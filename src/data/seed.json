@@ -1,0 +1,338 @@
+{
+  "updatedAt": "2026-08-31T21:42:00Z",
+  "currency": "USD",
+  "netWorth": 286421.78,
+  "netWorthChange": 1842.67,
+  "netWorthChangePct": 0.65,
+  "investedAssets": 239610.44,
+  "cash": 49229.67,
+  "debt": 2418.33,
+  "totalReturn": 48311.92,
+  "totalReturnPct": 25.26,
+  "accounts": [
+    {
+      "id": "all",
+      "name": "All accounts",
+      "institution": "Brief",
+      "type": "combined",
+      "value": 286421.78
+    },
+    {
+      "id": "fidelity",
+      "name": "Individual brokerage",
+      "institution": "Fidelity",
+      "type": "brokerage",
+      "value": 189830.14
+    },
+    {
+      "id": "schwab",
+      "name": "Roth IRA",
+      "institution": "Charles Schwab",
+      "type": "retirement",
+      "value": 49780.3
+    },
+    {
+      "id": "chase",
+      "name": "Checking",
+      "institution": "Chase",
+      "type": "cash",
+      "value": 49229.67
+    },
+    {
+      "id": "amex",
+      "name": "Gold Card",
+      "institution": "American Express",
+      "type": "credit",
+      "value": -2418.33
+    }
+  ],
+  "netWorthHistory": [
+    { "date": "Mar", "value": 248210.12 },
+    { "date": "Apr", "value": 253842.61 },
+    { "date": "May", "value": 249382.4 },
+    { "date": "Jun", "value": 265094.77 },
+    { "date": "Jul", "value": 276891.03 },
+    { "date": "Aug", "value": 286421.78 }
+  ],
+  "holdings": [
+    {
+      "ticker": "VTI",
+      "name": "Vanguard Total Stock Market ETF",
+      "accountId": "fidelity",
+      "shares": 248,
+      "price": 338.12,
+      "value": 83853.76,
+      "dailyChangePct": 0.48,
+      "totalChangePct": 31.84,
+      "afterHoursPrice": 338.44,
+      "color": "#272727",
+      "summary": "Broad US equities moved higher as rate expectations eased."
+    },
+    {
+      "ticker": "BND",
+      "name": "Vanguard Total Bond Market ETF",
+      "accountId": "fidelity",
+      "shares": 430,
+      "price": 74.83,
+      "value": 32176.9,
+      "dailyChangePct": 0.12,
+      "totalChangePct": 4.29,
+      "afterHoursPrice": 74.82,
+      "color": "#6b7280",
+      "summary": "Treasury yields were little changed across the session."
+    },
+    {
+      "ticker": "VXUS",
+      "name": "Vanguard Total International Stock ETF",
+      "accountId": "schwab",
+      "shares": 360,
+      "price": 71.22,
+      "value": 25639.2,
+      "dailyChangePct": -0.31,
+      "totalChangePct": 18.62,
+      "afterHoursPrice": 71.18,
+      "color": "#c07d48",
+      "summary": "International shares softened as the dollar strengthened."
+    },
+    {
+      "ticker": "MSFT",
+      "name": "Microsoft",
+      "accountId": "fidelity",
+      "shares": 41,
+      "price": 512.0,
+      "value": 20992.0,
+      "dailyChangePct": 1.04,
+      "totalChangePct": 44.1,
+      "afterHoursPrice": 512.87,
+      "color": "#4f8f76",
+      "summary": "Cloud demand and new product announcements supported shares."
+    },
+    {
+      "ticker": "AAPL",
+      "name": "Apple",
+      "accountId": "fidelity",
+      "shares": 86,
+      "price": 231.51,
+      "value": 19909.86,
+      "dailyChangePct": -0.22,
+      "totalChangePct": 26.75,
+      "afterHoursPrice": 231.63,
+      "color": "#858585",
+      "summary": "Shares consolidated after the previous week's product gains."
+    },
+    {
+      "ticker": "NVDA",
+      "name": "NVIDIA",
+      "accountId": "schwab",
+      "shares": 52,
+      "price": 180.22,
+      "value": 9371.44,
+      "dailyChangePct": 2.43,
+      "totalChangePct": 87.33,
+      "afterHoursPrice": 181.06,
+      "color": "#76a53b",
+      "summary": "Semiconductor shares advanced on continued data-center demand."
+    }
+  ],
+  "allocation": [
+    { "name": "US equities", "value": 124755.62, "percent": 52.07, "color": "#1f2020" },
+    { "name": "International", "value": 25639.2, "percent": 10.7, "color": "#ba7744" },
+    { "name": "Fixed income", "value": 32176.9, "percent": 13.43, "color": "#8f9692" },
+    { "name": "Cash", "value": 57038.72, "percent": 23.8, "color": "#d5d1c8" }
+  ],
+  "dividends": [
+    { "month": "Mar", "value": 182.41 },
+    { "month": "Apr", "value": 86.02 },
+    { "month": "May", "value": 94.28 },
+    { "month": "Jun", "value": 412.64 },
+    { "month": "Jul", "value": 121.37 },
+    { "month": "Aug", "value": 138.92 }
+  ],
+  "spending": {
+    "statementBalance": 2418.33,
+    "statementDueDate": "Sep 18",
+    "monthTotal": 6842.33,
+    "monthChangePct": -8.4,
+    "categories": [
+      { "name": "Housing", "value": 2850.0, "percent": 41.65, "color": "#232424" },
+      { "name": "Travel", "value": 1284.2, "percent": 18.77, "color": "#b87543" },
+      { "name": "Dining", "value": 934.71, "percent": 13.66, "color": "#71877c" },
+      { "name": "Shopping", "value": 721.86, "percent": 10.55, "color": "#9d9588" },
+      { "name": "Other", "value": 1051.56, "percent": 15.37, "color": "#d5d1c8" }
+    ]
+  },
+  "transactions": [
+    {
+      "id": "tx-1",
+      "merchant": "United Airlines",
+      "category": "Travel",
+      "date": "Aug 31",
+      "amount": -428.16,
+      "account": "Amex Gold",
+      "pending": true
+    },
+    {
+      "id": "tx-2",
+      "merchant": "Whole Foods Market",
+      "category": "Groceries",
+      "date": "Aug 30",
+      "amount": -86.42,
+      "account": "Amex Gold",
+      "pending": false
+    },
+    {
+      "id": "tx-3",
+      "merchant": "Salary",
+      "category": "Income",
+      "date": "Aug 29",
+      "amount": 4821.75,
+      "account": "Chase Checking",
+      "pending": false
+    },
+    {
+      "id": "tx-4",
+      "merchant": "Uber",
+      "category": "Transport",
+      "date": "Aug 28",
+      "amount": -31.88,
+      "account": "Amex Gold",
+      "pending": false
+    },
+    {
+      "id": "tx-5",
+      "merchant": "Blue Bottle Coffee",
+      "category": "Dining",
+      "date": "Aug 28",
+      "amount": -12.75,
+      "account": "Amex Gold",
+      "pending": false
+    },
+    {
+      "id": "tx-6",
+      "merchant": "Apple",
+      "category": "Shopping",
+      "date": "Aug 27",
+      "amount": -129.0,
+      "account": "Amex Gold",
+      "pending": false
+    },
+    {
+      "id": "tx-7",
+      "merchant": "PG&E",
+      "category": "Utilities",
+      "date": "Aug 26",
+      "amount": -118.42,
+      "account": "Chase Checking",
+      "pending": false
+    },
+    {
+      "id": "tx-8",
+      "merchant": "Airbnb",
+      "category": "Travel",
+      "date": "Aug 24",
+      "amount": -642.2,
+      "account": "Amex Gold",
+      "pending": false
+    },
+    {
+      "id": "tx-9",
+      "merchant": "Trader Joe's",
+      "category": "Groceries",
+      "date": "Aug 23",
+      "amount": -63.17,
+      "account": "Amex Gold",
+      "pending": false
+    },
+    {
+      "id": "tx-10",
+      "merchant": "Spotify",
+      "category": "Entertainment",
+      "date": "Aug 22",
+      "amount": -11.99,
+      "account": "Amex Gold",
+      "pending": false
+    },
+    {
+      "id": "tx-11",
+      "merchant": "Dividend · VTI",
+      "category": "Income",
+      "date": "Aug 21",
+      "amount": 94.16,
+      "account": "Fidelity",
+      "pending": false
+    },
+    {
+      "id": "tx-12",
+      "merchant": "Sweetgreen",
+      "category": "Dining",
+      "date": "Aug 20",
+      "amount": -24.65,
+      "account": "Amex Gold",
+      "pending": false
+    }
+  ],
+  "credits": [
+    {
+      "id": "credit-1",
+      "name": "Dining credit",
+      "used": 10,
+      "total": 10,
+      "deadline": "Resets Sep 1",
+      "status": "used"
+    },
+    {
+      "id": "credit-2",
+      "name": "Uber Cash",
+      "used": 6.5,
+      "total": 10,
+      "deadline": "3 days left",
+      "status": "available"
+    },
+    {
+      "id": "credit-3",
+      "name": "Resy credit",
+      "used": 72,
+      "total": 100,
+      "deadline": "Dec 31",
+      "status": "available"
+    },
+    {
+      "id": "credit-4",
+      "name": "Hotel collection",
+      "used": 0,
+      "total": 100,
+      "deadline": "Dec 31",
+      "status": "available"
+    }
+  ],
+  "providers": [
+    {
+      "id": "plaid",
+      "name": "Plaid",
+      "description": "Banking and credit cards",
+      "status": "ready",
+      "lastSync": "12 minutes ago"
+    },
+    {
+      "id": "snaptrade",
+      "name": "SnapTrade",
+      "description": "Brokerage accounts",
+      "status": "ready",
+      "lastSync": "28 minutes ago"
+    },
+    {
+      "id": "market",
+      "name": "Market data",
+      "description": "Quotes and historical bars",
+      "status": "ready",
+      "lastSync": "2 minutes ago"
+    },
+    {
+      "id": "logos",
+      "name": "Brand assets",
+      "description": "Locally cached company marks",
+      "status": "local",
+      "lastSync": "Cached"
+    }
+  ]
+}
