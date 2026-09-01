@@ -54,6 +54,51 @@
     { "date": "Jul", "value": 276891.03 },
     { "date": "Aug", "value": 286421.78 }
   ],
+  "benchmarkHistory": [],
+  "brokeragePerformance": [
+    {
+      "accountId": "total",
+      "name": "Total",
+      "institution": "All brokerages",
+      "currentValue": 239610.44,
+      "points": [
+        { "date": "Mar", "value": 207540, "netDeposits": 199000, "sp500": 199000 },
+        { "date": "Apr", "value": 212120, "netDeposits": 199000, "sp500": 203640 },
+        { "date": "May", "value": 208350, "netDeposits": 201000, "sp500": 200690 },
+        { "date": "Jun", "value": 222060, "netDeposits": 201000, "sp500": 210230 },
+        { "date": "Jul", "value": 231030, "netDeposits": 207000, "sp500": 219960 },
+        { "date": "Aug", "value": 239610.44, "netDeposits": 207000, "sp500": 225760 }
+      ]
+    },
+    {
+      "accountId": "fidelity",
+      "name": "Individual brokerage",
+      "institution": "Fidelity",
+      "currentValue": 189830.14,
+      "points": [
+        { "date": "Mar", "value": 164520, "netDeposits": 158000, "sp500": 158000 },
+        { "date": "Apr", "value": 168240, "netDeposits": 158000, "sp500": 161680 },
+        { "date": "May", "value": 165810, "netDeposits": 160000, "sp500": 159340 },
+        { "date": "Jun", "value": 176940, "netDeposits": 160000, "sp500": 166910 },
+        { "date": "Jul", "value": 183720, "netDeposits": 163000, "sp500": 173840 },
+        { "date": "Aug", "value": 189830.14, "netDeposits": 163000, "sp500": 178420 }
+      ]
+    },
+    {
+      "accountId": "schwab",
+      "name": "Roth IRA",
+      "institution": "Charles Schwab",
+      "currentValue": 49780.3,
+      "points": [
+        { "date": "Mar", "value": 43020, "netDeposits": 41000, "sp500": 41000 },
+        { "date": "Apr", "value": 43880, "netDeposits": 41000, "sp500": 41960 },
+        { "date": "May", "value": 42540, "netDeposits": 41000, "sp500": 41350 },
+        { "date": "Jun", "value": 45120, "netDeposits": 41000, "sp500": 43320 },
+        { "date": "Jul", "value": 47310, "netDeposits": 44000, "sp500": 46120 },
+        { "date": "Aug", "value": 49780.3, "netDeposits": 44000, "sp500": 47340 }
+      ]
+    }
+  ],
   "holdings": [
     {
       "ticker": "VTI",
@@ -165,6 +210,7 @@
     {
       "id": "tx-1",
       "merchant": "United Airlines",
+      "logoName": "United Airlines",
       "category": "Travel",
       "date": "Aug 31",
       "amount": -428.16,
@@ -174,6 +220,7 @@
     {
       "id": "tx-2",
       "merchant": "Whole Foods Market",
+      "logoName": "Whole Foods Market",
       "category": "Groceries",
       "date": "Aug 30",
       "amount": -86.42,
@@ -192,6 +239,7 @@
     {
       "id": "tx-4",
       "merchant": "Uber",
+      "logoName": "Uber",
       "category": "Transport",
       "date": "Aug 28",
       "amount": -31.88,
@@ -201,6 +249,7 @@
     {
       "id": "tx-5",
       "merchant": "Blue Bottle Coffee",
+      "logoName": "Blue Bottle Coffee",
       "category": "Dining",
       "date": "Aug 28",
       "amount": -12.75,
@@ -210,6 +259,7 @@
     {
       "id": "tx-6",
       "merchant": "Apple",
+      "logoName": "Apple",
       "category": "Shopping",
       "date": "Aug 27",
       "amount": -129.0,
@@ -219,6 +269,7 @@
     {
       "id": "tx-7",
       "merchant": "PG&E",
+      "logoName": "PG&E",
       "category": "Utilities",
       "date": "Aug 26",
       "amount": -118.42,
@@ -228,6 +279,7 @@
     {
       "id": "tx-8",
       "merchant": "Airbnb",
+      "logoName": "Airbnb",
       "category": "Travel",
       "date": "Aug 24",
       "amount": -642.2,
@@ -237,6 +289,7 @@
     {
       "id": "tx-9",
       "merchant": "Trader Joe's",
+      "logoName": "Trader Joe's",
       "category": "Groceries",
       "date": "Aug 23",
       "amount": -63.17,
@@ -246,6 +299,7 @@
     {
       "id": "tx-10",
       "merchant": "Spotify",
+      "logoName": "Spotify",
       "category": "Entertainment",
       "date": "Aug 22",
       "amount": -11.99,
@@ -264,6 +318,7 @@
     {
       "id": "tx-12",
       "merchant": "Sweetgreen",
+      "logoName": "Sweetgreen",
       "category": "Dining",
       "date": "Aug 20",
       "amount": -24.65,

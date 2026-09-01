@@ -1,3 +1,3 @@
 fn main() {
-    brief_finance_lib::run()
+    brief_lib::run()
 }
