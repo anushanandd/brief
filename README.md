@@ -12,9 +12,9 @@ Brief is a private, local-first personal finance desktop app. The MVP combines a
 - Keyboard-first navigation and a `Command-K` command palette
 - Cached local data that renders before network refreshes
 
-Provider integrations are represented by adapters and health states. Plaid, SnapTrade, market data, and logo requests are not enabled until credentials are supplied.
+Plaid and SnapTrade use bring-your-own-key integrations in the native desktop process. Provider credentials and Plaid access tokens are stored in the macOS Keychain; no hosted bridge is required.
 
-The current build is read-only and uses a deterministic sample snapshot. It is suitable for evaluating the product and architecture, not for making financial decisions.
+The browser development build uses a deterministic sample snapshot. The native desktop build can connect read-only provider accounts and keeps its financial snapshot on device. It is not suitable for making financial decisions.
 
 ## Run
 
@@ -28,6 +28,8 @@ Run the native desktop shell:
 ```sh
 pnpm tauri dev
 ```
+
+In Brief → Settings, enter a Plaid client ID and Production secret and/or a SnapTrade Personal client ID and consumer key. Save and test the credentials, then choose the provider under Data sources to connect accounts. Secrets are never written to the frontend cache or SQLite.
 
 Verify the project:
 

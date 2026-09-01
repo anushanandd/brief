@@ -1,7 +1,9 @@
 import { createColumnHelper, tableFeatures, useTable } from '@tanstack/react-table'
 
 import { formatCurrency, formatPercent } from '../lib/format'
+import { stockLogoUrl } from '../lib/logos'
 import type { Holding } from '../lib/schema'
+import { BrandMark } from './brand-mark'
 
 const features = tableFeatures({})
 const helper = createColumnHelper<typeof features, Holding>()
@@ -10,9 +12,13 @@ const columns = helper.columns([
     header: 'Asset',
     cell: ({ row }) => (
       <div className="table-asset">
-        <span className="asset-mark" style={{ backgroundColor: row.original.color }}>
-          {row.original.ticker.slice(0, 1)}
-        </span>
+        <BrandMark
+          className="asset-mark"
+          fallback={row.original.ticker.slice(0, 1)}
+          label={`${row.original.name} logo`}
+          src={stockLogoUrl(row.original.ticker)}
+          style={{ backgroundColor: row.original.color }}
+        />
         <span>
           <strong>{row.original.ticker}</strong>
           <small>{row.original.name}</small>

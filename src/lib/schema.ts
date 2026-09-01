@@ -42,6 +42,26 @@ export const financeSnapshotSchema = z.object({
   totalReturnPct: z.number(),
   accounts: z.array(accountSchema),
   netWorthHistory: z.array(z.object({ date: z.string(), value: z.number() })),
+  netWorthHistoryEstimated: z.boolean().default(false),
+  benchmarkHistory: z.array(z.object({ date: z.string(), value: z.number() })).default([]),
+  brokeragePerformance: z
+    .array(
+      z.object({
+        accountId: z.string(),
+        name: z.string(),
+        institution: z.string(),
+        currentValue: z.number(),
+        points: z.array(
+          z.object({
+            date: z.string(),
+            value: z.number(),
+            netDeposits: z.number(),
+            sp500: z.number().nullable(),
+          }),
+        ),
+      }),
+    )
+    .default([]),
   holdings: z.array(holdingSchema),
   allocation: z.array(allocationSchema),
   dividends: z.array(z.object({ month: z.string(), value: z.number() })),
@@ -61,6 +81,9 @@ export const financeSnapshotSchema = z.object({
       amount: z.number(),
       account: z.string(),
       pending: z.boolean(),
+      logoUrl: z.string().optional(),
+      website: z.string().optional(),
+      logoName: z.string().optional(),
     }),
   ),
   credits: z.array(

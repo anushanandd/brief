@@ -1,20 +1,65 @@
 import NumberFlow from '@number-flow/react'
-import { CalendarClock, Check, CircleDollarSign, CreditCard, Search } from 'lucide-react'
+import {
+  ArrowLeftRight,
+  Banknote,
+  CalendarClock,
+  ChartNoAxesCombined,
+  Check,
+  CircleDollarSign,
+  CreditCard,
+  Percent,
+  ReceiptText,
+  RotateCcw,
+  Search,
+  WalletCards,
+} from 'lucide-react'
 import { useState } from 'react'
 import { Virtuoso } from 'react-virtuoso'
 
+import { BrandMark } from '../components/brand-mark'
 import { PageError, PageLoading } from '../components/data-state'
 import { Card, SectionHeading } from '../components/ui'
 import { useFinance } from '../hooks/use-finance'
 import { formatCurrency } from '../lib/format'
+import { transactionLogoUrl, transactionMarkKind, type TransactionMarkKind } from '../lib/logos'
 import type { Transaction } from '../lib/schema'
 
+function TransactionFallback({ kind, initial }: { kind: TransactionMarkKind; initial: string }) {
+  switch (kind) {
+    case 'transfer':
+      return <ArrowLeftRight size={15} />
+    case 'interest':
+      return <Percent size={15} />
+    case 'dividend':
+      return <ChartNoAxesCombined size={15} />
+    case 'income':
+      return <Banknote size={15} />
+    case 'refund':
+      return <RotateCcw size={15} />
+    case 'fee':
+      return <ReceiptText size={15} />
+    case 'payment':
+      return <CreditCard size={15} />
+    case 'cash':
+      return <WalletCards size={15} />
+    default:
+      return initial
+  }
+}
+
 function TransactionRow({ transaction }: { transaction: Transaction }) {
+  const markKind = transactionMarkKind(transaction)
+
   return (
     <div className="transaction-row">
-      <span className={`transaction-mark category-${transaction.category.toLowerCase()}`}>
-        {transaction.merchant.slice(0, 1)}
-      </span>
+      <BrandMark
+        className={`transaction-mark transaction-mark-${markKind}`}
+        fallback={
+          <TransactionFallback kind={markKind} initial={transaction.merchant.slice(0, 1)} />
+        }
+        label={`${transaction.merchant} transaction icon`}
+        src={transactionLogoUrl(transaction)}
+      />
       <span className="transaction-name">
         <strong>{transaction.merchant}</strong>
         <small>
@@ -42,6 +87,19 @@ export function SpendingPage() {
 
   const data = query.data
   const normalizedSearch = search.trim().toLowerCase()
+  const updatedAt = new Date(data.updatedAt)
+  const previousMonthDate = new Date(
+    Date.UTC(updatedAt.getUTCFullYear(), updatedAt.getUTCMonth() - 1, 1),
+  )
+  const previousMonth = previousMonthDate.toLocaleDateString('en-US', {
+    month: 'long',
+    timeZone: 'UTC',
+  })
+  const spendingChange = data.spending.monthChangePct
+  const spendingComparison =
+    spendingChange === 0
+      ? `Same as ${previousMonth}`
+      : `${Math.abs(spendingChange).toFixed(1)}% ${spendingChange > 0 ? 'more' : 'less'} than ${previousMonth}`
   const transactions = data.transactions.filter((transaction) =>
     `${transaction.merchant} ${transaction.category} ${transaction.account}`
       .toLowerCase()
@@ -66,16 +124,14 @@ export function SpendingPage() {
             value={data.spending.monthTotal}
             format={{ style: 'currency', currency: 'USD' }}
           />
-          <span className="positive">
-            {Math.abs(data.spending.monthChangePct).toFixed(1)}% less than July
-          </span>
+          <span className={spendingChange > 0 ? 'negative' : 'positive'}>{spendingComparison}</span>
         </Card>
         <Card className="statement-card">
           <span className="metric-icon">
             <CreditCard size={17} />
           </span>
           <div>
-            <p>Amex statement</p>
+            <p>Credit card balance</p>
             <strong>{formatCurrency(data.spending.statementBalance)}</strong>
           </div>
           <div className="statement-due">

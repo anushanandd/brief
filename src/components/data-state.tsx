@@ -1,5 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, RefreshCw } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { financeQueryKey, useFinance } from '../hooks/use-finance'
@@ -40,8 +41,11 @@ export function PageError() {
 
 export function RefreshButton() {
   const queryClient = useQueryClient()
+  const [isRefreshing, setIsRefreshing] = useState(false)
 
   const onRefresh = async () => {
+    if (isRefreshing) return
+    setIsRefreshing(true)
     const promise = refreshFinanceSnapshot()
     toast.promise(promise, {
       loading: 'Refreshing your snapshot…',
@@ -49,13 +53,26 @@ export function RefreshButton() {
       error: 'Refresh failed',
     })
 
-    queryClient.setQueryData(financeQueryKey, await promise)
+    try {
+      queryClient.setQueryData(financeQueryKey, await promise)
+    } catch {
+      // toast.promise owns the user-facing error state; consume the rejection from this event
+      // handler so a failed provider refresh does not become an unhandled browser rejection.
+    } finally {
+      setIsRefreshing(false)
+    }
   }
 
   return (
-    <Button variant="secondary" onClick={() => void onRefresh()}>
+    <Button
+      variant="secondary"
+      size="icon"
+      onClick={() => void onRefresh()}
+      disabled={isRefreshing}
+      aria-label={isRefreshing ? 'Refreshing accounts' : 'Refresh accounts'}
+      title={isRefreshing ? 'Refreshing accounts' : 'Refresh accounts'}
+    >
       <RefreshCw size={15} aria-hidden="true" />
-      Refresh
     </Button>
   )
 }
