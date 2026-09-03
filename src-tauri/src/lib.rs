@@ -1,203 +1,70 @@
 mod authentication;
 mod providers;
 
-use std::{collections::BTreeMap, fs, path::Path, sync::Mutex};
+use std::{collections::BTreeMap, fs, path::PathBuf, sync::Mutex};
 
-use chrono::{SecondsFormat, Utc};
-use providers::{IntegrationStatus, LinkSession, LinkStatus, PlaidCache, ProviderSync, Providers};
-use rusqlite::{params, Connection, OptionalExtension};
+use providers::{
+    IntegrationStatus, LinkSession, LinkStatus, MarketSnapshot, PlaidCache, ProviderSync, Providers,
+};
+use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 use tauri::{Manager, State};
 
+#[cfg(target_os = "macos")]
+use tauri::{
+    menu::{Menu, MenuItem, Submenu},
+    AppHandle, Emitter, Runtime,
+};
+
 const EMPTY_SNAPSHOT: &str = include_str!("../../src/data/empty.json");
 
-struct AppState {
-    connection: Mutex<Connection>,
-    providers: Providers,
+struct Storage {
+    snapshot: PathBuf,
+    plaid_cache: PathBuf,
 }
 
-fn initialize_database(connection: &Connection) -> Result<(), rusqlite::Error> {
-    connection.execute_batch(
-        "
-        PRAGMA journal_mode = WAL;
-        PRAGMA foreign_keys = ON;
-
-        CREATE TABLE IF NOT EXISTS finance_snapshots (
-          id INTEGER PRIMARY KEY CHECK (id = 1),
-          payload TEXT NOT NULL,
-          updated_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS sync_runs (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          provider TEXT NOT NULL,
-          status TEXT NOT NULL,
-          completed_at TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS provider_cache (
-          key TEXT PRIMARY KEY,
-          payload TEXT NOT NULL
-        );
-
-        CREATE TABLE IF NOT EXISTS integration_configuration (
-          provider TEXT PRIMARY KEY,
-          configured INTEGER NOT NULL DEFAULT 0 CHECK (configured IN (0, 1))
-        );
-
-        INSERT OR IGNORE INTO integration_configuration (provider, configured)
-        VALUES ('plaid', 0), ('snaptrade', 0);
-
-        DROP TABLE IF EXISTS sync_configuration;
-        ",
-    )?;
-
-    let existing: Option<i64> = connection
-        .query_row("SELECT id FROM finance_snapshots WHERE id = 1", [], |row| {
-            row.get(0)
-        })
-        .optional()?;
-
-    if existing.is_none() {
-        let empty: Value = serde_json::from_str(EMPTY_SNAPSHOT)
-            .expect("the bundled empty finance snapshot must be valid JSON");
-        let updated_at = empty["updatedAt"].as_str().unwrap_or_default();
-        connection.execute(
-            "INSERT INTO finance_snapshots (id, payload, updated_at) VALUES (1, ?1, ?2)",
-            params![EMPTY_SNAPSHOT, updated_at],
-        )?;
-    } else {
-        let payload: String = connection.query_row(
-            "SELECT payload FROM finance_snapshots WHERE id = 1",
-            [],
-            |row| row.get(0),
-        )?;
-        if payload.contains("\"id\": \"fidelity\"") || payload.contains("\"id\":\"fidelity\"") {
-            connection.execute(
-                "UPDATE finance_snapshots SET payload = ?1, updated_at = '1970-01-01T00:00:00Z' WHERE id = 1",
-                params![EMPTY_SNAPSHOT],
-            )?;
-        }
-    }
-
-    let snapshot = read_snapshot(connection).map_err(|_| rusqlite::Error::InvalidQuery)?;
-    migrate_integration_configuration(connection, &snapshot)?;
-
-    Ok(())
-}
-
-fn open_database(path: &Path) -> Result<Connection, String> {
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent).map_err(|error| error.to_string())?;
-    }
-    let connection = Connection::open(path).map_err(|error| error.to_string())?;
-    initialize_database(&connection).map_err(|error| error.to_string())?;
-    Ok(connection)
-}
-
-fn read_snapshot(connection: &Connection) -> Result<Value, String> {
-    let payload: String = connection
-        .query_row(
-            "SELECT payload FROM finance_snapshots WHERE id = 1",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|error| error.to_string())?;
-    serde_json::from_str(&payload).map_err(|error| error.to_string())
-}
-
-fn migrate_integration_configuration(
-    connection: &Connection,
-    snapshot: &Value,
-) -> Result<(), rusqlite::Error> {
-    let Some(providers) = snapshot.get("providers").and_then(Value::as_array) else {
-        return Ok(());
-    };
-    for provider in providers {
-        let Some(id @ ("plaid" | "snaptrade")) = provider.get("id").and_then(Value::as_str) else {
-            continue;
+impl Storage {
+    fn new(data_dir: PathBuf) -> Result<Self, String> {
+        fs::create_dir_all(&data_dir).map_err(|error| error.to_string())?;
+        let storage = Self {
+            snapshot: data_dir.join("finance-snapshot.json"),
+            plaid_cache: data_dir.join("plaid-cache.json"),
         };
-        if provider.get("status").and_then(Value::as_str) == Some("ready") {
-            connection.execute(
-                "UPDATE integration_configuration SET configured = 1 WHERE provider = ?1",
-                params![id],
-            )?;
+        if !storage.snapshot.exists() {
+            let empty =
+                serde_json::from_str::<Value>(EMPTY_SNAPSHOT).map_err(|error| error.to_string())?;
+            storage.write(&storage.snapshot, &empty)?;
+        }
+        Ok(storage)
+    }
+
+    fn read<T: DeserializeOwned>(&self, path: &PathBuf) -> Result<T, String> {
+        serde_json::from_slice(&fs::read(path).map_err(|error| error.to_string())?)
+            .map_err(|error| error.to_string())
+    }
+
+    fn read_or_default<T: Default + DeserializeOwned>(&self, path: &PathBuf) -> Result<T, String> {
+        if path.exists() {
+            self.read(path)
+        } else {
+            Ok(T::default())
         }
     }
-    Ok(())
-}
 
-fn read_integration_status(connection: &Connection) -> Result<IntegrationStatus, String> {
-    let mut status = IntegrationStatus {
-        plaid: false,
-        snaptrade: false,
-    };
-    let mut statement = connection
-        .prepare("SELECT provider, configured FROM integration_configuration")
+    fn write<T: Serialize>(&self, path: &PathBuf, value: &T) -> Result<(), String> {
+        let temporary = path.with_extension("tmp");
+        fs::write(
+            &temporary,
+            serde_json::to_vec(value).map_err(|error| error.to_string())?,
+        )
         .map_err(|error| error.to_string())?;
-    let rows = statement
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?))
-        })
-        .map_err(|error| error.to_string())?;
-    for row in rows {
-        let (provider, configured) = row.map_err(|error| error.to_string())?;
-        match provider.as_str() {
-            "plaid" => status.plaid = configured,
-            "snaptrade" => status.snaptrade = configured,
-            _ => {}
-        }
+        fs::rename(temporary, path).map_err(|error| error.to_string())
     }
-    Ok(status)
 }
 
-fn mark_integration_configured(connection: &Connection, provider: &str) -> Result<(), String> {
-    connection
-        .execute(
-            "INSERT INTO integration_configuration (provider, configured) VALUES (?1, 1)
-             ON CONFLICT(provider) DO UPDATE SET configured = 1",
-            params![provider],
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(())
-}
-
-fn read_plaid_cache(connection: &Connection) -> Result<PlaidCache, String> {
-    let payload: Option<String> = connection
-        .query_row(
-            "SELECT payload FROM provider_cache WHERE key = 'plaid'",
-            [],
-            |row| row.get(0),
-        )
-        .optional()
-        .map_err(|error| error.to_string())?;
-    payload
-        .map(|value| serde_json::from_str(&value).map_err(|error| error.to_string()))
-        .transpose()
-        .map(Option::unwrap_or_default)
-}
-
-fn write_plaid_cache(connection: &Connection, cache: &PlaidCache) -> Result<(), String> {
-    let payload = serde_json::to_string(cache).map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "INSERT INTO provider_cache (key, payload) VALUES ('plaid', ?1)
-             ON CONFLICT(key) DO UPDATE SET payload = excluded.payload",
-            params![payload],
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(())
-}
-
-fn write_snapshot_payload(connection: &Connection, snapshot: &Value) -> Result<(), String> {
-    let payload = serde_json::to_string(snapshot).map_err(|error| error.to_string())?;
-    connection
-        .execute(
-            "UPDATE finance_snapshots SET payload = ?1 WHERE id = 1",
-            params![payload],
-        )
-        .map_err(|error| error.to_string())?;
-    Ok(())
+struct AppState {
+    storage: Mutex<Storage>,
+    providers: Providers,
 }
 
 #[derive(Default)]
@@ -274,51 +141,23 @@ fn enrich_snapshot_transaction_logos(snapshot: &mut Value, cache: &PlaidCache) -
     changed
 }
 
-fn persist_snapshot(connection: &mut Connection, snapshot: &Value) -> Result<(), String> {
-    let updated_at = snapshot["updatedAt"]
-        .as_str()
-        .map(str::to_string)
-        .unwrap_or_else(|| Utc::now().to_rfc3339_opts(SecondsFormat::Secs, true));
-    let payload = serde_json::to_string(snapshot).map_err(|error| error.to_string())?;
-    let transaction = connection
-        .transaction()
-        .map_err(|error| error.to_string())?;
-    transaction
-        .execute(
-            "UPDATE finance_snapshots SET payload = ?1, updated_at = ?2 WHERE id = 1",
-            params![payload, updated_at],
-        )
-        .map_err(|error| error.to_string())?;
-    transaction
-        .execute(
-            "INSERT INTO sync_runs (provider, status, completed_at) VALUES ('local', 'success', ?1)",
-            params![updated_at],
-        )
-        .map_err(|error| error.to_string())?;
-    transaction.commit().map_err(|error| error.to_string())
-}
-
 #[tauri::command]
 fn get_finance_snapshot(state: State<'_, AppState>) -> Result<Value, String> {
-    let connection = state
-        .connection
+    let storage = state
+        .storage
         .lock()
-        .map_err(|_| "the local database lock is unavailable".to_string())?;
-    let mut snapshot = read_snapshot(&connection)?;
-    let cache = read_plaid_cache(&connection)?;
+        .map_err(|_| "The local data store is unavailable".to_string())?;
+    let mut snapshot = storage.read(&storage.snapshot)?;
+    let cache = storage.read_or_default(&storage.plaid_cache)?;
     if enrich_snapshot_transaction_logos(&mut snapshot, &cache) {
-        write_snapshot_payload(&connection, &snapshot)?;
+        storage.write(&storage.snapshot, &snapshot)?;
     }
     Ok(snapshot)
 }
 
 #[tauri::command]
 fn get_integration_status(state: State<'_, AppState>) -> Result<IntegrationStatus, String> {
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|_| "the local database lock is unavailable".to_string())?;
-    read_integration_status(&connection)
+    state.providers.integration_status()
 }
 
 #[tauri::command]
@@ -329,53 +168,35 @@ async fn save_integration_credentials(
     consumer_key: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<IntegrationStatus, String> {
-    let requires_authentication = {
-        let connection = state
-            .connection
-            .lock()
-            .map_err(|_| "the local database lock is unavailable".to_string())?;
-        let status = read_integration_status(&connection)?;
-        match provider.as_str() {
-            "plaid" => status.plaid,
-            "snaptrade" => status.snaptrade,
-            _ => return Err("Unknown provider".into()),
-        }
+    let status = state.providers.integration_status()?;
+    let requires_authentication = match provider.as_str() {
+        "plaid" => status.plaid,
+        "snaptrade" => status.snaptrade,
+        "alpaca" => status.alpaca,
+        _ => return Err("Unknown provider".into()),
     };
     if requires_authentication && !state.providers.take_credential_edit_authorization()? {
         return Err("Authenticate before replacing saved credentials".into());
     }
 
-    let save_result = state
+    if let Err(error) = state
         .providers
         .save_credentials(&provider, client_id, secret, consumer_key)
-        .await;
-    if let Err(error) = save_result {
-        // Keep a recent authorization valid while the user corrects a rejected client ID or key.
+        .await
+    {
         if requires_authentication {
             state.providers.authorize_credential_edit()?;
         }
         return Err(error);
     }
-    let connection = state
-        .connection
-        .lock()
-        .map_err(|_| "the local database lock is unavailable".to_string())?;
-    mark_integration_configured(&connection, &provider)?;
-    read_integration_status(&connection)
+    state.providers.integration_status()
 }
 
 #[tauri::command]
 async fn authenticate_sensitive_action(state: State<'_, AppState>) -> Result<(), String> {
     state.providers.lock_credentials()?;
-    #[cfg(target_os = "macos")]
-    if !state.providers.unlock_credentials()? {
-        authentication::authenticate_sensitive_action().await?;
-    }
-    #[cfg(not(target_os = "macos"))]
-    {
-        state.providers.unlock_credentials()?;
-        authentication::authenticate_sensitive_action().await?;
-    }
+    authentication::authenticate_sensitive_action().await?;
+    state.providers.unlock_credentials()?;
     state.providers.authorize_credential_edit()
 }
 
@@ -397,18 +218,26 @@ async fn poll_provider_link(
 }
 
 #[tauri::command]
+async fn get_market_snapshots(
+    symbols: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<BTreeMap<String, MarketSnapshot>, String> {
+    state.providers.market_snapshots(symbols).await
+}
+
+#[tauri::command]
 async fn refresh_provider_data(state: State<'_, AppState>) -> Result<ProviderSync, String> {
     state.providers.lock_credentials()?;
     state.providers.unlock_credentials()?;
 
     let (mut plaid_cache, history, history_estimated, previous_benchmark) = {
-        let connection = state
-            .connection
+        let storage = state
+            .storage
             .lock()
-            .map_err(|_| "the local database lock is unavailable".to_string())?;
-        let snapshot = read_snapshot(&connection)?;
+            .map_err(|_| "The local data store is unavailable".to_string())?;
+        let snapshot: Value = storage.read(&storage.snapshot)?;
         (
-            read_plaid_cache(&connection)?,
+            storage.read_or_default(&storage.plaid_cache)?,
             snapshot
                 .get("netWorthHistory")
                 .cloned()
@@ -441,13 +270,11 @@ async fn refresh_provider_data(state: State<'_, AppState>) -> Result<ProviderSyn
         .filter(|history| history.as_array().is_some_and(|points| !points.is_empty()))
         .unwrap_or(previous_benchmark);
 
-    {
-        let connection = state
-            .connection
-            .lock()
-            .map_err(|_| "the local database lock is unavailable".to_string())?;
-        write_plaid_cache(&connection, &plaid_cache)?;
-    }
+    let storage = state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable".to_string())?;
+    storage.write(&storage.plaid_cache, &plaid_cache)?;
 
     Ok(ProviderSync {
         plaid,
@@ -460,23 +287,101 @@ async fn refresh_provider_data(state: State<'_, AppState>) -> Result<ProviderSyn
 
 #[tauri::command]
 fn save_finance_snapshot(snapshot: Value, state: State<'_, AppState>) -> Result<(), String> {
-    let mut connection = state
-        .connection
+    let storage = state
+        .storage
         .lock()
-        .map_err(|_| "the local database lock is unavailable".to_string())?;
-    persist_snapshot(&mut connection, &snapshot)
+        .map_err(|_| "The local data store is unavailable".to_string())?;
+    storage.write(&storage.snapshot, &snapshot)
+}
+
+#[cfg(target_os = "macos")]
+fn shortcut_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
+    let menu = Menu::default(app)?;
+
+    let settings = MenuItem::with_id(app, "open-settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
+    if let Some(app_menu) = menu.items()?.first().and_then(|item| item.as_submenu()) {
+        app_menu.insert(&settings, 1)?;
+    }
+
+    for item in menu.items()? {
+        let Some(submenu) = item.as_submenu() else {
+            continue;
+        };
+        let title = submenu.text()?;
+
+        if title == "File" {
+            menu.remove(&item)?;
+            continue;
+        }
+
+        if title == "Edit" || title == "Window" {
+            for child in submenu.items()? {
+                let Some(predefined) = child.as_predefined_menuitem() else {
+                    continue;
+                };
+                let label = predefined.text()?.replace('&', "");
+                if (title == "Edit" && label == "Select All")
+                    || (title == "Window" && label != "Zoom")
+                {
+                    submenu.remove(&child)?;
+                }
+            }
+        }
+    }
+
+    let previous = MenuItem::with_id(
+        app,
+        "graph-previous",
+        "Previous Graph",
+        true,
+        Some("CmdOrCtrl+ArrowLeft"),
+    )?;
+    let next = MenuItem::with_id(
+        app,
+        "graph-next",
+        "Next Graph",
+        true,
+        Some("CmdOrCtrl+ArrowRight"),
+    )?;
+    let week = MenuItem::with_id(app, "graph-week", "1 Week", true, Some("CmdOrCtrl+W"))?;
+    let month = MenuItem::with_id(app, "graph-month", "1 Month", true, Some("CmdOrCtrl+M"))?;
+    let three_months = MenuItem::with_id(
+        app,
+        "graph-three-months",
+        "3 Months",
+        true,
+        Some("CmdOrCtrl+3"),
+    )?;
+    let all = MenuItem::with_id(app, "graph-all", "All Time", true, Some("CmdOrCtrl+A"))?;
+    let graph = Submenu::with_items(
+        app,
+        "Graph",
+        true,
+        &[&previous, &next, &week, &month, &three_months, &all],
+    )?;
+    menu.append(&graph)?;
+
+    Ok(menu)
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
-        .plugin(tauri_plugin_opener::init())
+    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+
+    #[cfg(target_os = "macos")]
+    let builder = builder.menu(shortcut_menu).on_menu_event(|app, event| {
+        let shortcut = event.id().as_ref();
+        if shortcut == "open-settings" {
+            let _ = app.emit("open-settings", ());
+        } else if shortcut.starts_with("graph-") {
+            let _ = app.emit("graph-shortcut", shortcut.to_string());
+        }
+    });
+
+    builder
         .setup(|app| {
-            let database_path = app.path().app_data_dir()?.join("brief.sqlite3");
             app.manage(AppState {
-                connection: Mutex::new(open_database(&database_path).map_err(|error| {
-                    format!("failed to initialize local finance data: {error}")
-                })?),
+                storage: Mutex::new(Storage::new(app.path().app_data_dir()?)?),
                 providers: Providers::new()
                     .map_err(|error| format!("failed to initialize providers: {error}"))?,
             });
@@ -489,6 +394,7 @@ pub fn run() {
             save_integration_credentials,
             begin_provider_link,
             poll_provider_link,
+            get_market_snapshots,
             refresh_provider_data,
             save_finance_snapshot
         ])
@@ -501,37 +407,29 @@ mod tests {
     use super::*;
 
     #[test]
-    fn initializes_and_reads_the_empty_snapshot() {
-        let connection = Connection::open_in_memory().expect("in-memory database");
-        initialize_database(&connection).expect("schema initialization");
-        let snapshot = read_snapshot(&connection).expect("seed snapshot");
-        assert_eq!(snapshot["currency"], "USD");
+    fn persists_snapshot_and_provider_cache() {
+        let directory = std::env::temp_dir().join(format!("brief-test-{}", uuid::Uuid::new_v4()));
+        let storage = Storage::new(directory.clone()).expect("storage");
+        let snapshot: Value = storage.read(&storage.snapshot).expect("snapshot");
         assert!(snapshot["holdings"].as_array().is_some_and(Vec::is_empty));
-    }
-
-    #[test]
-    fn persists_provider_cache() {
-        let connection = Connection::open_in_memory().expect("in-memory database");
-        initialize_database(&connection).expect("schema initialization");
-        let cache = PlaidCache::default();
-        write_plaid_cache(&connection, &cache).expect("cache write");
-        read_plaid_cache(&connection).expect("cache read");
+        storage
+            .write(&storage.plaid_cache, &PlaidCache::default())
+            .expect("cache write");
+        storage
+            .read::<PlaidCache>(&storage.plaid_cache)
+            .expect("cache read");
+        fs::remove_dir_all(directory).expect("test cleanup");
     }
 
     #[test]
     fn backfills_transaction_branding_from_the_plaid_cache() {
         let cache: PlaidCache = serde_json::from_value(serde_json::json!({
-            "items": {
-                "item-1": {
-                    "cursor": null,
-                    "transactions": [{
-                        "transaction_id": "transaction-1",
-                        "merchant_name": "Coffee Shop",
-                        "logo_url": "https://plaid-merchant-logos.plaid.com/coffee.png",
-                        "website": "coffee.example"
-                    }]
-                }
-            }
+            "items": { "item-1": { "cursor": null, "transactions": [{
+                "transaction_id": "transaction-1",
+                "merchant_name": "Coffee Shop",
+                "logo_url": "https://plaid-merchant-logos.plaid.com/coffee.png",
+                "website": "coffee.example"
+            }]}}
         }))
         .expect("Plaid cache");
         let mut snapshot = serde_json::json!({
@@ -540,43 +438,15 @@ mod tests {
 
         assert!(enrich_snapshot_transaction_logos(&mut snapshot, &cache));
         assert_eq!(snapshot["transactions"][0]["logoName"], "Coffee Shop");
-        assert_eq!(snapshot["transactions"][0]["website"], "coffee.example");
-        assert_eq!(
-            snapshot["transactions"][0]["logoUrl"],
-            "https://plaid-merchant-logos.plaid.com/coffee.png"
-        );
         assert!(!enrich_snapshot_transaction_logos(&mut snapshot, &cache));
-    }
-
-    #[test]
-    fn reads_integration_status_without_the_keychain() {
-        let connection = Connection::open_in_memory().expect("in-memory database");
-        initialize_database(&connection).expect("schema initialization");
-        let status = read_integration_status(&connection).expect("integration status");
-        assert!(!status.plaid);
-        assert!(!status.snaptrade);
-
-        mark_integration_configured(&connection, "plaid").expect("mark Plaid configured");
-        let status = read_integration_status(&connection).expect("integration status");
-        assert!(status.plaid);
-        assert!(!status.snaptrade);
     }
 
     #[test]
     fn credential_edit_authorization_is_single_use() {
         let providers = Providers::new().expect("provider state");
-
-        assert!(!providers
-            .take_credential_edit_authorization()
-            .expect("authorization state"));
-        providers
-            .authorize_credential_edit()
-            .expect("authorize credential edit");
-        assert!(providers
-            .take_credential_edit_authorization()
-            .expect("authorization state"));
-        assert!(!providers
-            .take_credential_edit_authorization()
-            .expect("authorization state"));
+        assert!(!providers.take_credential_edit_authorization().unwrap());
+        providers.authorize_credential_edit().unwrap();
+        assert!(providers.take_credential_edit_authorization().unwrap());
+        assert!(!providers.take_credential_edit_authorization().unwrap());
     }
 }

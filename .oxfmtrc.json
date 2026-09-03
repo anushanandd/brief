@@ -1,8 +1,5 @@
 {
   "semi": false,
   "singleQuote": true,
-  "sortImports": true,
-  "tailwindcss": {
-    "stylesheet": "./src/index.css"
-  }
+  "sortImports": true
 }

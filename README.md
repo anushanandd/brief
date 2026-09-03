@@ -1,13 +1,11 @@
 # Brief
 
-Brief is a private, local-first personal finance desktop app. The MVP combines a fast React interface with a small Rust core and on-device SQLite storage.
+Brief is a private, local-first personal finance desktop app. The MVP combines a fast React interface with a small Rust core and on-device JSON storage.
 
 ## MVP
 
 - Dashboard with net worth, account switching, history, and top holdings
-- Analytics for performance, allocation, and dividends
-- Holdings with prices, after-hours values, search, and market-note placeholders
-- Spending with statement balance, categories, transactions, and card credits
+- Dashboard cards for holdings, accounts, spending, allocation, and recent transactions
 - Settings for appearance, provider health, credentials, and privacy preferences
 - Keyboard-first navigation and a `Command-K` command palette
 - Cached local data that renders before network refreshes
@@ -29,7 +27,7 @@ Run the native desktop shell:
 pnpm tauri dev
 ```
 
-In Brief → Settings, enter a Plaid client ID and Production secret and/or a SnapTrade Personal client ID and consumer key. Save and test the credentials, then choose the provider under Data sources to connect accounts. Secrets are never written to the frontend cache or SQLite.
+In Brief → Settings, enter a Plaid client ID and Production secret and/or a SnapTrade Personal client ID and consumer key. Save and test the credentials, then choose the provider under Data sources to connect accounts. Secrets are never written to the frontend cache or snapshot files.
 
 Verify the project:
 
@@ -37,10 +35,3 @@ Verify the project:
 pnpm check
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
-
-## Documentation
-
-- [Product specification](docs/general.md)
-- [Architecture and stack](docs/stack.md)
-- [MVP implementation](docs/mvp.md)
-- [Research archive](docs/gpt-discussion.md)

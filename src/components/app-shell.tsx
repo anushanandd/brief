@@ -1,55 +1,38 @@
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
-import {
-  ChartNoAxesCombined,
-  Command,
-  LayoutDashboard,
-  Settings,
-  ShoppingBag,
-  WalletCards,
-} from 'lucide-react'
-import { useEffect } from 'react'
+import { listen } from '@tauri-apps/api/event'
+import { LayoutDashboard, Settings } from 'lucide-react'
+import { useEffect, useState } from 'react'
 
-import { useUiStore } from '../store/ui'
+import { isTauri } from '../lib/api'
 import { CommandMenu } from './command-menu'
 
 const navigation = [
   { to: '/', label: 'Overview', icon: LayoutDashboard, shortcut: '⌘1' },
-  {
-    to: '/analytics',
-    label: 'Analytics',
-    icon: ChartNoAxesCombined,
-    shortcut: '⌘2',
-  },
-  { to: '/holdings', label: 'Holdings', icon: WalletCards, shortcut: '⌘3' },
-  { to: '/spending', label: 'Spending', icon: ShoppingBag, shortcut: '⌘4' },
-  { to: '/settings', label: 'Settings', icon: Settings, shortcut: '⌘5' },
+  { to: '/settings', label: 'Settings', icon: Settings, shortcut: '⌘2' },
 ] as const
 
 export function AppShell() {
   const navigate = useNavigate()
-  const setCommandOpen = useUiStore((state) => state.setCommandOpen)
+  const [commandOpen, setCommandOpen] = useState(false)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const isTyping =
-        event.target instanceof HTMLInputElement ||
-        event.target instanceof HTMLTextAreaElement ||
-        (event.target instanceof HTMLElement && event.target.isContentEditable)
+      if (!(event.metaKey || event.ctrlKey)) return
 
-      if (event.key === '/' && !isTyping) {
-        const search = document.querySelector<HTMLInputElement>('[data-search]')
-        if (search) {
-          event.preventDefault()
-          search.focus()
-        }
+      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+        event.preventDefault()
         return
       }
-
-      if (!(event.metaKey || event.ctrlKey)) return
 
       if (event.key.toLowerCase() === 'k') {
         event.preventDefault()
         setCommandOpen(true)
+        return
+      }
+
+      if (event.key === ',') {
+        event.preventDefault()
+        void navigate({ to: '/settings' })
         return
       }
 
@@ -60,16 +43,29 @@ export function AppShell() {
       }
     }
 
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    window.addEventListener('keydown', onKeyDown, { capture: true })
+    if (isTauri()) {
+      void listen('open-settings', () => navigate({ to: '/settings' })).then((stop) => {
+        if (disposed) stop()
+        else unlisten = stop
+      })
+    }
+
+    return () => {
+      disposed = true
+      unlisten?.()
+      window.removeEventListener('keydown', onKeyDown, { capture: true })
+    }
   }, [navigate, setCommandOpen])
 
   return (
     <div className="app-frame">
+      <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />
       <aside className="sidebar" aria-label="Primary navigation">
         <Link to="/" className="brand" aria-label="Brief overview">
           <span className="brand-mark">b</span>
-          <span>brief</span>
         </Link>
 
         <nav className="sidebar-nav">
@@ -80,27 +76,13 @@ export function AppShell() {
               className="nav-link"
               activeProps={{ className: 'nav-link active' }}
               activeOptions={{ exact: to === '/' }}
+              aria-label={label}
+              title={`${label} (${shortcut})`}
             >
               <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
-              <span>{label}</span>
-              <kbd>{shortcut}</kbd>
             </Link>
           ))}
         </nav>
-
-        <button className="command-trigger" onClick={() => setCommandOpen(true)} type="button">
-          <Command size={16} aria-hidden="true" />
-          <span>Quick actions</span>
-          <kbd>⌘K</kbd>
-        </button>
-
-        <div className="privacy-note">
-          <span className="privacy-lock" aria-hidden="true" />
-          <span>
-            Local workspace
-            <small>Your data stays on this device.</small>
-          </span>
-        </div>
       </aside>
 
       <main className="main-content">
@@ -122,7 +104,7 @@ export function AppShell() {
         ))}
       </nav>
 
-      <CommandMenu />
+      <CommandMenu open={commandOpen} onOpenChange={setCommandOpen} />
     </div>
   )
 }

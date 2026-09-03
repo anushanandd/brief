@@ -1,30 +1,16 @@
 {
   "updatedAt": "1970-01-01T00:00:00Z",
-  "currency": "USD",
   "netWorth": 0,
-  "netWorthChange": 0,
-  "netWorthChangePct": 0,
-  "investedAssets": 0,
-  "cash": 0,
-  "debt": 0,
-  "totalReturn": 0,
-  "totalReturnPct": 0,
   "accounts": [
     { "id": "all", "name": "All accounts", "institution": "Brief", "type": "combined", "value": 0 }
   ],
   "netWorthHistory": [{ "date": "—", "value": 0 }],
   "holdings": [],
-  "allocation": [],
-  "dividends": [],
   "spending": {
-    "statementBalance": 0,
-    "statementDueDate": "Unavailable",
     "monthTotal": 0,
-    "monthChangePct": 0,
     "categories": []
   },
   "transactions": [],
-  "credits": [],
   "providers": [
     {
       "id": "plaid",
@@ -34,11 +20,32 @@
       "lastSync": "Not connected"
     },
     {
+      "id": "plaid-investments",
+      "name": "Plaid Investments",
+      "description": "Brokerage and stock plan accounts",
+      "status": "error",
+      "lastSync": "Not connected"
+    },
+    {
       "id": "snaptrade",
       "name": "SnapTrade",
       "description": "Investment accounts",
       "status": "error",
       "lastSync": "Not connected"
+    },
+    {
+      "id": "alpaca",
+      "name": "Alpaca",
+      "description": "Market quotes",
+      "status": "error",
+      "lastSync": "Not configured"
+    },
+    {
+      "id": "logos",
+      "name": "Logo.dev",
+      "description": "Company and merchant logos",
+      "status": "ready",
+      "lastSync": "On demand"
     },
     {
       "id": "local",

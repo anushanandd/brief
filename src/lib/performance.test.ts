@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildBrokeragePerformance } from './performance'
+import { annotateKeyMoments, buildBrokeragePerformance } from './performance'
 
 describe('brokerage performance', () => {
   it('builds value, net deposit, and cash-flow-adjusted benchmark lines per account', () => {
@@ -91,5 +91,129 @@ describe('brokerage performance', () => {
     )
 
     expect(performance[1]?.points.map((point) => point.value)).toEqual([100, 100, 130, 140])
+  })
+
+  it('notes only large moves and adds matching transaction context', () => {
+    const points = annotateKeyMoments(
+      [
+        { date: '2026-08-28', value: 1000, netDeposits: 1000, sp500: 1000 },
+        { date: '2026-08-29', value: 1050, netDeposits: 1000, sp500: 1010 },
+        { date: '2026-08-30', value: 1250, netDeposits: 1000, sp500: 1020 },
+        { date: '2026-08-31', value: 1100, netDeposits: 1000, sp500: 1030 },
+      ],
+      {
+        transactions: [
+          {
+            id: 'transfer',
+            date: '2026-08-30',
+            amount: 190,
+            merchant: 'Transfer',
+            category: 'Transfer In',
+            account: 'Checking',
+            pending: false,
+          },
+          {
+            id: 'rent',
+            date: '2026-08-31',
+            amount: -160,
+            merchant: 'Rent',
+            category: 'Rent',
+            account: 'Checking',
+            pending: false,
+          },
+        ],
+        investmentActivities: [],
+        currentValue: 1100,
+        accountId: 'net-worth',
+      },
+    )
+
+    expect(points.map((point) => point.note)).toEqual([
+      undefined,
+      undefined,
+      'Up $200.00 · Transfer: $190.00',
+      'Down $150.00 · Rent: -$160.00',
+    ])
+  })
+
+  it('correlates a brokerage withdrawal with its recent sale and destination account', () => {
+    const points = annotateKeyMoments(
+      [
+        { date: '2026-08-29', value: 20_000, netDeposits: 20_000, sp500: null },
+        { date: '2026-08-30', value: 14_000, netDeposits: 14_000, sp500: null },
+      ],
+      {
+        transactions: [
+          {
+            id: 'incoming',
+            date: '2026-09-01',
+            amount: 6000,
+            merchant: 'Transfer from brokerage',
+            category: 'Transfer In',
+            account: 'Checking',
+            pending: false,
+          },
+        ],
+        investmentActivities: [
+          {
+            accountId: 'snaptrade:brokerage',
+            accountName: 'Individual Brokerage',
+            date: '2026-08-29',
+            type: 'SELL',
+            amount: 6100,
+            description: 'Sold AAPL',
+            symbol: 'AAPL',
+          },
+          {
+            accountId: 'snaptrade:brokerage',
+            accountName: 'Individual Brokerage',
+            date: '2026-08-30',
+            type: 'WITHDRAWAL',
+            amount: -6000,
+            description: 'Cash transfer',
+          },
+        ],
+        currentValue: 14_000,
+        accountId: 'snaptrade:brokerage',
+      },
+    )
+
+    expect(points[1]?.note).toBe(
+      'Sold AAPL for $6,100.00 · moved $6,000.00 from Individual Brokerage to Checking',
+    )
+  })
+
+  it('matches transfers between two investment accounts', () => {
+    const points = annotateKeyMoments(
+      [
+        { date: '2026-08-29', value: 20_000, netDeposits: 20_000, sp500: null },
+        { date: '2026-08-30', value: 14_000, netDeposits: 14_000, sp500: null },
+      ],
+      {
+        transactions: [],
+        investmentActivities: [
+          {
+            accountId: 'snaptrade:individual',
+            accountName: 'Individual Brokerage',
+            date: '2026-08-30',
+            type: 'WITHDRAWAL',
+            amount: -6000,
+            description: 'Transfer out',
+          },
+          {
+            accountId: 'snaptrade:roth',
+            accountName: 'Roth IRA',
+            date: '2026-09-01',
+            type: 'CONTRIBUTION',
+            amount: 6000,
+            description: 'Transfer in',
+          },
+        ],
+        currentValue: 14_000,
+        accountId: 'snaptrade:individual',
+      },
+    )
+
+    expect(points[1]?.note).toBe('Moved $6,000.00 from Individual Brokerage to Roth IRA')
   })
 })

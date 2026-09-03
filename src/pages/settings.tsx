@@ -5,6 +5,7 @@ import {
   Database,
   Fingerprint,
   HardDrive,
+  ImageIcon,
   Laptop,
   Moon,
   Save,
@@ -28,26 +29,77 @@ import {
   refreshFinanceSnapshot,
   saveIntegrationCredentials,
 } from '../lib/api'
+import {
+  getDefaultGraphWindow,
+  graphWindows,
+  saveDefaultGraphWindow,
+} from '../lib/graph-preferences'
 
 const wait = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration))
-const isLinkProvider = (provider: string): provider is 'plaid' | 'snaptrade' =>
-  provider === 'plaid' || provider === 'snaptrade'
+type CredentialProvider = 'plaid' | 'snaptrade' | 'alpaca'
+type LinkProvider = 'plaid' | 'plaid-investments' | 'snaptrade'
+const credentialProviders: Array<{
+  id: CredentialProvider
+  name: string
+  fields: [{ label: string; placeholder: string }, { label: string; placeholder: string }]
+}> = [
+  {
+    id: 'plaid',
+    name: 'Plaid',
+    fields: [
+      { label: 'Client ID', placeholder: 'Plaid client ID' },
+      { label: 'Secret', placeholder: 'Plaid secret' },
+    ],
+  },
+  {
+    id: 'snaptrade',
+    name: 'SnapTrade',
+    fields: [
+      { label: 'Client ID', placeholder: 'SnapTrade client ID' },
+      { label: 'Consumer key', placeholder: 'Consumer key' },
+    ],
+  },
+  {
+    id: 'alpaca',
+    name: 'Alpaca',
+    fields: [
+      { label: 'API key ID', placeholder: 'Alpaca API key ID' },
+      { label: 'Secret key', placeholder: 'Alpaca secret key' },
+    ],
+  },
+]
+const providerName = (provider: CredentialProvider) =>
+  credentialProviders.find(({ id }) => id === provider)?.name ?? provider
+const isLinkProvider = (provider: string): provider is LinkProvider =>
+  provider === 'plaid' || provider === 'plaid-investments' || provider === 'snaptrade'
+const linkProviderName = (provider: LinkProvider) =>
+  provider === 'plaid-investments'
+    ? 'Plaid Investments'
+    : provider === 'plaid'
+      ? 'Plaid'
+      : 'SnapTrade'
 
 export function SettingsPage() {
   const query = useFinance()
   const queryClient = useQueryClient()
   const { theme, setTheme } = useTheme()
-  const [linking, setLinking] = useState<'plaid' | 'snaptrade' | null>(null)
-  const [integrationStatus, setIntegrationStatus] = useState({ plaid: false, snaptrade: false })
-  const [integrationSaving, setIntegrationSaving] = useState<'plaid' | 'snaptrade' | null>(null)
+  const [linking, setLinking] = useState<LinkProvider | null>(null)
+  const [integrationStatus, setIntegrationStatus] = useState({
+    plaid: false,
+    snaptrade: false,
+    alpaca: false,
+  })
+  const [integrationSaving, setIntegrationSaving] = useState<CredentialProvider | null>(null)
   const [credentialsUnlocked, setCredentialsUnlocked] = useState(false)
   const [credentialsUnlocking, setCredentialsUnlocking] = useState(false)
-  const [plaidClientId, setPlaidClientId] = useState('')
-  const [plaidSecret, setPlaidSecret] = useState('')
-  const [snaptradeClientId, setSnaptradeClientId] = useState('')
-  const [snaptradeConsumerKey, setSnaptradeConsumerKey] = useState('')
+  const [defaultGraphWindow, setDefaultGraphWindow] = useState(getDefaultGraphWindow)
+  const [credentials, setCredentials] = useState<Record<CredentialProvider, [string, string]>>({
+    plaid: ['', ''],
+    snaptrade: ['', ''],
+    alpaca: ['', ''],
+  })
   const linkAttempt = useRef(0)
-  const linkingProvider = useRef<'plaid' | 'snaptrade' | null>(null)
+  const linkingProvider = useRef<LinkProvider | null>(null)
 
   useEffect(() => {
     void getIntegrationStatus()
@@ -72,25 +124,22 @@ export function SettingsPage() {
     }
   }
 
-  const saveIntegration = async (provider: 'plaid' | 'snaptrade') => {
+  const saveIntegration = async (provider: CredentialProvider) => {
     setIntegrationSaving(provider)
     try {
+      const [clientId, secret] = credentials[provider]
       const status = await saveIntegrationCredentials(
         provider,
         provider === 'plaid'
-          ? { clientId: plaidClientId, secret: plaidSecret }
-          : { clientId: snaptradeClientId, consumerKey: snaptradeConsumerKey },
+          ? { clientId, secret }
+          : provider === 'snaptrade'
+            ? { clientId, consumerKey: secret }
+            : { clientId, secret },
       )
       setIntegrationStatus(status)
-      if (provider === 'plaid') {
-        setPlaidClientId('')
-        setPlaidSecret('')
-      } else {
-        setSnaptradeClientId('')
-        setSnaptradeConsumerKey('')
-      }
+      setCredentials((current) => ({ ...current, [provider]: ['', ''] }))
       setCredentialsUnlocked(false)
-      toast.success(`${provider === 'plaid' ? 'Plaid' : 'SnapTrade'} credentials saved and tested`)
+      toast.success(`${providerName(provider)} credentials saved and tested`)
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       if (message.includes('Authenticate before replacing saved credentials')) {
@@ -102,15 +151,14 @@ export function SettingsPage() {
     }
   }
 
-  const connectProvider = async (provider: 'plaid' | 'snaptrade') => {
+  const connectProvider = async (provider: LinkProvider) => {
     if (linkingProvider.current) {
-      toast.info(
-        `Finish the ${linkingProvider.current === 'plaid' ? 'Plaid' : 'SnapTrade'} connection before starting another one`,
-      )
+      toast.info(`Finish the ${linkProviderName(linkingProvider.current)} connection first`)
       return
     }
-    if (!integrationStatus[provider]) {
-      toast.error(`Save your ${provider === 'plaid' ? 'Plaid' : 'SnapTrade'} credentials first`)
+    const credentialProvider = provider === 'plaid-investments' ? 'plaid' : provider
+    if (!integrationStatus[credentialProvider]) {
+      toast.error(`Save your ${providerName(credentialProvider)} credentials first`)
       return
     }
     const attemptId = linkAttempt.current + 1
@@ -127,7 +175,7 @@ export function SettingsPage() {
         if (result.status === 'connected') {
           const snapshot = await refreshFinanceSnapshot()
           queryClient.setQueryData(financeQueryKey, snapshot)
-          toast.success(`${provider === 'plaid' ? 'Plaid' : 'SnapTrade'} connected`)
+          toast.success(`${linkProviderName(provider)} connected`)
           return
         }
       }
@@ -145,6 +193,28 @@ export function SettingsPage() {
   if (query.isError || !query.data) return <PageError />
 
   const data = query.data
+  const providers = [
+    ...data.providers,
+    ...(data.providers.some((provider) => provider.id === 'plaid-investments')
+      ? []
+      : [
+          {
+            id: 'plaid-investments',
+            name: 'Plaid Investments',
+            description: 'Brokerage and stock plan accounts',
+            status: 'error' as const,
+            lastSync: 'Not connected',
+          },
+        ]),
+  ].map((provider) =>
+    provider.id === 'alpaca'
+      ? {
+          ...provider,
+          status: integrationStatus.alpaca ? ('ready' as const) : ('error' as const),
+          lastSync: integrationStatus.alpaca ? 'Configured' : 'Not configured',
+        }
+      : provider,
+  )
 
   return (
     <div className="page settings-page">
@@ -162,117 +232,65 @@ export function SettingsPage() {
           protects credential changes.
         </p>
         <div className="integration-grid">
-          <div className="integration-form">
-            <div className="integration-title">
-              <strong>Plaid</strong>
-              <StatusDot tone={integrationStatus.plaid ? 'positive' : 'neutral'} />
-              <small>{integrationStatus.plaid ? 'Configured' : 'Not configured'}</small>
-            </div>
-            {integrationStatus.plaid && !credentialsUnlocked ? (
-              <div className="integration-locked">
-                <p>Credentials are stored securely and are never displayed.</p>
-                <button
-                  className="credential-edit-button"
-                  type="button"
-                  disabled={!isTauri() || credentialsUnlocking}
-                  onClick={() => void unlockCredentials()}
-                >
-                  <Fingerprint size={15} />
-                  {credentialsUnlocking ? 'Authenticating…' : 'Edit credentials'}
-                </button>
+          {credentialProviders.map(({ id, name, fields }) => {
+            const configured = integrationStatus[id]
+            const values = credentials[id]
+            return (
+              <div className="integration-form" key={id}>
+                <div className="integration-title">
+                  <strong>{name}</strong>
+                  <StatusDot tone={configured ? 'positive' : 'neutral'} />
+                  <small>{configured ? 'Configured' : 'Not configured'}</small>
+                </div>
+                {configured && !credentialsUnlocked ? (
+                  <div className="integration-locked">
+                    <p>Credentials are stored securely and are never displayed.</p>
+                    <button
+                      className="credential-edit-button"
+                      type="button"
+                      disabled={!isTauri() || credentialsUnlocking}
+                      onClick={() => void unlockCredentials()}
+                    >
+                      <Fingerprint size={15} />
+                      {credentialsUnlocking ? 'Authenticating…' : 'Edit credentials'}
+                    </button>
+                  </div>
+                ) : (
+                  <>
+                    {fields.map(({ label, placeholder }, index) => (
+                      <label key={label}>
+                        <span>{label}</span>
+                        <input
+                          type={index ? 'password' : 'text'}
+                          value={values[index]}
+                          onChange={(event) =>
+                            setCredentials((current) => {
+                              const next: [string, string] = [...current[id]]
+                              next[index] = event.target.value
+                              return { ...current, [id]: next }
+                            })
+                          }
+                          placeholder={placeholder}
+                          autoComplete={index ? 'new-password' : 'off'}
+                        />
+                      </label>
+                    ))}
+                    <button
+                      className="sync-save-button"
+                      type="button"
+                      disabled={
+                        !isTauri() || integrationSaving !== null || values.some((value) => !value)
+                      }
+                      onClick={() => void saveIntegration(id)}
+                    >
+                      <Save size={14} />
+                      {integrationSaving === id ? 'Testing…' : 'Save and test'}
+                    </button>
+                  </>
+                )}
               </div>
-            ) : (
-              <>
-                <label>
-                  <span>Client ID</span>
-                  <input
-                    value={plaidClientId}
-                    onChange={(event) => setPlaidClientId(event.target.value)}
-                    placeholder="Plaid client ID"
-                    autoComplete="off"
-                  />
-                </label>
-                <label>
-                  <span>Secret</span>
-                  <input
-                    type="password"
-                    value={plaidSecret}
-                    onChange={(event) => setPlaidSecret(event.target.value)}
-                    placeholder="Plaid secret"
-                    autoComplete="new-password"
-                  />
-                </label>
-                <button
-                  className="sync-save-button"
-                  type="button"
-                  disabled={
-                    !isTauri() || integrationSaving !== null || !plaidClientId || !plaidSecret
-                  }
-                  onClick={() => void saveIntegration('plaid')}
-                >
-                  <Save size={14} />
-                  {integrationSaving === 'plaid' ? 'Testing…' : 'Save and test'}
-                </button>
-              </>
-            )}
-          </div>
-          <div className="integration-form">
-            <div className="integration-title">
-              <strong>SnapTrade</strong>
-              <StatusDot tone={integrationStatus.snaptrade ? 'positive' : 'neutral'} />
-              <small>{integrationStatus.snaptrade ? 'Configured' : 'Not configured'}</small>
-            </div>
-            {integrationStatus.snaptrade && !credentialsUnlocked ? (
-              <div className="integration-locked">
-                <p>Credentials are stored securely and are never displayed.</p>
-                <button
-                  className="credential-edit-button"
-                  type="button"
-                  disabled={!isTauri() || credentialsUnlocking}
-                  onClick={() => void unlockCredentials()}
-                >
-                  <Fingerprint size={15} />
-                  {credentialsUnlocking ? 'Authenticating…' : 'Edit credentials'}
-                </button>
-              </div>
-            ) : (
-              <>
-                <label>
-                  <span>Client ID</span>
-                  <input
-                    value={snaptradeClientId}
-                    onChange={(event) => setSnaptradeClientId(event.target.value)}
-                    placeholder="SnapTrade client ID"
-                    autoComplete="off"
-                  />
-                </label>
-                <label>
-                  <span>Consumer key</span>
-                  <input
-                    type="password"
-                    value={snaptradeConsumerKey}
-                    onChange={(event) => setSnaptradeConsumerKey(event.target.value)}
-                    placeholder="Consumer key"
-                    autoComplete="new-password"
-                  />
-                </label>
-                <button
-                  className="sync-save-button"
-                  type="button"
-                  disabled={
-                    !isTauri() ||
-                    integrationSaving !== null ||
-                    !snaptradeClientId ||
-                    !snaptradeConsumerKey
-                  }
-                  onClick={() => void saveIntegration('snaptrade')}
-                >
-                  <Save size={14} />
-                  {integrationSaving === 'snaptrade' ? 'Testing…' : 'Save and test'}
-                </button>
-              </>
-            )}
-          </div>
+            )
+          })}
         </div>
       </Card>
 
@@ -301,20 +319,53 @@ export function SettingsPage() {
       </Card>
 
       <Card>
+        <SectionHeading title="Charts" />
+        <p className="settings-copy">Default graph range</p>
+        <div
+          className="theme-options graph-window-options"
+          role="radiogroup"
+          aria-label="Default graph range"
+        >
+          {graphWindows.map(({ secs, settingsLabel }) => (
+            <button
+              key={secs}
+              type="button"
+              role="radio"
+              aria-checked={defaultGraphWindow === secs}
+              className={defaultGraphWindow === secs ? 'active' : ''}
+              onClick={() => {
+                saveDefaultGraphWindow(secs)
+                setDefaultGraphWindow(secs)
+              }}
+            >
+              <span>{settingsLabel}</span>
+              {defaultGraphWindow === secs ? <Check size={14} /> : null}
+            </button>
+          ))}
+        </div>
+      </Card>
+
+      <Card>
         <SectionHeading title="Data sources" action={<RefreshButton />} />
         <div className="provider-list">
-          {data.providers.map((provider) => (
+          {providers.map((provider) => (
             <button
               className="provider-row"
               type="button"
               key={provider.id}
-              disabled={!['plaid', 'snaptrade'].includes(provider.id)}
+              disabled={!isLinkProvider(provider.id)}
               onClick={() => {
                 if (isLinkProvider(provider.id)) void connectProvider(provider.id)
               }}
             >
               <span className="provider-icon">
-                {provider.id === 'logos' ? <HardDrive size={17} /> : <Database size={17} />}
+                {provider.id === 'logos' ? (
+                  <ImageIcon size={17} />
+                ) : provider.id === 'local' ? (
+                  <HardDrive size={17} />
+                ) : (
+                  <Database size={17} />
+                )}
               </span>
               <span>
                 <strong>{provider.name}</strong>
@@ -324,7 +375,7 @@ export function SettingsPage() {
                 <StatusDot tone={provider.status === 'error' ? 'negative' : 'positive'} />
                 {linking === provider.id ? 'Waiting for browser…' : provider.lastSync}
               </span>
-              <ChevronRight size={15} />
+              {isLinkProvider(provider.id) ? <ChevronRight size={15} /> : <span />}
             </button>
           ))}
         </div>
