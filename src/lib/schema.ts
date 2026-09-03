@@ -8,19 +8,27 @@ const accountSchema = z.object({
   value: z.number(),
 })
 
-const holdingSchema = z.object({
-  ticker: z.string(),
-  name: z.string(),
-  accountId: z.string(),
-  shares: z.number(),
-  price: z.number(),
-  value: z.number(),
-  dailyChangePct: z.number(),
-  totalChangePct: z.number(),
-  afterHoursPrice: z.number(),
-  color: z.string(),
-  summary: z.string(),
-})
+const holdingSchema = z
+  .object({
+    ticker: z.string(),
+    name: z.string(),
+    accountId: z.string(),
+    shares: z.number(),
+    price: z.number(),
+    value: z.number(),
+    costBasis: z.number().optional(),
+    dailyChangePct: z.number(),
+    totalChangePct: z.number(),
+    color: z.string(),
+  })
+  .transform((holding) => ({
+    ...holding,
+    costBasis:
+      holding.costBasis ??
+      (holding.totalChangePct > -100
+        ? holding.value / (1 + holding.totalChangePct / 100)
+        : holding.value),
+  }))
 
 const allocationSchema = z.object({
   name: z.string(),
@@ -29,17 +37,19 @@ const allocationSchema = z.object({
   color: z.string(),
 })
 
+const investmentActivitySchema = z.object({
+  accountId: z.string(),
+  accountName: z.string(),
+  date: z.string(),
+  type: z.string(),
+  amount: z.number(),
+  description: z.string(),
+  symbol: z.string().optional(),
+})
+
 export const financeSnapshotSchema = z.object({
   updatedAt: z.string(),
-  currency: z.string(),
   netWorth: z.number(),
-  netWorthChange: z.number(),
-  netWorthChangePct: z.number(),
-  investedAssets: z.number(),
-  cash: z.number(),
-  debt: z.number(),
-  totalReturn: z.number(),
-  totalReturnPct: z.number(),
   accounts: z.array(accountSchema),
   netWorthHistory: z.array(z.object({ date: z.string(), value: z.number() })),
   netWorthHistoryEstimated: z.boolean().default(false),
@@ -63,13 +73,8 @@ export const financeSnapshotSchema = z.object({
     )
     .default([]),
   holdings: z.array(holdingSchema),
-  allocation: z.array(allocationSchema),
-  dividends: z.array(z.object({ month: z.string(), value: z.number() })),
   spending: z.object({
-    statementBalance: z.number(),
-    statementDueDate: z.string(),
     monthTotal: z.number(),
-    monthChangePct: z.number(),
     categories: z.array(allocationSchema),
   }),
   transactions: z.array(
@@ -86,16 +91,7 @@ export const financeSnapshotSchema = z.object({
       logoName: z.string().optional(),
     }),
   ),
-  credits: z.array(
-    z.object({
-      id: z.string(),
-      name: z.string(),
-      used: z.number(),
-      total: z.number(),
-      deadline: z.string(),
-      status: z.enum(['used', 'available', 'missed']),
-    }),
-  ),
+  investmentActivities: z.array(investmentActivitySchema).default([]),
   providers: z.array(
     z.object({
       id: z.string(),
@@ -109,5 +105,16 @@ export const financeSnapshotSchema = z.object({
 
 export type FinanceSnapshot = z.infer<typeof financeSnapshotSchema>
 export type Account = FinanceSnapshot['accounts'][number]
-export type Holding = FinanceSnapshot['holdings'][number]
 export type Transaction = FinanceSnapshot['transactions'][number]
+export type InvestmentActivity = FinanceSnapshot['investmentActivities'][number]
+
+const marketSnapshotSchema = z.object({
+  symbol: z.string(),
+  price: z.number(),
+  previousClose: z.number(),
+  dailyChangePct: z.number(),
+  asOf: z.string(),
+})
+
+export const marketSnapshotsSchema = z.record(z.string(), marketSnapshotSchema)
+export type MarketSnapshot = z.infer<typeof marketSnapshotSchema>

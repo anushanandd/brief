@@ -6,6 +6,8 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Toaster } from 'sonner'
 
+import '@fontsource-variable/inter/wght.css'
+
 import { router } from './router'
 
 import './styles.css'

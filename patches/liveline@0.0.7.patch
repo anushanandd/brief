@@ -1,0 +1,148 @@
+diff --git a/dist/index.cjs b/dist/index.cjs
+index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..bede97a5d265893c653eec5a422231d1223ca70c 100644
+--- a/dist/index.cjs
++++ b/dist/index.cjs
+@@ -1627,6 +1627,7 @@ function drawMultiFrame(ctx, layout, opts) {
+     if (combinedAlpha < 0.01) continue;
+     ctx.save();
+     if (combinedAlpha < 1) ctx.globalAlpha = combinedAlpha;
++    ctx.setLineDash(s.dash ?? []);
+     const pts = drawLine(
+       ctx,
+       layout,
+@@ -3181,7 +3182,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+             if (range.min < globalMin) globalMin = range.min;
+             if (range.max > globalMax) globalMax = range.max;
+           }
+-          seriesEntries.push({ visible, smoothValue: sv, palette: s.palette, label: s.label, alpha });
++          seriesEntries.push({ visible, smoothValue: sv, palette: s.palette, label: s.label, alpha, dash: s.dash });
+         }
+       }
+       if (seriesEntries.length === 0) {
+@@ -3584,7 +3585,7 @@ function Liveline({
+   }, [color, theme, lineWidth]);
+   const isDark = theme === "dark";
+   const isMultiSeries = seriesProp != null && seriesProp.length > 0;
+-  const showSeriesToggle = (lastSeriesPropRef.current?.length ?? 0) > 1;
++  const showSeriesToggle = false;
+   const seriesPalettes = (0, import_react2.useMemo)(() => {
+     if (!seriesProp || seriesProp.length === 0) return null;
+     return resolveSeriesPalettes(seriesProp, theme);
+@@ -3594,7 +3595,8 @@ function Liveline({
+       data: s.data,
+       value: s.value,
+       palette: seriesPalettes.get(s.id) ?? resolveTheme(s.color || SERIES_COLORS[i % SERIES_COLORS.length], theme),
+-      label: s.label
++      label: s.label,
++      dash: s.dash
+     }));
+   }, [seriesProp, seriesPalettes, theme]);
+   const showMomentum = momentum !== false;
+@@ -3611,7 +3612,12 @@ function Liveline({
+   const degenEnabled = degenProp != null ? degenProp !== false : false;
+   const degenOptions = degenEnabled ? typeof degenProp === "object" ? degenProp : {} : void 0;
+   const [activeWindowSecs, setActiveWindowSecs] = (0, import_react2.useState)(
+-    windows && windows.length > 0 ? windows[0].secs : windowSecs
++    windows?.some((option) => option.secs === windowSecs) ? windowSecs : windows && windows.length > 0 ? windows[0].secs : windowSecs
+   );
++  (0, import_react2.useEffect)(() => {
++    if (windows?.some((option) => option.secs === windowSecs)) {
++      setActiveWindowSecs(windowSecs);
++    }
++  }, [windowSecs, windows]);
+   const effectiveWindowSecs = windows ? activeWindowSecs : windowSecs;
+   (0, import_react2.useLayoutEffect)(() => {
+@@ -3920,6 +3922,7 @@ function Liveline({
+         return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
+           "button",
+           {
++            "aria-label": s.label ?? s.id,
+             onClick: () => handleSeriesToggle(s.id),
+             style: {
+               position: "relative",
+diff --git a/dist/index.d.cts b/dist/index.d.cts
+index 414c4e61bac1017c49bbaedbd1691bcd9cdd667c..203c19f118373a934905fd90f0694159eb51da56 100644
+--- a/dist/index.d.cts
++++ b/dist/index.d.cts
+@@ -45,6 +45,7 @@ interface LivelineSeries {
+     value: number;
+     color: string;
+     label?: string;
++    dash?: number[];
+ }
+ interface LivelineProps {
+     data: LivelinePoint[];
+diff --git a/dist/index.d.ts b/dist/index.d.ts
+index 414c4e61bac1017c49bbaedbd1691bcd9cdd667c..203c19f118373a934905fd90f0694159eb51da56 100644
+--- a/dist/index.d.ts
++++ b/dist/index.d.ts
+@@ -45,6 +45,7 @@ interface LivelineSeries {
+     value: number;
+     color: string;
+     label?: string;
++    dash?: number[];
+ }
+ interface LivelineProps {
+     data: LivelinePoint[];
+diff --git a/dist/index.js b/dist/index.js
+index fd0506272e9a54432a0882c3a389ee74302e4718..59bc736ec755cda1628d7771671eef8ddbe2053f 100644
+--- a/dist/index.js
++++ b/dist/index.js
+@@ -1600,6 +1600,7 @@ function drawMultiFrame(ctx, layout, opts) {
+     if (combinedAlpha < 0.01) continue;
+     ctx.save();
+     if (combinedAlpha < 1) ctx.globalAlpha = combinedAlpha;
++    ctx.setLineDash(s.dash ?? []);
+     const pts = drawLine(
+       ctx,
+       layout,
+@@ -3154,7 +3155,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+             if (range.min < globalMin) globalMin = range.min;
+             if (range.max > globalMax) globalMax = range.max;
+           }
+-          seriesEntries.push({ visible, smoothValue: sv, palette: s.palette, label: s.label, alpha });
++          seriesEntries.push({ visible, smoothValue: sv, palette: s.palette, label: s.label, alpha, dash: s.dash });
+         }
+       }
+       if (seriesEntries.length === 0) {
+@@ -3557,7 +3558,7 @@ function Liveline({
+   }, [color, theme, lineWidth]);
+   const isDark = theme === "dark";
+   const isMultiSeries = seriesProp != null && seriesProp.length > 0;
+-  const showSeriesToggle = (lastSeriesPropRef.current?.length ?? 0) > 1;
++  const showSeriesToggle = false;
+   const seriesPalettes = useMemo(() => {
+     if (!seriesProp || seriesProp.length === 0) return null;
+     return resolveSeriesPalettes(seriesProp, theme);
+@@ -3567,7 +3568,8 @@ function Liveline({
+       data: s.data,
+       value: s.value,
+       palette: seriesPalettes.get(s.id) ?? resolveTheme(s.color || SERIES_COLORS[i % SERIES_COLORS.length], theme),
+-      label: s.label
++      label: s.label,
++      dash: s.dash
+     }));
+   }, [seriesProp, seriesPalettes, theme]);
+   const showMomentum = momentum !== false;
+@@ -3584,7 +3585,12 @@ function Liveline({
+   const degenEnabled = degenProp != null ? degenProp !== false : false;
+   const degenOptions = degenEnabled ? typeof degenProp === "object" ? degenProp : {} : void 0;
+   const [activeWindowSecs, setActiveWindowSecs] = useState(
+-    windows && windows.length > 0 ? windows[0].secs : windowSecs
++    windows?.some((option) => option.secs === windowSecs) ? windowSecs : windows && windows.length > 0 ? windows[0].secs : windowSecs
+   );
++  useEffect(() => {
++    if (windows?.some((option) => option.secs === windowSecs)) {
++      setActiveWindowSecs(windowSecs);
++    }
++  }, [windowSecs, windows]);
+   const effectiveWindowSecs = windows ? activeWindowSecs : windowSecs;
+   useLayoutEffect(() => {
+@@ -3893,6 +3895,7 @@ function Liveline({
+         return /* @__PURE__ */ jsxs(
+           "button",
+           {
++            "aria-label": s.label ?? s.id,
+             onClick: () => handleSeriesToggle(s.id),
+             style: {
+               position: "relative",

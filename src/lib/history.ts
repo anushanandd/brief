@@ -25,12 +25,12 @@ export function buildNetWorthHistory(
   transactions: Transaction[],
   currentNetWorth: number,
   now: Date,
-  days = 90,
+  days = 730,
 ): NetWorthHistoryPoint[] {
   const recorded = history.filter((point) => point.date !== '—' && Number.isFinite(point.value))
 
   if (recorded.length > 1) {
-    if (!recorded.every((point) => isoDate.test(point.date))) return recorded.slice(-180)
+    if (!recorded.every((point) => isoDate.test(point.date))) return recorded.slice(-730)
 
     const today = utcDate(now, 0)
     return [
@@ -38,7 +38,7 @@ export function buildNetWorthHistory(
         .toSorted((a, b) => a.date.localeCompare(b.date))
         .filter((point) => point.date !== today),
       { date: today, value: round(currentNetWorth) },
-    ].slice(-180)
+    ].slice(-730)
   }
 
   const flowByDate = new Map<string, number>()

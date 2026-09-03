@@ -2,41 +2,31 @@ import { Dialog } from '@base-ui/react/dialog'
 import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Command } from 'cmdk'
-import {
-  ChartNoAxesCombined,
-  Database,
-  LayoutDashboard,
-  Moon,
-  RefreshCw,
-  Settings,
-  ShoppingBag,
-  Sun,
-  WalletCards,
-} from 'lucide-react'
+import { Database, LayoutDashboard, Moon, RefreshCw, Settings, Sun } from 'lucide-react'
 import { useTheme } from 'next-themes'
 import { toast } from 'sonner'
 
 import { financeQueryKey } from '../hooks/use-finance'
 import { refreshFinanceSnapshot } from '../lib/api'
-import { useUiStore } from '../store/ui'
 
 const destinations = [
   { label: 'Overview', to: '/', icon: LayoutDashboard },
-  { label: 'Analytics', to: '/analytics', icon: ChartNoAxesCombined },
-  { label: 'Holdings', to: '/holdings', icon: WalletCards },
-  { label: 'Spending', to: '/spending', icon: ShoppingBag },
   { label: 'Settings', to: '/settings', icon: Settings },
 ] as const
 
-export function CommandMenu() {
-  const open = useUiStore((state) => state.commandOpen)
-  const setOpen = useUiStore((state) => state.setCommandOpen)
+export function CommandMenu({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { setTheme } = useTheme()
 
   const run = (action: () => void | Promise<void>) => {
-    setOpen(false)
+    onOpenChange(false)
     void action()
   }
 
@@ -51,7 +41,7 @@ export function CommandMenu() {
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={setOpen}>
+    <Dialog.Root open={open} onOpenChange={onOpenChange}>
       <Dialog.Portal>
         <Dialog.Backdrop className="command-backdrop" />
         <Dialog.Viewport className="command-viewport">

@@ -3,7 +3,12 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 
 import seed from '../data/seed.json'
 import { normalizeSnapshot, type ProviderSyncPayload } from './normalize'
-import { financeSnapshotSchema, type FinanceSnapshot } from './schema'
+import {
+  financeSnapshotSchema,
+  marketSnapshotsSchema,
+  type FinanceSnapshot,
+  type MarketSnapshot,
+} from './schema'
 
 export const isTauri = () => '__TAURI_INTERNALS__' in window
 
@@ -23,7 +28,7 @@ export async function openExternalUrl(url: string): Promise<void> {
 }
 
 export type ProviderLinkSession = {
-  provider: 'plaid' | 'snaptrade'
+  provider: 'plaid' | 'plaid-investments' | 'snaptrade'
   sessionId: string
   url: string
 }
@@ -36,6 +41,7 @@ export type ProviderLinkStatus = {
 export type IntegrationStatus = {
   plaid: boolean
   snaptrade: boolean
+  alpaca: boolean
 }
 
 const browserSnapshot = (): FinanceSnapshot => financeSnapshotSchema.parse(seed)
@@ -71,7 +77,7 @@ export async function refreshFinanceSnapshot(): Promise<FinanceSnapshot> {
 }
 
 export async function beginProviderLink(
-  provider: 'plaid' | 'snaptrade',
+  provider: 'plaid' | 'plaid-investments' | 'snaptrade',
 ): Promise<ProviderLinkSession> {
   if (!isTauri()) throw new Error('Provider linking is available in the Brief desktop app')
   const session = await invoke<ProviderLinkSession>('begin_provider_link', { provider })
@@ -87,7 +93,7 @@ export async function pollProviderLink(session: ProviderLinkSession): Promise<Pr
 }
 
 export async function getIntegrationStatus(): Promise<IntegrationStatus> {
-  if (!isTauri()) return { plaid: false, snaptrade: false }
+  if (!isTauri()) return { plaid: false, snaptrade: false, alpaca: false }
   return invoke<IntegrationStatus>('get_integration_status')
 }
 
@@ -97,7 +103,7 @@ export async function authenticateSensitiveAction(): Promise<void> {
 }
 
 export async function saveIntegrationCredentials(
-  provider: 'plaid' | 'snaptrade',
+  provider: 'plaid' | 'snaptrade' | 'alpaca',
   credentials: { clientId: string; secret?: string; consumerKey?: string },
 ): Promise<IntegrationStatus> {
   if (!isTauri()) throw new Error('Integration settings are available in the Brief desktop app')
@@ -107,4 +113,11 @@ export async function saveIntegrationCredentials(
     secret: credentials.secret,
     consumerKey: credentials.consumerKey,
   })
+}
+
+export async function getMarketSnapshots(
+  symbols: string[],
+): Promise<Record<string, MarketSnapshot>> {
+  if (!isTauri()) return {}
+  return marketSnapshotsSchema.parse(await invoke('get_market_snapshots', { symbols }))
 }
