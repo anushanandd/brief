@@ -1,10 +1,7 @@
-import { useQueryClient } from '@tanstack/react-query'
 import { AlertCircle, RefreshCw } from 'lucide-react'
-import { useState } from 'react'
-import { toast } from 'sonner'
 
-import { financeQueryKey, useFinance } from '../hooks/use-finance'
-import { refreshFinanceSnapshot } from '../lib/api'
+import { useFinance } from '../hooks/use-finance'
+import { useFinanceRefreshState, useRefreshFinance } from '../hooks/use-refresh-finance'
 import { Button } from './ui'
 
 export function PageLoading() {
@@ -40,39 +37,35 @@ export function PageError() {
 }
 
 export function RefreshButton() {
-  const queryClient = useQueryClient()
-  const [isRefreshing, setIsRefreshing] = useState(false)
+  const recovery = useFinance().data?.recovery
+  const refresh = useRefreshFinance()
+  const isRefreshing = useFinanceRefreshState()
 
   const onRefresh = async () => {
     if (isRefreshing) return
-    setIsRefreshing(true)
-    const promise = refreshFinanceSnapshot()
-    toast.promise(promise, {
-      loading: 'Refreshing your snapshot…',
-      success: 'Snapshot refreshed',
-      error: 'Refresh failed',
-    })
-
     try {
-      queryClient.setQueryData(financeQueryKey, await promise)
+      await refresh()
     } catch {
-      // toast.promise owns the user-facing error state; consume the rejection from this event
-      // handler so a failed provider refresh does not become an unhandled browser rejection.
-    } finally {
-      setIsRefreshing(false)
+      // The shared refresh hook owns the user-facing error state.
     }
   }
 
   return (
     <Button
-      variant="secondary"
+      variant="ghost"
       size="icon"
+      className={`icon-only-subtle${isRefreshing ? ' refresh-button-active' : ''}`}
       onClick={() => void onRefresh()}
-      disabled={isRefreshing}
+      disabled={isRefreshing || Boolean(recovery)}
+      aria-busy={isRefreshing}
       aria-label={isRefreshing ? 'Refreshing accounts' : 'Refresh accounts'}
       title={isRefreshing ? 'Refreshing accounts' : 'Refresh accounts'}
     >
-      <RefreshCw size={15} aria-hidden="true" />
+      <RefreshCw
+        className={isRefreshing ? 'refresh-icon-active' : undefined}
+        size={15}
+        aria-hidden="true"
+      />
     </Button>
   )
 }

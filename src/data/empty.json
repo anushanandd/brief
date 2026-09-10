@@ -6,53 +6,11 @@
   ],
   "netWorthHistory": [{ "date": "—", "value": 0 }],
   "holdings": [],
+  "trades": [],
   "spending": {
     "monthTotal": 0,
     "categories": []
   },
-  "transactions": [],
-  "providers": [
-    {
-      "id": "plaid",
-      "name": "Plaid",
-      "description": "Bank and credit card accounts",
-      "status": "error",
-      "lastSync": "Not connected"
-    },
-    {
-      "id": "plaid-investments",
-      "name": "Plaid Investments",
-      "description": "Brokerage and stock plan accounts",
-      "status": "error",
-      "lastSync": "Not connected"
-    },
-    {
-      "id": "snaptrade",
-      "name": "SnapTrade",
-      "description": "Investment accounts",
-      "status": "error",
-      "lastSync": "Not connected"
-    },
-    {
-      "id": "alpaca",
-      "name": "Alpaca",
-      "description": "Market quotes",
-      "status": "error",
-      "lastSync": "Not configured"
-    },
-    {
-      "id": "logos",
-      "name": "Logo.dev",
-      "description": "Company and merchant logos",
-      "status": "ready",
-      "lastSync": "On demand"
-    },
-    {
-      "id": "local",
-      "name": "Local cache",
-      "description": "On-device financial snapshot",
-      "status": "local",
-      "lastSync": "Ready"
-    }
-  ]
+  "accountMovements": [],
+  "transactions": []
 }

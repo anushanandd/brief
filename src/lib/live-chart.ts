@@ -14,9 +14,15 @@ export function appendLiveChartPoint(
   if (!Number.isFinite(value) || !Number.isFinite(time)) return points
   const last = points.at(-1)
   const next = { time: minute(time), value }
+  if (last && (next.time < last.time || (next.time === last.time && next.value === last.value)))
+    return points
   const updated =
     last && minute(last.time) === next.time ? [...points.slice(0, -1), next] : [...points, next]
   return updated.slice(-MAX_LIVE_POINTS)
+}
+
+export function chartPointAtOrAfter(points: LivelinePoint[], time: number) {
+  return points.find((point) => point.time >= time) ?? points.at(-1)
 }
 
 export function buildLiveChartData(

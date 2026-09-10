@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 
-import { stockLogoUrl, transactionLogoUrl, transactionMarkKind } from './logos'
+import {
+  stockLogoUrl,
+  stockMarkColor,
+  stockMarkLabel,
+  transactionLogoUrl,
+  transactionMarkKind,
+  transactionMarkLabel,
+} from './logos'
 import type { Transaction } from './schema'
 
 const transaction = (overrides: Partial<Transaction> = {}): Transaction => ({
@@ -15,27 +22,43 @@ const transaction = (overrides: Partial<Transaction> = {}): Transaction => ({
 })
 
 describe('logo resolution', () => {
-  it('resolves stock tickers through the Logo.dev ticker endpoint', () => {
-    expect(stockLogoUrl('BRK.B')).toContain('/ticker/BRK.B?')
+  it('generates local marks without requesting remote financial identifiers', () => {
+    expect(stockLogoUrl('BRK.B')).toMatch(/^data:image\/svg\+xml/)
+    expect(stockMarkLabel('BRK.B')).toBe('BRK')
+    expect(stockMarkLabel('$CASH-USD')).toBe('$')
+    expect(stockMarkColor('BRK.B')).toBe('#7399a0')
+
+    const url = transactionLogoUrl(
+      transaction({
+        logoUrl: 'https://plaid-merchant-logos.plaid.com/merchant.png',
+        website: 'https://www.example.com/store',
+        logoName: 'Example Coffee',
+      }),
+    )
+    expect(url).toMatch(/^data:image\/svg\+xml/)
+    expect(url).not.toContain('plaid')
+    expect(url).not.toContain('example.com')
+    expect(transactionMarkLabel(transaction({ logoName: 'Example Coffee' }))).toBe('EC')
+    expect(transactionLogoUrl(transaction())).toBe(transactionLogoUrl(transaction()))
   })
 
-  it('prefers Plaid logos before website and merchant fallbacks', () => {
+  it('uses allowlisted actual logos only after external loading is enabled', () => {
+    expect(stockLogoUrl('AAPL', true)).toContain('https://img.logo.dev/ticker/AAPL')
+    expect(
+      transactionLogoUrl(
+        transaction({ logoUrl: 'https://plaid-merchant-logos.plaid.com/merchant.png' }),
+        true,
+      ),
+    ).toBe('https://plaid-merchant-logos.plaid.com/merchant.png')
     expect(
       transactionLogoUrl(
         transaction({
-          logoUrl: 'https://plaid-merchant-logos.plaid.com/merchant.png',
-          website: 'example.com',
-          logoName: 'Example',
+          logoUrl: 'https://untrusted.example/logo.png',
+          logoName: 'Example Coffee',
         }),
+        true,
       ),
-    ).toBe('https://plaid-merchant-logos.plaid.com/merchant.png')
-  })
-
-  it('uses verified domains but never sends raw descriptors', () => {
-    expect(transactionLogoUrl(transaction({ website: 'https://www.example.com/store' }))).toContain(
-      'https://img.logo.dev/example.com?',
-    )
-    expect(transactionLogoUrl(transaction())).toBeUndefined()
+    ).toContain('https://img.logo.dev/name/Example%20Coffee')
   })
 
   it('uses meaningful local marks for non-purchase activity', () => {
@@ -54,5 +77,29 @@ describe('logo resolution', () => {
     expect(transactionMarkKind(transaction({ merchant: 'Salary', category: 'Income' }))).toBe(
       'income',
     )
+  })
+
+  it('uses American Express branding for its card payments', () => {
+    const bankPayment = transaction({
+      merchant: 'AMEX EPAYMENT ACH PMT',
+      description: 'AMEX EPAYMENT ACH PMT',
+      account: 'Premium Savings -1676',
+      category: 'Loan Payments',
+    })
+    const cardPayment = transaction({
+      merchant: 'AUTOPAY PAYMENT - THANK YOU',
+      account: 'Morgan Stanley Platinum Card®',
+      category: 'Loan Payments',
+    })
+
+    expect(transactionMarkLabel(bankPayment)).toBe('AMEX')
+    expect(transactionLogoUrl(bankPayment, true)).toContain('img.logo.dev/americanexpress.com')
+    expect(transactionLogoUrl(cardPayment, true)).toContain('img.logo.dev/americanexpress.com')
+    expect(
+      transactionLogoUrl(
+        transaction({ merchant: 'AUTOPAY PAYMENT - THANK YOU', category: 'Loan Payments' }),
+        true,
+      ),
+    ).not.toContain('americanexpress.com')
   })
 })
