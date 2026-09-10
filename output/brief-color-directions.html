@@ -1,0 +1,279 @@
+<div id="brief-color-directions">
+  <style>
+    #brief-color-directions {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 14px;
+    }
+    #brief-color-directions .theme-sample {
+      --brief-bg: #2c3844;
+      --brief-card: #364653;
+      --brief-ink: #edf1f3;
+      --brief-muted: #b2c0cb;
+      --brief-accent: #a5c5df;
+      --brief-gain: #9acbb5;
+      --brief-line: #50606b;
+      color: var(--brief-ink);
+      background: var(--brief-bg);
+      padding: 18px;
+      border-radius: 12px;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      font-size: 13px;
+      line-height: 1.5;
+    }
+    #brief-color-directions .graphite {
+      --brief-bg: #343532;
+      --brief-card: #41433e;
+      --brief-ink: #f0eee8;
+      --brief-muted: #c0c2b7;
+      --brief-accent: #b9c6d5;
+      --brief-gain: #abd0b3;
+      --brief-line: #5c5e56;
+    }
+    #brief-color-directions .stone {
+      --brief-bg: #d9d3c8;
+      --brief-card: #e9e3d9;
+      --brief-ink: #333630;
+      --brief-muted: #62665c;
+      --brief-accent: #45677a;
+      --brief-gain: #37674f;
+      --brief-line: #c5bfb3;
+    }
+    #brief-color-directions .palette-name {
+      font-size: 16px;
+      font-weight: 500;
+      margin: 0;
+    }
+    #brief-color-directions .palette-caption {
+      color: var(--brief-muted);
+      font-size: 12px;
+      margin: 3px 0 24px;
+    }
+    #brief-color-directions .route-name {
+      font-family: 'Iowan Old Style', Georgia, serif;
+      font-size: 18px;
+      margin-bottom: 14px;
+    }
+    #brief-color-directions .finance-panel {
+      border-radius: 9px;
+      background: var(--brief-card);
+      padding: 16px;
+    }
+    #brief-color-directions .label {
+      color: var(--brief-muted);
+      font-size: 12px;
+    }
+    #brief-color-directions .balance {
+      font-size: 28px;
+      font-weight: 500;
+      letter-spacing: -1px;
+      font-variant-numeric: tabular-nums;
+      margin: 5px 0;
+    }
+    #brief-color-directions .gain {
+      color: var(--brief-gain);
+      font-size: 12px;
+    }
+    #brief-color-directions .trend {
+      width: 100%;
+      height: 74px;
+      display: block;
+      margin-top: 18px;
+    }
+    #brief-color-directions .trend polyline {
+      stroke: var(--brief-accent);
+      fill: none;
+      stroke-width: 2.5;
+      stroke-linecap: round;
+      stroke-linejoin: round;
+      vector-effect: non-scaling-stroke;
+    }
+    #brief-color-directions .mini-row {
+      display: flex;
+      justify-content: space-between;
+      gap: 6px;
+      padding: 12px 0 0;
+      font-size: 12px;
+    }
+    #brief-color-directions .mini-row + .mini-row {
+      margin-top: 10px;
+      border-top: 1px solid var(--brief-line);
+    }
+    #brief-color-directions .mini-row span:last-child {
+      font-variant-numeric: tabular-nums;
+      white-space: nowrap;
+    }
+    #brief-color-directions .selected-nav {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 10px;
+      margin-top: 14px;
+      border-radius: 6px;
+      background: var(--brief-card);
+      color: var(--brief-accent);
+    }
+    #brief-color-directions .selected-nav svg {
+      width: 15px;
+      height: 15px;
+    }
+    #brief-color-directions .swatches {
+      display: grid;
+      gap: 7px;
+      margin: 20px 0 0;
+      font-size: 11px;
+    }
+    #brief-color-directions .swatch-row {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      color: var(--brief-muted);
+    }
+    #brief-color-directions .swatch-row b {
+      width: 12px;
+      height: 12px;
+      border-radius: 3px;
+      box-shadow: inset 0 0 0 1px var(--brief-line);
+    }
+    #brief-color-directions .swatch-row code {
+      margin-left: auto;
+      font-family: inherit;
+      color: var(--brief-ink);
+      background: transparent;
+      padding: 0;
+    }
+  </style>
+  <section class="theme-sample" id="brief-slate-sample" aria-label="Slate palette preview">
+    <h3 class="palette-name">Slate</h3>
+    <p class="palette-caption">Cool, composed · My pick</p>
+    <div class="route-name">Home</div>
+    <div class="finance-panel">
+      <div class="label">Net worth · Sample data</div>
+      <div class="balance">$124,580</div>
+      <div class="gain">+$2,340 this month</div>
+      <svg
+        class="trend"
+        viewBox="0 0 200 74"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Illustrative rising balance trend"
+      >
+        <polyline
+          points="2,65 18,61 30,63 46,47 63,50 80,40 95,44 108,31 125,37 141,21 158,26 174,13 198,5"
+        />
+      </svg>
+      <div class="mini-row"><span>Groceries</span><span>−$54.20</span></div>
+      <div class="mini-row"><span>Subscriptions</span><span>−$18.00</span></div>
+    </div>
+    <div class="selected-nav"><i data-lucide="wallet-cards" aria-hidden="true"></i> Spending</div>
+    <div class="swatches">
+      <div class="swatch-row">
+        <b style="background: var(--brief-bg)"></b>Background<code data-value="bg">#2C3844</code>
+      </div>
+      <div class="swatch-row">
+        <b style="background: var(--brief-card)"></b>Cards<code>#364653</code>
+      </div>
+      <div class="swatch-row">
+        <b style="background: var(--brief-accent)"></b>Accent<code>#A5C5DF</code>
+      </div>
+    </div>
+  </section>
+  <section
+    class="theme-sample graphite"
+    id="brief-graphite-sample"
+    aria-label="Warm graphite palette preview"
+  >
+    <h3 class="palette-name">Warm graphite</h3>
+    <p class="palette-caption">Neutral, understated</p>
+    <div class="route-name">Home</div>
+    <div class="finance-panel">
+      <div class="label">Net worth · Sample data</div>
+      <div class="balance">$124,580</div>
+      <div class="gain">+$2,340 this month</div>
+      <svg
+        class="trend"
+        viewBox="0 0 200 74"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Illustrative rising balance trend"
+      >
+        <polyline
+          points="2,65 18,61 30,63 46,47 63,50 80,40 95,44 108,31 125,37 141,21 158,26 174,13 198,5"
+        />
+      </svg>
+      <div class="mini-row"><span>Groceries</span><span>−$54.20</span></div>
+      <div class="mini-row"><span>Subscriptions</span><span>−$18.00</span></div>
+    </div>
+    <div class="selected-nav"><i data-lucide="wallet-cards" aria-hidden="true"></i> Spending</div>
+    <div class="swatches">
+      <div class="swatch-row">
+        <b style="background: var(--brief-bg)"></b>Background<code data-value="bg">#343532</code>
+      </div>
+      <div class="swatch-row">
+        <b style="background: var(--brief-card)"></b>Cards<code>#41433E</code>
+      </div>
+      <div class="swatch-row">
+        <b style="background: var(--brief-accent)"></b>Accent<code>#B9C6D5</code>
+      </div>
+    </div>
+  </section>
+  <section
+    class="theme-sample stone"
+    id="brief-stone-sample"
+    aria-label="Warm stone palette preview"
+  >
+    <h3 class="palette-name">Warm stone</h3>
+    <p class="palette-caption">Lighter, quiet, editorial</p>
+    <div class="route-name">Home</div>
+    <div class="finance-panel">
+      <div class="label">Net worth · Sample data</div>
+      <div class="balance">$124,580</div>
+      <div class="gain">+$2,340 this month</div>
+      <svg
+        class="trend"
+        viewBox="0 0 200 74"
+        preserveAspectRatio="none"
+        role="img"
+        aria-label="Illustrative rising balance trend"
+      >
+        <polyline
+          points="2,65 18,61 30,63 46,47 63,50 80,40 95,44 108,31 125,37 141,21 158,26 174,13 198,5"
+        />
+      </svg>
+      <div class="mini-row"><span>Groceries</span><span>−$54.20</span></div>
+      <div class="mini-row"><span>Subscriptions</span><span>−$18.00</span></div>
+    </div>
+    <div class="selected-nav"><i data-lucide="wallet-cards" aria-hidden="true"></i> Spending</div>
+    <div class="swatches">
+      <div class="swatch-row">
+        <b style="background: var(--brief-bg)"></b>Background<code data-value="bg">#D9D3C8</code>
+      </div>
+      <div class="swatch-row">
+        <b style="background: var(--brief-card)"></b>Cards<code>#E9E3D9</code>
+      </div>
+      <div class="swatch-row">
+        <b style="background: var(--brief-accent)"></b>Accent<code>#45677A</code>
+      </div>
+    </div>
+  </section>
+</div>
+<script>
+  if (globalThis.Tweak) {
+    for (const [id, background] of [
+      ['brief-slate-sample', '#2c3844'],
+      ['brief-graphite-sample', '#343532'],
+      ['brief-stone-sample', '#d9d3c8'],
+    ]) {
+      const element = document.getElementById(id)
+      const state = { background }
+      const tweak = new Tweak({
+        container: element,
+        onChange: () => {
+          element.style.setProperty('--brief-bg', state.background)
+          element.querySelector('[data-value="bg"]').textContent = state.background.toUpperCase()
+        },
+      })
+      tweak.addColorPicker(state, 'background', { label: 'Background', reference: '--brief-bg' })
+    }
+  }
+</script>

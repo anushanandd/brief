@@ -1,31 +1,64 @@
-import NumberFlow from '@number-flow/react'
+import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
 import { listen } from '@tauri-apps/api/event'
 import {
   ChartNoAxesCombined,
-  ChevronLeft,
   ChevronRight,
   CreditCard,
   Landmark,
   type LucideIcon,
   WalletCards,
 } from 'lucide-react'
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { ActivityList } from '../components/activity-list'
 import { BrandMark } from '../components/brand-mark'
-import { AllocationChart, PerformanceChart } from '../components/charts'
+import { DonutChart, PerformanceChart, type DonutSegment } from '../components/charts'
 import { PageError, PageLoading, RefreshButton } from '../components/data-state'
 import { Card, Change, SectionHeading, StatusDot } from '../components/ui'
-import { useFinance } from '../hooks/use-finance'
-import { buildNetWorthAllocation } from '../lib/allocation'
-import { isTauri, openExternalUrl } from '../lib/api'
-import { formatCurrency, formatPercent, formatUpdatedAt } from '../lib/format'
-import { getDefaultGraphWindow, graphWindows } from '../lib/graph-preferences'
+import { LiveMarketProvider } from '../hooks/live-market-provider'
+import { graphAccountShortcut, useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
+import { useLiveFinance } from '../hooks/use-live-finance'
+import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
+import { buildActivities } from '../lib/activity'
+import {
+  generateFoundationExplanation,
+  getFoundationModelStatus,
+  getMarketNews,
+  isTauri,
+  openExternalUrl,
+} from '../lib/api'
+import { buildChartEventGroups } from '../lib/chart-events'
+import {
+  currentMonthIncome,
+  dashboardAccountViews,
+  dashboardAssetBreakdown,
+  monthlyPortfolioChange,
+} from '../lib/dashboard-account-views'
+import {
+  formatCompactCurrency,
+  formatCurrency,
+  formatPercent,
+  formatSecurityName,
+  formatUpdatedAt,
+} from '../lib/format'
+import {
+  getChartAccountPreferences,
+  getDefaultGraphWindow,
+  reconcileChartAccountPreferences,
+} from '../lib/graph-preferences'
+import { briefingEvidence, homeInsightSections, weeklyBriefingCandidate } from '../lib/insights'
 import { buildLiveChartData } from '../lib/live-chart'
-import { stockLogoUrl, transactionLogoUrl, transactionMarkKind } from '../lib/logos'
-import { spendingCategoryColor } from '../lib/normalize'
-import { annotateKeyMoments } from '../lib/performance'
+import { getExternalLogosEnabled, stockLogoUrl, stockMarkColor, stockMarkLabel } from '../lib/logos'
 import type { FinanceSnapshot } from '../lib/schema'
+import { buildSpendingView, resolveSpendingAccount, spendingCategoryColor } from '../lib/spending'
+import { getSpendingAccountId } from '../lib/spending-preferences'
+
+const assetAccountColors: Record<string, string> = {
+  brokerage: 'var(--allocation-2)',
+  retirement: 'var(--allocation-3)',
+  cash: 'var(--allocation-1)',
+}
 
 const accountTypeMarks: Record<string, [LucideIcon, string]> = {
   brokerage: [ChartNoAxesCombined, 'dividend'],
@@ -36,7 +69,6 @@ const accountTypeMarks: Record<string, [LucideIcon, string]> = {
 
 function AccountTypeMark({ type }: { type: string }) {
   const [Icon, tone] = accountTypeMarks[type] ?? [Landmark, 'transfer']
-
   return (
     <span className={`transaction-mark transaction-mark-${tone}`} aria-hidden="true">
       <Icon size={15} />
@@ -44,82 +76,95 @@ function AccountTypeMark({ type }: { type: string }) {
   )
 }
 
-function totalNetWorthPoints(data: FinanceSnapshot) {
-  const history = data.netWorthHistory.length
-    ? data.netWorthHistory
-    : [{ date: data.updatedAt.slice(0, 10), value: data.netWorth }]
-  const brokerageTotal = data.brokeragePerformance.find((item) => item.accountId === 'total')
-  const usesIsoDates = history.every((point) => /^\d{4}-\d{2}-\d{2}$/.test(point.date))
-  const benchmarkSource =
-    usesIsoDates && data.benchmarkHistory.length
-      ? data.benchmarkHistory
-      : (brokerageTotal?.points.flatMap((point) =>
-          typeof point.sp500 === 'number' ? [{ date: point.date, value: point.sp500 }] : [],
-        ) ?? [])
-  const benchmarkByDate = new Map(benchmarkSource.map((point) => [point.date, point.value]))
-  const sortedBenchmark = usesIsoDates
-    ? benchmarkSource.toSorted((left, right) => left.date.localeCompare(right.date))
-    : []
-  let benchmarkCursor = 0
-  let lastBenchmark: number | undefined
-  let benchmarkBaseline: number | undefined
-  let benchmarkStartingValue: number | undefined
+const insightEmphasisPattern =
+  /(Notable weekly activity|The last seven days|Today|Spending|[Ii]ncome sources|[Ii]ncome|net worth|holding|[-+]?\$[\d,.]+|[+-]?\d+(?:\.\d+)?%|\b[A-Z][A-Z0-9.-]{1,7}\b)/g
 
-  return history.map((point) => {
-    if (usesIsoDates) {
-      while (benchmarkCursor < sortedBenchmark.length) {
-        const benchmark = sortedBenchmark[benchmarkCursor]
-        if (!benchmark || benchmark.date > point.date) break
-        lastBenchmark = benchmark.value
-        benchmarkCursor += 1
-      }
-    } else {
-      lastBenchmark = benchmarkByDate.get(point.date) ?? lastBenchmark
-    }
-    if (benchmarkBaseline === undefined && lastBenchmark !== undefined) {
-      benchmarkBaseline = lastBenchmark
-      benchmarkStartingValue = point.value
-    }
+function InsightLine({ children }: { children: string }) {
+  return (
+    <span className="home-insight-line">
+      {children
+        .split(insightEmphasisPattern)
+        .map((part, index) =>
+          index % 2 ? <strong key={`${part}:${index}`}>{part}</strong> : part,
+        )}
+    </span>
+  )
+}
 
-    return {
-      date: point.date,
-      value: point.value,
-      // Total net worth has no meaningful brokerage-deposit line. This placeholder is excluded
-      // from the chart; account views calculate and render their own external cash flows.
-      netDeposits: point.value,
-      sp500:
-        lastBenchmark && benchmarkBaseline && benchmarkStartingValue !== undefined
-          ? Math.round(benchmarkStartingValue * (lastBenchmark / benchmarkBaseline) * 100) / 100
-          : null,
-    }
+function HomeInsights({ data }: { data: FinanceSnapshot }) {
+  const candidate = useMemo(() => weeklyBriefingCandidate(data), [data])
+  const foundationModel = useQuery({
+    queryKey: ['foundation-model-status'],
+    queryFn: getFoundationModelStatus,
+    enabled: isTauri(),
+    staleTime: Number.POSITIVE_INFINITY,
   })
+  const analysis = useQuery({
+    queryKey: ['weekly-briefing', 1, candidate?.key],
+    queryFn: async ({ signal }) => {
+      if (!candidate) throw new Error('No meaningful changes to explain')
+      const news = candidate.stock
+        ? await getMarketNews(candidate.stock.ticker).catch(() => undefined)
+        : undefined
+      signal.throwIfAborted()
+      return generateFoundationExplanation(briefingEvidence(candidate, news), signal)
+    },
+    enabled: isTauri() && !!candidate && foundationModel.data?.state === 'available',
+    staleTime: Number.POSITIVE_INFINITY,
+    retry: false,
+  })
+
+  const sections = homeInsightSections(data, candidate, analysis.data)
+
+  return (
+    <Card className="home-insights" aria-label="What changed">
+      <div className="home-insights-heading">
+        <strong>What changed</strong>
+        <span>Local overview</span>
+      </div>
+      {sections.map((section) => (
+        <section key={section.title} aria-label={section.title}>
+          <p className="home-insight-summary" aria-live="polite">
+            {section.lines.map((line) => (
+              <InsightLine key={line}>{line}</InsightLine>
+            ))}
+          </p>
+        </section>
+      ))}
+    </Card>
+  )
 }
 
 export function DashboardPage() {
-  const query = useFinance({ liveMarket: true })
-  const reduceMotion = useReducedMotion()
-  const [direction, setDirection] = useState(0)
-  const [activeAccountId, setActiveAccountId] = useState('all')
-  const [graphWindow, setGraphWindow] = useState(getDefaultGraphWindow)
-  const accountViews = useMemo(
-    () =>
-      query.data
-        ? [
-            {
-              accountId: 'net-worth',
-              name: 'Total net worth',
-              institution: 'All accounts',
-              currentValue: query.data.netWorth,
-              points: totalNetWorthPoints(query.data),
-            },
-            ...query.data.brokeragePerformance
-              .filter((item) => item.accountId !== 'total')
-              .toSorted((left, right) => right.currentValue - left.currentValue)
-              .slice(0, 2),
-          ].toSorted((left, right) => right.currentValue - left.currentValue)
-        : [],
-    [query.data],
+  return (
+    <LiveMarketProvider>
+      <DashboardContent />
+    </LiveMarketProvider>
   )
+}
+
+function DashboardContent() {
+  const query = useLiveFinance()
+  const [activeAccountId, setActiveAccountId] = useState('total')
+  const [graphWindow, setGraphWindow] = useState(getDefaultGraphWindow)
+  const [chartAccountPreferences] = useState(getChartAccountPreferences)
+  const [accountDisplayNames] = useState(getAccountDisplayNames)
+  const [externalLogosEnabled] = useState(getExternalLogosEnabled)
+  const [spendingAccountId] = useState(getSpendingAccountId)
+  useGraphWindowShortcuts(setGraphWindow)
+  const accountViews = useMemo(() => {
+    if (!query.data) return []
+    const views = dashboardAccountViews(query.data).map((view) => ({
+      ...view,
+      name: accountDisplayName(view.accountId, view.name, accountDisplayNames),
+    }))
+    const byId = new Map(views.map((view) => [view.accountId, view]))
+    const visibleViews = reconcileChartAccountPreferences(
+      views.map(({ accountId }) => accountId),
+      chartAccountPreferences,
+    ).flatMap(({ accountId, visible: isVisible }) => (isVisible ? [byId.get(accountId)!] : []))
+    return visibleViews.length ? visibleViews : views.slice(0, 1)
+  }, [accountDisplayNames, chartAccountPreferences, query.data])
   const accountCount = accountViews.length
   const selectedAccountIndex = accountViews.findIndex((item) => item.accountId === activeAccountId)
   const accountIndex = selectedAccountIndex >= 0 ? selectedAccountIndex : 0
@@ -134,61 +179,32 @@ export function DashboardPage() {
 
   useEffect(() => {
     const runShortcut = (shortcut: string) => {
-      if (shortcut === 'graph-previous' || shortcut === 'graph-next') {
-        if (accountCount < 2) return
-        const nextDirection = shortcut === 'graph-previous' ? -1 : 1
-        setDirection(nextDirection)
-        setActiveAccountId((currentId) => {
-          const currentIndex = Math.max(
-            0,
-            accountViews.findIndex((item) => item.accountId === currentId),
-          )
-          return (
-            accountViews[(currentIndex + nextDirection + accountCount) % accountCount]?.accountId ??
-            currentId
-          )
-        })
-        return
-      }
-
-      const windowLabels: Record<string, string> = {
-        'graph-week': '1W',
-        'graph-month': '1M',
-        'graph-three-months': '3M',
-        'graph-all': 'All',
-      }
-      const nextWindow = graphWindows.find((window) => window.label === windowLabels[shortcut])
-      if (nextWindow) setGraphWindow(nextWindow.secs)
+      if ((shortcut !== 'graph-previous' && shortcut !== 'graph-next') || accountCount < 2) return
+      const nextDirection = shortcut === 'graph-previous' ? -1 : 1
+      setActiveAccountId((currentId) => {
+        const currentIndex = Math.max(
+          0,
+          accountViews.findIndex((item) => item.accountId === currentId),
+        )
+        return (
+          accountViews[(currentIndex + nextDirection + accountCount) % accountCount]?.accountId ??
+          currentId
+        )
+      })
     }
 
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target
+      const shortcut = graphAccountShortcut(event)
       if (
-        !(event.metaKey || event.ctrlKey) ||
-        event.altKey ||
+        !shortcut ||
         (target instanceof HTMLElement &&
           (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))
       ) {
         return
       }
-
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        event.preventDefault()
-        runShortcut(event.key === 'ArrowLeft' ? 'graph-previous' : 'graph-next')
-        return
-      }
-
-      const shortcuts: Record<string, string> = {
-        w: 'graph-week',
-        m: 'graph-month',
-        '3': 'graph-three-months',
-        a: 'graph-all',
-      }
-      const shortcut = shortcuts[event.key.toLowerCase()]
-      if (shortcut) {
-        event.preventDefault()
-        runShortcut(shortcut)
-      }
+      event.preventDefault()
+      runShortcut(shortcut)
     }
 
     let disposed = false
@@ -213,49 +229,26 @@ export function DashboardPage() {
 
   const data = query.data
   const account = accountViews[accountIndex] ?? accountViews[0]
-  const currentMonth = data.updatedAt.slice(0, 7)
-  const currentMonthShort = new Date(data.updatedAt).toLocaleDateString('en-US', {
-    month: 'short',
-    timeZone: 'UTC',
-  })
-  const monthlyTransactions = data.transactions.filter(
-    (transaction) =>
-      transaction.date.startsWith(currentMonth) || transaction.date.startsWith(currentMonthShort),
-  )
-  const monthlyIncome = monthlyTransactions
-    .filter((transaction) => transaction.amount > 0)
-    .reduce((sum, transaction) => sum + transaction.amount, 0)
-  const monthlyNetIncome = monthlyIncome - data.spending.monthTotal
-  const biggestTransaction = monthlyTransactions.toSorted(
-    (left, right) => Math.abs(right.amount) - Math.abs(left.amount),
-  )[0]
-  const netWorthAllocation = buildNetWorthAllocation(data)
-  const spendingCategories = data.spending.categories.map((category, index) => ({
-    ...category,
-    color: spendingCategoryColor(category.name, index),
-  }))
-  const recentTransactions = data.transactions.slice(0, 3)
-  const marketIsLive = query.marketStreamState === 'live'
-  const marketHasActivePrices = marketIsLive && query.marketStreamMessage !== 'Market closed'
-  const marketIsConnecting = ['connecting', 'reconnecting'].includes(query.marketStreamState)
-  const marketIsPolling = query.marketStreamState === 'error'
+  const marketIsActive = query.marketPriceState === 'active'
+  const marketIsLoading = query.marketPriceState === 'loading'
 
-  const changeAccount = (nextDirection: number) => {
-    if (accountCount < 2) return
-    setDirection(nextDirection)
-    const nextIndex = (accountIndex + nextDirection + accountCount) % accountCount
-    const nextAccount = accountViews[nextIndex]
-    if (nextAccount) setActiveAccountId(nextAccount.accountId)
-  }
-
-  const points = annotateKeyMoments(account.points, {
-    transactions: data.transactions,
-    investmentActivities: data.investmentActivities,
-    currentValue: account.currentValue,
-    accountId: account.accountId,
-  })
-  const latestValue = points.at(-1)?.value ?? account.currentValue
-  const priorValue = points.at(-2)?.value ?? latestValue
+  const points = account.points
+  const latestValue = account.currentValue
+  const incomplete =
+    account.accountId === 'net-worth'
+      ? data.netWorthIncomplete
+      : account.accountId === 'total' &&
+        data.accounts.some(
+          ({ type, value }) => (type === 'brokerage' || type === 'retirement') && value == null,
+        )
+  const latestPoint = points.at(-1)
+  const latestDate = latestPoint?.date ?? ''
+  const currentDate = data.updatedAt.slice(0, 10)
+  const hasLiveDelta = Math.abs(latestValue - (latestPoint?.value ?? latestValue)) >= 0.01
+  const priorValue =
+    hasLiveDelta && /^\d{4}-\d{2}-\d{2}$/.test(latestDate) && latestDate < currentDate
+      ? (latestPoint?.value ?? latestValue)
+      : (points.at(-2)?.value ?? latestPoint?.value ?? latestValue)
   const dailyChange = latestValue - priorValue
   const dailyChangePercent = priorValue ? (dailyChange / Math.abs(priorValue)) * 100 : 0
   const changePeriod = /^\d{4}-\d{2}-\d{2}$/.test(points.at(-1)?.date ?? '')
@@ -264,133 +257,187 @@ export function DashboardPage() {
   const chartNow = Date.now() / 1_000
   const chartData = buildLiveChartData(points, livePoints ?? [], latestValue, chartNow)
   const netDepositsData =
-    account.accountId === 'net-worth'
+    account.accountId === 'net-worth' || account.performanceMethod === 'value-only'
       ? undefined
       : buildLiveChartData(
-          points.map((point) => ({ date: point.date, value: point.netDeposits })),
+          points.flatMap((point) =>
+            typeof point.netDeposits === 'number'
+              ? [{ date: point.date, value: point.netDeposits }]
+              : [],
+          ),
           [],
-          points.at(-1)?.netDeposits ?? 0,
+          points.findLast((point) => typeof point.netDeposits === 'number')?.netDeposits ?? 0,
           chartNow,
         )
-  const benchmarkHistory = points.flatMap((point) =>
-    typeof point.sp500 === 'number' ? [{ date: point.date, value: point.sp500 }] : [],
-  )
+  const benchmarkHistory =
+    account.accountId === 'net-worth' || account.performanceMethod === 'value-only'
+      ? []
+      : points.flatMap((point) =>
+          typeof point.sp500 === 'number' ? [{ date: point.date, value: point.sp500 }] : [],
+        )
   const benchmarkData = benchmarkHistory.length
     ? buildLiveChartData(benchmarkHistory, [], benchmarkHistory.at(-1)?.value ?? 0, chartNow)
     : undefined
-  const slideVariants = {
-    enter: (slideDirection: number) => ({
-      opacity: 0,
-      transform: reduceMotion ? 'translateX(0%)' : `translateX(${slideDirection >= 0 ? 18 : -18}%)`,
-    }),
-    center: { opacity: 1, transform: 'translateX(0%)' },
-    exit: (slideDirection: number) => ({
-      opacity: 0,
-      transform: reduceMotion ? 'translateX(0%)' : `translateX(${slideDirection >= 0 ? -18 : 18}%)`,
-    }),
-  }
-
+  const chartEvents = buildChartEventGroups(data, account.accountId, points, graphWindow)
+  const accounts = data.accounts
+    .filter(({ id }) => id !== 'all')
+    .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
+  const holdings = data.holdings
+    .filter(
+      ({ accountId }) =>
+        account.accountId === 'total' ||
+        account.accountId === 'net-worth' ||
+        accountId === account.accountId,
+    )
+    .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
+  const latestActivities = buildActivities(data, accountDisplayNames, externalLogosEnabled).slice(
+    0,
+    6,
+  )
+  const portfolioChange = monthlyPortfolioChange(data)
+  const income = currentMonthIncome(data)
+  const spendingAccount = resolveSpendingAccount(data.accounts, spendingAccountId)
+  const spending = buildSpendingView(
+    spendingAccount
+      ? data.transactions.filter(({ accountId }) => accountId === spendingAccount.id)
+      : [],
+    data.updatedAt,
+    1,
+  )
+  const assetGroups = dashboardAssetBreakdown(data).map((group) => {
+    const children = group.children.map((child) => ({
+      ...child,
+      color: child.name === 'Cash & other' ? 'var(--chart-secondary)' : stockMarkColor(child.name),
+    }))
+    return {
+      ...group,
+      name: accountDisplayName(group.id, group.name, accountDisplayNames),
+      color: children[0]?.color ?? assetAccountColors[group.type] ?? 'var(--allocation-4)',
+      children,
+    }
+  })
+  const assetAccounts: DonutSegment[] = assetGroups.map(({ name, value, color, children }) => ({
+    name,
+    value,
+    color,
+    details: children,
+  }))
+  const totalAssets = assetAccounts.reduce((total, { value }) => total + value, 0)
+  const spendingSegments: DonutSegment[] = spending.categories.map(({ name, value }) => ({
+    name,
+    value,
+    color: spendingCategoryColor(name),
+  }))
   return (
-    <div className="page dashboard-page dashboard-focus">
-      <header className="dashboard-topbar">
-        <div>
-          <NumberFlow
-            value={latestValue}
-            format={{ style: 'currency', currency: 'USD', maximumFractionDigits: 2 }}
-            className="hero-number"
-          />
-          <div className="hero-change">
-            <Change value={dailyChangePercent} />
-            <span className={dailyChange > 0 ? 'positive' : dailyChange < 0 ? 'negative' : 'muted'}>
-              {formatCurrency(dailyChange)} {changePeriod}
-            </span>
-          </div>
-        </div>
+    <div className="page dashboard-page">
+      <header className="page-header home-header">
+        <h1>Home</h1>
         <div className="dashboard-actions">
-          <span className="freshness" title={query.marketStreamMessage} aria-live="polite">
-            <StatusDot tone={marketHasActivePrices ? 'positive' : 'neutral'} />
-            {marketIsLive
-              ? (query.marketStreamMessage ?? 'Live prices')
-              : marketIsConnecting
-                ? 'Connecting prices'
-                : marketIsPolling
-                  ? 'Polling prices'
-                  : `Updated ${formatUpdatedAt(data.updatedAt)}`}
+          <span className="freshness" title={query.marketPriceMessage} aria-live="polite">
+            <StatusDot tone={marketIsActive ? 'positive' : 'neutral'} />
+            {marketIsActive
+              ? `${query.marketSession} · ${query.marketPriceMessage}`
+              : marketIsLoading
+                ? 'Checking market prices'
+                : query.marketPriceState === 'error'
+                  ? 'Prices unavailable'
+                  : query.marketSession === 'Market closed'
+                    ? 'Market closed · prices paused'
+                    : `Updated ${formatUpdatedAt(data.updatedAt)}`}
           </span>
           <RefreshButton />
         </div>
       </header>
 
-      <Card className="net-worth-card brokerage-performance-card">
-        <header className="brokerage-card-header">
-          <h1 className="overview-account-title">
-            {account.name} <span>· {account.institution}</span>
-          </h1>
-        </header>
-
-        <div className="brokerage-chart-viewport">
-          <AnimatePresence initial={false} custom={direction} mode="popLayout">
-            <motion.div
-              key={account.accountId}
-              className="brokerage-chart-slide"
-              custom={direction}
-              variants={slideVariants}
-              initial="enter"
-              animate="center"
-              exit="exit"
-              transition={
-                reduceMotion
-                  ? { duration: 0.15, ease: [0.23, 1, 0.32, 1] }
-                  : { type: 'spring', duration: 0.5, bounce: 0.2 }
-              }
-            >
-              <div className="brokerage-chart-content">
-                <PerformanceChart
-                  data={chartData}
-                  netDeposits={netDepositsData}
-                  benchmark={benchmarkData}
-                  value={latestValue}
-                  isLive={marketHasActivePrices}
-                  selectedWindow={graphWindow}
-                  onWindowChange={setGraphWindow}
-                />
+      <div className="home-primary-grid">
+        <Card className="net-worth-card brokerage-performance-card">
+          <header className="home-balance-header">
+            <div>
+              <h2 className="balance-label">
+                {account.name}
+                {incomplete ? ' · known USD balances only' : ''}
+              </h2>
+              <div className="home-balance-value">
+                <span className="hero-number">{formatCurrency(latestValue)}</span>
               </div>
-            </motion.div>
-          </AnimatePresence>
-        </div>
-
-        {accountCount > 1 ? (
-          <nav className="brokerage-chart-nav" aria-label="Investment accounts">
-            <button type="button" onClick={() => changeAccount(-1)} aria-label="Previous account">
-              <ChevronLeft size={15} />
-            </button>
-            <div className="brokerage-page-dots">
-              {accountViews.map((item, index) => (
-                <span
-                  key={item.accountId}
-                  className={index === accountIndex ? 'active' : undefined}
-                  aria-hidden="true"
-                />
-              ))}
+              {!incomplete ? (
+                <div className="hero-change">
+                  <span
+                    className={
+                      dailyChange > 0 ? 'positive' : dailyChange < 0 ? 'negative' : 'muted'
+                    }
+                  >
+                    {formatCurrency(dailyChange)} {changePeriod}
+                  </span>
+                  <Change value={dailyChangePercent} />
+                </div>
+              ) : (
+                <p className="spending-detail-note">
+                  A complete balance and change are unavailable.
+                </p>
+              )}
             </div>
-            <button type="button" onClick={() => changeAccount(1)} aria-label="Next account">
-              <ChevronRight size={15} />
-            </button>
-          </nav>
-        ) : null}
-      </Card>
+            <span className="balance-institution">
+              {account.institution}
+              <br />
+              {account.accountId === 'net-worth'
+                ? data.netWorthHistoryEstimated
+                  ? 'Estimated history'
+                  : 'Observed history'
+                : account.historySource === 'provider-estimated'
+                  ? 'Provider-estimated value history'
+                  : account.historySource === 'reported'
+                    ? 'Observed provider history'
+                    : account.historySource === 'estimated'
+                      ? 'Estimated history'
+                      : 'History unavailable'}
+            </span>
+          </header>
 
-      <div className="overview-grid">
-        <Card className="holdings-overview-card">
-          <SectionHeading title="Holdings" />
-          <div className="overview-list holdings-list">
-            {data.holdings
-              .toSorted((left, right) => right.value - left.value)
-              .map((holding) => {
-                const yahooUrl = `https://finance.yahoo.com/quote/${encodeURIComponent(holding.ticker)}`
+          <div className="brokerage-chart-viewport">
+            <div key={account.accountId} className="brokerage-chart-slide">
+              <div className="brokerage-chart-content">
+                {!incomplete ? (
+                  <PerformanceChart
+                    data={chartData}
+                    netDeposits={netDepositsData}
+                    benchmark={benchmarkData}
+                    value={latestValue}
+                    events={chartEvents}
+                    referenceIso={data.updatedAt}
+                    selectedWindow={graphWindow}
+                    onWindowChange={setGraphWindow}
+                  />
+                ) : (
+                  <p className="spending-detail-note">
+                    The total chart is paused until all included account balances are available in
+                    USD.
+                  </p>
+                )}
+              </div>
+            </div>
+          </div>
+        </Card>
+        <HomeInsights data={data} />
+      </div>
+
+      <div className="home-secondary-grid home-holdings-row">
+        <Card className="brokerage-holdings-card">
+          <section className="brokerage-holdings" aria-label={`${account.name} holdings`}>
+            <div className="holding-column-headings">
+              <h2>Holdings</h2>
+              <span aria-hidden="true">Price</span>
+              <span aria-hidden="true">Today %</span>
+              <span aria-hidden="true">Week %</span>
+              <span aria-hidden="true">Total %</span>
+              <span aria-hidden="true">Value</span>
+            </div>
+            <div className="overview-list holdings-list">
+              {holdings.map((holding) => {
+                const yahooUrl = `https://finance.yahoo.com/quote/${encodeURIComponent(holding.ticker)}/`
                 return (
                   <a
-                    className="overview-holding-row"
+                    className="overview-holding-row compact-holding-row"
                     href={yahooUrl}
                     target="_blank"
                     rel="noopener noreferrer"
@@ -404,131 +451,201 @@ export function DashboardPage() {
                     <span className="table-asset">
                       <BrandMark
                         className="asset-mark"
-                        fallback={holding.ticker.slice(0, 1)}
+                        fallback={stockMarkLabel(holding.ticker)}
                         label={`${holding.name} logo`}
-                        src={stockLogoUrl(holding.ticker)}
-                        style={{ backgroundColor: holding.color }}
+                        src={stockLogoUrl(holding.ticker, externalLogosEnabled)}
+                        style={{ backgroundColor: stockMarkColor(holding.ticker) }}
                       />
-                      <span>
+                      <span className="overview-holding-copy">
                         <strong className="overview-holding-ticker">{holding.ticker}</strong>
-                        <small>{holding.name.split(/\s+/).slice(0, 3).join(' ')}</small>
+                        <small>{holding.valuationNote ?? formatSecurityName(holding.name)}</small>
                       </span>
                     </span>
-                    <span>{formatCurrency(holding.price)}</span>
-                    <span className={holding.dailyChangePct >= 0 ? 'positive' : 'negative'}>
-                      {formatPercent(holding.dailyChangePct)}
+                    <span className="holding-metric">
+                      <span className="sr-only">Price: </span>
+                      <span>{formatCurrency(holding.price)}</span>
                     </span>
-                    <span className={holding.totalChangePct >= 0 ? 'positive' : 'negative'}>
-                      {formatPercent(holding.totalChangePct)}
+                    <span className="holding-metric">
+                      <span className="sr-only">Today: </span>
+                      <span
+                        className={
+                          holding.dailyChangePct == null
+                            ? 'muted'
+                            : holding.dailyChangePct >= 0
+                              ? 'positive'
+                              : 'negative'
+                        }
+                      >
+                        {formatPercent(holding.dailyChangePct)}
+                      </span>
                     </span>
-                    <span>{formatCurrency(holding.value)}</span>
+                    <span
+                      className="holding-metric"
+                      title={
+                        holding.weeklyReferencePrice != null && holding.weeklyReferenceDate
+                          ? `Since ${holding.weeklyReferenceDate} close ${formatCurrency(holding.weeklyReferencePrice)}`
+                          : 'Seven-day reference price unavailable'
+                      }
+                    >
+                      <span className="sr-only">Seven-day change: </span>
+                      <span
+                        className={
+                          holding.weeklyChangePct == null
+                            ? 'muted'
+                            : holding.weeklyChangePct >= 0
+                              ? 'positive'
+                              : 'negative'
+                        }
+                      >
+                        {formatPercent(holding.weeklyChangePct)}
+                      </span>
+                    </span>
+                    <span className="holding-metric">
+                      <span className="sr-only">Total gain: </span>
+                      <span
+                        className={
+                          holding.totalChangePct == null
+                            ? 'muted'
+                            : holding.totalChangePct >= 0
+                              ? 'positive'
+                              : 'negative'
+                        }
+                      >
+                        {formatPercent(holding.totalChangePct)}
+                      </span>
+                    </span>
+                    <span className="holding-metric">
+                      <span className="sr-only">Value: </span>
+                      <span>{formatCurrency(holding.value)}</span>
+                    </span>
                   </a>
                 )
               })}
+              {!holdings.length ? (
+                <p className="overview-recent-empty">No holdings in this account.</p>
+              ) : null}
+            </div>
+          </section>
+        </Card>
+
+        <Card className="accounts-overview-card home-overview-card">
+          <SectionHeading title="Accounts" />
+          <div className="overview-list">
+            {accounts.map((item) => (
+              <Link
+                className="overview-account-row"
+                key={item.id}
+                to="/accounts/$accountId"
+                params={{ accountId: item.id }}
+              >
+                <AccountTypeMark type={item.type} />
+                <span className="account-name">
+                  <span>{accountDisplayName(item.id, item.name, accountDisplayNames)}</span>
+                  <small>{item.institution}</small>
+                </span>
+                <span>{formatCurrency(item.value)}</span>
+              </Link>
+            ))}
+            {!accounts.length ? <p className="overview-recent-empty">No accounts yet.</p> : null}
           </div>
         </Card>
 
-        <Card className="accounts-overview-card">
-          <SectionHeading title="Accounts" />
-          <div className="overview-list">
-            {data.accounts
-              .slice(1)
-              .toSorted((left, right) => right.value - left.value)
-              .map((item) => (
-                <div className="overview-account-row" key={item.id}>
-                  <AccountTypeMark type={item.type} />
-                  <span className="account-name">
-                    <span>{item.name}</span>
-                    <small>{item.type}</small>
-                  </span>
-                  <span>{formatCurrency(item.value)}</span>
-                </div>
-              ))}
-          </div>
+        <Card className="home-overview-card home-activity-card">
+          <SectionHeading
+            title={
+              <Link to="/activities" className="section-heading-link">
+                Latest activities <ChevronRight size={14} aria-hidden="true" />
+              </Link>
+            }
+          />
+          <ActivityList activities={latestActivities} referenceIso={data.updatedAt} compact />
         </Card>
       </div>
 
-      <div className="overview-insights-grid">
-        <Card className="overview-income-card">
-          <SectionHeading title="Monthly net income" />
-          <div className="overview-income-summary">
-            <NumberFlow
-              value={monthlyNetIncome}
-              format={{ style: 'currency', currency: 'USD', maximumFractionDigits: 2 }}
-              className={monthlyNetIncome >= 0 ? 'positive' : 'negative'}
+      <div className="home-finance-grid">
+        <Card className="home-monthly-card">
+          <SectionHeading title="Monthly overview" />
+          <div className="home-monthly-metrics">
+            <div className="home-monthly-metric" title="Value change, not investment return">
+              <span>Portfolio value</span>
+              <strong
+                className={
+                  portfolioChange == null ? 'muted' : portfolioChange >= 0 ? 'positive' : 'negative'
+                }
+              >
+                {formatPercent(portfolioChange)}
+              </strong>
+            </div>
+            <div className="home-monthly-metric">
+              <span>Income</span>
+              <strong>{formatCurrency(income)}</strong>
+            </div>
+            <div
+              className="home-monthly-metric"
+              title={
+                spendingAccount
+                  ? accountDisplayName(
+                      spendingAccount.id,
+                      spendingAccount.name,
+                      accountDisplayNames,
+                    )
+                  : 'Choose a spending account in Settings'
+              }
+            >
+              <span>Spending</span>
+              <strong>{formatCurrency(spending.total)}</strong>
+            </div>
+          </div>
+        </Card>
+
+        <Card className="home-breakdown-card">
+          <SectionHeading title="Spending" />
+          <div className="home-donut-content">
+            <DonutChart
+              segments={spendingSegments}
+              label="Spending by category"
+              centerValue={formatCompactCurrency(spending.total)}
+              centerLabel="spent"
             />
-          </div>
-          <div className="overview-income-breakdown">
-            <span>
-              <small>Income</small>
-              <strong>{formatCurrency(monthlyIncome)}</strong>
-            </span>
-            <span>
-              <small>Spending</small>
-              <strong>{formatCurrency(data.spending.monthTotal)}</strong>
-            </span>
-            {biggestTransaction ? (
-              <span className="overview-income-largest">
-                <span>
-                  <small>Biggest transaction</small>
-                  <strong>{biggestTransaction.merchant}</strong>
-                </span>
-                <strong className={biggestTransaction.amount > 0 ? 'positive' : undefined}>
-                  {formatCurrency(biggestTransaction.amount)}
-                </strong>
-              </span>
-            ) : null}
-          </div>
-        </Card>
-
-        <Card className="overview-donut-card">
-          <SectionHeading title="Monthly spending" />
-          <AllocationChart
-            data={spendingCategories}
-            centerValue={data.spending.monthTotal}
-            centerLabel="Spent"
-          />
-        </Card>
-
-        <Card className="overview-donut-card">
-          <SectionHeading title="Net worth allocation" />
-          <AllocationChart
-            data={netWorthAllocation}
-            centerValue={data.netWorth}
-            centerLabel="Net worth"
-          />
-        </Card>
-
-        <Card className="overview-transactions-card">
-          <SectionHeading title="Recent transactions" />
-          <div className="overview-recent-list">
-            {recentTransactions.length ? (
-              recentTransactions.map((transaction) => {
-                const markKind = transactionMarkKind(transaction)
-                return (
-                  <div className="overview-recent-row" key={transaction.id}>
-                    <BrandMark
-                      className={`transaction-mark transaction-mark-${markKind}`}
-                      fallback={transaction.merchant.slice(0, 1)}
-                      label={`${transaction.merchant} transaction icon`}
-                      src={transactionLogoUrl(transaction)}
-                    />
-                    <span className="transaction-name">
-                      <strong>{transaction.merchant}</strong>
-                      <small>
-                        {transaction.pending ? 'Pending · ' : ''}
-                        {transaction.category} · {transaction.date}
-                      </small>
-                    </span>
-                    <strong className={transaction.amount > 0 ? 'positive' : undefined}>
-                      {formatCurrency(transaction.amount)}
-                    </strong>
+            <div className="home-donut-legend">
+              {spendingSegments.length ? (
+                spendingSegments.map((segment) => (
+                  <div className="home-donut-legend-row" key={segment.name}>
+                    <span className="home-donut-swatch" style={{ background: segment.color }} />
+                    <span>{segment.name}</span>
+                    <strong>{formatCompactCurrency(segment.value)}</strong>
                   </div>
-                )
-              })
-            ) : (
-              <p className="overview-recent-empty">No recent transactions.</p>
-            )}
+                ))
+              ) : (
+                <small className="home-donut-empty">No spending activity</small>
+              )}
+            </div>
+          </div>
+        </Card>
+
+        <Card className="home-breakdown-card home-assets-card">
+          <SectionHeading title="Assets" />
+          <div className="home-donut-content">
+            <DonutChart
+              segments={assetAccounts}
+              label="Assets by account"
+              centerValue={formatCompactCurrency(totalAssets)}
+              centerLabel="assets"
+            />
+            <div className="home-asset-legend">
+              {assetGroups.map((group) => (
+                <div className="home-asset-group" key={group.id}>
+                  <div className="home-donut-legend-row">
+                    <span className="home-donut-swatch" style={{ background: group.color }} />
+                    <span>{group.name}</span>
+                    <strong>{formatCompactCurrency(group.value)}</strong>
+                  </div>
+                </div>
+              ))}
+              {!assetGroups.length ? (
+                <small className="home-donut-empty">No valued assets</small>
+              ) : null}
+            </div>
           </div>
         </Card>
       </div>

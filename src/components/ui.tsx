@@ -8,7 +8,7 @@ export function Button({
   size = 'default',
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-  variant?: 'primary' | 'secondary' | 'ghost'
+  variant?: 'primary' | 'secondary' | 'ghost' | 'destructive'
   size?: 'default' | 'icon' | 'compact'
 }) {
   return (
@@ -28,7 +28,7 @@ export function SectionHeading({
   detail,
   action,
 }: {
-  title: string
+  title: ReactNode
   detail?: string
   action?: ReactNode
 }) {
@@ -43,8 +43,17 @@ export function SectionHeading({
   )
 }
 
-export function Change({ value, label }: { value: number; label?: string }) {
-  const tone = value > 0 ? 'positive' : value < 0 ? 'negative' : 'muted'
+export function Change({
+  value,
+  label,
+  favorable = 'increase',
+}: {
+  value: number
+  label?: string
+  favorable?: 'increase' | 'decrease'
+}) {
+  const signedValue = favorable === 'decrease' ? -value : value
+  const tone = signedValue > 0 ? 'positive' : signedValue < 0 ? 'negative' : 'muted'
 
   return (
     <span className={`change ${tone}`}>

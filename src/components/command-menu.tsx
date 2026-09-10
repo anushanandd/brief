@@ -1,18 +1,42 @@
-import { Dialog } from '@base-ui/react/dialog'
-import { useQueryClient } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
-import { Command } from 'cmdk'
-import { Database, LayoutDashboard, Moon, RefreshCw, Settings, Sun } from 'lucide-react'
-import { useTheme } from 'next-themes'
-import { toast } from 'sonner'
+import {
+  CreditCard,
+  Database,
+  House,
+  Landmark,
+  ListTree,
+  RefreshCw,
+  Settings,
+  type LucideIcon,
+} from 'lucide-react'
+import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
-import { financeQueryKey } from '../hooks/use-finance'
-import { refreshFinanceSnapshot } from '../lib/api'
+import { useFinance } from '../hooks/use-finance'
+import { useRefreshFinance } from '../hooks/use-refresh-finance'
+import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
 
 const destinations = [
-  { label: 'Overview', to: '/', icon: LayoutDashboard },
+  { label: 'Home', to: '/', icon: House },
+  { label: 'Accounts', to: '/accounts', icon: Landmark },
+  { label: 'Activity', to: '/activities', icon: ListTree },
   { label: 'Settings', to: '/settings', icon: Settings },
+  { label: 'Investment accounts', to: '/accounts/investments', icon: Landmark },
+  { label: 'Cash & cards', to: '/accounts/cash', icon: CreditCard },
+  { label: 'Spending', to: '/activities/spending', icon: CreditCard },
+  { label: 'Subscriptions', to: '/activities/subscriptions', icon: RefreshCw },
+  { label: 'Trades', to: '/activities/trades', icon: Landmark },
+  { label: 'Balance changes', to: '/activities/changes', icon: ListTree },
+  { label: 'Benefits', to: '/activities/benefits', icon: CreditCard },
 ] as const
+
+type MenuAction = {
+  label: string
+  search: string
+  group: 'Navigate' | 'Accounts' | 'Actions'
+  icon: LucideIcon
+  shortcut?: string
+  run: () => unknown
+}
 
 export function CommandMenu({
   open,
@@ -22,78 +46,155 @@ export function CommandMenu({
   onOpenChange: (open: boolean) => void
 }) {
   const navigate = useNavigate()
-  const queryClient = useQueryClient()
-  const { setTheme } = useTheme()
+  const finance = useFinance()
+  const refresh = useRefreshFinance()
+  const dialog = useRef<HTMLDialogElement>(null)
+  const input = useRef<HTMLInputElement>(null)
+  const [search, setSearch] = useState('')
+  const [activeIndex, setActiveIndex] = useState(0)
+  const actions: MenuAction[] = [
+    ...destinations.map(({ label, to, icon }, index) => ({
+      label,
+      search: `navigate ${label}`,
+      group: 'Navigate' as const,
+      icon,
+      shortcut: index < 4 ? `⌘${index + 1}` : undefined,
+      run: () => navigate({ to }),
+    })),
+    ...(finance.data?.accounts ?? [])
+      .filter(({ id }) => id !== 'all')
+      .map((account) => ({
+        label: accountDisplayName(account.id, account.name, getAccountDisplayNames()),
+        search: `${account.name} ${account.institution} ${account.type} account`,
+        group: 'Accounts' as const,
+        icon: account.type === 'credit' ? CreditCard : Landmark,
+        run: () => navigate({ to: '/accounts/$accountId', params: { accountId: account.id } }),
+      })),
+    {
+      label: 'Refresh snapshot',
+      search: 'refresh data snapshot',
+      group: 'Actions',
+      icon: RefreshCw,
+      shortcut: '⌘R',
+      run: refresh,
+    },
+    {
+      label: 'Review data sources',
+      search: 'data sources integrations providers',
+      group: 'Actions',
+      icon: Database,
+      run: () => navigate({ to: '/settings' }),
+    },
+  ]
+  const normalizedSearch = search.trim().toLocaleLowerCase()
+  const visibleActions = normalizedSearch
+    ? actions.filter((action) => action.search.toLocaleLowerCase().includes(normalizedSearch))
+    : actions
 
-  const run = (action: () => void | Promise<void>) => {
+  useEffect(() => {
+    const element = dialog.current
+    if (!element) return undefined
+    if (open && !element.open) {
+      element.showModal()
+      input.current?.focus()
+    } else if (!open && element.open) {
+      element.close()
+    }
+    return () => {
+      if (element.open) element.close()
+    }
+  }, [open])
+
+  useEffect(() => setActiveIndex(0), [search])
+
+  const run = (action: MenuAction) => {
     onOpenChange(false)
-    void action()
+    void Promise.resolve(action.run()).catch(() => undefined)
   }
-
-  const refresh = async () => {
-    const promise = refreshFinanceSnapshot()
-    toast.promise(promise, {
-      loading: 'Refreshing your snapshot…',
-      success: 'Snapshot refreshed',
-      error: 'Refresh failed',
-    })
-    queryClient.setQueryData(financeQueryKey, await promise)
+  const handleKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
+    if (event.key === 'Escape') {
+      event.preventDefault()
+      onOpenChange(false)
+      return
+    }
+    if (!visibleActions.length) return
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault()
+      const offset = event.key === 'ArrowDown' ? 1 : -1
+      setActiveIndex(
+        (current) => (current + offset + visibleActions.length) % visibleActions.length,
+      )
+    } else if (event.key === 'Enter') {
+      event.preventDefault()
+      const action = visibleActions[activeIndex]
+      if (action) run(action)
+    }
   }
 
   return (
-    <Dialog.Root open={open} onOpenChange={onOpenChange}>
-      <Dialog.Portal>
-        <Dialog.Backdrop className="command-backdrop" />
-        <Dialog.Viewport className="command-viewport">
-          <Dialog.Popup className="command-popup">
-            <Dialog.Title className="sr-only">Quick actions</Dialog.Title>
-            <Command label="Quick actions">
-              <div className="command-input-wrap">
-                <Command.Input placeholder="Go somewhere or run an action…" autoFocus />
-                <span>esc</span>
-              </div>
-              <Command.List>
-                <Command.Empty>No matching action.</Command.Empty>
-                <Command.Group heading="Navigate">
-                  {destinations.map(({ label, to, icon: Icon }, index) => (
-                    <Command.Item
-                      key={to}
-                      value={`navigate ${label}`}
-                      onSelect={() => run(() => navigate({ to }))}
-                    >
-                      <Icon size={17} aria-hidden="true" />
-                      <span>{label}</span>
-                      <kbd>⌘{index + 1}</kbd>
-                    </Command.Item>
-                  ))}
-                </Command.Group>
-                <Command.Separator />
-                <Command.Group heading="Actions">
-                  <Command.Item value="refresh data" onSelect={() => run(refresh)}>
-                    <RefreshCw size={17} aria-hidden="true" />
-                    <span>Refresh snapshot</span>
-                  </Command.Item>
-                  <Command.Item value="light theme" onSelect={() => run(() => setTheme('light'))}>
-                    <Sun size={17} aria-hidden="true" />
-                    <span>Use light appearance</span>
-                  </Command.Item>
-                  <Command.Item value="dark theme" onSelect={() => run(() => setTheme('dark'))}>
-                    <Moon size={17} aria-hidden="true" />
-                    <span>Use dark appearance</span>
-                  </Command.Item>
-                  <Command.Item
-                    value="data sources"
-                    onSelect={() => run(() => navigate({ to: '/settings' }))}
-                  >
-                    <Database size={17} aria-hidden="true" />
-                    <span>Review data sources</span>
-                  </Command.Item>
-                </Command.Group>
-              </Command.List>
-            </Command>
-          </Dialog.Popup>
-        </Dialog.Viewport>
-      </Dialog.Portal>
-    </Dialog.Root>
+    <dialog
+      ref={dialog}
+      className="command-dialog"
+      aria-labelledby="command-title"
+      onCancel={(event) => {
+        event.preventDefault()
+        onOpenChange(false)
+      }}
+      onClick={(event) => {
+        if (event.target === event.currentTarget) onOpenChange(false)
+      }}
+      onKeyDown={handleKeyDown}
+    >
+      <h2 id="command-title" className="sr-only">
+        Quick actions
+      </h2>
+      <div className="command-popup">
+        <label className="command-input-wrap">
+          <span className="sr-only">Search quick actions</span>
+          <input
+            ref={input}
+            type="search"
+            value={search}
+            placeholder="Go somewhere or run an action…"
+            autoComplete="off"
+            onChange={(event) => setSearch(event.target.value)}
+          />
+          <kbd>esc</kbd>
+        </label>
+        <div className="command-list">
+          {visibleActions.length ? (
+            (['Navigate', 'Accounts', 'Actions'] as const).map((group) => {
+              const grouped = visibleActions.filter((action) => action.group === group)
+              if (!grouped.length) return null
+              return (
+                <section className="command-group" key={group} aria-label={group}>
+                  <h3>{group}</h3>
+                  {grouped.map((action) => {
+                    const index = visibleActions.indexOf(action)
+                    const Icon = action.icon
+                    return (
+                      <button
+                        key={`${group}:${action.label}`}
+                        type="button"
+                        className={index === activeIndex ? 'active' : undefined}
+                        tabIndex={-1}
+                        onPointerMove={() => setActiveIndex(index)}
+                        onClick={() => run(action)}
+                      >
+                        <Icon size={17} aria-hidden="true" />
+                        <span>{action.label}</span>
+                        {action.shortcut ? <kbd>{action.shortcut}</kbd> : null}
+                      </button>
+                    )
+                  })}
+                </section>
+              )
+            })
+          ) : (
+            <p className="command-empty">No matching action.</p>
+          )}
+        </div>
+      </div>
+    </dialog>
   )
 }

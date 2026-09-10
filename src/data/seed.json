@@ -14,28 +14,48 @@
       "name": "Individual brokerage",
       "institution": "Fidelity",
       "type": "brokerage",
-      "value": 189830.14
+      "value": 189830.14,
+      "knownCostBasis": 124731.6,
+      "knownUnrealizedGain": 32200.92,
+      "knownUnrealizedGainPct": 25.8162,
+      "investmentIncomeYtd": 94.16,
+      "saleProceedsYtd": 0,
+      "salesYtd": 0,
+      "costBasisCoverage": "complete",
+      "currency": "USD"
     },
     {
       "id": "schwab",
       "name": "Roth IRA",
       "institution": "Charles Schwab",
       "type": "retirement",
-      "value": 49780.3
+      "value": 49780.3,
+      "knownCostBasis": 26617.21,
+      "knownUnrealizedGain": 8393.43,
+      "knownUnrealizedGainPct": 31.5338,
+      "investmentIncomeYtd": 0,
+      "saleProceedsYtd": 1157.55,
+      "salesYtd": 1,
+      "estimatedRealizedGainYtd": 307.55,
+      "realizedGainCoverage": "complete",
+      "costBasisCoverage": "complete",
+      "currency": "USD"
     },
     {
       "id": "chase",
       "name": "Checking",
       "institution": "Chase",
       "type": "cash",
-      "value": 49229.67
+      "value": 49229.67,
+      "currency": "USD"
     },
     {
       "id": "amex",
-      "name": "Gold Card",
+      "name": "Platinum Card",
       "institution": "American Express",
       "type": "credit",
-      "value": -2418.33
+      "value": -2418.33,
+      "currency": "USD"
     }
   ],
   "netWorthHistory": [
@@ -100,7 +120,11 @@
       "price": 338.12,
       "value": 83853.76,
       "costBasis": 63602.67,
+      "unrealizedGain": 20251.09,
       "dailyChangePct": 0.48,
+      "weeklyChangePct": 1.82,
+      "weeklyReferencePrice": 332.0762,
+      "weeklyReferenceDate": "2026-08-24",
       "totalChangePct": 31.84,
       "color": "#272727"
     },
@@ -112,7 +136,11 @@
       "price": 74.83,
       "value": 32176.9,
       "costBasis": 30853.29,
+      "unrealizedGain": 1323.61,
       "dailyChangePct": 0.12,
+      "weeklyChangePct": 0.44,
+      "weeklyReferencePrice": 74.5022,
+      "weeklyReferenceDate": "2026-08-24",
       "totalChangePct": 4.29,
       "color": "#6b7280"
     },
@@ -124,7 +152,11 @@
       "price": 71.22,
       "value": 25639.2,
       "costBasis": 21614.57,
+      "unrealizedGain": 4024.63,
       "dailyChangePct": -0.31,
+      "weeklyChangePct": -1.2,
+      "weeklyReferencePrice": 72.085,
+      "weeklyReferenceDate": "2026-08-24",
       "totalChangePct": 18.62,
       "color": "#c07d48"
     },
@@ -136,7 +168,11 @@
       "price": 512.0,
       "value": 20992.0,
       "costBasis": 14567.66,
+      "unrealizedGain": 6424.34,
       "dailyChangePct": 1.04,
+      "weeklyChangePct": 3.14,
+      "weeklyReferencePrice": 496.4126,
+      "weeklyReferenceDate": "2026-08-24",
       "totalChangePct": 44.1,
       "color": "#4f8f76"
     },
@@ -148,7 +184,11 @@
       "price": 231.51,
       "value": 19909.86,
       "costBasis": 15707.98,
+      "unrealizedGain": 4201.88,
       "dailyChangePct": -0.22,
+      "weeklyChangePct": -0.86,
+      "weeklyReferencePrice": 233.5183,
+      "weeklyReferenceDate": "2026-08-24",
       "totalChangePct": 26.75,
       "color": "#858585"
     },
@@ -160,9 +200,41 @@
       "price": 180.22,
       "value": 9371.44,
       "costBasis": 5002.64,
+      "unrealizedGain": 4368.8,
       "dailyChangePct": 2.43,
+      "weeklyChangePct": 7.9,
+      "weeklyReferencePrice": 167.025,
+      "weeklyReferenceDate": "2026-08-24",
       "totalChangePct": 87.33,
       "color": "#76a53b"
+    }
+  ],
+  "trades": [
+    {
+      "id": "trade-1",
+      "type": "BUY",
+      "date": "2026-08-30",
+      "amount": -1690.6,
+      "account": "Individual brokerage",
+      "accountId": "fidelity",
+      "ticker": "VTI",
+      "units": 5,
+      "price": 338.12
+    },
+    {
+      "id": "trade-2",
+      "type": "SELL",
+      "date": "2026-08-27",
+      "amount": 1157.55,
+      "account": "Roth IRA",
+      "accountId": "schwab",
+      "ticker": "AAPL",
+      "units": 5,
+      "price": 231.51,
+      "realizedCostBasis": 850,
+      "estimatedRealizedGain": 307.55,
+      "estimatedRealizedGainPct": 36.1824,
+      "realizedGainMethod": "estimated-fifo"
     }
   ],
   "spending": {
@@ -175,30 +247,60 @@
       { "name": "Other", "value": 1051.56, "percent": 15.37, "color": "#d5d1c8" }
     ]
   },
+  "lastChange": {
+    "observedAt": "2026-08-31T21:42:00Z",
+    "previousUpdatedAt": "2026-08-30T21:42:00Z",
+    "previousNetWorth": 284936.19,
+    "netWorthChange": 1485.59,
+    "accountChanges": [
+      { "accountId": "fidelity", "name": "Individual brokerage", "change": 1294.22 },
+      { "accountId": "amex", "name": "Platinum Card", "change": -428.16 }
+    ],
+    "newTransactionIds": ["tx-1"]
+  },
+  "accountMovements": [
+    {
+      "id": "2026-08-31T21:42:00Z:fidelity",
+      "observedAt": "2026-08-31T21:42:00Z",
+      "accountId": "fidelity",
+      "name": "Individual brokerage",
+      "change": 1294.22
+    },
+    {
+      "id": "2026-08-31T21:42:00Z:amex",
+      "observedAt": "2026-08-31T21:42:00Z",
+      "accountId": "amex",
+      "name": "Platinum Card",
+      "change": -428.16
+    }
+  ],
   "transactions": [
     {
       "id": "tx-1",
       "merchant": "United Airlines",
       "logoName": "United Airlines",
+      "accountId": "amex",
       "category": "Travel",
       "date": "Aug 31",
       "amount": -428.16,
-      "account": "Amex Gold",
+      "account": "Platinum Card",
       "pending": true
     },
     {
       "id": "tx-2",
       "merchant": "Whole Foods Market",
       "logoName": "Whole Foods Market",
+      "accountId": "amex",
       "category": "Groceries",
       "date": "Aug 30",
       "amount": -86.42,
-      "account": "Amex Gold",
+      "account": "Platinum Card",
       "pending": false
     },
     {
       "id": "tx-3",
       "merchant": "Salary",
+      "accountId": "chase",
       "category": "Income",
       "date": "Aug 29",
       "amount": 4821.75,
@@ -209,36 +311,40 @@
       "id": "tx-4",
       "merchant": "Uber",
       "logoName": "Uber",
+      "accountId": "amex",
       "category": "Transport",
       "date": "Aug 28",
       "amount": -31.88,
-      "account": "Amex Gold",
+      "account": "Platinum Card",
       "pending": false
     },
     {
       "id": "tx-5",
       "merchant": "Blue Bottle Coffee",
       "logoName": "Blue Bottle Coffee",
+      "accountId": "amex",
       "category": "Dining",
       "date": "Aug 28",
       "amount": -12.75,
-      "account": "Amex Gold",
+      "account": "Platinum Card",
       "pending": false
     },
     {
       "id": "tx-6",
       "merchant": "Apple",
       "logoName": "Apple",
+      "accountId": "amex",
       "category": "Shopping",
       "date": "Aug 27",
       "amount": -129.0,
-      "account": "Amex Gold",
+      "account": "Platinum Card",
       "pending": false
     },
     {
       "id": "tx-7",
       "merchant": "PG&E",
       "logoName": "PG&E",
+      "accountId": "chase",
       "category": "Utilities",
       "date": "Aug 26",
       "amount": -118.42,
@@ -249,35 +355,39 @@
       "id": "tx-8",
       "merchant": "Airbnb",
       "logoName": "Airbnb",
+      "accountId": "amex",
       "category": "Travel",
       "date": "Aug 24",
       "amount": -642.2,
-      "account": "Amex Gold",
+      "account": "Platinum Card",
       "pending": false
     },
     {
       "id": "tx-9",
       "merchant": "Trader Joe's",
       "logoName": "Trader Joe's",
+      "accountId": "amex",
       "category": "Groceries",
       "date": "Aug 23",
       "amount": -63.17,
-      "account": "Amex Gold",
+      "account": "Platinum Card",
       "pending": false
     },
     {
       "id": "tx-10",
       "merchant": "Spotify",
       "logoName": "Spotify",
+      "accountId": "amex",
       "category": "Entertainment",
       "date": "Aug 22",
       "amount": -11.99,
-      "account": "Amex Gold",
+      "account": "Platinum Card",
       "pending": false
     },
     {
       "id": "tx-11",
       "merchant": "Dividend · VTI",
+      "accountId": "fidelity",
       "category": "Income",
       "date": "Aug 21",
       "amount": 94.16,
@@ -288,48 +398,12 @@
       "id": "tx-12",
       "merchant": "Sweetgreen",
       "logoName": "Sweetgreen",
+      "accountId": "amex",
       "category": "Dining",
       "date": "Aug 20",
       "amount": -24.65,
-      "account": "Amex Gold",
+      "account": "Platinum Card",
       "pending": false
-    }
-  ],
-  "providers": [
-    {
-      "id": "plaid",
-      "name": "Plaid",
-      "description": "Banking and credit cards",
-      "status": "ready",
-      "lastSync": "12 minutes ago"
-    },
-    {
-      "id": "plaid-investments",
-      "name": "Plaid Investments",
-      "description": "Brokerage and stock plan accounts",
-      "status": "error",
-      "lastSync": "Not connected"
-    },
-    {
-      "id": "snaptrade",
-      "name": "SnapTrade",
-      "description": "Brokerage accounts",
-      "status": "ready",
-      "lastSync": "28 minutes ago"
-    },
-    {
-      "id": "alpaca",
-      "name": "Alpaca",
-      "description": "Market quotes",
-      "status": "ready",
-      "lastSync": "2 minutes ago"
-    },
-    {
-      "id": "logos",
-      "name": "Logo.dev",
-      "description": "Company and merchant logos",
-      "status": "ready",
-      "lastSync": "On demand"
     }
   ]
 }

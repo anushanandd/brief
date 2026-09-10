@@ -1,163 +1,144 @@
 mod authentication;
+mod database;
+mod financial_engine;
+mod foundation_model;
 mod providers;
+mod storage;
 
-use std::{collections::BTreeMap, fs, path::PathBuf, sync::Mutex};
+use std::{collections::BTreeMap, sync::Mutex};
 
+use chrono::{DateTime, Duration, Utc};
 use providers::{
-    IntegrationStatus, LinkSession, LinkStatus, MarketSnapshot, PlaidCache, ProviderSync, Providers,
+    IntegrationStatus, LinkSession, LinkStatus, MarketNewsArticle, PlaidData, ProviderSync,
+    Providers,
 };
-use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
-use tauri::{Manager, State};
+use storage::{Annotation, Storage};
+use tauri::{AppHandle, Manager, State};
 
 #[cfg(target_os = "macos")]
 use tauri::{
     menu::{Menu, MenuItem, Submenu},
-    AppHandle, Emitter, Runtime,
+    Emitter, Runtime,
 };
 
-const EMPTY_SNAPSHOT: &str = include_str!("../../src/data/empty.json");
+const HISTORY_CACHE_HOURS: i64 = 12;
 
-struct Storage {
-    snapshot: PathBuf,
-    plaid_cache: PathBuf,
-}
-
-impl Storage {
-    fn new(data_dir: PathBuf) -> Result<Self, String> {
-        fs::create_dir_all(&data_dir).map_err(|error| error.to_string())?;
-        let storage = Self {
-            snapshot: data_dir.join("finance-snapshot.json"),
-            plaid_cache: data_dir.join("plaid-cache.json"),
-        };
-        if !storage.snapshot.exists() {
-            let empty =
-                serde_json::from_str::<Value>(EMPTY_SNAPSHOT).map_err(|error| error.to_string())?;
-            storage.write(&storage.snapshot, &empty)?;
-        }
-        Ok(storage)
-    }
-
-    fn read<T: DeserializeOwned>(&self, path: &PathBuf) -> Result<T, String> {
-        serde_json::from_slice(&fs::read(path).map_err(|error| error.to_string())?)
-            .map_err(|error| error.to_string())
-    }
-
-    fn read_or_default<T: Default + DeserializeOwned>(&self, path: &PathBuf) -> Result<T, String> {
-        if path.exists() {
-            self.read(path)
-        } else {
-            Ok(T::default())
-        }
-    }
-
-    fn write<T: Serialize>(&self, path: &PathBuf, value: &T) -> Result<(), String> {
-        let temporary = path.with_extension("tmp");
-        fs::write(
-            &temporary,
-            serde_json::to_vec(value).map_err(|error| error.to_string())?,
-        )
-        .map_err(|error| error.to_string())?;
-        fs::rename(temporary, path).map_err(|error| error.to_string())
-    }
+fn history_cache_is_fresh(refreshed_at: Option<&str>, now: DateTime<Utc>) -> bool {
+    refreshed_at
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .map(|value| now.signed_duration_since(value.with_timezone(&Utc)))
+        .is_some_and(|age| age >= Duration::zero() && age < Duration::hours(HISTORY_CACHE_HOURS))
 }
 
 struct AppState {
     storage: Mutex<Storage>,
     providers: Providers,
+    refresh: tokio::sync::Mutex<()>,
 }
 
-#[derive(Default)]
-struct TransactionBrand {
-    logo_url: Option<String>,
-    website: Option<String>,
-    logo_name: Option<String>,
-}
-
-fn optional_string(value: Option<&Value>) -> Option<String> {
-    value.and_then(Value::as_str).and_then(|value| {
-        let trimmed = value.trim();
-        (!trimmed.is_empty()).then(|| trimmed.to_string())
-    })
-}
-
-fn transaction_brand(transaction: &Value) -> TransactionBrand {
-    let counterparty = transaction
-        .get("counterparties")
-        .and_then(Value::as_array)
-        .and_then(|counterparties| {
-            counterparties.iter().find(|counterparty| {
-                counterparty.get("type").and_then(Value::as_str) == Some("merchant")
-            })
-        });
-    TransactionBrand {
-        logo_url: optional_string(transaction.get("logo_url"))
-            .or_else(|| optional_string(counterparty.and_then(|value| value.get("logo_url")))),
-        website: optional_string(transaction.get("website"))
-            .or_else(|| optional_string(counterparty.and_then(|value| value.get("website")))),
-        logo_name: optional_string(transaction.get("merchant_name"))
-            .or_else(|| optional_string(counterparty.and_then(|value| value.get("name")))),
-    }
-}
-
-fn enrich_snapshot_transaction_logos(snapshot: &mut Value, cache: &PlaidCache) -> bool {
-    let brands: BTreeMap<String, TransactionBrand> = cache
-        .transactions()
-        .filter_map(|transaction| {
-            optional_string(transaction.get("transaction_id"))
-                .map(|id| (id, transaction_brand(transaction)))
-        })
-        .collect();
-    let Some(transactions) = snapshot
-        .get_mut("transactions")
-        .and_then(Value::as_array_mut)
-    else {
-        return false;
-    };
-    let mut changed = false;
-    for transaction in transactions {
-        let Some(id) = optional_string(transaction.get("id")) else {
-            continue;
-        };
-        let Some(brand) = brands.get(&id) else {
-            continue;
-        };
-        let Some(object) = transaction.as_object_mut() else {
-            continue;
-        };
-        for (key, value) in [
-            ("logoUrl", brand.logo_url.as_ref()),
-            ("website", brand.website.as_ref()),
-            ("logoName", brand.logo_name.as_ref()),
-        ] {
-            if !object.contains_key(key) {
-                if let Some(value) = value {
-                    object.insert(key.into(), Value::String(value.clone()));
-                    changed = true;
-                }
-            }
+fn update_or_warn<T>(
+    cached: &mut Option<T>,
+    result: Result<T, String>,
+    provider: &str,
+    warnings: &mut Vec<String>,
+) -> bool {
+    match result {
+        Ok(value) => {
+            *cached = Some(value);
+            true
+        }
+        Err(error) => {
+            warnings.push(format!("{provider}: {error}"));
+            false
         }
     }
-    changed
 }
 
 #[tauri::command]
 fn get_finance_snapshot(state: State<'_, AppState>) -> Result<Value, String> {
-    let storage = state
+    let mut storage = state
         .storage
         .lock()
         .map_err(|_| "The local data store is unavailable".to_string())?;
-    let mut snapshot = storage.read(&storage.snapshot)?;
-    let cache = storage.read_or_default(&storage.plaid_cache)?;
-    if enrich_snapshot_transaction_logos(&mut snapshot, &cache) {
-        storage.write(&storage.snapshot, &snapshot)?;
+    if storage.upgrade_projection().is_err() {
+        let mut snapshot = storage.snapshot()?;
+        let warnings = snapshot["syncWarnings"].as_array_mut();
+        if let Some(warnings) = warnings {
+            warnings.push("Cached calculations need a refresh to update.".into());
+        } else {
+            snapshot["syncWarnings"] =
+                serde_json::json!(["Cached calculations need a refresh to update."]);
+        }
+        return Ok(snapshot);
     }
-    Ok(snapshot)
+    storage.snapshot()
+}
+
+#[tauri::command]
+fn get_sync_runs(state: State<'_, AppState>) -> Result<Vec<database::SyncRun>, String> {
+    state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable".to_string())?
+        .sync_runs()
+}
+
+#[tauri::command]
+async fn recover_finance_state(restore: bool, state: State<'_, AppState>) -> Result<Value, String> {
+    let _refresh = state.refresh.lock().await;
+    state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .recover(restore)
+}
+
+#[tauri::command]
+fn transaction_annotations(
+    changes: BTreeMap<String, Annotation>,
+    importing: bool,
+    state: State<'_, AppState>,
+) -> Result<BTreeMap<String, Annotation>, String> {
+    state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .save_annotations(changes, importing)
 }
 
 #[tauri::command]
 fn get_integration_status(state: State<'_, AppState>) -> Result<IntegrationStatus, String> {
     state.providers.integration_status()
+}
+
+#[tauri::command]
+fn get_provider_connections(
+    state: State<'_, AppState>,
+) -> Result<Vec<providers::ProviderConnection>, String> {
+    let cache = state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .data
+        .plaid_cache
+        .clone();
+    state.providers.connections(&cache)
+}
+
+#[tauri::command]
+async fn forget_provider_connection(
+    item_id: String,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let _refresh = state.refresh.lock().await;
+    state.providers.forget_connection(&item_id)?;
+    state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .cancel_pending_refresh();
+    Ok(())
 }
 
 #[tauri::command]
@@ -168,6 +149,10 @@ async fn save_integration_credentials(
     consumer_key: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<IntegrationStatus, String> {
+    let _refresh = state
+        .refresh
+        .try_lock()
+        .map_err(|_| "Wait for the current account refresh before changing credentials")?;
     let status = state.providers.integration_status()?;
     let requires_authentication = match provider.as_str() {
         "plaid" => status.plaid,
@@ -189,6 +174,11 @@ async fn save_integration_credentials(
         }
         return Err(error);
     }
+    state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .cancel_pending_refresh();
     state.providers.integration_status()
 }
 
@@ -201,11 +191,25 @@ async fn authenticate_sensitive_action(state: State<'_, AppState>) -> Result<(),
 }
 
 #[tauri::command]
+fn get_foundation_model_status() -> foundation_model::FoundationModelStatus {
+    foundation_model::status()
+}
+
+#[tauri::command]
+async fn generate_foundation_explanation(evidence: String) -> Result<String, String> {
+    foundation_model::generate(evidence).await
+}
+
+#[tauri::command]
 async fn begin_provider_link(
     provider: String,
+    item_id: Option<String>,
     state: State<'_, AppState>,
 ) -> Result<LinkSession, String> {
-    state.providers.begin_link(&provider).await
+    state
+        .providers
+        .begin_link(&provider, item_id.as_deref())
+        .await
 }
 
 #[tauri::command]
@@ -218,80 +222,356 @@ async fn poll_provider_link(
 }
 
 #[tauri::command]
-async fn get_market_snapshots(
-    symbols: Vec<String>,
-    state: State<'_, AppState>,
-) -> Result<BTreeMap<String, MarketSnapshot>, String> {
-    state.providers.market_snapshots(symbols).await
+fn cancel_provider_link(session_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    state.providers.finish_link(&session_id)
 }
 
 #[tauri::command]
-async fn refresh_provider_data(state: State<'_, AppState>) -> Result<ProviderSync, String> {
-    state.providers.lock_credentials()?;
+async fn get_market_snapshots(
+    symbols: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let market = state.providers.market_snapshots(symbols).await?;
+    let snapshot = state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .snapshot()?;
+    let projection = financial_engine::apply_market_snapshots(&snapshot, &market.snapshots)?;
+    let mut response = serde_json::to_value(market).map_err(|error| error.to_string())?;
+    response["financeSnapshot"] = projection;
+    Ok(response)
+}
+
+#[tauri::command]
+async fn get_market_news(
+    symbol: String,
+    state: State<'_, AppState>,
+) -> Result<Vec<MarketNewsArticle>, String> {
+    state.providers.market_news(symbol).await
+}
+
+#[tauri::command]
+async fn refresh_finance_snapshot(state: State<'_, AppState>) -> Result<Value, String> {
+    let _refresh = state
+        .refresh
+        .try_lock()
+        .map_err(|_| "A refresh is already running")?;
+    let run_id = uuid::Uuid::new_v4().to_string();
+    let started_at = Utc::now().to_rfc3339();
+    let sync =
+        match tokio::time::timeout(std::time::Duration::from_secs(120), prepare_refresh(&state))
+            .await
+        {
+            Ok(Ok(sync)) => sync,
+            result => {
+                let error_code = if result.is_err() {
+                    "refresh_timeout"
+                } else {
+                    "provider_refresh_failed"
+                };
+                if let Ok(mut storage) = state.storage.lock() {
+                    storage.record_failed_sync(&run_id, &started_at, error_code);
+                }
+                return match result {
+                    Err(_) => Err("Account refresh timed out; your saved data is unchanged".into()),
+                    Ok(Err(error)) => Err(error),
+                    Ok(Ok(_)) => unreachable!(),
+                };
+            }
+        };
+    let account_links = state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .data
+        .account_links
+        .clone();
+    let snapshot = match financial_engine::project(&sync, &account_links, Utc::now()) {
+        Ok(snapshot) => snapshot,
+        Err(error) => {
+            if let Ok(mut storage) = state.storage.lock() {
+                storage.fail_pending(&sync.sync_id, "projection_failed");
+            }
+            return Err(error);
+        }
+    };
+    state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable".to_string())?
+        .commit(&sync.sync_id, snapshot)
+}
+
+#[tauri::command]
+fn save_account_link(
+    plaid_account_id: String,
+    snaptrade_account_id: Option<String>,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .save_account_link(plaid_account_id, snaptrade_account_id)
+}
+
+async fn prepare_refresh(state: &AppState) -> Result<ProviderSync, String> {
+    state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .ensure_writable()?;
     state.providers.unlock_credentials()?;
 
-    let (mut plaid_cache, history, history_estimated, previous_benchmark) = {
+    let (
+        plaid_cache,
+        mut provider_data,
+        previous_benchmark,
+        had_plaid,
+        had_snaptrade,
+        revision,
+        previous_snapshot,
+        market_cache_compatible,
+    ) = {
         let storage = state
             .storage
             .lock()
             .map_err(|_| "The local data store is unavailable".to_string())?;
-        let snapshot: Value = storage.read(&storage.snapshot)?;
+        let snapshot = &storage.data.snapshot;
+        let benchmark_compatible = snapshot
+            .pointer("/provenance/benchmark/provider")
+            .and_then(Value::as_str)
+            == Some("Alpaca")
+            && snapshot
+                .pointer("/provenance/benchmark/adjustment")
+                .and_then(Value::as_str)
+                == Some("all");
+        let security_history_compatible = storage
+            .data
+            .provider_data
+            .security_history_adjustment
+            .as_deref()
+            == Some("split");
         (
-            storage.read_or_default(&storage.plaid_cache)?,
+            storage.data.plaid_cache.clone(),
+            storage.data.provider_data.clone(),
+            if benchmark_compatible {
+                snapshot
+                    .get("benchmarkHistory")
+                    .cloned()
+                    .unwrap_or_else(|| Value::Array(Vec::new()))
+            } else {
+                Value::Array(Vec::new())
+            },
             snapshot
-                .get("netWorthHistory")
-                .cloned()
-                .unwrap_or_else(|| Value::Array(Vec::new())),
+                .get("accounts")
+                .and_then(Value::as_array)
+                .is_some_and(|accounts| {
+                    accounts.iter().any(|account| {
+                        account
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .is_some_and(|id| id.starts_with("plaid:"))
+                    })
+                }),
             snapshot
-                .get("netWorthHistoryEstimated")
-                .and_then(Value::as_bool)
-                .unwrap_or(false),
-            snapshot
-                .get("benchmarkHistory")
-                .cloned()
-                .unwrap_or_else(|| Value::Array(Vec::new())),
+                .get("accounts")
+                .and_then(Value::as_array)
+                .is_some_and(|accounts| {
+                    accounts.iter().any(|account| {
+                        account
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .is_some_and(|id| id.starts_with("snaptrade:"))
+                    })
+                }),
+            storage.data.revision,
+            snapshot.clone(),
+            benchmark_compatible && security_history_compatible,
         )
     };
 
-    let benchmark_sync = tokio::time::timeout(
-        std::time::Duration::from_secs(12),
-        state.providers.sync_sp500(),
+    let now = Utc::now();
+    let refresh_snaptrade_history =
+        !history_cache_is_fresh(provider_data.snaptrade_history_refreshed_at.as_deref(), now);
+    let backfill_snaptrade_activity = !history_cache_is_fresh(
+        provider_data.snaptrade_activity_backfilled_at.as_deref(),
+        now,
     );
+    if provider_data.security_history_adjustment.as_deref() != Some("split") {
+        provider_data.security_history.clear();
+        provider_data.security_history_adjustment = None;
+        provider_data.market_history_refreshed_at = None;
+    }
+    let refresh_market_history = !market_cache_compatible
+        || !history_cache_is_fresh(provider_data.market_history_refreshed_at.as_deref(), now);
+    let mut next_plaid_cache = plaid_cache.clone();
+    let benchmark_sync = async {
+        if refresh_market_history {
+            Some(
+                tokio::time::timeout(
+                    std::time::Duration::from_secs(12),
+                    state.providers.sync_benchmark(),
+                )
+                .await,
+            )
+        } else {
+            None
+        }
+    };
     let (plaid, snaptrade, benchmark) = tokio::join!(
-        state.providers.sync_plaid(&mut plaid_cache),
-        state.providers.sync_snaptrade(),
+        state
+            .providers
+            .sync_plaid(&mut next_plaid_cache, provider_data.plaid.as_ref()),
+        state.providers.sync_snaptrade(
+            provider_data.snaptrade.as_ref(),
+            refresh_snaptrade_history,
+            backfill_snaptrade_activity
+        ),
         benchmark_sync,
     );
-    let plaid = plaid?;
-    let snaptrade = snaptrade?;
+    let mut warnings = Vec::new();
+    for (name, error) in [
+        ("plaid", plaid.as_ref().err()),
+        ("snaptrade", snaptrade.as_ref().err()),
+    ] {
+        let status = provider_data.sync_status.entry(name.into()).or_default();
+        status.error = error.cloned();
+        if error.is_none() {
+            status.updated_at = Some(now.to_rfc3339());
+        }
+    }
+    let plaid_updated = update_or_warn(&mut provider_data.plaid, plaid, "Plaid", &mut warnings);
+    if !plaid_updated {
+        next_plaid_cache = plaid_cache;
+    }
+    let mut refreshed_account_ids = if plaid_updated {
+        provider_data
+            .plaid
+            .as_ref()
+            .map(|data| data.refreshed_account_ids.clone())
+            .unwrap_or_default()
+    } else {
+        Vec::new()
+    };
+    let plaid_complete = plaid_updated
+        && provider_data
+            .plaid
+            .as_ref()
+            .is_none_or(|data| data.warnings.is_empty());
+    if let Some(data) = &provider_data.plaid {
+        warnings.extend(data.warnings.clone());
+        if !data.warnings.is_empty() {
+            provider_data
+                .sync_status
+                .entry("plaid".into())
+                .or_default()
+                .error = Some(data.warnings.join(" · "));
+        }
+    }
+    let snaptrade_updated = update_or_warn(
+        &mut provider_data.snaptrade,
+        snaptrade,
+        "SnapTrade",
+        &mut warnings,
+    );
+    if let Some(data) = &provider_data.snaptrade {
+        warnings.extend(data.warnings.clone());
+        if snaptrade_updated {
+            refreshed_account_ids.extend(
+                data.accounts
+                    .iter()
+                    .filter_map(|account| account.get("id").and_then(Value::as_str))
+                    .map(|id| format!("snaptrade:{id}")),
+            );
+        }
+    }
+    if refresh_snaptrade_history
+        && snaptrade_updated
+        && provider_data
+            .snaptrade
+            .as_ref()
+            .is_some_and(|data| data.history_complete)
+    {
+        provider_data.snaptrade_history_refreshed_at = Some(now.to_rfc3339());
+    }
+    if backfill_snaptrade_activity
+        && snaptrade_updated
+        && provider_data
+            .snaptrade
+            .as_ref()
+            .is_some_and(|data| data.activity_complete)
+    {
+        provider_data.snaptrade_activity_backfilled_at = Some(now.to_rfc3339());
+    }
+    if (!plaid_updated && provider_data.plaid.is_none() && had_plaid)
+        || (!snaptrade_updated && provider_data.snaptrade.is_none() && had_snaptrade)
+    {
+        return Err(format!(
+            "Could not refresh safely without a provider cache: {}",
+            warnings.join(" · ")
+        ));
+    }
+    let mut benchmark_refreshed = false;
+    if let Some(result) = &benchmark {
+        match result {
+            Ok(Err(error)) => warnings.push(format!("Benchmark history: {error}")),
+            Err(_) => warnings.push("Benchmark history: request timed out".into()),
+            _ => {}
+        }
+    }
     let benchmark = benchmark
-        .ok()
+        .and_then(Result::ok)
         .and_then(Result::ok)
         .filter(|history| history.as_array().is_some_and(|points| !points.is_empty()))
+        .inspect(|_| benchmark_refreshed = true)
         .unwrap_or(previous_benchmark);
+    let mut security_history_refreshed = false;
+    if refresh_market_history {
+        let empty_plaid = PlaidData::default();
+        match tokio::time::timeout(
+            std::time::Duration::from_secs(12),
+            state
+                .providers
+                .sync_security_history(provider_data.plaid.as_ref().unwrap_or(&empty_plaid)),
+        )
+        .await
+        {
+            Ok(Ok(history)) => {
+                provider_data.security_history = history;
+                provider_data.security_history_adjustment = Some("split".into());
+                security_history_refreshed = true;
+            }
+            Ok(Err(error)) => warnings.push(format!("Market history: {error}")),
+            Err(_) => warnings.push("Market history: request timed out".into()),
+        }
+    }
+    if benchmark_refreshed && security_history_refreshed {
+        provider_data.market_history_refreshed_at = Some(now.to_rfc3339());
+    }
 
-    let storage = state
+    let mut storage = state
         .storage
         .lock()
         .map_err(|_| "The local data store is unavailable".to_string())?;
-    storage.write(&storage.plaid_cache, &plaid_cache)?;
+    let sync_id = storage.stage(
+        revision,
+        next_plaid_cache,
+        provider_data.clone(),
+        warnings.clone(),
+    )?;
 
     Ok(ProviderSync {
-        plaid,
-        snaptrade,
-        net_worth_history: history,
-        net_worth_history_estimated: history_estimated,
+        sync_id,
+        balances_fresh: plaid_complete && snaptrade_updated,
+        refreshed_account_ids,
+        previous_snapshot,
+        plaid: provider_data.plaid.unwrap_or_default(),
+        snaptrade: provider_data.snaptrade.unwrap_or_default(),
         benchmark_history: benchmark,
+        security_history: provider_data.security_history,
     })
-}
-
-#[tauri::command]
-fn save_finance_snapshot(snapshot: Value, state: State<'_, AppState>) -> Result<(), String> {
-    let storage = state
-        .storage
-        .lock()
-        .map_err(|_| "The local data store is unavailable".to_string())?;
-    storage.write(&storage.snapshot, &snapshot)
 }
 
 #[cfg(target_os = "macos")]
@@ -329,42 +609,46 @@ fn shortcut_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
         }
     }
 
-    let previous = MenuItem::with_id(
+    let previous = MenuItem::with_id(app, "graph-previous", "Previous Graph", true, None::<&str>)?;
+    let next = MenuItem::with_id(app, "graph-next", "Next Graph", true, None::<&str>)?;
+    let previous_window = MenuItem::with_id(
         app,
-        "graph-previous",
-        "Previous Graph",
+        "graph-window-previous",
+        "Previous Date View",
         true,
-        Some("CmdOrCtrl+ArrowLeft"),
+        Some("Cmd+Ctrl+ArrowLeft"),
     )?;
-    let next = MenuItem::with_id(
+    let next_window = MenuItem::with_id(
         app,
-        "graph-next",
-        "Next Graph",
+        "graph-window-next",
+        "Next Date View",
         true,
-        Some("CmdOrCtrl+ArrowRight"),
+        Some("Cmd+Ctrl+ArrowRight"),
     )?;
-    let week = MenuItem::with_id(app, "graph-week", "1 Week", true, Some("CmdOrCtrl+W"))?;
-    let month = MenuItem::with_id(app, "graph-month", "1 Month", true, Some("CmdOrCtrl+M"))?;
-    let three_months = MenuItem::with_id(
-        app,
-        "graph-three-months",
-        "3 Months",
-        true,
-        Some("CmdOrCtrl+3"),
-    )?;
-    let all = MenuItem::with_id(app, "graph-all", "All Time", true, Some("CmdOrCtrl+A"))?;
+    let week = MenuItem::with_id(app, "graph-week", "1 Week", true, None::<&str>)?;
+    let month = MenuItem::with_id(app, "graph-month", "1 Month", true, None::<&str>)?;
+    let quarter = MenuItem::with_id(app, "graph-quarter", "3 Months", true, None::<&str>)?;
+    let all = MenuItem::with_id(app, "graph-all", "All Time", true, None::<&str>)?;
     let graph = Submenu::with_items(
         app,
         "Graph",
         true,
-        &[&previous, &next, &week, &month, &three_months, &all],
+        &[
+            &previous,
+            &next,
+            &previous_window,
+            &next_window,
+            &week,
+            &month,
+            &quarter,
+            &all,
+        ],
     )?;
     menu.append(&graph)?;
 
     Ok(menu)
 }
 
-#[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
 
@@ -384,19 +668,29 @@ pub fn run() {
                 storage: Mutex::new(Storage::new(app.path().app_data_dir()?)?),
                 providers: Providers::new()
                     .map_err(|error| format!("failed to initialize providers: {error}"))?,
+                refresh: tokio::sync::Mutex::new(()),
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             get_finance_snapshot,
+            get_sync_runs,
+            recover_finance_state,
+            transaction_annotations,
             get_integration_status,
+            get_provider_connections,
+            forget_provider_connection,
+            get_foundation_model_status,
+            generate_foundation_explanation,
             authenticate_sensitive_action,
             save_integration_credentials,
             begin_provider_link,
             poll_provider_link,
+            cancel_provider_link,
             get_market_snapshots,
-            refresh_provider_data,
-            save_finance_snapshot
+            get_market_news,
+            refresh_finance_snapshot,
+            save_account_link
         ])
         .run(tauri::generate_context!())
         .expect("error while running Brief");
@@ -407,46 +701,42 @@ mod tests {
     use super::*;
 
     #[test]
-    fn persists_snapshot_and_provider_cache() {
-        let directory = std::env::temp_dir().join(format!("brief-test-{}", uuid::Uuid::new_v4()));
-        let storage = Storage::new(directory.clone()).expect("storage");
-        let snapshot: Value = storage.read(&storage.snapshot).expect("snapshot");
-        assert!(snapshot["holdings"].as_array().is_some_and(Vec::is_empty));
-        storage
-            .write(&storage.plaid_cache, &PlaidCache::default())
-            .expect("cache write");
-        storage
-            .read::<PlaidCache>(&storage.plaid_cache)
-            .expect("cache read");
-        fs::remove_dir_all(directory).expect("test cleanup");
-    }
-
-    #[test]
-    fn backfills_transaction_branding_from_the_plaid_cache() {
-        let cache: PlaidCache = serde_json::from_value(serde_json::json!({
-            "items": { "item-1": { "cursor": null, "transactions": [{
-                "transaction_id": "transaction-1",
-                "merchant_name": "Coffee Shop",
-                "logo_url": "https://plaid-merchant-logos.plaid.com/coffee.png",
-                "website": "coffee.example"
-            }]}}
-        }))
-        .expect("Plaid cache");
-        let mut snapshot = serde_json::json!({
-            "transactions": [{ "id": "transaction-1", "merchant": "COFFEE SHOP 123" }]
-        });
-
-        assert!(enrich_snapshot_transaction_logos(&mut snapshot, &cache));
-        assert_eq!(snapshot["transactions"][0]["logoName"], "Coffee Shop");
-        assert!(!enrich_snapshot_transaction_logos(&mut snapshot, &cache));
-    }
-
-    #[test]
     fn credential_edit_authorization_is_single_use() {
         let providers = Providers::new().expect("provider state");
         assert!(!providers.take_credential_edit_authorization().unwrap());
         providers.authorize_credential_edit().unwrap();
         assert!(providers.take_credential_edit_authorization().unwrap());
         assert!(!providers.take_credential_edit_authorization().unwrap());
+    }
+
+    #[test]
+    fn provider_failures_keep_last_good_data_and_add_a_warning() {
+        let mut cached = Some(vec!["saved"]);
+        let mut warnings = Vec::new();
+
+        assert!(!update_or_warn(
+            &mut cached,
+            Err("offline".into()),
+            "Plaid",
+            &mut warnings,
+        ));
+        assert_eq!(cached, Some(vec!["saved"]));
+        assert_eq!(warnings, vec!["Plaid: offline"]);
+
+        assert!(update_or_warn(
+            &mut cached,
+            Ok(vec!["fresh"]),
+            "Plaid",
+            &mut warnings,
+        ));
+        assert_eq!(cached, Some(vec!["fresh"]));
+    }
+
+    #[test]
+    fn historical_data_expires_after_twelve_hours() {
+        let now = "2026-09-04T16:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        assert!(history_cache_is_fresh(Some("2026-09-04T05:00:01Z"), now));
+        assert!(!history_cache_is_fresh(Some("2026-09-04T04:00:00Z"), now));
+        assert!(!history_cache_is_fresh(Some("invalid"), now));
     }
 }
