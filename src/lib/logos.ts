@@ -35,6 +35,10 @@ function markPaletteEntry(label: string) {
   return markPalette[paletteIndex]
 }
 
+export function markColor(label: string): string {
+  return markPaletteEntry(label)[0]
+}
+
 function markUrl(label: string): string {
   const [background, foreground] = markPaletteEntry(label)
   const fontSize = label.length >= 4 ? 20 : label.length === 3 ? 23 : 28
@@ -121,7 +125,7 @@ export function transactionMarkLabel(transaction: Transaction): string {
 }
 
 export function stockMarkColor(ticker: string): string {
-  return markPaletteEntry(stockMarkLabel(ticker))[0]
+  return markColor(stockMarkLabel(ticker))
 }
 
 export function stockLogoUrl(ticker: string, external = false): string {

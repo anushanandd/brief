@@ -5,20 +5,25 @@ import { formatUpdatedAt } from '../lib/format'
 import { RefreshButton } from './data-state'
 import { StatusDot } from './ui'
 
-export function ActivityWorkspaceHeader({ title = 'Activity' }: { title?: string }) {
+type WorkspaceParent = {
+  label: string
+  to: '/accounts' | '/spending'
+}
+
+export function WorkspaceHeader({ title, parent }: { title: string; parent?: WorkspaceParent }) {
   const updatedAt = useFinance().data?.updatedAt
 
   return (
     <header className="page-header workspace-header">
-      <h1 className={title === 'Activity' ? undefined : 'page-route'}>
-        {title === 'Activity' ? (
-          title
-        ) : (
+      <h1 className={parent ? 'page-route' : undefined}>
+        {parent ? (
           <>
-            <Link to="/activities">Activity</Link>
+            <Link to={parent.to}>{parent.label}</Link>
             <span className="page-route-separator">/</span>
             <span aria-current="page">{title}</span>
           </>
+        ) : (
+          title
         )}
       </h1>
       <div className="dashboard-actions">

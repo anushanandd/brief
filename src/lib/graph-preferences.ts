@@ -8,6 +8,10 @@ export const graphWindows = [
   { label: 'All', settingsLabel: 'All time', secs: 0 },
 ]
 
+export function graphWindowForKey(key: string) {
+  return graphWindows[['w', 'm', 'q', 'a'].indexOf(key.toLocaleLowerCase())]?.secs
+}
+
 export function adjacentGraphWindow(current: number, direction: -1 | 1) {
   const index = graphWindows.findIndex(({ secs }) => secs === current)
   return graphWindows[(Math.max(0, index) + direction + graphWindows.length) % graphWindows.length]

@@ -323,6 +323,7 @@ dependencies = [
  "base64 0.22.1",
  "block2",
  "chrono",
+ "futures-util",
  "hmac",
  "keyring",
  "objc2",

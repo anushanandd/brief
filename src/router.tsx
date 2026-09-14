@@ -3,6 +3,7 @@ import {
   createRoute,
   createRouter,
   lazyRouteComponent,
+  redirect,
 } from '@tanstack/react-router'
 
 import { AppShell } from './components/app-shell'
@@ -14,9 +15,12 @@ const dashboardRoute = createRoute({
   path: '/',
   component: lazyRouteComponent(() => import('./pages/dashboard'), 'DashboardPage'),
 })
+const accountSearch = (search: Record<string, unknown>): { account?: string } =>
+  typeof search.account === 'string' && search.account ? { account: search.account } : {}
 const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/accounts',
+  validateSearch: accountSearch,
   component: lazyRouteComponent(() => import('./pages/accounts'), 'AccountsPage'),
 })
 const investmentAccountsRoute = createRoute({
@@ -34,20 +38,47 @@ const accountDetailRoute = createRoute({
   path: '/accounts/$accountId',
   component: lazyRouteComponent(() => import('./pages/account-detail'), 'AccountDetailPage'),
 })
+const ledgerSearch = (
+  search: Record<string, unknown>,
+): { account?: string; category?: string } => ({
+  ...(typeof search.account === 'string' && search.account ? { account: search.account } : {}),
+  ...(typeof search.category === 'string' && search.category ? { category: search.category } : {}),
+})
+const holdingsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/holdings',
+  validateSearch: ledgerSearch,
+  component: lazyRouteComponent(() => import('./pages/holdings'), 'HoldingsPage'),
+})
 const activitiesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/activities',
-  component: lazyRouteComponent(() => import('./pages/spending'), 'ActivitiesPage'),
+  validateSearch: ledgerSearch,
+  component: lazyRouteComponent(() => import('./pages/activities'), 'ActivitiesPage'),
+})
+const spendingRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/spending',
+  component: lazyRouteComponent(() => import('./pages/spending'), 'SpendingPage'),
 })
 const spendingActivityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/activities/spending',
-  component: lazyRouteComponent(() => import('./pages/spending'), 'SpendingActivityPage'),
+  beforeLoad: () => {
+    throw redirect({ to: '/spending' })
+  },
 })
 const subscriptionsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/activities/subscriptions',
+  path: '/spending/subscriptions',
   component: lazyRouteComponent(() => import('./pages/subscriptions'), 'SubscriptionsPage'),
+})
+const legacySubscriptionsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/activities/subscriptions',
+  beforeLoad: () => {
+    throw redirect({ to: '/spending/subscriptions' })
+  },
 })
 const tradesActivityRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -61,13 +92,15 @@ const changesActivityRoute = createRoute({
 })
 const transactionsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/activities/transactions',
+  path: '/spending/transactions',
   component: lazyRouteComponent(() => import('./pages/transactions'), 'TransactionsPage'),
 })
-const platinumBenefitsRoute = createRoute({
+const legacyTransactionsRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: '/activities/benefits',
-  component: lazyRouteComponent(() => import('./pages/platinum-benefits'), 'PlatinumBenefitsPage'),
+  path: '/activities/transactions',
+  beforeLoad: () => {
+    throw redirect({ to: '/spending/transactions' })
+  },
 })
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -86,13 +119,16 @@ const routeTree = rootRoute.addChildren([
   investmentAccountsRoute,
   cashAccountsRoute,
   accountDetailRoute,
+  holdingsRoute,
   activitiesRoute,
+  spendingRoute,
   spendingActivityRoute,
   subscriptionsRoute,
+  legacySubscriptionsRoute,
   tradesActivityRoute,
   changesActivityRoute,
   transactionsRoute,
-  platinumBenefitsRoute,
+  legacyTransactionsRoute,
   settingsRoute,
   logsRoute,
 ])

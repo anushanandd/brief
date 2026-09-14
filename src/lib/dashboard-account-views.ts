@@ -1,8 +1,71 @@
 import { transactionMarkKind } from './logos'
-import type { FinanceSnapshot } from './schema'
+import type { Account, FinanceSnapshot } from './schema'
 import { transactionDateKey } from './spending'
 
 type BrokeragePerformance = FinanceSnapshot['brokeragePerformance'][number]
+type ValuePoint = { date: string; value: number }
+const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
+const WEEK_MS = 7 * 24 * 60 * 60 * 1_000
+
+export function accountWeeklyChangePct(
+  data: Pick<
+    FinanceSnapshot,
+    'accountBalanceHistory' | 'brokeragePerformance' | 'holdings' | 'updatedAt'
+  >,
+  account: Account,
+) {
+  if (account.value == null) return null
+  const targetTime = Date.parse(data.updatedAt) - WEEK_MS
+  if (!Number.isFinite(targetTime)) return null
+  const targetDate = new Date(targetTime).toISOString().slice(0, 10)
+  const history = [...data.accountBalanceHistory, ...data.brokeragePerformance].find(
+    ({ accountId }) => accountId === account.id,
+  )
+  const baseline = history?.points
+    .filter(({ date }) => DATE_PATTERN.test(date) && date <= targetDate)
+    .toSorted((left, right) => left.date.localeCompare(right.date))
+    .at(-1)
+  if (baseline?.value) {
+    return ((account.value - baseline.value) / Math.abs(baseline.value)) * 100
+  }
+
+  if (account.type !== 'brokerage' && account.type !== 'retirement') return null
+  const holdings = data.holdings.filter(
+    ({ accountId, value }) => accountId === account.id && value != null,
+  )
+  if (
+    !holdings.length ||
+    holdings.some(
+      ({ shares, weeklyReferencePrice }) => shares == null || weeklyReferencePrice == null,
+    )
+  ) {
+    return null
+  }
+  const currentHoldings = holdings.reduce((total, { value }) => total + (value ?? 0), 0)
+  const referenceHoldings = holdings.reduce(
+    (total, { shares, weeklyReferencePrice }) =>
+      total + (shares ?? 0) * (weeklyReferencePrice ?? 0),
+    0,
+  )
+  const referenceValue = account.value - currentHoldings + referenceHoldings
+  return referenceValue ? ((account.value - referenceValue) / Math.abs(referenceValue)) * 100 : null
+}
+
+export function chartValueChange(points: ValuePoint[], currentValue: number, currentDate: string) {
+  const latestPoint = points.at(-1)
+  const latestDate = latestPoint?.date ?? ''
+  const hasLiveDelta = Math.abs(currentValue - (latestPoint?.value ?? currentValue)) >= 0.01
+  const priorValue =
+    hasLiveDelta && /^\d{4}-\d{2}-\d{2}$/.test(latestDate) && latestDate < currentDate
+      ? (latestPoint?.value ?? currentValue)
+      : (points.at(-2)?.value ?? latestPoint?.value ?? currentValue)
+  const change = currentValue - priorValue
+  return {
+    change,
+    percent: priorValue ? (change / Math.abs(priorValue)) * 100 : 0,
+    period: /^\d{4}-\d{2}-\d{2}$/.test(latestDate) ? 'today' : 'this period',
+  }
+}
 
 function totalNetWorthPoints(
   data: Pick<FinanceSnapshot, 'netWorthHistory' | 'updatedAt' | 'netWorth'>,

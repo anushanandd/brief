@@ -61,6 +61,30 @@ const allocationSchema = z.object({
   color: z.string(),
 })
 
+const performanceSchema = z.object({
+  accountId: z.string(),
+  name: z.string(),
+  institution: z.string(),
+  currentValue: z.number(),
+  historySource: z
+    .enum(['reported', 'provider-estimated', 'estimated', 'transaction-derived', 'unavailable'])
+    .optional(),
+  historyStart: z.string().nullable().optional(),
+  performanceMethod: z
+    .enum(['value-only', 'value-with-comparisons', 'time-weighted', 'modified-dietz'])
+    .optional(),
+  points: z.array(
+    z.object({
+      date: z.string(),
+      value: z.number(),
+      netDeposits: z.number().nullable(),
+      sp500: z.number().nullable(),
+      marketChange: z.number().nullable().optional(),
+      marketChangePct: z.number().nullable().optional(),
+    }),
+  ),
+})
+
 export const financeSnapshotSchema = z.object({
   calculationVersion: z.number().int().positive().optional(),
   revision: z.number().int().nonnegative().optional(),
@@ -80,33 +104,8 @@ export const financeSnapshotSchema = z.object({
   netWorthHistory: z.array(z.object({ date: z.string(), value: z.number() })),
   netWorthHistoryEstimated: z.boolean().default(false),
   benchmarkHistory: z.array(z.object({ date: z.string(), value: z.number() })).default([]),
-  brokeragePerformance: z
-    .array(
-      z.object({
-        accountId: z.string(),
-        name: z.string(),
-        institution: z.string(),
-        currentValue: z.number(),
-        historySource: z
-          .enum(['reported', 'provider-estimated', 'estimated', 'unavailable'])
-          .optional(),
-        historyStart: z.string().nullable().optional(),
-        performanceMethod: z
-          .enum(['value-only', 'value-with-comparisons', 'time-weighted', 'modified-dietz'])
-          .optional(),
-        points: z.array(
-          z.object({
-            date: z.string(),
-            value: z.number(),
-            netDeposits: z.number().nullable(),
-            sp500: z.number().nullable(),
-            marketChange: z.number().nullable().optional(),
-            marketChangePct: z.number().nullable().optional(),
-          }),
-        ),
-      }),
-    )
-    .default([]),
+  accountBalanceHistory: z.array(performanceSchema).default([]),
+  brokeragePerformance: z.array(performanceSchema).default([]),
   holdings: z.array(holdingSchema),
   trades: z
     .array(

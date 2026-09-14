@@ -111,6 +111,42 @@
       ]
     }
   ],
+  "accountBalanceHistory": [
+    {
+      "accountId": "chase",
+      "name": "Checking",
+      "institution": "Chase",
+      "currentValue": 49229.67,
+      "historySource": "transaction-derived",
+      "historyStart": "2026-08-26",
+      "performanceMethod": "value-only",
+      "points": [
+        { "date": "2026-08-26", "value": 44407.92, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-28", "value": 44407.92, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-29", "value": 49229.67, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-31", "value": 49229.67, "netDeposits": null, "sp500": null }
+      ]
+    },
+    {
+      "accountId": "amex",
+      "name": "Platinum Card",
+      "institution": "American Express",
+      "currentValue": -2418.33,
+      "historySource": "transaction-derived",
+      "historyStart": "2026-08-20",
+      "performanceMethod": "value-only",
+      "points": [
+        { "date": "2026-08-20", "value": -1440.92, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-22", "value": -1452.91, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-23", "value": -1516.08, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-24", "value": -2158.28, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-27", "value": -2287.28, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-28", "value": -2331.91, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-30", "value": -2418.33, "netDeposits": null, "sp500": null },
+        { "date": "2026-08-31", "value": -2418.33, "netDeposits": null, "sp500": null }
+      ]
+    }
+  ],
   "holdings": [
     {
       "ticker": "VTI",

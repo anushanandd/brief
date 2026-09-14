@@ -25,6 +25,11 @@ import {
   saveAccountDisplayNames,
 } from '../lib/account-name-preferences'
 import {
+  accountStartDate,
+  getAccountStartDates,
+  saveAccountStartDates,
+} from '../lib/account-start-date-preferences'
+import {
   authenticateSensitiveAction,
   beginProviderLink,
   cancelProviderLink,
@@ -139,6 +144,7 @@ export function SettingsPage() {
     getChartAccountPreferences,
   )
   const [accountDisplayNames, setAccountDisplayNames] = useState(getAccountDisplayNames)
+  const [accountStartDates, setAccountStartDates] = useState(getAccountStartDates)
   const [externalLogosEnabled, setExternalLogosEnabled] = useState(getExternalLogosEnabled)
   const [spendingAccountId, setSpendingAccountId] = useState(getSpendingAccountId)
   const [hiddenPlatinumBenefitIds, setHiddenPlatinumBenefitIds] = useState(
@@ -297,6 +303,12 @@ export function SettingsPage() {
     setAccountDisplayNames(next)
     saveAccountDisplayNames(next)
   }
+  const updateAccountStartDate = (accountId: string, date: string) => {
+    const next = { ...accountStartDates }
+    if (date) next[accountId] = date
+    else delete next[accountId]
+    setAccountStartDates(saveAccountStartDates(next))
+  }
   const updateChartAccountPreferences = (next: typeof chartAccountPreferences) => {
     saveChartAccountPreferences(next)
     setSavedChartAccountPreferences(next)
@@ -335,11 +347,13 @@ export function SettingsPage() {
       status: !configured ? 'neutral' : health?.error ? 'error' : 'ready',
       lastSync: health?.error
         ? `Using saved data · ${health.error}`
-        : connected
-          ? 'Connected'
-          : configured
-            ? 'Ready to connect'
-            : 'Not configured',
+        : provider.id === 'alpaca' && configured
+          ? 'Configured'
+          : connected
+            ? 'Connected'
+            : configured
+              ? 'Ready to connect'
+              : 'Not configured',
     }
   })
 
@@ -505,6 +519,40 @@ export function SettingsPage() {
             <p className="settings-copy account-name-note">
               Display names stay on this Mac and do not change provider or account data. Clear a
               field to use its provider name.
+            </p>
+          </Card>
+
+          <Card>
+            <SectionHeading
+              title="Account start dates"
+              detail="Inferred from each account’s earliest imported transaction or trade."
+            />
+            <div className="account-name-settings">
+              {renameableAccounts.map((account) => (
+                <label className="account-name-setting" key={account.id}>
+                  <span>
+                    <strong>
+                      {accountDisplayName(account.id, account.name, accountDisplayNames)}
+                    </strong>
+                    <small>
+                      {accountStartDates[account.id] ? 'Custom date' : 'First imported activity'}
+                    </small>
+                  </span>
+                  <input
+                    type="date"
+                    max={data.updatedAt.slice(0, 10)}
+                    value={accountStartDate(data, account.id, accountStartDates) ?? ''}
+                    aria-label={`Start date for ${account.name}`}
+                    onChange={(event) => updateAccountStartDate(account.id, event.target.value)}
+                  />
+                </label>
+              ))}
+              {!renameableAccounts.length ? (
+                <p className="settings-copy">No connected accounts to edit.</p>
+              ) : null}
+            </div>
+            <p className="settings-copy account-name-note">
+              Dates stay on this Mac. Clear a custom date to use the first imported activity again.
             </p>
           </Card>
 
@@ -675,10 +723,10 @@ export function SettingsPage() {
         </section>
 
         <section className="settings-section">
-          <h2 className="settings-section-heading">Activity & benefits</h2>
+          <h2 className="settings-section-heading">Spending & benefits</h2>
 
           <Card>
-            <SectionHeading title="Activities" />
+            <SectionHeading title="Spending account" />
             <label className="settings-field">
               <span>Credit account</span>
               <select
@@ -722,7 +770,7 @@ export function SettingsPage() {
                   </label>
                 ))}
               </div>
-              <small>Choose which credits appear in Activities.</small>
+              <small>Choose which credits appear in Spending.</small>
             </fieldset>
           </Card>
         </section>

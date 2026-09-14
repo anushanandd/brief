@@ -624,6 +624,8 @@ struct Snapshot {
     #[serde(default)]
     brokerage_performance: Vec<Performance>,
     #[serde(default)]
+    account_balance_history: Vec<Performance>,
+    #[serde(default)]
     observed_net_worth_history: Vec<Point>,
     #[serde(default)]
     possible_duplicate_accounts: Vec<PossibleDuplicate>,
@@ -1069,6 +1071,35 @@ fn validate_snapshot(value: &Value) -> Result<(), String> {
             )
     }) {
         return Err("Brokerage performance is invalid or references an unknown account".into());
+    }
+    let balance_history_ids = snapshot
+        .account_balance_history
+        .iter()
+        .map(|history| history.account_id.as_str())
+        .collect::<BTreeSet<_>>();
+    if balance_history_ids.len() != snapshot.account_balance_history.len()
+        || snapshot.account_balance_history.iter().any(|history| {
+            snapshot
+                .accounts
+                .iter()
+                .find(|account| account.id == history.account_id)
+                .is_none_or(|account| !["cash", "credit"].contains(&account.r#type.as_str()))
+                || !history.current_value.is_finite()
+                || history
+                    .history_start
+                    .as_deref()
+                    .is_some_and(|date| !valid_date(date))
+                || !matches!(
+                    history.history_source.as_deref(),
+                    Some("transaction-derived" | "unavailable")
+                )
+                || history.performance_method.as_deref() != Some("value-only")
+                || !valid_performance_points(&history.points, Some("value-only"))
+        })
+    {
+        return Err(
+            "Account balance history is invalid or references an unsupported account".into(),
+        );
     }
     let mut possible_duplicate_pairs = BTreeSet::new();
     if snapshot

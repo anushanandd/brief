@@ -1,11 +1,13 @@
-import { Search, X } from 'lucide-react'
 import { useState } from 'react'
 
 import { PageError, PageLoading } from '../components/data-state'
+import { FilterSelect } from '../components/filter-select'
+import { LedgerToolbar } from '../components/ledger-toolbar'
 import { ActivityDetailHeader } from '../components/spending-detail-header'
 import { TransactionList } from '../components/transaction-list'
-import { Button, Card } from '../components/ui'
+import { Card } from '../components/ui'
 import { useFinance } from '../hooks/use-finance'
+import { useSearchShortcuts } from '../hooks/use-search-shortcuts'
 import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
 import {
   resolveSpendingAccount,
@@ -25,6 +27,7 @@ export function TransactionsPage() {
   const query = useFinance()
   const [search, setSearch] = useState('')
   const [month, setMonth] = useState('')
+  const searchInputRef = useSearchShortcuts(search, setSearch)
   if (query.isLoading) return <PageLoading />
   if (query.isError || !query.data) return <PageError />
 
@@ -59,39 +62,23 @@ export function TransactionsPage() {
     <div className="page spending-detail-page">
       <ActivityDetailHeader title="Transactions" accountName={accountName} />
       <Card className="spending-detail-card">
-        <div className="spending-history-toolbar">
-          <label className="spending-history-search">
-            <Search size={16} aria-hidden="true" />
-            <span className="sr-only">Search transactions</span>
-            <input
-              type="search"
-              value={search}
-              onChange={(event) => setSearch(event.target.value)}
-              placeholder="Search merchant, category or amount"
-            />
-            {search ? (
-              <Button
-                size="icon"
-                variant="ghost"
-                onClick={() => setSearch('')}
-                aria-label="Clear search"
-              >
-                <X size={14} aria-hidden="true" />
-              </Button>
-            ) : null}
-          </label>
-          <label className="spending-history-filter">
-            <span className="sr-only">Transaction month</span>
-            <select value={selectedMonth} onChange={(event) => setMonth(event.target.value)}>
-              <option value="">All months</option>
-              {months.map((value) => (
-                <option key={value} value={value}>
-                  {monthLabel(value)}
-                </option>
-              ))}
-            </select>
-          </label>
-        </div>
+        <LedgerToolbar
+          label="Search transactions"
+          placeholder="Search merchant, category or amount"
+          value={search}
+          onValueChange={setSearch}
+          inputRef={searchInputRef}
+        >
+          <FilterSelect
+            label="Transaction month"
+            value={selectedMonth}
+            options={[
+              { value: '', label: 'All months' },
+              ...months.map((value) => ({ value, label: monthLabel(value) })),
+            ]}
+            onValueChange={setMonth}
+          />
+        </LedgerToolbar>
         <p className="spending-detail-note" role="status">
           {filtered.length} of {transactions.length} transactions · All imported history
         </p>

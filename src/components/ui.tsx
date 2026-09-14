@@ -20,7 +20,27 @@ export function Button({
 }
 
 export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
-  return <section className={`surface-card${className ? ` ${className}` : ''}`} {...props} />
+  return <div className={`surface-card${className ? ` ${className}` : ''}`} {...props} />
+}
+
+export function Metric({
+  label,
+  value,
+  detail,
+  tone,
+}: {
+  label: ReactNode
+  value: ReactNode
+  detail?: ReactNode
+  tone?: 'positive' | 'negative' | 'muted'
+}) {
+  return (
+    <div className="metric">
+      <span>{label}</span>
+      <strong className={tone}>{value}</strong>
+      {detail != null ? <small>{detail}</small> : null}
+    </div>
+  )
 }
 
 export function SectionHeading({

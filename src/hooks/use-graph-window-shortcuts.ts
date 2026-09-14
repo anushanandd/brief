@@ -2,7 +2,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
 
 import { isTauri } from '../lib/api'
-import { adjacentGraphWindow, graphWindows } from '../lib/graph-preferences'
+import { adjacentGraphWindow, graphWindowForKey, graphWindows } from '../lib/graph-preferences'
 
 const shortcutLabels: Record<string, string> = {
   'graph-week': '1W',
@@ -24,6 +24,11 @@ export function graphAccountShortcut(event: ArrowShortcutEvent) {
     return undefined
   }
   return event.key === 'ArrowLeft' ? 'graph-previous' : 'graph-next'
+}
+
+export function graphRangeShortcut(event: ArrowShortcutEvent) {
+  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return undefined
+  return graphWindowForKey(event.key)
 }
 
 export function graphWindowShortcut(event: ArrowShortcutEvent) {
@@ -54,15 +59,17 @@ export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target
       const shortcut = graphWindowShortcut(event)
+      const range = graphRangeShortcut(event)
       if (
-        !shortcut ||
+        (!shortcut && range == null) ||
         (target instanceof HTMLElement &&
           (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))
       ) {
         return
       }
       event.preventDefault()
-      runShortcut(shortcut)
+      if (shortcut) runShortcut(shortcut)
+      else if (range != null) setGraphWindow(range)
     }
 
     let disposed = false

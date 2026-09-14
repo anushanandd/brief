@@ -5,21 +5,21 @@ mod foundation_model;
 mod providers;
 mod storage;
 
-use std::{collections::BTreeMap, sync::Mutex};
+use std::{collections::BTreeMap, sync::Mutex, time::Instant};
 
 use chrono::{DateTime, Duration, Utc};
 use providers::{
-    IntegrationStatus, LinkSession, LinkStatus, MarketNewsArticle, PlaidData, ProviderSync,
-    Providers,
+    IntegrationStatus, LinkSession, LinkStatus, MarketNewsArticle, PlaidData, PlaidRefreshProgress,
+    ProviderSync, Providers,
 };
 use serde_json::Value;
 use storage::{Annotation, Storage};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(target_os = "macos")]
 use tauri::{
     menu::{Menu, MenuItem, Submenu},
-    Emitter, Runtime,
+    Runtime,
 };
 
 const HISTORY_CACHE_HOURS: i64 = 12;
@@ -35,6 +35,60 @@ struct AppState {
     storage: Mutex<Storage>,
     providers: Providers,
     refresh: tokio::sync::Mutex<()>,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinanceRefreshTask {
+    id: String,
+    label: String,
+    status: String,
+    state: &'static str,
+}
+
+#[derive(Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FinanceRefreshProgress {
+    title: &'static str,
+    detail: &'static str,
+    task: Option<FinanceRefreshTask>,
+}
+
+fn report_refresh(app: &AppHandle, title: &'static str, detail: &'static str) {
+    let _ = app.emit(
+        "finance-refresh-progress",
+        FinanceRefreshProgress {
+            title,
+            detail,
+            task: None,
+        },
+    );
+}
+
+fn report_refresh_task(
+    app: &AppHandle,
+    id: impl Into<String>,
+    label: impl Into<String>,
+    status: impl Into<String>,
+    task_state: &'static str,
+) {
+    let _ = app.emit(
+        "finance-refresh-progress",
+        FinanceRefreshProgress {
+            title: "Refreshing financial data…",
+            detail: "Connected sources update independently, so completed checks appear as they finish.",
+            task: Some(FinanceRefreshTask {
+                id: id.into(),
+                label: label.into(),
+                status: status.into(),
+                state: task_state,
+            }),
+        },
+    );
+}
+
+fn timed_status(status: &str, started: Instant) -> String {
+    format!("{status} · {:.1}s", started.elapsed().as_secs_f64())
 }
 
 fn update_or_warn<T>(
@@ -252,34 +306,44 @@ async fn get_market_news(
 }
 
 #[tauri::command]
-async fn refresh_finance_snapshot(state: State<'_, AppState>) -> Result<Value, String> {
+async fn refresh_finance_snapshot(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
     let _refresh = state
         .refresh
         .try_lock()
         .map_err(|_| "A refresh is already running")?;
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
-    let sync =
-        match tokio::time::timeout(std::time::Duration::from_secs(120), prepare_refresh(&state))
-            .await
-        {
-            Ok(Ok(sync)) => sync,
-            result => {
-                let error_code = if result.is_err() {
-                    "refresh_timeout"
-                } else {
-                    "provider_refresh_failed"
-                };
-                if let Ok(mut storage) = state.storage.lock() {
-                    storage.record_failed_sync(&run_id, &started_at, error_code);
-                }
-                return match result {
-                    Err(_) => Err("Account refresh timed out; your saved data is unchanged".into()),
-                    Ok(Err(error)) => Err(error),
-                    Ok(Ok(_)) => unreachable!(),
-                };
+    report_refresh(
+        &app,
+        "Preparing refresh…",
+        "Unlocking credentials and reading the last committed snapshot.",
+    );
+    let sync = match tokio::time::timeout(
+        std::time::Duration::from_secs(120),
+        prepare_refresh(&app, &state),
+    )
+    .await
+    {
+        Ok(Ok(sync)) => sync,
+        result => {
+            let error_code = if result.is_err() {
+                "refresh_timeout"
+            } else {
+                "provider_refresh_failed"
+            };
+            if let Ok(mut storage) = state.storage.lock() {
+                storage.record_failed_sync(&run_id, &started_at, error_code);
             }
-        };
+            return match result {
+                Err(_) => Err("Account refresh timed out; your saved data is unchanged".into()),
+                Ok(Err(error)) => Err(error),
+                Ok(Ok(_)) => unreachable!(),
+            };
+        }
+    };
     let account_links = state
         .storage
         .lock()
@@ -316,13 +380,14 @@ fn save_account_link(
         .save_account_link(plaid_account_id, snaptrade_account_id)
 }
 
-async fn prepare_refresh(state: &AppState) -> Result<ProviderSync, String> {
+async fn prepare_refresh(app: &AppHandle, state: &AppState) -> Result<ProviderSync, String> {
     state
         .storage
         .lock()
         .map_err(|_| "The local data store is unavailable")?
         .ensure_writable()?;
     state.providers.unlock_credentials()?;
+    let integrations = state.providers.integration_status()?;
 
     let (
         plaid_cache,
@@ -407,6 +472,99 @@ async fn prepare_refresh(state: &AppState) -> Result<ProviderSync, String> {
     let refresh_market_history = !market_cache_compatible
         || !history_cache_is_fresh(provider_data.market_history_refreshed_at.as_deref(), now);
     let mut next_plaid_cache = plaid_cache.clone();
+    if integrations.plaid {
+        report_refresh_task(app, "plaid", "Plaid", "Checking", "active");
+    }
+    if integrations.snaptrade {
+        report_refresh_task(app, "snaptrade", "SnapTrade", "Checking", "active");
+    }
+    let plaid_progress = |progress: PlaidRefreshProgress| {
+        report_refresh_task(
+            app,
+            progress.id,
+            progress.label,
+            progress.status,
+            progress.state,
+        );
+    };
+    let plaid_sync = async {
+        let started = Instant::now();
+        let result = state
+            .providers
+            .sync_plaid(
+                &mut next_plaid_cache,
+                provider_data.plaid.as_ref(),
+                &plaid_progress,
+            )
+            .await;
+        if integrations.plaid {
+            match &result {
+                Ok(data) if data.warnings.is_empty() => {
+                    report_refresh_task(
+                        app,
+                        "plaid",
+                        "Plaid",
+                        timed_status("Complete", started),
+                        "complete",
+                    );
+                }
+                Ok(_) => report_refresh_task(
+                    app,
+                    "plaid",
+                    "Plaid",
+                    timed_status("Completed with notices", started),
+                    "warning",
+                ),
+                Err(_) => {
+                    report_refresh_task(
+                        app,
+                        "plaid",
+                        "Plaid",
+                        timed_status("Could not update", started),
+                        "warning",
+                    );
+                }
+            }
+        }
+        result
+    };
+    let snaptrade_sync = async {
+        let started = Instant::now();
+        let result = state
+            .providers
+            .sync_snaptrade(
+                provider_data.snaptrade.as_ref(),
+                refresh_snaptrade_history,
+                backfill_snaptrade_activity,
+            )
+            .await;
+        if integrations.snaptrade {
+            match &result {
+                Ok(data) if data.warnings.is_empty() => report_refresh_task(
+                    app,
+                    "snaptrade",
+                    "SnapTrade",
+                    timed_status("Complete", started),
+                    "complete",
+                ),
+                Ok(_) => report_refresh_task(
+                    app,
+                    "snaptrade",
+                    "SnapTrade",
+                    timed_status("Completed with notices", started),
+                    "warning",
+                ),
+                Err(_) => report_refresh_task(
+                    app,
+                    "snaptrade",
+                    "SnapTrade",
+                    timed_status("Could not update", started),
+                    "warning",
+                ),
+            }
+        }
+        result
+    };
     let benchmark_sync = async {
         if refresh_market_history {
             Some(
@@ -420,17 +578,7 @@ async fn prepare_refresh(state: &AppState) -> Result<ProviderSync, String> {
             None
         }
     };
-    let (plaid, snaptrade, benchmark) = tokio::join!(
-        state
-            .providers
-            .sync_plaid(&mut next_plaid_cache, provider_data.plaid.as_ref()),
-        state.providers.sync_snaptrade(
-            provider_data.snaptrade.as_ref(),
-            refresh_snaptrade_history,
-            backfill_snaptrade_activity
-        ),
-        benchmark_sync,
-    );
+    let (plaid, snaptrade, benchmark) = tokio::join!(plaid_sync, snaptrade_sync, benchmark_sync);
     let mut warnings = Vec::new();
     for (name, error) in [
         ("plaid", plaid.as_ref().err()),

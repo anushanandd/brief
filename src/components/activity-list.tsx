@@ -93,6 +93,8 @@ export function ActivityList({
         return website ? (
           <a
             className="financial-activity-row financial-activity-link"
+            data-keyboard-row
+            data-keyboard-open
             href={website}
             target="_blank"
             rel="noopener noreferrer"
@@ -106,7 +108,7 @@ export function ActivityList({
             {content}
           </a>
         ) : (
-          <div className="financial-activity-row" key={activity.id}>
+          <div className="financial-activity-row" key={activity.id} data-keyboard-row tabIndex={-1}>
             {content}
           </div>
         )

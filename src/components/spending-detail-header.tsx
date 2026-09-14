@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 
-import { ActivityWorkspaceHeader } from './activity-workspace-header'
+import { WorkspaceHeader } from './workspace-header'
 
 export function ActivityDetailHeader({
   title,
@@ -11,7 +11,7 @@ export function ActivityDetailHeader({
 }) {
   return (
     <>
-      <ActivityWorkspaceHeader title={title} />
+      <WorkspaceHeader title={title} parent={{ label: 'Spending', to: '/spending' }} />
       {!accountName ? (
         <p className="spending-detail-note">
           Choose a spending account in <Link to="/settings">Settings</Link> to see its history.

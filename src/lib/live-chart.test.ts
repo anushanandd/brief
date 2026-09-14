@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { appendLiveChartPoint, buildLiveChartData, chartPointAtOrAfter } from './live-chart'
+import {
+  appendLiveChartPoint,
+  buildLiveChartData,
+  chartPointAtOrAfter,
+  chartPointsFromStartDate,
+} from './live-chart'
 
 describe('live chart points', () => {
   it('keeps the latest account value for each minute', () => {
@@ -39,6 +44,17 @@ describe('live chart points', () => {
     )
 
     expect(data.map((point) => point.value)).toEqual([90, 100, 105])
+  })
+
+  it('starts chart data at the saved or inferred account date', () => {
+    const points = [
+      { time: Date.parse('2024-12-31T12:00:00Z') / 1_000, value: 90 },
+      { time: Date.parse('2025-01-01T12:00:00Z') / 1_000, value: 100 },
+      { time: Date.parse('2025-01-02T12:00:00Z') / 1_000, value: 110 },
+    ]
+
+    expect(chartPointsFromStartDate(points, '2025-01-01')).toEqual(points.slice(1))
+    expect(chartPointsFromStartDate(points)).toBe(points)
   })
 
   it('preserves zero and negative historical balances', () => {

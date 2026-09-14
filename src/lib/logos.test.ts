@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  markColor,
   stockLogoUrl,
   stockMarkColor,
   stockMarkLabel,
@@ -27,6 +28,7 @@ describe('logo resolution', () => {
     expect(stockMarkLabel('BRK.B')).toBe('BRK')
     expect(stockMarkLabel('$CASH-USD')).toBe('$')
     expect(stockMarkColor('BRK.B')).toBe('#7399a0')
+    expect(markColor('premium-savings')).not.toBe(markColor('max-rate-checking'))
 
     const url = transactionLogoUrl(
       transaction({

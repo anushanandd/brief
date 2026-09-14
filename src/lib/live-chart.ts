@@ -25,6 +25,12 @@ export function chartPointAtOrAfter(points: LivelinePoint[], time: number) {
   return points.find((point) => point.time >= time) ?? points.at(-1)
 }
 
+export function chartPointsFromStartDate(points: LivelinePoint[], startDate?: string) {
+  if (!startDate || !DATE_PATTERN.test(startDate)) return points
+  const startTime = Date.parse(`${startDate}T00:00:00Z`) / 1_000
+  return Number.isFinite(startTime) ? points.filter(({ time }) => time >= startTime) : points
+}
+
 export function buildLiveChartData(
   history: Array<{ date: string; value: number }>,
   live: LivelinePoint[],
