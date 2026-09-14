@@ -9,6 +9,7 @@ use std::{
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Duration, Utc};
+use futures_util::{stream, StreamExt};
 use hmac::{Hmac, Mac};
 use reqwest::{Method, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
@@ -23,6 +24,44 @@ const PLAID_ITEMS_KEY: &str = "plaid-items";
 const PLAID_USER_KEY: &str = "plaid-user";
 const SNAPTRADE_CREDENTIALS_KEY: &str = "snaptrade-credentials";
 const ALPACA_CREDENTIALS_KEY: &str = "alpaca-credentials";
+const PLAID_ITEM_CONCURRENCY: usize = 4;
+
+fn report_plaid_progress(
+    progress: &(dyn Fn(PlaidRefreshProgress) + Sync),
+    item_index: usize,
+    item_count: usize,
+    task: &'static str,
+    status: String,
+    state: &'static str,
+) {
+    let connection = if item_count == 1 {
+        "Plaid".into()
+    } else {
+        format!("Plaid {}", item_index + 1)
+    };
+    progress(PlaidRefreshProgress {
+        id: format!("plaid-{item_index}-{}", task.to_lowercase()),
+        label: format!("{connection} {task}"),
+        status,
+        state,
+    });
+}
+
+fn measured_status(started: Instant, detail: impl AsRef<str>) -> String {
+    format!(
+        "{} · {:.1}s",
+        detail.as_ref(),
+        started.elapsed().as_secs_f64()
+    )
+}
+
+fn completion_status(retries: usize) -> String {
+    match retries {
+        0 => "Complete".into(),
+        1 => "Complete · 1 retry".into(),
+        retries => format!("Complete · {retries} retries"),
+    }
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -88,6 +127,14 @@ pub struct ProviderConnection {
     name: String,
     provider: String,
     error: Option<String>,
+}
+
+#[derive(Clone, Debug)]
+pub struct PlaidRefreshProgress {
+    pub id: String,
+    pub label: String,
+    pub status: String,
+    pub state: &'static str,
 }
 
 #[derive(Clone, Debug)]
@@ -1066,6 +1113,7 @@ impl Providers {
         &self,
         cache: &mut PlaidCache,
         previous: Option<&PlaidData>,
+        progress: &(dyn Fn(PlaidRefreshProgress) + Sync),
     ) -> Result<PlaidData, String> {
         let Some(credentials) = self.read_secret::<PlaidCredentials>(PLAID_CREDENTIALS_KEY)? else {
             return Ok(PlaidData::default());
@@ -1077,10 +1125,32 @@ impl Providers {
         cache
             .items
             .retain(|id, _| items.iter().any(|item| &item.item_id == id));
+        let item_count = items.len();
+        let work = items
+            .into_iter()
+            .enumerate()
+            .map(|(index, item)| {
+                let staged = cache.items.get(&item.item_id).cloned().unwrap_or_default();
+                (index, item, staged)
+            })
+            .collect::<Vec<_>>();
+        let mut results = stream::iter(work.into_iter().map(|(index, item, mut staged)| {
+            let credentials = &credentials;
+            async move {
+                let result = self
+                    .sync_plaid_item(credentials, &item, &mut staged, index, item_count, progress)
+                    .await;
+                (index, item, staged, result)
+            }
+        }))
+        .buffer_unordered(PLAID_ITEM_CONCURRENCY)
+        .collect::<Vec<_>>()
+        .await;
+        results.sort_by_key(|(index, _, _, _)| *index);
+
         let mut legacy_failure = false;
-        for item in &items {
-            let mut staged = cache.items.get(&item.item_id).cloned().unwrap_or_default();
-            match self.sync_plaid_item(&credentials, item, &mut staged).await {
+        for (_, item, mut staged, result) in results {
+            match result {
                 Ok(fresh) => {
                     data.refreshed_account_ids.extend(
                         fresh
@@ -1127,16 +1197,45 @@ impl Providers {
         credentials: &PlaidCredentials,
         item: &PlaidItem,
         item_cache: &mut PlaidItemCache,
+        item_index: usize,
+        item_count: usize,
+        progress: &(dyn Fn(PlaidRefreshProgress) + Sync),
     ) -> Result<PlaidData, String> {
         let mut data = PlaidData::default();
         if item.investments {
-            let investments = self
-                .plaid_request(
+            report_plaid_progress(
+                progress,
+                item_index,
+                item_count,
+                "holdings",
+                "Checking".into(),
+                "active",
+            );
+            let started = Instant::now();
+            let result = self
+                .plaid_request_with_attempts(
                     credentials,
                     "/investments/holdings/get",
                     json!({ "access_token": &item.access_token }),
                 )
-                .await?;
+                .await;
+            let status = match &result {
+                Ok((_, retries)) => measured_status(started, completion_status(*retries)),
+                Err(_) => measured_status(started, "Failed"),
+            };
+            report_plaid_progress(
+                progress,
+                item_index,
+                item_count,
+                "holdings",
+                status,
+                if result.is_ok() {
+                    "complete"
+                } else {
+                    "warning"
+                },
+            );
+            let (investments, _) = result?;
             let balance_fetched_at = Utc::now().to_rfc3339();
             let institution = item
                 .institution_name
@@ -1159,96 +1258,187 @@ impl Providers {
             return Ok(data);
         }
 
-        let starting_cursor = item_cache.cursor.clone();
-        let starting_transactions: BTreeMap<String, Value> = item_cache
-            .transactions
-            .iter()
-            .filter_map(|transaction| {
-                let id = transaction
-                    .get("transaction_id")
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)?;
-                Some((id, transaction.clone()))
-            })
-            .collect();
-        loop {
-            let mut cursor = starting_cursor.clone();
-            let mut transactions = starting_transactions.clone();
-            let pagination: Result<(String, BTreeMap<String, Value>), String> = async {
+        report_plaid_progress(
+            progress,
+            item_index,
+            item_count,
+            "transactions",
+            "Checking".into(),
+            "active",
+        );
+        report_plaid_progress(
+            progress,
+            item_index,
+            item_count,
+            "balances",
+            "Checking".into(),
+            "active",
+        );
+        let transaction_sync = async {
+            let started = Instant::now();
+            let result = async {
+                let mut requests = 0;
+                let mut retries = 0;
+                let starting_cursor = item_cache.cursor.clone();
+                let starting_transactions: BTreeMap<String, Value> = item_cache
+                    .transactions
+                    .iter()
+                    .filter_map(|transaction| {
+                        let id = transaction
+                            .get("transaction_id")
+                            .and_then(Value::as_str)
+                            .map(str::to_owned)?;
+                        Some((id, transaction.clone()))
+                    })
+                    .collect();
                 loop {
-                    let mut request = json!({
-                        "access_token": &item.access_token,
-                        "count": 500
-                    });
-                    if let Some(value) = cursor.as_deref() {
-                        request["cursor"] = Value::String(value.into());
+                    let mut cursor = starting_cursor.clone();
+                    let mut transactions = starting_transactions.clone();
+                    let pagination: Result<(String, BTreeMap<String, Value>), String> = async {
+                        loop {
+                            let mut request = json!({
+                                "access_token": &item.access_token,
+                                "count": 500
+                            });
+                            if let Some(value) = cursor.as_deref() {
+                                request["cursor"] = Value::String(value.into());
+                            }
+                            requests += 1;
+                            let (sync, request_retries) = self
+                                .plaid_request_with_attempts(
+                                    credentials,
+                                    "/transactions/sync",
+                                    request,
+                                )
+                                .await?;
+                            retries += request_retries;
+                            for transaction in required_arrays(&sync, &["added", "modified"])? {
+                                if let Some(id) =
+                                    transaction.get("transaction_id").and_then(Value::as_str)
+                                {
+                                    transactions.insert(id.to_owned(), transaction);
+                                }
+                            }
+                            for removed in required_array(&sync, "removed")? {
+                                if let Some(id) =
+                                    removed.get("transaction_id").and_then(Value::as_str)
+                                {
+                                    transactions.remove(id);
+                                }
+                            }
+                            let next_cursor = string_field(&sync, "next_cursor")?;
+                            cursor = Some(next_cursor.clone());
+                            if !bool_field(&sync, "has_more")? {
+                                return Ok((next_cursor, transactions));
+                            }
+                        }
                     }
-                    let sync = self
-                        .plaid_request(credentials, "/transactions/sync", request)
-                        .await?;
-                    for transaction in required_arrays(&sync, &["added", "modified"])? {
-                        if let Some(id) = transaction.get("transaction_id").and_then(Value::as_str)
+                    .await;
+
+                    match pagination {
+                        Ok((cursor, transactions)) => {
+                            item_cache.cursor = Some(cursor);
+                            item_cache.transactions = transactions.into_values().collect();
+                            if item_cache.transaction_history_start.is_none() {
+                                item_cache.transaction_history_start = if starting_cursor.is_none()
+                                {
+                                    Some(
+                                        (Utc::now() - Duration::days(729)).date_naive().to_string(),
+                                    )
+                                } else {
+                                    item_cache
+                                        .transactions
+                                        .iter()
+                                        .filter_map(|transaction| {
+                                            transaction["datetime"]
+                                                .as_str()
+                                                .or_else(|| transaction["date"].as_str())
+                                                .and_then(|date| date.get(..10))
+                                        })
+                                        .min()
+                                        .map(str::to_owned)
+                                };
+                            }
+                            break;
+                        }
+                        Err(error)
+                            if error.contains("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") =>
                         {
-                            transactions.insert(id.to_owned(), transaction);
+                            continue
                         }
-                    }
-                    for removed in required_array(&sync, "removed")? {
-                        if let Some(id) = removed.get("transaction_id").and_then(Value::as_str) {
-                            transactions.remove(id);
-                        }
-                    }
-                    let next_cursor = string_field(&sync, "next_cursor")?;
-                    cursor = Some(next_cursor.clone());
-                    if !bool_field(&sync, "has_more")? {
-                        return Ok((next_cursor, transactions));
+                        Err(error) => return Err(error),
                     }
                 }
+                Ok::<_, String>((requests, retries))
             }
             .await;
-
-            match pagination {
-                Ok((cursor, transactions)) => {
-                    item_cache.cursor = Some(cursor);
-                    item_cache.transactions = transactions.into_values().collect();
-                    if item_cache.transaction_history_start.is_none() {
-                        item_cache.transaction_history_start = if starting_cursor.is_none() {
-                            Some((Utc::now() - Duration::days(729)).date_naive().to_string())
-                        } else {
-                            item_cache
-                                .transactions
-                                .iter()
-                                .filter_map(|transaction| {
-                                    transaction["datetime"]
-                                        .as_str()
-                                        .or_else(|| transaction["date"].as_str())
-                                        .and_then(|date| date.get(..10))
-                                })
-                                .min()
-                                .map(str::to_owned)
-                        };
-                    }
-                    break;
+            let status = match &result {
+                Ok((requests, retries)) => {
+                    let requests_label = if *requests == 1 {
+                        "request"
+                    } else {
+                        "requests"
+                    };
+                    let retries_label = match retries {
+                        0 => String::new(),
+                        1 => " · 1 retry".into(),
+                        retries => format!(" · {retries} retries"),
+                    };
+                    measured_status(
+                        started,
+                        format!("Complete · {requests} {requests_label}{retries_label}"),
+                    )
                 }
-                Err(error) if error.contains("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") => {
-                    continue
-                }
-                Err(error) => return Err(error),
-            }
-        }
-
-        let balances = self
-            .plaid_request(
-                credentials,
-                "/accounts/balance/get",
-                json!({
-                    "access_token": item.access_token,
-                    "options": {
-                        "min_last_updated_datetime": (Utc::now() - Duration::minutes(15)).to_rfc3339()
-                    }
-                }),
-            )
-            .await?;
-        let balance_fetched_at = Utc::now().to_rfc3339();
+                Err(_) => measured_status(started, "Failed"),
+            };
+            report_plaid_progress(
+                progress,
+                item_index,
+                item_count,
+                "transactions",
+                status,
+                if result.is_ok() {
+                    "complete"
+                } else {
+                    "warning"
+                },
+            );
+            result.map(|_| ())
+        };
+        let balance_sync = async {
+            let started = Instant::now();
+            let result = self
+                .plaid_request_with_attempts(
+                    credentials,
+                    "/accounts/balance/get",
+                    json!({
+                        "access_token": item.access_token,
+                        "options": {
+                            "min_last_updated_datetime": (Utc::now() - Duration::minutes(15)).to_rfc3339()
+                        }
+                    }),
+                )
+                .await;
+            let status = match &result {
+                Ok((_, retries)) => measured_status(started, completion_status(*retries)),
+                Err(_) => measured_status(started, "Failed"),
+            };
+            report_plaid_progress(
+                progress,
+                item_index,
+                item_count,
+                "balances",
+                status,
+                if result.is_ok() {
+                    "complete"
+                } else {
+                    "warning"
+                },
+            );
+            let (balances, _) = result?;
+            Ok::<_, String>((balances, Utc::now().to_rfc3339()))
+        };
+        let (_, (balances, balance_fetched_at)) = tokio::try_join!(transaction_sync, balance_sync)?;
         let mut allowed_ids = Vec::new();
         for mut account in required_array(&balances, "accounts")? {
             let institution = item
@@ -1630,6 +1820,17 @@ impl Providers {
         path: &str,
         body: Value,
     ) -> Result<Value, String> {
+        self.plaid_request_with_attempts(credentials, path, body)
+            .await
+            .map(|(value, _)| value)
+    }
+
+    async fn plaid_request_with_attempts(
+        &self,
+        credentials: &PlaidCredentials,
+        path: &str,
+        body: Value,
+    ) -> Result<(Value, usize), String> {
         let safe_to_retry = [
             "/transactions/sync",
             "/accounts/balance/get",
@@ -1651,7 +1852,11 @@ impl Providers {
                 Ok(response) if attempt + 1 < attempts && retryable_status(response.status()) => {
                     retry_pause(&response).await;
                 }
-                Ok(response) => return provider_response("Plaid", response).await,
+                Ok(response) => {
+                    return provider_response("Plaid", response)
+                        .await
+                        .map(|value| (value, attempt));
+                }
                 Err(_) if attempt + 1 < attempts => {
                     tokio::time::sleep(StdDuration::from_millis(250)).await;
                 }

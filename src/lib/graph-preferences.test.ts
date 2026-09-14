@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import {
   adjacentGraphWindow,
+  graphWindowForKey,
   graphWindows,
   parseChartAccountPreferences,
   parseGraphWindow,
@@ -22,6 +23,11 @@ describe('graph preferences', () => {
     expect(adjacentGraphWindow(30 * day, 1)).toBe(90 * day)
     expect(adjacentGraphWindow(90 * day, 1)).toBe(0)
     expect(adjacentGraphWindow(0, 1)).toBe(7 * day)
+    expect(graphWindowForKey('w')).toBe(7 * day)
+    expect(graphWindowForKey('M')).toBe(30 * day)
+    expect(graphWindowForKey('q')).toBe(90 * day)
+    expect(graphWindowForKey('a')).toBe(0)
+    expect(graphWindowForKey('x')).toBeUndefined()
   })
 
   it('keeps saved chart visibility and order while appending new accounts', () => {

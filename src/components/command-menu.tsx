@@ -1,33 +1,12 @@
 import { useNavigate } from '@tanstack/react-router'
-import {
-  CreditCard,
-  Database,
-  House,
-  Landmark,
-  ListTree,
-  RefreshCw,
-  Settings,
-  type LucideIcon,
-} from 'lucide-react'
+import { CreditCard, Database, Landmark, RefreshCw, type LucideIcon } from 'lucide-react'
 import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
 import { useRefreshFinance } from '../hooks/use-refresh-finance'
 import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
-
-const destinations = [
-  { label: 'Home', to: '/', icon: House },
-  { label: 'Accounts', to: '/accounts', icon: Landmark },
-  { label: 'Activity', to: '/activities', icon: ListTree },
-  { label: 'Settings', to: '/settings', icon: Settings },
-  { label: 'Investment accounts', to: '/accounts/investments', icon: Landmark },
-  { label: 'Cash & cards', to: '/accounts/cash', icon: CreditCard },
-  { label: 'Spending', to: '/activities/spending', icon: CreditCard },
-  { label: 'Subscriptions', to: '/activities/subscriptions', icon: RefreshCw },
-  { label: 'Trades', to: '/activities/trades', icon: Landmark },
-  { label: 'Balance changes', to: '/activities/changes', icon: ListTree },
-  { label: 'Benefits', to: '/activities/benefits', icon: CreditCard },
-] as const
+import { commandDestinations } from '../lib/navigation'
+import { getSpendingAccountId } from '../lib/spending-preferences'
 
 type MenuAction = {
   label: string
@@ -53,16 +32,16 @@ export function CommandMenu({
   const [search, setSearch] = useState('')
   const [activeIndex, setActiveIndex] = useState(0)
   const actions: MenuAction[] = [
-    ...destinations.map(({ label, to, icon }, index) => ({
+    ...commandDestinations.map(({ label, to, icon, ...destination }) => ({
       label,
       search: `navigate ${label}`,
       group: 'Navigate' as const,
       icon,
-      shortcut: index < 4 ? `⌘${index + 1}` : undefined,
+      shortcut: 'shortcut' in destination ? destination.shortcut : undefined,
       run: () => navigate({ to }),
     })),
     ...(finance.data?.accounts ?? [])
-      .filter(({ id }) => id !== 'all')
+      .filter(({ id }) => id !== 'all' && id !== getSpendingAccountId())
       .map((account) => ({
         label: accountDisplayName(account.id, account.name, getAccountDisplayNames()),
         search: `${account.name} ${account.institution} ${account.type} account`,

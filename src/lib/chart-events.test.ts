@@ -5,7 +5,7 @@ import { buildChartEventGroups, chartEventGroupLabel } from './chart-events'
 import { financeSnapshotSchema } from './schema'
 
 describe('buildChartEventGroups', () => {
-  it('selects reported activity, deduplicates internal transfers, and derives portfolio moves', () => {
+  it('includes small directional trades and deduplicates internal transfers', () => {
     const data = financeSnapshotSchema.parse(seed)
     data.updatedAt = '2026-09-10T20:00:00Z'
     data.netWorth = 100_000
@@ -45,13 +45,23 @@ describe('buildChartEventGroups', () => {
     ]
     data.trades = [
       {
+        id: 'buy',
+        type: 'BUY',
+        date: '2026-09-06',
+        amount: -1_200,
+        account: 'Brokerage',
+        accountId: 'snaptrade:brokerage',
+        ticker: 'VXUS',
+      },
+      {
         id: 'sale',
         type: 'SELL',
         date: '2026-09-07',
-        amount: 2_100,
+        amount: 207.05,
         account: 'Brokerage',
         accountId: 'snaptrade:brokerage',
         ticker: 'VTI',
+        estimatedRealizedGainPct: -12.5,
       },
     ]
     data.brokeragePerformance = [
@@ -76,25 +86,25 @@ describe('buildChartEventGroups', () => {
       },
     ]
 
-    const allAccounts = buildChartEventGroups(data, 'net-worth', [], 0)
+    const allAccounts = buildChartEventGroups(data, 'net-worth', 0)
     expect(allAccounts.flatMap(({ events }) => events).map(({ title }) => title)).toEqual([
+      'Bought VXUS',
       'Sold VTI',
       'Payroll',
       'Internal transfer',
     ])
 
-    const brokerage = buildChartEventGroups(
-      data,
-      'snaptrade:brokerage',
-      data.brokeragePerformance[0].points,
-      0,
-    )
-    expect(brokerage.flatMap(({ events }) => events).map(({ kind }) => kind)).toEqual([
-      'sale',
-      'transfer',
-      'market-move',
+    const brokerage = buildChartEventGroups(data, 'snaptrade:brokerage', 0)
+    const brokerageEvents = brokerage.flatMap(({ events }) => events)
+    expect(brokerageEvents.map(({ kind, direction }) => [kind, direction])).toEqual([
+      ['buy', 'in'],
+      ['sale', 'out'],
+      ['transfer', 'out'],
     ])
-    expect(chartEventGroupLabel(brokerage[1], data.updatedAt)).toContain('Near sold vti')
-    expect(chartEventGroupLabel(brokerage[1], data.updatedAt)).toContain('estimated')
+    expect(chartEventGroupLabel(brokerage[1], data.updatedAt)).toContain(
+      'Sold VTI $207.05 · -12.50%',
+    )
+    expect(chartEventGroupLabel(brokerage[2], data.updatedAt)).toContain('Near sold vti')
+    expect(chartEventGroupLabel(brokerage[0], data.updatedAt)).toContain('Bought VXUS')
   })
 })

@@ -1,16 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { listen } from '@tauri-apps/api/event'
-import {
-  ChartNoAxesCombined,
-  ChevronRight,
-  CreditCard,
-  Landmark,
-  type LucideIcon,
-  WalletCards,
-} from 'lucide-react'
+import { ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
+import { AccountMark } from '../components/account-mark'
 import { ActivityList } from '../components/activity-list'
 import { BrandMark } from '../components/brand-mark'
 import { DonutChart, PerformanceChart, type DonutSegment } from '../components/charts'
@@ -20,6 +14,7 @@ import { LiveMarketProvider } from '../hooks/live-market-provider'
 import { graphAccountShortcut, useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
+import { accountStartDate, getAccountStartDates } from '../lib/account-start-date-preferences'
 import { buildActivities } from '../lib/activity'
 import {
   generateFoundationExplanation,
@@ -30,6 +25,8 @@ import {
 } from '../lib/api'
 import { buildChartEventGroups } from '../lib/chart-events'
 import {
+  accountWeeklyChangePct,
+  chartValueChange,
   currentMonthIncome,
   dashboardAccountViews,
   dashboardAssetBreakdown,
@@ -49,32 +46,21 @@ import {
 } from '../lib/graph-preferences'
 import { briefingEvidence, homeInsightSections, weeklyBriefingCandidate } from '../lib/insights'
 import { buildLiveChartData } from '../lib/live-chart'
-import { getExternalLogosEnabled, stockLogoUrl, stockMarkColor, stockMarkLabel } from '../lib/logos'
+import {
+  getExternalLogosEnabled,
+  markColor,
+  stockLogoUrl,
+  stockMarkColor,
+  stockMarkLabel,
+} from '../lib/logos'
 import type { FinanceSnapshot } from '../lib/schema'
-import { buildSpendingView, resolveSpendingAccount, spendingCategoryColor } from '../lib/spending'
+import {
+  buildSpendingView,
+  formatActivityDate,
+  resolveSpendingAccount,
+  spendingCategoryColor,
+} from '../lib/spending'
 import { getSpendingAccountId } from '../lib/spending-preferences'
-
-const assetAccountColors: Record<string, string> = {
-  brokerage: 'var(--allocation-2)',
-  retirement: 'var(--allocation-3)',
-  cash: 'var(--allocation-1)',
-}
-
-const accountTypeMarks: Record<string, [LucideIcon, string]> = {
-  brokerage: [ChartNoAxesCombined, 'dividend'],
-  retirement: [Landmark, 'interest'],
-  cash: [WalletCards, 'cash'],
-  credit: [CreditCard, 'payment'],
-}
-
-function AccountTypeMark({ type }: { type: string }) {
-  const [Icon, tone] = accountTypeMarks[type] ?? [Landmark, 'transfer']
-  return (
-    <span className={`transaction-mark transaction-mark-${tone}`} aria-hidden="true">
-      <Icon size={15} />
-    </span>
-  )
-}
 
 const insightEmphasisPattern =
   /(Notable weekly activity|The last seven days|Today|Spending|[Ii]ncome sources|[Ii]ncome|net worth|holding|[-+]?\$[\d,.]+|[+-]?\d+(?:\.\d+)?%|\b[A-Z][A-Z0-9.-]{1,7}\b)/g
@@ -100,7 +86,7 @@ function HomeInsights({ data }: { data: FinanceSnapshot }) {
     staleTime: Number.POSITIVE_INFINITY,
   })
   const analysis = useQuery({
-    queryKey: ['weekly-briefing', 1, candidate?.key],
+    queryKey: ['weekly-briefing', 2, candidate?.key],
     queryFn: async ({ signal }) => {
       if (!candidate) throw new Error('No meaningful changes to explain')
       const news = candidate.stock
@@ -117,18 +103,20 @@ function HomeInsights({ data }: { data: FinanceSnapshot }) {
   const sections = homeInsightSections(data, candidate, analysis.data)
 
   return (
-    <Card className="home-insights" aria-label="What changed">
+    <Card className="home-insights">
       <div className="home-insights-heading">
-        <strong>What changed</strong>
+        <h2>What changed</h2>
         <span>Local overview</span>
       </div>
       {sections.map((section) => (
         <section key={section.title} aria-label={section.title}>
-          <p className="home-insight-summary" aria-live="polite">
+          <ul className="home-insight-summary" aria-live="polite">
             {section.lines.map((line) => (
-              <InsightLine key={line}>{line}</InsightLine>
+              <li key={line}>
+                <InsightLine>{line}</InsightLine>
+              </li>
             ))}
-          </p>
+          </ul>
         </section>
       ))}
     </Card>
@@ -149,6 +137,7 @@ function DashboardContent() {
   const [graphWindow, setGraphWindow] = useState(getDefaultGraphWindow)
   const [chartAccountPreferences] = useState(getChartAccountPreferences)
   const [accountDisplayNames] = useState(getAccountDisplayNames)
+  const [accountStartDates] = useState(getAccountStartDates)
   const [externalLogosEnabled] = useState(getExternalLogosEnabled)
   const [spendingAccountId] = useState(getSpendingAccountId)
   useGraphWindowShortcuts(setGraphWindow)
@@ -241,19 +230,11 @@ function DashboardContent() {
         data.accounts.some(
           ({ type, value }) => (type === 'brokerage' || type === 'retirement') && value == null,
         )
-  const latestPoint = points.at(-1)
-  const latestDate = latestPoint?.date ?? ''
-  const currentDate = data.updatedAt.slice(0, 10)
-  const hasLiveDelta = Math.abs(latestValue - (latestPoint?.value ?? latestValue)) >= 0.01
-  const priorValue =
-    hasLiveDelta && /^\d{4}-\d{2}-\d{2}$/.test(latestDate) && latestDate < currentDate
-      ? (latestPoint?.value ?? latestValue)
-      : (points.at(-2)?.value ?? latestPoint?.value ?? latestValue)
-  const dailyChange = latestValue - priorValue
-  const dailyChangePercent = priorValue ? (dailyChange / Math.abs(priorValue)) * 100 : 0
-  const changePeriod = /^\d{4}-\d{2}-\d{2}$/.test(points.at(-1)?.date ?? '')
-    ? 'today'
-    : 'this period'
+  const {
+    change: dailyChange,
+    percent: dailyChangePercent,
+    period: changePeriod,
+  } = chartValueChange(points, latestValue, data.updatedAt.slice(0, 10))
   const chartNow = Date.now() / 1_000
   const chartData = buildLiveChartData(points, livePoints ?? [], latestValue, chartNow)
   const netDepositsData =
@@ -278,10 +259,14 @@ function DashboardContent() {
   const benchmarkData = benchmarkHistory.length
     ? buildLiveChartData(benchmarkHistory, [], benchmarkHistory.at(-1)?.value ?? 0, chartNow)
     : undefined
-  const chartEvents = buildChartEventGroups(data, account.accountId, points, graphWindow)
+  const chartEvents = buildChartEventGroups(data, account.accountId, graphWindow)
+  const startDate = accountStartDate(data, account.accountId, accountStartDates)
   const accounts = data.accounts
     .filter(({ id }) => id !== 'all')
     .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
+  const holdingsAccountId = accounts.some(({ id }) => id === account.accountId)
+    ? account.accountId
+    : ''
   const holdings = data.holdings
     .filter(
       ({ accountId }) =>
@@ -292,7 +277,7 @@ function DashboardContent() {
     .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
   const latestActivities = buildActivities(data, accountDisplayNames, externalLogosEnabled).slice(
     0,
-    6,
+    Math.max(holdings.length || 2, accounts.length || 2),
   )
   const portfolioChange = monthlyPortfolioChange(data)
   const income = currentMonthIncome(data)
@@ -312,7 +297,7 @@ function DashboardContent() {
     return {
       ...group,
       name: accountDisplayName(group.id, group.name, accountDisplayNames),
-      color: children[0]?.color ?? assetAccountColors[group.type] ?? 'var(--allocation-4)',
+      color: markColor(group.id),
       children,
     }
   })
@@ -378,19 +363,7 @@ function DashboardContent() {
               )}
             </div>
             <span className="balance-institution">
-              {account.institution}
-              <br />
-              {account.accountId === 'net-worth'
-                ? data.netWorthHistoryEstimated
-                  ? 'Estimated history'
-                  : 'Observed history'
-                : account.historySource === 'provider-estimated'
-                  ? 'Provider-estimated value history'
-                  : account.historySource === 'reported'
-                    ? 'Observed provider history'
-                    : account.historySource === 'estimated'
-                      ? 'Estimated history'
-                      : 'History unavailable'}
+              Started {startDate ? formatActivityDate(startDate, data.updatedAt) : 'unknown'}
             </span>
           </header>
 
@@ -405,6 +378,7 @@ function DashboardContent() {
                     value={latestValue}
                     events={chartEvents}
                     referenceIso={data.updatedAt}
+                    startDate={startDate}
                     selectedWindow={graphWindow}
                     onWindowChange={setGraphWindow}
                   />
@@ -417,6 +391,27 @@ function DashboardContent() {
               </div>
             </div>
           </div>
+          <div
+            className="home-account-dots"
+            role="group"
+            aria-label="Home chart accounts"
+            aria-keyshortcuts="Meta+ArrowLeft Meta+ArrowRight"
+          >
+            {accountViews.map((view) => {
+              const active = view.accountId === account.accountId
+              return (
+                <button
+                  key={view.accountId}
+                  type="button"
+                  className={active ? 'active' : undefined}
+                  aria-label={`${view.name}: ${formatCurrency(view.currentValue)}`}
+                  aria-pressed={active}
+                  title={view.name}
+                  onClick={() => setActiveAccountId(view.accountId)}
+                />
+              )
+            })}
+          </div>
         </Card>
         <HomeInsights data={data} />
       </div>
@@ -425,7 +420,15 @@ function DashboardContent() {
         <Card className="brokerage-holdings-card">
           <section className="brokerage-holdings" aria-label={`${account.name} holdings`}>
             <div className="holding-column-headings">
-              <h2>Holdings</h2>
+              <h2>
+                <Link
+                  to="/holdings"
+                  search={holdingsAccountId ? { account: holdingsAccountId } : undefined}
+                  className="section-heading-link"
+                >
+                  Holdings <ChevronRight size={14} aria-hidden="true" />
+                </Link>
+              </h2>
               <span aria-hidden="true">Price</span>
               <span aria-hidden="true">Today %</span>
               <span aria-hidden="true">Week %</span>
@@ -529,23 +532,48 @@ function DashboardContent() {
         </Card>
 
         <Card className="accounts-overview-card home-overview-card">
-          <SectionHeading title="Accounts" />
-          <div className="overview-list">
-            {accounts.map((item) => (
-              <Link
-                className="overview-account-row"
-                key={item.id}
-                to="/accounts/$accountId"
-                params={{ accountId: item.id }}
-              >
-                <AccountTypeMark type={item.type} />
-                <span className="account-name">
-                  <span>{accountDisplayName(item.id, item.name, accountDisplayNames)}</span>
-                  <small>{item.institution}</small>
-                </span>
-                <span>{formatCurrency(item.value)}</span>
+          <SectionHeading
+            title={
+              <Link to="/accounts" className="section-heading-link">
+                Accounts <ChevronRight size={14} aria-hidden="true" />
               </Link>
-            ))}
+            }
+          />
+          <div className="overview-list">
+            {accounts.map((item) => {
+              const weeklyChange = accountWeeklyChangePct(data, item)
+              return (
+                <Link
+                  className="overview-account-row"
+                  key={item.id}
+                  to="/accounts/$accountId"
+                  params={{ accountId: item.id }}
+                >
+                  <AccountMark type={item.type} />
+                  <span className="account-name">
+                    <span>{accountDisplayName(item.id, item.name, accountDisplayNames)}</span>
+                    <small>{item.institution}</small>
+                  </span>
+                  <span className="overview-account-values">
+                    <strong>{formatCurrency(item.value)}</strong>
+                    <small
+                      className={
+                        weeklyChange == null
+                          ? 'muted'
+                          : weeklyChange > 0
+                            ? 'positive'
+                            : weeklyChange < 0
+                              ? 'negative'
+                              : 'muted'
+                      }
+                      title="Seven-day account value change, not investment return"
+                    >
+                      1W {formatPercent(weeklyChange)}
+                    </small>
+                  </span>
+                </Link>
+              )
+            })}
             {!accounts.length ? <p className="overview-recent-empty">No accounts yet.</p> : null}
           </div>
         </Card>
@@ -607,19 +635,9 @@ function DashboardContent() {
               centerValue={formatCompactCurrency(spending.total)}
               centerLabel="spent"
             />
-            <div className="home-donut-legend">
-              {spendingSegments.length ? (
-                spendingSegments.map((segment) => (
-                  <div className="home-donut-legend-row" key={segment.name}>
-                    <span className="home-donut-swatch" style={{ background: segment.color }} />
-                    <span>{segment.name}</span>
-                    <strong>{formatCompactCurrency(segment.value)}</strong>
-                  </div>
-                ))
-              ) : (
-                <small className="home-donut-empty">No spending activity</small>
-              )}
-            </div>
+            {!spendingSegments.length ? (
+              <small className="home-donut-empty">No spending activity</small>
+            ) : null}
           </div>
         </Card>
 
@@ -632,20 +650,9 @@ function DashboardContent() {
               centerValue={formatCompactCurrency(totalAssets)}
               centerLabel="assets"
             />
-            <div className="home-asset-legend">
-              {assetGroups.map((group) => (
-                <div className="home-asset-group" key={group.id}>
-                  <div className="home-donut-legend-row">
-                    <span className="home-donut-swatch" style={{ background: group.color }} />
-                    <span>{group.name}</span>
-                    <strong>{formatCompactCurrency(group.value)}</strong>
-                  </div>
-                </div>
-              ))}
-              {!assetGroups.length ? (
-                <small className="home-donut-empty">No valued assets</small>
-              ) : null}
-            </div>
+            {!assetAccounts.length ? (
+              <small className="home-donut-empty">No valued assets</small>
+            ) : null}
           </div>
         </Card>
       </div>

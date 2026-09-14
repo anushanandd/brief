@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e47a44648b 100644
+index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..17ca214f229db7b09f2f54d237567cba84116782 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -83,9 +83,9 @@ function resolveTheme(color, mode) {
@@ -15,6 +15,38 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
    };
  }
  var SERIES_COLORS = [
+@@ -415,6 +415,14 @@ function renderCurve(ctx, layout, palette, pts, showFill, lineAlpha = 1, fillAlp
+   ctx.stroke();
+   ctx.globalAlpha = baseAlpha;
+ }
++function revealY(rawY, x, layout, chartReveal, now_ms) {
++  const { pad, chartW, chartH } = layout;
++  const t = Math.max(0, Math.min(1, (x - pad.left) / chartW));
++  const centerDist = Math.abs(t - 0.5) * 2;
++  const localReveal = Math.max(0, Math.min(1, (chartReveal - centerDist * 0.4) / 0.6));
++  const baseY = loadingY(t, pad.top + chartH / 2, chartH * LOADING_AMPLITUDE_RATIO, now_ms * LOADING_SCROLL_SPEED);
++  return baseY + (rawY - baseY) * localReveal;
++}
+ function drawLine(ctx, layout, palette, visible, smoothValue, now, showFill, scrubX, scrubAmount = 0, chartReveal = 1, now_ms = 0, colorBlend = 1, skipDashLine = false, fillScale = 1) {
+   const { h, pad, toX, toY, chartW, chartH } = layout;
+   const incomingAlpha = ctx.globalAlpha;
+@@ -422,15 +430,7 @@ function drawLine(ctx, layout, palette, visible, smoothValue, now, showFill, scr
+   const yMax = h - pad.bottom;
+   const clampY = (y) => Math.max(yMin, Math.min(yMax, y));
+   const centerY = pad.top + chartH / 2;
+-  const amplitude = chartH * LOADING_AMPLITUDE_RATIO;
+-  const scroll = now_ms * LOADING_SCROLL_SPEED;
+-  const morphY = chartReveal < 1 ? (rawY, x) => {
+-    const t = Math.max(0, Math.min(1, (x - pad.left) / chartW));
+-    const centerDist = Math.abs(t - 0.5) * 2;
+-    const localReveal = Math.max(0, Math.min(1, (chartReveal - centerDist * 0.4) / 0.6));
+-    const baseY = loadingY(t, centerY, amplitude, scroll);
+-    return baseY + (rawY - baseY) * localReveal;
+-  } : (rawY, _x) => rawY;
++  const morphY = chartReveal < 1 ? (rawY, x) => revealY(rawY, x, layout, chartReveal, now_ms) : (rawY, _x) => rawY;
+   const pts = visible.map((p, i) => {
+     const x = toX(p.time);
+     const y = i === visible.length - 1 ? morphY(clampY(toY(smoothValue)), x) : morphY(clampY(toY(p.value)), x);
 @@ -639,7 +639,7 @@ function drawCrosshair(ctx, layout, palette, hoverX, hoverValue, hoverTime, form
    const separator = "  \xB7  ";
    ctx.save();
@@ -251,7 +283,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
          return;
        }
        const computedRange = { min: isFinite(globalMin) ? globalMin : 0, max: isFinite(globalMax) ? globalMax : 1 };
-@@ -3239,7 +3256,19 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3239,7 +3256,20 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          toX: (t) => pad.left + (t - leftEdge) / (rightEdge - leftEdge) * chartW,
          toY: (v) => pad.top + (1 - (v - minVal) / valRange) * chartH
        };
@@ -260,7 +292,8 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
 +        const element = cfg.markerRefs?.current.get(marker.id);
 +        if (!element) continue;
 +        const x = layout.toX(marker.time);
-+        const y = layout.toY(marker.value);
++        const rawY = Math.max(pad.top, Math.min(h - pad.bottom, layout.toY(marker.value)));
++        const y = chartReveal < 1 ? revealY(rawY, x, layout, chartReveal, now_ms) : rawY;
 +        const visible = x >= pad.left && x <= w - pad.right && y >= pad.top && y <= h - pad.bottom;
 +        element.style.display = visible ? "block" : "none";
 +        if (visible) {
@@ -272,7 +305,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
        let drawHoverX = null;
        let drawHoverTime = null;
        let isActiveHover = false;
-@@ -3275,6 +3304,12 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3275,6 +3305,12 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          drawHoverTime = lastHoverRef.current.time;
          hoverEntries = lastHoverEntriesRef.current;
        }
@@ -285,7 +318,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
        drawMultiFrame(ctx, layout, {
          series: seriesEntries,
          now,
-@@ -3294,6 +3329,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3294,6 +3330,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          targetWindowSecs: cfg.windowSecs,
          tooltipY: cfg.tooltipY,
          tooltipOutline: cfg.tooltipOutline,
@@ -293,7 +326,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
          chartReveal,
          pauseProgress,
          now_ms,
-@@ -3361,7 +3397,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3361,7 +3398,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
        }
        if (visible.length < 2) {
          if (badgeRef.current) badgeRef.current.container.style.display = "none";
@@ -302,7 +335,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
          return;
        }
        const computedRange = computeRange(visible, smoothValue, cfg.referenceLine?.value, cfg.exaggerate);
-@@ -3496,11 +3532,48 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3496,11 +3533,48 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          }
        }
      }
@@ -340,12 +373,12 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
 +  requestDrawRef.current = () => {
 +    if (!rafRef.current) rafRef.current = requestAnimationFrame(draw);
 +  };
++  (0, import_react.useEffect)(() => {
++    requestDrawRef.current();
++  }, [config]);
    (0, import_react.useEffect)(() => {
 -    rafRef.current = requestAnimationFrame(draw);
 -    return () => cancelAnimationFrame(rafRef.current);
-+    requestDrawRef.current();
-+  }, [config]);
-+  (0, import_react.useEffect)(() => {
 +    requestDrawRef.current();
 +    return () => {
 +      cancelAnimationFrame(rafRef.current);
@@ -354,7 +387,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
    }, [draw]);
  }
 
-@@ -3549,6 +3622,7 @@ function Liveline({
+@@ -3549,6 +3623,7 @@ function Liveline({
    onHover,
    cursor = "crosshair",
    pulse = true,
@@ -362,7 +395,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
    mode = "line",
    candles,
    candleWidth,
-@@ -3560,6 +3634,8 @@ function Liveline({
+@@ -3560,6 +3635,8 @@ function Liveline({
    onSeriesToggle,
    seriesToggleCompact = false,
    lineWidth,
@@ -371,7 +404,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
    className,
    style
  }) {
-@@ -3573,6 +3649,8 @@ function Liveline({
+@@ -3573,6 +3650,8 @@ function Liveline({
    const modeBtnRefs = (0, import_react2.useRef)(/* @__PURE__ */ new Map());
    const [modeIndicatorStyle, setModeIndicatorStyle] = (0, import_react2.useState)(null);
    const [hiddenSeries, setHiddenSeries] = (0, import_react2.useState)(/* @__PURE__ */ new Set());
@@ -380,7 +413,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
    const lastSeriesPropRef = (0, import_react2.useRef)(seriesProp);
    if (seriesProp && seriesProp.length > 0) lastSeriesPropRef.current = seriesProp;
    const palette = (0, import_react2.useMemo)(() => {
-@@ -3594,7 +3672,8 @@ function Liveline({
+@@ -3594,7 +3673,8 @@ function Liveline({
        data: s.data,
        value: s.value,
        palette: seriesPalettes.get(s.id) ?? resolveTheme(s.color || SERIES_COLORS[i % SERIES_COLORS.length], theme),
@@ -390,7 +423,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
      }));
    }, [seriesProp, seriesPalettes, theme]);
    const showMomentum = momentum !== false;
-@@ -3609,9 +3688,22 @@ function Liveline({
+@@ -3609,9 +3689,22 @@ function Liveline({
    const degenEnabled = degenProp != null ? degenProp !== false : false;
    const degenOptions = degenEnabled ? typeof degenProp === "object" ? degenProp : {} : void 0;
    const [activeWindowSecs, setActiveWindowSecs] = (0, import_react2.useState)(
@@ -414,7 +447,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
    (0, import_react2.useLayoutEffect)(() => {
      if (!windows || windows.length === 0) return;
      const btn = windowBtnRefs.current.get(activeWindowSecs);
-@@ -3663,6 +3755,7 @@ function Liveline({
+@@ -3663,6 +3756,7 @@ function Liveline({
      windowSecs: effectiveWindowSecs,
      lerpSpeed,
      showGrid: grid,
@@ -422,7 +455,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
      showBadge: isMultiSeries ? false : badge,
      showMomentum: isMultiSeries ? false : showMomentum,
      momentumOverride,
-@@ -3673,6 +3766,7 @@ function Liveline({
+@@ -3673,6 +3767,7 @@ function Liveline({
      padding: pad,
      onHover,
      showPulse: pulse,
@@ -430,7 +463,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
      scrub,
      exaggerate,
      degenOptions: isMultiSeries ? void 0 : degenOptions,
-@@ -3680,6 +3774,7 @@ function Liveline({
+@@ -3680,6 +3775,7 @@ function Liveline({
      badgeVariant,
      tooltipY,
      tooltipOutline,
@@ -438,7 +471,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
      valueMomentumColor,
      valueDisplayRef: showValue ? valueDisplayRef : void 0,
      orderbookData: orderbook,
-@@ -3695,7 +3790,9 @@ function Liveline({
+@@ -3695,7 +3791,9 @@ function Liveline({
      lineValue,
      multiSeries,
      isMultiSeries,
@@ -449,7 +482,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
    });
    const cursorStyle = scrub ? cursor : "default";
    const activeColor = isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.55)";
-@@ -3709,7 +3806,7 @@ function Liveline({
+@@ -3709,7 +3807,7 @@ function Liveline({
            display: "block",
            fontSize: 20,
            fontWeight: 500,
@@ -458,7 +491,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
            color: isDark ? "rgba(255,255,255,0.85)" : "#111",
            transition: "color 0.3s",
            letterSpacing: "-0.01em",
-@@ -3920,6 +4017,7 @@ function Liveline({
+@@ -3920,6 +4018,7 @@ function Liveline({
          return /* @__PURE__ */ (0, import_jsx_runtime.jsxs)(
            "button",
            {
@@ -466,7 +499,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..d423951e0ff2b51178d6d6f0356441e4
              onClick: () => handleSeriesToggle(s.id),
              style: {
                position: "relative",
-@@ -3968,13 +4066,58 @@ function Liveline({
+@@ -3968,13 +4067,58 @@ function Liveline({
            position: "relative",
            ...style
          },
@@ -611,7 +644,7 @@ index 414c4e61bac1017c49bbaedbd1691bcd9cdd667c..96a6d45ab763ca8a8e8e30d5aa0746f2
  interface LivelineTransitionProps {
      /** Key of the active child to display. Must match a child's `key` prop. */
 diff --git a/dist/index.js b/dist/index.js
-index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb02693b1f2 100644
+index fd0506272e9a54432a0882c3a389ee74302e4718..de469cda8b4e2510e778de4dd36661be43ad8acc 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -56,9 +56,9 @@ function resolveTheme(color, mode) {
@@ -627,6 +660,38 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
    };
  }
  var SERIES_COLORS = [
+@@ -388,6 +388,14 @@ function renderCurve(ctx, layout, palette, pts, showFill, lineAlpha = 1, fillAlp
+   ctx.stroke();
+   ctx.globalAlpha = baseAlpha;
+ }
++function revealY(rawY, x, layout, chartReveal, now_ms) {
++  const { pad, chartW, chartH } = layout;
++  const t = Math.max(0, Math.min(1, (x - pad.left) / chartW));
++  const centerDist = Math.abs(t - 0.5) * 2;
++  const localReveal = Math.max(0, Math.min(1, (chartReveal - centerDist * 0.4) / 0.6));
++  const baseY = loadingY(t, pad.top + chartH / 2, chartH * LOADING_AMPLITUDE_RATIO, now_ms * LOADING_SCROLL_SPEED);
++  return baseY + (rawY - baseY) * localReveal;
++}
+ function drawLine(ctx, layout, palette, visible, smoothValue, now, showFill, scrubX, scrubAmount = 0, chartReveal = 1, now_ms = 0, colorBlend = 1, skipDashLine = false, fillScale = 1) {
+   const { h, pad, toX, toY, chartW, chartH } = layout;
+   const incomingAlpha = ctx.globalAlpha;
+@@ -395,15 +403,7 @@ function drawLine(ctx, layout, palette, visible, smoothValue, now, showFill, scr
+   const yMax = h - pad.bottom;
+   const clampY = (y) => Math.max(yMin, Math.min(yMax, y));
+   const centerY = pad.top + chartH / 2;
+-  const amplitude = chartH * LOADING_AMPLITUDE_RATIO;
+-  const scroll = now_ms * LOADING_SCROLL_SPEED;
+-  const morphY = chartReveal < 1 ? (rawY, x) => {
+-    const t = Math.max(0, Math.min(1, (x - pad.left) / chartW));
+-    const centerDist = Math.abs(t - 0.5) * 2;
+-    const localReveal = Math.max(0, Math.min(1, (chartReveal - centerDist * 0.4) / 0.6));
+-    const baseY = loadingY(t, centerY, amplitude, scroll);
+-    return baseY + (rawY - baseY) * localReveal;
+-  } : (rawY, _x) => rawY;
++  const morphY = chartReveal < 1 ? (rawY, x) => revealY(rawY, x, layout, chartReveal, now_ms) : (rawY, _x) => rawY;
+   const pts = visible.map((p, i) => {
+     const x = toX(p.time);
+     const y = i === visible.length - 1 ? morphY(clampY(toY(smoothValue)), x) : morphY(clampY(toY(p.value)), x);
 @@ -612,7 +612,7 @@ function drawCrosshair(ctx, layout, palette, hoverX, hoverValue, hoverTime, form
    const separator = "  \xB7  ";
    ctx.save();
@@ -863,7 +928,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
          return;
        }
        const computedRange = { min: isFinite(globalMin) ? globalMin : 0, max: isFinite(globalMax) ? globalMax : 1 };
-@@ -3212,7 +3229,19 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3212,7 +3229,20 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          toX: (t) => pad.left + (t - leftEdge) / (rightEdge - leftEdge) * chartW,
          toY: (v) => pad.top + (1 - (v - minVal) / valRange) * chartH
        };
@@ -872,7 +937,8 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
 +        const element = cfg.markerRefs?.current.get(marker.id);
 +        if (!element) continue;
 +        const x = layout.toX(marker.time);
-+        const y = layout.toY(marker.value);
++        const rawY = Math.max(pad.top, Math.min(h - pad.bottom, layout.toY(marker.value)));
++        const y = chartReveal < 1 ? revealY(rawY, x, layout, chartReveal, now_ms) : rawY;
 +        const visible = x >= pad.left && x <= w - pad.right && y >= pad.top && y <= h - pad.bottom;
 +        element.style.display = visible ? "block" : "none";
 +        if (visible) {
@@ -884,7 +950,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
        let drawHoverX = null;
        let drawHoverTime = null;
        let isActiveHover = false;
-@@ -3248,6 +3277,12 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3248,6 +3278,12 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          drawHoverTime = lastHoverRef.current.time;
          hoverEntries = lastHoverEntriesRef.current;
        }
@@ -897,7 +963,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
        drawMultiFrame(ctx, layout, {
          series: seriesEntries,
          now,
-@@ -3267,6 +3302,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3267,6 +3303,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          targetWindowSecs: cfg.windowSecs,
          tooltipY: cfg.tooltipY,
          tooltipOutline: cfg.tooltipOutline,
@@ -905,7 +971,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
          chartReveal,
          pauseProgress,
          now_ms,
-@@ -3334,7 +3370,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3334,7 +3371,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
        }
        if (visible.length < 2) {
          if (badgeRef.current) badgeRef.current.container.style.display = "none";
@@ -914,7 +980,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
          return;
        }
        const computedRange = computeRange(visible, smoothValue, cfg.referenceLine?.value, cfg.exaggerate);
-@@ -3469,11 +3505,48 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3469,11 +3506,48 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          }
        }
      }
@@ -966,7 +1032,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
    }, [draw]);
  }
 
-@@ -3522,6 +3595,7 @@ function Liveline({
+@@ -3522,6 +3596,7 @@ function Liveline({
    onHover,
    cursor = "crosshair",
    pulse = true,
@@ -974,7 +1040,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
    mode = "line",
    candles,
    candleWidth,
-@@ -3533,6 +3607,8 @@ function Liveline({
+@@ -3533,6 +3608,8 @@ function Liveline({
    onSeriesToggle,
    seriesToggleCompact = false,
    lineWidth,
@@ -983,7 +1049,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
    className,
    style
  }) {
-@@ -3546,6 +3622,8 @@ function Liveline({
+@@ -3546,6 +3623,8 @@ function Liveline({
    const modeBtnRefs = useRef2(/* @__PURE__ */ new Map());
    const [modeIndicatorStyle, setModeIndicatorStyle] = useState(null);
    const [hiddenSeries, setHiddenSeries] = useState(/* @__PURE__ */ new Set());
@@ -992,7 +1058,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
    const lastSeriesPropRef = useRef2(seriesProp);
    if (seriesProp && seriesProp.length > 0) lastSeriesPropRef.current = seriesProp;
    const palette = useMemo(() => {
-@@ -3567,7 +3645,8 @@ function Liveline({
+@@ -3567,7 +3646,8 @@ function Liveline({
        data: s.data,
        value: s.value,
        palette: seriesPalettes.get(s.id) ?? resolveTheme(s.color || SERIES_COLORS[i % SERIES_COLORS.length], theme),
@@ -1002,7 +1068,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
      }));
    }, [seriesProp, seriesPalettes, theme]);
    const showMomentum = momentum !== false;
-@@ -3582,9 +3661,22 @@ function Liveline({
+@@ -3582,9 +3662,22 @@ function Liveline({
    const degenEnabled = degenProp != null ? degenProp !== false : false;
    const degenOptions = degenEnabled ? typeof degenProp === "object" ? degenProp : {} : void 0;
    const [activeWindowSecs, setActiveWindowSecs] = useState(
@@ -1026,7 +1092,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
    useLayoutEffect(() => {
      if (!windows || windows.length === 0) return;
      const btn = windowBtnRefs.current.get(activeWindowSecs);
-@@ -3636,6 +3728,7 @@ function Liveline({
+@@ -3636,6 +3729,7 @@ function Liveline({
      windowSecs: effectiveWindowSecs,
      lerpSpeed,
      showGrid: grid,
@@ -1034,7 +1100,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
      showBadge: isMultiSeries ? false : badge,
      showMomentum: isMultiSeries ? false : showMomentum,
      momentumOverride,
-@@ -3646,6 +3739,7 @@ function Liveline({
+@@ -3646,6 +3740,7 @@ function Liveline({
      padding: pad,
      onHover,
      showPulse: pulse,
@@ -1042,7 +1108,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
      scrub,
      exaggerate,
      degenOptions: isMultiSeries ? void 0 : degenOptions,
-@@ -3653,6 +3747,7 @@ function Liveline({
+@@ -3653,6 +3748,7 @@ function Liveline({
      badgeVariant,
      tooltipY,
      tooltipOutline,
@@ -1050,7 +1116,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
      valueMomentumColor,
      valueDisplayRef: showValue ? valueDisplayRef : void 0,
      orderbookData: orderbook,
-@@ -3668,7 +3763,9 @@ function Liveline({
+@@ -3668,7 +3764,9 @@ function Liveline({
      lineValue,
      multiSeries,
      isMultiSeries,
@@ -1061,7 +1127,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
    });
    const cursorStyle = scrub ? cursor : "default";
    const activeColor = isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.55)";
-@@ -3682,7 +3779,7 @@ function Liveline({
+@@ -3682,7 +3780,7 @@ function Liveline({
            display: "block",
            fontSize: 20,
            fontWeight: 500,
@@ -1070,7 +1136,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
            color: isDark ? "rgba(255,255,255,0.85)" : "#111",
            transition: "color 0.3s",
            letterSpacing: "-0.01em",
-@@ -3893,6 +3990,7 @@ function Liveline({
+@@ -3893,6 +3991,7 @@ function Liveline({
          return /* @__PURE__ */ jsxs(
            "button",
            {
@@ -1078,7 +1144,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..397ba8ba9fbf51180594874853a74fb0
              onClick: () => handleSeriesToggle(s.id),
              style: {
                position: "relative",
-@@ -3941,13 +4039,58 @@ function Liveline({
+@@ -3941,13 +4040,58 @@ function Liveline({
            position: "relative",
            ...style
          },

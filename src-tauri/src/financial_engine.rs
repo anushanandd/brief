@@ -19,7 +19,7 @@ const COLORS: [&str; 6] = [
 const SPENDING_COLORS: [&str; 6] = [
     "#477d75", "#4f78a8", "#b58a3f", "#7d6da5", "#a45f79", "#79924b",
 ];
-pub(crate) const CALCULATION_VERSION: u32 = 13;
+pub(crate) const CALCULATION_VERSION: u32 = 15;
 
 #[derive(Debug, Deserialize)]
 struct PlaidBalances {
@@ -977,11 +977,11 @@ fn reconstructed_plaid_histories(
     transactions: &[PlaidTransaction],
     history_starts: &BTreeMap<String, String>,
     today: NaiveDate,
-) -> Option<Vec<Vec<(String, Decimal)>>> {
+) -> BTreeMap<String, Vec<(String, Decimal)>> {
     let earliest_allowed = today - Duration::days(729);
     accounts
         .iter()
-        .map(|account| {
+        .filter_map(|account| {
             let current = usd_value(
                 account.balances.current,
                 account.balances.iso_currency_code.as_deref(),
@@ -1024,7 +1024,7 @@ fn reconstructed_plaid_histories(
                 }
             }
             points.reverse();
-            Some(points)
+            Some((account.account_id.clone(), points))
         })
         .collect()
 }
@@ -1801,7 +1801,7 @@ pub fn project(
                 "currency": position.currency,
                 "quoteEligible": value.is_some() && ["stock", "etf", "adr", "cef"].contains(&kind) && ticker.is_some_and(|ticker| ticker != "—"),
                 "valuationNote": value.is_none().then_some(if position.currency.as_deref() != Some("USD") { "USD valuation unavailable" } else if !share_valued { "Instrument valuation unsupported" } else { "Position not priced by provider" }),
-                "marketAsOf": sync.snaptrade.positions_as_of.get(&account.id).cloned().flatten(),
+                "marketAsOf": Value::Null,
                 "priceSource": "provider",
                 "color": COLORS[holdings.len() % COLORS.len()],
             }));
@@ -2104,12 +2104,33 @@ pub fn project(
             .cmp(right["accountId"].as_str().unwrap_or_default())
     });
     let brokerage_performance = combined_performance(&individual_performance);
+    let account_balance_history = plaid_accounts
+        .iter()
+        .filter_map(|account| {
+            let history = plaid_histories.get(&account.account_id)?.clone();
+            let current = history.last()?.1;
+            Some(performance_record(
+                format!("plaid:{}", account.account_id),
+                text(account.name.as_deref(), "Account"),
+                text(account.institution_name.as_deref(), "Unknown institution"),
+                current,
+                history,
+                &today,
+                "transaction-derived",
+                None,
+                &[],
+            ))
+        })
+        .collect::<Vec<_>>();
     let estimated_history = if incomplete {
         Vec::new()
+    } else if plaid_histories.len() == plaid_accounts.len() {
+        reconstructed_net_worth_history(
+            plaid_histories.values().cloned().collect(),
+            &individual_performance,
+        )
     } else {
-        plaid_histories
-            .map(|histories| reconstructed_net_worth_history(histories, &individual_performance))
-            .unwrap_or_default()
+        Vec::new()
     };
     add_investment_metrics(
         &mut accounts,
@@ -2184,6 +2205,10 @@ pub fn project(
     snapshot.insert("benchmarkHistory".into(), benchmark.into());
     snapshot.insert("brokeragePerformance".into(), brokerage_performance.into());
     snapshot.insert(
+        "accountBalanceHistory".into(),
+        account_balance_history.into(),
+    );
+    snapshot.insert(
         "possibleDuplicateAccounts".into(),
         possible_duplicates.into(),
     );
@@ -2249,15 +2274,6 @@ pub fn apply_market_snapshots(
     let accounts = projected["accounts"]
         .as_array()
         .ok_or("Committed accounts are unavailable")?;
-    let source_times = accounts
-        .iter()
-        .filter_map(|account| {
-            Some((
-                account["id"].as_str()?.to_string(),
-                account["positionsAsOf"].as_str().map(str::to_string),
-            ))
-        })
-        .collect::<BTreeMap<_, _>>();
     let valued_accounts = accounts
         .iter()
         .filter_map(|account| {
@@ -2286,12 +2302,8 @@ pub fn apply_market_snapshots(
             .as_str()
             .unwrap_or_default()
             .to_string();
-        let source = holding["marketAsOf"]
+        if holding["marketAsOf"]
             .as_str()
-            .map(str::to_string)
-            .or_else(|| source_times.get(&account_id).cloned().flatten());
-        if source
-            .as_deref()
             .and_then(|source| DateTime::parse_from_rfc3339(source).ok())
             .is_some_and(|source| quote_time < source)
             || holding["quoteEligible"].as_bool() != Some(true)
@@ -2601,6 +2613,9 @@ mod tests {
                 "instrument": { "kind": "stock", "symbol": "TEST", "description": "Test Security" }
             })],
         );
+        sync.snaptrade
+            .positions_as_of
+            .insert("brokerage".into(), Some("2026-09-09T07:30:00Z".into()));
         sync.snaptrade.activity_complete = true;
         sync.snaptrade.activities.insert(
             "brokerage".into(),
@@ -2653,6 +2668,7 @@ mod tests {
         assert_eq!(account["realizedGainCoverage"], "complete");
         assert_eq!(account["costBasisCoverage"], "complete");
         assert_eq!(snapshot["holdings"][0]["unrealizedGain"], 50.0);
+        assert!(snapshot["holdings"][0]["marketAsOf"].is_null());
         assert_eq!(
             snapshot["trades"]
                 .as_array()
@@ -2820,6 +2836,23 @@ mod tests {
             ])
         );
         assert_eq!(
+            snapshot["accountBalanceHistory"][0],
+            json!({
+                "accountId": "plaid:cash",
+                "name": "Checking",
+                "institution": "Bank",
+                "currentValue": 100.11,
+                "historySource": "transaction-derived",
+                "historyStart": "2026-09-07",
+                "performanceMethod": "value-only",
+                "points": [
+                    { "date": "2026-09-07", "value": 105.24, "netDeposits": null, "sp500": null, "marketChange": null, "marketChangePct": null },
+                    { "date": "2026-09-08", "value": 100.11, "netDeposits": null, "sp500": null, "marketChange": null, "marketChangePct": null },
+                    { "date": "2026-09-09", "value": 100.11, "netDeposits": null, "sp500": null, "marketChange": null, "marketChangePct": null }
+                ]
+            })
+        );
+        assert_eq!(
             snapshot["observedNetWorthHistory"]
                 .as_array()
                 .unwrap()
@@ -2830,7 +2863,47 @@ mod tests {
     }
 
     #[test]
-    fn live_quotes_are_ephemeral_and_respect_source_freshness() {
+    fn reconstructs_credit_history_as_a_negative_liability() {
+        let mut sync = sync();
+        sync.plaid.accounts.push(json!({
+            "account_id": "card", "name": "Card", "institution_name": "Bank", "type": "credit",
+            "balances": { "current": 250, "iso_currency_code": "USD" }
+        }));
+        sync.plaid.transactions.push(json!({
+            "transaction_id": "purchase", "account_id": "card", "amount": 40,
+            "name": "Purchase", "pending": false, "date": "2026-09-08"
+        }));
+        sync.plaid
+            .transaction_history_start
+            .insert("card".into(), "2026-09-07".into());
+
+        let snapshot = project(
+            &sync,
+            &BTreeMap::new(),
+            DateTime::parse_from_rfc3339("2026-09-09T12:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        )
+        .unwrap();
+        let history = snapshot["accountBalanceHistory"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|history| history["accountId"] == "plaid:card")
+            .unwrap();
+        assert_eq!(history["currentValue"], -250.0);
+        assert_eq!(
+            history["points"],
+            json!([
+                { "date": "2026-09-07", "value": -210.0, "netDeposits": null, "sp500": null, "marketChange": null, "marketChangePct": null },
+                { "date": "2026-09-08", "value": -250.0, "netDeposits": null, "sp500": null, "marketChange": null, "marketChangePct": null },
+                { "date": "2026-09-09", "value": -250.0, "netDeposits": null, "sp500": null, "marketChange": null, "marketChangePct": null }
+            ])
+        );
+    }
+
+    #[test]
+    fn live_quotes_use_price_freshness_not_position_freshness() {
         let mut committed = project(&sync(), &BTreeMap::new(), Utc::now()).unwrap();
         committed["accounts"][1]["positionsAsOf"] = "2026-09-09T16:00:00Z".into();
         committed["holdings"] = json!([{
@@ -2850,6 +2923,12 @@ mod tests {
                 as_of: "2026-09-09T15:00:00Z".into(),
             },
         )]);
+        let projected = apply_market_snapshots(&committed, &old).unwrap();
+        assert_eq!(projected["netWorth"], 320.22);
+        assert_eq!(projected["holdings"][0]["dailyChangePct"], 9.09);
+        assert_eq!(projected["holdings"][0]["weeklyChangePct"], 20.0);
+
+        committed["holdings"][0]["marketAsOf"] = "2026-09-09T16:00:00Z".into();
         assert_eq!(
             apply_market_snapshots(&committed, &old).unwrap()["netWorth"],
             committed["netWorth"]
@@ -2859,7 +2938,6 @@ mod tests {
         fresh.get_mut("ONE").unwrap().as_of = "2026-09-09T17:00:00Z".into();
         let projected = apply_market_snapshots(&committed, &fresh).unwrap();
         assert_eq!(projected["netWorth"], 320.22);
-        assert_eq!(projected["holdings"][0]["weeklyChangePct"], 20.0);
         assert_eq!(projected["holdings"][0]["weeklyReferencePrice"], 50.0);
         assert_eq!(
             projected["holdings"][0]["weeklyReferenceDate"],

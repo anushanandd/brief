@@ -1,34 +1,54 @@
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate } from '@tanstack/react-router'
 import { listen } from '@tauri-apps/api/event'
-import { House, Landmark, ListTree, Settings } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
 import { financeQueryKey } from '../hooks/use-finance'
 import { useAutoRefreshFinance, useRefreshFinance } from '../hooks/use-refresh-finance'
 import { isTauri, recoverFinanceState } from '../lib/api'
+import { navigation, primaryNavigation, settingsNavigation } from '../lib/navigation'
 import { CommandMenu } from './command-menu'
+import { ShortcutHelp } from './shortcut-help'
 import { Button } from './ui'
 
-const primaryNavigation = [
-  { to: '/', label: 'Home', icon: House, shortcut: '⌘1' },
-  { to: '/accounts', label: 'Accounts', icon: Landmark, shortcut: '⌘2' },
-  { to: '/activities', label: 'Activity', icon: ListTree, shortcut: '⌘3' },
-] as const
-const settingsNavigation = {
-  to: '/settings',
-  label: 'Settings',
-  icon: Settings,
-  shortcut: '⌘4',
-} as const
-const navigation = [...primaryNavigation, settingsNavigation]
+export function browserHistoryDirection({ metaKey, key }: Pick<KeyboardEvent, 'metaKey' | 'key'>) {
+  if (!metaKey) return undefined
+  if (key === '[') return 'back' as const
+  if (key === ']') return 'forward' as const
+  return undefined
+}
+
+type BareShortcutEvent = Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>
+
+const hasModifier = (event: BareShortcutEvent) =>
+  event.altKey || event.ctrlKey || event.metaKey || event.shiftKey
+
+export function navigationShortcutIndex(event: BareShortcutEvent, isEditing: boolean) {
+  if (isEditing || hasModifier(event)) return undefined
+  const index = Number(event.key) - 1
+  return Number.isInteger(index) && index >= 0 && index < navigation.length ? index : undefined
+}
+
+export function listNavigationAction(event: BareShortcutEvent, isEditing: boolean) {
+  if (isEditing || hasModifier(event)) return undefined
+  if (event.key.toLowerCase() === 'j') return 'next' as const
+  if (event.key.toLowerCase() === 'k') return 'previous' as const
+  if (event.key === 'Enter') return 'open' as const
+  return undefined
+}
+
+export function shortcutHelpShortcut(event: BareShortcutEvent, isEditing: boolean) {
+  return event.key === '?' && !isEditing && !event.altKey && !event.ctrlKey && !event.metaKey
+}
 
 export function AppShell() {
+  const SettingsIcon = settingsNavigation.icon
   const finance = useFinance()
   const navigate = useNavigate()
   const refresh = useRefreshFinance()
   const [commandOpen, setCommandOpen] = useState(false)
+  const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
   const client = useQueryClient()
   useAutoRefreshFinance(
     finance.data?.updatedAt,
@@ -48,7 +68,68 @@ export function AppShell() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      const target = event.target
+      const isEditing =
+        target instanceof HTMLElement &&
+        (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+      if (commandOpen || shortcutHelpOpen) return
+
+      if (shortcutHelpShortcut(event, isEditing)) {
+        event.preventDefault()
+        setShortcutHelpOpen(true)
+        return
+      }
+
+      const navigationIndex = navigationShortcutIndex(event, isEditing)
+      if (navigationIndex != null) {
+        event.preventDefault()
+        void navigate({ to: navigation[navigationIndex].to })
+        return
+      }
+
+      const listAction = listNavigationAction(event, isEditing)
+      if (listAction) {
+        const rows = [...document.querySelectorAll<HTMLElement>('[data-keyboard-row]')].filter(
+          (row) => row.getClientRects().length > 0,
+        )
+        const focusedRow =
+          document.activeElement instanceof HTMLElement
+            ? document.activeElement.closest<HTMLElement>('[data-keyboard-row]')
+            : null
+        if (listAction === 'open') {
+          const opener = focusedRow?.matches('[data-keyboard-open]')
+            ? focusedRow
+            : focusedRow?.querySelector<HTMLElement>('[data-keyboard-open]')
+          if (opener) {
+            event.preventDefault()
+            opener.click()
+          }
+        } else if (rows.length) {
+          event.preventDefault()
+          const currentIndex = focusedRow
+            ? rows.indexOf(focusedRow)
+            : listAction === 'next'
+              ? -1
+              : 0
+          const nextIndex =
+            listAction === 'next'
+              ? (currentIndex + 1) % rows.length
+              : (currentIndex - 1 + rows.length) % rows.length
+          rows[nextIndex].focus()
+          rows[nextIndex].scrollIntoView({ block: 'nearest' })
+        }
+        return
+      }
+
       if (!(event.metaKey || event.ctrlKey)) return
+
+      const historyDirection = browserHistoryDirection(event)
+      if (historyDirection) {
+        event.preventDefault()
+        if (historyDirection === 'back') window.history.back()
+        else window.history.forward()
+        return
+      }
 
       if (event.metaKey && event.key.toLowerCase() === 'r') {
         event.preventDefault()
@@ -72,12 +153,6 @@ export function AppShell() {
         void navigate({ to: '/settings' })
         return
       }
-
-      const item = navigation[Number(event.key) - 1]
-      if (item) {
-        event.preventDefault()
-        void navigate({ to: item.to })
-      }
     }
 
     let disposed = false
@@ -95,7 +170,7 @@ export function AppShell() {
       unlisten?.()
       window.removeEventListener('keydown', onKeyDown, { capture: true })
     }
-  }, [navigate, refresh, setCommandOpen])
+  }, [commandOpen, navigate, refresh, shortcutHelpOpen])
 
   return (
     <div className="app-frame">
@@ -129,7 +204,7 @@ export function AppShell() {
             aria-label={settingsNavigation.label}
             title={`${settingsNavigation.label} (${settingsNavigation.shortcut})`}
           >
-            <Settings size={17} strokeWidth={1.8} aria-hidden="true" />
+            <SettingsIcon size={17} strokeWidth={1.8} aria-hidden="true" />
             <span>{settingsNavigation.label}</span>
           </Link>
         </nav>
@@ -180,6 +255,7 @@ export function AppShell() {
       </main>
 
       {commandOpen ? <CommandMenu open onOpenChange={setCommandOpen} /> : null}
+      {shortcutHelpOpen ? <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /> : null}
     </div>
   )
 }

@@ -34,6 +34,8 @@ export function mergeAccountMovements(
 export type ActivityItem = {
   id: string
   kind: 'spending' | 'transaction' | 'income' | 'credit' | 'transfer' | 'trade'
+  accountId?: string
+  category: string
   title: string
   detail: string
   date: string
@@ -50,6 +52,7 @@ export function buildActivities(
 ): ActivityItem[] {
   const transactions = data.transactions.map((transaction): ActivityItem => {
     const mark = transactionMarkKind(transaction)
+    const category = transaction.category || 'Other'
     const isCredit =
       transaction.amount > 0 &&
       (mark === 'refund' || /\bcredit\b/i.test(`${transaction.category} ${transaction.merchant}`))
@@ -66,8 +69,10 @@ export function buildActivities(
     return {
       id: `spending:${transaction.id}`,
       kind,
+      accountId: transaction.accountId,
+      category,
       title: transaction.merchant,
-      detail: `${accountDisplayName(transaction.accountId, transaction.account, accountDisplayNames)} · ${transaction.category}`,
+      detail: `${accountDisplayName(transaction.accountId, transaction.account, accountDisplayNames)} · ${category}`,
       date: transaction.date,
       amount: transaction.amount,
       pending: transaction.pending,
@@ -89,6 +94,8 @@ export function buildActivities(
     return {
       id: `trade:${trade.id}`,
       kind: 'trade',
+      accountId: trade.accountId,
+      category: 'Trade',
       title: `${verb} ${trade.ticker ?? 'security'}`,
       detail: [
         accountDisplayName(trade.accountId, trade.account, accountDisplayNames),

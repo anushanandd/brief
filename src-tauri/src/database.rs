@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 
 use crate::storage::{Annotation, FinanceState};
 
-const COLLECTIONS: [&str; 9] = [
+const COLLECTIONS: [&str; 10] = [
     "accounts",
     "holdings",
     "transactions",
@@ -14,6 +14,7 @@ const COLLECTIONS: [&str; 9] = [
     "accountMovements",
     "observedNetWorthHistory",
     "netWorthHistory",
+    "accountBalanceHistory",
     "brokeragePerformance",
     "possibleDuplicateAccounts",
 ];
@@ -452,7 +453,7 @@ fn entity_id(section: &str, value: &Value, ordinal: usize) -> String {
     }
     let field = match section {
         "accounts" | "transactions" | "trades" | "accountMovements" => "id",
-        "brokeragePerformance" => "accountId",
+        "accountBalanceHistory" | "brokeragePerformance" => "accountId",
         "observedNetWorthHistory" | "netWorthHistory" => "date",
         _ => "",
     };

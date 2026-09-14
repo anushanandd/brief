@@ -15,20 +15,21 @@ export function TransactionList({
   transactions,
   referenceIso,
   detailed = false,
-  onBenefitConfirmation,
-  savingConfirmation = false,
 }: {
   transactions: Transaction[]
   referenceIso: string
   detailed?: boolean
-  onBenefitConfirmation?: (id: string, confirmed: boolean) => void
-  savingConfirmation?: boolean
 }) {
   const externalLogosEnabled = getExternalLogosEnabled()
   return (
     <div className={`spending-transaction-list${detailed ? ' transaction-history-list' : ''}`}>
       {transactions.map((transaction) => (
-        <div className="spending-transaction-row" key={transaction.id}>
+        <div
+          className="spending-transaction-row"
+          key={transaction.id}
+          data-keyboard-row
+          tabIndex={-1}
+        >
           <BrandMark
             className={`transaction-mark transaction-mark-${transactionMarkKind(transaction)}`}
             fallback={transactionMarkLabel(transaction)}
@@ -47,17 +48,6 @@ export function TransactionList({
             transaction.description &&
             transaction.description !== transaction.merchant ? (
               <small className="transaction-description">{transaction.description}</small>
-            ) : null}
-            {onBenefitConfirmation && transaction.amount > 0 && !transaction.pending ? (
-              <label className="benefit-confirmation">
-                <input
-                  type="checkbox"
-                  checked={transaction.benefitConfirmed === true}
-                  disabled={savingConfirmation}
-                  onChange={(event) => onBenefitConfirmation(transaction.id, event.target.checked)}
-                />{' '}
-                Confirmed benefit reimbursement
-              </label>
             ) : null}
           </span>
           <span className="transaction-category" title={transaction.category}>

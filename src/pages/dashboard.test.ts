@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  accountWeeklyChangePct,
+  chartValueChange,
   currentMonthIncome,
   dashboardAccountViews,
   dashboardAssetBreakdown,
@@ -19,6 +21,80 @@ const view = (accountId: string, name = accountId): BrokeragePerformance => ({
 })
 
 describe('dashboard account views', () => {
+  it('uses complete account or holding evidence for seven-day value changes', () => {
+    const account = {
+      id: 'account',
+      name: 'Account',
+      institution: 'Broker',
+      type: 'brokerage',
+      value: 120,
+    }
+    expect(
+      accountWeeklyChangePct(
+        {
+          updatedAt: '2026-09-08T12:00:00Z',
+          accountBalanceHistory: [
+            {
+              ...view('account'),
+              currentValue: 120,
+              points: [
+                { date: '2026-09-01', value: 100, netDeposits: null, sp500: null },
+                { date: '2026-09-08', value: 120, netDeposits: null, sp500: null },
+              ],
+            },
+          ],
+          brokeragePerformance: [],
+          holdings: [],
+        },
+        account,
+      ),
+    ).toBe(20)
+    expect(
+      accountWeeklyChangePct(
+        {
+          updatedAt: '2026-09-08T12:00:00Z',
+          accountBalanceHistory: [],
+          brokeragePerformance: [],
+          holdings: [
+            {
+              ticker: 'VTI',
+              name: 'VTI',
+              accountId: 'account',
+              shares: 1,
+              price: 100,
+              value: 100,
+              costBasis: null,
+              dailyChangePct: 0,
+              weeklyChangePct: 11.11,
+              weeklyReferencePrice: 90,
+              weeklyReferenceDate: '2026-09-01',
+              totalChangePct: 0,
+              color: '#000',
+            },
+          ],
+        },
+        account,
+      ),
+    ).toBeCloseTo(9.09, 2)
+  })
+
+  it('uses the same latest change for Home and account charts', () => {
+    const points = [
+      { date: '2026-09-02', value: 100 },
+      { date: '2026-09-03', value: 105 },
+    ]
+    expect(chartValueChange(points, 105, '2026-09-03')).toEqual({
+      change: 5,
+      percent: 5,
+      period: 'today',
+    })
+    expect(chartValueChange(points, 110, '2026-09-04')).toEqual({
+      change: 5,
+      percent: 5 / 1.05,
+      period: 'today',
+    })
+  })
+
   it('calculates the current monthly overview from imported evidence', () => {
     expect(
       monthlyPortfolioChange({

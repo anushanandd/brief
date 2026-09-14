@@ -5,6 +5,7 @@
     { "id": "all", "name": "All accounts", "institution": "Brief", "type": "combined", "value": 0 }
   ],
   "netWorthHistory": [{ "date": "—", "value": 0 }],
+  "accountBalanceHistory": [],
   "holdings": [],
   "trades": [],
   "spending": {

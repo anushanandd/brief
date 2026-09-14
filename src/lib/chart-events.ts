@@ -1,18 +1,11 @@
 import { formatCurrency, formatPercent } from './format'
-import { holdingImpact } from './insights'
 import { transactionMarkKind } from './logos'
 import type { FinanceSnapshot } from './schema'
 import { formatActivityDate, isSpendingTransaction, transactionDateKey } from './spending'
 
 const DAY_SECONDS = 24 * 60 * 60
 
-export type ChartEventKind =
-  | 'income'
-  | 'expense'
-  | 'transfer'
-  | 'sale'
-  | 'market-move'
-  | 'stock-move'
+export type ChartEventKind = 'income' | 'expense' | 'transfer' | 'buy' | 'sale'
 
 export type ChartEvent = {
   id: string
@@ -20,8 +13,8 @@ export type ChartEvent = {
   kind: ChartEventKind
   title: string
   amount?: number
-  changePct?: number
-  provenance: 'reported' | 'estimated'
+  profitLossPct?: number
+  direction: 'in' | 'out'
   accountId?: string
   note?: string
   score: number
@@ -32,14 +25,6 @@ export type ChartEventGroup = {
   date: string
   events: ChartEvent[]
   score: number
-}
-
-type PerformancePoint = {
-  date: string
-  value: number
-  netDeposits?: number | null
-  marketChange?: number | null
-  marketChangePct?: number | null
 }
 
 function chartAccountIds(data: FinanceSnapshot, accountId: string) {
@@ -69,19 +54,12 @@ function eventLimit(windowSeconds: number) {
 export function buildChartEventGroups(
   data: FinanceSnapshot,
   accountId: string,
-  points: PerformancePoint[],
   windowSeconds: number,
 ): ChartEventGroup[] {
   const relevantAccounts = chartAccountIds(data, accountId)
   const includesAccount = (id?: string) => !relevantAccounts || (!!id && relevantAccounts.has(id))
-  const accountValue =
-    data.accounts.find(({ id }) => id === accountId)?.value ??
-    data.brokeragePerformance.find(({ accountId: id }) => id === accountId)?.currentValue ??
-    data.netWorth
   const transactionThreshold = Math.max(500, Math.abs(data.spending.monthTotal) * 0.1)
   const transferThreshold = Math.max(1_000, Math.abs(data.netWorth) * 0.005)
-  const tradeThreshold = Math.max(1_000, Math.abs(accountValue ?? 0) * 0.005)
-  const movementThreshold = Math.max(500, Math.abs(accountValue ?? data.netWorth) * 0.0025)
   const events: ChartEvent[] = []
 
   for (const transaction of data.transactions) {
@@ -106,29 +84,27 @@ export function buildChartEventGroups(
       kind,
       title: transaction.merchant,
       amount: transaction.amount,
-      provenance: 'reported',
+      direction: transaction.amount > 0 ? 'in' : 'out',
       accountId: transaction.accountId,
       score: amount / threshold,
     })
   }
 
   for (const trade of data.trades) {
-    if (
-      !includesAccount(trade.accountId) ||
-      !trade.type.toLocaleUpperCase().includes('SELL') ||
-      Math.abs(trade.amount) < tradeThreshold
-    ) {
-      continue
-    }
+    const type = trade.type.toLocaleUpperCase()
+    const direction = type.includes('SELL') ? 'out' : type.includes('BUY') ? 'in' : undefined
+    if (!includesAccount(trade.accountId) || !direction) continue
     events.push({
       id: `trade:${trade.id}`,
       date: trade.date,
-      kind: 'sale',
-      title: `Sold ${trade.ticker ?? 'security'}`,
+      kind: direction === 'out' ? 'sale' : 'buy',
+      title: `${direction === 'out' ? 'Sold' : 'Bought'} ${trade.ticker ?? 'security'}`,
       amount: Math.abs(trade.amount),
-      provenance: 'reported',
+      profitLossPct:
+        direction === 'out' ? (trade.estimatedRealizedGainPct ?? undefined) : undefined,
+      direction,
       accountId: trade.accountId,
-      score: Math.abs(trade.amount) / tradeThreshold,
+      score: 1 + Math.abs(trade.amount) / 1_000,
     })
   }
 
@@ -143,47 +119,6 @@ export function buildChartEventGroups(
         transferTime - Date.parse(`${candidate.date}T12:00:00Z`) <= 5 * DAY_SECONDS * 1_000,
     )
     if (nearbySale) event.note = `Near ${nearbySale.title.toLocaleLowerCase()}`
-  }
-
-  if (accountId !== 'net-worth') {
-    for (const current of points) {
-      const marketChange = current.marketChange
-      if (marketChange == null) continue
-      const changePct = current.marketChangePct ?? 0
-      if (Math.abs(changePct) < 4 && Math.abs(marketChange) < movementThreshold) continue
-      events.push({
-        id: `market:${accountId}:${current.date}`,
-        date: current.date,
-        kind: 'market-move',
-        title: 'Portfolio movement',
-        amount: marketChange,
-        changePct,
-        provenance: 'estimated',
-        score: Math.max(Math.abs(changePct) / 4, Math.abs(marketChange) / movementThreshold),
-      })
-    }
-  }
-
-  const minimumImpact = Math.max(100, Math.abs(data.netWorth) * 0.001)
-  for (const holding of data.holdings) {
-    if (!includesAccount(holding.accountId) || holding.dailyChangePct == null) continue
-    const impact = holdingImpact(holding.value, holding.dailyChangePct)
-    if (
-      Math.abs(holding.dailyChangePct) < 8 &&
-      (Math.abs(holding.dailyChangePct) < 4 || Math.abs(impact) < minimumImpact)
-    ) {
-      continue
-    }
-    events.push({
-      id: `stock:${holding.accountId}:${holding.ticker}:${data.updatedAt.slice(0, 10)}`,
-      date: data.updatedAt.slice(0, 10),
-      kind: 'stock-move',
-      title: `${holding.ticker} moved`,
-      amount: impact,
-      changePct: holding.dailyChangePct,
-      provenance: 'estimated',
-      score: Math.max(Math.abs(holding.dailyChangePct) / 4, Math.abs(impact) / minimumImpact),
-    })
   }
 
   const pairedTransfers = new Set<string>()
@@ -210,7 +145,7 @@ export function buildChartEventGroups(
         kind: 'transfer',
         title: 'Internal transfer',
         amount: Math.abs(incoming.amount ?? 0),
-        provenance: 'reported',
+        direction: 'in',
         score: Math.max(incoming.score, outgoing.score),
       })
     }
@@ -245,13 +180,9 @@ export function buildChartEventGroups(
 
 export function chartEventGroupLabel(group: ChartEventGroup, referenceIso: string) {
   const details = group.events.slice(0, 3).map((event) => {
-    const value =
-      event.changePct == null
-        ? event.amount == null
-          ? ''
-          : formatCurrency(event.amount)
-        : `${formatPercent(event.changePct)} · ${formatCurrency(event.amount)}`
-    return `${event.title}${value ? ` ${value}` : ''}${event.note ? ` · ${event.note}` : ''}${event.provenance === 'estimated' ? ' · estimated' : ''}`
+    const value = event.amount == null ? '' : formatCurrency(event.amount)
+    const profitLoss = event.profitLossPct == null ? '' : ` · ${formatPercent(event.profitLossPct)}`
+    return `${event.title}${value ? ` ${value}` : ''}${profitLoss}${event.note ? ` · ${event.note}` : ''}`
   })
   const remainder = group.events.length - details.length
   return `${formatActivityDate(group.date, referenceIso)} · ${details.join(' · ')}${remainder ? ` · +${remainder} more` : ''}`
