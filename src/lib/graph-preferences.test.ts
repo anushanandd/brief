@@ -3,16 +3,14 @@ import { describe, expect, it } from 'vitest'
 import {
   adjacentGraphWindow,
   graphWindowForKey,
-  graphWindows,
   parseChartAccountPreferences,
   parseGraphWindow,
   reconcileChartAccountPreferences,
 } from './graph-preferences'
 
 describe('graph preferences', () => {
-  it('offers week, month, quarter, and all-time ranges', () => {
+  it('validates saved ranges and wraps keyboard selection', () => {
     const day = 24 * 60 * 60
-    expect(graphWindows.map(({ label }) => label)).toEqual(['1W', '1M', '3M', 'All'])
     expect(parseGraphWindow(String(day))).toBe(7 * day)
     expect(parseGraphWindow(String(30 * day))).toBe(30 * day)
     expect(parseGraphWindow(String(90 * day))).toBe(90 * day)

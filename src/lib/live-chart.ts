@@ -1,5 +1,7 @@
 import type { LivelinePoint } from 'liveline'
 
+import type { MarketSnapshots } from './schema'
+
 const MAX_LIVE_POINTS = 7 * 24 * 60
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
@@ -21,8 +23,51 @@ export function appendLiveChartPoint(
   return updated.slice(-MAX_LIVE_POINTS)
 }
 
+export function upsertLiveChartPoint(
+  points: LivelinePoint[],
+  value: number,
+  time: number,
+): LivelinePoint[] {
+  if (!Number.isFinite(value) || !Number.isFinite(time)) return points
+  const next = { time: minute(time), value }
+  const existing = points.findIndex((point) => minute(point.time) === next.time)
+  if (existing >= 0) {
+    if (points[existing].value === next.value) return points
+    return [...points.slice(0, existing), next, ...points.slice(existing + 1)]
+  }
+  return [...points, next].toSorted((left, right) => left.time - right.time).slice(-MAX_LIVE_POINTS)
+}
+
 export function chartPointAtOrAfter(points: LivelinePoint[], time: number) {
   return points.find((point) => point.time >= time) ?? points.at(-1)
+}
+
+export function chartRangeChange(points: LivelinePoint[], windowSeconds: number, now: number) {
+  const ordered = points
+    .filter(({ time, value }) => Number.isFinite(time) && Number.isFinite(value))
+    .toSorted((left, right) => left.time - right.time)
+  const first = ordered[0]
+  const last = ordered.at(-1)
+  if (!first || !last || !Number.isFinite(now)) return { change: 0, percent: 0 }
+
+  const boundary = windowSeconds ? now - windowSeconds : first.time
+  const afterIndex = ordered.findIndex(({ time }) => time >= boundary)
+  const after = afterIndex < 0 ? last : ordered[afterIndex]
+  const before = afterIndex > 0 ? ordered[afterIndex - 1] : after
+  const elapsed = after.time - before.time
+  const progress = elapsed ? (boundary - before.time) / elapsed : 0
+  const baseline =
+    boundary <= first.time
+      ? first.value
+      : boundary >= last.time
+        ? last.value
+        : before.value + (after.value - before.value) * progress
+  const change = last.value - baseline
+
+  return {
+    change,
+    percent: baseline ? (change / Math.abs(baseline)) * 100 : 0,
+  }
 }
 
 export function chartPointsFromStartDate(points: LivelinePoint[], startDate?: string) {
@@ -37,7 +82,7 @@ export function buildLiveChartData(
   currentValue: number,
   now: number,
 ): LivelinePoint[] {
-  const liveWithCurrent = appendLiveChartPoint(live, currentValue, now)
+  const liveWithCurrent = live.length ? live : appendLiveChartPoint([], currentValue, now)
   const liveDates = new Set(liveWithCurrent.map((point) => utcDate(point.time)))
   const historical = history.flatMap((point): LivelinePoint[] => {
     if (!DATE_PATTERN.test(point.date) || !Number.isFinite(point.value)) return []
@@ -48,7 +93,14 @@ export function buildLiveChartData(
     .filter((point) => Number.isFinite(point.time) && Number.isFinite(point.value))
     .toSorted((left, right) => left.time - right.time)
 
-  const deduplicated = [...new Map(merged.map((point) => [point.time, point])).values()]
-  if (deduplicated.length !== 1) return deduplicated
-  return [{ time: deduplicated[0].time - 60, value: deduplicated[0].value }, ...deduplicated]
+  return [...new Map(merged.map((point) => [point.time, point])).values()]
+}
+
+export function marketClosePoint(
+  points: LivelinePoint[],
+  session: MarketSnapshots['session'] | undefined,
+  closeTime: number | undefined,
+) {
+  if (!session || session === 'Regular market' || closeTime === undefined) return undefined
+  return points.find((point) => point.time === closeTime)
 }

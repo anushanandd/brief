@@ -8,14 +8,19 @@ use std::{
 };
 
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
-use chrono::{DateTime, Duration, Utc};
-use futures_util::{stream, StreamExt};
+use chrono::{DateTime, Duration, NaiveDate, Utc};
+use futures_util::{stream, SinkExt, StreamExt, TryStreamExt};
 use hmac::{Hmac, Mac};
 use reqwest::{Method, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Sha256;
+use tokio_tungstenite::{connect_async, tungstenite::Message};
 use uuid::Uuid;
+
+pub mod holding_market;
+pub mod market_stream;
+pub mod news_cache;
 
 const KEYCHAIN_SERVICE: &str = "com.brief.finance.providers";
 const CREDENTIAL_VAULT_KEY: &str = "credential-vault-v2";
@@ -24,6 +29,7 @@ const PLAID_ITEMS_KEY: &str = "plaid-items";
 const PLAID_USER_KEY: &str = "plaid-user";
 const SNAPTRADE_CREDENTIALS_KEY: &str = "snaptrade-credentials";
 const ALPACA_CREDENTIALS_KEY: &str = "alpaca-credentials";
+const ALPHA_VANTAGE_CREDENTIALS_KEY: &str = "alpha-vantage-credentials";
 const PLAID_ITEM_CONCURRENCY: usize = 4;
 
 fn report_plaid_progress(
@@ -69,14 +75,16 @@ pub struct IntegrationStatus {
     pub plaid: bool,
     pub snaptrade: bool,
     pub alpaca: bool,
+    pub alpha_vantage: bool,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketSnapshot {
     pub symbol: String,
     pub price: f64,
     pub previous_close: f64,
+    pub previous_close_as_of: Option<String>,
     pub daily_change_pct: f64,
     pub weekly_change_pct: Option<f64>,
     pub weekly_reference_price: Option<f64>,
@@ -84,7 +92,7 @@ pub struct MarketSnapshot {
     pub as_of: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketSnapshots {
     pub snapshots: BTreeMap<String, MarketSnapshot>,
@@ -94,6 +102,21 @@ pub struct MarketSnapshots {
     pub as_of: Option<String>,
     pub next_transition_at: Option<String>,
     pub poll_interval_ms: Option<u64>,
+    pub history_feed: String,
+    pub history_delay_minutes: u8,
+}
+
+#[derive(Clone, Debug)]
+pub struct MarketFrame {
+    pub as_of: String,
+    pub snapshots: BTreeMap<String, MarketSnapshot>,
+}
+
+#[derive(Clone, Debug)]
+pub struct MarketStreamTick {
+    pub market: MarketSnapshots,
+    pub chart_as_of: Option<String>,
+    pub chart_snapshots: Option<BTreeMap<String, MarketSnapshot>>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -103,8 +126,22 @@ pub struct MarketNewsArticle {
     pub summary: String,
     pub source: String,
     pub url: String,
-    #[serde(alias = "created_at")]
     pub created_at: String,
+    pub symbols: Vec<String>,
+    pub relevance_score: Option<f64>,
+    pub sentiment_score: Option<f64>,
+    pub sentiment_label: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EarningsEvent {
+    pub symbol: String,
+    pub name: String,
+    pub report_date: String,
+    pub fiscal_date_ending: Option<String>,
+    pub estimate: Option<f64>,
+    pub currency: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -182,12 +219,7 @@ pub struct SnapTradeData {
     pub activity_complete: bool,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct ProviderSyncStatus {
-    pub updated_at: Option<String>,
-    pub error: Option<String>,
-}
+pub use crate::finance_contract::ProviderSyncStatus;
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -224,6 +256,11 @@ struct AlpacaCredentials {
     secret_key: String,
 }
 
+#[derive(Clone, Debug, Deserialize, Serialize)]
+struct AlphaVantageCredentials {
+    api_key: String,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum AlpacaMarketSession {
     Core,
@@ -252,17 +289,24 @@ impl AlpacaMarketSession {
         }
     }
 
-    fn delay_minutes(self) -> u8 {
+    fn history_feed(self) -> &'static str {
         match self {
-            Self::PreMarket | Self::AfterHours => 15,
+            Self::PreMarket | Self::AfterHours => "sip",
+            Self::Overnight => "boats",
+            _ => self.feed(),
+        }
+    }
+
+    fn history_delay_minutes(self) -> u8 {
+        match self {
+            Self::PreMarket | Self::AfterHours | Self::Overnight => 15,
             _ => 0,
         }
     }
 
     fn poll_interval_ms(self) -> Option<u64> {
         match self {
-            Self::Core => Some(15_000),
-            Self::PreMarket | Self::AfterHours | Self::Overnight => Some(60_000),
+            Self::Core | Self::PreMarket | Self::AfterHours | Self::Overnight => Some(300_000),
             Self::Closed => None,
         }
     }
@@ -340,7 +384,7 @@ enum PendingLink {
         repairing: bool,
     },
     SnapTrade {
-        existing_account_ids: BTreeSet<String>,
+        existing_connection_ids: BTreeSet<String>,
     },
 }
 
@@ -354,13 +398,19 @@ struct PendingSession {
 }
 
 pub struct Providers {
+    pub market_streams: market_stream::MarketStreams,
+    chart_previews: Mutex<BTreeMap<(String, u64), (u64, holding_market::PriceHistory)>>,
+    chart_requests: tokio::sync::Semaphore,
     http: reqwest::Client,
     links: Mutex<BTreeMap<String, PendingSession>>,
     vault: Mutex<()>,
     credential_generation: AtomicU64,
     credential_edit_authorized_until: Mutex<Option<Instant>>,
     market_schedule: Mutex<Option<AlpacaMarketSchedule>>,
+    market_access: Mutex<Option<(u64, Instant, bool, bool)>>,
     weekly_closes: Mutex<WeeklyCloseCache>,
+    news: tokio::sync::Mutex<()>,
+    news_cache_path: Option<std::path::PathBuf>,
 }
 
 impl Providers {
@@ -372,13 +422,24 @@ impl Providers {
             .map_err(|error| error.to_string())?;
         Ok(Self {
             http,
+            market_streams: market_stream::MarketStreams::default(),
+            chart_previews: Mutex::new(BTreeMap::new()),
+            chart_requests: tokio::sync::Semaphore::new(2),
             links: Mutex::new(BTreeMap::new()),
             vault: Mutex::new(()),
             credential_generation: AtomicU64::new(0),
             credential_edit_authorized_until: Mutex::new(None),
             market_schedule: Mutex::new(None),
+            market_access: Mutex::new(None),
             weekly_closes: Mutex::new(WeeklyCloseCache::default()),
+            news: tokio::sync::Mutex::new(()),
+            news_cache_path: None,
         })
+    }
+
+    pub fn with_news_cache(mut self, path: &std::path::Path) -> Result<Self, String> {
+        self.news_cache_path = Some(path.to_owned());
+        Ok(self)
     }
 
     pub fn authorize_credential_edit(&self) -> Result<(), String> {
@@ -429,6 +490,7 @@ impl Providers {
             plaid: vault.entries.contains_key(PLAID_CREDENTIALS_KEY),
             snaptrade: vault.entries.contains_key(SNAPTRADE_CREDENTIALS_KEY),
             alpaca: vault.entries.contains_key(ALPACA_CREDENTIALS_KEY),
+            alpha_vantage: vault.entries.contains_key(ALPHA_VANTAGE_CREDENTIALS_KEY),
         })
     }
 
@@ -539,6 +601,11 @@ impl Providers {
             .ok_or_else(|| "Enter and test Alpaca credentials in Settings first".into())
     }
 
+    fn alpha_vantage_credentials(&self) -> Result<AlphaVantageCredentials, String> {
+        self.read_secret(ALPHA_VANTAGE_CREDENTIALS_KEY)?
+            .ok_or_else(|| "Enter and test an Alpha Vantage API key in Settings first".into())
+    }
+
     pub async fn save_credentials(
         &self,
         provider: &str,
@@ -550,6 +617,8 @@ impl Providers {
             client_id,
             if provider == "alpaca" {
                 "API key ID"
+            } else if provider == "alphavantage" {
+                "API key"
             } else {
                 "Client ID"
             },
@@ -595,9 +664,87 @@ impl Providers {
                     .await?;
                 self.write_secret(ALPACA_CREDENTIALS_KEY, &credentials)?;
             }
+            "alphavantage" => {
+                let credentials = AlphaVantageCredentials { api_key: client_id };
+                self.alpha_vantage_earnings(Some("IBM"), &credentials)
+                    .await?;
+                self.write_secret(ALPHA_VANTAGE_CREDENTIALS_KEY, &credentials)?;
+            }
             _ => return Err("Unknown provider".into()),
         }
         Ok(())
+    }
+
+    pub async fn earnings_calendar(
+        &self,
+        symbols: Vec<String>,
+    ) -> Result<Vec<EarningsEvent>, String> {
+        let symbols = normalize_stock_symbols(symbols)
+            .into_iter()
+            .collect::<BTreeSet<_>>();
+        if symbols.is_empty() {
+            return Ok(Vec::new());
+        }
+        let credentials = self.alpha_vantage_credentials()?;
+        let events = self.alpha_vantage_earnings(None, &credentials).await?;
+        Ok(events
+            .into_iter()
+            .filter(|event| symbols.contains(&event.symbol))
+            .collect())
+    }
+
+    async fn alpha_vantage_earnings(
+        &self,
+        symbol: Option<&str>,
+        credentials: &AlphaVantageCredentials,
+    ) -> Result<Vec<EarningsEvent>, String> {
+        let generation = self.credential_generation.load(Ordering::SeqCst);
+        // Serialize news/earnings requests to deduplicate misses and preserve one budget.
+        let _news_request = self.news.lock().await;
+        let mut cache = news_cache::NewsCache::new(self.news_cache_path.as_deref())?;
+        let now = Utc::now().timestamp();
+        if symbol.is_none() {
+            if let Some(body) = cache.earnings(now)? {
+                return parse_earnings_csv(&body);
+            }
+        }
+        cache.reserve(None, now)?;
+        let mut request = self.http.get("https://www.alphavantage.co/query").query(&[
+            ("function", "EARNINGS_CALENDAR"),
+            ("horizon", "3month"),
+            ("apikey", credentials.api_key.as_str()),
+        ]);
+        if let Some(symbol) = symbol {
+            request = request.query(&[("symbol", symbol)]);
+        }
+        let response = request
+            .send()
+            .await
+            .map_err(|_| "Could not reach Alpha Vantage")?;
+        if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            cache.provider_limit(&json!({"Note": "rate limit"}), now)?;
+        }
+        if !response.status().is_success() {
+            return Err(format!("Alpha Vantage returned {}", response.status()));
+        }
+        let body = response
+            .text()
+            .await
+            .map_err(|_| "Could not read Alpha Vantage earnings")?;
+        if let Ok(payload) = serde_json::from_str::<Value>(&body) {
+            cache.provider_limit(&payload, now)?;
+            return Err(
+                "Alpha Vantage earnings unavailable: quota or access limit; try again later".into(),
+            );
+        }
+        let events = parse_earnings_csv(&body)?;
+        if self.credential_generation.load(Ordering::SeqCst) != generation {
+            return Err("Credentials changed; retry the request".into());
+        }
+        if symbol.is_none() {
+            cache.save_earnings(&body, now)?;
+        }
+        Ok(events)
     }
 
     pub async fn market_snapshots(&self, symbols: Vec<String>) -> Result<MarketSnapshots, String> {
@@ -611,25 +758,33 @@ impl Providers {
                 as_of: None,
                 next_transition_at: None,
                 poll_interval_ms: None,
+                history_feed: AlpacaMarketSession::Closed.history_feed().into(),
+                history_delay_minutes: 0,
             });
         }
         let credentials = self.alpaca_credentials()?;
         let now = Utc::now();
-        let schedule = self.market_schedule(&credentials, now).await?;
+        let snapshot_request = async {
+            let schedule = self.market_schedule(&credentials, now).await?;
+            let (sip, boats) = self.market_access(&symbols[0]).await?;
+            let feed = holding_market::valuation_feed(schedule.session, sip, boats);
+            let joined = symbols.join(",");
+            let payload = self
+                .alpaca_request(
+                    &credentials,
+                    "/v2/stocks/snapshots",
+                    &[("symbols", joined.as_str()), ("feed", feed)],
+                )
+                .await?;
+            Ok::<_, String>((schedule, payload, feed))
+        };
+        let (result, weekly_references) = tokio::join!(
+            snapshot_request,
+            self.weekly_reference_closes(&credentials, &symbols, now)
+        );
+        let (schedule, payload, feed) = result?;
         let session = schedule.session;
-        let joined = symbols.join(",");
-        let payload = self
-            .alpaca_request(
-                &credentials,
-                "/v2/stocks/snapshots",
-                &[("symbols", joined.as_str()), ("feed", session.feed())],
-            )
-            .await?;
-        let mut snapshots =
-            parse_market_snapshots(&payload, session == AlpacaMarketSession::Overnight);
-        let weekly_references = self
-            .weekly_reference_closes(&credentials, &symbols, now)
-            .await;
+        let mut snapshots = parse_market_snapshots(&payload, feed == "overnight");
         for (symbol, snapshot) in &mut snapshots {
             if let Some(reference) = weekly_references.get(symbol) {
                 snapshot.weekly_change_pct =
@@ -647,12 +802,221 @@ impl Providers {
         Ok(MarketSnapshots {
             snapshots,
             session: session.label().into(),
-            feed: session.feed().into(),
-            delay_minutes: session.delay_minutes(),
+            feed: feed.into(),
+            delay_minutes: if feed == "delayed_sip" { 15 } else { 0 },
             as_of,
             next_transition_at: Some(schedule.next_transition_at.to_rfc3339()),
             poll_interval_ms: session.poll_interval_ms(),
+            history_feed: if matches!(feed, "sip" | "boats") {
+                feed
+            } else {
+                session.history_feed()
+            }
+            .into(),
+            history_delay_minutes: if matches!(feed, "sip" | "boats") {
+                0
+            } else {
+                session.history_delay_minutes()
+            },
         })
+    }
+
+    pub async fn market_history(
+        &self,
+        symbols: &[String],
+        market: &MarketSnapshots,
+    ) -> Result<Vec<MarketFrame>, String> {
+        let symbols = normalize_stock_symbols(symbols.to_vec());
+        if symbols.is_empty() || market.poll_interval_ms.is_none() {
+            return Ok(Vec::new());
+        }
+        let credentials = self.alpaca_credentials()?;
+        let end = Utc::now() - Duration::minutes(i64::from(market.history_delay_minutes));
+        let start = end - Duration::hours(24);
+        let joined = symbols.join(",");
+        let start = start.to_rfc3339();
+        let end = end.to_rfc3339();
+        let mut page_token: Option<String> = None;
+        let mut frames = BTreeMap::<String, BTreeMap<String, MarketSnapshot>>::new();
+        for _ in 0..20 {
+            let mut parameters = vec![
+                ("symbols", joined.as_str()),
+                ("timeframe", "1Min"),
+                ("start", start.as_str()),
+                ("end", end.as_str()),
+                ("limit", "10000"),
+                ("feed", market.history_feed.as_str()),
+                ("adjustment", "split"),
+                ("sort", "asc"),
+            ];
+            if let Some(token) = page_token.as_deref() {
+                parameters.push(("page_token", token));
+            }
+            let payload = self
+                .alpaca_request(&credentials, "/v2/stocks/bars", &parameters)
+                .await?;
+            for frame in parse_market_bar_frames(&payload, &market.snapshots) {
+                frames
+                    .entry(frame.as_of)
+                    .or_default()
+                    .extend(frame.snapshots);
+            }
+            page_token = payload
+                .get("next_page_token")
+                .and_then(Value::as_str)
+                .map(str::to_owned);
+            if page_token.is_none() {
+                break;
+            }
+        }
+        Ok(frames
+            .into_iter()
+            .map(|(as_of, snapshots)| MarketFrame { as_of, snapshots })
+            .collect())
+    }
+
+    pub async fn stream_market_updates<F>(
+        &self,
+        symbols: Vec<String>,
+        mut market: MarketSnapshots,
+        update_interval: StdDuration,
+        mut cancel: tokio::sync::watch::Receiver<bool>,
+        mut publish: F,
+    ) -> Result<(), String>
+    where
+        F: FnMut(MarketStreamTick) -> Result<(), String> + Send,
+    {
+        let symbols = normalize_stock_symbols(symbols);
+        if symbols.is_empty() || market.poll_interval_ms.is_none() {
+            return Ok(());
+        }
+
+        let transition = market
+            .next_transition_at
+            .as_deref()
+            .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.with_timezone(&Utc))
+            .ok_or_else(|| "Alpaca did not return the next market transition".to_string())?;
+        let chart_seed = previous_close_snapshots(&market.snapshots, &[]);
+        let mut bar_frames = BTreeMap::new();
+
+        let mut attempt = 0;
+        loop {
+            if *cancel.borrow() || Utc::now() >= transition {
+                return Ok(());
+            }
+            let feed = self
+                .market_streams
+                .acquire(&market.feed, self.alpaca_credentials()?)?;
+            // Keep the canonical feed warm even when no Holdings chart is mounted.
+            let canonical = self.canonical_stream_feed(&symbols[0]).await?;
+            let canonical_feed = self
+                .market_streams
+                .acquire(&canonical, self.alpaca_credentials()?)?;
+            let mut canonical_events = canonical_feed.events.subscribe();
+            let canonical_failure = async {
+                if canonical_feed.state.lock().unwrap().finished {
+                    return;
+                }
+                loop {
+                    match canonical_events.recv().await {
+                        Ok(events) if !events.iter().any(|item| item["T"] == "error") => {}
+                        _ => return,
+                    }
+                }
+            };
+            let consumption = consume_market_stream(
+                &feed,
+                &symbols,
+                transition,
+                &mut market,
+                &chart_seed,
+                &mut bar_frames,
+                update_interval,
+                &mut cancel,
+                &mut publish,
+            );
+            let result = tokio::select! {
+                result = consumption => Some(result),
+                _ = canonical_failure => Some(Err("Canonical feed disconnected".into())),
+                _ = tokio::time::sleep(StdDuration::from_secs(300)) => None,
+            };
+            match result {
+                Some(Ok(())) => return Ok(()),
+                Some(Err(error)) => {
+                    if error != "Market correction requires reconciliation" {
+                        attempt += 1;
+                    }
+                    if attempt >= 3 {
+                        return Err(error);
+                    }
+                }
+                None => {
+                    let refreshed = tokio::select! {
+                        _ = cancel.changed() => return Ok(()),
+                        result = self.market_snapshots(symbols.clone()) => result,
+                    };
+                    if let Ok(mut refreshed) = refreshed {
+                        if refreshed.feed == market.feed {
+                            for (symbol, snapshot) in &market.snapshots {
+                                update_stream_price(
+                                    &mut refreshed.snapshots,
+                                    symbol,
+                                    snapshot.price,
+                                    &snapshot.as_of,
+                                );
+                            }
+                            refreshed.as_of = newest_market_time(&refreshed.snapshots);
+                        }
+                        market = refreshed;
+                        publish(MarketStreamTick {
+                            market: market.clone(),
+                            chart_snapshots: None,
+                            chart_as_of: None,
+                        })?;
+                    }
+                    continue;
+                }
+            }
+            let refreshed = tokio::select! {
+                _ = cancel.changed() => return Ok(()),
+                result = self.market_snapshots(symbols.clone()) => result,
+            };
+            if let Ok(refreshed) = refreshed {
+                market = refreshed;
+                publish(MarketStreamTick {
+                    market: market.clone(),
+                    chart_snapshots: None,
+                    chart_as_of: None,
+                })?;
+            }
+            if let Ok(backfill) = self.market_history(&symbols, &market).await {
+                for frame in backfill {
+                    let changed = bar_frames.get(&frame.as_of) != Some(&frame.snapshots);
+                    bar_frames.insert(frame.as_of.clone(), frame.snapshots);
+                    if changed {
+                        publish(MarketStreamTick {
+                            market: market.clone(),
+                            chart_snapshots: Some(chart_snapshots_at(
+                                &frame.as_of,
+                                &chart_seed,
+                                &bar_frames,
+                            )),
+                            chart_as_of: Some(frame.as_of),
+                        })?;
+                    }
+                }
+            }
+            let backoff = StdDuration::from_secs(1 << attempt);
+            tokio::select! {
+                _ = tokio::time::sleep(backoff) => {}
+                changed = cancel.changed() => {
+                    if changed.is_err() || *cancel.borrow() {
+                        return Ok(());
+                    }
+                }
+            }
+        }
     }
 
     async fn weekly_reference_closes(
@@ -741,24 +1105,68 @@ impl Providers {
         references
     }
 
-    pub async fn market_news(&self, symbol: String) -> Result<Vec<MarketNewsArticle>, String> {
-        let symbol = stock_symbol(&symbol)?;
-        let credentials = self.alpaca_credentials()?;
-        let start = (Utc::now() - Duration::days(7)).to_rfc3339();
-        let payload = self
-            .alpaca_request(
-                &credentials,
-                "/v1beta1/news",
-                &[
-                    ("symbols", &symbol),
-                    ("start", &start),
-                    ("limit", "5"),
-                    ("sort", "desc"),
-                    ("include_content", "false"),
-                ],
-            )
-            .await?;
-        parse_market_news(&payload)
+    pub async fn market_news(
+        &self,
+        symbols: Vec<String>,
+        force: bool,
+    ) -> Result<news_cache::NewsResult, String> {
+        let symbols = normalize_stock_symbols(symbols);
+        if symbols.len() != 1 {
+            return Err("Choose one ticker for news".into());
+        }
+        let symbol = &symbols[0];
+        let credentials = self.alpha_vantage_credentials()?;
+        let generation = self.credential_generation.load(Ordering::SeqCst);
+        let _news_request = self.news.lock().await;
+        let mut cache = news_cache::NewsCache::new(self.news_cache_path.as_deref())?;
+        let now = Utc::now().timestamp();
+        if !force && cache.recent_attempt(symbol, now)? {
+            return cache.result(symbol, now, None);
+        }
+        if let Err(error) = cache.reserve(Some(symbol), now) {
+            return cache.result(symbol, now, Some(error));
+        }
+        let fetched = async {
+            let response = self
+                .http
+                .get("https://www.alphavantage.co/query")
+                .timeout(StdDuration::from_secs(15))
+                .query(&[
+                    ("function", "NEWS_SENTIMENT"),
+                    ("tickers", symbol.as_str()),
+                    ("sort", "LATEST"),
+                    ("limit", "25"),
+                    ("apikey", credentials.api_key.as_str()),
+                ])
+                .send()
+                .await
+                .map_err(|_| "Could not reach Alpha Vantage news".to_string())?;
+            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
+                cache.provider_limit(&json!({"Note": "rate limit"}), now)?;
+            }
+            if !response.status().is_success() {
+                return Err(format!("Alpha Vantage news returned {}", response.status()));
+            }
+            let payload: Value = response
+                .json()
+                .await
+                .map_err(|_| "Could not read Alpha Vantage news".to_string())?;
+            cache.provider_limit(&payload, now)?;
+            parse_alpha_vantage_news(&payload, symbol)?;
+            Ok(json!({"feed": payload["feed"]}))
+        }
+        .await;
+        if self.credential_generation.load(Ordering::SeqCst) != generation {
+            return Err("News credentials changed; retry the request".into());
+        }
+        let warning = match fetched {
+            Ok(payload) => cache.save(symbol, &payload, now).err(),
+            Err(error) => Some(error),
+        };
+        if let Some(ref warning) = warning {
+            cache.failure(symbol, warning)?;
+        }
+        cache.result(symbol, now, warning)
     }
 
     pub async fn begin_link(
@@ -829,10 +1237,10 @@ impl Providers {
             }
             "snaptrade" => {
                 let credentials = self.snaptrade_credentials()?;
-                let accounts = self
-                    .snaptrade_request(&credentials, Method::GET, "/accounts", vec![], None)
+                let connections = self
+                    .snaptrade_request(&credentials, Method::GET, "/authorizations", vec![], None)
                     .await?;
-                let existing_account_ids = snaptrade_account_ids(&accounts)?;
+                let existing_connection_ids = snaptrade_active_connection_ids(&connections)?;
                 let response = self
                     .snaptrade_request(
                         &credentials,
@@ -848,7 +1256,7 @@ impl Providers {
                 (
                     string_field(&response, "redirectURI")?,
                     PendingLink::SnapTrade {
-                        existing_account_ids,
+                        existing_connection_ids,
                     },
                 )
             }
@@ -884,7 +1292,12 @@ impl Providers {
         })
     }
 
-    pub async fn poll_link(&self, provider: &str, session_id: &str) -> Result<LinkStatus, String> {
+    pub async fn poll_link(
+        &self,
+        provider: &str,
+        session_id: &str,
+        browser_completed: bool,
+    ) -> Result<LinkStatus, String> {
         let session = {
             let mut links = self
                 .links
@@ -903,7 +1316,7 @@ impl Providers {
         let result = cancellable_link_poll(
             session.cancel.subscribe(),
             session.expires,
-            self.poll_link_inner(provider, session_id, session.link),
+            self.poll_link_inner(provider, session_id, session.link, browser_completed),
         )
         .await;
         let mut links = self
@@ -948,6 +1361,7 @@ impl Providers {
         provider: &str,
         session_id: &str,
         pending: PendingLink,
+        browser_completed: bool,
     ) -> Result<LinkStatus, String> {
         match (provider, pending) {
             (
@@ -1078,20 +1492,14 @@ impl Providers {
             (
                 "snaptrade",
                 PendingLink::SnapTrade {
-                    existing_account_ids,
+                    existing_connection_ids,
                 },
             ) => {
                 let credentials = self.snaptrade_credentials()?;
                 let response = self
-                    .snaptrade_request(&credentials, Method::GET, "/accounts", vec![], None)
+                    .snaptrade_request(&credentials, Method::GET, "/authorizations", vec![], None)
                     .await?;
-                if snaptrade_account_ids(&response)?.is_subset(&existing_account_ids) {
-                    Ok(pending_status())
-                } else {
-                    Ok(LinkStatus {
-                        status: "connected".into(),
-                    })
-                }
+                snaptrade_link_status(&response, &existing_connection_ids, browser_completed)
             }
             _ => Err("Provider does not match this link session".into()),
         }
@@ -1291,11 +1699,14 @@ impl Providers {
                         Some((id, transaction.clone()))
                     })
                     .collect();
+                let mut restarts = 0;
                 loop {
                     let mut cursor = starting_cursor.clone();
                     let mut transactions = starting_transactions.clone();
+                    let mut seen = BTreeSet::new();
+                    if let Some(cursor) = &cursor { seen.insert(cursor.clone()); }
                     let pagination: Result<(String, BTreeMap<String, Value>), String> = async {
-                        loop {
+                        for page in 0..100 {
                             let mut request = json!({
                                 "access_token": &item.access_token,
                                 "count": 500
@@ -1328,10 +1739,11 @@ impl Providers {
                             }
                             let next_cursor = string_field(&sync, "next_cursor")?;
                             cursor = Some(next_cursor.clone());
-                            if !bool_field(&sync, "has_more")? {
-                                return Ok((next_cursor, transactions));
-                            }
+                            let has_more = bool_field(&sync, "has_more")?;
+                            validate_plaid_page(&next_cursor, has_more, page, &mut seen)?;
+                            if !has_more { return Ok((next_cursor, transactions)); }
                         }
+                        Err("Plaid transaction pagination exceeded its safe page limit".into())
                     }
                     .await;
 
@@ -1364,6 +1776,8 @@ impl Providers {
                         Err(error)
                             if error.contains("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") =>
                         {
+                            restarts += 1;
+                            if restarts > 2 { return Err("Plaid transactions kept changing during pagination; retry the refresh".into()); }
                             continue
                         }
                         Err(error) => return Err(error),
@@ -1496,114 +1910,142 @@ impl Providers {
             .cloned()
             .ok_or_else(|| "SnapTrade response did not include an account list".to_string())?;
         let balance_fetched_at = Utc::now().to_rfc3339();
+        let results = stream::iter(
+            all_accounts
+                .into_iter()
+                .filter(supported_snaptrade_account)
+                .map(|mut account| {
+                    let credentials = &credentials;
+                    let balance_fetched_at = &balance_fetched_at;
+                    async move {
+                        let mut data = SnapTradeData {
+                            history_complete: true,
+                            activity_complete: true,
+                            ..Default::default()
+                        };
+
+                        let id = account
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .unwrap_or_default()
+                            .to_owned();
+                        // `/accounts` only returns brokerage accounts. `account_category` is optional and is
+                        // commonly null for valid accounts, including E*Trade Individual and Roth IRA
+                        // accounts, so it cannot be used as an inclusion filter.
+                        account["balance_fetched_at"] = Value::String(balance_fetched_at.clone());
+                        let positions_path = format!("/accounts/{id}/positions/all");
+                        let history_path = format!("/accounts/{id}/balanceHistory");
+                        let activities_path = format!("/accounts/{id}/activities");
+                        let cached_history = cached.and_then(|data| data.balance_history.get(&id));
+                        let cached_activities = cached.and_then(|data| data.activities.get(&id));
+                        let recent_only = !backfill_activity && cached_activities.is_some();
+                        let since = (Utc::now()
+                            - Duration::days(if recent_only { 30 } else { 730 }))
+                        .format("%Y-%m-%d")
+                        .to_string();
+                        let (positions, balance_history, activities) = tokio::join!(
+                            self.snaptrade_request(
+                                credentials,
+                                Method::GET,
+                                &positions_path,
+                                vec![],
+                                None,
+                            ),
+                            async {
+                                if !refresh_history {
+                                    if let Some(history) = cached_history {
+                                        return Ok(history.clone());
+                                    }
+                                }
+                                let response = tokio::time::timeout(
+                                    StdDuration::from_secs(5),
+                                    self.snaptrade_request(
+                                        credentials,
+                                        Method::GET,
+                                        &history_path,
+                                        vec![],
+                                        None,
+                                    ),
+                                )
+                                .await
+                                .map_err(|_| "request timed out".to_string())??;
+                                required_array(&response, "history")
+                            },
+                            async {
+                                self.snaptrade_activities(credentials, &activities_path, &since)
+                                    .await
+                                    .map(|fresh| {
+                                        if recent_only {
+                                            merge_recent_activities(
+                                                cached_activities.map(Vec::as_slice).unwrap_or(&[]),
+                                                fresh,
+                                                &since,
+                                            )
+                                        } else {
+                                            fresh
+                                        }
+                                    })
+                            },
+                        );
+                        let positions = positions?;
+                        data.positions_as_of.insert(
+                            id.clone(),
+                            positions
+                                .pointer("/data_freshness/as_of")
+                                .and_then(Value::as_str)
+                                .map(str::to_owned),
+                        );
+                        data.positions
+                            .insert(id.clone(), required_array(&positions, "results")?);
+                        data.history_complete &= balance_history.is_ok();
+                        data.activity_complete &= activities.is_ok();
+                        let balance_history = history_or_cached(
+                            balance_history,
+                            cached_history,
+                            &format!("SnapTrade account {id} balance history"),
+                            &mut data.warnings,
+                        );
+                        data.balance_history.insert(id.clone(), balance_history);
+                        if activities.is_err() {
+                            account["sync_status"]["transactions"] = cached
+                                .and_then(|data| {
+                                    data.accounts.iter().find(|account| {
+                                        account.get("id").and_then(Value::as_str) == Some(&id)
+                                    })
+                                })
+                                .and_then(|account| account.pointer("/sync_status/transactions"))
+                                .cloned()
+                                .unwrap_or(Value::Null);
+                        }
+                        data.accounts.push(account);
+                        let activities = history_or_cached(
+                            activities,
+                            cached_activities,
+                            &format!("SnapTrade account {id} activities"),
+                            &mut data.warnings,
+                        );
+                        data.activities.insert(id, activities);
+                        Ok::<_, String>(data)
+                    }
+                }),
+        )
+        .buffered(3)
+        .try_collect::<Vec<_>>()
+        .await?;
         let mut data = SnapTradeData {
             history_complete: true,
             activity_complete: true,
             ..Default::default()
         };
-        for mut account in all_accounts {
-            let id = account
-                .get("id")
-                .and_then(Value::as_str)
-                .unwrap_or_default()
-                .to_owned();
-            // `/accounts` only returns brokerage accounts. `account_category` is optional and is
-            // commonly null for valid accounts, including E*Trade Individual and Roth IRA
-            // accounts, so it cannot be used as an inclusion filter.
-            if supported_snaptrade_account(&account) {
-                account["balance_fetched_at"] = Value::String(balance_fetched_at.clone());
-                let positions_path = format!("/accounts/{id}/positions/all");
-                let history_path = format!("/accounts/{id}/balanceHistory");
-                let activities_path = format!("/accounts/{id}/activities");
-                let cached_history = cached.and_then(|data| data.balance_history.get(&id));
-                let cached_activities = cached.and_then(|data| data.activities.get(&id));
-                let recent_only = !backfill_activity && cached_activities.is_some();
-                let since = (Utc::now() - Duration::days(if recent_only { 30 } else { 730 }))
-                    .format("%Y-%m-%d")
-                    .to_string();
-                let (positions, balance_history, activities) = tokio::join!(
-                    self.snaptrade_request(
-                        &credentials,
-                        Method::GET,
-                        &positions_path,
-                        vec![],
-                        None,
-                    ),
-                    async {
-                        if !refresh_history {
-                            if let Some(history) = cached_history {
-                                return Ok(history.clone());
-                            }
-                        }
-                        let response = tokio::time::timeout(
-                            StdDuration::from_secs(5),
-                            self.snaptrade_request(
-                                &credentials,
-                                Method::GET,
-                                &history_path,
-                                vec![],
-                                None,
-                            ),
-                        )
-                        .await
-                        .map_err(|_| "request timed out".to_string())??;
-                        required_array(&response, "history")
-                    },
-                    async {
-                        self.snaptrade_activities(&credentials, &activities_path, &since)
-                            .await
-                            .map(|fresh| {
-                                if recent_only {
-                                    merge_recent_activities(
-                                        cached_activities.map(Vec::as_slice).unwrap_or(&[]),
-                                        fresh,
-                                        &since,
-                                    )
-                                } else {
-                                    fresh
-                                }
-                            })
-                    },
-                );
-                let positions = positions?;
-                data.positions_as_of.insert(
-                    id.clone(),
-                    positions
-                        .pointer("/data_freshness/as_of")
-                        .and_then(Value::as_str)
-                        .map(str::to_owned),
-                );
-                data.positions
-                    .insert(id.clone(), required_array(&positions, "results")?);
-                data.history_complete &= balance_history.is_ok();
-                data.activity_complete &= activities.is_ok();
-                let balance_history = history_or_cached(
-                    balance_history,
-                    cached_history,
-                    &format!("SnapTrade account {id} balance history"),
-                    &mut data.warnings,
-                );
-                data.balance_history.insert(id.clone(), balance_history);
-                if activities.is_err() {
-                    account["sync_status"]["transactions"] = cached
-                        .and_then(|data| {
-                            data.accounts.iter().find(|account| {
-                                account.get("id").and_then(Value::as_str) == Some(&id)
-                            })
-                        })
-                        .and_then(|account| account.pointer("/sync_status/transactions"))
-                        .cloned()
-                        .unwrap_or(Value::Null);
-                }
-                data.accounts.push(account);
-                let activities = history_or_cached(
-                    activities,
-                    cached_activities,
-                    &format!("SnapTrade account {id} activities"),
-                    &mut data.warnings,
-                );
-                data.activities.insert(id, activities);
-            }
+        for account in results {
+            data.accounts.extend(account.accounts);
+            data.positions.extend(account.positions);
+            data.positions_as_of.extend(account.positions_as_of);
+            data.activities.extend(account.activities);
+            data.balance_history.extend(account.balance_history);
+            data.warnings.extend(account.warnings);
+            data.history_complete &= account.history_complete;
+            data.activity_complete &= account.activity_complete;
         }
         Ok(data)
     }
@@ -2019,6 +2461,319 @@ impl Providers {
     }
 }
 
+async fn consume_market_stream<F>(
+    feed: &market_stream::Feed,
+    symbols: &[String],
+    transition: DateTime<Utc>,
+    market: &mut MarketSnapshots,
+    chart_seed: &BTreeMap<String, MarketSnapshot>,
+    bar_frames: &mut BTreeMap<String, BTreeMap<String, MarketSnapshot>>,
+    update_interval: StdDuration,
+    cancel: &mut tokio::sync::watch::Receiver<bool>,
+    publish: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(MarketStreamTick) -> Result<(), String> + Send,
+{
+    let mut messages = feed.events.subscribe();
+    let initial = feed
+        .state
+        .lock()
+        .map_err(|_| "Market state unavailable")?
+        .clone();
+    if initial.finished {
+        return Err(initial
+            .error
+            .unwrap_or_else(|| "Market disconnected".into()));
+    }
+    for (symbol, quote) in initial.quotes {
+        let price = if market.feed == "overnight" {
+            quote_midpoint(&quote)
+        } else {
+            quote["p"].as_f64()
+        };
+        if let (Some(price), Some(time)) = (price, quote["t"].as_str()) {
+            update_stream_price(&mut market.snapshots, &symbol, price, time);
+        }
+    }
+    let wait = (transition - Utc::now())
+        .to_std()
+        .unwrap_or_else(|_| StdDuration::from_secs(0));
+    let transition_sleep = tokio::time::sleep(wait);
+    tokio::pin!(transition_sleep);
+    let mut flush = tokio::time::interval(update_interval.max(StdDuration::from_secs(1)));
+    flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    flush.tick().await;
+    let mut market_changed = true;
+    let mut chart_times = BTreeSet::new();
+
+    loop {
+        tokio::select! {
+            changed = cancel.changed() => {
+                if changed.is_err() || *cancel.borrow() {
+                    return Ok(());
+                }
+            }
+            _ = &mut transition_sleep => {
+                publish_pending_market_updates(
+                    market,
+                    chart_seed,
+                    bar_frames,
+                    &mut market_changed,
+                    &mut chart_times,
+                    publish,
+                )?;
+                return Ok(());
+            }
+            _ = flush.tick() => {
+                publish_pending_market_updates(
+                    market,
+                    chart_seed,
+                    bar_frames,
+                    &mut market_changed,
+                    &mut chart_times,
+                    publish,
+                )?;
+            }
+            message = messages.recv() => {
+                let items = message.map_err(|_| "Market consumer needs reconciliation")?;
+                        for item in items {
+                            if item.get("T").and_then(Value::as_str) == Some("error") {
+                                return Err(stream_error(&item));
+                            }
+                            let Some(symbol) = item
+                                .get("S")
+                                .and_then(Value::as_str)
+                                .filter(|symbol| symbols.iter().any(|candidate| candidate == symbol))
+                            else {
+                                continue;
+                            };
+                            if matches!(item["T"].as_str(), Some("c" | "x")) {
+                                return Err("Market correction requires reconciliation".into());
+                            }
+                            let Some(as_of) = item.get("t").and_then(Value::as_str) else {
+                                continue;
+                            };
+                            match item.get("T").and_then(Value::as_str) {
+                                Some("q") if market.feed == "overnight" => {
+                                    if let Some(price) = quote_midpoint(&item) {
+                                        market_changed |= update_stream_price(
+                                            &mut market.snapshots,
+                                            symbol,
+                                            price,
+                                            as_of,
+                                        );
+                                    }
+                                }
+                                Some("t") if market.feed != "overnight" => {
+                                    if let Some(price) = item.get("p").and_then(Value::as_f64) {
+                                        market_changed |= update_stream_price(
+                                            &mut market.snapshots,
+                                            symbol,
+                                            price,
+                                            as_of,
+                                        );
+                                    }
+                                }
+                                Some("b" | "u") => {
+                                    if let Some(price) = item.get("c").and_then(Value::as_f64) {
+                                        let base = market
+                                            .snapshots
+                                            .get(symbol)
+                                            .or_else(|| chart_seed.get(symbol));
+                                        if let Some(snapshot) = stream_snapshot(base, symbol, price, as_of) {
+                                            bar_frames
+                                                .entry(as_of.to_string())
+                                                .or_default()
+                                                .insert(symbol.to_string(), snapshot);
+                                            chart_times.insert(as_of.to_string());
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        market.as_of = newest_market_time(&market.snapshots);
+            }
+        }
+    }
+}
+
+fn publish_pending_market_updates<F>(
+    market: &MarketSnapshots,
+    chart_seed: &BTreeMap<String, MarketSnapshot>,
+    bar_frames: &BTreeMap<String, BTreeMap<String, MarketSnapshot>>,
+    market_changed: &mut bool,
+    chart_times: &mut BTreeSet<String>,
+    publish: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(MarketStreamTick) -> Result<(), String>,
+{
+    if !*market_changed && chart_times.is_empty() {
+        return Ok(());
+    }
+    if chart_times.is_empty() {
+        publish(MarketStreamTick {
+            market: market.clone(),
+            chart_as_of: None,
+            chart_snapshots: None,
+        })?;
+    } else {
+        for as_of in std::mem::take(chart_times) {
+            publish(MarketStreamTick {
+                market: market.clone(),
+                chart_snapshots: Some(chart_snapshots_at(&as_of, chart_seed, bar_frames)),
+                chart_as_of: Some(as_of),
+            })?;
+        }
+    }
+    *market_changed = false;
+    Ok(())
+}
+
+fn parse_stream_payload(text: &str) -> Result<Vec<Value>, String> {
+    let payload: Value = serde_json::from_str(text)
+        .map_err(|error| format!("Alpaca WebSocket sent invalid data: {error}"))?;
+    match payload {
+        Value::Array(items) => Ok(items),
+        item @ Value::Object(_) => Ok(vec![item]),
+        _ => Err("Alpaca WebSocket sent an unexpected message".into()),
+    }
+}
+
+fn stream_error(value: &Value) -> String {
+    let message = value
+        .get("msg")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown error");
+    let code = value
+        .get("code")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    format!("Alpaca WebSocket error {code}: {message}")
+}
+
+fn update_stream_price(
+    snapshots: &mut BTreeMap<String, MarketSnapshot>,
+    symbol: &str,
+    price: f64,
+    as_of: &str,
+) -> bool {
+    if !price.is_finite() || price <= 0.0 {
+        return false;
+    }
+    if snapshots.get(symbol).is_some_and(|current| {
+        let current_time = DateTime::parse_from_rfc3339(&current.as_of).ok();
+        let next_time = DateTime::parse_from_rfc3339(as_of).ok();
+        current_time
+            .zip(next_time)
+            .is_some_and(|(current, next)| next < current)
+    }) {
+        return false;
+    }
+    let Some(snapshot) = stream_snapshot(snapshots.get(symbol), symbol, price, as_of) else {
+        return false;
+    };
+    snapshots.insert(symbol.to_string(), snapshot);
+    true
+}
+
+fn stream_snapshot(
+    base: Option<&MarketSnapshot>,
+    symbol: &str,
+    price: f64,
+    as_of: &str,
+) -> Option<MarketSnapshot> {
+    if !price.is_finite() || price <= 0.0 || DateTime::parse_from_rfc3339(as_of).is_err() {
+        return None;
+    }
+    let previous_close = base
+        .map(|snapshot| snapshot.previous_close)
+        .unwrap_or(price);
+    let weekly_reference_price = base.and_then(|snapshot| snapshot.weekly_reference_price);
+    Some(MarketSnapshot {
+        symbol: symbol.to_string(),
+        price,
+        previous_close,
+        previous_close_as_of: base.and_then(|snapshot| snapshot.previous_close_as_of.clone()),
+        daily_change_pct: if previous_close == 0.0 {
+            0.0
+        } else {
+            (price - previous_close) / previous_close * 100.0
+        },
+        weekly_change_pct: weekly_reference_price
+            .map(|reference| (price - reference) / reference * 100.0),
+        weekly_reference_price,
+        weekly_reference_date: base.and_then(|snapshot| snapshot.weekly_reference_date.clone()),
+        as_of: as_of.to_string(),
+    })
+}
+
+fn newest_market_time(snapshots: &BTreeMap<String, MarketSnapshot>) -> Option<String> {
+    snapshots
+        .values()
+        .filter_map(|snapshot| {
+            DateTime::parse_from_rfc3339(&snapshot.as_of)
+                .ok()
+                .map(|time| (time, snapshot.as_of.clone()))
+        })
+        .max_by_key(|(time, _)| *time)
+        .map(|(_, value)| value)
+}
+
+fn previous_close_snapshots(
+    snapshots: &BTreeMap<String, MarketSnapshot>,
+    history: &[MarketFrame],
+) -> BTreeMap<String, MarketSnapshot> {
+    let as_of = history
+        .first()
+        .map(|frame| frame.as_of.clone())
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    snapshots
+        .iter()
+        .filter_map(|(symbol, snapshot)| {
+            stream_snapshot(Some(snapshot), symbol, snapshot.previous_close, &as_of)
+                .map(|snapshot| (symbol.clone(), snapshot))
+        })
+        .collect()
+}
+
+fn chart_snapshots_at(
+    as_of: &str,
+    seed: &BTreeMap<String, MarketSnapshot>,
+    frames: &BTreeMap<String, BTreeMap<String, MarketSnapshot>>,
+) -> BTreeMap<String, MarketSnapshot> {
+    let Some(target) = DateTime::parse_from_rfc3339(as_of).ok() else {
+        return seed.clone();
+    };
+    let mut snapshots = seed.clone();
+    for (frame_time, frame) in frames {
+        let Some(frame_time) = DateTime::parse_from_rfc3339(frame_time).ok() else {
+            continue;
+        };
+        if frame_time > target {
+            continue;
+        }
+        snapshots.extend(frame.clone());
+    }
+    snapshots
+}
+
+fn validate_plaid_page(
+    cursor: &str,
+    has_more: bool,
+    page: usize,
+    seen: &mut BTreeSet<String>,
+) -> Result<(), String> {
+    if has_more && (page >= 99 || !seen.insert(cursor.into())) {
+        return Err(
+            "Plaid transaction pagination made no progress or exceeded its safe page limit".into(),
+        );
+    }
+    Ok(())
+}
+
 fn retryable_status(status: reqwest::StatusCode) -> bool {
     status == reqwest::StatusCode::TOO_MANY_REQUESTS || status.is_server_error()
 }
@@ -2049,21 +2804,158 @@ fn history_or_cached(
     }
 }
 
-fn parse_market_news(payload: &Value) -> Result<Vec<MarketNewsArticle>, String> {
-    required_array(payload, "news")?
-        .into_iter()
-        .map(serde_json::from_value::<MarketNewsArticle>)
-        .collect::<Result<Vec<_>, _>>()
-        .map(|articles| {
-            articles
-                .into_iter()
-                .filter(|article| {
-                    Url::parse(&article.url)
-                        .is_ok_and(|url| url.scheme() == "https" && url.host_str().is_some())
-                })
-                .collect()
+fn parse_alpha_vantage_news(
+    payload: &Value,
+    symbol: &str,
+) -> Result<Vec<MarketNewsArticle>, String> {
+    if payload.get("Note").is_some() || payload.get("Information").is_some() {
+        return Err("Alpha Vantage news is unavailable: check API quota or news access in Settings, then retry later".into());
+    }
+    if payload.get("Error Message").is_some() {
+        return Err("Alpha Vantage rejected the news request".into());
+    }
+    let feed = payload
+        .get("feed")
+        .and_then(Value::as_array)
+        .ok_or("Alpha Vantage response omitted news")?;
+    let mut seen = BTreeSet::new();
+    Ok(feed
+        .iter()
+        .filter_map(|article| {
+            let sentiment = article["ticker_sentiment"]
+                .as_array()?
+                .iter()
+                .find(|entry| entry["ticker"].as_str() == Some(symbol))?;
+            let url = article["url"].as_str()?;
+            let parsed = Url::parse(url).ok()?;
+            if parsed.scheme() != "https"
+                || parsed.host_str().is_none()
+                || !parsed.username().is_empty()
+                || parsed.password().is_some()
+            {
+                return None;
+            }
+            let headline = article["title"].as_str()?.trim();
+            let source = article["source"].as_str()?.trim();
+            if headline.is_empty() || source.is_empty() {
+                return None;
+            }
+            let date = chrono::NaiveDateTime::parse_from_str(
+                article["time_published"].as_str()?,
+                "%Y%m%dT%H%M%S",
+            )
+            .ok()?
+            .and_utc();
+            let score = |key: &str, min: f64, max: f64| {
+                sentiment[key]
+                    .as_str()
+                    .and_then(|v| v.parse::<f64>().ok())
+                    .or_else(|| sentiment[key].as_f64())
+                    .filter(|v| v.is_finite() && *v >= min && *v <= max)
+            };
+            if !seen.insert(url.to_string()) {
+                return None;
+            }
+            let label = sentiment["ticker_sentiment_label"].as_str().filter(|v| {
+                matches!(
+                    *v,
+                    "Bearish" | "Somewhat-Bearish" | "Neutral" | "Somewhat-Bullish" | "Bullish"
+                )
+            });
+            Some(MarketNewsArticle {
+                headline: headline.into(),
+                summary: article["summary"].as_str().unwrap_or("").into(),
+                source: source.into(),
+                url: url.into(),
+                created_at: date.to_rfc3339(),
+                symbols: vec![symbol.into()],
+                relevance_score: score("relevance_score", 0.0, 1.0),
+                sentiment_score: score("ticker_sentiment_score", -1.0, 1.0),
+                sentiment_label: label.map(str::to_owned),
+            })
         })
-        .map_err(|error| format!("Invalid Alpaca news response: {error}"))
+        .collect())
+}
+
+fn csv_fields(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut characters = line.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '"' if quoted && characters.peek() == Some(&'"') => {
+                field.push('"');
+                characters.next();
+            }
+            '"' => quoted = !quoted,
+            ',' if !quoted => fields.push(std::mem::take(&mut field)),
+            '\r' => {}
+            _ => field.push(character),
+        }
+    }
+    fields.push(field);
+    fields
+}
+
+fn parse_earnings_csv(body: &str) -> Result<Vec<EarningsEvent>, String> {
+    if body.trim_start().starts_with('{') {
+        return Err("Alpha Vantage did not return an earnings calendar".into());
+    }
+    let mut lines = body.lines();
+    let headers = csv_fields(
+        lines
+            .next()
+            .ok_or("Alpha Vantage returned an empty calendar")?,
+    );
+    let column = |name: &str| {
+        headers
+            .iter()
+            .position(|header| header.eq_ignore_ascii_case(name))
+            .ok_or_else(|| format!("Alpha Vantage earnings calendar omitted {name}"))
+    };
+    let symbol = column("symbol")?;
+    let name = column("name")?;
+    let report_date = column("reportDate")?;
+    let fiscal_date_ending = column("fiscalDateEnding").ok();
+    let estimate = column("estimate").ok();
+    let currency = column("currency").ok();
+    let mut events = Vec::new();
+    for line in lines.filter(|line| !line.trim().is_empty()) {
+        let values = csv_fields(line);
+        let Some(symbol_value) = values
+            .get(symbol)
+            .map(|value| value.trim().to_ascii_uppercase())
+        else {
+            continue;
+        };
+        let Some(date) = values.get(report_date).map(|value| value.trim()) else {
+            continue;
+        };
+        if symbol_value.is_empty() || NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err() {
+            continue;
+        }
+        events.push(EarningsEvent {
+            symbol: symbol_value,
+            name: values
+                .get(name)
+                .map(|value| value.trim().to_owned())
+                .unwrap_or_default(),
+            report_date: date.to_owned(),
+            fiscal_date_ending: fiscal_date_ending
+                .and_then(|index| values.get(index))
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty()),
+            estimate: estimate
+                .and_then(|index| values.get(index))
+                .and_then(|value| value.trim().parse().ok()),
+            currency: currency
+                .and_then(|index| values.get(index))
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty()),
+        });
+    }
+    Ok(events)
 }
 
 pub fn normalize_stock_symbols(symbols: Vec<String>) -> Vec<String> {
@@ -2208,6 +3100,11 @@ fn parse_market_snapshots(payload: &Value, prefer_quote: bool) -> BTreeMap<Strin
                 .pointer("/prevDailyBar/c")
                 .and_then(Value::as_f64)
                 .unwrap_or(price);
+            let previous_close_as_of = snapshot
+                .pointer("/prevDailyBar/t")
+                .and_then(Value::as_str)
+                .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+                .map(|value| (value.with_timezone(&Utc) + Duration::hours(16)).to_rfc3339());
             let as_of = (if prefer_quote {
                 snapshot.pointer("/latestQuote/t")
             } else {
@@ -2226,6 +3123,7 @@ fn parse_market_snapshots(payload: &Value, prefer_quote: bool) -> BTreeMap<Strin
                     symbol: symbol.clone(),
                     price,
                     previous_close,
+                    previous_close_as_of,
                     daily_change_pct: if previous_close == 0.0 {
                         0.0
                     } else {
@@ -2238,6 +3136,39 @@ fn parse_market_snapshots(payload: &Value, prefer_quote: bool) -> BTreeMap<Strin
                 },
             ))
         })
+        .collect()
+}
+
+fn parse_market_bar_frames(
+    payload: &Value,
+    seed: &BTreeMap<String, MarketSnapshot>,
+) -> Vec<MarketFrame> {
+    let mut frames = BTreeMap::<String, BTreeMap<String, MarketSnapshot>>::new();
+    for (symbol, bars) in payload
+        .get("bars")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        for bar in bars.as_array().into_iter().flatten() {
+            let Some(as_of) = bar.get("t").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(price) = bar.get("c").and_then(Value::as_f64) else {
+                continue;
+            };
+            let Some(snapshot) = stream_snapshot(seed.get(symbol), symbol, price, as_of) else {
+                continue;
+            };
+            frames
+                .entry(as_of.to_string())
+                .or_default()
+                .insert(symbol.clone(), snapshot);
+        }
+    }
+    frames
+        .into_iter()
+        .map(|(as_of, snapshots)| MarketFrame { as_of, snapshots })
         .collect()
 }
 
@@ -2451,17 +3382,45 @@ fn plaid_link_completed(value: &Value) -> bool {
     })
 }
 
-fn snaptrade_account_ids(value: &Value) -> Result<BTreeSet<String>, String> {
-    value
+// Only enabled connections are in the baseline, so repairing one is observable
+// even when SnapTrade preserves its connection and account IDs.
+fn snaptrade_active_connection_ids(value: &Value) -> Result<BTreeSet<String>, String> {
+    let connections = value
         .as_array()
-        .ok_or_else(|| "SnapTrade response did not include an account list".into())
-        .map(|accounts| {
-            accounts
-                .iter()
-                .filter_map(|account| account.get("id").and_then(Value::as_str))
-                .map(str::to_owned)
-                .collect()
-        })
+        .ok_or("SnapTrade response did not include a connection list")?;
+    let mut active = BTreeSet::new();
+    for connection in connections {
+        let id = string_field(connection, "id")?;
+        let disabled = connection
+            .get("disabled")
+            .and_then(Value::as_bool)
+            .ok_or("SnapTrade connection did not include its disabled status")?;
+        if !disabled {
+            active.insert(id);
+        }
+    }
+    Ok(active)
+}
+
+fn snaptrade_link_status(
+    response: &Value,
+    baseline: &BTreeSet<String>,
+    browser_completed: bool,
+) -> Result<LinkStatus, String> {
+    let active = snaptrade_active_connection_ids(response)?;
+    if browser_completed && active.is_empty() {
+        return Err(
+            "No active SnapTrade connection found. Finish connecting in your browser and try again"
+                .into(),
+        );
+    }
+    Ok(if browser_completed || !active.is_subset(baseline) {
+        LinkStatus {
+            status: "connected".into(),
+        }
+    } else {
+        pending_status()
+    })
 }
 
 fn validate_link_session(session: &PendingSession, generation: u64) -> Result<(), String> {
@@ -2626,6 +3585,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn plaid_rejects_cursor_cycles_and_unbounded_pages_but_accepts_noop_completion() {
+        let mut seen = BTreeSet::from(["saved".into()]);
+        assert!(validate_plaid_page("next", true, 0, &mut seen).is_ok());
+        assert!(validate_plaid_page("saved", true, 1, &mut seen).is_err());
+        assert!(validate_plaid_page("last", true, 99, &mut seen).is_err());
+        assert!(validate_plaid_page("saved", false, 0, &mut seen).is_ok());
+        assert!(validate_plaid_page("last", false, 99, &mut seen).is_ok());
+    }
+
+    #[test]
     fn failed_vault_persistence_does_not_publish_the_mutation() {
         let original = CredentialVault {
             entries: BTreeMap::from([("first".into(), json!("synthetic"))]),
@@ -2644,12 +3613,67 @@ mod tests {
     }
 
     #[test]
-    fn link_results_require_current_credentials_an_active_session_and_new_accounts() {
+    fn snaptrade_link_detects_repairs_and_verifies_explicit_browser_completion() {
+        let before = json!([
+            {"id": "existing", "disabled": false},
+            {"id": "repair", "disabled": true}
+        ]);
+        let baseline = snaptrade_active_connection_ids(&before).unwrap();
+        assert_eq!(
+            snaptrade_link_status(&before, &baseline, false)
+                .unwrap()
+                .status,
+            "pending"
+        );
+        let repaired = json!([
+            {"id": "existing", "disabled": false},
+            {"id": "repair", "disabled": false}
+        ]);
+        assert_eq!(
+            snaptrade_link_status(&repaired, &baseline, false)
+                .unwrap()
+                .status,
+            "connected"
+        );
+        let added = json!([{"id": "new", "disabled": false}]);
+        assert_eq!(
+            snaptrade_link_status(&added, &baseline, false)
+                .unwrap()
+                .status,
+            "connected"
+        );
+        // Reopening a healthy connection may leave every provider field unchanged.
+        assert_eq!(
+            snaptrade_link_status(&before, &baseline, true)
+                .unwrap()
+                .status,
+            "connected"
+        );
+        for unavailable in [json!([]), json!([{"id": "repair", "disabled": true}])] {
+            assert_eq!(
+                snaptrade_link_status(&unavailable, &baseline, false)
+                    .unwrap()
+                    .status,
+                "pending"
+            );
+            assert!(snaptrade_link_status(&unavailable, &baseline, true).is_err());
+        }
+        for malformed in [
+            json!({}),
+            json!([{"id": "existing"}]),
+            json!([{"disabled": false}]),
+        ] {
+            assert!(snaptrade_link_status(&malformed, &baseline, true).is_err());
+        }
+    }
+
+    #[test]
+    fn link_results_require_current_credentials_and_an_active_session() {
         let providers = Providers::new().unwrap();
         let (cancel, _) = tokio::sync::watch::channel(false);
         let mut session = PendingSession {
             link: PendingLink::SnapTrade {
-                existing_account_ids: BTreeSet::from(["existing".into()]),
+                existing_connection_ids: BTreeSet::from(["existing".into()]),
             },
             generation: 0,
             expires: Instant::now() + StdDuration::from_secs(300),
@@ -2663,15 +3687,6 @@ mod tests {
         assert!(providers
             .mutate_link_vault("cancelled", |_| panic!("Cancelled session must not mutate"))
             .is_err());
-        let baseline = snaptrade_account_ids(&json!([{ "id": "existing" }])).unwrap();
-        assert!(snaptrade_account_ids(&json!([{ "id": "existing" }]))
-            .unwrap()
-            .is_subset(&baseline));
-        assert!(
-            !snaptrade_account_ids(&json!([{ "id": "existing" }, { "id": "new" }]))
-                .unwrap()
-                .is_subset(&baseline)
-        );
         assert!(!plaid_link_completed(
             &json!({"link_sessions": [{"finished_at": null, "on_success": {"public_token": "synthetic"}}]})
         ));
@@ -2885,20 +3900,42 @@ mod tests {
     }
 
     #[test]
-    fn news_matches_frontend_contract_and_excludes_unsafe_links() {
-        let article = json!({
-            "headline": "Test headline", "summary": "Test summary", "source": "Test source",
-            "url": "https://example.com/news", "created_at": "2026-09-05T12:00:00Z"
-        });
+    fn alpha_news_preserves_ticker_scores_and_rejects_errors_and_unsafe_articles() {
+        let article = json!({"title":"Synthetic news", "source":"Example", "url":"https://example.com/story",
+            "summary":"Synthetic evidence", "time_published":"20260921T120000", "overall_sentiment_score": -0.8,
+            "ticker_sentiment":[{"ticker":"TEST", "relevance_score":"0.91", "ticker_sentiment_score":"0.3", "ticker_sentiment_label":"Somewhat-Bullish"}]});
         let mut unsafe_article = article.clone();
         unsafe_article["url"] = "javascript:alert(1)".into();
-        let articles = parse_market_news(&json!({"news": [article, unsafe_article]})).unwrap();
+        let articles = parse_alpha_vantage_news(
+            &json!({"feed":[article.clone(), unsafe_article, article.clone()]}),
+            "TEST",
+        )
+        .unwrap();
         assert_eq!(articles.len(), 1);
         let value = serde_json::to_value(&articles[0]).unwrap();
-        assert_eq!(value["createdAt"], "2026-09-05T12:00:00Z");
-        assert!(value.get("created_at").is_none());
-        assert!(parse_market_news(&json!({"news": [{}]})).is_err());
-        assert!(parse_market_news(&json!({})).is_err());
+        assert_eq!(value["relevanceScore"], 0.91);
+        assert_eq!(value["sentimentScore"], 0.3);
+        assert_eq!(value["createdAt"], "2026-09-21T12:00:00+00:00");
+        assert!(
+            parse_alpha_vantage_news(&json!({"feed":[article.clone()]}), "OTHER")
+                .unwrap()
+                .is_empty()
+        );
+        for payload in [
+            json!({"Note":"quota"}),
+            json!({"Information":"access"}),
+            json!({"Error Message":"invalid"}),
+            json!({}),
+        ] {
+            assert!(parse_alpha_vantage_news(&payload, "TEST").is_err());
+        }
+        let mut invalid = article;
+        invalid["ticker_sentiment"][0]["relevance_score"] = "NaN".into();
+        assert!(
+            parse_alpha_vantage_news(&json!({"feed":[invalid]}), "TEST").unwrap()[0]
+                .relevance_score
+                .is_none()
+        );
     }
 
     #[test]
@@ -3076,13 +4113,17 @@ mod tests {
             &json!({
                 "snapshots": { "AAPL": {
                     "latestTrade": { "p": 230.0, "t": "2026-09-01T17:00:00Z" },
-                    "prevDailyBar": { "c": 225.0 }
+                    "prevDailyBar": { "c": 225.0, "t": "2026-08-31T04:00:00Z" }
                 }}
             }),
             false,
         );
         let snapshot = snapshots.get("AAPL").unwrap();
         assert_eq!(snapshot.price, 230.0);
+        assert_eq!(
+            snapshot.previous_close_as_of.as_deref(),
+            Some("2026-08-31T20:00:00+00:00")
+        );
         assert!((snapshot.daily_change_pct - 2.222222).abs() < 0.000001);
 
         assert!(stock_symbol("AAPL,MSFT").is_err());
@@ -3145,5 +4186,51 @@ mod tests {
         );
         assert_eq!(snapshots["AAPL"].price, 230.0);
         assert_eq!(snapshots["AAPL"].as_of, "2026-09-03T00:00:00Z");
+    }
+
+    #[test]
+    fn groups_minute_bars_and_preserves_price_references() {
+        let seed = BTreeMap::from([(
+            "AAPL".into(),
+            MarketSnapshot {
+                symbol: "AAPL".into(),
+                price: 230.0,
+                previous_close: 225.0,
+                previous_close_as_of: Some("2026-09-05T20:00:00Z".into()),
+                daily_change_pct: 0.0,
+                weekly_change_pct: Some(4.5),
+                weekly_reference_price: Some(220.0),
+                weekly_reference_date: Some("2026-09-01".into()),
+                as_of: "2026-09-08T01:02:00Z".into(),
+            },
+        )]);
+        let frames = parse_market_bar_frames(
+            &json!({ "bars": { "AAPL": [
+                { "t": "2026-09-08T01:00:00Z", "c": 228.0 },
+                { "t": "2026-09-08T01:01:00Z", "c": 229.0 }
+            ]}}),
+            &seed,
+        );
+
+        assert_eq!(frames.len(), 2);
+        assert_eq!(frames[0].snapshots["AAPL"].price, 228.0);
+        assert_eq!(frames[0].snapshots["AAPL"].previous_close, 225.0);
+        assert_eq!(frames[1].as_of, "2026-09-08T01:01:00Z");
+        assert_eq!(AlpacaMarketSession::Overnight.history_feed(), "boats");
+        assert_eq!(AlpacaMarketSession::Overnight.history_delay_minutes(), 15);
+    }
+
+    #[test]
+    fn parses_quoted_earnings_calendar_rows() {
+        let events = parse_earnings_csv(
+            "symbol,name,reportDate,fiscalDateEnding,estimate,currency\nAAPL,\"Apple, Inc.\",2026-10-29,2026-09-30,1.42,USD\n",
+        )
+        .unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].symbol, "AAPL");
+        assert_eq!(events[0].name, "Apple, Inc.");
+        assert_eq!(events[0].report_date, "2026-10-29");
+        assert_eq!(events[0].estimate, Some(1.42));
     }
 }

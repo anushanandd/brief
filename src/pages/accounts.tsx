@@ -1,52 +1,25 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { listen } from '@tauri-apps/api/event'
-import { ChevronRight } from 'lucide-react'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { AccountMark } from '../components/account-mark'
-import { BrandMark } from '../components/brand-mark'
+import { AccountRow } from '../components/account-row'
 import { PageError, PageLoading } from '../components/data-state'
-import { Card, Metric, SectionHeading } from '../components/ui'
+import { PositionTable } from '../components/position-table'
+import { Card, EmptyState, Metric, SectionHeading } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
-import { useFinance } from '../hooks/use-finance'
-import { graphAccountShortcut, useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
+import {
+  useGraphAccountShortcuts,
+  useGraphWindowShortcuts,
+} from '../hooks/use-graph-window-shortcuts'
+import { useLiveFinance } from '../hooks/use-live-finance'
 import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
-import { isTauri } from '../lib/api'
-import { formatCurrency, formatPercent, formatSecurityName } from '../lib/format'
+import { accountStartDate, getAccountStartDates } from '../lib/account-start-date-preferences'
+import { accountValueChart } from '../lib/dashboard-account-views'
+import { formatCurrency, formatPercent, valueTone } from '../lib/format'
 import { getDefaultGraphWindow } from '../lib/graph-preferences'
-import { getExternalLogosEnabled, stockLogoUrl, stockMarkColor, stockMarkLabel } from '../lib/logos'
+import { getExternalLogosEnabled } from '../lib/logos'
 import type { Account, FinanceSnapshot } from '../lib/schema'
-import { getSpendingAccountId } from '../lib/spending-preferences'
-import { AccountDetailContent } from './account-detail'
-
-function AccountRow({
-  account,
-  detail,
-  displayName,
-}: {
-  account: Account
-  detail: string
-  displayName: string
-}) {
-  return (
-    <Link
-      className="account-workspace-row"
-      data-keyboard-row
-      data-keyboard-open
-      to="/accounts/$accountId"
-      params={{ accountId: account.id }}
-    >
-      <AccountMark type={account.type} />
-      <span>
-        <strong>{displayName}</strong>
-        <small>{account.institution}</small>
-      </span>
-      <span className="account-workspace-row-detail">{detail}</span>
-      <strong>{formatCurrency(account.value)}</strong>
-      <ChevronRight size={15} aria-hidden="true" />
-    </Link>
-  )
-}
+import { AccountOverview } from './account-overview'
 
 function sumKnown(values: Array<number | null | undefined>) {
   const known = values.filter((value): value is number => value != null)
@@ -62,7 +35,7 @@ function accountData(data: FinanceSnapshot) {
 }
 
 function useAccountsPage() {
-  const query = useFinance()
+  const query = useLiveFinance()
   if (query.isLoading) return { state: 'loading' as const }
   if (query.isError || !query.data) return { state: 'error' as const }
   return {
@@ -89,16 +62,23 @@ function AccountsWorkspace({
   names: ReturnType<typeof getAccountDisplayNames>
 }) {
   const routeSearch = useSearch({ from: '/accounts' })
+  const live = useLiveFinance()
+  const startDates = getAccountStartDates()
+  const now = Date.now() / 1_000
+  const valuationTime = Date.parse(live.valuationAsOf ?? data.updatedAt) / 1_000
   const navigate = useNavigate({ from: '/accounts' })
-  const spendingAccountId = getSpendingAccountId()
-  const visibleData = useMemo(
-    () => ({
+  const visibleData = useMemo(() => {
+    const creditIds = new Set(
+      data.accounts.filter(({ type }) => type === 'credit').map(({ id }) => id),
+    )
+    return {
       ...data,
-      accounts: data.accounts.filter(({ id }) => id !== spendingAccountId),
-      transactions: data.transactions.filter(({ accountId }) => accountId !== spendingAccountId),
-    }),
-    [data, spendingAccountId],
-  )
+      accounts: data.accounts.filter(({ id }) => !creditIds.has(id)),
+      transactions: data.transactions.filter(
+        ({ accountId }) => !accountId || !creditIds.has(accountId),
+      ),
+    }
+  }, [data])
   const accounts = useMemo(() => {
     const allAccount: Account = visibleData.accounts.find(({ id }) => id === 'all') ?? {
       id: 'all',
@@ -123,57 +103,51 @@ function AccountsWorkspace({
   const selectedAccount =
     accounts.find(({ id }) => id === (routeSearch.account ?? 'all')) ?? accounts[0]
 
-  useEffect(() => {
-    const runShortcut = (shortcut: string) => {
-      if ((shortcut !== 'graph-previous' && shortcut !== 'graph-next') || accounts.length < 2) {
-        return
-      }
-      const direction = shortcut === 'graph-previous' ? -1 : 1
-      const currentIndex = Math.max(
-        0,
-        accounts.findIndex(({ id }) => id === selectedAccount?.id),
-      )
-      const next = accounts[(currentIndex + direction + accounts.length) % accounts.length]
-      void navigate({ search: { account: next.id === 'all' ? undefined : next.id } })
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target
-      const shortcut = graphAccountShortcut(event)
-      if (
-        !shortcut ||
-        (target instanceof HTMLElement &&
-          (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))
-      ) {
-        return
-      }
-      event.preventDefault()
-      runShortcut(shortcut)
-    }
-
-    let disposed = false
-    let unlisten: (() => void) | undefined
-    window.addEventListener('keydown', onKeyDown)
-    if (isTauri()) {
-      void listen<string>('graph-shortcut', (event) => runShortcut(event.payload)).then((stop) => {
-        if (disposed) stop()
-        else unlisten = stop
-      })
-    }
-    return () => {
-      disposed = true
-      unlisten?.()
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [accounts, navigate, selectedAccount?.id])
+  useGraphAccountShortcuts((direction) => {
+    if (accounts.length < 2) return
+    const currentIndex = Math.max(
+      0,
+      accounts.findIndex(({ id }) => id === selectedAccount?.id),
+    )
+    const next = accounts[(currentIndex + direction + accounts.length) % accounts.length]
+    void navigate({ search: { account: next.id === 'all' ? undefined : next.id } })
+  })
 
   return (
     <div className="page accounts-workspace-page">
-      <WorkspaceHeader title="Accounts" />
+      <WorkspaceHeader
+        title="Accounts"
+        breadcrumbs={
+          selectedAccount && selectedAccount.id !== 'all'
+            ? [
+                { label: 'Accounts', to: '/accounts', search: {} },
+                {
+                  label: accountDisplayName(selectedAccount.id, selectedAccount.name, names),
+                  to: '/accounts',
+                  search: { account: selectedAccount.id },
+                },
+              ]
+            : undefined
+        }
+      />
 
       <nav className="account-switcher" aria-label="Connected accounts">
         <div className="account-switcher-grid">
           {accounts.map((account) => {
             const active = account.id === selectedAccount?.id
+            const chartId =
+              account.id === 'all' || account.type === 'combined' ? 'net-worth' : account.id
+            const view = accountValueChart(
+              visibleData,
+              account,
+              live.marketSeries[chartId] ?? [],
+              Number.isFinite(valuationTime) ? valuationTime : now,
+              graphWindow,
+              now,
+              accountStartDate(visibleData, chartId, startDates),
+            )
+            const percent =
+              view.historyIsAvailable && account.type !== 'credit' ? view.chartChange.percent : null
             return (
               <Link
                 className="account-switcher-button"
@@ -188,23 +162,31 @@ function AccountsWorkspace({
                 <AccountMark type={account.type} />
                 <span className="account-switcher-copy">
                   <span>{accountDisplayName(account.id, account.name, names)}</span>
-                  <strong>{formatCurrency(account.value)}</strong>
+                  <strong className="account-switcher-value">
+                    <span>{formatCurrency(account.value)}</span>
+                    <span
+                      className={valueTone(percent)}
+                      aria-label={
+                        percent == null
+                          ? 'Selected range change unavailable'
+                          : `${formatPercent(percent)} balance change in selected range`
+                      }
+                    >
+                      {formatPercent(percent)}
+                    </span>
+                  </strong>
                 </span>
               </Link>
             )
           })}
-          {!accounts.length ? (
-            <p className="overview-recent-empty">No connected accounts.</p>
-          ) : null}
+          {!accounts.length ? <EmptyState>No connected accounts.</EmptyState> : null}
         </div>
       </nav>
 
       {selectedAccount ? (
-        <AccountDetailContent
-          key={selectedAccount.id}
+        <AccountOverview
           account={selectedAccount}
           data={visibleData}
-          embedded
           graphWindow={graphWindow}
           onGraphWindowChange={setGraphWindow}
         />
@@ -249,7 +231,7 @@ export function InvestmentAccountsPage() {
           <Metric
             label="Known unrealized P/L"
             value={formatCurrency(gain)}
-            tone={gain == null ? 'muted' : gain > 0 ? 'positive' : gain < 0 ? 'negative' : 'muted'}
+            tone={valueTone(gain)}
           />
           <Metric label="Investment income YTD" value={formatCurrency(income)} />
           <Metric
@@ -275,46 +257,18 @@ export function InvestmentAccountsPage() {
                 detail={`${data.holdings.filter(({ accountId }) => accountId === account.id).length} positions · ${formatCurrency(account.knownUnrealizedGain)} P/L`}
               />
             ))}
-            {!investments.length ? (
-              <p className="overview-recent-empty">No investment accounts.</p>
-            ) : null}
+            {!investments.length ? <EmptyState>No investment accounts.</EmptyState> : null}
           </div>
         </Card>
 
         <Card className="account-group-card portfolio-positions-card">
-          <SectionHeading
+          <PositionTable
             title="Largest positions"
-            detail="Current committed values across investment accounts."
+            positions={positions.slice(0, 8)}
+            externalLogosEnabled={externalLogos}
+            view="summary"
+            emptyMessage="No positions in these accounts."
           />
-          <div className="portfolio-position-list">
-            {positions.slice(0, 8).map((holding) => (
-              <div
-                className="portfolio-position-row"
-                key={`${holding.accountId}:${holding.ticker}`}
-              >
-                <BrandMark
-                  className="asset-mark"
-                  fallback={stockMarkLabel(holding.ticker)}
-                  label={`${holding.name} logo`}
-                  src={stockLogoUrl(holding.ticker, externalLogos)}
-                  style={{ backgroundColor: stockMarkColor(holding.ticker) }}
-                />
-                <span>
-                  <strong>{holding.ticker}</strong>
-                  <small>{formatSecurityName(holding.name)}</small>
-                </span>
-                <span>
-                  <strong>{formatCurrency(holding.value)}</strong>
-                  <small className={(holding.totalChangePct ?? 0) >= 0 ? 'positive' : 'negative'}>
-                    {formatPercent(holding.totalChangePct)}
-                  </small>
-                </span>
-              </div>
-            ))}
-            {!positions.length ? (
-              <p className="overview-recent-empty">No valued positions.</p>
-            ) : null}
-          </div>
         </Card>
       </div>
     </div>
@@ -369,7 +323,7 @@ export function CashAccountsPage() {
               detail={`${data.transactions.filter(({ accountId }) => accountId === account.id).length} imported transactions`}
             />
           ))}
-          {!cash.length ? <p className="overview-recent-empty">No cash accounts.</p> : null}
+          {!cash.length ? <EmptyState>No cash accounts.</EmptyState> : null}
         </div>
       </Card>
     </div>

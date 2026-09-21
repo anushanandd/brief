@@ -2,17 +2,31 @@
 mod macos {
     use std::{
         ffi::{c_char, c_void, CStr, CString},
+        sync::{Arc, LazyLock},
         time::Duration,
     };
 
     use serde::Serialize;
     use tokio::sync::oneshot;
 
-    type ResponseSender = oneshot::Sender<Result<String, String>>;
+    struct ResponseContext {
+        sender: oneshot::Sender<Result<String, String>>,
+        // Keep serialization until Swift acknowledges completion, even after a timeout.
+        _generation: tokio::sync::OwnedMutexGuard<()>,
+    }
+    struct CancelOnDrop(CString);
+    impl Drop for CancelOnDrop {
+        fn drop(&mut self) {
+            unsafe { brief_foundation_model_cancel(self.0.as_ptr()) };
+        }
+    }
 
     unsafe extern "C" {
         fn brief_foundation_model_availability() -> i32;
+        fn brief_foundation_model_cancel(request: *const c_char);
         fn brief_foundation_model_generate(
+            request: *const c_char,
+            purpose: *const c_char,
             prompt: *const c_char,
             context: *mut c_void,
             callback: extern "C" fn(*mut c_void, *const c_char, *const c_char),
@@ -41,7 +55,7 @@ mod macos {
     }
 
     extern "C" fn complete(context: *mut c_void, result: *const c_char, error: *const c_char) {
-        let sender = unsafe { Box::from_raw(context.cast::<ResponseSender>()) };
+        let response = unsafe { Box::from_raw(context.cast::<ResponseContext>()) };
         let value = if !error.is_null() {
             Err(unsafe { CStr::from_ptr(error) }
                 .to_string_lossy()
@@ -53,13 +67,47 @@ mod macos {
         } else {
             Err("Apple Intelligence returned no explanation".into())
         };
-        let _ = sender.send(value);
+        let _ = response.sender.send(value);
     }
 
-    pub async fn generate(evidence: String) -> Result<String, String> {
-        static GENERATION: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
-        let _generation = GENERATION
-            .try_lock()
+    #[cfg(test)]
+    mod callback_tests {
+        use super::*;
+
+        #[tokio::test]
+        async fn abandoned_receiver_keeps_generation_locked_until_native_completion() {
+            let gate = Arc::new(tokio::sync::Mutex::new(()));
+            let (sender, receiver) = oneshot::channel();
+            let context = Box::into_raw(Box::new(ResponseContext {
+                sender,
+                _generation: gate.clone().lock_owned().await,
+            }))
+            .cast::<c_void>();
+            drop(receiver);
+            assert!(gate.try_lock().is_err());
+            let error = CString::new("cancelled").unwrap();
+            complete(context, std::ptr::null(), error.as_ptr());
+            assert!(gate.try_lock().is_ok());
+        }
+    }
+
+    pub fn cancel(request_id: String) {
+        if let Ok(id) = CString::new(request_id) {
+            unsafe { brief_foundation_model_cancel(id.as_ptr()) };
+        }
+    }
+
+    pub async fn generate(
+        evidence: String,
+        purpose: String,
+        request_id: String,
+        started: tauri::ipc::Channel<()>,
+    ) -> Result<String, String> {
+        static GENERATION: LazyLock<Arc<tokio::sync::Mutex<()>>> =
+            LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(())));
+        let generation = GENERATION
+            .clone()
+            .try_lock_owned()
             .map_err(|_| "An explanation is already being generated")?;
         if status().state != "available" {
             return Err(status().message.into());
@@ -73,9 +121,34 @@ mod macos {
         }
         let prompt = CString::new(evidence)
             .map_err(|_| "The explanation evidence contains unsupported text".to_string())?;
+        if !["news", "chat"].contains(&purpose.as_str()) {
+            return Err("Unknown Apple Intelligence request purpose".into());
+        }
+        let purpose = CString::new(purpose).map_err(|_| "Invalid explanation purpose")?;
+        if request_id.is_empty() || request_id.len() > 100 {
+            return Err("Invalid explanation request".into());
+        }
+        let request =
+            CancelOnDrop(CString::new(request_id).map_err(|_| "Invalid explanation request")?);
         let (sender, receiver) = oneshot::channel::<Result<String, String>>();
-        let context = Box::into_raw(Box::new(sender)).cast::<c_void>();
-        unsafe { brief_foundation_model_generate(prompt.as_ptr(), context, complete) };
+        let context = Box::into_raw(Box::new(ResponseContext {
+            sender,
+            _generation: generation,
+        }))
+        .cast::<c_void>();
+        unsafe {
+            brief_foundation_model_generate(
+                request.0.as_ptr(),
+                purpose.as_ptr(),
+                prompt.as_ptr(),
+                context,
+                complete,
+            )
+        };
+        // The frontend defers cancellation until native registration has completed.
+        started
+            .send(())
+            .map_err(|_| "Explanation listener disconnected")?;
 
         tokio::time::timeout(Duration::from_secs(45), receiver)
             .await
@@ -102,7 +175,14 @@ mod fallback {
         }
     }
 
-    pub async fn generate(_evidence: String) -> Result<String, String> {
+    pub fn cancel(_request_id: String) {}
+
+    pub async fn generate(
+        _evidence: String,
+        _purpose: String,
+        _request_id: String,
+        _started: tauri::ipc::Channel<()>,
+    ) -> Result<String, String> {
         Err(status().message.into())
     }
 }
@@ -111,13 +191,3 @@ mod fallback {
 pub use fallback::*;
 #[cfg(target_os = "macos")]
 pub use macos::*;
-
-#[cfg(test)]
-mod tests {
-    use super::status;
-
-    #[test]
-    fn reports_a_known_availability_state() {
-        assert!(["available", "unavailable", "disabled", "notReady",].contains(&status().state));
-    }
-}

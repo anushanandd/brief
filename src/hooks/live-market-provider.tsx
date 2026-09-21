@@ -1,150 +1,157 @@
 import { useQuery } from '@tanstack/react-query'
 import type { LivelinePoint } from 'liveline'
-import { useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
+import { useCallback, useEffect, useMemo, useState, type PropsWithChildren } from 'react'
 
-import { getMarketSnapshots, isTauri } from '../lib/api'
-import { appendLiveChartPoint } from '../lib/live-chart'
+import { getSavedMarket, isTauri } from '../lib/api'
+import {
+  applyLiveProjection,
+  compatibleMarketProjection,
+  liveMarketSeries,
+  subscribeLiveMarket,
+} from '../lib/live-market'
+import { useMarketUpdateInterval } from '../lib/market-preferences'
+import type { MarketSnapshots } from '../lib/schema'
 import { useFinance } from './use-finance'
 import { LiveFinanceContext } from './use-live-finance'
 
-function useLiveMarketState(poll: boolean) {
+function useLiveMarketState() {
   const base = useFinance()
-  const [marketSeries, setMarketSeries] = useState<Record<string, LivelinePoint[]>>({})
-  const marketQuery = useQuery({
-    queryKey: ['market-snapshots', base.marketSymbols],
-    queryFn: () => getMarketSnapshots(base.marketSymbols),
-    enabled: base.liveMarketEnabled && isTauri() && base.marketSymbols.length > 0,
-    refetchInterval: poll
-      ? (market) => (market.state.error ? 60_000 : (market.state.data?.pollIntervalMs ?? false))
-      : false,
-    refetchIntervalInBackground: false,
-    refetchOnWindowFocus: poll,
-    retry: false,
-  })
-  const marketSnapshots = marketQuery.data?.snapshots ?? {}
-  const data =
-    marketQuery.data?.financeSnapshot && base.liveMarketEnabled
-      ? marketQuery.data.financeSnapshot
-      : base.data
-  const latestUpdateTime = useMemo(() => {
-    const times = Object.values(marketSnapshots)
-      .map(({ asOf }) => Date.parse(asOf) / 1_000)
-      .filter(Number.isFinite)
-    return times.length ? Math.max(...times) : undefined
-  }, [marketSnapshots])
-
+  const [state, setState] = useState<{
+    market?: MarketSnapshots
+    symbolKey?: string
+    series: Record<string, LivelinePoint[]>
+    error?: string
+  }>({ series: {} })
+  const marketUpdateInterval = useMarketUpdateInterval()
+  const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
+  const symbolKey = base.marketSymbols.join(',')
+  const enabled = visible && base.liveMarketEnabled && isTauri() && !!symbolKey
+  const acceptMarket = useCallback(
+    (market: MarketSnapshots) => {
+      if (!performance.getEntriesByName('brief:first-market-frame').length)
+        performance.mark('brief:first-market-frame')
+      setState((current) => ({
+        market,
+        symbolKey,
+        series: liveMarketSeries(current.series, market),
+      }))
+    },
+    [symbolKey],
+  )
+  const rejectMarket = useCallback(
+    (error: string) => {
+      setState((current) => ({ ...current, error }))
+      base.appendRuntimeLog('Alpaca', 'Current market values unavailable', 'negative', error)
+    },
+    [base.appendRuntimeLog],
+  )
   useEffect(() => {
-    const market = marketQuery.data
-    if (!market) return
-    base.appendRuntimeLog(
-      'Alpaca REST',
-      poll && market.pollIntervalMs ? 'Market polling scheduled' : 'Market snapshot loaded',
-      'positive',
-      `${market.session} · ${market.feed}${market.delayMinutes ? ` · ${market.delayMinutes}-minute delayed` : ''}`,
+    const update = () => setVisible(!document.hidden)
+    document.addEventListener('visibilitychange', update)
+    return () => document.removeEventListener('visibilitychange', update)
+  }, [])
+  useEffect(() => {
+    setState({ series: {} })
+  }, [symbolKey, base.data?.revision, base.data?.updatedAt])
+  useEffect(() => {
+    if (!enabled) return undefined
+    return subscribeLiveMarket(
+      symbolKey.split(','),
+      marketUpdateInterval,
+      acceptMarket,
+      rejectMarket,
     )
   }, [
-    base.appendRuntimeLog,
-    marketQuery.data?.delayMinutes,
-    marketQuery.data?.feed,
-    marketQuery.data?.pollIntervalMs,
-    marketQuery.data?.session,
-    poll,
+    enabled,
+    symbolKey,
+    marketUpdateInterval,
+    base.data?.revision,
+    base.data?.updatedAt,
+    acceptMarket,
+    rejectMarket,
   ])
-
-  const marketHadError = useRef(false)
+  const saved = useQuery({
+    queryKey: ['startup-market', base.data?.revision, base.data?.updatedAt],
+    queryFn: getSavedMarket,
+    enabled: Boolean(base.data && base.liveMarketEnabled && isTauri()),
+    staleTime: Infinity,
+    retry: false,
+  })
+  const [startupFinished, setStartupFinished] = useState(false)
+  const startupPending =
+    !startupFinished && (base.isLoading || base.integrationStatusLoading || saved.isLoading)
   useEffect(() => {
-    if (marketQuery.isError && !marketHadError.current) {
-      marketHadError.current = true
-      base.appendRuntimeLog(
-        'Alpaca REST',
-        'Market snapshot failed',
-        'negative',
-        marketQuery.error instanceof Error ? marketQuery.error.message : String(marketQuery.error),
-      )
-    } else if (!marketQuery.isError && marketHadError.current) {
-      marketHadError.current = false
-      base.appendRuntimeLog('Alpaca REST', 'Market snapshots recovered', 'positive')
-    }
-  }, [base.appendRuntimeLog, marketQuery.error, marketQuery.isError])
-
-  useEffect(() => {
-    if (!poll) return undefined
-    const transition = Date.parse(marketQuery.data?.nextTransitionAt ?? '')
-    const delay = transition - Date.now() + 1_000
-    if (!Number.isFinite(delay) || delay <= 0) return undefined
-    const timer = window.setTimeout(() => {
-      if (document.visibilityState === 'visible') void marketQuery.refetch()
-    }, delay)
-    return () => window.clearTimeout(timer)
-  }, [marketQuery.data?.nextTransitionAt, marketQuery.refetch, poll])
-
-  useEffect(() => {
-    if (!poll || !base.liveMarketEnabled || !data) return
-    const time = Math.max(latestUpdateTime ?? 0, Date.parse(data.updatedAt) / 1_000)
-    setMarketSeries((current) => {
-      const ids = new Set([
-        'net-worth',
-        ...data.brokeragePerformance.map((account) => account.accountId),
-      ])
-      const next = Object.fromEntries(Object.entries(current).filter(([id]) => ids.has(id)))
-      let changed = Object.keys(next).length !== Object.keys(current).length
-      const update = (id: string, value: number) => {
-        const points = next[id] ?? []
-        const updated = appendLiveChartPoint(points, value, time)
-        if (updated !== points) changed = true
-        next[id] = updated
-      }
-      if (!data.netWorthIncomplete) update('net-worth', data.netWorth)
-      const investmentsIncomplete = data.accounts.some(
-        ({ type, value }) => (type === 'brokerage' || type === 'retirement') && value == null,
-      )
-      for (const account of data.brokeragePerformance) {
-        if (account.accountId !== 'total' || !investmentsIncomplete)
-          update(account.accountId, account.currentValue)
-      }
-      return changed ? next : current
-    })
-  }, [base.liveMarketEnabled, data, latestUpdateTime, poll])
-
-  const marketPriceState = marketQuery.isError
-    ? ('error' as const)
-    : marketQuery.isLoading
-      ? ('loading' as const)
-      : poll && marketQuery.data?.pollIntervalMs
-        ? ('active' as const)
-        : ('idle' as const)
-  const marketFeedLabel =
-    marketQuery.data?.feed === 'iex'
-      ? 'IEX'
-      : marketQuery.data?.feed === 'delayed_sip'
-        ? 'Delayed SIP'
-        : marketQuery.data?.feed === 'overnight'
-          ? 'Overnight indicative'
-          : undefined
-  const marketPriceMessage = marketQuery.isError
-    ? marketQuery.error instanceof Error
-      ? marketQuery.error.message
-      : String(marketQuery.error)
-    : marketFeedLabel
-      ? `${marketFeedLabel}${marketQuery.data?.delayMinutes ? ` · ${marketQuery.data.delayMinutes}-minute delayed` : ''}`
+    if (!startupPending) setStartupFinished(true)
+  }, [startupPending])
+  const candidate = state.market ?? saved.data ?? undefined
+  const market =
+    base.liveMarketEnabled &&
+    (state.symbolKey === symbolKey || !state.market) &&
+    base.data &&
+    compatibleMarketProjection(base.data, candidate?.projection)
+      ? candidate
       : undefined
-
+  const data = useMemo(
+    () => (base.data ? applyLiveProjection(base.data, market?.projection) : undefined),
+    [base.data, market?.projection],
+  )
+  const marketCloseTime = market
+    ? Object.values(market.snapshots).reduce<number | undefined>((latest, snapshot) => {
+        const time = Date.parse(snapshot.previousCloseAsOf ?? '') / 1_000
+        return Number.isFinite(time) && (latest === undefined || time > latest) ? time : latest
+      }, undefined)
+    : undefined
+  const marketFeedLabel =
+    market?.feed === 'iex'
+      ? 'IEX'
+      : market?.feed === 'sip'
+        ? 'SIP'
+        : market?.feed === 'boats'
+          ? 'BOATS'
+          : market?.feed === 'delayed_sip'
+            ? 'Delayed SIP'
+            : market?.feed === 'overnight'
+              ? 'Overnight indicative'
+              : undefined
   return {
     ...base,
     data,
-    marketSeries,
-    marketSession: marketQuery.data?.session,
-    marketPriceState,
-    marketPriceMessage,
+    valuationAsOf: market?.asOf ?? base.data?.updatedAt,
+    startupPending,
+    marketIsSaved: Boolean(market?.cached),
+    analysisReady:
+      !base.integrationStatusLoading &&
+      (!base.liveMarketEnabled || !symbolKey || !!state.market || !!state.error),
+    marketSeries: market?.cached ? (market.chartSeries ?? {}) : market ? state.series : {},
+    marketCloseTime,
+    marketSession: market?.session,
+    marketPriceState:
+      enabled && state.error
+        ? ('error' as const)
+        : enabled && (!market || market.cached)
+          ? ('loading' as const)
+          : market?.pollIntervalMs && !market.cached
+            ? ('active' as const)
+            : ('idle' as const),
+    marketPriceMessage:
+      enabled && state.error
+        ? state.error
+        : marketFeedLabel
+          ? `${marketFeedLabel}${market?.delayMinutes ? ` · ${market.delayMinutes}-minute delayed` : ''}`
+          : undefined,
+    marketPriceNote: market
+      ? `${state.error ? 'Refresh failed; last available values. ' : ''}${market.cached ? 'Saved market observations · ' : ''}${market.session} · ${marketFeedLabel ?? 'Market data'} · ${market.asOf ? new Date(market.asOf).toLocaleString() : 'Observation time unavailable'}. Values and changes use the shared Rust valuation.`
+      : enabled && state.error
+        ? 'Market refresh failed; showing saved values.'
+        : enabled
+          ? 'Loading current values and market changes…'
+          : 'Current market values are unavailable; showing saved values.',
   }
 }
 
 export type LiveFinanceState = ReturnType<typeof useLiveMarketState>
 
-export function LiveMarketProvider({
-  children,
-  poll = true,
-}: PropsWithChildren<{ poll?: boolean }>) {
-  const finance = useLiveMarketState(poll)
+export function LiveMarketProvider({ children }: PropsWithChildren) {
+  const finance = useLiveMarketState()
   return <LiveFinanceContext.Provider value={finance}>{children}</LiveFinanceContext.Provider>
 }

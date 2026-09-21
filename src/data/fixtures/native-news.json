@@ -1,0 +1,19 @@
+{
+  "articles": [
+    {
+      "headline": "Synthetic news",
+      "summary": "Synthetic evidence",
+      "source": "Example",
+      "url": "https://example.com/story",
+      "createdAt": "2026-09-21T12:00:00+00:00",
+      "symbols": ["TEST"],
+      "relevanceScore": 0.91,
+      "sentimentScore": -0.3,
+      "sentimentLabel": "Somewhat-Bearish"
+    }
+  ],
+  "savedAt": "2026-09-21T12:00:00+00:00",
+  "warning": "Synthetic refresh failure",
+  "requestsRemaining": 19,
+  "canRefresh": true
+}

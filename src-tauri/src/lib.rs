@@ -1,16 +1,24 @@
 mod authentication;
 mod database;
+mod finance_contract;
 mod financial_engine;
 mod foundation_model;
 mod providers;
+mod startup_market;
 mod storage;
+mod transaction_policy;
+mod workspace;
 
-use std::{collections::BTreeMap, sync::Mutex, time::Instant};
+use std::{
+    collections::BTreeMap,
+    sync::Mutex,
+    time::{Duration as StdDuration, Instant},
+};
 
 use chrono::{DateTime, Duration, Utc};
 use providers::{
-    IntegrationStatus, LinkSession, LinkStatus, MarketNewsArticle, PlaidData, PlaidRefreshProgress,
-    ProviderSync, Providers,
+    IntegrationStatus, LinkSession, LinkStatus, PlaidData, PlaidRefreshProgress, ProviderSync,
+    Providers,
 };
 use serde_json::Value;
 use storage::{Annotation, Storage};
@@ -23,6 +31,15 @@ use tauri::{
 };
 
 const HISTORY_CACHE_HOURS: i64 = 12;
+const DEFAULT_MARKET_UPDATE_INTERVAL_MS: u64 = 10_000;
+
+fn market_update_interval(milliseconds: Option<u64>) -> StdDuration {
+    StdDuration::from_millis(
+        milliseconds
+            .unwrap_or(DEFAULT_MARKET_UPDATE_INTERVAL_MS)
+            .clamp(1_000, 60_000),
+    )
+}
 
 fn history_cache_is_fresh(refreshed_at: Option<&str>, now: DateTime<Utc>) -> bool {
     refreshed_at
@@ -32,9 +49,14 @@ fn history_cache_is_fresh(refreshed_at: Option<&str>, now: DateTime<Utc>) -> boo
 }
 
 struct AppState {
+    startup_market: startup_market::StartupMarket,
     storage: Mutex<Storage>,
     providers: Providers,
     refresh: tokio::sync::Mutex<()>,
+    market_owner: Mutex<Option<(String, tokio::sync::watch::Sender<bool>)>>,
+    holding_owner: Mutex<Option<(String, tokio::sync::watch::Sender<bool>)>>,
+    holding_selection:
+        Mutex<Option<tokio::sync::watch::Sender<providers::holding_market::ChartSelection>>>,
 }
 
 #[derive(Clone, serde::Serialize)]
@@ -149,16 +171,70 @@ async fn recover_finance_state(restore: bool, state: State<'_, AppState>) -> Res
 }
 
 #[tauri::command]
-fn transaction_annotations(
-    changes: BTreeMap<String, Annotation>,
-    importing: bool,
+fn get_holding_thesis(ticker: String, state: State<'_, AppState>) -> Result<String, String> {
+    Ok(state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .holding_thesis(&ticker))
+}
+
+#[tauri::command]
+fn save_holding_thesis(
+    ticker: String,
+    thesis: String,
     state: State<'_, AppState>,
-) -> Result<BTreeMap<String, Annotation>, String> {
+) -> Result<String, String> {
     state
         .storage
         .lock()
         .map_err(|_| "The local data store is unavailable")?
-        .save_annotations(changes, importing)
+        .save_holding_thesis(ticker, thesis)
+}
+
+#[tauri::command]
+fn transaction_annotations(
+    changes: BTreeMap<String, Annotation>,
+    importing: bool,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let mut storage = state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?;
+    let annotations = storage.save_annotations(changes, importing)?;
+    Ok(serde_json::json!({ "annotations": annotations, "snapshot": storage.snapshot()? }))
+}
+
+#[tauri::command]
+async fn export_finance_csv(contents: String, filename: String) -> Result<bool, String> {
+    if contents.len() > 50 * 1024 * 1024 {
+        return Err("Export exceeds 50 MB".into());
+    }
+    let path =
+        tauri::async_runtime::spawn_blocking(move || workspace::choose_csv_destination(&filename))
+            .await
+            .map_err(|_| "File picker interrupted")??;
+    let Some(path) = path else { return Ok(false) };
+    use std::io::Write;
+    #[cfg(unix)]
+    use std::os::unix::fs::OpenOptionsExt;
+    let mut options = std::fs::OpenOptions::new();
+    options.write(true).create_new(true);
+    #[cfg(unix)]
+    options.mode(0o600);
+    let mut file = options
+        .open(&path)
+        .map_err(|_| "Choose a new filename; existing files are never overwritten")?;
+    if file
+        .write_all(contents.as_bytes())
+        .and_then(|_| file.sync_all())
+        .is_err()
+    {
+        let _ = std::fs::remove_file(path);
+        return Err("Export could not be saved".into());
+    }
+    Ok(true)
 }
 
 #[tauri::command]
@@ -212,6 +288,7 @@ async fn save_integration_credentials(
         "plaid" => status.plaid,
         "snaptrade" => status.snaptrade,
         "alpaca" => status.alpaca,
+        "alphavantage" => status.alpha_vantage,
         _ => return Err("Unknown provider".into()),
     };
     if requires_authentication && !state.providers.take_credential_edit_authorization()? {
@@ -250,8 +327,18 @@ fn get_foundation_model_status() -> foundation_model::FoundationModelStatus {
 }
 
 #[tauri::command]
-async fn generate_foundation_explanation(evidence: String) -> Result<String, String> {
-    foundation_model::generate(evidence).await
+async fn generate_foundation_explanation(
+    evidence: String,
+    purpose: String,
+    request_id: String,
+    started: tauri::ipc::Channel<()>,
+) -> Result<String, String> {
+    foundation_model::generate(evidence, purpose, request_id, started).await
+}
+
+#[tauri::command]
+fn cancel_foundation_explanation(request_id: String) {
+    foundation_model::cancel(request_id);
 }
 
 #[tauri::command]
@@ -270,9 +357,13 @@ async fn begin_provider_link(
 async fn poll_provider_link(
     provider: String,
     session_id: String,
+    browser_completed: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<LinkStatus, String> {
-    state.providers.poll_link(&provider, &session_id).await
+    state
+        .providers
+        .poll_link(&provider, &session_id, browser_completed.unwrap_or(false))
+        .await
 }
 
 #[tauri::command]
@@ -281,28 +372,409 @@ fn cancel_provider_link(session_id: String, state: State<'_, AppState>) -> Resul
 }
 
 #[tauri::command]
-async fn get_market_snapshots(
-    symbols: Vec<String>,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
-    let market = state.providers.market_snapshots(symbols).await?;
-    let snapshot = state
+fn reveal_main_window(app: AppHandle) -> Result<(), String> {
+    let window = app.get_webview_window("main").ok_or("Window unavailable")?;
+    window.show().map_err(|error| error.to_string())
+}
+
+#[tauri::command]
+fn get_saved_market(state: State<'_, AppState>) -> Result<Option<Value>, String> {
+    let storage = state
         .storage
         .lock()
-        .map_err(|_| "The local data store is unavailable")?
-        .snapshot()?;
-    let projection = financial_engine::apply_market_snapshots(&snapshot, &market.snapshots)?;
-    let mut response = serde_json::to_value(market).map_err(|error| error.to_string())?;
-    response["financeSnapshot"] = projection;
-    Ok(response)
+        .map_err(|_| "Local store unavailable")?;
+    if storage.ensure_writable().is_err() {
+        return Ok(None);
+    }
+    let Some(market) = state.startup_market.load(&storage.data.snapshot) else {
+        return Ok(None);
+    };
+    let mut response = serde_json::to_value(&market).map_err(|error| error.to_string())?;
+    response["projection"] =
+        financial_engine::apply_market_snapshots(&storage.data.snapshot, &market.snapshots)?;
+    response["chartSeries"] =
+        serde_json::to_value(market_chart_series(&storage.data.snapshot, &market)?)
+            .map_err(|error| error.to_string())?;
+    response["cached"] = true.into();
+    Ok(Some(response))
+}
+
+fn market_chart_values(projection: &Value, time: i64) -> BTreeMap<String, Value> {
+    let mut values = BTreeMap::new();
+    if projection["netWorthIncomplete"].as_bool() != Some(true) {
+        if let Some(value) = projection["netWorth"]
+            .as_f64()
+            .filter(|value| value.is_finite())
+        {
+            values.insert(
+                "net-worth".into(),
+                serde_json::json!({ "time": time, "value": value }),
+            );
+        }
+    }
+    let investments_incomplete =
+        projection["accounts"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .any(|account| {
+                matches!(account["type"].as_str(), Some("brokerage" | "retirement"))
+                    && account["value"].is_null()
+            });
+    for account in projection["brokeragePerformance"]
+        .as_array()
+        .into_iter()
+        .flatten()
+    {
+        let Some(id) = account["accountId"].as_str() else {
+            continue;
+        };
+        if id == "total" && investments_incomplete {
+            continue;
+        }
+        let Some(value) = account["currentValue"]
+            .as_f64()
+            .filter(|value| value.is_finite())
+        else {
+            continue;
+        };
+        values.insert(
+            id.into(),
+            serde_json::json!({ "time": time, "value": value }),
+        );
+    }
+    values
+}
+
+fn market_chart_series(
+    snapshot: &Value,
+    market: &providers::MarketSnapshots,
+) -> Result<BTreeMap<String, Vec<Value>>, String> {
+    let close_time = market
+        .snapshots
+        .values()
+        .filter_map(|snapshot| snapshot.previous_close_as_of.as_deref())
+        .filter_map(|value| DateTime::parse_from_rfc3339(value).ok())
+        .max();
+    let mut series = BTreeMap::<String, Vec<Value>>::new();
+
+    if let Some(as_of) = close_time {
+        let closes = market
+            .snapshots
+            .iter()
+            .map(|(symbol, current)| {
+                let mut previous = current.clone();
+                previous.price = current.previous_close;
+                previous.daily_change_pct = 0.0;
+                previous.weekly_change_pct = current
+                    .weekly_reference_price
+                    .map(|reference| (previous.price - reference) / reference * 100.0);
+                previous.as_of = as_of.to_rfc3339();
+                (symbol.clone(), previous)
+            })
+            .collect::<BTreeMap<_, _>>();
+        let projection = financial_engine::apply_historical_market_snapshots(snapshot, &closes)?;
+        for (id, point) in market_chart_values(&projection, as_of.timestamp()) {
+            series.entry(id).or_default().push(point);
+        }
+    }
+
+    if let Some(as_of) = market
+        .as_of
+        .as_deref()
+        .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+        .filter(|as_of| close_time.is_none_or(|close| *as_of > close))
+    {
+        let projection = financial_engine::apply_market_snapshots(snapshot, &market.snapshots)?;
+        for (id, point) in market_chart_values(&projection, as_of.timestamp()) {
+            series.entry(id).or_default().push(point);
+        }
+    }
+    Ok(series)
+}
+
+fn cancel_stream(
+    stream: &mut Option<(String, tokio::sync::watch::Sender<bool>)>,
+    request_id: Option<&str>,
+) {
+    if request_id.is_none_or(|id| stream.as_ref().is_some_and(|(active, _)| active == id)) {
+        if let Some((_, cancel)) = stream.take() {
+            let _ = cancel.send(true);
+        }
+    }
+}
+
+#[tauri::command]
+async fn start_market_stream(
+    symbols: Vec<String>,
+    update_interval_ms: Option<u64>,
+    request_id: String,
+    updates: tauri::ipc::Channel<Value>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    if request_id.is_empty() || request_id.len() > 100 {
+        return Err("Invalid market request".into());
+    }
+    let symbols = providers::normalize_stock_symbols(symbols);
+    let (cancel, mut receiver) = tokio::sync::watch::channel(false);
+    {
+        let mut stream = state
+            .market_owner
+            .lock()
+            .map_err(|_| "Market stream state unavailable")?;
+        cancel_stream(&mut stream, None);
+        *stream = Some((request_id, cancel));
+        state.providers.market_streams.start(symbols.clone());
+    }
+    let market = tokio::select! {
+        _ = receiver.changed() => return Ok(()),
+        result = state.providers.market_snapshots(symbols.clone()) => result?,
+    };
+    if *receiver.borrow() {
+        return Ok(());
+    }
+    let mut response = serde_json::to_value(&market).map_err(|error| error.to_string())?;
+    {
+        let storage = state
+            .storage
+            .lock()
+            .map_err(|_| "The local data store is unavailable")?;
+        state.startup_market.save(&storage.data.snapshot, &market);
+        response["projection"] =
+            financial_engine::apply_market_snapshots(&storage.data.snapshot, &market.snapshots)?;
+        response["chartSeries"] =
+            serde_json::to_value(market_chart_series(&storage.data.snapshot, &market)?)
+                .map_err(|error| error.to_string())?;
+    }
+    updates
+        .send(serde_json::json!({"kind": "update", "market": response}))
+        .map_err(|error| error.to_string())?;
+    if market.poll_interval_ms.is_none() || symbols.is_empty() {
+        return Ok(());
+    }
+
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let mut cancellation = receiver.clone();
+
+        let stream = state.providers.stream_market_updates(
+            symbols,
+            market,
+            market_update_interval(update_interval_ms),
+            receiver.clone(),
+            |tick| {
+                if *receiver.borrow() {
+                    return Ok(());
+                }
+                let storage = state
+                    .storage
+                    .lock()
+                    .map_err(|_| "The local data store is unavailable")?;
+                let committed = &storage.data.snapshot;
+                let projection =
+                    financial_engine::apply_market_snapshots(committed, &tick.market.snapshots)?;
+                let chart_point = if let (Some(as_of), Some(chart_snapshots)) =
+                    (tick.chart_as_of, tick.chart_snapshots)
+                {
+                    let chart_projection = financial_engine::apply_historical_market_snapshots(
+                        committed,
+                        &chart_snapshots,
+                    )?;
+                    DateTime::parse_from_rfc3339(&as_of)
+                        .ok()
+                        .map(|time| market_chart_values(&chart_projection, time.timestamp()))
+                } else {
+                    tick.market
+                        .as_of
+                        .as_deref()
+                        .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
+                        .map(|time| market_chart_values(&projection, time.timestamp()))
+                };
+                state.startup_market.save(committed, &tick.market);
+                drop(storage);
+                let mut payload =
+                    serde_json::to_value(&tick.market).map_err(|error| error.to_string())?;
+                payload["projection"] = projection;
+                if let Some(point) = chart_point {
+                    payload["chartPoint"] =
+                        serde_json::to_value(point).map_err(|error| error.to_string())?;
+                }
+                updates
+                    .send(serde_json::json!({"kind": "update", "market": payload}))
+                    .map_err(|error| error.to_string())
+            },
+        );
+        let result = tokio::select! {
+            _ = cancellation.changed() => return,
+            result = stream => result,
+        };
+        if let Err(error) = result {
+            if !*receiver.borrow() {
+                let _ = updates.send(serde_json::json!({"kind": "error", "message": error}));
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_market_stream(request_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut owner = state
+        .market_owner
+        .lock()
+        .map_err(|_| "Market state unavailable")?;
+    if owner.as_ref().is_some_and(|(id, _)| id == &request_id) {
+        cancel_stream(&mut owner, Some(&request_id));
+        state.providers.market_streams.stop();
+    }
+    Ok(())
+}
+
+fn reuse_holding_chart(
+    owner: &mut Option<(String, tokio::sync::watch::Sender<bool>)>,
+    chart: Option<&tokio::sync::watch::Sender<providers::holding_market::ChartSelection>>,
+    selected: &providers::holding_market::ChartSelection,
+) -> bool {
+    let Some(chart) = chart.filter(|chart| !chart.is_closed()) else {
+        return false;
+    };
+    let Some((id, cancel)) = owner.as_mut() else {
+        return false;
+    };
+    if *id != chart.borrow().request_id || *cancel.borrow() {
+        return false;
+    }
+    chart.send_replace(selected.clone());
+    *id = selected.request_id.clone();
+    true
+}
+
+#[tauri::command]
+async fn start_holding_chart(
+    symbol: String,
+    range: u64,
+    request_id: String,
+    warm_symbols: Option<Vec<String>>,
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    providers::holding_market::resolution(range)?;
+    let symbol = providers::normalize_stock_symbols(vec![symbol])
+        .into_iter()
+        .next()
+        .ok_or("Invalid security symbol")?;
+    if request_id.is_empty() || request_id.len() > 100 {
+        return Err("Invalid chart request".into());
+    }
+    let cache = app
+        .path()
+        .app_data_dir()
+        .map_err(|_| "Price cache directory unavailable")?
+        .join("market-prices.sqlite3");
+    let selected = providers::holding_market::ChartSelection {
+        symbol,
+        range,
+        request_id: request_id.clone(),
+        warm_symbols: warm_symbols
+            .unwrap_or_default()
+            .into_iter()
+            .take(160)
+            .filter(|s| !providers::normalize_stock_symbols(vec![s.clone()]).is_empty())
+            .collect(),
+    };
+    let (cancel, receiver) = tokio::sync::watch::channel(false);
+    let selection = {
+        let mut owner = state
+            .holding_owner
+            .lock()
+            .map_err(|_| "Market owner unavailable")?;
+        let mut chart = state
+            .holding_selection
+            .lock()
+            .map_err(|_| "Chart selection unavailable")?;
+        if reuse_holding_chart(&mut owner, chart.as_ref(), &selected) {
+            return Ok(());
+        }
+        cancel_stream(&mut owner, None);
+        *owner = Some((request_id, cancel));
+        let (sender, selection) = tokio::sync::watch::channel(selected);
+        *chart = Some(sender);
+        selection
+    };
+    tauri::async_runtime::spawn(async move {
+        let state = app.state::<AppState>();
+        let publish = |payload: Value| {
+            if *receiver.borrow() {
+                return;
+            }
+            let _ = app.emit("holding-chart-update", payload);
+        };
+        let initial = selection.borrow().clone();
+        if let Some(history) =
+            providers::holding_market::cached_history(&cache, &initial.symbol, initial.range)
+        {
+            publish(
+                initial
+                    .tag(serde_json::json!({"kind":"history", "history":history, "startedAt":0})),
+            );
+        }
+        let mut cancellation = receiver.clone();
+        loop {
+            if *cancellation.borrow() {
+                break;
+            }
+            let result = tokio::select! {
+                _ = cancellation.changed() => break,
+                result = state.providers.run_holding_chart(selection.clone(), &cache,
+                    receiver.clone(), &publish) => result,
+            };
+            if result.is_ok() {
+                break;
+            }
+            publish(selection.borrow().tag(serde_json::json!({"kind":"error", "message":
+                "Market data unavailable; retrying. Check Alpaca access in Settings. Saved history is retained."})));
+            tokio::select! {
+                _ = cancellation.changed() => break,
+                _ = tokio::time::sleep(StdDuration::from_secs(30)) => {},
+            }
+        }
+    });
+    Ok(())
+}
+
+#[tauri::command]
+fn stop_holding_chart(request_id: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut chart = state
+        .holding_owner
+        .lock()
+        .map_err(|_| "Security chart state unavailable")?;
+    if chart.as_ref().is_some_and(|(id, _)| id == &request_id) {
+        if let Some((_, cancel)) = chart.take() {
+            let _ = cancel.send(true);
+        }
+    }
+    Ok(())
 }
 
 #[tauri::command]
 async fn get_market_news(
-    symbol: String,
+    symbols: Vec<String>,
+    force: Option<bool>,
     state: State<'_, AppState>,
-) -> Result<Vec<MarketNewsArticle>, String> {
-    state.providers.market_news(symbol).await
+) -> Result<providers::news_cache::NewsResult, String> {
+    state
+        .providers
+        .market_news(symbols, force.unwrap_or(false))
+        .await
+}
+
+#[tauri::command]
+async fn get_earnings_calendar(
+    symbols: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<Vec<providers::EarningsEvent>, String> {
+    state.providers.earnings_calendar(symbols).await
 }
 
 #[tauri::command]
@@ -323,7 +795,7 @@ async fn refresh_finance_snapshot(
     );
     let sync = match tokio::time::timeout(
         std::time::Duration::from_secs(120),
-        prepare_refresh(&app, &state),
+        prepare_refresh(&app, &state, &run_id, &started_at),
     )
     .await
     {
@@ -351,20 +823,29 @@ async fn refresh_finance_snapshot(
         .data
         .account_links
         .clone();
-    let snapshot = match financial_engine::project(&sync, &account_links, Utc::now()) {
-        Ok(snapshot) => snapshot,
-        Err(error) => {
-            if let Ok(mut storage) = state.storage.lock() {
-                storage.fail_pending(&sync.sync_id, "projection_failed");
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<AppState>();
+        let snapshot = match financial_engine::project(&sync, &account_links, Utc::now()) {
+            Ok(snapshot) => snapshot,
+            Err(error) => {
+                if let Ok(mut storage) = state.storage.lock() {
+                    storage.fail_pending(&sync.sync_id, "projection_failed");
+                }
+                return Err(error);
             }
-            return Err(error);
+        };
+        let mut storage = state
+            .storage
+            .lock()
+            .map_err(|_| "The local data store is unavailable")?;
+        let result = storage.commit(&sync.sync_id, snapshot);
+        if result.is_err() {
+            storage.fail_pending(&sync.sync_id, "commit_failed");
         }
-    };
-    state
-        .storage
-        .lock()
-        .map_err(|_| "The local data store is unavailable".to_string())?
-        .commit(&sync.sync_id, snapshot)
+        result
+    })
+    .await
+    .map_err(|_| "Local refresh worker failed".to_string())?
 }
 
 #[tauri::command]
@@ -380,7 +861,12 @@ fn save_account_link(
         .save_account_link(plaid_account_id, snaptrade_account_id)
 }
 
-async fn prepare_refresh(app: &AppHandle, state: &AppState) -> Result<ProviderSync, String> {
+async fn prepare_refresh(
+    app: &AppHandle,
+    state: &AppState,
+    run_id: &str,
+    started_at: &str,
+) -> Result<ProviderSync, String> {
     state
         .storage
         .lock()
@@ -704,6 +1190,8 @@ async fn prepare_refresh(app: &AppHandle, state: &AppState) -> Result<ProviderSy
         .lock()
         .map_err(|_| "The local data store is unavailable".to_string())?;
     let sync_id = storage.stage(
+        run_id,
+        started_at,
         revision,
         next_plaid_cache,
         provider_data.clone(),
@@ -813,30 +1301,59 @@ pub fn run() {
     builder
         .setup(|app| {
             app.manage(AppState {
+                startup_market: startup_market::StartupMarket::new(
+                    app.path().app_data_dir()?.join("startup-market.sqlite3"),
+                ),
                 storage: Mutex::new(Storage::new(app.path().app_data_dir()?)?),
                 providers: Providers::new()
+                    .and_then(|providers| {
+                        providers.with_news_cache(
+                            &app.path()
+                                .app_data_dir()
+                                .map_err(|_| "App data directory unavailable")?
+                                .join("news.sqlite3"),
+                        )
+                    })
                     .map_err(|error| format!("failed to initialize providers: {error}"))?,
                 refresh: tokio::sync::Mutex::new(()),
+                market_owner: Mutex::new(None),
+                holding_owner: Mutex::new(None),
+                holding_selection: Mutex::new(None),
+            });
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                tokio::time::sleep(StdDuration::from_secs(3)).await;
+                let _ = reveal_main_window(handle);
             });
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            reveal_main_window,
+            get_saved_market,
             get_finance_snapshot,
             get_sync_runs,
             recover_finance_state,
             transaction_annotations,
+            get_holding_thesis,
+            save_holding_thesis,
+            export_finance_csv,
             get_integration_status,
             get_provider_connections,
             forget_provider_connection,
             get_foundation_model_status,
             generate_foundation_explanation,
+            cancel_foundation_explanation,
             authenticate_sensitive_action,
             save_integration_credentials,
             begin_provider_link,
             poll_provider_link,
             cancel_provider_link,
-            get_market_snapshots,
+            start_market_stream,
+            stop_market_stream,
+            start_holding_chart,
+            stop_holding_chart,
             get_market_news,
+            get_earnings_calendar,
             refresh_finance_snapshot,
             save_account_link
         ])
@@ -847,6 +1364,86 @@ pub fn run() {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn old_cleanup_cannot_cancel_a_new_market_request() {
+        let (sender, receiver) = tokio::sync::watch::channel(false);
+        let mut stream = Some(("new".into(), sender));
+        cancel_stream(&mut stream, Some("old"));
+        assert!(!*receiver.borrow());
+        assert!(stream.is_some());
+        cancel_stream(&mut stream, Some("new"));
+        assert!(*receiver.borrow());
+        assert!(stream.is_none());
+    }
+
+    #[test]
+    fn changing_chart_selection_retains_socket_owner_and_old_cleanup_cannot_stop_it() {
+        use providers::holding_market::ChartSelection;
+        let (cancel, cancelled) = tokio::sync::watch::channel(false);
+        let mut owner = Some(("first".into(), cancel));
+        let (chart, selection) = tokio::sync::watch::channel(ChartSelection {
+            symbol: "TEST".into(),
+            range: 86400,
+            request_id: "first".into(),
+            warm_symbols: Vec::new(),
+        });
+        let next = ChartSelection {
+            symbol: "OTHER".into(),
+            range: 604800,
+            request_id: "second".into(),
+            warm_symbols: Vec::new(),
+        };
+        assert!(reuse_holding_chart(&mut owner, Some(&chart), &next));
+        assert_eq!(selection.borrow().symbol, "OTHER");
+        assert_eq!(selection.borrow().range, 604800);
+        cancel_stream(&mut owner, Some("first"));
+        assert!(!*cancelled.borrow());
+        assert_eq!(owner.as_ref().unwrap().0, "second");
+        cancel_stream(&mut owner, Some("second"));
+        assert!(*cancelled.borrow());
+        assert!(!reuse_holding_chart(&mut owner, Some(&chart), &next));
+
+        let (cancel, _) = tokio::sync::watch::channel(false);
+        owner = Some(("portfolio".into(), cancel));
+        assert!(!reuse_holding_chart(&mut owner, Some(&chart), &next));
+        assert_eq!(owner.unwrap().0, "portfolio");
+    }
+
+    #[tokio::test]
+    async fn socket_handoff_waits_for_release_and_cancelled_waiters_never_acquire() {
+        let socket = tokio::sync::Mutex::new(());
+        let active = socket.lock().await;
+        let (cancel, receiver) = tokio::sync::watch::channel(false);
+        let next = providers::market_stream::socket_lease(&socket, receiver.clone());
+        tokio::pin!(next);
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        assert!(std::future::Future::poll(next.as_mut(), &mut context).is_pending());
+        cancel.send(true).unwrap();
+        assert!(next.await.is_none());
+        assert!(providers::market_stream::socket_lease(&socket, receiver)
+            .await
+            .is_none());
+        drop(active);
+        let (_cancel, receiver) = tokio::sync::watch::channel(false);
+        assert!(providers::market_stream::socket_lease(&socket, receiver)
+            .await
+            .is_some());
+    }
+
+    #[test]
+    fn market_update_interval_defaults_and_stays_bounded() {
+        assert_eq!(market_update_interval(None), StdDuration::from_secs(10));
+        assert_eq!(market_update_interval(Some(500)), StdDuration::from_secs(1));
+        assert_eq!(
+            market_update_interval(Some(30_000)),
+            StdDuration::from_secs(30)
+        );
+        assert_eq!(
+            market_update_interval(Some(90_000)),
+            StdDuration::from_secs(60)
+        );
+    }
 
     #[test]
     fn credential_edit_authorization_is_single_use() {

@@ -59,12 +59,30 @@
     }
   ],
   "netWorthHistory": [
-    { "date": "Mar", "value": 248210.12 },
-    { "date": "Apr", "value": 253842.61 },
-    { "date": "May", "value": 249382.4 },
-    { "date": "Jun", "value": 265094.77 },
-    { "date": "Jul", "value": 276891.03 },
-    { "date": "Aug", "value": 286421.78 }
+    {
+      "date": "Mar",
+      "value": 248210.12
+    },
+    {
+      "date": "Apr",
+      "value": 253842.61
+    },
+    {
+      "date": "May",
+      "value": 249382.4
+    },
+    {
+      "date": "Jun",
+      "value": 265094.77
+    },
+    {
+      "date": "Jul",
+      "value": 276891.03
+    },
+    {
+      "date": "Aug",
+      "value": 286421.78
+    }
   ],
   "benchmarkHistory": [],
   "brokeragePerformance": [
@@ -74,12 +92,42 @@
       "institution": "All brokerages",
       "currentValue": 239610.44,
       "points": [
-        { "date": "Mar", "value": 207540, "netDeposits": 199000, "sp500": 199000 },
-        { "date": "Apr", "value": 212120, "netDeposits": 199000, "sp500": 203640 },
-        { "date": "May", "value": 208350, "netDeposits": 201000, "sp500": 200690 },
-        { "date": "Jun", "value": 222060, "netDeposits": 201000, "sp500": 210230 },
-        { "date": "Jul", "value": 231030, "netDeposits": 207000, "sp500": 219960 },
-        { "date": "Aug", "value": 239610.44, "netDeposits": 207000, "sp500": 225760 }
+        {
+          "date": "Mar",
+          "value": 207540,
+          "netDeposits": 199000,
+          "sp500": 199000
+        },
+        {
+          "date": "Apr",
+          "value": 212120,
+          "netDeposits": 199000,
+          "sp500": 203640
+        },
+        {
+          "date": "May",
+          "value": 208350,
+          "netDeposits": 201000,
+          "sp500": 200690
+        },
+        {
+          "date": "Jun",
+          "value": 222060,
+          "netDeposits": 201000,
+          "sp500": 210230
+        },
+        {
+          "date": "Jul",
+          "value": 231030,
+          "netDeposits": 207000,
+          "sp500": 219960
+        },
+        {
+          "date": "Aug",
+          "value": 239610.44,
+          "netDeposits": 207000,
+          "sp500": 225760
+        }
       ]
     },
     {
@@ -88,12 +136,42 @@
       "institution": "Fidelity",
       "currentValue": 189830.14,
       "points": [
-        { "date": "Mar", "value": 164520, "netDeposits": 158000, "sp500": 158000 },
-        { "date": "Apr", "value": 168240, "netDeposits": 158000, "sp500": 161680 },
-        { "date": "May", "value": 165810, "netDeposits": 160000, "sp500": 159340 },
-        { "date": "Jun", "value": 176940, "netDeposits": 160000, "sp500": 166910 },
-        { "date": "Jul", "value": 183720, "netDeposits": 163000, "sp500": 173840 },
-        { "date": "Aug", "value": 189830.14, "netDeposits": 163000, "sp500": 178420 }
+        {
+          "date": "Mar",
+          "value": 164520,
+          "netDeposits": 158000,
+          "sp500": 158000
+        },
+        {
+          "date": "Apr",
+          "value": 168240,
+          "netDeposits": 158000,
+          "sp500": 161680
+        },
+        {
+          "date": "May",
+          "value": 165810,
+          "netDeposits": 160000,
+          "sp500": 159340
+        },
+        {
+          "date": "Jun",
+          "value": 176940,
+          "netDeposits": 160000,
+          "sp500": 166910
+        },
+        {
+          "date": "Jul",
+          "value": 183720,
+          "netDeposits": 163000,
+          "sp500": 173840
+        },
+        {
+          "date": "Aug",
+          "value": 189830.14,
+          "netDeposits": 163000,
+          "sp500": 178420
+        }
       ]
     },
     {
@@ -102,12 +180,42 @@
       "institution": "Charles Schwab",
       "currentValue": 49780.3,
       "points": [
-        { "date": "Mar", "value": 43020, "netDeposits": 41000, "sp500": 41000 },
-        { "date": "Apr", "value": 43880, "netDeposits": 41000, "sp500": 41960 },
-        { "date": "May", "value": 42540, "netDeposits": 41000, "sp500": 41350 },
-        { "date": "Jun", "value": 45120, "netDeposits": 41000, "sp500": 43320 },
-        { "date": "Jul", "value": 47310, "netDeposits": 44000, "sp500": 46120 },
-        { "date": "Aug", "value": 49780.3, "netDeposits": 44000, "sp500": 47340 }
+        {
+          "date": "Mar",
+          "value": 43020,
+          "netDeposits": 41000,
+          "sp500": 41000
+        },
+        {
+          "date": "Apr",
+          "value": 43880,
+          "netDeposits": 41000,
+          "sp500": 41960
+        },
+        {
+          "date": "May",
+          "value": 42540,
+          "netDeposits": 41000,
+          "sp500": 41350
+        },
+        {
+          "date": "Jun",
+          "value": 45120,
+          "netDeposits": 41000,
+          "sp500": 43320
+        },
+        {
+          "date": "Jul",
+          "value": 47310,
+          "netDeposits": 44000,
+          "sp500": 46120
+        },
+        {
+          "date": "Aug",
+          "value": 49780.3,
+          "netDeposits": 44000,
+          "sp500": 47340
+        }
       ]
     }
   ],
@@ -121,10 +229,30 @@
       "historyStart": "2026-08-26",
       "performanceMethod": "value-only",
       "points": [
-        { "date": "2026-08-26", "value": 44407.92, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-28", "value": 44407.92, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-29", "value": 49229.67, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-31", "value": 49229.67, "netDeposits": null, "sp500": null }
+        {
+          "date": "2026-08-26",
+          "value": 44407.92,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-28",
+          "value": 44407.92,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-29",
+          "value": 49229.67,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-31",
+          "value": 49229.67,
+          "netDeposits": null,
+          "sp500": null
+        }
       ]
     },
     {
@@ -136,14 +264,54 @@
       "historyStart": "2026-08-20",
       "performanceMethod": "value-only",
       "points": [
-        { "date": "2026-08-20", "value": -1440.92, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-22", "value": -1452.91, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-23", "value": -1516.08, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-24", "value": -2158.28, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-27", "value": -2287.28, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-28", "value": -2331.91, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-30", "value": -2418.33, "netDeposits": null, "sp500": null },
-        { "date": "2026-08-31", "value": -2418.33, "netDeposits": null, "sp500": null }
+        {
+          "date": "2026-08-20",
+          "value": -1440.92,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-22",
+          "value": -1452.91,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-23",
+          "value": -1516.08,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-24",
+          "value": -2158.28,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-27",
+          "value": -2287.28,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-28",
+          "value": -2331.91,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-30",
+          "value": -2418.33,
+          "netDeposits": null,
+          "sp500": null
+        },
+        {
+          "date": "2026-08-31",
+          "value": -2418.33,
+          "netDeposits": null,
+          "sp500": null
+        }
       ]
     }
   ],
@@ -276,11 +444,36 @@
   "spending": {
     "monthTotal": 6842.33,
     "categories": [
-      { "name": "Housing", "value": 2850.0, "percent": 41.65, "color": "#232424" },
-      { "name": "Travel", "value": 1284.2, "percent": 18.77, "color": "#b87543" },
-      { "name": "Dining", "value": 934.71, "percent": 13.66, "color": "#c9684b" },
-      { "name": "Shopping", "value": 721.86, "percent": 10.55, "color": "#9d9588" },
-      { "name": "Other", "value": 1051.56, "percent": 15.37, "color": "#d5d1c8" }
+      {
+        "name": "Housing",
+        "value": 2850.0,
+        "percent": 41.65,
+        "color": "#232424"
+      },
+      {
+        "name": "Travel",
+        "value": 1284.2,
+        "percent": 18.77,
+        "color": "#b87543"
+      },
+      {
+        "name": "Dining",
+        "value": 934.71,
+        "percent": 13.66,
+        "color": "#c9684b"
+      },
+      {
+        "name": "Shopping",
+        "value": 721.86,
+        "percent": 10.55,
+        "color": "#9d9588"
+      },
+      {
+        "name": "Other",
+        "value": 1051.56,
+        "percent": 15.37,
+        "color": "#d5d1c8"
+      }
     ]
   },
   "lastChange": {
@@ -289,8 +482,16 @@
     "previousNetWorth": 284936.19,
     "netWorthChange": 1485.59,
     "accountChanges": [
-      { "accountId": "fidelity", "name": "Individual brokerage", "change": 1294.22 },
-      { "accountId": "amex", "name": "Platinum Card", "change": -428.16 }
+      {
+        "accountId": "fidelity",
+        "name": "Individual brokerage",
+        "change": 1294.22
+      },
+      {
+        "accountId": "amex",
+        "name": "Platinum Card",
+        "change": -428.16
+      }
     ],
     "newTransactionIds": ["tx-1"]
   },
@@ -320,7 +521,15 @@
       "date": "Aug 31",
       "amount": -428.16,
       "account": "Platinum Card",
-      "pending": true
+      "pending": true,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     },
     {
       "id": "tx-2",
@@ -331,7 +540,15 @@
       "date": "Aug 30",
       "amount": -86.42,
       "account": "Platinum Card",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     },
     {
       "id": "tx-3",
@@ -341,7 +558,15 @@
       "date": "Aug 29",
       "amount": 4821.75,
       "account": "Chase Checking",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "income",
+        "mark": "income",
+        "spending": false,
+        "zelle": false
+      }
     },
     {
       "id": "tx-4",
@@ -352,7 +577,15 @@
       "date": "Aug 28",
       "amount": -31.88,
       "account": "Platinum Card",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     },
     {
       "id": "tx-5",
@@ -363,7 +596,15 @@
       "date": "Aug 28",
       "amount": -12.75,
       "account": "Platinum Card",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     },
     {
       "id": "tx-6",
@@ -374,7 +615,15 @@
       "date": "Aug 27",
       "amount": -129.0,
       "account": "Platinum Card",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     },
     {
       "id": "tx-7",
@@ -385,7 +634,15 @@
       "date": "Aug 26",
       "amount": -118.42,
       "account": "Chase Checking",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     },
     {
       "id": "tx-8",
@@ -396,7 +653,15 @@
       "date": "Aug 24",
       "amount": -642.2,
       "account": "Platinum Card",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     },
     {
       "id": "tx-9",
@@ -407,7 +672,15 @@
       "date": "Aug 23",
       "amount": -63.17,
       "account": "Platinum Card",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     },
     {
       "id": "tx-10",
@@ -418,7 +691,15 @@
       "date": "Aug 22",
       "amount": -11.99,
       "account": "Platinum Card",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     },
     {
       "id": "tx-11",
@@ -428,7 +709,15 @@
       "date": "Aug 21",
       "amount": 94.16,
       "account": "Fidelity",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "dividend",
+        "mark": "dividend",
+        "spending": false,
+        "zelle": false
+      }
     },
     {
       "id": "tx-12",
@@ -439,7 +728,15 @@
       "date": "Aug 20",
       "amount": -24.65,
       "account": "Platinum Card",
-      "pending": false
+      "pending": false,
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      }
     }
   ]
 }

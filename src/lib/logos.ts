@@ -1,3 +1,5 @@
+import { transactionMarkKind } from './transaction-kind'
+export { transactionMarkKind, isBrokerageIncomeTransfer } from './transaction-kind'
 import type { Transaction } from './schema'
 
 const externalLogosKey = 'brief.externalLogosEnabled'
@@ -105,9 +107,7 @@ function isAmericanExpressPayment(transaction: Transaction): boolean {
   )
 }
 
-export function transactionMarkLabel(transaction: Transaction): string {
-  if (isAmericanExpressPayment(transaction)) return 'AMEX'
-  const source = transaction.logoName?.trim() || transaction.merchant.trim()
+export function brandMarkLabel(source: string): string {
   const words = source
     .normalize('NFKD')
     .replace(/[^a-zA-Z0-9]+/g, ' ')
@@ -122,6 +122,15 @@ export function transactionMarkLabel(transaction: Transaction): string {
           .join('')
       : words[0]?.slice(0, 2)
   return label?.toUpperCase() || '•'
+}
+
+export function brandLogoUrl(name: string, domain?: string, external = false): string {
+  return external && domain ? logoDevUrl(null, domain) : markUrl(brandMarkLabel(name))
+}
+
+export function transactionMarkLabel(transaction: Transaction): string {
+  if (isAmericanExpressPayment(transaction)) return 'AMEX'
+  return brandMarkLabel(transaction.logoName?.trim() || transaction.merchant.trim())
 }
 
 export function stockMarkColor(ticker: string): string {
@@ -145,32 +154,4 @@ export function transactionLogoUrl(transaction: Transaction, external = false): 
   return transaction.logoName
     ? logoDevUrl('name', transaction.logoName)
     : markUrl(transactionMarkLabel(transaction))
-}
-
-export type TransactionMarkKind =
-  | 'transfer'
-  | 'interest'
-  | 'dividend'
-  | 'income'
-  | 'refund'
-  | 'fee'
-  | 'payment'
-  | 'cash'
-  | 'initial'
-
-/** Chooses a private, local fallback mark for activity that does not have a merchant logo. */
-export function transactionMarkKind(transaction: Transaction): TransactionMarkKind {
-  const category = transaction.category.toLocaleLowerCase()
-  const merchant = transaction.merchant.toLocaleLowerCase()
-  const text = `${category} ${merchant}`
-
-  if (/interest|\bapy\b/.test(text)) return 'interest'
-  if (/dividend|capital gain|investment distribution/.test(text)) return 'dividend'
-  if (/refund|reimbursement|cash ?back|reversal|credit adjustment/.test(text)) return 'refund'
-  if (/\bfee\b|overdraft|service charge/.test(text)) return 'fee'
-  if (/cash withdrawal|\batm\b/.test(text)) return 'cash'
-  if (/credit card payment|loan payment|autopay|bill payment/.test(text)) return 'payment'
-  if (/transfer|\bwire\b|\bach\b/.test(text)) return 'transfer'
-  if (/income|salary|payroll|direct deposit/.test(text)) return 'income'
-  return 'initial'
 }

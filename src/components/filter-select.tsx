@@ -8,14 +8,17 @@ export function FilterSelect({
   value,
   options,
   onValueChange,
+  disabled = false,
 }: {
   label: string
+  disabled?: boolean
   value: string
   options: FilterSelectOption[]
   onValueChange: (value: string) => void
 }) {
   return (
     <Select.Root
+      disabled={disabled}
       items={options}
       value={value}
       onValueChange={(nextValue) => {

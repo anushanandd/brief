@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
 
-import { applyTransactionAnnotations, loadTransactionAnnotations } from '../lib/annotations'
+import { loadTransactionAnnotations } from '../lib/annotations'
 import { getFinanceSnapshot, getIntegrationStatus } from '../lib/api'
 import { FinanceContext, financeQueryKey } from './use-finance'
 
@@ -46,23 +46,18 @@ function useBaseFinanceState() {
     },
     [],
   )
-  const query = useQuery({
-    queryKey: financeQueryKey,
-    queryFn: getFinanceSnapshot,
-    staleTime: Number.POSITIVE_INFINITY,
-  })
+  // Import legacy annotations before reading the native, annotation-aware view.
   const annotations = useQuery({
     queryKey: ['transaction-annotations'],
     queryFn: loadTransactionAnnotations,
     staleTime: Number.POSITIVE_INFINITY,
   })
-  const snapshot = useMemo(
-    () =>
-      query.data
-        ? applyTransactionAnnotations(query.data, annotations.data?.annotations ?? {})
-        : undefined,
-    [query.data, annotations.data],
-  )
+  const query = useQuery({
+    queryKey: financeQueryKey,
+    queryFn: getFinanceSnapshot,
+    enabled: annotations.isSuccess || annotations.isError,
+    staleTime: Number.POSITIVE_INFINITY,
+  })
   const tickers = useMemo(
     () =>
       [
@@ -78,6 +73,8 @@ function useBaseFinanceState() {
 
   useEffect(() => {
     if (!query.dataUpdatedAt || !query.data) return
+    if (!performance.getEntriesByName('brief:local-snapshot-ready').length)
+      performance.mark('brief:local-snapshot-ready')
     appendRuntimeLog(
       'Local cache',
       'Finance snapshot loaded',
@@ -88,6 +85,8 @@ function useBaseFinanceState() {
 
   useEffect(() => {
     if (!integration.data) return
+    if (!performance.getEntriesByName('brief:integrations-ready').length)
+      performance.mark('brief:integrations-ready')
     const configured = Object.entries(integration.data)
       .filter(([, enabled]) => enabled)
       .map(([provider]) => provider)
@@ -103,18 +102,24 @@ function useBaseFinanceState() {
   return {
     ...query,
     refetch: async () => {
-      const [result] = await Promise.all([query.refetch(), annotations.refetch()])
+      await annotations.refetch()
+      const result = await query.refetch()
       return result
     },
-    isLoading: query.isLoading,
+    isLoading: annotations.isLoading || query.isLoading,
     isError: query.isError,
     error: query.error,
     annotationWarning: annotations.isError
       ? 'Transaction annotations could not be loaded. Finance data remains available.'
       : annotations.data?.warning,
-    data: snapshot,
+    data: query.data,
     annotations: annotations.data?.annotations ?? {},
-    integrationStatus: integration.data ?? { plaid: false, snaptrade: false, alpaca: false },
+    integrationStatus: integration.data ?? {
+      plaid: false,
+      snaptrade: false,
+      alpaca: false,
+      alphaVantage: false,
+    },
     integrationStatusLoading: integration.isLoading,
     liveMarketEnabled: integration.data?.alpaca === true && !query.data?.recovery,
     marketSymbols: tickers,

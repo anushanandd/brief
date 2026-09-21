@@ -6,8 +6,9 @@ import {
 } from './spending-preferences'
 
 describe('spending preferences', () => {
-  it('defaults to the optional Platinum benefits and preserves an explicit empty selection', () => {
-    expect(parseHiddenPlatinumBenefitIds(null)).toEqual(defaultHiddenPlatinumBenefitIds)
+  it('shows all benefits by default and preserves explicit visibility choices', () => {
+    expect(defaultHiddenPlatinumBenefitIds).toEqual([])
+    expect(parseHiddenPlatinumBenefitIds(null)).toEqual([])
     expect(parseHiddenPlatinumBenefitIds('')).toEqual([])
     expect(parseHiddenPlatinumBenefitIds('clear,oura')).toEqual(['clear', 'oura'])
   })

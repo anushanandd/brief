@@ -13,7 +13,7 @@ export function RefreshProgress({
   tasks = [],
   finished = false,
 }: {
-  detail: string
+  detail?: string
   startedAt: number
   tasks?: RefreshProgressTask[]
   finished?: boolean
@@ -31,7 +31,7 @@ export function RefreshProgress({
 
   return (
     <div className="refresh-progress">
-      <span>{detail}</span>
+      {detail ? <span>{detail}</span> : null}
       {tasks.length ? (
         <ul className="refresh-progress-tasks">
           {tasks.map((task) => (

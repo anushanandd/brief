@@ -1,10 +1,48 @@
 import { describe, expect, it } from 'vitest'
 
+import { classification } from '../data/fixtures/classification'
 import seed from '../data/seed.json'
 import { buildChartEventGroups, chartEventGroupLabel } from './chart-events'
 import { financeSnapshotSchema } from './schema'
 
 describe('buildChartEventGroups', () => {
+  it('keeps external money transfers directional on the all-accounts chart', () => {
+    const data = financeSnapshotSchema.parse(seed)
+    data.updatedAt = '2026-09-10T20:00:00Z'
+    data.netWorth = 100_000
+    data.transactions = [
+      {
+        id: 'external-in',
+        merchant: 'External deposit',
+        category: 'Transfer',
+        date: '2026-09-08',
+        amount: 1_500,
+        account: 'Checking',
+        accountId: 'plaid:checking',
+        classification: classification('transfer'),
+        pending: false,
+      },
+      {
+        id: 'external-out',
+        merchant: 'External withdrawal',
+        category: 'Transfer',
+        date: '2026-09-09',
+        amount: -1_600,
+        account: 'Checking',
+        accountId: 'plaid:checking',
+        classification: classification('transfer'),
+        pending: false,
+      },
+    ]
+    data.trades = []
+
+    const chartEvents = buildChartEventGroups(data, 'net-worth', 0).flatMap((group) => group.events)
+    expect(chartEvents.map(({ title, direction }) => [title, direction])).toEqual([
+      ['External deposit', 'in'],
+      ['External withdrawal', 'out'],
+    ])
+  })
+
   it('includes small directional trades and deduplicates internal transfers', () => {
     const data = financeSnapshotSchema.parse(seed)
     data.updatedAt = '2026-09-10T20:00:00Z'
@@ -20,6 +58,7 @@ describe('buildChartEventGroups', () => {
         amount: 4_000,
         account: 'Checking',
         accountId: 'plaid:checking',
+        classification: classification('income'),
         pending: false,
       },
       {
@@ -30,6 +69,7 @@ describe('buildChartEventGroups', () => {
         amount: -2_000,
         account: 'Brokerage',
         accountId: 'snaptrade:brokerage',
+        classification: classification('transfer'),
         pending: false,
       },
       {
@@ -40,6 +80,7 @@ describe('buildChartEventGroups', () => {
         amount: 2_000,
         account: 'Checking',
         accountId: 'plaid:checking',
+        classification: classification('transfer'),
         pending: false,
       },
     ]

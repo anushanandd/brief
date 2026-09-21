@@ -1,14 +1,26 @@
 import { useNavigate } from '@tanstack/react-router'
-import { CreditCard, Database, Landmark, RefreshCw, type LucideIcon } from 'lucide-react'
-import { useEffect, useRef, useState, type KeyboardEvent } from 'react'
+import { Command } from 'cmdk'
+import {
+  CreditCard,
+  Database,
+  Landmark,
+  MessageCircle,
+  RefreshCw,
+  type LucideIcon,
+} from 'lucide-react'
+import { useEffect, useRef, useState } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
 import { useRefreshFinance } from '../hooks/use-refresh-finance'
 import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
+import { generateFoundationExplanation, getFoundationModelStatus } from '../lib/api'
+import { chatEvidence } from '../lib/money'
 import { commandDestinations } from '../lib/navigation'
+import { useOrderedNavigation } from '../lib/navigation-preferences'
 import { getSpendingAccountId } from '../lib/spending-preferences'
 
 type MenuAction = {
+  id: string
   label: string
   search: string
   group: 'Navigate' | 'Accounts' | 'Actions'
@@ -24,15 +36,22 @@ export function CommandMenu({
   open: boolean
   onOpenChange: (open: boolean) => void
 }) {
+  const pages = useOrderedNavigation()
   const navigate = useNavigate()
   const finance = useFinance()
   const refresh = useRefreshFinance()
   const dialog = useRef<HTMLDialogElement>(null)
   const input = useRef<HTMLInputElement>(null)
-  const [search, setSearch] = useState('')
-  const [activeIndex, setActiveIndex] = useState(0)
+  const request = useRef<AbortController | undefined>(undefined)
+  const [query, setQuery] = useState('')
+  const [answer, setAnswer] = useState<string>()
+  const [asking, setAsking] = useState(false)
   const actions: MenuAction[] = [
-    ...commandDestinations.map(({ label, to, icon, ...destination }) => ({
+    ...[
+      ...pages,
+      ...commandDestinations.filter((item) => !pages.some(({ to }) => to === item.to)),
+    ].map(({ label, to, icon, ...destination }) => ({
+      id: `navigate:${to}`,
       label,
       search: `navigate ${label}`,
       group: 'Navigate' as const,
@@ -43,13 +62,15 @@ export function CommandMenu({
     ...(finance.data?.accounts ?? [])
       .filter(({ id }) => id !== 'all' && id !== getSpendingAccountId())
       .map((account) => ({
+        id: `account:${account.id}`,
         label: accountDisplayName(account.id, account.name, getAccountDisplayNames()),
-        search: `${account.name} ${account.institution} ${account.type} account`,
+        search: `${accountDisplayName(account.id, account.name, getAccountDisplayNames())} ${account.name} ${account.institution} ${account.type} account`,
         group: 'Accounts' as const,
         icon: account.type === 'credit' ? CreditCard : Landmark,
-        run: () => navigate({ to: '/accounts/$accountId', params: { accountId: account.id } }),
+        run: () => navigate({ to: '/accounts', search: { account: account.id } }),
       })),
     {
+      id: 'refresh',
       label: 'Refresh snapshot',
       search: 'refresh data snapshot',
       group: 'Actions',
@@ -58,6 +79,7 @@ export function CommandMenu({
       run: refresh,
     },
     {
+      id: 'sources',
       label: 'Review data sources',
       search: 'data sources integrations providers',
       group: 'Actions',
@@ -65,11 +87,6 @@ export function CommandMenu({
       run: () => navigate({ to: '/settings' }),
     },
   ]
-  const normalizedSearch = search.trim().toLocaleLowerCase()
-  const visibleActions = normalizedSearch
-    ? actions.filter((action) => action.search.toLocaleLowerCase().includes(normalizedSearch))
-    : actions
-
   useEffect(() => {
     const element = dialog.current
     if (!element) return undefined
@@ -84,30 +101,40 @@ export function CommandMenu({
     }
   }, [open])
 
-  useEffect(() => setActiveIndex(0), [search])
+  useEffect(
+    () => () => {
+      request.current?.abort()
+    },
+    [],
+  )
+
+  const askBrief = async () => {
+    if (!finance.data || query.trim().length < 4 || asking) return
+    request.current?.abort()
+    const controller = new AbortController()
+    request.current = controller
+    setAsking(true)
+    setAnswer(undefined)
+    try {
+      const status = await getFoundationModelStatus()
+      if (status.state !== 'available') throw new Error(status.message)
+      const response = await generateFoundationExplanation(
+        JSON.stringify({ question: query.trim(), evidence: chatEvidence(finance.data) }),
+        controller.signal,
+        'chat',
+      )
+      setAnswer(response)
+    } catch (error) {
+      if (!controller.signal.aborted)
+        setAnswer(error instanceof Error ? error.message : String(error))
+    } finally {
+      if (!controller.signal.aborted) setAsking(false)
+    }
+  }
 
   const run = (action: MenuAction) => {
     onOpenChange(false)
     void Promise.resolve(action.run()).catch(() => undefined)
-  }
-  const handleKeyDown = (event: KeyboardEvent<HTMLDialogElement>) => {
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      onOpenChange(false)
-      return
-    }
-    if (!visibleActions.length) return
-    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-      event.preventDefault()
-      const offset = event.key === 'ArrowDown' ? 1 : -1
-      setActiveIndex(
-        (current) => (current + offset + visibleActions.length) % visibleActions.length,
-      )
-    } else if (event.key === 'Enter') {
-      event.preventDefault()
-      const action = visibleActions[activeIndex]
-      if (action) run(action)
-    }
   }
 
   return (
@@ -122,57 +149,75 @@ export function CommandMenu({
       onClick={(event) => {
         if (event.target === event.currentTarget) onOpenChange(false)
       }}
-      onKeyDown={handleKeyDown}
     >
       <h2 id="command-title" className="sr-only">
         Quick actions
       </h2>
       <div className="command-popup">
-        <label className="command-input-wrap">
-          <span className="sr-only">Search quick actions</span>
-          <input
-            ref={input}
-            type="search"
-            value={search}
-            placeholder="Go somewhere or run an action…"
-            autoComplete="off"
-            onChange={(event) => setSearch(event.target.value)}
-          />
-          <kbd>esc</kbd>
-        </label>
-        <div className="command-list">
-          {visibleActions.length ? (
-            (['Navigate', 'Accounts', 'Actions'] as const).map((group) => {
-              const grouped = visibleActions.filter((action) => action.group === group)
+        <Command label="Quick actions">
+          <label className="command-input-wrap">
+            <span className="sr-only">Search quick actions</span>
+            <Command.Input
+              ref={input}
+              value={query}
+              onValueChange={(value) => {
+                request.current?.abort()
+                request.current = undefined
+                setAsking(false)
+                setQuery(value)
+                setAnswer(undefined)
+              }}
+              placeholder="Go somewhere, run an action, or ask Brief…"
+            />
+            <kbd>esc</kbd>
+          </label>
+          <Command.List className="command-list" label="Quick actions">
+            <Command.Empty className="command-empty">No matching action.</Command.Empty>
+            {query.trim().length >= 4 ? (
+              <Command.Group className="command-group" heading="Ask Brief">
+                <Command.Item
+                  value={`ask brief ${query}`}
+                  keywords={[query, 'ask brief apple intelligence']}
+                  disabled={asking}
+                  onSelect={() => void askBrief()}
+                >
+                  <MessageCircle size={17} aria-hidden="true" />
+                  <span>{asking ? 'Thinking on this Mac…' : `Ask “${query.trim()}”`}</span>
+                  <kbd>↵</kbd>
+                </Command.Item>
+              </Command.Group>
+            ) : null}
+            {(['Navigate', 'Accounts', 'Actions'] as const).map((group) => {
+              const grouped = actions.filter((action) => action.group === group)
               if (!grouped.length) return null
               return (
-                <section className="command-group" key={group} aria-label={group}>
-                  <h3>{group}</h3>
+                <Command.Group className="command-group" heading={group} key={group}>
                   {grouped.map((action) => {
-                    const index = visibleActions.indexOf(action)
                     const Icon = action.icon
                     return (
-                      <button
-                        key={`${group}:${action.label}`}
-                        type="button"
-                        className={index === activeIndex ? 'active' : undefined}
-                        tabIndex={-1}
-                        onPointerMove={() => setActiveIndex(index)}
-                        onClick={() => run(action)}
+                      <Command.Item
+                        key={action.id}
+                        value={action.id}
+                        keywords={[action.label, action.search]}
+                        onSelect={() => run(action)}
                       >
                         <Icon size={17} aria-hidden="true" />
                         <span>{action.label}</span>
                         {action.shortcut ? <kbd>{action.shortcut}</kbd> : null}
-                      </button>
+                      </Command.Item>
                     )
                   })}
-                </section>
+                </Command.Group>
               )
-            })
-          ) : (
-            <p className="command-empty">No matching action.</p>
-          )}
-        </div>
+            })}
+          </Command.List>
+          {answer ? (
+            <div className="command-answer" aria-live="polite">
+              <strong>Brief</strong>
+              <p>{answer}</p>
+            </div>
+          ) : null}
+        </Command>
       </div>
     </dialog>
   )

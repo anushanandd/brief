@@ -1,22 +1,30 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import {
   ArrowDown,
   ArrowUp,
-  Check,
   ChevronRight,
   Cpu,
   Database,
   Fingerprint,
   HardDrive,
+  Link2,
+  Palette,
+  RefreshCw,
   Save,
   ScrollText,
+  Trash2,
+  Unlink,
+  Wrench,
+  X,
 } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { PageError, PageLoading, RefreshButton } from '../components/data-state'
-import { Button, Card, SectionHeading, StatusDot } from '../components/ui'
+import { FilterSelect } from '../components/filter-select'
+import { Button, Card, RangeSelector, SectionHeading, StatusDot } from '../components/ui'
+import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import { useRefreshFinance } from '../hooks/use-refresh-finance'
 import {
@@ -52,7 +60,18 @@ import {
   saveChartAccountPreferences,
   saveDefaultGraphWindow,
 } from '../lib/graph-preferences'
+import {
+  getDefaultHoldingChartRange,
+  holdingChartRanges,
+  saveDefaultHoldingChartRange,
+} from '../lib/holding-prices'
 import { getExternalLogosEnabled, saveExternalLogosEnabled } from '../lib/logos'
+import {
+  getMarketUpdateInterval,
+  marketUpdateIntervals,
+  saveMarketUpdateInterval,
+} from '../lib/market-preferences'
+import { movePage, savePageOrder, useOrderedNavigation } from '../lib/navigation-preferences'
 import { platinumBenefitOptions } from '../lib/spending'
 import {
   getHiddenPlatinumBenefitIds,
@@ -62,12 +81,12 @@ import {
 } from '../lib/spending-preferences'
 
 const wait = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration))
-type CredentialProvider = 'plaid' | 'snaptrade' | 'alpaca'
+type CredentialProvider = 'plaid' | 'snaptrade' | 'alpaca' | 'alphavantage'
 type LinkProvider = 'plaid' | 'plaid-investments' | 'snaptrade'
 const credentialProviders: Array<{
   id: CredentialProvider
   name: string
-  fields: [{ label: string; placeholder: string }, { label: string; placeholder: string }]
+  fields: Array<{ label: string; placeholder: string; secret?: boolean }>
 }> = [
   {
     id: 'plaid',
@@ -93,6 +112,11 @@ const credentialProviders: Array<{
       { label: 'Secret key', placeholder: 'Alpaca secret key' },
     ],
   },
+  {
+    id: 'alphavantage',
+    name: 'Alpha Vantage',
+    fields: [{ label: 'API key', placeholder: 'Alpha Vantage API key', secret: true }],
+  },
 ]
 const providerName = (provider: CredentialProvider) =>
   credentialProviders.find(({ id }) => id === provider)?.name ?? provider
@@ -114,6 +138,7 @@ const dataSources = [
   },
   { id: 'snaptrade', name: 'SnapTrade', description: 'Investment accounts' },
   { id: 'alpaca', name: 'Alpaca', description: 'Market quotes' },
+  { id: 'alphavantage', name: 'Alpha Vantage', description: 'Earnings dates, news and sentiment' },
   {
     id: 'intelligence',
     name: 'Apple Intelligence',
@@ -130,6 +155,25 @@ export function SettingsPage() {
     queryKey: ['provider-connections', query.data?.revision],
     queryFn: getProviderConnections,
   })
+  const orderedPages = useOrderedNavigation()
+  const [forgettingItem, setForgettingItem] = useState<string | null>(null)
+  const forgetConnection = useMutation({
+    mutationFn: forgetProviderConnection,
+    onSuccess: (_, itemId) => {
+      queryClient.setQueriesData<NonNullable<typeof connections.data>>(
+        { queryKey: ['provider-connections'] },
+        (current) => current?.filter((connection) => connection.itemId !== itemId),
+      )
+      setForgettingItem(null)
+      toast.success('Connection forgotten locally. Refresh to update accounts.')
+      void queryClient.invalidateQueries({ queryKey: ['provider-connections'] })
+    },
+    onError: (error) => {
+      toast.error('Could not forget connection', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    },
+  })
   const [linking, setLinking] = useState<LinkProvider | null>(null)
   const foundationModel = useQuery({
     queryKey: ['foundation-model-status'],
@@ -140,6 +184,8 @@ export function SettingsPage() {
   const [credentialsUnlocked, setCredentialsUnlocked] = useState(false)
   const [credentialsUnlocking, setCredentialsUnlocking] = useState(false)
   const [defaultGraphWindow, setDefaultGraphWindow] = useState(getDefaultGraphWindow)
+  const [holdingChartRange, setHoldingChartRange] = useState(getDefaultHoldingChartRange)
+  const [marketUpdateInterval, setMarketUpdateInterval] = useState(getMarketUpdateInterval)
   const [savedChartAccountPreferences, setSavedChartAccountPreferences] = useState(
     getChartAccountPreferences,
   )
@@ -150,11 +196,14 @@ export function SettingsPage() {
   const [hiddenPlatinumBenefitIds, setHiddenPlatinumBenefitIds] = useState(
     getHiddenPlatinumBenefitIds,
   )
-  const [credentials, setCredentials] = useState<Record<CredentialProvider, [string, string]>>({
+  const [credentials, setCredentials] = useState<Record<CredentialProvider, string[]>>({
     plaid: ['', ''],
     snaptrade: ['', ''],
     alpaca: ['', ''],
+    alphavantage: [''],
   })
+  const [linkPhase, setLinkPhase] = useState<'browser' | 'checking' | 'refreshing'>('browser')
+  const browserCompleted = useRef(false)
   const linkAttempt = useRef(0)
   const activeSession = useRef<ProviderLinkSession | null>(null)
   const linkingProvider = useRef<LinkProvider | null>(null)
@@ -192,11 +241,16 @@ export function SettingsPage() {
           ? { clientId, secret }
           : provider === 'snaptrade'
             ? { clientId, consumerKey: secret }
-            : { clientId, secret },
+            : provider === 'alpaca'
+              ? { clientId, secret }
+              : { clientId },
       )
       queryClient.setQueryData(['integration-status'], status)
       void queryClient.invalidateQueries({ queryKey: ['market-snapshots'] })
-      setCredentials((current) => ({ ...current, [provider]: ['', ''] }))
+      setCredentials((current) => ({
+        ...current,
+        [provider]: current[provider].map(() => ''),
+      }))
       setCredentialsUnlocked(false)
       toast.success(`${providerName(provider)} credentials saved and tested`)
     } catch (error) {
@@ -235,6 +289,8 @@ export function SettingsPage() {
     linkAttempt.current = attemptId
     linkingProvider.current = provider
     setLinking(provider)
+    setLinkPhase('browser')
+    browserCompleted.current = false
     try {
       const session = await beginProviderLink(provider, itemId)
       if (linkAttempt.current !== attemptId) {
@@ -246,9 +302,10 @@ export function SettingsPage() {
       for (let attempt = 0; attempt < 150; attempt += 1) {
         await wait(2_000)
         if (linkAttempt.current !== attemptId) return
-        const result = await pollProviderLink(session)
+        const result = await pollProviderLink(session, browserCompleted.current)
         if (linkAttempt.current !== attemptId) return
         if (result.status === 'connected') {
+          setLinkPhase('refreshing')
           await refresh()
           if (linkAttempt.current !== attemptId) return
           void connections.refetch()
@@ -275,6 +332,8 @@ export function SettingsPage() {
 
   const data = query.data
   const integrationStatus = query.integrationStatus
+  const isConfigured = (provider: CredentialProvider) =>
+    provider === 'alphavantage' ? integrationStatus.alphaVantage : integrationStatus[provider]
   const foundationModelStatus = foundationModel.data ?? {
     state: 'unavailable',
     message: foundationModel.isLoading ? 'Checking availability…' : 'Unavailable',
@@ -328,11 +387,12 @@ export function SettingsPage() {
       return {
         ...provider,
         status: foundationModelStatus.state === 'available' ? 'ready' : 'error',
-        lastSync: foundationModelStatus.message,
+        lastSync:
+          foundationModelStatus.state === 'available' ? 'Ready' : foundationModelStatus.message,
       }
     }
     const credentialProvider = provider.id === 'plaid-investments' ? 'plaid' : provider.id
-    const configured = integrationStatus[credentialProvider]
+    const configured = isConfigured(credentialProvider)
     const health = data.providerStatus?.[credentialProvider]
     const connected = data.accounts.some(
       (account) =>
@@ -347,7 +407,7 @@ export function SettingsPage() {
       status: !configured ? 'neutral' : health?.error ? 'error' : 'ready',
       lastSync: health?.error
         ? `Using saved data · ${health.error}`
-        : provider.id === 'alpaca' && configured
+        : (provider.id === 'alpaca' || provider.id === 'alphavantage') && configured
           ? 'Configured'
           : connected
             ? 'Connected'
@@ -359,291 +419,144 @@ export function SettingsPage() {
 
   return (
     <div className="page settings-page">
-      <header className="page-header workspace-header settings-header">
-        <h1>Settings</h1>
-        {linking ? <Button onClick={() => void cancelLink()}>Cancel connection</Button> : null}
-      </header>
+      <WorkspaceHeader
+        title="Settings"
+        showSnapshot={false}
+        showRefresh={false}
+        actions={
+          <>
+            {linking ? (
+              <Button icon={X} onClick={() => void cancelLink()}>
+                Cancel connection
+              </Button>
+            ) : null}
+            <Link to="/settings/design" className="button-base button-secondary button-default">
+              <Palette size={16} aria-hidden="true" />
+              <span className="sr-only">Design</span>
+            </Link>
+            <Link to="/logs" className="button-base button-secondary button-default">
+              <ScrollText size={16} aria-hidden="true" />
+              <span className="sr-only">Logs</span>
+            </Link>
+          </>
+        }
+      />
 
       <div className="settings-sections">
-        <section className="settings-section">
-          <h2 className="settings-section-heading">Accounts & connections</h2>
-
+        <section className="settings-section settings-section-pair">
+          <h2 className="settings-section-heading">Display</h2>
           <Card>
-            <SectionHeading
-              title="Bank connections"
-              detail="Repair a specific Plaid connection or forget it locally. Previously saved balances remain until the next successful refresh; recorded history is retained."
-            />
-            {connections.isError ? (
-              <p className="settings-copy">
-                Could not load connections.{' '}
-                <Button onClick={() => void connections.refetch()}>Retry</Button>
-              </p>
-            ) : null}
-            {connections.isPending ? <p className="settings-copy">Loading connections…</p> : null}
-            {connections.data?.map((connection) => (
-              <div className="provider-row connection-row" key={connection.itemId}>
-                <div>
-                  <strong>{connection.name}</strong>
-                  <p className="settings-copy">
-                    {connection.error ?? 'Connected'} ·{' '}
-                    {connection.provider === 'plaid-investments' ? 'Investments' : 'Banking'}
-                  </p>
+            <SectionHeading title="Page order" />
+            <div className="page-order-list">
+              {orderedPages.map(({ to, label, icon: Icon }, index) => (
+                <div className="page-order-row" key={to}>
+                  <Icon size={16} aria-hidden="true" />
+                  <span>{label}</span>
+                  <Button
+                    icon={ArrowUp}
+                    disabled={index === 0}
+                    aria-label={`Move ${label} page up`}
+                    onClick={() =>
+                      savePageOrder(
+                        movePage(
+                          orderedPages.map((page) => page.to),
+                          index,
+                          -1,
+                        ),
+                      )
+                    }
+                  />
+                  <Button
+                    icon={ArrowDown}
+                    disabled={index === orderedPages.length - 1}
+                    aria-label={`Move ${label} page down`}
+                    onClick={() =>
+                      savePageOrder(
+                        movePage(
+                          orderedPages.map((page) => page.to),
+                          index,
+                          1,
+                        ),
+                      )
+                    }
+                  />
                 </div>
-                <Button
-                  disabled={Boolean(linking)}
-                  onClick={() => void connectProvider(connection.provider, connection.itemId)}
-                >
-                  Repair
-                </Button>
-                <Button
-                  variant="destructive"
-                  disabled={Boolean(linking)}
-                  onClick={() => {
-                    if (
-                      !window.confirm(
-                        `Forget ${connection.name} locally? Saved accounts disappear on the next refresh. This does not revoke access at Plaid or your bank.`,
-                      )
-                    )
-                      return
-                    void forgetProviderConnection(connection.itemId)
-                      .then(() => connections.refetch())
-                      .then(() =>
-                        toast.success('Connection forgotten locally. Refresh to update accounts.'),
-                      )
-                      .catch(() => toast.error('Could not forget connection'))
-                  }}
-                >
-                  Forget locally
-                </Button>
-              </div>
-            ))}
-            {connections.data?.length === 0 ? (
-              <p className="settings-copy">No saved Plaid connections.</p>
-            ) : null}
-          </Card>
-
-          <Card>
-            <SectionHeading title="Integrations" />
-            <p className="settings-copy">Provider keys stay in the macOS Keychain.</p>
-            <div className="integration-grid">
-              {credentialProviders.map(({ id, name, fields }) => {
-                const configured = integrationStatus[id]
-                const values = credentials[id]
-                return (
-                  <div className="integration-form" key={id}>
-                    <div className="integration-title">
-                      <strong>{name}</strong>
-                      <StatusDot tone={configured ? 'positive' : 'neutral'} />
-                      <small>{configured ? 'Configured' : 'Not configured'}</small>
-                    </div>
-                    {configured && !credentialsUnlocked ? (
-                      <div className="integration-locked">
-                        <Button
-                          size="compact"
-                          disabled={!isTauri() || credentialsUnlocking}
-                          onClick={() => void unlockCredentials()}
-                        >
-                          <Fingerprint size={15} />
-                          {credentialsUnlocking ? 'Authenticating…' : 'Edit credentials'}
-                        </Button>
-                      </div>
-                    ) : (
-                      <>
-                        {fields.map(({ label, placeholder }, index) => (
-                          <label key={label}>
-                            <span>{label}</span>
-                            <input
-                              type={index ? 'password' : 'text'}
-                              value={values[index]}
-                              onChange={(event) =>
-                                setCredentials((current) => {
-                                  const next: [string, string] = [...current[id]]
-                                  next[index] = event.target.value
-                                  return { ...current, [id]: next }
-                                })
-                              }
-                              placeholder={placeholder}
-                              autoComplete={index ? 'new-password' : 'off'}
-                            />
-                          </label>
-                        ))}
-                        <Button
-                          variant="primary"
-                          size="compact"
-                          disabled={
-                            !isTauri() ||
-                            integrationSaving !== null ||
-                            values.some((value) => !value)
-                          }
-                          onClick={() => void saveIntegration(id)}
-                        >
-                          <Save size={14} />
-                          {integrationSaving === id ? 'Testing…' : 'Save and test'}
-                        </Button>
-                      </>
-                    )}
-                  </div>
-                )
-              })}
-            </div>
-          </Card>
-
-          <Card>
-            <SectionHeading
-              title="Account names"
-              detail="Set the names Brief shows for bank, brokerage, retirement, and credit accounts."
-            />
-            <div className="account-name-settings">
-              {renameableAccounts.map((account) => (
-                <label className="account-name-setting" key={account.id}>
-                  <span>
-                    <strong>{account.name}</strong>
-                    <small>
-                      {account.institution} · {account.type}
-                    </small>
-                  </span>
-                  <input
-                    type="text"
-                    maxLength={80}
-                    value={accountDisplayNames[account.id] ?? ''}
-                    placeholder="Use provider name"
-                    aria-label={`Display name for ${account.name}`}
-                    onChange={(event) => updateAccountDisplayName(account.id, event.target.value)}
-                  />
-                </label>
               ))}
-              {!renameableAccounts.length ? (
-                <p className="settings-copy">No connected accounts to rename.</p>
-              ) : null}
             </div>
-            <p className="settings-copy account-name-note">
-              Display names stay on this Mac and do not change provider or account data. Clear a
-              field to use its provider name.
-            </p>
           </Card>
-
-          <Card>
-            <SectionHeading
-              title="Account start dates"
-              detail="Inferred from each account’s earliest imported transaction or trade."
-            />
-            <div className="account-name-settings">
-              {renameableAccounts.map((account) => (
-                <label className="account-name-setting" key={account.id}>
-                  <span>
-                    <strong>
-                      {accountDisplayName(account.id, account.name, accountDisplayNames)}
-                    </strong>
-                    <small>
-                      {accountStartDates[account.id] ? 'Custom date' : 'First imported activity'}
-                    </small>
-                  </span>
-                  <input
-                    type="date"
-                    max={data.updatedAt.slice(0, 10)}
-                    value={accountStartDate(data, account.id, accountStartDates) ?? ''}
-                    aria-label={`Start date for ${account.name}`}
-                    onChange={(event) => updateAccountStartDate(account.id, event.target.value)}
-                  />
-                </label>
-              ))}
-              {!renameableAccounts.length ? (
-                <p className="settings-copy">No connected accounts to edit.</p>
-              ) : null}
-            </div>
-            <p className="settings-copy account-name-note">
-              Dates stay on this Mac. Clear a custom date to use the first imported activity again.
-            </p>
-          </Card>
-
-          {(data.possibleDuplicateAccounts?.length ?? 0) ||
-          Object.keys(data.accountLinks ?? {}).length ? (
-            <Card>
-              <SectionHeading
-                title="Linked accounts"
-                detail="Brief never removes a possible duplicate automatically. Confirm only accounts that represent the same assets."
-              />
-              <div className="account-name-settings">
-                {(data.possibleDuplicateAccounts ?? []).map((candidate) => (
-                  <div className="account-name-setting" key={candidate.plaidAccountId}>
-                    <span>
-                      <strong>Possible duplicate</strong>
-                      <small>{candidate.description}</small>
-                    </span>
-                    <Button
-                      onClick={() => {
-                        void saveAccountLink(candidate.plaidAccountId, candidate.snaptradeAccountId)
-                          .then(() => refresh())
-                          .then(() => toast.success('Accounts linked after provider confirmation'))
-                          .catch((error) =>
-                            toast.error(error instanceof Error ? error.message : String(error)),
-                          )
-                      }}
-                    >
-                      Confirm same account
-                    </Button>
-                  </div>
-                ))}
-                {Object.entries(data.accountLinks ?? {}).map(
-                  ([plaidAccountId, snaptradeAccountId]) => (
-                    <div className="account-name-setting" key={plaidAccountId}>
-                      <span>
-                        <strong>Confirmed linked account</strong>
-                        <small>
-                          {plaidAccountId} → {snaptradeAccountId}
-                        </small>
-                      </span>
-                      <Button
-                        variant="destructive"
-                        onClick={() => {
-                          void saveAccountLink(plaidAccountId)
-                            .then(() => refresh())
-                            .then(() => toast.success('Account link removed'))
-                            .catch((error) =>
-                              toast.error(error instanceof Error ? error.message : String(error)),
-                            )
-                        }}
-                      >
-                        Unlink
-                      </Button>
-                    </div>
-                  ),
-                )}
-              </div>
-            </Card>
-          ) : null}
-        </section>
-
-        <section className="settings-section">
-          <h2 className="settings-section-heading">Home & display</h2>
-
           <Card>
             <SectionHeading title="Charts" />
-            <p className="settings-copy">Choose the default range for Home charts.</p>
-            <div
-              className="graph-window-options"
-              role="radiogroup"
-              aria-label="Default graph range"
-            >
-              {graphWindows.map(({ secs, settingsLabel }) => (
-                <button
-                  key={secs}
-                  type="button"
-                  role="radio"
-                  aria-checked={defaultGraphWindow === secs}
-                  className={defaultGraphWindow === secs ? 'active' : ''}
-                  onClick={() => {
-                    saveDefaultGraphWindow(secs)
-                    setDefaultGraphWindow(secs)
-                  }}
-                >
-                  <span>{settingsLabel}</span>
-                  {defaultGraphWindow === secs ? <Check size={14} /> : null}
-                </button>
-              ))}
+            <div className="settings-control-row">
+              <span>Home range</span>
+              <RangeSelector
+                className="graph-window-options"
+                label="Default graph range"
+                options={graphWindows.map(({ secs, label, settingsLabel }) => ({
+                  value: secs,
+                  label,
+                  accessibleLabel: settingsLabel,
+                }))}
+                value={defaultGraphWindow}
+                onValueChange={(secs) => {
+                  saveDefaultGraphWindow(secs)
+                  setDefaultGraphWindow(secs)
+                }}
+              />
             </div>
-            <fieldset className="chart-account-settings">
-              <legend>Charts shown on Home</legend>
+            <div className="settings-control-row">
+              <span>Holdings range</span>
+              <RangeSelector
+                className="graph-window-options"
+                label="Default Holdings graph range"
+                options={holdingChartRanges}
+                value={holdingChartRange}
+                onValueChange={(value) => {
+                  saveDefaultHoldingChartRange(value)
+                  setHoldingChartRange(value)
+                }}
+              />
+            </div>
+            <div className="settings-control-row">
+              <span>Live price updates</span>
+              <RangeSelector
+                className="graph-window-options"
+                label="Live price updates"
+                options={marketUpdateIntervals.map(({ seconds, label, settingsLabel }) => ({
+                  value: seconds,
+                  label,
+                  accessibleLabel: settingsLabel,
+                }))}
+                value={marketUpdateInterval}
+                onValueChange={(seconds) => {
+                  saveMarketUpdateInterval(seconds)
+                  setMarketUpdateInterval(seconds)
+                }}
+              />
+            </div>
+
+            <div className="settings-control-row">
+              <label className="external-logo-setting">
+                <input
+                  type="checkbox"
+                  checked={externalLogosEnabled}
+                  onChange={(event) => {
+                    saveExternalLogosEnabled(event.target.checked)
+                    setExternalLogosEnabled(event.target.checked)
+                  }}
+                />
+                <span>
+                  <strong>Company and merchant logos</strong>
+                </span>
+              </label>
+              <span className="muted">
+                Requests ticker and merchant logos from Logo.dev or Plaid. Turn off to use local
+                initials.
+              </span>
+            </div>
+          </Card>
+          <Card>
+            <div className="chart-account-settings">
+              <SectionHeading title="Home accounts" />
               <div className="chart-account-options">
                 {chartAccountPreferences.map((preference, index) => {
                   const chart = chartViewsById.get(preference.accountId)
@@ -675,83 +588,64 @@ export function SettingsPage() {
                         </span>
                       </label>
                       <div className="chart-account-order">
-                        <button
+                        <Button
+                          size="icon"
+                          variant="ghost"
                           type="button"
                           disabled={index === 0}
                           aria-label={`Move ${accountDisplayName(chart.accountId, chart.name, accountDisplayNames)} up`}
                           onClick={() => moveChartAccount(index, -1)}
                         >
-                          <ArrowUp size={14} />
-                        </button>
-                        <button
+                          <ArrowUp size={14} aria-hidden="true" />
+                        </Button>
+                        <Button
+                          size="icon"
+                          variant="ghost"
                           type="button"
                           disabled={index === chartAccountPreferences.length - 1}
                           aria-label={`Move ${accountDisplayName(chart.accountId, chart.name, accountDisplayNames)} down`}
                           onClick={() => moveChartAccount(index, 1)}
                         >
-                          <ArrowDown size={14} />
-                        </button>
+                          <ArrowDown size={14} aria-hidden="true" />
+                        </Button>
                       </div>
                     </div>
                   )
                 })}
               </div>
-              <small>Unchecked accounts stay available elsewhere in Brief.</small>
-            </fieldset>
-          </Card>
-
-          <Card>
-            <SectionHeading title="Company logos" />
-            <label className="external-logo-setting">
-              <input
-                type="checkbox"
-                checked={externalLogosEnabled}
-                onChange={(event) => {
-                  saveExternalLogosEnabled(event.target.checked)
-                  setExternalLogosEnabled(event.target.checked)
-                }}
-              />
-              <span>
-                <strong>Load actual company and merchant logos</strong>
-                <small>
-                  Sends ticker or merchant-domain identifiers to Logo.dev or Plaid when those marks
-                  are displayed. Off uses private local initials.
-                </small>
-              </span>
-            </label>
+            </div>
           </Card>
         </section>
-
         <section className="settings-section">
-          <h2 className="settings-section-heading">Spending & benefits</h2>
-
+          <h2 className="settings-section-heading">Spending</h2>
           <Card>
             <SectionHeading title="Spending account" />
-            <label className="settings-field">
+            <div className="settings-field">
               <span>Credit account</span>
-              <select
+              <FilterSelect
+                label="Credit account"
                 value={selectedSpendingAccount}
                 disabled={!creditAccounts.length}
-                onChange={(event) => {
-                  const accountId = event.target.value
+                options={[
+                  {
+                    value: '',
+                    label: creditAccounts.length
+                      ? 'Choose an account'
+                      : 'No credit accounts connected',
+                  },
+                  ...creditAccounts.map((account) => ({
+                    value: account.id,
+                    label: `${accountDisplayName(account.id, account.name, accountDisplayNames)} · ${account.institution}`,
+                  })),
+                ]}
+                onValueChange={(accountId) => {
                   saveSpendingAccountId(accountId)
                   setSpendingAccountId(accountId)
                 }}
-              >
-                <option value="">
-                  {creditAccounts.length ? 'Choose an account' : 'No credit accounts connected'}
-                </option>
-                {creditAccounts.map((account) => (
-                  <option key={account.id} value={account.id}>
-                    {accountDisplayName(account.id, account.name, accountDisplayNames)} ·{' '}
-                    {account.institution}
-                  </option>
-                ))}
-              </select>
-              <small>Transactions and card benefits use this account.</small>
-            </label>
-            <fieldset className="benefit-visibility-settings">
-              <legend>Visible Platinum credits</legend>
+              />
+            </div>
+            <fieldset className="benefit-visibility-settings" id="platinum-benefits">
+              <legend>Visible Platinum benefits</legend>
               <div className="benefit-visibility-options">
                 {platinumBenefitOptions.map((benefit) => (
                   <label key={benefit.id}>
@@ -770,27 +664,126 @@ export function SettingsPage() {
                   </label>
                 ))}
               </div>
-              <small>Choose which credits appear in Spending.</small>
             </fieldset>
           </Card>
         </section>
-
         <section className="settings-section">
-          <h2 className="settings-section-heading">Privacy & data</h2>
-
+          <h2 className="settings-section-heading">Accounts</h2>
+          <Card>
+            <SectionHeading title="Account details" />
+            <div className="settings-table-scroll">
+              <table className="settings-account-table">
+                <thead>
+                  <tr>
+                    <th scope="col">Account</th>
+                    <th scope="col">Display name</th>
+                    <th scope="col">Start date</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {renameableAccounts.map((account) => (
+                    <tr key={account.id}>
+                      <th scope="row">
+                        <strong>{account.name}</strong>
+                        <small>
+                          {account.institution} · {account.type}
+                        </small>
+                      </th>
+                      <td>
+                        <input
+                          type="text"
+                          maxLength={80}
+                          value={accountDisplayNames[account.id] ?? ''}
+                          placeholder="Provider name"
+                          aria-label={`Display name for ${account.name}`}
+                          onChange={(event) =>
+                            updateAccountDisplayName(account.id, event.target.value)
+                          }
+                        />
+                      </td>
+                      <td>
+                        <input
+                          type="date"
+                          max={data.updatedAt.slice(0, 10)}
+                          value={accountStartDate(data, account.id, accountStartDates) ?? ''}
+                          aria-label={`Start date for ${account.name}`}
+                          onChange={(event) =>
+                            updateAccountStartDate(account.id, event.target.value)
+                          }
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            {!renameableAccounts.length ? (
+              <p className="settings-copy">No connected accounts to edit.</p>
+            ) : null}
+          </Card>
+          {(data.possibleDuplicateAccounts?.length ?? 0) ||
+          Object.keys(data.accountLinks ?? {}).length ? (
+            <Card>
+              <SectionHeading title="Linked accounts" />
+              <div className="account-name-settings">
+                {(data.possibleDuplicateAccounts ?? []).map((candidate) => (
+                  <div className="account-name-setting" key={candidate.plaidAccountId}>
+                    <span>
+                      <strong>Possible duplicate</strong>
+                      <small>{candidate.description}</small>
+                    </span>
+                    <Button
+                      icon={Link2}
+                      onClick={() => {
+                        void saveAccountLink(candidate.plaidAccountId, candidate.snaptradeAccountId)
+                          .then(() => refresh())
+                          .then(() => toast.success('Accounts linked after provider confirmation'))
+                          .catch((error) =>
+                            toast.error(error instanceof Error ? error.message : String(error)),
+                          )
+                      }}
+                    >
+                      Confirm same account
+                    </Button>
+                  </div>
+                ))}
+                {Object.entries(data.accountLinks ?? {}).map(
+                  ([plaidAccountId, snaptradeAccountId]) => (
+                    <div className="account-name-setting" key={plaidAccountId}>
+                      <span>
+                        <strong>Confirmed linked account</strong>
+                        <small>
+                          {plaidAccountId} → {snaptradeAccountId}
+                        </small>
+                      </span>
+                      <Button
+                        icon={Unlink}
+                        variant="destructive"
+                        onClick={() => {
+                          void saveAccountLink(plaidAccountId)
+                            .then(() => refresh())
+                            .then(() => toast.success('Account link removed'))
+                            .catch((error) =>
+                              toast.error(error instanceof Error ? error.message : String(error)),
+                            )
+                        }}
+                      >
+                        Unlink
+                      </Button>
+                    </div>
+                  ),
+                )}
+              </div>
+            </Card>
+          ) : null}
+        </section>
+        <section className="settings-section settings-section-pair">
+          <h2 className="settings-section-heading">Connections</h2>
           <Card>
             <SectionHeading title="Data sources" action={<RefreshButton />} />
             <div className="provider-list">
               {providers.map((provider) => (
-                <button
-                  className="provider-row"
-                  type="button"
-                  key={provider.id}
-                  disabled={!isLinkProvider(provider.id)}
-                  onClick={() => {
-                    if (isLinkProvider(provider.id)) void connectProvider(provider.id)
-                  }}
-                >
+                <div className="provider-row" key={provider.id}>
                   <span className="provider-icon">
                     {provider.id === 'intelligence' ? (
                       <Cpu size={17} />
@@ -802,7 +795,6 @@ export function SettingsPage() {
                   </span>
                   <span>
                     <strong>{provider.name}</strong>
-                    <small>{provider.description}</small>
                   </span>
                   <span className="provider-status">
                     <StatusDot
@@ -814,31 +806,180 @@ export function SettingsPage() {
                             : 'positive'
                       }
                     />
-                    {linking === provider.id ? 'Waiting for browser…' : provider.lastSync}
+                    {linking === provider.id
+                      ? linkPhase === 'refreshing'
+                        ? 'Refreshing accounts…'
+                        : linkPhase === 'checking'
+                          ? 'Checking connection…'
+                          : 'Waiting for browser…'
+                      : provider.lastSync}
                   </span>
-                  {isLinkProvider(provider.id) ? <ChevronRight size={15} /> : <span />}
-                </button>
+                  {linking === 'snaptrade' && provider.id === 'snaptrade' ? (
+                    <Button
+                      disabled={linkPhase !== 'browser'}
+                      onClick={() => {
+                        browserCompleted.current = true
+                        setLinkPhase('checking')
+                      }}
+                    >
+                      Done in browser
+                    </Button>
+                  ) : isLinkProvider(provider.id) ? (
+                    <Button
+                      aria-label={`Connect ${provider.name}`}
+                      disabled={Boolean(linking)}
+                      onClick={() => {
+                        if (isLinkProvider(provider.id)) void connectProvider(provider.id)
+                      }}
+                    >
+                      <ChevronRight size={16} aria-hidden="true" />
+                    </Button>
+                  ) : (
+                    <span />
+                  )}
+                </div>
               ))}
             </div>
           </Card>
+          <div className="settings-section">
+            <Card>
+              <SectionHeading title="Bank connections" />
+              {connections.isError ? (
+                <p className="settings-copy">
+                  Could not load connections.{' '}
+                  <Button icon={RefreshCw} onClick={() => void connections.refetch()}>
+                    Retry
+                  </Button>
+                </p>
+              ) : null}
+              {connections.isPending ? <p className="settings-copy">Loading connections…</p> : null}
+              {connections.data?.map((connection) => (
+                <div className="provider-row provider-connection-row" key={connection.itemId}>
+                  <div>
+                    <strong>{connection.name}</strong>
+                    <p className="settings-copy">
+                      {connection.error ?? 'Connected'} ·{' '}
+                      {connection.provider === 'plaid-investments' ? 'Investments' : 'Banking'}
+                    </p>
+                  </div>
+                  <Button
+                    icon={Wrench}
+                    disabled={Boolean(linking) || forgetConnection.isPending}
+                    onClick={() => void connectProvider(connection.provider, connection.itemId)}
+                  >
+                    Repair
+                  </Button>
+                  <Button
+                    icon={Trash2}
+                    variant="destructive"
+                    disabled={Boolean(linking) || forgetConnection.isPending}
+                    onClick={() => setForgettingItem(connection.itemId)}
+                  >
+                    Forget locally
+                  </Button>
+                  {forgettingItem === connection.itemId ? (
+                    <div
+                      className="connection-confirmation"
+                      role="group"
+                      aria-label={`Forget ${connection.name} locally`}
+                    >
+                      <p>
+                        Forget {connection.name}? Saved accounts disappear after the next successful
+                        refresh. This does not revoke access at Plaid or your bank.
+                      </p>
+                      <div>
+                        <Button
+                          icon={X}
+                          disabled={forgetConnection.isPending}
+                          onClick={() => setForgettingItem(null)}
+                        >
+                          Cancel
+                        </Button>
+                        <Button
+                          icon={Trash2}
+                          variant="destructive"
+                          disabled={forgetConnection.isPending || Boolean(linking)}
+                          onClick={() => forgetConnection.mutate(connection.itemId)}
+                        >
+                          {forgetConnection.isPending ? 'Forgetting…' : 'Confirm forget'}
+                        </Button>
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ))}
+              {connections.data?.length === 0 ? (
+                <p className="settings-copy">No saved Plaid connections.</p>
+              ) : null}
+            </Card>
+            <Card>
+              <SectionHeading title="Provider credentials" />
 
-          <Card>
-            <SectionHeading title="Diagnostics" />
-            <Link to="/logs" className="settings-page-link">
-              <span className="provider-icon">
-                <ScrollText size={17} />
-              </span>
-              <span>
-                <strong>Logs</strong>
-                <small>Provider health, quote timestamps, and recent runtime activity</small>
-              </span>
-              <ChevronRight size={15} />
-            </Link>
-          </Card>
+              <div className="integration-grid">
+                {credentialProviders.map(({ id, name, fields }) => {
+                  const configured = isConfigured(id)
+                  const values = credentials[id]
+                  return (
+                    <details className="integration-form" key={id}>
+                      <summary className="integration-title">
+                        <strong>{name}</strong>
+                        <StatusDot tone={configured ? 'positive' : 'neutral'} />
+                        <small>{configured ? 'Configured' : 'Not configured'}</small>
+                      </summary>
+                      {configured && !credentialsUnlocked ? (
+                        <div className="integration-locked">
+                          <Button
+                            icon={Fingerprint}
+                            size="compact"
+                            disabled={!isTauri() || credentialsUnlocking}
+                            onClick={() => void unlockCredentials()}
+                          >
+                            {credentialsUnlocking ? 'Authenticating…' : 'Edit credentials'}
+                          </Button>
+                        </div>
+                      ) : (
+                        <>
+                          {fields.map(({ label, placeholder, secret }, index) => (
+                            <label key={label}>
+                              <span>{label}</span>
+                              <input
+                                type={secret || index ? 'password' : 'text'}
+                                value={values[index]}
+                                onChange={(event) =>
+                                  setCredentials((current) => {
+                                    const next = [...current[id]]
+                                    next[index] = event.target.value
+                                    return { ...current, [id]: next }
+                                  })
+                                }
+                                placeholder={placeholder}
+                                autoComplete={secret || index ? 'new-password' : 'off'}
+                              />
+                            </label>
+                          ))}
+                          <Button
+                            icon={Save}
+                            variant="primary"
+                            size="compact"
+                            disabled={
+                              !isTauri() ||
+                              integrationSaving !== null ||
+                              values.some((value) => !value)
+                            }
+                            onClick={() => void saveIntegration(id)}
+                          >
+                            {integrationSaving === id ? 'Testing…' : 'Save and test'}
+                          </Button>
+                        </>
+                      )}
+                    </details>
+                  )
+                })}
+              </div>
+            </Card>
+          </div>
         </section>
       </div>
-
-      <p className="settings-footnote">Brief 0.1.0 · Not financial advice</p>
     </div>
   )
 }

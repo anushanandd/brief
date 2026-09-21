@@ -2,7 +2,27 @@ import { AlertCircle, RefreshCw } from 'lucide-react'
 
 import { useFinance } from '../hooks/use-finance'
 import { useFinanceRefreshState, useRefreshFinance } from '../hooks/use-refresh-finance'
-import { Button } from './ui'
+import { Button, EmptyState } from './ui'
+
+export function ValueHistoryEmptyState({
+  incomplete,
+  valueAvailable,
+}: {
+  incomplete: boolean
+  valueAvailable: boolean
+}) {
+  return (
+    <EmptyState
+      title={incomplete ? 'Complete balance unavailable' : 'Historical series unavailable'}
+    >
+      {incomplete
+        ? 'Only known USD balances are shown. History and changes require complete account values.'
+        : valueAvailable
+          ? 'The current provider balance is available, but there is not enough supported history to plot.'
+          : 'The provider has not supplied a usable USD balance or history.'}
+    </EmptyState>
+  )
+}
 
 export function PageLoading() {
   return (
@@ -21,6 +41,44 @@ export function PageLoading() {
   )
 }
 
+export function HomeLoading() {
+  return (
+    <div
+      className="page loading-page home-loading"
+      aria-busy="true"
+      aria-label="Loading finance data"
+    >
+      <span className="sr-only" role="status">
+        Opening saved finances
+      </span>
+      <div className="page-header">
+        <div className="skeleton skeleton-label" />
+      </div>
+      <div className="home-primary-grid" aria-hidden="true">
+        <div className="surface-card home-loading-chart">
+          <div className="skeleton skeleton-label" />
+          <div className="skeleton skeleton-value" />
+        </div>
+        <div className="surface-card home-loading-overview">
+          {[0, 1, 2].map((key) => (
+            <div className="skeleton skeleton-value" key={key} />
+          ))}
+        </div>
+      </div>
+      <div className="home-secondary-grid home-holdings-row" aria-hidden="true">
+        {[0, 1, 2].map((key) => (
+          <div className="surface-card skeleton-card" key={key} />
+        ))}
+      </div>
+      <div className="home-finance-grid" aria-hidden="true">
+        {[0, 1, 2].map((key) => (
+          <div className="surface-card skeleton-card" key={key} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
 export function PageError() {
   const query = useFinance()
 
@@ -29,7 +87,7 @@ export function PageError() {
       <AlertCircle size={24} aria-hidden="true" />
       <h1>We couldn’t load your snapshot.</h1>
       <p>{query.error instanceof Error ? query.error.message : 'Unknown error'}</p>
-      <Button variant="primary" onClick={() => void query.refetch()}>
+      <Button icon={RefreshCw} variant="primary" onClick={() => void query.refetch()}>
         Try again
       </Button>
     </div>

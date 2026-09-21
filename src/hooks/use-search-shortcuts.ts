@@ -1,4 +1,6 @@
-import { useEffect, useRef, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useRef } from 'react'
+
+import { shortcutInput, shortcutOverlayOpen } from '../lib/keyboard'
 
 type SearchShortcutEvent = Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey'>
 
@@ -15,15 +17,14 @@ export function searchShortcutAction(
   return undefined
 }
 
-export function useSearchShortcuts(query: string, setQuery: Dispatch<SetStateAction<string>>) {
+export function useSearchShortcuts(query: string, setQuery: (value: string) => void) {
   const inputRef = useRef<HTMLInputElement>(null)
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.defaultPrevented || event.isComposing || shortcutOverlayOpen()) return
       const target = event.target
-      const isEditing =
-        target instanceof HTMLElement &&
-        (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
+      const isEditing = shortcutInput(target)
       const action = searchShortcutAction(
         event,
         isEditing,

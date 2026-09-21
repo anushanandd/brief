@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
 
-import { navigation } from '../lib/navigation'
 import {
   browserHistoryDirection,
   listNavigationAction,
   navigationShortcutIndex,
   shortcutHelpShortcut,
+  sidebarShortcutDirection,
 } from './app-shell'
 
 const key = (overrides: Partial<Parameters<typeof navigationShortcutIndex>[0]> = {}) => ({
@@ -28,23 +28,12 @@ describe('browser history shortcuts', () => {
 })
 
 describe('navigation shortcuts', () => {
-  it('places Spending directly after Accounts', () => {
-    expect(navigation.map(({ label, shortcut }) => [label, shortcut])).toEqual([
-      ['Home', '1'],
-      ['Accounts', '2'],
-      ['Spending', '3'],
-      ['Holdings', '4'],
-      ['Activity', '5'],
-      ['Settings', '6'],
-    ])
-  })
-
   it('uses bare number keys without stealing typing or modified shortcuts', () => {
     expect(navigationShortcutIndex(key(), false)).toBe(0)
-    expect(navigationShortcutIndex(key({ key: '6' }), false)).toBe(5)
+    expect(navigationShortcutIndex(key({ key: '7' }), false)).toBe(6)
     expect(navigationShortcutIndex(key({ metaKey: true }), false)).toBeUndefined()
     expect(navigationShortcutIndex(key(), true)).toBeUndefined()
-    expect(navigationShortcutIndex(key({ key: '7' }), false)).toBeUndefined()
+    expect(navigationShortcutIndex(key({ key: '9' }), false)).toBeUndefined()
   })
 
   it('maps list navigation and shortcut help', () => {
@@ -55,4 +44,14 @@ describe('navigation shortcuts', () => {
     expect(shortcutHelpShortcut(key({ key: '?', shiftKey: true }), false)).toBe(true)
     expect(shortcutHelpShortcut(key({ key: '?', shiftKey: true }), true)).toBe(false)
   })
+})
+
+it('cycles sidebar pages only for unmodified Command-Up/Down outside editing', () => {
+  expect(sidebarShortcutDirection(key({ key: 'ArrowUp', metaKey: true }), false)).toBe(-1)
+  expect(sidebarShortcutDirection(key({ key: 'ArrowDown', metaKey: true }), false)).toBe(1)
+  expect(sidebarShortcutDirection(key({ key: 'ArrowUp' }), false)).toBeUndefined()
+  expect(sidebarShortcutDirection(key({ key: 'ArrowUp', metaKey: true }), true)).toBeUndefined()
+  expect(
+    sidebarShortcutDirection(key({ key: 'ArrowUp', metaKey: true, ctrlKey: true }), false),
+  ).toBeUndefined()
 })

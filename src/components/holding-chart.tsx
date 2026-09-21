@@ -1,0 +1,372 @@
+import { Liveline } from 'liveline'
+import { ChartCandlestick, ChartNoAxesCombined } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+
+import { useFinance } from '../hooks/use-finance'
+import { useGraphAccountShortcuts } from '../hooks/use-graph-window-shortcuts'
+import { useHoldingPrices } from '../hooks/use-holding-prices'
+import { formatCurrency, formatSecurityName, valueTone } from '../lib/format'
+import {
+  getDefaultHoldingChartRange,
+  holdingChartPoints,
+  holdingChartCandles,
+  holdingChartTimeline,
+  visibleHoldingChartPoints,
+  holdingChartRanges,
+  holdingRangeChange,
+  holdingChartEnd,
+  holdingChartTime,
+} from '../lib/holding-prices'
+import { pageShortcutBlocked } from '../lib/keyboard'
+import type { FinanceSnapshot } from '../lib/schema'
+import { useChartColors } from './charts'
+import { AnimatedCurrency, Button, Card, Change, EmptyState, RangeSelector } from './ui'
+
+function LoadingText({ children }: { children: string }) {
+  const [visible, setVisible] = useState(false)
+  useEffect(() => {
+    const timer = setTimeout(() => setVisible(true), 400)
+    return () => clearTimeout(timer)
+  }, [])
+  return <span style={{ visibility: visible ? 'visible' : 'hidden' }}>{children}</span>
+}
+
+export function HoldingChart({
+  holdings,
+  ticker,
+  onTickerChange,
+}: {
+  holdings: FinanceSnapshot['holdings']
+  ticker: string
+  onTickerChange: (ticker: string) => void
+}) {
+  const finance = useFinance()
+  const colors = useChartColors()
+  const tickerKey = [...new Set(holdings.map((holding) => holding.ticker))].join(',')
+  const tickers = useMemo(() => tickerKey.split(','), [tickerKey])
+  const [mode, setMode] = useState<'line' | 'candle'>('candle')
+  const [range, setRange] = useState(getDefaultHoldingChartRange)
+  const supported = finance.marketSymbols.includes(ticker)
+  const prices = useHoldingPrices(ticker, range, finance.liveMarketEnabled && supported, tickers)
+  const index = tickers.indexOf(ticker)
+  const move = useCallback(
+    (direction: -1 | 1) => {
+      if (tickers.length)
+        onTickerChange(tickers[(index + direction + tickers.length) % tickers.length])
+    },
+    [index, tickers, onTickerChange],
+  )
+  useGraphAccountShortcuts(move, 'none')
+  const holding = holdings.find((position) => position.ticker === ticker)
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (
+        event.metaKey ||
+        event.ctrlKey ||
+        event.altKey ||
+        event.shiftKey ||
+        pageShortcutBlocked(event)
+      )
+        return
+      const next = holdingChartRanges.find(
+        ({ label }) => label.toLowerCase() === event.key.toLowerCase(),
+      )
+      if (next) {
+        event.preventDefault()
+        setRange(next.value)
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
+  const quote = prices.quote
+  const history = prices.history
+  const now = history?.cached ? history.fetchedAt / 1000 : prices.now
+  const allPoints = useMemo(
+    () =>
+      holdingChartPoints({
+        history,
+        bars: prices.bars,
+        historyError: prices.historyError,
+        error: prices.error,
+      }),
+    [history, prices.bars, prices.historyError, prices.error],
+  )
+  const chartEnd = holdingChartEnd(prices, allPoints, now)
+  const points = useMemo(
+    () => visibleHoldingChartPoints(allPoints, range, chartEnd),
+    [allPoints, range, chartEnd],
+  )
+  const last = points.at(-1)
+  const price =
+    quote && quote.time >= (last?.time ?? 0)
+      ? quote.price
+      : (last?.value ?? (!finance.liveMarketEnabled ? holding?.price : undefined))
+  const timelineEnd = prices.connection?.status === 'closed' ? (last?.time ?? chartEnd) : chartEnd
+  const timeline = useMemo(
+    () => holdingChartTimeline(history, points, timelineEnd, range),
+    [history, points, timelineEnd, range],
+  )
+  const candleChart = useMemo(
+    () => holdingChartCandles({ history, bars: prices.bars }, timeline, chartEnd, range),
+    [history, prices.bars, timeline, chartEnd, range],
+  )
+  const candleLabel =
+    candleChart.resolution < 86400
+      ? `${candleChart.resolution / 60}m candles`
+      : `${candleChart.resolution / 86400}-day candles`
+  const change = holdingRangeChange(prices, allPoints, now)
+  const connection = prices.connection
+  const active = prices.visible && connection?.status === 'subscribed' && !prices.error
+  const stale = quote && now - quote.time > (connection?.delayMinutes ?? 0) * 60 + 120
+  const feed =
+    connection?.feed === 'overnight'
+      ? 'Indicative'
+      : connection?.feed === 'boats'
+        ? 'BOATS'
+        : connection?.feed === 'delayed_sip'
+          ? 'SIP · 15m delayed'
+          : 'SIP'
+  const status = !holding
+    ? 'No holdings available.'
+    : !supported
+      ? 'Live pricing is unavailable for this security.'
+      : !finance.liveMarketEnabled
+        ? 'Connect Alpaca in Settings for live prices.'
+        : (prices.error ??
+          (connection
+            ? `${connection.session}${connection.feed ? ` · ${feed}` : ''} · ${!prices.visible ? 'Paused' : active ? (stale ? 'Older quote' : quote ? (connection.delayMinutes ? 'Streaming' : 'Live') : 'Waiting for quotes') : connection.status === 'rest' ? 'REST updates' : connection.status}`
+            : null))
+  const latestLabel = quote?.indicative ? undefined : 'Latest trade'
+  const loadingHistory =
+    supported && finance.liveMarketEnabled && !history && !prices.historyError && !prices.error
+  const selection = `${ticker}:${range}`
+  const savedChange = Boolean(history?.cached || prices.historyError || prices.error)
+  const marketStatus = status ?? <LoadingText key={selection}>Loading market data…</LoadingText>
+  const historyStatus = <LoadingText key={selection}>Loading price history…</LoadingText>
+  return (
+    <Card className="net-worth-card brokerage-performance-card holding-chart-card">
+      <header className="home-balance-header">
+        <div className="home-balance-main">
+          <h2 className="balance-label">
+            {holding ? `${ticker} · ${formatSecurityName(holding.name)}` : 'Security price'}
+          </h2>
+          <div className="home-balance-value">
+            <AnimatedCurrency key={ticker} className="hero-number" value={price} />
+          </div>
+          <div className="chart-summary-row">
+            {change ? (
+              <div
+                className="hero-change"
+                role="group"
+                aria-label={`${savedChange ? 'Saved bar-close change' : 'Bar-close change'}${
+                  prices.savedComparison
+                    ? `, verified ${new Date(prices.savedComparison.asOf).toLocaleString()}`
+                    : ''
+                }`}
+              >
+                <span className={valueTone(change.change)}>{formatCurrency(change.change)}</span>
+                <Change value={change.percent} />
+              </div>
+            ) : (
+              <span className="holding-chart-status">
+                {loadingHistory ? historyStatus : 'Range change unavailable'}
+              </span>
+            )}
+          </div>
+        </div>
+        <div className="holding-chart-controls">
+          <div className="holding-chart-status">
+            {(!holding ||
+              !supported ||
+              !finance.liveMarketEnabled ||
+              prices.error ||
+              !prices.visible ||
+              stale ||
+              connection?.status === 'reconnecting' ||
+              connection?.status === 'unavailable') && (
+              <span role="status" className="holding-chart-provenance">
+                {status}
+              </span>
+            )}
+            {history ? (
+              <details className="holding-chart-provenance">
+                <summary>
+                  {mode === 'candle'
+                    ? candleLabel
+                    : history.resolution < 86400
+                      ? `${history.resolution / 60}m bars`
+                      : 'Daily bars'}
+                  {history.delayMinutes ? ` · ${history.delayMinutes}m delayed` : ''}
+                  {chartEnd !== now ? ' · Last observed day' : ''}
+                  {last ? ` · Last ${holdingChartTime(last.time, prices.now)}` : ''}
+                </summary>
+                <span className="holding-chart-provenance">
+                  {history.feeds.join(' + ').toUpperCase()} · Split-adjusted · Chart times ET;
+                  closed sessions compressed. Lines connect reported closes, not intervening
+                  executions.
+                  {quote
+                    ? ` ${latestLabel ?? 'Latest quote'} is separate from historical bars.`
+                    : ''}
+                  <span className="holding-chart-provenance">
+                    {marketStatus}
+                    {quote ? (
+                      <time dateTime={new Date(quote.time * 1000).toISOString()}>
+                        {` · ${holdingChartTime(quote.time, prices.now, true)}`}
+                      </time>
+                    ) : null}
+                  </span>
+                  {history.cached
+                    ? ' Saved history is awaiting verification.'
+                    : savedChange
+                      ? ' Showing the last verified bar-close comparison.'
+                      : ''}
+                  {last ? ` Last bar: ${new Date(last.time * 1000).toLocaleString()}.` : ''}
+                </span>
+              </details>
+            ) : null}
+            {prices.historyError ? (
+              <span className="holding-chart-provenance">{prices.historyError}</span>
+            ) : null}
+          </div>
+          <div className="holding-chart-mode" role="group" aria-label="Chart style">
+            <Button
+              icon={ChartNoAxesCombined}
+              size="icon-compact"
+              aria-label="Line chart"
+              aria-pressed={mode === 'line'}
+              onClick={() => setMode('line')}
+            />
+            <Button
+              icon={ChartCandlestick}
+              size="icon-compact"
+              aria-label="Candlestick chart"
+              aria-pressed={mode === 'candle'}
+              onClick={() => setMode('candle')}
+            />
+          </div>
+          <RangeSelector
+            label="Security price range"
+            options={holdingChartRanges}
+            value={range}
+            onValueChange={setRange}
+          />
+        </div>
+      </header>
+      <div className="brokerage-chart-viewport">
+        {supported && finance.liveMarketEnabled && points.length >= 2 ? (
+          <div
+            className="chart-container performance-chart live-performance-chart"
+            role="group"
+            aria-label={`${ticker} price history`}
+          >
+            <div className="holding-session-overlay" aria-label="Trading sessions in Eastern time">
+              {timeline.sessions.map((session) => {
+                const left = Math.max(0, timeline.position(session.start))
+                const right = Math.min(95, timeline.position(session.end))
+                const label =
+                  session.kind === 'regular' || session.label === 'Close'
+                    ? `${session.label} ${new Date(session.start * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET`
+                    : session.label
+                return right > left ? (
+                  <div
+                    key={session.start}
+                    className={`holding-session holding-session-${session.kind}`}
+                    style={{ left: `${left}%`, width: `${right - left}%` }}
+                    aria-label={label}
+                  >
+                    {range === 86400 &&
+                    right - left > 12 &&
+                    timeline.position(session.start) >= 0 ? (
+                      <span>{label}</span>
+                    ) : null}
+                  </div>
+                ) : null
+              })}
+              {(timeline.gaps.length <= 24 ? timeline.gaps : []).map((gap) => (
+                <div
+                  key={gap.start}
+                  className="holding-session-closure"
+                  style={{ left: `${timeline.position(gap.end)}%` }}
+                  aria-label="Closed session compressed"
+                >
+                  ⋮
+                </div>
+              ))}
+            </div>
+            <Liveline
+              className="liveline-chart-canvas"
+              key={`${ticker}:${range}:${mode}`}
+              mode={mode}
+              candles={candleChart.candles}
+              candleWidth={candleChart.width}
+              data={timeline.points}
+              value={last!.value}
+              valueTime={timeline.toDisplay(last!.time)}
+              endTime={timeline.end}
+              theme="dark"
+              color={colors.value}
+              window={timeline.window}
+              padding={{ top: 24, right: 80, bottom: 28, left: 12 }}
+              badge
+              badgeVariant="minimal"
+              currentLine={false}
+              grid
+              momentum={false}
+              pulse={false}
+              continuous={active}
+              paused={false}
+              fill
+              lineWidth={1.75}
+              minValueRange={last!.value * 0.001}
+              referenceLine={quote ? { value: quote.price, label: latestLabel } : undefined}
+              markers={
+                quote
+                  ? [
+                      {
+                        id: 'latest',
+                        time: timeline.toDisplay(quote.time),
+                        value: quote.price,
+                        color: colors.deposits,
+                        label: [ticker, latestLabel, formatCurrency(quote.price)]
+                          .filter(Boolean)
+                          .join(' · '),
+                      },
+                    ]
+                  : []
+              }
+              scrub
+              formatValue={formatCurrency}
+              formatTime={(time) =>
+                range === 86400
+                  ? new Date(timeline.toActual(time) * 1000).toLocaleTimeString(undefined, {
+                      hour: 'numeric',
+                      minute: '2-digit',
+                      timeZone: 'America/New_York',
+                    })
+                  : new Date(timeline.toActual(time) * 1000).toLocaleDateString(undefined, {
+                      month: 'short',
+                      day: 'numeric',
+                      ...(range === 0 || range >= 365 * 86400 ? { year: 'numeric' } : {}),
+                      ...(range === 604800 || range === 2592000
+                        ? ({ hour: 'numeric', minute: '2-digit' } as const)
+                        : {}),
+                      timeZone: 'America/New_York',
+                    })
+              }
+              style={{ flex: 1, minHeight: 0, height: 'auto' }}
+            />
+          </div>
+        ) : (
+          <EmptyState>
+            {loadingHistory
+              ? historyStatus
+              : history
+                ? 'No completed trades in this range.'
+                : marketStatus}
+          </EmptyState>
+        )}
+      </div>
+    </Card>
+  )
+}

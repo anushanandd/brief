@@ -1,32 +1,39 @@
-import { Link } from '@tanstack/react-router'
-import { ChevronRight, Settings } from 'lucide-react'
+import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ActivityList } from '../components/activity-list'
 import { DonutChart, SpendingLineChart, type DonutSegment } from '../components/charts'
 import { PageError, PageLoading } from '../components/data-state'
-import { Card, Metric, SectionHeading } from '../components/ui'
+import { PlatinumBenefits } from '../components/platinum-benefits'
+import { SpendingAccountEmptyState } from '../components/spending-account-empty-state'
+import {
+  AnimatedCurrency,
+  Button,
+  Card,
+  Change,
+  EmptyState,
+  Metric,
+  RangeSelector,
+  SectionHeading,
+} from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
-import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
-import { buildActivities, movementsFromChange } from '../lib/activity'
-import { formatCompactCurrency, formatCurrency } from '../lib/format'
+import { getAccountDisplayNames } from '../lib/account-name-preferences'
+import { buildActivities } from '../lib/activity'
+import { formatCompactCurrency, formatCurrency, valueTone, formatActivityName } from '../lib/format'
+import { pageShortcutBlocked } from '../lib/keyboard'
 import { getExternalLogosEnabled } from '../lib/logos'
 import {
-  buildPlatinumBenefitHistory,
-  buildPlatinumBenefitTracker,
   buildSpendingView,
-  formatActivityDate,
-  getPlatinumBenefitActivity,
   resolveSpendingAccount,
   spendingCategoryColor,
+  spendingMonthDirectionForKey,
   type SpendingPeriod,
   spendingPeriodLabel,
   spendingPeriodForKey,
   spendingPeriodReference,
-  transactionDateKey,
 } from '../lib/spending'
-import { getHiddenPlatinumBenefitIds, getSpendingAccountId } from '../lib/spending-preferences'
+import { getSpendingAccountId } from '../lib/spending-preferences'
 
 const monthYearFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'long',
@@ -42,27 +49,14 @@ const statementEndFormatter = new Intl.DateTimeFormat('en-US', {
 
 const spendingPeriodIndicators: Array<{
   label: string
-  title: string
+  accessibleLabel: string
   value: SpendingPeriod
 }> = [
-  { label: 'M', title: 'Month', value: 1 },
-  { label: 'Q', title: 'Quarter', value: 3 },
-  { label: 'Y', title: 'Year', value: 12 },
-  { label: 'A', title: 'All time', value: 0 },
+  { label: 'M', accessibleLabel: '1 month', value: 1 },
+  { label: 'Q', accessibleLabel: '3 months', value: 3 },
+  { label: 'Y', accessibleLabel: '1 year', value: 12 },
+  { label: 'A', accessibleLabel: 'All time', value: 0 },
 ]
-
-function EmptySpendingAccount() {
-  return (
-    <Card className="activity-empty-card">
-      <Settings size={20} aria-hidden="true" />
-      <strong>Choose a spending account</strong>
-      <p>Brief uses one credit account for spending and benefit views.</p>
-      <Link className="button-base button-secondary button-default" to="/settings">
-        Open Settings
-      </Link>
-    </Card>
-  )
-}
 
 function useActivityData() {
   const query = useFinance()
@@ -100,27 +94,20 @@ export function SpendingPage() {
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target
-      if (
-        event.altKey ||
-        event.ctrlKey ||
-        event.metaKey ||
-        event.shiftKey ||
-        (target instanceof HTMLElement &&
-          (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))
-      ) {
-        return
-      }
-      const nextPeriod = spendingPeriodForKey(event.key)
-      if (nextPeriod != null) {
-        event.preventDefault()
-        setPeriod(nextPeriod)
-      } else if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
+      if (pageShortcutBlocked(event)) return
+      const monthDirection = spendingMonthDirectionForKey(event)
+      if (monthDirection != null) {
         event.preventDefault()
         setMonthOffset((current) =>
-          event.key === 'ArrowLeft' ? current - 1 : Math.min(0, current + 1),
+          monthDirection === -1 ? current - 1 : Math.min(0, current + 1),
         )
+        return
       }
+      if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
+      const nextPeriod = spendingPeriodForKey(event.key)
+      if (nextPeriod == null) return
+      event.preventDefault()
+      setPeriod(nextPeriod)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
@@ -135,21 +122,12 @@ export function SpendingPage() {
   const periodLabel = spendingPeriodLabel(period, monthOffset, selectedPeriod, view.periodBasis)
   const headlineValue =
     view.periodBasis === 'statement' && period === 1 ? view.statementBalance : view.total
+  const spendingChange = period ? view.total - view.previousTotal : null
   const segments: DonutSegment[] = view.categories.map(({ name, value }) => ({
     name,
     value,
     color: spendingCategoryColor(name),
   }))
-  const hiddenBenefits = getHiddenPlatinumBenefitIds()
-  const benefits = buildPlatinumBenefitTracker(transactions, periodReference).filter(
-    ({ id }) => !hiddenBenefits.includes(id),
-  )
-  const benefitYear = Number(view.end.slice(0, 4))
-  const benefitHistory = buildPlatinumBenefitHistory(
-    getPlatinumBenefitActivity(transactions, data.updatedAt),
-    benefitYear,
-  ).benefits.filter(({ creditCount }) => creditCount > 0)
-  const activityPreviewLimit = Math.max(2, benefits.length + benefitHistory.length + 2)
   const activities = buildActivities(
     { ...data, transactions: view.transactions, trades: [] },
     names,
@@ -160,20 +138,20 @@ export function SpendingPage() {
     <div className="page spending-workspace-page">
       <WorkspaceHeader title="Spending" />
       {!account ? (
-        <EmptySpendingAccount />
+        <SpendingAccountEmptyState />
       ) : (
         <div className="spending-overview-grid">
           <Card className="workspace-brief-card spending-brief-card spending-hero-card">
             <div className="spending-primary-overview">
               <section
                 className="spending-total-panel"
-                aria-keyshortcuts="M Q Y A ArrowLeft ArrowRight"
+                aria-keyshortcuts="M Q Y A ArrowLeft ArrowRight Meta+ArrowLeft Meta+ArrowRight"
               >
                 <header className="workspace-brief-heading">
                   <div>
                     <h2
                       className="balance-label"
-                      title={
+                      aria-description={
                         view.periodBasis === 'statement'
                           ? 'Period inferred from recurring posted autopay dates'
                           : undefined
@@ -181,35 +159,60 @@ export function SpendingPage() {
                     >
                       {periodLabel}
                     </h2>
-                    <strong className="hero-number">{formatCurrency(headlineValue)}</strong>
+                    <AnimatedCurrency className="hero-number" value={headlineValue} />
+                    <div className="chart-summary-row">
+                      {spendingChange != null ? (
+                        <div className="hero-change">
+                          <span className={valueTone(-spendingChange)}>
+                            {formatCurrency(spendingChange)} vs prior period
+                          </span>
+                          <Change value={view.percentChange} favorable="decrease" />
+                        </div>
+                      ) : null}
+                      <div className="spending-period-indicators">
+                        <Button
+                          size="icon-compact"
+                          variant="ghost"
+                          className="icon-only-subtle"
+                          aria-label="Previous spending period"
+                          onClick={() => setMonthOffset((current) => current - 1)}
+                        >
+                          <ChevronLeft size={16} aria-hidden="true" />
+                        </Button>
+                        <RangeSelector
+                          label={`Spending range. Active period: ${periodLabel}`}
+                          options={spendingPeriodIndicators.map((indicator) => ({
+                            ...indicator,
+                            accessibleLabel:
+                              view.periodBasis === 'statement' && indicator.value
+                                ? `${indicator.value} ${indicator.value === 1 ? 'statement' : 'statements'}`
+                                : indicator.accessibleLabel,
+                          }))}
+                          value={period}
+                          onValueChange={setPeriod}
+                        />
+                        <Button
+                          size="icon-compact"
+                          variant="ghost"
+                          className="icon-only-subtle"
+                          aria-label="Next spending period"
+                          disabled={monthOffset === 0}
+                          onClick={() => setMonthOffset((current) => Math.min(0, current + 1))}
+                        >
+                          <ChevronRight size={16} aria-hidden="true" />
+                        </Button>
+                      </div>
+                    </div>
                   </div>
                 </header>
-                <div
-                  className="spending-period-indicators"
-                  role="group"
-                  aria-label={`Active spending range: ${periodLabel}`}
-                >
-                  {spendingPeriodIndicators.map((indicator) => (
-                    <span
-                      key={indicator.label}
-                      className={period === indicator.value ? 'active' : undefined}
-                      aria-current={period === indicator.value ? 'true' : undefined}
-                      title={
-                        view.periodBasis === 'statement' && indicator.value
-                          ? `${indicator.value} ${indicator.value === 1 ? 'statement' : 'statements'}`
-                          : indicator.title
-                      }
-                    >
-                      {indicator.label}
-                    </span>
-                  ))}
+                <div className="spending-chart-region">
+                  <SpendingLineChart
+                    data={view.trend.map(({ date, current }) => ({ date, value: current }))}
+                    activityMarkers={view.activityMarkers}
+                    startingValue={view.startingBalance}
+                    label={periodLabel}
+                  />
                 </div>
-                <SpendingLineChart
-                  data={view.trend.map(({ date, current }) => ({ date, value: current }))}
-                  activityMarkers={view.activityMarkers}
-                  startingValue={view.startingBalance}
-                  label={periodLabel}
-                />
               </section>
 
               <div className="spending-category-panel">
@@ -229,7 +232,9 @@ export function SpendingPage() {
                   <Metric
                     label="Largest expense"
                     value={formatCurrency(view.biggest ? Math.abs(view.biggest.amount) : null)}
-                    detail={view.biggest?.merchant ?? 'No spending yet'}
+                    detail={
+                      view.biggest ? formatActivityName(view.biggest.merchant) : 'No spending yet'
+                    }
                   />
                 </div>
                 <div className="spending-category-chart">
@@ -240,199 +245,25 @@ export function SpendingPage() {
                     centerLabel="spent"
                   />
                   {!segments.length ? (
-                    <small className="home-donut-empty">No category spending in this period.</small>
+                    <EmptyState>No category spending in this period.</EmptyState>
                   ) : null}
                 </div>
               </div>
             </div>
           </Card>
 
-          <Card className="spending-benefits-card">
-            <SectionHeading title="Amex benefit tracker" />
-            <div className="spending-benefit-list">
-              {benefits.map((benefit) => {
-                const progress = benefit.cap
-                  ? Math.min(100, (benefit.creditedAmount / benefit.cap) * 100)
-                  : 0
-                return (
-                  <div className="spending-benefit-row" key={benefit.id}>
-                    <span>
-                      <strong>{benefit.name}</strong>
-                      <small>
-                        {benefit.remainingAmount === 0
-                          ? 'Current benefit matched'
-                          : `${formatCurrency(benefit.remainingAmount)} available`}
-                      </small>
-                    </span>
-                    <strong>
-                      {formatCurrency(benefit.creditedAmount)} / {formatCurrency(benefit.cap)}
-                    </strong>
-                    <div aria-hidden="true">
-                      <span style={{ width: `${Math.max(progress, progress ? 2 : 0)}%` }} />
-                    </div>
-                  </div>
-                )
-              })}
-              {!benefits.length ? (
-                <p className="overview-recent-empty">No benefits selected in Settings.</p>
-              ) : null}
-            </div>
-          </Card>
-
-          <Card className="spending-benefit-history-card">
-            <SectionHeading title="By benefit" detail={`Matched credits in ${benefitYear}`} />
-            <div className="spending-benefit-credit-list">
-              {benefitHistory.map((benefit) => (
-                <div className="spending-benefit-credit-row" key={benefit.id}>
-                  <span>
-                    <strong>{benefit.name}</strong>
-                    <small>
-                      {benefit.creditCount} matched{' '}
-                      {benefit.creditCount === 1 ? 'credit' : 'credits'}
-                    </small>
-                  </span>
-                  <strong className="positive">{formatCurrency(benefit.creditedAmount)}</strong>
-                </div>
-              ))}
-              {!benefitHistory.length ? (
-                <p className="overview-recent-empty">No matched credits in {benefitYear}.</p>
-              ) : null}
-            </div>
-          </Card>
+          <PlatinumBenefits preview transactions={transactions} snapshotIso={data.updatedAt} />
 
           <Card className="spending-transactions-preview">
-            <SectionHeading
-              title={
-                <Link to="/spending/transactions" className="section-heading-link">
-                  Latest activity <ChevronRight size={14} aria-hidden="true" />
-                </Link>
-              }
-            />
+            <SectionHeading title="Recent activity" />
             <ActivityList
-              activities={activities.slice(0, activityPreviewLimit)}
+              activities={activities.slice(0, 10)}
               referenceIso={data.updatedAt}
               compact
             />
           </Card>
         </div>
       )}
-    </div>
-  )
-}
-
-export function TradesActivityPage() {
-  const { query, data, names } = useActivityData()
-  if (query.isLoading) return <PageLoading />
-  if (query.isError || !data) return <PageError />
-
-  const year = data.updatedAt.slice(0, 4)
-  const trades = data.trades
-    .filter(({ date }) => transactionDateKey(date, data.updatedAt).startsWith(year))
-    .toSorted((left, right) => right.date.localeCompare(left.date))
-  const buys = trades.filter(({ type }) => type.toUpperCase().includes('BUY')).length
-  const sales = trades.filter(({ type }) => type.toUpperCase().includes('SELL')).length
-  const accounts = new Set(trades.map(({ accountId }) => accountId).filter(Boolean)).size
-  const activities = buildActivities(
-    { ...data, transactions: [], trades },
-    names,
-    getExternalLogosEnabled(),
-  )
-
-  return (
-    <div className="page activities-page">
-      <WorkspaceHeader title="Trades" parent={{ label: 'Spending', to: '/spending' }} />
-      <Card className="workspace-brief-card activity-count-brief">
-        <header className="workspace-brief-heading">
-          <div>
-            <span className="balance-label">Trades in {year}</span>
-            <strong className="hero-number">{trades.length}</strong>
-          </div>
-          <p>Execution history supplied by connected investment providers</p>
-        </header>
-        <div className="workspace-metric-grid workspace-metric-grid-three">
-          <Metric label="Buys" value={buys} />
-          <Metric label="Sales" value={sales} />
-          <Metric label="Accounts" value={accounts} />
-        </div>
-      </Card>
-      <Card className="transactions-card activity-ledger-card">
-        <SectionHeading
-          title="Trade ledger"
-          detail="Amounts are cash effects; realized estimates appear only when lots reconcile."
-        />
-        <ActivityList
-          activities={activities}
-          referenceIso={data.updatedAt}
-          emptyMessage="No imported trades this year."
-        />
-      </Card>
-    </div>
-  )
-}
-
-export function ChangesActivityPage() {
-  const { query, data, names } = useActivityData()
-  if (query.isLoading) return <PageLoading />
-  if (query.isError || !data) return <PageError />
-
-  const movements = (
-    data.accountMovements.length ? data.accountMovements : movementsFromChange(data.lastChange)
-  ).toReversed()
-  const increases = movements.filter(({ change }) => change > 0).length
-  const decreases = movements.filter(({ change }) => change < 0).length
-  const latest = data.lastChange
-
-  return (
-    <div className="page activities-page">
-      <WorkspaceHeader title="Changes" parent={{ label: 'Spending', to: '/spending' }} />
-      <Card className="workspace-brief-card">
-        <header className="workspace-brief-heading">
-          <div>
-            <span className="balance-label">Latest net-worth change</span>
-            <strong
-              className={`hero-number ${latest?.netWorthChange ? (latest.netWorthChange > 0 ? 'positive' : 'negative') : 'muted'}`}
-            >
-              {formatCurrency(latest?.netWorthChange)}
-            </strong>
-          </div>
-          <p>
-            {latest
-              ? `Observed ${formatActivityDate(latest.observedAt, data.updatedAt)}`
-              : 'No committed comparison is available yet'}
-          </p>
-        </header>
-        <div className="workspace-metric-grid workspace-metric-grid-three">
-          <Metric label="Recorded observations" value={movements.length} />
-          <Metric label="Increases" value={increases} />
-          <Metric label="Decreases" value={decreases} />
-        </div>
-      </Card>
-      <Card className="key-changes-card activity-ledger-card">
-        <SectionHeading
-          title="Balance change ledger"
-          detail="Changes are observations, not transaction or market-return claims."
-        />
-        <div className="key-change-list">
-          {movements.slice(0, 100).map((change) => (
-            <article className="key-change-row" key={change.id}>
-              <span className="key-change-copy">
-                <strong>{accountDisplayName(change.accountId, change.name, names)}</strong>
-                <small>Observed {formatActivityDate(change.observedAt, data.updatedAt)}</small>
-              </span>
-              <strong
-                className={
-                  change.change > 0 ? 'positive' : change.change < 0 ? 'negative' : 'muted'
-                }
-              >
-                {formatCurrency(change.change)}
-              </strong>
-            </article>
-          ))}
-          {!movements.length ? (
-            <p className="key-change-empty">No recorded balance changes.</p>
-          ) : null}
-        </div>
-      </Card>
     </div>
   )
 }
