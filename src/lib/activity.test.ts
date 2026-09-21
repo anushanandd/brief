@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
-import { buildActivities, mergeAccountMovements } from './activity'
+import { classification } from '../data/fixtures/classification'
+import { buildActivities } from './activity'
 import { financeSnapshotSchema } from './schema'
 
 describe('financial activities', () => {
@@ -34,6 +35,7 @@ describe('financial activities', () => {
           date: '2026-09-01',
           amount: -25,
           account: 'Card',
+          classification: classification('expense'),
           pending: false,
           logoUrl: 'https://plaid-merchant-logos.plaid.com/lunch.png',
         },
@@ -83,6 +85,7 @@ describe('financial activities', () => {
           amount: 100,
           account: 'Savings',
           accountId: 'savings',
+          classification: classification('transfer'),
           pending: false,
         },
       ],
@@ -112,6 +115,7 @@ describe('financial activities', () => {
             id: 'income',
             merchant: 'Payroll',
             category: 'Income',
+            classification: classification('income'),
           },
         ],
       })[0],
@@ -122,55 +126,28 @@ describe('financial activities', () => {
         transactions: [
           {
             ...snapshot.transactions[0],
+            id: 'brokerage-income',
+            merchant: 'TRANSFER MONEY FROM BROKERAGE XXXXX8549 Reference Number: MCK1SOY78',
+            classification: classification('income', { brokerageIncomeTransfer: true }),
+          },
+        ],
+      })[0],
+    ).toMatchObject({ kind: 'income' })
+    expect(
+      buildActivities({
+        ...snapshot,
+        transactions: [
+          {
+            ...snapshot.transactions[0],
             id: 'credit',
             merchant: 'Platinum Digital Entertainment Credit',
             category: 'Entertainment',
             amount: 15.99,
+            classification: classification('other', { credit: true }),
           },
         ],
       })[0],
     ).toMatchObject({ kind: 'credit', title: 'Platinum Digital Entertainment Credit' })
-  })
-
-  it('keeps account movements after later refreshes report no new change', () => {
-    const previous = financeSnapshotSchema.parse({
-      updatedAt: '2026-09-02T12:00:00Z',
-      netWorth: 100,
-      accounts: [
-        { id: 'all', name: 'All accounts', institution: 'Brief', type: 'combined', value: 100 },
-        { id: 'savings', name: 'Savings', institution: 'Bank', type: 'cash', value: 100 },
-      ],
-      netWorthHistory: [{ date: '2026-09-02', value: 100 }],
-      holdings: [],
-      trades: [],
-      spending: { monthTotal: 0, categories: [] },
-      transactions: [],
-    })
-    const firstChange = {
-      observedAt: '2026-09-03T12:00:00Z',
-      previousUpdatedAt: previous.updatedAt,
-      previousNetWorth: 100,
-      netWorthChange: 100,
-      accountChanges: [{ accountId: 'savings', name: 'Savings', change: 100 }],
-      newTransactionIds: [],
-    }
-    const first = mergeAccountMovements(previous, firstChange)
-    const second = mergeAccountMovements(
-      { ...previous, accountMovements: first, lastChange: firstChange },
-      {
-        ...firstChange,
-        observedAt: '2026-09-04T12:00:00Z',
-        previousUpdatedAt: firstChange.observedAt,
-        netWorthChange: 0,
-        accountChanges: [],
-      },
-    )
-
-    expect(first).toHaveLength(1)
-    expect(second).toEqual(first)
-    expect(
-      buildActivities({ ...previous, accountMovements: second, lastChange: undefined }),
-    ).toEqual([])
   })
 
   it('uses local display names without changing account IDs', () => {
@@ -193,6 +170,7 @@ describe('financial activities', () => {
           amount: -5,
           account: 'Platinum Card',
           accountId: 'amex',
+          classification: classification('expense'),
           pending: false,
           website: 'https://coffee.example',
         },

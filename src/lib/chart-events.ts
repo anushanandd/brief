@@ -1,4 +1,4 @@
-import { formatCurrency, formatPercent } from './format'
+import { formatCurrency, formatPercent, formatActivityName } from './format'
 import { transactionMarkKind } from './logos'
 import type { FinanceSnapshot } from './schema'
 import { formatActivityDate, isSpendingTransaction, transactionDateKey } from './spending'
@@ -182,7 +182,7 @@ export function chartEventGroupLabel(group: ChartEventGroup, referenceIso: strin
   const details = group.events.slice(0, 3).map((event) => {
     const value = event.amount == null ? '' : formatCurrency(event.amount)
     const profitLoss = event.profitLossPct == null ? '' : ` · ${formatPercent(event.profitLossPct)}`
-    return `${event.title}${value ? ` ${value}` : ''}${profitLoss}${event.note ? ` · ${event.note}` : ''}`
+    return `${formatActivityName(event.title)}${value ? ` ${value}` : ''}${profitLoss}${event.note ? ` · ${event.note}` : ''}`
   })
   const remainder = group.events.length - details.length
   return `${formatActivityDate(group.date, referenceIso)} · ${details.join(' · ')}${remainder ? ` · +${remainder} more` : ''}`

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
+import { classification } from '../data/fixtures/classification'
 import { accountStartDate, parseAccountStartDates } from './account-start-date-preferences'
 
 const data = {
@@ -24,6 +25,7 @@ const data = {
       category: 'Transfer',
       date: '2024-06-03',
       amount: 100,
+      classification: classification('transfer'),
       pending: false,
     },
     {
@@ -34,6 +36,7 @@ const data = {
       category: 'Transfer',
       date: '2025-02-01',
       amount: 50,
+      classification: classification('transfer'),
       pending: false,
     },
   ],

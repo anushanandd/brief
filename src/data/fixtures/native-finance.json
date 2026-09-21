@@ -1,0 +1,297 @@
+{
+  "accountBalanceHistory": [
+    {
+      "accountId": "plaid:cash",
+      "currentValue": 100.11,
+      "historySource": "transaction-derived",
+      "historyStart": "2026-09-08",
+      "institution": "Bank",
+      "name": "Checking",
+      "performanceMethod": "value-only",
+      "points": [
+        {
+          "date": "2026-09-08",
+          "marketChange": null,
+          "marketChangePct": null,
+          "netDeposits": null,
+          "sp500": null,
+          "value": 100.11
+        },
+        {
+          "date": "2026-09-09",
+          "marketChange": null,
+          "marketChangePct": null,
+          "netDeposits": null,
+          "sp500": null,
+          "value": 100.11
+        }
+      ]
+    }
+  ],
+  "accountLinks": {},
+  "accountMovements": [],
+  "accounts": [
+    {
+      "activityAsOf": null,
+      "balanceAsOf": null,
+      "balanceFetchedAt": "2026-09-09T13:00:00+00:00",
+      "currency": null,
+      "estimatedRealizedGainYtd": null,
+      "id": "all",
+      "institution": "Brief",
+      "investmentIncomeYtd": null,
+      "knownCostBasis": null,
+      "knownUnrealizedGain": null,
+      "knownUnrealizedGainPct": null,
+      "name": "All accounts",
+      "positionsAsOf": null,
+      "saleProceedsYtd": null,
+      "type": "combined",
+      "value": 300.22
+    },
+    {
+      "activityAsOf": null,
+      "balanceAsOf": null,
+      "balanceFetchedAt": "2026-09-09T07:29:00Z",
+      "currency": "USD",
+      "estimatedRealizedGainYtd": null,
+      "id": "plaid:cash",
+      "institution": "Bank",
+      "investmentIncomeYtd": null,
+      "knownCostBasis": null,
+      "knownUnrealizedGain": null,
+      "knownUnrealizedGainPct": null,
+      "name": "Checking",
+      "positionsAsOf": null,
+      "saleProceedsYtd": null,
+      "type": "cash",
+      "value": 100.11
+    },
+    {
+      "activityAsOf": null,
+      "balanceAsOf": null,
+      "balanceFetchedAt": null,
+      "costBasisCoverage": "complete",
+      "currency": "USD",
+      "estimatedRealizedGainYtd": 25.0,
+      "id": "snaptrade:brokerage",
+      "institution": "Broker",
+      "investmentIncomeYtd": 0.0,
+      "knownCostBasis": 150.0,
+      "knownUnrealizedGain": 50.0,
+      "knownUnrealizedGainPct": 33.3333,
+      "name": "Brokerage",
+      "positionsAsOf": null,
+      "realizedGainCoverage": "complete",
+      "saleProceedsYtd": 100.0,
+      "salesYtd": 1,
+      "type": "brokerage",
+      "value": 200.11
+    }
+  ],
+  "benchmarkHistory": [],
+  "brokeragePerformance": [
+    {
+      "accountId": "total",
+      "currentValue": 200.11,
+      "historySource": "estimated",
+      "historyStart": "2026-09-08",
+      "institution": "1 account",
+      "name": "Combined brokerages",
+      "performanceMethod": "value-with-comparisons",
+      "points": [
+        {
+          "date": "2026-09-08",
+          "marketChange": null,
+          "marketChangePct": null,
+          "netDeposits": 190.0,
+          "sp500": null,
+          "value": 190.0
+        },
+        {
+          "date": "2026-09-09",
+          "marketChange": 10.11,
+          "marketChangePct": 5.3211,
+          "netDeposits": 190.0,
+          "sp500": null,
+          "value": 200.11
+        }
+      ]
+    },
+    {
+      "accountId": "snaptrade:brokerage",
+      "currentValue": 200.11,
+      "historySource": "provider-estimated",
+      "historyStart": "2026-09-08",
+      "institution": "Broker",
+      "name": "Brokerage",
+      "performanceMethod": "value-with-comparisons",
+      "points": [
+        {
+          "date": "2026-09-08",
+          "marketChange": null,
+          "marketChangePct": null,
+          "netDeposits": 190.0,
+          "sp500": null,
+          "value": 190.0
+        },
+        {
+          "date": "2026-09-09",
+          "marketChange": 10.11,
+          "marketChangePct": 5.3211,
+          "netDeposits": 190.0,
+          "sp500": null,
+          "value": 200.11
+        }
+      ]
+    }
+  ],
+  "calculationVersion": 16,
+  "holdings": [
+    {
+      "accountId": "snaptrade:brokerage",
+      "color": "#232424",
+      "costBasis": 150.0,
+      "currency": "USD",
+      "dailyChangePct": null,
+      "instrumentKind": "stock",
+      "marketAsOf": null,
+      "name": "Synthetic Security",
+      "price": 100.0,
+      "quoteEligible": true,
+      "shares": 2.0,
+      "ticker": "TEST",
+      "totalChangePct": 33.33,
+      "unrealizedGain": 50.0,
+      "valuationNote": null,
+      "value": 200.0,
+      "weeklyChangePct": null,
+      "weeklyReferenceDate": null,
+      "weeklyReferencePrice": null
+    }
+  ],
+  "lastChange": {
+    "accountChanges": [],
+    "comparisonComplete": true,
+    "netWorthChange": 0.0,
+    "newTransactionIds": [],
+    "observedAt": "2026-09-09T13:00:00+00:00",
+    "previousNetWorth": 300.22,
+    "previousUpdatedAt": "2026-09-09T12:00:00+00:00"
+  },
+  "netWorth": 300.22,
+  "netWorthHistory": [
+    {
+      "date": "2026-09-08",
+      "value": 290.11
+    },
+    {
+      "date": "2026-09-09",
+      "value": 300.22
+    }
+  ],
+  "netWorthHistoryEstimated": true,
+  "netWorthIncomplete": false,
+  "observedNetWorthHistory": [
+    {
+      "date": "2026-09-09",
+      "value": 300.22
+    }
+  ],
+  "possibleDuplicateAccounts": [],
+  "provenance": {
+    "benchmark": {
+      "adjustment": "all",
+      "provider": "Alpaca"
+    },
+    "calculation": "rust",
+    "stockPlanHistory": {
+      "adjustment": "split",
+      "provider": "Alpaca"
+    }
+  },
+  "providerStatus": {
+    "plaid": {
+      "error": null,
+      "updatedAt": "2026-09-09T12:00:00+00:00"
+    }
+  },
+  "revision": 2,
+  "spending": {
+    "categories": [
+      {
+        "color": "#c9684b",
+        "name": "Food And Drink",
+        "percent": 100.0,
+        "value": 5.13
+      }
+    ],
+    "monthTotal": 5.13
+  },
+  "syncWarnings": [],
+  "trades": [
+    {
+      "account": "Brokerage",
+      "accountId": "snaptrade:brokerage",
+      "amount": 100.0,
+      "date": "2026-09-08",
+      "description": null,
+      "estimatedRealizedGain": 25.0,
+      "estimatedRealizedGainPct": 33.3333,
+      "id": "sale",
+      "price": 100.0,
+      "realizedCostBasis": 75.0,
+      "realizedGainMethod": "estimated-fifo",
+      "ticker": "TEST",
+      "type": "SELL",
+      "units": 1.0
+    },
+    {
+      "account": "Brokerage",
+      "accountId": "snaptrade:brokerage",
+      "amount": -225.0,
+      "date": "2026-09-01",
+      "description": null,
+      "estimatedRealizedGain": null,
+      "estimatedRealizedGainPct": null,
+      "id": "purchase",
+      "price": 75.0,
+      "realizedCostBasis": null,
+      "ticker": "TEST",
+      "type": "BUY",
+      "units": 3.0
+    }
+  ],
+  "transactions": [
+    {
+      "account": "Checking",
+      "accountId": "plaid:cash",
+      "amount": -5.13,
+      "benefitConfirmed": false,
+      "category": "Food And Drink",
+      "categoryConfidence": "VERY_HIGH",
+      "categoryDetail": "FOOD_AND_DRINK_COFFEE",
+      "classification": {
+        "brokerageIncomeTransfer": false,
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterpartyType": "payment_app",
+      "date": "2026-09-07",
+      "description": "Coffee",
+      "id": "coffee",
+      "logoName": "Coffee",
+      "logoUrl": "https://plaid-merchant-logos.plaid.com/coffee.png",
+      "merchant": "Coffee",
+      "occurredOn": "2026-09-07",
+      "pending": false,
+      "postedOn": "2026-09-08",
+      "transactionCode": "digital_payment",
+      "website": "https://coffee.example"
+    }
+  ],
+  "updatedAt": "2026-09-09T13:00:00+00:00"
+}

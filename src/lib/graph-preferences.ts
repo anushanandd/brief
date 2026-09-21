@@ -2,10 +2,10 @@ const DAY_SECONDS = 24 * 60 * 60
 const DEFAULT_GRAPH_WINDOW = 7 * DAY_SECONDS
 
 export const graphWindows = [
-  { label: '1W', settingsLabel: '1 week', secs: 7 * DAY_SECONDS },
-  { label: '1M', settingsLabel: '1 month', secs: 30 * DAY_SECONDS },
-  { label: '3M', settingsLabel: '3 months', secs: 90 * DAY_SECONDS },
-  { label: 'All', settingsLabel: 'All time', secs: 0 },
+  { label: 'W', settingsLabel: '1 week', secs: 7 * DAY_SECONDS },
+  { label: 'M', settingsLabel: '1 month', secs: 30 * DAY_SECONDS },
+  { label: 'Q', settingsLabel: '3 months', secs: 90 * DAY_SECONDS },
+  { label: 'A', settingsLabel: 'All time', secs: 0 },
 ]
 
 export function graphWindowForKey(key: string) {

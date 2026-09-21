@@ -13,6 +13,7 @@ use std::io::Write;
 
 use crate::{
     database::{Database, SyncRun},
+    finance_contract::{PerformancePoint, Point, Snapshot},
     providers::{PlaidCache, ProviderDataCache, ProviderSync},
 };
 
@@ -28,6 +29,8 @@ pub struct FinanceState {
     pub annotations: BTreeMap<String, Annotation>,
     #[serde(default)]
     pub account_links: BTreeMap<String, String>,
+    #[serde(default)]
+    pub workspace: crate::workspace::Workspace,
 }
 
 #[derive(Clone, Default, Deserialize, Serialize, PartialEq)]
@@ -77,10 +80,22 @@ pub(crate) fn empty_state() -> Result<FinanceState, String> {
         provider_data: ProviderDataCache::default(),
         annotations: BTreeMap::new(),
         account_links: BTreeMap::new(),
+        workspace: Default::default(),
     })
 }
 
 fn validate_state(data: FinanceState) -> Result<FinanceState, String> {
+    data.workspace.validate()?;
+    if data.annotations.iter().any(|(id, annotation)| {
+        id.is_empty()
+            || id.len() > 200
+            || annotation
+                .category
+                .as_ref()
+                .is_some_and(|category| category.trim().is_empty() || category.len() > 100)
+    }) {
+        return Err("Invalid saved annotations".into());
+    }
     if data.schema_version != 1 {
         return Err("This financial data requires a newer version of Brief".into());
     }
@@ -125,6 +140,7 @@ fn legacy_state(directory: &Path) -> Result<FinanceState, String> {
         provider_data: read_or_default(&directory.join("provider-data.json"))?,
         annotations: BTreeMap::new(),
         account_links: BTreeMap::new(),
+        workspace: Default::default(),
     })
 }
 
@@ -196,7 +212,12 @@ impl Storage {
                 .unwrap_or_else(|| Value::Array(Vec::new())),
             security_history: self.data.provider_data.security_history.clone(),
         };
-        let mut snapshot = crate::financial_engine::project(&sync, &self.data.account_links, now)?;
+        let mut snapshot = serde_json::to_value(crate::financial_engine::project(
+            &sync,
+            &self.data.account_links,
+            now,
+        )?)
+        .map_err(|error| error.to_string())?;
         let revision = self
             .data
             .revision
@@ -240,6 +261,7 @@ impl Storage {
             provider_data: self.data.provider_data.clone(),
             annotations: self.data.annotations.clone(),
             account_links: self.data.account_links.clone(),
+            workspace: self.data.workspace.clone(),
         })?;
         self.database.backup(&self.backup_path())?;
         self.database.replace(&next)?;
@@ -363,6 +385,8 @@ impl Storage {
 
     pub fn stage(
         &mut self,
+        id: &str,
+        started_at: &str,
         revision: u64,
         plaid_cache: PlaidCache,
         provider_data: ProviderDataCache,
@@ -372,20 +396,19 @@ impl Storage {
         if revision != self.data.revision {
             return Err("Financial data changed during refresh; refresh again".into());
         }
-        let id = uuid::Uuid::new_v4().to_string();
         self.pending = Some(PendingRefresh {
-            id: id.clone(),
-            started_at: chrono::Utc::now().to_rfc3339(),
+            id: id.into(),
+            started_at: started_at.into(),
             revision,
             plaid_cache,
             provider_data,
             warnings,
             expires: Instant::now() + Duration::from_secs(120),
         });
-        Ok(id)
+        Ok(id.into())
     }
 
-    pub fn commit(&mut self, id: &str, mut snapshot: Value) -> Result<Value, String> {
+    pub fn commit(&mut self, id: &str, mut snapshot: Snapshot) -> Result<Value, String> {
         self.ensure_writable()?;
         let pending = self
             .pending
@@ -396,29 +419,20 @@ impl Storage {
                     && pending.expires > Instant::now()
             })
             .ok_or("Refresh expired or was superseded; refresh again")?;
-        validate_snapshot(&snapshot)?;
+        validate_projected_snapshot(&snapshot)?;
         let revision = self
             .data
             .revision
             .checked_add(1)
             .ok_or("Snapshot revision overflow")?;
-        snapshot["revision"] = revision.into();
+        snapshot.revision = Some(revision);
         let mut warnings = pending.warnings.clone();
-        warnings.extend(
-            snapshot
-                .get("syncWarnings")
-                .and_then(Value::as_array)
-                .into_iter()
-                .flatten()
-                .filter_map(Value::as_str)
-                .map(str::to_owned),
-        );
+        warnings.extend(snapshot.sync_warnings);
         warnings.sort();
         warnings.dedup();
-        snapshot["syncWarnings"] =
-            serde_json::to_value(&warnings).map_err(|error| error.to_string())?;
-        snapshot["providerStatus"] = serde_json::to_value(&pending.provider_data.sync_status)
-            .map_err(|error| error.to_string())?;
+        snapshot.sync_warnings = warnings.clone();
+        snapshot.provider_status = Some(pending.provider_data.sync_status.clone());
+        let snapshot = serde_json::to_value(snapshot).map_err(|error| error.to_string())?;
         let next = FinanceState {
             schema_version: 1,
             revision,
@@ -427,6 +441,7 @@ impl Storage {
             provider_data: pending.provider_data.clone(),
             annotations: self.data.annotations.clone(),
             account_links: self.data.account_links.clone(),
+            workspace: self.data.workspace.clone(),
         };
         let sync_run_warnings = (!warnings.is_empty())
             .then(|| vec![format!("{} warning(s)", warnings.len())])
@@ -442,6 +457,11 @@ impl Storage {
         self.data = next;
         self.pending = None;
         self.snapshot()
+    }
+
+    #[cfg(test)]
+    fn commit_value(&mut self, id: &str, value: Value) -> Result<Value, String> {
+        self.commit(id, crate::finance_contract::decode(value)?)
     }
 
     pub fn fail_pending(&mut self, id: &str, error_code: &str) {
@@ -470,7 +490,7 @@ impl Storage {
             return Ok(self.data.annotations.clone());
         }
         self.ensure_writable()?;
-        let mut next = self.data.clone();
+        let mut next = self.data.annotations.clone();
         for (id, change) in changes {
             if id.is_empty()
                 || id.len() > 200
@@ -481,7 +501,7 @@ impl Storage {
             {
                 return Err("Invalid transaction annotation".into());
             }
-            let entry = next.annotations.entry(id).or_default();
+            let entry = next.entry(id).or_default();
             if change.category.is_some() && (!importing || entry.category.is_none()) {
                 entry.category = change.category;
             }
@@ -494,12 +514,172 @@ impl Storage {
                 entry.benefit_confirmed = change.benefit_confirmed;
             }
         }
-        if next.annotations != self.data.annotations {
+        if next != self.data.annotations {
             self.database.backup(&self.backup_path())?;
-            self.database.replace_annotations(&next.annotations)?;
-            self.data = next;
+            self.database.replace_annotations(&next)?;
+            self.data.annotations = next;
         }
         Ok(self.data.annotations.clone())
+    }
+
+    pub fn holding_thesis(&self, ticker: &str) -> String {
+        self.data
+            .workspace
+            .theses
+            .get(ticker)
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    pub fn save_holding_thesis(
+        &mut self,
+        ticker: String,
+        thesis: String,
+    ) -> Result<String, String> {
+        if ticker.is_empty()
+            || ticker.len() > 32
+            || ticker.trim() != ticker
+            || ticker.chars().any(char::is_control)
+        {
+            return Err("Invalid holding symbol".into());
+        }
+        let thesis = thesis.trim().to_owned();
+        if thesis.chars().count() > 1000 {
+            return Err("Keep the thesis under 1,000 characters".into());
+        }
+        let mut workspace = self.data.workspace.clone();
+        if thesis.is_empty() {
+            workspace.theses.remove(&ticker);
+        } else {
+            workspace.theses.insert(ticker, thesis.clone());
+        }
+        self.save_workspace(workspace)?;
+        Ok(thesis)
+    }
+
+    pub fn save_workspace(&mut self, workspace: crate::workspace::Workspace) -> Result<(), String> {
+        self.ensure_writable()?;
+        workspace.validate()?;
+        if self.data.workspace != workspace {
+            self.database.backup(&self.backup_path())?;
+            self.database.replace_workspace(&workspace)?;
+            self.data.workspace = workspace;
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn review_transaction(
+        &mut self,
+        id: &str,
+        annotation: Option<Annotation>,
+        create_rule: bool,
+    ) -> Result<(), String> {
+        self.ensure_writable()?;
+        let transaction = self.data.snapshot["transactions"]
+            .as_array()
+            .into_iter()
+            .flatten()
+            .find(|t| t["id"].as_str() == Some(id))
+            .ok_or("Transaction is no longer available")?;
+        if id.is_empty()
+            || id.len() > 200
+            || annotation
+                .as_ref()
+                .and_then(|a| a.category.as_ref())
+                .is_some_and(|category| category.trim().is_empty() || category.len() > 100)
+        {
+            return Err("Invalid transaction review".into());
+        }
+        let mut workspace = self.data.workspace.clone();
+        if create_rule {
+            let category = annotation
+                .as_ref()
+                .and_then(|a| a.category.clone())
+                .ok_or("A merchant rule needs a category")?;
+            let merchant = transaction["merchant"]
+                .as_str()
+                .unwrap_or("")
+                .trim()
+                .to_lowercase();
+            workspace.rules.insert(merchant, category);
+            workspace.validate()?;
+        }
+        self.database.backup(&self.backup_path())?;
+        self.database
+            .replace_review(id, annotation.as_ref(), &workspace)?;
+        if let Some(annotation) = annotation {
+            self.data.annotations.insert(id.into(), annotation);
+        } else {
+            self.data.annotations.remove(id);
+        }
+        self.data.workspace = workspace;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn export_backup(&self, destination: &Path) -> Result<(), String> {
+        // A new file only: a mistaken selection cannot overwrite a database or any user file.
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let file = options
+            .open(destination)
+            .map_err(|_| "Choose a new filename; existing files are never overwritten")?;
+        drop(file);
+        let result = self.database.backup(destination);
+        if result.is_err() {
+            let _ = fs::remove_file(destination);
+        }
+        result
+    }
+
+    #[cfg(test)]
+    pub fn import_backup(&mut self, source: &Path) -> Result<crate::workspace::Workspace, String> {
+        self.ensure_writable()?;
+        if fs::metadata(source)
+            .map_err(|_| "Backup cannot be read")?
+            .len()
+            > 512 * 1024 * 1024
+        {
+            return Err("Backup exceeds 512 MB".into());
+        }
+        let temporary = self
+            .path
+            .with_extension(format!("{}.import", uuid::Uuid::new_v4()));
+        // Migrate and validate a private copy, never the user's backup.
+        let result = (|| {
+            fs::copy(source, &temporary).map_err(|_| "Backup cannot be copied")?;
+            let mut database = Database::open(&temporary)?;
+            let mut next = validate_state(database.load()?.ok_or("This is not a Brief backup")?)?;
+            next.revision = self
+                .data
+                .revision
+                .max(next.revision)
+                .checked_add(1)
+                .ok_or("Revision overflow")?;
+            next.snapshot["revision"] = next.revision.into();
+            database.replace(&next)?;
+            let retained = self
+                .path
+                .with_extension(format!("retained-{}.sqlite3", uuid::Uuid::new_v4()));
+            self.database.backup(&retained)?;
+            self.database.backup(&self.backup_path())?;
+            drop(database);
+            fs::rename(&temporary, &self.path).map_err(|_| "Could not install backup")?;
+            self.database = Database::open(&self.path)?;
+            self.data = next;
+            self.pending = None;
+            Ok(self.data.workspace.clone())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        result
     }
 
     pub fn save_account_link(
@@ -539,17 +719,16 @@ impl Storage {
         } else if !self.data.account_links.contains_key(&plaid_account_id) {
             return Err("That account link does not exist".into());
         }
-        let mut next = self.data.clone();
+        let mut next = self.data.account_links.clone();
         if let Some(snaptrade_account_id) = snaptrade_account_id {
-            next.account_links
-                .insert(plaid_account_id, snaptrade_account_id);
+            next.insert(plaid_account_id, snaptrade_account_id);
         } else {
-            next.account_links.remove(&plaid_account_id);
+            next.remove(&plaid_account_id);
         }
-        if next.account_links != self.data.account_links {
+        if next != self.data.account_links {
             self.database.backup(&self.backup_path())?;
-            self.database.replace_account_links(&next.account_links)?;
-            self.data = next;
+            self.database.replace_account_links(&next)?;
+            self.data.account_links = next;
             self.pending = None;
         }
         Ok(())
@@ -597,236 +776,13 @@ fn atomic_write(path: &Path, value: &impl Serialize) -> Result<(), String> {
     Ok(())
 }
 
-// Validate the persisted IPC contract independently of the renderer's Zod validation.
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Snapshot {
-    #[serde(default)]
-    calculation_version: Option<u32>,
-    updated_at: String,
-    net_worth: f64,
-    #[serde(default)]
-    net_worth_incomplete: bool,
-    accounts: Vec<Account>,
-    holdings: Vec<Holding>,
-    #[serde(default)]
-    trades: Vec<Trade>,
-    transactions: Vec<Transaction>,
-    #[serde(default)]
-    account_movements: Vec<AccountMovement>,
-    spending: Spending,
-    net_worth_history: Vec<Point>,
-    #[serde(default)]
-    net_worth_history_estimated: bool,
-    #[serde(default)]
-    benchmark_history: Vec<Point>,
-    #[serde(default)]
-    brokerage_performance: Vec<Performance>,
-    #[serde(default)]
-    account_balance_history: Vec<Performance>,
-    #[serde(default)]
-    observed_net_worth_history: Vec<Point>,
-    #[serde(default)]
-    possible_duplicate_accounts: Vec<PossibleDuplicate>,
-    last_change: Option<Change>,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Account {
-    id: String,
-    name: String,
-    institution: String,
-    r#type: String,
-    value: Option<f64>,
-    #[serde(default)]
-    known_cost_basis: Option<f64>,
-    #[serde(default)]
-    known_unrealized_gain: Option<f64>,
-    #[serde(default)]
-    known_unrealized_gain_pct: Option<f64>,
-    #[serde(default)]
-    investment_income_ytd: Option<f64>,
-    #[serde(default)]
-    sale_proceeds_ytd: Option<f64>,
-    #[serde(default)]
-    sales_ytd: Option<u64>,
-    #[serde(default)]
-    estimated_realized_gain_ytd: Option<f64>,
-    #[serde(default)]
-    realized_gain_coverage: Option<String>,
-    #[serde(default)]
-    cost_basis_coverage: Option<String>,
-    #[serde(default)]
-    balance_as_of: Option<String>,
-    #[serde(default)]
-    balance_fetched_at: Option<String>,
-    #[serde(default)]
-    positions_as_of: Option<String>,
-    #[serde(default)]
-    activity_as_of: Option<String>,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Holding {
-    ticker: String,
-    name: String,
-    account_id: String,
-    shares: Option<f64>,
-    price: Option<f64>,
-    value: Option<f64>,
-    cost_basis: Option<f64>,
-    #[serde(default)]
-    unrealized_gain: Option<f64>,
-    daily_change_pct: Option<f64>,
-    #[serde(default)]
-    weekly_change_pct: Option<f64>,
-    #[serde(default)]
-    weekly_reference_price: Option<f64>,
-    #[serde(default)]
-    weekly_reference_date: Option<String>,
-    total_change_pct: Option<f64>,
-    #[serde(default)]
-    market_as_of: Option<String>,
-    color: String,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Transaction {
-    id: String,
-    merchant: String,
-    category: String,
-    date: String,
-    #[serde(default)]
-    occurred_on: Option<String>,
-    #[serde(default)]
-    posted_on: Option<String>,
-    amount: f64,
-    account: String,
-    account_id: Option<String>,
-    pending: bool,
-    description: Option<String>,
-    logo_url: Option<String>,
-    website: Option<String>,
-    logo_name: Option<String>,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Trade {
-    id: String,
-    r#type: String,
-    date: String,
-    amount: f64,
-    account: String,
-    account_id: String,
-    ticker: Option<String>,
-    description: Option<String>,
-    units: Option<f64>,
-    price: Option<f64>,
-    #[serde(default)]
-    realized_cost_basis: Option<f64>,
-    #[serde(default)]
-    estimated_realized_gain: Option<f64>,
-    #[serde(default)]
-    estimated_realized_gain_pct: Option<f64>,
-    #[serde(default)]
-    realized_gain_method: Option<String>,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AccountMovement {
-    id: String,
-    observed_at: String,
-    account_id: String,
-    name: String,
-    change: f64,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-struct Point {
-    date: String,
-    value: f64,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-struct Allocation {
-    name: String,
-    value: f64,
-    percent: f64,
-    color: String,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Spending {
-    month_total: f64,
-    categories: Vec<Allocation>,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Performance {
-    account_id: String,
-    name: String,
-    institution: String,
-    current_value: f64,
-    #[serde(default)]
-    history_start: Option<String>,
-    #[serde(default)]
-    performance_method: Option<String>,
-    #[serde(default)]
-    history_source: Option<String>,
-    points: Vec<PerformancePoint>,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PerformancePoint {
-    date: String,
-    value: f64,
-    net_deposits: Option<f64>,
-    sp500: Option<f64>,
-    #[serde(default)]
-    market_change: Option<f64>,
-    #[serde(default)]
-    market_change_pct: Option<f64>,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct Change {
-    observed_at: String,
-    previous_updated_at: String,
-    previous_net_worth: f64,
-    net_worth_change: f64,
-    account_changes: Vec<AccountChange>,
-    new_transaction_ids: Vec<String>,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct AccountChange {
-    account_id: String,
-    name: String,
-    change: f64,
-}
-#[allow(dead_code)]
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct PossibleDuplicate {
-    plaid_account_id: String,
-    snaptrade_account_id: String,
-    description: String,
-}
-
 fn validate_snapshot(value: &Value) -> Result<(), String> {
     let snapshot: Snapshot = serde_json::from_value(value.clone())
         .map_err(|error| format!("Invalid financial snapshot: {error}"))?;
+    validate_projected_snapshot(&snapshot)
+}
+
+fn validate_projected_snapshot(snapshot: &Snapshot) -> Result<(), String> {
     chrono::DateTime::parse_from_rfc3339(&snapshot.updated_at)
         .map_err(|_| "Invalid snapshot timestamp")?;
     let ids = snapshot
@@ -1261,22 +1217,26 @@ mod tests {
         snapshot["updatedAt"] = "2026-09-01T12:00:00Z".into();
         let id = storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 0,
                 PlaidCache::default(),
                 ProviderDataCache::default(),
                 vec![],
             )
             .unwrap();
-        storage.commit(&id, snapshot.clone()).unwrap();
+        storage.commit_value(&id, snapshot.clone()).unwrap();
         let id = storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 1,
                 PlaidCache::default(),
                 ProviderDataCache::default(),
                 vec![],
             )
             .unwrap();
-        storage.commit(&id, snapshot).unwrap();
+        storage.commit_value(&id, snapshot).unwrap();
         fs::write(&storage.path, b"synthetic corrupt state").unwrap();
         drop(storage);
         let mut storage = Storage::new(directory.clone()).unwrap();
@@ -1284,6 +1244,8 @@ mod tests {
         assert_eq!(storage.snapshot().unwrap()["recovery"]["canRestore"], true);
         assert!(storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 1,
                 PlaidCache::default(),
                 ProviderDataCache::default(),
@@ -1381,6 +1343,41 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
 
+    #[test]
+    fn failed_commit_retains_original_run_identity_and_committed_state() {
+        let directory = directory();
+        let mut storage = Storage::new(directory.clone()).unwrap();
+        let original = storage.data.snapshot.clone();
+        let original_disk = storage.database.load().unwrap().unwrap().snapshot;
+        let started = "2026-09-18T12:00:00Z";
+        storage
+            .stage(
+                "synthetic-run",
+                started,
+                0,
+                PlaidCache::default(),
+                ProviderDataCache::default(),
+                vec![],
+            )
+            .unwrap();
+        assert!(storage
+            .commit_value("synthetic-run", serde_json::json!({"netWorth": 999}))
+            .is_err());
+        storage.fail_pending("synthetic-run", "commit_failed");
+        assert_eq!(storage.data.snapshot, original);
+        assert_eq!(
+            storage.database.load().unwrap().unwrap().snapshot,
+            original_disk
+        );
+        let runs = serde_json::to_value(storage.sync_runs().unwrap()).unwrap();
+        assert_eq!(runs[0]["id"], "synthetic-run");
+        assert_eq!(runs[0]["startedAt"], started);
+        assert_eq!(runs[0]["errorCode"], "commit_failed");
+        assert!(storage.pending.is_none());
+        drop(storage);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
     fn directory() -> PathBuf {
         std::env::temp_dir().join(format!("brief-storage-{}", uuid::Uuid::new_v4()))
     }
@@ -1395,6 +1392,8 @@ mod tests {
         .unwrap();
         let id = storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 0,
                 cache,
                 ProviderDataCache::default(),
@@ -1403,12 +1402,12 @@ mod tests {
             .unwrap();
         assert_eq!(storage.database.load().unwrap().unwrap().revision, 0);
         assert!(storage
-            .commit(&id, serde_json::json!({"netWorth": 999}))
+            .commit_value(&id, serde_json::json!({"netWorth": 999}))
             .is_err());
         let mut invalid = original.clone();
         invalid["netWorth"] = 999.into();
-        assert!(storage.commit(&id, invalid).is_err());
-        let result = storage.commit(&id, original.clone()).unwrap();
+        assert!(storage.commit_value(&id, invalid).is_err());
+        let result = storage.commit_value(&id, original.clone()).unwrap();
         assert_eq!(result["syncWarnings"][0], "Offline");
         assert_eq!(storage.database.load().unwrap().unwrap().revision, 1);
         assert_eq!(
@@ -1416,9 +1415,11 @@ mod tests {
                 ["items"]["item"]["cursor"],
             "next"
         );
-        assert!(storage.commit(&id, original).is_err());
+        assert!(storage.commit_value(&id, original).is_err());
         assert!(storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 0,
                 PlaidCache::default(),
                 ProviderDataCache::default(),
@@ -1433,6 +1434,8 @@ mod tests {
         let mut storage = Storage::new(directory.clone()).unwrap();
         let old = storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 0,
                 PlaidCache::default(),
                 ProviderDataCache::default(),
@@ -1441,13 +1444,17 @@ mod tests {
             .unwrap();
         storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 0,
                 PlaidCache::default(),
                 ProviderDataCache::default(),
                 vec![],
             )
             .unwrap();
-        assert!(storage.commit(&old, storage.data.snapshot.clone()).is_err());
+        assert!(storage
+            .commit_value(&old, storage.data.snapshot.clone())
+            .is_err());
         storage.data.schema_version = 2;
         storage.database.replace(&storage.data).unwrap();
         drop(storage);
@@ -1495,6 +1502,8 @@ mod tests {
         let mut storage = Storage::new(directory.clone()).unwrap();
         let id = storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 0,
                 PlaidCache::default(),
                 ProviderDataCache::default(),
@@ -1506,10 +1515,12 @@ mod tests {
             {"plaidAccountId": "same", "snaptradeAccountId": "one", "description": "one"},
             {"plaidAccountId": "same", "snaptradeAccountId": "one", "description": "duplicate"}
         ]);
-        assert!(storage.commit(&id, invalid).is_err());
+        assert!(storage.commit_value(&id, invalid).is_err());
         assert_eq!(storage.data.revision, 0);
         assert_eq!(storage.database.load().unwrap().unwrap().revision, 0);
-        storage.commit(&id, storage.data.snapshot.clone()).unwrap();
+        storage
+            .commit_value(&id, storage.data.snapshot.clone())
+            .unwrap();
         assert_eq!(storage.data.revision, 1);
         fs::remove_dir_all(directory).unwrap();
     }
@@ -1520,6 +1531,8 @@ mod tests {
         let mut storage = Storage::new(directory.clone()).unwrap();
         let id = storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 0,
                 PlaidCache::default(),
                 ProviderDataCache::default(),
@@ -1544,7 +1557,9 @@ mod tests {
             },
         )]);
         storage.save_annotations(legacy, true).unwrap();
-        storage.commit(&id, storage.data.snapshot.clone()).unwrap();
+        storage
+            .commit_value(&id, storage.data.snapshot.clone())
+            .unwrap();
         drop(storage);
         let restored = Storage::new(directory.clone()).unwrap();
         assert_eq!(
@@ -1564,6 +1579,8 @@ mod tests {
         let mut storage = Storage::new(directory.clone()).unwrap();
         let id = storage
             .stage(
+                &uuid::Uuid::new_v4().to_string(),
+                &chrono::Utc::now().to_rfc3339(),
                 0,
                 PlaidCache::default(),
                 ProviderDataCache::default(),
@@ -1571,7 +1588,9 @@ mod tests {
             )
             .unwrap();
         storage.pending.as_mut().unwrap().expires = Instant::now() - Duration::from_secs(1);
-        assert!(storage.commit(&id, storage.data.snapshot.clone()).is_err());
+        assert!(storage
+            .commit_value(&id, storage.data.snapshot.clone())
+            .is_err());
         assert_eq!(storage.data.revision, 0);
         fs::remove_dir_all(directory).unwrap();
     }
@@ -1583,6 +1602,47 @@ mod tests {
         assert!(Storage::new(directory.clone()).is_err());
         drop(storage);
         assert!(Storage::new(directory.clone()).is_ok());
+        fs::remove_dir_all(directory).unwrap();
+    }
+    #[test]
+    fn holding_theses_persist_clear_and_reject_invalid_edits_without_changing_finance() {
+        let directory = directory();
+        let mut storage = Storage::new(directory.clone()).unwrap();
+        let before = storage.snapshot().unwrap();
+        storage
+            .save_holding_thesis("TEST".into(), "  Synthetic adoption hypothesis.  ".into())
+            .unwrap();
+        storage
+            .save_holding_thesis("OTHER".into(), "Different synthetic hypothesis.".into())
+            .unwrap();
+        assert!(storage
+            .save_holding_thesis("TEST".into(), "x".repeat(1001))
+            .is_err());
+        assert!(storage
+            .save_holding_thesis("".into(), "Invalid".into())
+            .is_err());
+        assert_eq!(
+            storage.holding_thesis("TEST"),
+            "Synthetic adoption hypothesis."
+        );
+        assert_eq!(storage.snapshot().unwrap(), before);
+        drop(storage);
+        let mut storage = Storage::new(directory.clone()).unwrap();
+        assert_eq!(
+            storage.holding_thesis("TEST"),
+            "Synthetic adoption hypothesis."
+        );
+        storage
+            .save_holding_thesis("TEST".into(), "".into())
+            .unwrap();
+        drop(storage);
+        let storage = Storage::new(directory.clone()).unwrap();
+        assert_eq!(storage.holding_thesis("TEST"), "");
+        assert_eq!(
+            storage.holding_thesis("OTHER"),
+            "Different synthetic hypothesis."
+        );
+        drop(storage);
         fs::remove_dir_all(directory).unwrap();
     }
 }

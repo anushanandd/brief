@@ -1,35 +1,8 @@
 import { accountDisplayName, type AccountDisplayNames } from './account-name-preferences'
 import { formatCurrency } from './format'
 import { transactionLogoUrl, transactionMarkKind } from './logos'
-import type { AccountMovement, FinanceSnapshot, SnapshotChange } from './schema'
+import type { FinanceSnapshot } from './schema'
 import { isSpendingTransaction, transactionDateKey } from './spending'
-
-const accountMovementLimit = 2_000
-export function movementsFromChange(change?: SnapshotChange): AccountMovement[] {
-  return (change?.accountChanges ?? []).map((account) => ({
-    id: `${change?.observedAt}:${account.accountId}`,
-    observedAt: change?.observedAt ?? '',
-    accountId: account.accountId,
-    name: account.name,
-    change: account.change,
-  }))
-}
-
-export function mergeAccountMovements(
-  previous: FinanceSnapshot,
-  latest?: SnapshotChange,
-): AccountMovement[] {
-  const movements = new Map(
-    [...previous.accountMovements, ...movementsFromChange(previous.lastChange)].map((movement) => [
-      movement.id,
-      movement,
-    ]),
-  )
-  for (const movement of movementsFromChange(latest)) movements.set(movement.id, movement)
-  return [...movements.values()]
-    .toSorted((left, right) => left.observedAt.localeCompare(right.observedAt))
-    .slice(-accountMovementLimit)
-}
 
 export type ActivityItem = {
   id: string
@@ -41,21 +14,20 @@ export type ActivityItem = {
   date: string
   amount: number
   pending?: boolean
+  description?: string
   logoUrl?: string
   website?: string
 }
 
 export function buildActivities(
-  data: FinanceSnapshot,
+  data: Pick<FinanceSnapshot, 'transactions' | 'trades' | 'updatedAt'> & Partial<FinanceSnapshot>,
   accountDisplayNames: AccountDisplayNames = {},
   externalLogosEnabled = false,
 ): ActivityItem[] {
   const transactions = data.transactions.map((transaction): ActivityItem => {
     const mark = transactionMarkKind(transaction)
-    const category = transaction.category || 'Other'
-    const isCredit =
-      transaction.amount > 0 &&
-      (mark === 'refund' || /\bcredit\b/i.test(`${transaction.category} ${transaction.merchant}`))
+    const isCredit = transaction.classification.credit
+    const category = isCredit ? 'Credit' : transaction.category || 'Other'
     const kind =
       mark === 'transfer'
         ? 'transfer'
@@ -76,6 +48,10 @@ export function buildActivities(
       date: transaction.date,
       amount: transaction.amount,
       pending: transaction.pending,
+      description:
+        transaction.description && transaction.description !== transaction.merchant
+          ? transaction.description
+          : undefined,
       website: transaction.website,
       ...((kind === 'spending' || kind === 'transaction') && {
         logoUrl: transactionLogoUrl(transaction, externalLogosEnabled),
@@ -116,4 +92,39 @@ export function buildActivities(
         transactionDateKey(left.date, data.updatedAt),
       ) || right.id.localeCompare(left.id),
   )
+}
+
+const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' })
+const monthYearFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'long',
+  year: 'numeric',
+  timeZone: 'UTC',
+})
+
+export function activityDateGroup(date: string, referenceIso: string) {
+  const activityDay = transactionDateKey(date, referenceIso)
+  const referenceDay = transactionDateKey(referenceIso, referenceIso)
+  const daysAgo = Math.round(
+    (Date.parse(`${referenceDay}T00:00:00Z`) - Date.parse(`${activityDay}T00:00:00Z`)) / 86_400_000,
+  )
+
+  if (daysAgo < 0) return 'Upcoming'
+  if (daysAgo === 0) return 'Today'
+  if (daysAgo === 1) return 'Yesterday'
+  if (!activityDay) return 'Unknown date'
+  if (daysAgo <= 7 && activityDay.slice(0, 7) === referenceDay.slice(0, 7)) return 'Last week'
+  const formatter =
+    activityDay.slice(0, 4) === referenceDay.slice(0, 4) ? monthFormatter : monthYearFormatter
+  return formatter.format(new Date(`${activityDay}T00:00:00Z`))
+}
+
+export function groupActivitiesByDate(activities: ActivityItem[], referenceIso: string) {
+  const groups: Array<{ label: string; activities: ActivityItem[] }> = []
+  for (const activity of activities) {
+    const label = activityDateGroup(activity.date, referenceIso)
+    const last = groups.at(-1)
+    if (last?.label === label) last.activities.push(activity)
+    else groups.push({ label, activities: [activity] })
+  }
+  return groups
 }

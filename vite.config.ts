@@ -3,6 +3,9 @@ import { defineConfig } from 'vite'
 
 export default defineConfig({
   plugins: [react()],
+  optimizeDeps: {
+    exclude: ['liveline'],
+  },
   clearScreen: false,
   server: {
     port: 1420,

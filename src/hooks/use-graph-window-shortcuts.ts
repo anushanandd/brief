@@ -2,20 +2,24 @@ import { listen } from '@tauri-apps/api/event'
 import { useEffect, type Dispatch, type SetStateAction } from 'react'
 
 import { isTauri } from '../lib/api'
-import { adjacentGraphWindow, graphWindowForKey, graphWindows } from '../lib/graph-preferences'
+import { adjacentGraphWindow, graphWindowForKey } from '../lib/graph-preferences'
+import { pageShortcutBlocked } from '../lib/keyboard'
 
-const shortcutLabels: Record<string, string> = {
-  'graph-week': '1W',
-  'graph-month': '1M',
-  'graph-quarter': '3M',
-  'graph-all': 'All',
+const shortcutKeys: Record<string, string> = {
+  'graph-week': 'W',
+  'graph-month': 'M',
+  'graph-quarter': 'Q',
+  'graph-all': 'A',
 }
 
 type ArrowShortcutEvent = Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>
 
-export function graphAccountShortcut(event: ArrowShortcutEvent) {
+export function graphAccountShortcut(
+  event: ArrowShortcutEvent,
+  modifier: 'command' | 'none' = 'command',
+) {
   if (
-    !event.metaKey ||
+    event.metaKey !== (modifier === 'command') ||
     event.ctrlKey ||
     event.shiftKey ||
     event.altKey ||
@@ -53,18 +57,13 @@ export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<
         )
         return
       }
-      const next = graphWindows.find(({ label }) => label === shortcutLabels[shortcut])
-      if (next) setGraphWindow(next.secs)
+      const next = graphWindowForKey(shortcutKeys[shortcut] ?? '')
+      if (next != null) setGraphWindow(next)
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      const target = event.target
       const shortcut = graphWindowShortcut(event)
       const range = graphRangeShortcut(event)
-      if (
-        (!shortcut && range == null) ||
-        (target instanceof HTMLElement &&
-          (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName)))
-      ) {
+      if ((!shortcut && range == null) || pageShortcutBlocked(event)) {
         return
       }
       event.preventDefault()
@@ -76,7 +75,9 @@ export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<
     let unlisten: (() => void) | undefined
     window.addEventListener('keydown', onKeyDown)
     if (isTauri()) {
-      void listen<string>('graph-shortcut', (event) => runShortcut(event.payload)).then((stop) => {
+      void listen<string>('graph-shortcut', (event) => {
+        if (!pageShortcutBlocked()) runShortcut(event.payload)
+      }).then((stop) => {
         if (disposed) stop()
         else unlisten = stop
       })
@@ -87,4 +88,38 @@ export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [setGraphWindow])
+}
+
+export function useGraphAccountShortcuts(
+  onDirection: (direction: -1 | 1) => void,
+  modifier: 'command' | 'none' = 'command',
+) {
+  useEffect(() => {
+    const runShortcut = (shortcut: string) => {
+      if (shortcut === 'graph-previous') onDirection(-1)
+      else if (shortcut === 'graph-next') onDirection(1)
+    }
+    const onKeyDown = (event: KeyboardEvent) => {
+      const shortcut = graphAccountShortcut(event, modifier)
+      if (!shortcut || pageShortcutBlocked(event)) return
+      event.preventDefault()
+      runShortcut(shortcut)
+    }
+    let disposed = false
+    let unlisten: (() => void) | undefined
+    window.addEventListener('keydown', onKeyDown)
+    if (isTauri()) {
+      void listen<string>('graph-shortcut', (event) => {
+        if (!pageShortcutBlocked()) runShortcut(event.payload)
+      }).then((stop) => {
+        if (disposed) stop()
+        else unlisten = stop
+      })
+    }
+    return () => {
+      disposed = true
+      unlisten?.()
+      window.removeEventListener('keydown', onKeyDown)
+    }
+  }, [onDirection, modifier])
 }

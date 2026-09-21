@@ -2,45 +2,62 @@
 
 ## Scope
 
-- Brief is a personal, local-first macOS app. Do not add production, multi-user, server, cloud-sync, web-product, or mobile architecture.
-- Do not use computer use or attempt mobile views or mobile testing. The native window has a minimum width of 860 px.
-- Preserve the read-only provider model and the absence of a hosted backend.
-- Prefer the standard library, platform features, and existing dependencies over new abstractions or packages.
+- Brief is a personal, local-first macOS app. Do not add server, multi-user, cloud-sync, web-product, mobile, or production-service architecture.
+- Do not use computer-use tools or add mobile layouts. The native window minimum width is 860 px.
+- Preserve read-only providers and the absence of a hosted backend.
+- Prefer the standard library, platform features, and existing dependencies.
+- Preserve unrelated working-tree changes.
 
-## Documentation contract
+## Read the relevant documentation
 
-- At the start of every task, read [README.md](README.md) and [ARCHITECTURE.md](ARCHITECTURE.md).
-- Treat code and tests as the source of truth. If documentation disagrees, verify the behavior and update the documentation.
+Do not load every document for every task. Read:
 
-<!-- - Update `README.md` when setup, commands, integrations, or user-facing capabilities change.
-- Update `ARCHITECTURE.md` when data flow, state ownership, persistence, IPC, providers, or polling change.
-- Update `AGENTS.md` when repository rules, commands, verification requirements, or recurring gotchas change.
-- Do not edit documentation when the change does not affect it.
-- In the final response, name the documentation updated, or state why no documentation update was needed. -->
+- [ARCHITECTURE.md](ARCHITECTURE.md) for persistence, IPC, providers, refreshes, or market-state changes.
+- [.interface-design/system.md](.interface-design/system.md) for interface work.
+- [docs/platinum-benefits.md](docs/platinum-benefits.md) before changing benefit rules.
+- [docs/liveline-patch-review.md](docs/liveline-patch-review.md) before changing or upgrading Liveline.
 
-## Interface design
+Code and tests are the source of truth. Update:
 
-- Do not use horizontal top tab bars for navigation. Use card-based navigation, and add a clickable detail route only when the deeper view materially helps.
-- Do not add subtitles or captions that merely restate a page title or list the page's contents. Keep page headers concise; use supporting copy only for actionable instructions, state, provenance, or necessary financial scope.
+- `README.md` when setup, commands, integrations, privacy notes, or top-level capabilities change.
+- `ARCHITECTURE.md` when ownership, persistence, IPC, provider, refresh, or polling flows change.
+- `AGENTS.md` when repository rules, commands, verification requirements, or recurring gotchas change.
+- Specialized docs only when their implemented rules change.
+
+Do not update docs for unrelated implementation details. In the final response, name updated documentation or explain why none was needed.
+
+## Interface rules
+
+- Use card-based navigation, not horizontal top tabs. Add a detail route only when it materially helps.
+- Keep page, card, and section headings concise. Do not add subtitles that restate a heading; put necessary scope, provenance, or instructions beside the relevant control or state.
+- Preserve keyboard access, accessible names, unavailable states, and reduced-motion behavior.
 
 ## Invariants
 
-- Rust owns provider access, secrets, and durable state. Credentials and provider tokens belong only in macOS Keychain.
-- Refreshes are staged, validated, and atomically committed. A failure must leave the prior snapshot and provider caches usable.
-- Plaid pagination applies pages to temporary state and publishes its cursor and cache only after the complete operation succeeds.
-- `FinanceProvider` holds committed state. Live quotes remain route-scoped: Home polls; other current routes use the committed snapshot.
+- Rust owns provider access, credentials, the committed snapshot, and durable finance state. Credentials and provider tokens belong only in macOS Keychain.
+- Refreshes are staged, validated, and atomically committed. Failure must leave the previous snapshot and caches usable.
+- Plaid cursor and page changes stay temporary until pagination and the matching balance request complete.
+- `FinanceProvider` owns committed data. `LiveMarketProvider` overlays only a compatible Rust valuation projection.
+- One native market service owns held-symbol feeds. Holdings chart selection must not replace portfolio subscriptions or stop them on route cleanup.
+- Keep canonical Holdings bars separate from latest trade or indicative quote observations. The market-price cache is separate from finance state.
 - Spending and Platinum benefits use the saved spending account ID, never provider ordering.
+- Rust assigns shared transaction classification after annotations. React reads it through `src/lib/transaction-kind.ts` and must not implement a second policy.
 - Financial calculations are deterministic. Apple Intelligence may explain supplied evidence but must not calculate or mutate finance data.
-- Never place credentials, tokens, or real financial data in logs, fixtures, screenshots, or tests.
+- Never put credentials, tokens, or real financial data in logs, fixtures, screenshots, or tests.
 
 ## Code map
 
 - `src/lib/api.ts`: browser fallback and Tauri IPC client
-- `src/lib/schema.ts`, `src/lib/normalize.ts`: renderer contract and normalization
-- `src/hooks/`: committed finance state, refreshes, and live market overlay
-- `src-tauri/src/lib.rs`: Tauri commands and refresh orchestration
-- `src-tauri/src/providers.rs`: Plaid, SnapTrade, and Alpaca integrations
-- `src-tauri/src/storage.rs`: versioned state, locking, validation, and atomic writes
+- `src/lib/schema.ts`: renderer runtime contract
+- `src/hooks/`: committed finance state, refresh, and live-market overlay
+- `src-tauri/src/lib.rs`: Tauri commands and orchestration
+- `src-tauri/src/finance_contract.rs`: native output types
+- `src-tauri/src/financial_engine.rs`: canonical projection
+- `src-tauri/src/transaction_policy.rs`: transaction classification
+- `src-tauri/src/providers.rs`: integrations and provider caches
+- `src-tauri/src/providers/market_stream.rs`: shared held-symbol sockets
+- `src-tauri/src/providers/holding_market.rs`: security history and price cache
+- `src-tauri/src/storage.rs`: staging, validation, recovery, and commits
 
 ## Commands
 
@@ -53,11 +70,28 @@ cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
-Run checks proportional to the change. Use targeted tests while iterating; run `pnpm check` for frontend or cross-boundary changes and Rust formatting/tests for Rust changes. Documentation-only changes need no application build.
+Run checks proportional to the change. Documentation-only changes need no application build. Use targeted tests while iterating; run `pnpm check` for frontend or cross-boundary changes and Rust formatting/tests for Rust changes.
+
+## Verification
+
+- Keep pure-function tests beside their module. `src/pages/routes.test.tsx` verifies server-rendered route wiring, not mounted effects, canvas pixels, or interaction.
+- Assert financial results, unavailable states, accessible controls, and trust boundaries. Avoid styling inventories and assertions that repeat configuration.
+- Pin calendar fixtures and use synthetic amounts. Prefer explicit completion signals or polling over arbitrary sleeps.
+- Preserve migration, recovery, contract field-preservation, pagination, and stale-request/cancellation regressions.
+- Native contract changes must pass the Rust projection fixture and the Zod field-preservation test. Regenerate only synthetic fixtures:
+
+  ```sh
+  BRIEF_UPDATE_CONTRACT_FIXTURE=1 cargo test --manifest-path src-tauri/Cargo.toml native_finance_fixture_matches_typed_projection
+  ```
+
+  When transaction policy changes, use the same environment variable with `browser_seed_contains_native_transaction_policy`, then rerun normal Rust and frontend tests.
 
 ## Gotchas
 
 - Browser development uses `src/data/seed.json`; real integrations exist only in Tauri.
-- `liveline@0.0.7` is patched through `pnpm-workspace.yaml`; review the patch before upgrading it.
-- Do not run `cargo clean` unless explicitly needed; the rebuild is expensive.
-- Preserve unrelated working-tree changes.
+- `liveline@0.0.7` is patched through `pnpm-workspace.yaml`. Keep ESM, CommonJS, and both declaration outputs synchronized; restart Vite after patch changes.
+- Market sockets are app-owned and request-scoped. Preserve timestamp monotonicity, feed separation, correction repair, hidden-window shutdown, and stale-cleanup tests. Price observations may be coalesced; bar corrections may not be silently dropped.
+- All-time Holdings history may reuse a prefix only after fresh full verification and an identical overlap.
+- Startup reveal waits for local reads, never network or market readiness. Saved observations must not be labeled live.
+- Do not gate native actions with `window.confirm`; the macOS WebView treats it as Cancel. Use an in-app confirmation with pending and error states.
+- Do not run `cargo clean` unless explicitly necessary.

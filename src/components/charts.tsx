@@ -1,10 +1,11 @@
 import { Liveline, type LivelinePoint, type LivelineSeries } from 'liveline'
-import { useState, useSyncExternalStore } from 'react'
+import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
 
 import { type ChartEventGroup, chartEventGroupLabel } from '../lib/chart-events'
-import { formatCompactCurrency, formatCurrency } from '../lib/format'
-import { graphWindowForKey, graphWindows } from '../lib/graph-preferences'
+import { formatCompactCurrency, formatCurrency, formatActivityName } from '../lib/format'
+import { graphWindows } from '../lib/graph-preferences'
 import { chartPointAtOrAfter, chartPointsFromStartDate } from '../lib/live-chart'
+import { RangeSelector } from './ui'
 
 const DAY_SECONDS = 24 * 60 * 60
 const WEEK_SECONDS = 7 * DAY_SECONDS
@@ -40,6 +41,28 @@ function useReducedMotion() {
   )
 }
 
+// Canvas needs resolved colors; CSS custom-property strings are not canvas colors.
+export function useChartColors() {
+  const [colors, setColors] = useState({
+    value: 'transparent',
+    deposits: 'transparent',
+    benchmark: 'transparent',
+    positive: 'transparent',
+    negative: 'transparent',
+  })
+  useLayoutEffect(() => {
+    const style = getComputedStyle(document.documentElement)
+    setColors({
+      value: style.getPropertyValue('--chart-primary').trim(),
+      deposits: style.getPropertyValue('--chart-secondary').trim(),
+      benchmark: style.getPropertyValue('--chart-benchmark').trim(),
+      positive: style.getPropertyValue('--positive').trim(),
+      negative: style.getPropertyValue('--negative').trim(),
+    })
+  }, [])
+  return colors
+}
+
 function formatLiveTime(time: number, windowSeconds: number) {
   const date = new Date(time * 1_000)
   if (windowSeconds <= DAY_SECONDS) return timeFormatter.format(date)
@@ -51,6 +74,34 @@ export type DonutSegment = {
   value: number
   color: string
   details?: DonutSegment[]
+}
+
+function renderRing(items: DonutSegment[], radius: number, width: number) {
+  const ringTotal = items.reduce((sum, { value }) => sum + value, 0)
+  let offset = 0
+  return items.map((segment, index) => {
+    const percent = ringTotal ? (segment.value / ringTotal) * 100 : 0
+    const start = offset
+    offset += percent
+    const detail = `${segment.name}: ${formatCurrency(segment.value)} (${percent.toFixed(1)}%)`
+    return (
+      <circle
+        key={`${segment.name}:${index}`}
+        aria-label={detail}
+        className="donut-segment"
+        cx="50"
+        cy="50"
+        fill="none"
+        pathLength="100"
+        r={radius}
+        stroke={segment.color}
+        strokeDasharray={`${Math.max(0, percent - 0.7)} ${100 - Math.max(0, percent - 0.7)}`}
+        strokeDashoffset={-start}
+        strokeWidth={width}
+        tabIndex={0}
+      />
+    )
+  })
 }
 
 export function DonutChart({
@@ -65,44 +116,10 @@ export function DonutChart({
   centerLabel: string
 }) {
   const visibleSegments = segments.filter(({ value }) => value > 0)
-  const legendSegments = visibleSegments
-    .toSorted((left, right) => right.value - left.value)
-    .slice(0, 5)
-  const [activeSegment, setActiveSegment] = useState<DonutSegment>()
+  const legendSegments = visibleSegments.toSorted((left, right) => right.value - left.value)
   const description = visibleSegments
     .map(({ name, value }) => `${name} ${formatCurrency(value)}`)
     .join(', ')
-  const renderRing = (items: DonutSegment[], radius: number, width: number) => {
-    const ringTotal = items.reduce((sum, { value }) => sum + value, 0)
-    let offset = 0
-    return items.map((segment, index) => {
-      const percent = ringTotal ? (segment.value / ringTotal) * 100 : 0
-      const start = offset
-      offset += percent
-      const interactive = !!segment.details?.length
-      return (
-        <circle
-          className={interactive ? 'donut-segment interactive' : 'donut-segment'}
-          cx="50"
-          cy="50"
-          fill="none"
-          key={`${segment.name}:${index}`}
-          pathLength="100"
-          r={radius}
-          stroke={segment.color}
-          strokeDasharray={`${Math.max(0, percent - 0.7)} ${100 - Math.max(0, percent - 0.7)}`}
-          strokeDashoffset={-start}
-          strokeWidth={width}
-          tabIndex={interactive ? 0 : undefined}
-          aria-label={interactive ? `${segment.name} composition` : undefined}
-          onBlur={() => setActiveSegment(undefined)}
-          onFocus={() => interactive && setActiveSegment(segment)}
-          onPointerEnter={() => interactive && setActiveSegment(segment)}
-          onPointerLeave={() => setActiveSegment(undefined)}
-        />
-      )
-    })
-  }
 
   return (
     <div className="donut-chart-layout">
@@ -115,27 +132,41 @@ export function DonutChart({
           <small>{centerLabel}</small>
         </span>
       </div>
-      <ol className="donut-legend" aria-label={`${label}, largest values`}>
-        {legendSegments.map((segment) => (
-          <li className="donut-legend-item" key={segment.name}>
-            <i style={{ background: segment.color }} />
-            <span>{segment.name}</span>
-            <strong>{formatCompactCurrency(segment.value)}</strong>
-          </li>
-        ))}
+      <ol className="donut-legend" aria-label={`${label}, all values`}>
+        {legendSegments.map((segment) => {
+          const content = (
+            <>
+              <i style={{ background: segment.color }} />
+              <span>{segment.name}</span>
+              <strong aria-label={formatCurrency(segment.value)}>
+                {formatCompactCurrency(segment.value)}
+              </strong>
+            </>
+          )
+          return (
+            <li className="donut-legend-item" key={segment.name}>
+              {segment.details?.length ? (
+                <details className="donut-details">
+                  <summary className="donut-legend-row">{content}</summary>
+                  <ul>
+                    {segment.details.map((detail) => (
+                      <li className="donut-legend-row" key={detail.name}>
+                        <i style={{ background: detail.color }} />
+                        <span>{detail.name}</span>
+                        <strong aria-label={formatCurrency(detail.value)}>
+                          {formatCompactCurrency(detail.value)}
+                        </strong>
+                      </li>
+                    ))}
+                  </ul>
+                </details>
+              ) : (
+                <div className="donut-legend-row">{content}</div>
+              )}
+            </li>
+          )
+        })}
       </ol>
-      {activeSegment?.details?.length ? (
-        <div className="donut-composition-tooltip" role="tooltip">
-          <strong>{activeSegment.name}</strong>
-          {activeSegment.details.map((detail) => (
-            <span key={detail.name}>
-              <i style={{ background: detail.color }} />
-              <small>{detail.name}</small>
-              <b>{formatCompactCurrency(detail.value)}</b>
-            </span>
-          ))}
-        </div>
-      ) : null}
     </div>
   )
 }
@@ -161,6 +192,7 @@ export function SpendingLineChart({
   label: string
 }) {
   const reduceMotion = useReducedMotion()
+  const colors = useChartColors()
   const markersByDate = new Map<string, typeof activityMarkers>()
   for (const marker of activityMarkers) {
     const markers = markersByDate.get(marker.date) ?? []
@@ -192,8 +224,8 @@ export function SpendingLineChart({
         id: marker.id,
         time,
         value: marker.value,
-        color: marker.direction === 'expense' ? 'var(--negative)' : 'var(--positive)',
-        label: `${dateFormatter.format(new Date(time * 1_000))} · ${marker.merchant} · ${formatCurrency(marker.amount)}`,
+        color: marker.direction === 'expense' ? colors.negative : colors.positive,
+        label: `${dateFormatter.format(new Date(time * 1_000))} · ${formatActivityName(marker.merchant)} · ${formatCurrency(marker.amount)}`,
       })
     }
     dayPoints.push({ time: dayStart + (DAY_SECONDS * 2) / 3, value })
@@ -202,17 +234,9 @@ export function SpendingLineChart({
   })
   const firstTime = points[0]?.time ?? 0
   const lastTime = points.at(-1)?.time ?? firstTime
-  const windowSeconds = Math.max(DAY_SECONDS + 1, (lastTime - firstTime) / 0.985)
+  const windowSeconds = Math.max(DAY_SECONDS + 1, (lastTime - firstTime) / 0.935)
   const value = points.at(-1)?.value ?? 0
-  const lineColor = '#e6e6e6'
-  const series: LivelineSeries[] = [
-    {
-      id: 'Statement balance',
-      data: points,
-      value,
-      color: lineColor,
-    },
-  ]
+  const lineColor = colors.value
 
   return (
     <div
@@ -223,16 +247,20 @@ export function SpendingLineChart({
       <Liveline
         data={points}
         value={value}
-        series={series}
+        valueTime={lastTime}
+        endTime={lastTime}
+        continuous={false}
+        fill={false}
+        grid
         theme="dark"
         color={lineColor}
         window={windowSeconds}
+        badge
         badgeVariant="minimal"
         currentLine={false}
         markers={markers}
         emptyText="No spending in this period"
-        tooltipY={-10}
-        tooltipOutline={false}
+        scrub={false}
         formatValue={formatCurrency}
         formatTime={(time) => dateFormatter.format(new Date(time * 1_000))}
         pulse={false}
@@ -262,6 +290,11 @@ export function MonthlyBarChart({
 
   return (
     <div className="monthly-bar-chart" role="img" aria-label={`${label}: ${description}`}>
+      <div className="monthly-bar-axis" aria-hidden="true">
+        {[maximum, maximum / 2, 0].map((value, index) => (
+          <span key={index}>{formatCompactCurrency(value)}</span>
+        ))}
+      </div>
       {data.map(({ month, value }, index) => (
         <div className="monthly-bar-column" key={month} aria-hidden="true">
           <strong>{formatCompactCurrency(value)}</strong>
@@ -278,6 +311,71 @@ export function MonthlyBarChart({
   )
 }
 
+export function ChartRangeSelector({
+  value,
+  onValueChange,
+}: {
+  value: number
+  onValueChange: (seconds: number) => void
+}) {
+  return (
+    <RangeSelector
+      label="Chart range"
+      options={graphWindows.map(({ label, settingsLabel, secs }) => ({
+        label,
+        accessibleLabel: settingsLabel,
+        value: secs,
+      }))}
+      value={value}
+      onValueChange={onValueChange}
+    />
+  )
+}
+
+export function PerformanceChartControls({
+  value,
+  onValueChange,
+  netDeposits,
+  benchmark,
+}: {
+  value: number
+  onValueChange: (seconds: number) => void
+  netDeposits?: LivelinePoint[]
+  benchmark?: LivelinePoint[]
+}) {
+  return (
+    <div className="performance-chart-controls">
+      <ul className="performance-chart-key" aria-label="Chart key">
+        <li>
+          <span className="performance-chart-key-line" data-series="value" aria-hidden="true" />
+          <span>Value</span>
+        </li>
+        {netDeposits?.length ? (
+          <li>
+            <span
+              className="performance-chart-key-line"
+              data-series="deposits"
+              aria-hidden="true"
+            />
+            <span>Net deposits</span>
+          </li>
+        ) : null}
+        {benchmark?.length ? (
+          <li>
+            <span
+              className="performance-chart-key-line"
+              data-series="benchmark"
+              aria-hidden="true"
+            />
+            <span>VOO</span>
+          </li>
+        ) : null}
+      </ul>
+      <ChartRangeSelector value={value} onValueChange={onValueChange} />
+    </div>
+  )
+}
+
 export function PerformanceChart({
   data,
   netDeposits,
@@ -287,7 +385,7 @@ export function PerformanceChart({
   referenceIso,
   startDate,
   selectedWindow,
-  onWindowChange,
+  sessionBoundary,
 }: {
   data: LivelinePoint[]
   netDeposits?: LivelinePoint[]
@@ -297,29 +395,26 @@ export function PerformanceChart({
   referenceIso: string
   startDate?: string
   selectedWindow: number
-  onWindowChange: (seconds: number) => void
+  sessionBoundary?: LivelinePoint
 }) {
-  const colors = { value: '#e6e6e6', deposits: '#b0b0b1', benchmark: '#56c2ff' }
   const reduceMotion = useReducedMotion()
+  const colors = useChartColors()
   const chartData = chartPointsFromStartDate(data, startDate)
+  const plottedValue = chartData.at(-1)?.value ?? value
+  const minValueRange = Math.max(1, Math.abs(value) * 0.05)
   const firstTime = chartData[0]?.time ?? 0
   const lastTime = chartData.at(-1)?.time ?? firstTime
-  // Keep the all-time window usable even when the series has just one point.
-  const allTimeWindow = Math.max(DAY_SECONDS + 1, (lastTime - firstTime) / 0.985)
+  const historyWindow = Math.max(DAY_SECONDS + 1, (lastTime - firstTime) / 0.935)
   const visibleSeries = (points: LivelinePoint[]) => {
     const startedPoints = chartPointsFromStartDate(points, startDate)
     return selectedWindow === 0
       ? startedPoints.filter((point) => point.time >= firstTime)
       : startedPoints
   }
-  const windows = graphWindows.map((window) => ({
-    ...window,
-    secs: window.secs || allTimeWindow,
-  }))
-  const windowSeconds = selectedWindow || allTimeWindow
-  const eventColors = { in: 'var(--positive)', out: 'var(--negative)' }
+  const windowSeconds = selectedWindow || historyWindow
+  const eventColors = { in: colors.positive, out: colors.negative }
   const referenceTime = Date.parse(referenceIso) / 1_000
-  const markers = events.flatMap((group) => {
+  const eventMarkers = events.flatMap((group) => {
     const eventTime =
       group.date === referenceIso.slice(0, 10) && Number.isFinite(referenceTime)
         ? referenceTime
@@ -337,17 +432,31 @@ export function PerformanceChart({
       },
     ]
   })
+  const markers = [
+    ...(sessionBoundary
+      ? [
+          {
+            id: 'market-close',
+            time: sessionBoundary.time,
+            value: sessionBoundary.value,
+            color: colors.deposits,
+            label: 'Regular market close',
+          },
+        ]
+      : []),
+    ...eventMarkers,
+  ]
   const series: LivelineSeries[] = [
     {
       id: 'Value',
       data: chartData,
-      value,
+      value: plottedValue,
       color: colors.value,
     },
     ...(netDeposits?.length
       ? [
           {
-            id: 'Starting value + net flows',
+            id: 'Net deposits',
             data: visibleSeries(netDeposits),
             value: netDeposits.at(-1)?.value ?? 0,
             color: colors.deposits,
@@ -358,7 +467,7 @@ export function PerformanceChart({
     ...(benchmark?.length
       ? [
           {
-            id: 'S&P 500 (VOO)',
+            id: 'S&P 500',
             data: visibleSeries(benchmark),
             value: benchmark.at(-1)?.value ?? 0,
             color: colors.benchmark,
@@ -367,6 +476,7 @@ export function PerformanceChart({
         ]
       : []),
   ]
+  const comparisonSeries = series.length > 1 ? series : undefined
 
   return (
     <div
@@ -374,38 +484,36 @@ export function PerformanceChart({
       role="group"
       tabIndex={0}
       aria-keyshortcuts="W M Q A"
-      aria-label={`Account value over time${benchmark?.length ? ' compared with VOO' : ''}${events.length ? ` with ${events.length} key event markers` : ''}`}
-      onKeyDown={(event) => {
-        if (event.altKey || event.ctrlKey || event.metaKey || event.shiftKey) return
-        const graphWindow = graphWindowForKey(event.key)
-        if (graphWindow == null) return
-        event.preventDefault()
-        onWindowChange(graphWindow)
-      }}
+      aria-label={`Account value over time${benchmark?.length ? ' compared with VOO' : ''}${events.length ? ` with ${events.length} key event markers` : ''}${sessionBoundary ? ', with the regular-market close marked' : ''}`}
     >
+      <span className="sr-only" role="status">
+        Chart range: {graphWindows.find(({ secs }) => secs === selectedWindow)?.settingsLabel}
+      </span>
+      {netDeposits?.length ? (
+        <span className="sr-only">Net deposits shows the starting value plus net cash flows.</span>
+      ) : null}
       <Liveline
+        className="liveline-chart-canvas"
         data={chartData}
-        value={value}
-        series={series}
+        value={plottedValue}
+        series={comparisonSeries}
         theme="dark"
         color={colors.value}
         window={windowSeconds}
-        windows={windows}
-        onWindowChange={(seconds) => onWindowChange(seconds === allTimeWindow ? 0 : seconds)}
-        windowStyle="text"
-        seriesToggleCompact
+        badge
         badgeVariant="minimal"
         currentLine={false}
+        grid
+        minValueRange={minValueRange}
         markers={markers}
-        tooltipY={-10}
-        tooltipOutline={false}
+        scrub
         formatValue={formatCurrency}
         formatTime={(time) => formatLiveTime(time, windowSeconds)}
         pulse={false}
         continuous
-        momentum={!reduceMotion}
-        lerpSpeed={reduceMotion ? 1 : 0.4}
-        lineWidth={2.25}
+        momentum={false}
+        lerpSpeed={reduceMotion ? 1 : 0.25}
+        lineWidth={1.75}
         style={{ flex: 1, minHeight: 0, height: 'auto' }}
       />
     </div>

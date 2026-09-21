@@ -1,104 +1,126 @@
-import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useState } from 'react'
+import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 
+import { BrandMark } from '../components/brand-mark'
 import { PageError, PageLoading } from '../components/data-state'
-import { FilterSelect } from '../components/filter-select'
-import { LedgerToolbar } from '../components/ledger-toolbar'
+import { HoldingChart } from '../components/holding-chart'
+import { HoldingAccounts, HoldingActivity, HoldingPortfolio } from '../components/holding-details'
+import { HoldingNews } from '../components/holding-news'
 import { PositionTable } from '../components/position-table'
 import { Card } from '../components/ui'
-import { WorkspaceHeader } from '../components/workspace-header'
-import { useFinance } from '../hooks/use-finance'
-import { useSearchShortcuts } from '../hooks/use-search-shortcuts'
-import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
-import { formatSecurityName } from '../lib/format'
-import { getExternalLogosEnabled } from '../lib/logos'
-
-const categoryLabel = (value: string) =>
-  value.replaceAll(/[_-]+/g, ' ').replace(/^./, (character) => character.toLocaleUpperCase())
+import { MarketStatus, WorkspaceHeader } from '../components/workspace-header'
+import { useLiveFinance } from '../hooks/use-live-finance'
+import { formatCurrency, formatPercent, valueTone } from '../lib/format'
+import { holdingDetail } from '../lib/holding-detail'
+import { getExternalLogosEnabled, stockLogoUrl, stockMarkColor, stockMarkLabel } from '../lib/logos'
 
 export function HoldingsPage() {
-  const query = useFinance()
-  const routeSearch = useSearch({ from: '/holdings' })
   const navigate = useNavigate({ from: '/holdings' })
-  const [search, setSearch] = useState('')
-  const searchInputRef = useSearchShortcuts(search, setSearch)
+  const routeSearch = useSearch({ from: '/holdings' })
+  const query = useLiveFinance()
 
   if (query.isLoading) return <PageLoading />
   if (query.isError || !query.data) return <PageError />
 
   const data = query.data
-  const displayNames = getAccountDisplayNames()
-  const accounts = data.accounts.filter(({ id }) => id !== 'all')
-  const accountNames = Object.fromEntries(
-    accounts.map((account) => [
-      account.id,
-      accountDisplayName(account.id, account.name, displayNames),
-    ]),
-  )
-  const accountOptions = [
-    { value: '', label: 'All accounts' },
-    ...accounts.map((account) => ({ value: account.id, label: accountNames[account.id] })),
-  ]
-  const categories = [
-    ...new Set(data.holdings.map(({ instrumentKind }) => instrumentKind || 'other')),
-  ].toSorted((left, right) => categoryLabel(left).localeCompare(categoryLabel(right)))
-  const categoryOptions = [
-    { value: '', label: 'All categories' },
-    ...categories.map((category) => ({ value: category, label: categoryLabel(category) })),
-  ]
-  const requestedAccount = routeSearch.account ?? ''
-  const requestedCategory = routeSearch.category ?? ''
-  const selectedAccount = accounts.some(({ id }) => id === requestedAccount) ? requestedAccount : ''
-  const selectedCategory = categories.includes(requestedCategory) ? requestedCategory : ''
-  const queryText = search.trim().toLocaleLowerCase()
-  const holdings = data.holdings
-    .filter(
-      (holding) =>
-        (!selectedAccount || holding.accountId === selectedAccount) &&
-        (!selectedCategory || (holding.instrumentKind || 'other') === selectedCategory) &&
-        `${holding.ticker} ${formatSecurityName(holding.name)} ${accountNames[holding.accountId] ?? ''} ${holding.instrumentKind ?? ''} ${holding.value ?? ''}`
-          .toLocaleLowerCase()
-          .includes(queryText),
-    )
-    .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
-
-  const updateFilters = (account: string, category: string) =>
-    void navigate({
-      search: { account: account || undefined, category: category || undefined },
-      replace: true,
+  const externalLogos = getExternalLogosEnabled()
+  const securities = [...new Set(data.holdings.map(({ ticker }) => ticker))]
+    .map((ticker) => ({ ticker, ...holdingDetail(data.holdings, ticker) }))
+    .toSorted((left, right) => {
+      if (left.value == null) return right.value == null ? 0 : 1
+      if (right.value == null) return -1
+      return right.value - left.value
     })
+  const holdings = securities.flatMap(({ positions }) => positions)
+  const requestedTicker = routeSearch.ticker
+  const ticker =
+    requestedTicker && holdings.some((holding) => holding.ticker === requestedTicker)
+      ? requestedTicker
+      : (holdings[0]?.ticker ?? '')
 
   return (
-    <div className="page spending-detail-page ledger-page">
-      <WorkspaceHeader title="Holdings" />
-      <Card className="spending-detail-card ledger-card">
-        <LedgerToolbar
-          label="Search holdings"
-          placeholder="Search security, account or value"
-          value={search}
-          onValueChange={setSearch}
-          inputRef={searchInputRef}
-        >
-          <FilterSelect
-            label="Holding account"
-            value={selectedAccount}
-            options={accountOptions}
-            onValueChange={(value) => updateFilters(value, selectedCategory)}
-          />
-          <FilterSelect
-            label="Holding category"
-            value={selectedCategory}
-            options={categoryOptions}
-            onValueChange={(value) => updateFilters(selectedAccount, value)}
-          />
-        </LedgerToolbar>
-        <PositionTable
-          positions={holdings}
-          externalLogosEnabled={getExternalLogosEnabled()}
-          accountNames={accountNames}
-          emptyMessage="No holdings match these filters."
+    <div className="page holdings-page">
+      <WorkspaceHeader
+        title="Holdings"
+        status={<MarketStatus />}
+        breadcrumbs={
+          ticker
+            ? [
+                { label: 'Holdings', to: '/holdings', search: {} },
+                { label: ticker, to: '/holdings', search: { ticker } },
+              ]
+            : undefined
+        }
+      />
+      {securities.length ? (
+        <nav className="account-switcher" aria-label="Held securities">
+          <div className="account-switcher-grid">
+            {securities.map((security) => (
+              <Link
+                className="account-switcher-button"
+                activeOptions={{ exact: true }}
+                data-keyboard-row
+                data-keyboard-open
+                aria-current={security.ticker === ticker ? 'page' : undefined}
+                key={security.ticker}
+                to="/holdings"
+                search={{ ticker: security.ticker }}
+              >
+                <BrandMark
+                  className="asset-mark"
+                  fallback={stockMarkLabel(security.ticker)}
+                  label={`${security.positions[0].name} logo`}
+                  src={stockLogoUrl(security.ticker, externalLogos)}
+                  style={{ backgroundColor: stockMarkColor(security.ticker) }}
+                />
+                <span className="account-switcher-copy">
+                  <span>{security.ticker}</span>
+                  <strong className="account-switcher-value">
+                    <span>{formatCurrency(security.value)}</span>
+                    <span
+                      className={valueTone(security.dailyChange)}
+                      aria-label={
+                        security.dailyChange == null
+                          ? 'Daily change unavailable'
+                          : `${formatPercent(security.dailyChange)} daily change`
+                      }
+                    >
+                      {formatPercent(security.dailyChange)}
+                    </span>
+                  </strong>
+                </span>
+              </Link>
+            ))}
+          </div>
+        </nav>
+      ) : null}
+      <div className="holdings-overview-grid">
+        <HoldingChart
+          holdings={holdings}
+          ticker={ticker}
+          onTickerChange={(nextTicker) =>
+            void navigate({ search: { ticker: nextTicker }, replace: true })
+          }
         />
-      </Card>
+        <HoldingPortfolio data={query.data} ticker={ticker} />
+      </div>
+      <div className="holdings-detail-grid">
+        <div className="holdings-account-activity-column">
+          <HoldingAccounts data={query.data} ticker={ticker} />
+          <HoldingActivity data={query.data} ticker={ticker} />
+        </div>
+        <Card className="brokerage-holdings-card holdings-total-card">
+          <PositionTable
+            title="Holdings"
+            positions={data.holdings.toSorted(
+              (left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity),
+            )}
+            externalLogosEnabled={externalLogos}
+            view="market"
+            emptyMessage="No holdings yet."
+          />
+        </Card>
+        <HoldingNews ticker={ticker} connected={query.integrationStatus.alphaVantage} />
+      </div>
     </div>
   )
 }

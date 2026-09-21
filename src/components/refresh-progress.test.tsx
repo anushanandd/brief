@@ -1,12 +1,15 @@
 import { renderToStaticMarkup } from 'react-dom/server'
-import { expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 
 import { RefreshProgress } from './refresh-progress'
 
-it('keeps refresh progress indeterminate and explains snapshot safety', () => {
+afterEach(() => vi.useRealTimers())
+
+it('shows provider progress without inventing completion percentages', () => {
+  vi.useFakeTimers({ toFake: ['Date'] })
+  vi.setSystemTime(10_000)
   const markup = renderToStaticMarkup(
     <RefreshProgress
-      detail="Connected sources update independently."
       startedAt={0}
       tasks={[
         { id: 'plaid', label: 'Plaid', status: 'Complete', state: 'complete' },

@@ -1,12 +1,13 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { PageError, PageLoading } from '../components/data-state'
-import { Card, SectionHeading, StatusDot } from '../components/ui'
+import { Card, EmptyState, SectionHeading, StatusDot } from '../components/ui'
+import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
+import { useLiveFinance } from '../hooks/use-live-finance'
 import { useFinanceRefreshState } from '../hooks/use-refresh-finance'
 import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
 import { getSyncRuns } from '../lib/api'
-import type { MarketSnapshots } from '../lib/schema'
 
 const logTimeFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
@@ -25,37 +26,29 @@ export function LogsPage() {
   const query = useFinance()
   const refreshing = useFinanceRefreshState()
   const data = query.data
-  const quotes = useQuery<MarketSnapshots>({
-    queryKey: ['market-snapshots', query.marketSymbols],
-    enabled: false,
-  })
+  const live = useLiveFinance()
   const syncRuns = useQuery({ queryKey: ['sync-runs', data?.revision], queryFn: getSyncRuns })
 
   if (query.isLoading) return <PageLoading />
   if (query.isError || !data) return <PageError />
 
   const accountDisplayNames = getAccountDisplayNames()
-  const configuredCount = Object.values(query.integrationStatus).filter(Boolean).length
-  const activeCount = Number(refreshing)
   const connectedAccounts = {
     plaid: data.accounts.filter((account) => account.id.startsWith('plaid:')).length,
     snaptrade: data.accounts.filter((account) => account.id.startsWith('snaptrade:')).length,
   }
   const quoteUpdates = query.marketSymbols.map((ticker) => ({
     ticker,
-    updatedAt:
-      quotes.data?.snapshots[ticker]?.asOf ??
-      data.holdings
-        .filter((holding) => holding.ticker.trim().toUpperCase() === ticker)
-        .flatMap((holding) => (holding.marketAsOf ? [holding.marketAsOf] : []))
-        .toSorted()
-        .at(-1),
+    updatedAt: (live.data ?? data).holdings
+      .filter((holding) => holding.ticker.trim().toUpperCase() === ticker)
+      .flatMap((holding) => (holding.marketAsOf ? [holding.marketAsOf] : []))
+      .toSorted()
+      .at(-1),
   }))
   const connections = [
     {
       id: 'plaid',
       name: 'Plaid',
-      detail: 'Banking and stock plan data',
       configured: query.integrationStatus.plaid,
       accounts: connectedAccounts.plaid,
       health: data.providerStatus?.plaid,
@@ -63,7 +56,6 @@ export function LogsPage() {
     {
       id: 'snaptrade',
       name: 'SnapTrade',
-      detail: 'Brokerage positions and activity',
       configured: query.integrationStatus.snaptrade,
       accounts: connectedAccounts.snaptrade,
       health: data.providerStatus?.snaptrade,
@@ -71,73 +63,54 @@ export function LogsPage() {
     {
       id: 'alpaca',
       name: 'Alpaca',
-      detail: 'Market history and session-aware snapshots',
       configured: query.integrationStatus.alpaca,
       accounts: 0,
       health: undefined,
     },
+    {
+      id: 'alphavantage',
+      name: 'Alpha Vantage',
+      configured: query.integrationStatus.alphaVantage,
+      accounts: 0,
+      health: undefined,
+    },
   ] as const
+  const configuredCount = connections.filter(({ configured }) => configured).length
+  const marketState = {
+    active: 'Live',
+    loading: 'Checking',
+    paused: 'REST polling',
+    error: 'Unavailable',
+    idle: 'Idle',
+  }[live.marketPriceState]
 
   return (
     <div className="page logs-page">
-      <header className="page-header logs-header">
-        <h1>Logs</h1>
-        <span className="freshness">
-          <StatusDot tone={activeCount ? 'positive' : 'neutral'} />
-          {activeCount ? `${activeCount} active` : 'Quiet'}
-        </span>
-      </header>
-
+      <WorkspaceHeader
+        title="Logs"
+        parent={{ label: 'Settings', to: '/settings' }}
+        showSnapshot={false}
+        showRefresh={false}
+      />
       <div className="logs-grid">
         <Card className="logs-card">
-          <SectionHeading title="Background activity" />
-          <div className="runtime-list">
-            <div className="runtime-row">
-              <div className="runtime-copy">
-                <strong>Market snapshot checks</strong>
-                <small>Session-aware on Home · stopped here</small>
-              </div>
-              <div className="runtime-state">
-                <StatusDot tone="neutral" />
-                <strong>Stopped</strong>
-              </div>
-            </div>
-
-            <div className="runtime-row">
-              <div className="runtime-copy">
-                <strong>Account refresh</strong>
-                <small>Manual · last saved {formatTime(data.updatedAt)}</small>
-              </div>
-              <div className="runtime-state">
-                <StatusDot tone={refreshing ? 'positive' : 'neutral'} />
-                <strong>{refreshing ? 'Running' : 'Idle'}</strong>
-              </div>
-            </div>
-
-            <div className="runtime-row">
-              <div className="runtime-copy">
-                <strong>Live chart history</strong>
-                <small>Session-local and active only while Home is open</small>
-              </div>
-              <div className="runtime-state">
-                <StatusDot tone="neutral" />
-                <strong>Stopped</strong>
-              </div>
-            </div>
-          </div>
-        </Card>
-
-        <Card className="logs-card">
-          <SectionHeading title={`Connections · ${configuredCount}/3`} />
+          <SectionHeading
+            title="Connections"
+            action={
+              <span className="logs-count">
+                {configuredCount}/{connections.length} configured
+              </span>
+            }
+          />
           <div className="connection-list">
-            {connections.map(({ id, name, detail, configured, accounts, health }) => {
+            {connections.map(({ id, name, configured, accounts, health }) => {
               const error = health?.error
               const state = error
                 ? 'Error'
                 : configured
                   ? accounts
                     ? `${accounts} ${accounts === 1 ? 'account' : 'accounts'}`
-                    : id === 'alpaca'
+                    : id === 'alpaca' || id === 'alphavantage'
                       ? 'Configured'
                       : 'Ready'
                   : 'Not configured'
@@ -146,15 +119,11 @@ export function LogsPage() {
                   <StatusDot tone={error ? 'negative' : configured ? 'positive' : 'neutral'} />
                   <div>
                     <strong>{name}</strong>
-                    <small>
-                      {error
-                        ? error
-                        : health?.updatedAt
-                          ? `Last checked ${formatTime(health.updatedAt)}`
-                          : id === 'alpaca' && configured
-                            ? `${query.marketSymbols.length} symbols · route scoped`
-                            : detail}
-                    </small>
+                    {error ? (
+                      <small className="negative">{error}</small>
+                    ) : health?.updatedAt ? (
+                      <small>Checked {formatTime(health.updatedAt)}</small>
+                    ) : null}
                   </div>
                   <span>{state}</span>
                 </div>
@@ -162,52 +131,51 @@ export function LogsPage() {
             })}
           </div>
         </Card>
-      </div>
-
-      <Card className="logs-card market-data-card">
-        <SectionHeading
-          title="Source timestamps"
-          detail="When providers last obtained the underlying data. A successful check does not imply fresh data."
-        />
-        {data.accounts
-          .filter(({ id }) => id !== 'all')
-          .map((account) => (
-            <div className="runtime-row" key={account.id}>
+        <Card className="logs-card">
+          <SectionHeading title="Background activity" />
+          <div className="runtime-list">
+            <div className="runtime-row">
               <div className="runtime-copy">
-                <strong>{accountDisplayName(account.id, account.name, accountDisplayNames)}</strong>
-                <small>
-                  Balance: {formatTime(account.balanceAsOf)} · Positions:{' '}
-                  {formatTime(account.positionsAsOf)} · Activity: {formatTime(account.activityAsOf)}
-                  {' · '}Fetched by Brief: {formatTime(account.balanceFetchedAt)}
-                </small>
+                <strong>Account refresh</strong>
+              </div>
+              <div className="runtime-state">
+                <StatusDot tone={refreshing ? 'positive' : 'neutral'} />
+                <strong>{refreshing ? 'Running' : 'Idle'}</strong>
               </div>
             </div>
-          ))}
-      </Card>
-
-      <Card className="logs-card market-data-card">
-        <SectionHeading
-          title={`Market data · ${quoteUpdates.length}`}
-          detail="Latest quote time stored for each symbol"
-        />
-        <div className="market-data-list">
-          {quoteUpdates.map(({ ticker, updatedAt }) => (
-            <div className="market-data-row" key={ticker}>
-              <strong>{ticker}</strong>
-              <time dateTime={updatedAt}>{formatTime(updatedAt)}</time>
+            <div className="runtime-row">
+              <div className="runtime-copy">
+                <strong>Market prices</strong>
+                {live.marketPriceState === 'error' && live.marketPriceMessage ? (
+                  <small>{live.marketPriceMessage}</small>
+                ) : null}
+              </div>
+              <div className="runtime-state">
+                <StatusDot
+                  tone={
+                    live.marketPriceState === 'error'
+                      ? 'negative'
+                      : live.marketPriceState === 'active'
+                        ? 'positive'
+                        : 'neutral'
+                  }
+                />
+                <strong>
+                  {live.marketIsSaved ? `Saved · ${marketState.toLowerCase()}` : marketState}
+                </strong>
+              </div>
             </div>
-          ))}
-          {!quoteUpdates.length ? (
-            <p className="activity-log-empty">No market symbols in the current snapshot.</p>
-          ) : null}
-        </div>
-      </Card>
-
+            <div className="runtime-row">
+              <div className="runtime-copy">
+                <strong>Snapshot saved</strong>
+              </div>
+              <time dateTime={data.updatedAt}>{formatTime(data.updatedAt)}</time>
+            </div>
+          </div>
+        </Card>
+      </div>
       <Card className="logs-card activity-log-card">
-        <SectionHeading
-          title="Durable sync history"
-          detail="Redacted outcomes stored locally; no credentials or financial values are recorded"
-        />
+        <SectionHeading title="Sync history" />
         <div className="activity-log">
           {syncRuns.data?.map((run) => (
             <div className="activity-log-row" key={run.id}>
@@ -223,17 +191,15 @@ export function LogsPage() {
               </div>
             </div>
           ))}
-          {syncRuns.isError ? (
-            <p className="activity-log-empty">Durable sync history is unavailable.</p>
-          ) : null}
+          {syncRuns.isPending ? <EmptyState>Loading sync history…</EmptyState> : null}
+          {syncRuns.isError ? <EmptyState>Sync history is unavailable.</EmptyState> : null}
           {!syncRuns.isPending && !syncRuns.isError && !syncRuns.data?.length ? (
-            <p className="activity-log-empty">No durable sync runs recorded yet.</p>
+            <EmptyState>No refreshes recorded yet.</EmptyState>
           ) : null}
         </div>
       </Card>
-
       <Card className="logs-card activity-log-card">
-        <SectionHeading title="Recent activity" />
+        <SectionHeading title="Runtime activity" />
         <div className="activity-log" aria-live="polite">
           {query.runtimeLog.length ? (
             query.runtimeLog.map((entry) => (
@@ -248,8 +214,65 @@ export function LogsPage() {
               </div>
             ))
           ) : (
-            <p className="activity-log-empty">No runtime events recorded yet.</p>
+            <EmptyState>No runtime events recorded yet.</EmptyState>
           )}
+        </div>
+      </Card>
+      <Card className="logs-card market-data-card">
+        <SectionHeading title="Source timestamps" />
+        <div className="settings-table-scroll">
+          <table className="source-time-table">
+            <thead>
+              <tr>
+                {['Account', 'Balance', 'Positions', 'Activity', 'Fetched'].map((label) => (
+                  <th scope="col" key={label}>
+                    {label}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {data.accounts
+                .filter(({ id }) => id !== 'all')
+                .map((account) => (
+                  <tr key={account.id}>
+                    <th scope="row">
+                      {accountDisplayName(account.id, account.name, accountDisplayNames)}
+                    </th>
+                    {[
+                      account.balanceAsOf,
+                      account.positionsAsOf,
+                      account.activityAsOf,
+                      account.balanceFetchedAt,
+                    ].map((time, index) => (
+                      <td key={index}>
+                        <time dateTime={time ?? undefined}>{formatTime(time)}</time>
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+        {!data.accounts.some(({ id }) => id !== 'all') ? (
+          <EmptyState>No account timestamps available.</EmptyState>
+        ) : null}
+      </Card>
+      <Card className="logs-card market-data-card">
+        <SectionHeading
+          title="Quote timestamps"
+          action={<span className="logs-count">{quoteUpdates.length} symbols</span>}
+        />
+        <div className="market-data-list">
+          {quoteUpdates.map(({ ticker, updatedAt }) => (
+            <div className="market-data-row" key={ticker}>
+              <strong>{ticker}</strong>
+              <time dateTime={updatedAt}>{formatTime(updatedAt)}</time>
+            </div>
+          ))}
+          {!quoteUpdates.length ? (
+            <EmptyState>No market symbols in the current snapshot.</EmptyState>
+          ) : null}
         </div>
       </Card>
     </div>

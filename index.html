@@ -5,10 +5,25 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#08090a" />
     <meta name="description" content="A private, local-first view of your finances." />
+    <style>
+      html,
+      body,
+      #root {
+        margin: 0;
+        min-height: 100%;
+        background: #08090a;
+        color: #e8e8e8;
+        color-scheme: dark;
+      }
+    </style>
     <title>Brief</title>
   </head>
   <body>
-    <div id="root"></div>
+    <div id="root">
+      <p role="status" style="padding: 32px; font: 14px system-ui; color: #92969b">
+        Opening Brief…
+      </p>
+    </div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

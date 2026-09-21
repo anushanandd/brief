@@ -1,9 +1,9 @@
 import {
   Activity,
+  ChartNoAxesCombined,
   BriefcaseBusiness,
   House,
   Landmark,
-  RefreshCw,
   Settings,
   WalletCards,
 } from 'lucide-react'
@@ -12,15 +12,16 @@ export const primaryNavigation = [
   { to: '/', label: 'Home', icon: House, shortcut: '1' },
   { to: '/accounts', label: 'Accounts', icon: Landmark, shortcut: '2' },
   { to: '/spending', label: 'Spending', icon: WalletCards, shortcut: '3' },
-  { to: '/holdings', label: 'Holdings', icon: BriefcaseBusiness, shortcut: '4' },
-  { to: '/activities', label: 'Activity', icon: Activity, shortcut: '5' },
+  { to: '/analytics', label: 'Analytics', icon: ChartNoAxesCombined, shortcut: '4' },
+  { to: '/holdings', label: 'Holdings', icon: BriefcaseBusiness, shortcut: '5' },
+  { to: '/activities', label: 'Activity', icon: Activity, shortcut: '6' },
 ] as const
 
 export const settingsNavigation = {
   to: '/settings',
   label: 'Settings',
   icon: Settings,
-  shortcut: '6',
+  shortcut: '7',
 } as const
 
 export const navigation = [...primaryNavigation, settingsNavigation] as const
@@ -29,7 +30,6 @@ export const commandDestinations = [
   ...navigation,
   { label: 'Investment accounts', to: '/accounts/investments', icon: Landmark },
   { label: 'Cash accounts', to: '/accounts/cash', icon: Landmark },
-  { label: 'Subscriptions', to: '/spending/subscriptions', icon: RefreshCw },
 ] as const
 
 const navigationShortcutRange = `${navigation[0].shortcut}–${navigation.at(-1)?.shortcut}`
@@ -42,6 +42,7 @@ export const shortcutGroups = [
       ['?', 'Show keyboard shortcuts'],
       ['⌘K', 'Open quick actions'],
       ['⌘[ / ⌘]', 'Go back / forward'],
+      ['⌘↑ / ⌘↓', 'Previous / next sidebar page'],
       ['⌘,', 'Open Settings'],
       ['⌘R', 'Refresh data'],
     ],
@@ -53,7 +54,6 @@ export const shortcutGroups = [
       ['esc', 'Clear search, then blur'],
       ['J / K', 'Move down / up'],
       ['return', 'Open the focused row'],
-      ['← / →', 'Previous / next Activity page'],
     ],
   },
   {
@@ -67,7 +67,9 @@ export const shortcutGroups = [
     title: 'Charts',
     shortcuts: [
       ['W / M / Q / A', 'Week / month / quarter / all time'],
-      ['⌘← / ⌘→', 'Previous / next account graph'],
+      ['D / W / M / Y / A', 'Holdings: day / week / month / year / all time'],
+      ['← / →', 'Holdings: previous / next ticker'],
+      ['⌘← / ⌘→', 'Previous / next account or analytics chart'],
       ['⌘⌃← / ⌘⌃→', 'Previous / next date view'],
     ],
   },

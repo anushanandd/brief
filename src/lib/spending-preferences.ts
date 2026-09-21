@@ -1,13 +1,7 @@
 const spendingAccountKey = 'brief:spending-account-id'
 const hiddenPlatinumBenefitsKey = 'brief:hidden-platinum-benefits'
 
-export const defaultHiddenPlatinumBenefitIds = [
-  'walmart-plus',
-  'clear',
-  'equinox',
-  'oura',
-  'uber-one',
-]
+export const defaultHiddenPlatinumBenefitIds: string[] = []
 
 export const getSpendingAccountId = () => localStorage.getItem(spendingAccountKey) ?? ''
 

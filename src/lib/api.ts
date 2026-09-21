@@ -1,13 +1,15 @@
-import { invoke } from '@tauri-apps/api/core'
+import { Channel, invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 
 import seed from '../data/seed.json'
 import {
+  earningsEventSchema,
   financeSnapshotSchema,
-  marketNewsSchema,
+  marketNewsResultSchema,
   marketSnapshotsSchema,
   type FinanceSnapshot,
-  type MarketNewsArticle,
+  type EarningsEvent,
+  type MarketNewsResult,
   type MarketSnapshots,
 } from './schema'
 
@@ -46,6 +48,7 @@ export type IntegrationStatus = {
   plaid: boolean
   snaptrade: boolean
   alpaca: boolean
+  alphaVantage: boolean
 }
 
 export type SyncRun = {
@@ -116,15 +119,19 @@ export async function cancelProviderLink(session: ProviderLinkSession): Promise<
   await invoke('cancel_provider_link', { sessionId: session.sessionId })
 }
 
-export async function pollProviderLink(session: ProviderLinkSession): Promise<ProviderLinkStatus> {
+export async function pollProviderLink(
+  session: ProviderLinkSession,
+  browserCompleted = false,
+): Promise<ProviderLinkStatus> {
   return invoke<ProviderLinkStatus>('poll_provider_link', {
+    browserCompleted,
     provider: session.provider,
     sessionId: session.sessionId,
   })
 }
 
 export async function getIntegrationStatus(): Promise<IntegrationStatus> {
-  if (!isTauri()) return { plaid: false, snaptrade: false, alpaca: false }
+  if (!isTauri()) return { plaid: false, snaptrade: false, alpaca: false, alphaVantage: false }
   return invoke<IntegrationStatus>('get_integration_status')
 }
 
@@ -147,7 +154,7 @@ export async function authenticateSensitiveAction(): Promise<void> {
 }
 
 export async function saveIntegrationCredentials(
-  provider: 'plaid' | 'snaptrade' | 'alpaca',
+  provider: 'plaid' | 'snaptrade' | 'alpaca' | 'alphavantage',
   credentials: { clientId: string; secret?: string; consumerKey?: string },
 ): Promise<IntegrationStatus> {
   if (!isTauri()) throw new Error('Integration settings are available in the Brief desktop app')
@@ -159,24 +166,64 @@ export async function saveIntegrationCredentials(
   })
 }
 
-export async function getMarketSnapshots(symbols: string[]): Promise<MarketSnapshots> {
-  if (!isTauri()) {
-    return {
-      snapshots: {},
-      session: 'Market closed',
-      feed: 'iex',
-      delayMinutes: 0,
-      asOf: null,
-      nextTransitionAt: null,
-      pollIntervalMs: null,
+export async function startMarketStream(
+  symbols: string[],
+  updateIntervalSeconds: number,
+  requestId: string,
+  onUpdate: (market: MarketSnapshots) => void,
+  onError: (message: string) => void,
+): Promise<void> {
+  const updates = new Channel<unknown>((payload) => {
+    if (!payload || typeof payload !== 'object') return
+    if ('kind' in payload && payload.kind === 'update' && 'market' in payload) {
+      const parsed = marketSnapshotsSchema.safeParse(payload.market)
+      if (parsed.success) onUpdate(parsed.data)
+      else onError('Invalid market update received')
+    } else if (
+      'kind' in payload &&
+      payload.kind === 'error' &&
+      'message' in payload &&
+      typeof payload.message === 'string'
+    ) {
+      onError(payload.message)
     }
-  }
-  return marketSnapshotsSchema.parse(await invoke('get_market_snapshots', { symbols }))
+  })
+  await invoke('start_market_stream', {
+    symbols,
+    updateIntervalMs: updateIntervalSeconds * 1_000,
+    requestId,
+    updates,
+  })
 }
 
-export async function getMarketNews(symbol: string): Promise<MarketNewsArticle[]> {
+export async function stopMarketStream(requestId: string): Promise<void> {
+  await invoke('stop_market_stream', { requestId })
+}
+
+export async function startHoldingChart(
+  symbol: string,
+  range: number,
+  requestId: string,
+  warmSymbols: string[] = [],
+) {
+  if (!isTauri()) return
+  await invoke('start_holding_chart', { symbol, range, requestId, warmSymbols })
+}
+
+export async function stopHoldingChart(requestId: string) {
+  if (!isTauri()) return
+  await invoke('stop_holding_chart', { requestId })
+}
+
+export async function getMarketNews(symbols: string[], force = false): Promise<MarketNewsResult> {
+  if (!isTauri())
+    return { articles: [], savedAt: null, warning: null, requestsRemaining: 0, canRefresh: false }
+  return marketNewsResultSchema.parse(await invoke('get_market_news', { symbols, force }))
+}
+
+export async function getEarningsCalendar(symbols: string[]): Promise<EarningsEvent[]> {
   if (!isTauri()) return []
-  return marketNewsSchema.parse(await invoke('get_market_news', { symbol }))
+  return earningsEventSchema.array().parse(await invoke('get_earnings_calendar', { symbols }))
 }
 
 export type FoundationModelStatus = {
@@ -194,15 +241,45 @@ export async function getFoundationModelStatus(): Promise<FoundationModelStatus>
 let explanationQueue: Promise<unknown> = Promise.resolve()
 export async function generateFoundationExplanation(
   evidence: string,
-  signal?: AbortSignal,
+  signal: AbortSignal | undefined,
+  purpose: 'news' | 'chat',
 ): Promise<string> {
   if (!isTauri()) throw new Error('Apple Intelligence requires the Brief desktop app')
-  const result = explanationQueue.then(() => {
+  const result = explanationQueue.then(async () => {
     signal?.throwIfAborted()
-    return invoke<string>('generate_foundation_explanation', {
-      evidence: evidence.slice(0, 12_000),
+    const requestId = crypto.randomUUID()
+    let registered = false
+    const cancel = () => {
+      if (registered)
+        void invoke('cancel_foundation_explanation', { requestId }).catch(() => undefined)
+    }
+    const started = new Channel<null>(() => {
+      registered = true
+      if (signal?.aborted) cancel()
     })
+    signal?.addEventListener('abort', cancel, { once: true })
+    try {
+      const response = await invoke<string>('generate_foundation_explanation', {
+        evidence: evidence.slice(0, 12_000),
+        purpose,
+        requestId,
+        started,
+      })
+      signal?.throwIfAborted()
+      return response
+    } finally {
+      signal?.removeEventListener('abort', cancel)
+    }
   })
   explanationQueue = result.catch(() => undefined)
   return result
+}
+
+export async function getSavedMarket() {
+  if (!isTauri()) return null
+  return marketSnapshotsSchema.nullable().parse(await invoke('get_saved_market'))
+}
+
+export async function revealMainWindow() {
+  if (isTauri()) await invoke('reveal_main_window')
 }

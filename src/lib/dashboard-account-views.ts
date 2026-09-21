@@ -1,11 +1,83 @@
-import { transactionMarkKind } from './logos'
+import { buildLiveChartData, chartPointsFromStartDate, chartRangeChange } from './live-chart'
 import type { Account, FinanceSnapshot } from './schema'
-import { transactionDateKey } from './spending'
+
+export function accountValueChart(
+  data: Pick<
+    FinanceSnapshot,
+    | 'accounts'
+    | 'netWorthIncomplete'
+    | 'netWorthHistory'
+    | 'brokeragePerformance'
+    | 'accountBalanceHistory'
+    | 'updatedAt'
+  >,
+  account: Account,
+  livePoints: Parameters<typeof buildLiveChartData>[1],
+  valuationTime: number,
+  windowSeconds: number,
+  now: number,
+  startDate?: string,
+) {
+  const combined = account.id === 'all' || account.type === 'combined'
+  const investment = account.type === 'brokerage' || account.type === 'retirement'
+  const history =
+    account.value == null
+      ? []
+      : combined
+        ? data.netWorthHistory
+        : ((investment ? data.brokeragePerformance : data.accountBalanceHistory).find(
+            ({ accountId }) => accountId === account.id,
+          )?.points ?? [])
+  const chartData =
+    account.value == null
+      ? []
+      : buildLiveChartData(history, livePoints, account.value, valuationTime)
+  const incomplete = accountValueIncomplete(data, combined ? 'all' : account.id)
+  return {
+    chartData,
+    chartChange: chartRangeChange(
+      chartPointsFromStartDate(chartData, startDate),
+      windowSeconds,
+      now,
+    ),
+    incomplete,
+    historyIsAvailable: !incomplete && hasValueHistory(history, startDate),
+  }
+}
 
 type BrokeragePerformance = FinanceSnapshot['brokeragePerformance'][number]
 type ValuePoint = { date: string; value: number }
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 const WEEK_MS = 7 * 24 * 60 * 60 * 1_000
+
+export function accountValueIncomplete(
+  data: Pick<FinanceSnapshot, 'accounts' | 'netWorthIncomplete'>,
+  accountId: string,
+) {
+  if (accountId === 'all' || accountId === 'net-worth') return Boolean(data.netWorthIncomplete)
+  if (accountId === 'total') {
+    return data.accounts.some(
+      ({ type, value }) => (type === 'brokerage' || type === 'retirement') && value == null,
+    )
+  }
+  return data.accounts.find(({ id }) => id === accountId)?.value == null
+}
+
+export function hasValueHistory(points: ValuePoint[], startDate?: string) {
+  return (
+    new Set(
+      points
+        .filter(
+          ({ date, value }) =>
+            DATE_PATTERN.test(date) &&
+            Number.isFinite(Date.parse(`${date}T00:00:00Z`)) &&
+            Number.isFinite(value) &&
+            (!startDate || date >= startDate),
+        )
+        .map(({ date }) => date),
+    ).size > 1
+  )
+}
 
 export function accountWeeklyChangePct(
   data: Pick<
@@ -13,9 +85,10 @@ export function accountWeeklyChangePct(
     'accountBalanceHistory' | 'brokeragePerformance' | 'holdings' | 'updatedAt'
   >,
   account: Account,
+  valuationAsOf = data.updatedAt,
 ) {
   if (account.value == null) return null
-  const targetTime = Date.parse(data.updatedAt) - WEEK_MS
+  const targetTime = Date.parse(valuationAsOf) - WEEK_MS
   if (!Number.isFinite(targetTime)) return null
   const targetDate = new Date(targetTime).toISOString().slice(0, 10)
   const history = [...data.accountBalanceHistory, ...data.brokeragePerformance].find(
@@ -25,46 +98,12 @@ export function accountWeeklyChangePct(
     .filter(({ date }) => DATE_PATTERN.test(date) && date <= targetDate)
     .toSorted((left, right) => left.date.localeCompare(right.date))
     .at(-1)
-  if (baseline?.value) {
+  if (baseline?.value && Date.parse(targetDate) - Date.parse(baseline.date) <= 4 * 86_400_000) {
     return ((account.value - baseline.value) / Math.abs(baseline.value)) * 100
   }
 
-  if (account.type !== 'brokerage' && account.type !== 'retirement') return null
-  const holdings = data.holdings.filter(
-    ({ accountId, value }) => accountId === account.id && value != null,
-  )
-  if (
-    !holdings.length ||
-    holdings.some(
-      ({ shares, weeklyReferencePrice }) => shares == null || weeklyReferencePrice == null,
-    )
-  ) {
-    return null
-  }
-  const currentHoldings = holdings.reduce((total, { value }) => total + (value ?? 0), 0)
-  const referenceHoldings = holdings.reduce(
-    (total, { shares, weeklyReferencePrice }) =>
-      total + (shares ?? 0) * (weeklyReferencePrice ?? 0),
-    0,
-  )
-  const referenceValue = account.value - currentHoldings + referenceHoldings
-  return referenceValue ? ((account.value - referenceValue) / Math.abs(referenceValue)) * 100 : null
-}
-
-export function chartValueChange(points: ValuePoint[], currentValue: number, currentDate: string) {
-  const latestPoint = points.at(-1)
-  const latestDate = latestPoint?.date ?? ''
-  const hasLiveDelta = Math.abs(currentValue - (latestPoint?.value ?? currentValue)) >= 0.01
-  const priorValue =
-    hasLiveDelta && /^\d{4}-\d{2}-\d{2}$/.test(latestDate) && latestDate < currentDate
-      ? (latestPoint?.value ?? currentValue)
-      : (points.at(-2)?.value ?? latestPoint?.value ?? currentValue)
-  const change = currentValue - priorValue
-  return {
-    change,
-    percent: priorValue ? (change / Math.abs(priorValue)) * 100 : 0,
-    period: /^\d{4}-\d{2}-\d{2}$/.test(latestDate) ? 'today' : 'this period',
-  }
+  // A repriced basket of today's positions is not an account balance change.
+  return null
 }
 
 function totalNetWorthPoints(
@@ -81,39 +120,6 @@ function accountRank({ name }: BrokeragePerformance) {
   if (normalizedName.includes('roth')) return 0
   if (/stock\s*plan/.test(normalizedName)) return 2
   return 1
-}
-
-export function monthlyPortfolioChange(
-  data: Pick<FinanceSnapshot, 'brokeragePerformance' | 'updatedAt'>,
-) {
-  const portfolio = data.brokeragePerformance.find(({ accountId }) => accountId === 'total')
-  if (!portfolio) return null
-
-  const monthStart = `${data.updatedAt.slice(0, 7)}-01`
-  const datedPoints = portfolio.points.filter(({ date }) => /^\d{4}-\d{2}-\d{2}$/.test(date))
-  const baseline =
-    datedPoints.findLast(({ date }) => date < monthStart) ??
-    datedPoints.find(({ date }) => date >= monthStart) ??
-    portfolio.points.at(-2)
-
-  return baseline?.value
-    ? ((portfolio.currentValue - baseline.value) / Math.abs(baseline.value)) * 100
-    : null
-}
-
-export function currentMonthIncome(data: Pick<FinanceSnapshot, 'transactions' | 'updatedAt'>) {
-  const month = data.updatedAt.slice(0, 7)
-  return data.transactions
-    .filter(
-      (transaction) =>
-        !transaction.pending &&
-        transaction.amount > 0 &&
-        transactionDateKey(transaction.postedOn ?? transaction.date, data.updatedAt).startsWith(
-          month,
-        ) &&
-        ['income', 'interest', 'dividend'].includes(transactionMarkKind(transaction)),
-    )
-    .reduce((total, { amount }) => total + amount, 0)
 }
 
 export function dashboardAssetBreakdown(data: Pick<FinanceSnapshot, 'accounts' | 'holdings'>) {

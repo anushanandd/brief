@@ -1,10 +1,13 @@
+import { isSpendingTransaction } from './transaction-kind'
+export { isSpendingTransaction } from './transaction-kind'
 import type { Account, Transaction } from './schema'
 
 export type SpendingPeriod = 0 | 1 | 3 | 12
 export type SpendingPeriodBasis = 'calendar' | 'statement'
 const spendingPeriodKeys: Record<string, SpendingPeriod> = { m: 1, q: 3, y: 12, a: 0 }
-type BenefitCadence = 'monthly' | 'quarterly' | 'semiannual' | 'annual'
-const benefitRulesVersion = '2025-01'
+type BenefitCadence = 'monthly' | 'quarterly' | 'semiannual' | 'annual' | 'renewal' | 'purchase'
+const benefitRulesVersion = '2026-09-20'
+const amexBenefitUrl = (path: string) => `https://global.americanexpress.com/card-benefits/${path}`
 
 type RankedSpend = {
   name: string
@@ -21,17 +24,34 @@ const platinumBenefits: Array<{
   cap: number
   cadence: BenefitCadence
   matches: RegExp
-  effectiveFrom: string
+  creditMatches: RegExp
+  instruction: string
+  effectiveFrom?: string
+  effectiveUntil?: string
+  url: string
+  timeZone?: string
+  deadlineNote?: string
+  allowanceChanges?: Array<{
+    from: string
+    cap: number
+    limit: string
+    cadence: BenefitCadence
+  }>
 }> = [
   {
     id: 'digital-entertainment',
     name: 'Digital entertainment',
-    limit: '$25 / month',
-    cap: 25,
+    limit: '$20 / month',
+    cap: 20,
     cadence: 'monthly',
     matches:
       /digital entertainment|disney|hulu|espn|new york times|paramount|peacock|wall street journal|youtube/i,
+    creditMatches: /digital entertainment.*credit/i,
+    instruction:
+      'Enroll, then pay directly for Disney+, ESPN, Hulu, NYT, Paramount+, standalone Peacock, WSJ or YouTube (including Music). No third-party billing or Peacock bundles with other services.',
     effectiveFrom: '2025-01-01',
+    url: amexBenefitUrl('detail/digital-entertainment/platinum'),
+    allowanceChanges: [{ from: '2025-09-18', cap: 25, limit: '$25 / month', cadence: 'monthly' }],
   },
   {
     id: 'uber-cash',
@@ -40,7 +60,13 @@ const platinumBenefits: Array<{
     cap: 15,
     cadence: 'monthly',
     matches: /uber cash|^uber(?:\s|$)/i,
+    creditMatches: /$^/,
+    instruction:
+      'Add Platinum to Uber. For U.S. rides and orders, pay with an Amex and turn Uber Cash on. Unused cash expires each month.',
     effectiveFrom: '2025-01-01',
+    url: 'https://www.uber.com/us/en/u/amex/',
+    timeZone: 'Pacific/Honolulu',
+    deadlineNote: '11:59 p.m. Hawaii time',
   },
   {
     id: 'uber-one',
@@ -49,16 +75,24 @@ const platinumBenefits: Array<{
     cap: 120,
     cadence: 'annual',
     matches: /uber one/i,
-    effectiveFrom: '2025-01-01',
+    creditMatches: /uber one.*credit/i,
+    instruction:
+      'Pay directly with Platinum for a U.S. monthly or annual membership; turn Uber Cash off. Free trials, discounts and Uber Cash payments do not qualify.',
+    effectiveFrom: '2025-09-18',
+    url: amexBenefitUrl('detail/uber-one-credit/platinum'),
   },
   {
     id: 'walmart-plus',
     name: 'Walmart+',
-    limit: '$12.95 / month',
+    limit: '$12.95 + tax / month',
     cap: 12.95,
     cadence: 'monthly',
-    matches: /walmart/i,
+    matches: /walmart(?:\+| plus|.*membership)|walmart.*credit/i,
+    creditMatches: /(?:amex|platinum).*walmart.*credit|walmart(?:\+| plus).*credit/i,
+    instruction:
+      'Pay with Platinum for one monthly membership, including tax. Excludes annual plans, Plus Ups and Walmart Business+.',
     effectiveFrom: '2025-01-01',
+    url: amexBenefitUrl('detail/walmart-platinum/platinum'),
   },
   {
     id: 'resy',
@@ -66,8 +100,12 @@ const platinumBenefits: Array<{
     limit: '$100 / quarter',
     cap: 100,
     cadence: 'quarterly',
-    matches: /resy/i,
-    effectiveFrom: '2025-01-01',
+    matches: /resy|\btock\b/i,
+    creditMatches: /resy.*credit/i,
+    instruction:
+      'Enroll and use a U.S. venue marked Resy Credit eligible—not just any restaurant. Includes eligible Tock purchases from Sep 15, 2026.',
+    effectiveFrom: '2025-09-18',
+    url: amexBenefitUrl('detail/400-resy-credit/platinum'),
   },
   {
     id: 'lululemon',
@@ -76,17 +114,30 @@ const platinumBenefits: Array<{
     cap: 75,
     cadence: 'quarterly',
     matches: /lululemon/i,
-    effectiveFrom: '2025-01-01',
+    creditMatches: /lululemon.*credit/i,
+    instruction:
+      'Enroll and buy directly at eligible U.S. stores, website or app. Excludes gift cards, outlets, Like New, Studio, warehouses and events.',
+    effectiveFrom: '2025-09-18',
+    url: amexBenefitUrl('terms/platinum'),
   },
   {
     id: 'hotel',
     name: 'Hotel credit',
-    limit: '$300 / half-year',
-    cap: 300,
-    cadence: 'semiannual',
+    limit: '$200 / year',
+    cap: 200,
+    cadence: 'annual',
     matches:
-      /hotel credit|fine hotels|\bfhr\b|the hotel collection|amex travel|american express travel/i,
+      /hotel\s?credit|fine hotels|\bfhr\b|the hotel collection|amex travel|american express travel/i,
+    creditMatches: /hotel\s?credit/i,
+    instruction:
+      'Prepay Fine Hotels + Resorts or The Hotel Collection through Amex Travel. The Hotel Collection requires two consecutive nights. Excludes pay-at-hotel bookings and property charges.',
     effectiveFrom: '2025-01-01',
+    url: amexBenefitUrl('detail/hotel-credit/platinum'),
+    timeZone: 'America/Chicago',
+    deadlineNote: '11:59 p.m. Central time · processing date',
+    allowanceChanges: [
+      { from: '2025-09-18', cap: 300, limit: '$300 / half-year', cadence: 'semiannual' },
+    ],
   },
   {
     id: 'airline-fee',
@@ -96,16 +147,25 @@ const platinumBenefits: Array<{
     cadence: 'annual',
     matches:
       /airline fee (?:credit|reimbursement)|checked bag|baggage fee|inflight|in-flight|seat fee|lounge fee/i,
+    creditMatches: /airline fee (?:credit|reimbursement)/i,
+    instruction:
+      'Select an airline in Amex first; changes are allowed in January. Covers eligible incidental fees charged separately, not tickets, upgrades, gift cards or miles.',
     effectiveFrom: '2025-01-01',
+    url: amexBenefitUrl('detail/airline-fee-credit/platinum'),
   },
   {
     id: 'clear',
     name: 'CLEAR+',
-    limit: '$219 / year',
-    cap: 219,
+    limit: '$209 / year',
+    cap: 209,
     cadence: 'annual',
     matches: /\bclear\b/i,
+    creditMatches: /(?:amex|platinum).*clear.*credit|clear\+? plus.*credit/i,
+    instruction:
+      'Pay with Platinum for auto-renewing CLEAR+ and complete identity verification. Membership coverage excludes taxes and fees.',
     effectiveFrom: '2025-01-01',
+    url: amexBenefitUrl('detail/clear-credit/platinum'),
+    allowanceChanges: [{ from: '2026-07-01', cap: 219, limit: '$219 / year', cadence: 'annual' }],
   },
   {
     id: 'oura',
@@ -114,7 +174,11 @@ const platinumBenefits: Array<{
     cap: 200,
     cadence: 'annual',
     matches: /\boura\b/i,
-    effectiveFrom: '2025-01-01',
+    creditMatches: /oura.*credit/i,
+    instruction:
+      'Enroll and buy a ring at U.S. Ouraring.com for U.S. delivery. Excludes memberships, chargers, warranties, gift cards and other retailers.',
+    effectiveFrom: '2025-09-18',
+    url: amexBenefitUrl('detail/oura-credit/platinum'),
   },
   {
     id: 'equinox',
@@ -122,12 +186,54 @@ const platinumBenefits: Array<{
     limit: '$300 / year',
     cap: 300,
     cadence: 'annual',
-    matches: /equinox/i,
+    matches: /^(?!.*(?:soulcycle|bike)).*equinox/i,
+    creditMatches: /^(?!.*(?:soulcycle|bike)).*equinox.*credit/i,
+    instruction:
+      'Enroll and validate eligibility. Pay Equinox directly for an eligible club membership or Equinox+ subscription. Excludes app-store billing.',
     effectiveFrom: '2025-01-01',
+    url: amexBenefitUrl('detail/credit-equinox/platinum'),
+  },
+  {
+    id: 'global-entry',
+    name: 'Global Entry / TSA PreCheck',
+    limit: '$120 / up to $85',
+    cap: 120,
+    cadence: 'renewal',
+    matches: /global entry|tsa\s?pre\s?check/i,
+    creditMatches: /(?:global entry|tsa\s?pre\s?check).*(?:credit|reimbursement)/i,
+    instruction:
+      'Pay the application fee: $120 Global Entry or up to $85 TSA PreCheck, once every four years. Additional cards have separate eligibility. Confirm your next eligible date in Amex.',
+    url: amexBenefitUrl('terms/platinum'),
+  },
+  {
+    id: 'soulcycle',
+    name: 'SoulCycle bike',
+    limit: '$300 / qualifying bike',
+    cap: 300,
+    cadence: 'purchase',
+    matches: /soulcycle|equinox.*bike/i,
+    creditMatches: /(?:soulcycle|equinox.*bike).*(?:credit|reimbursement)/i,
+    instruction:
+      'Buy a full-price at-home bike at Equinox+ in one transaction with a 12-month Equinox+ membership. No financing. Up to 15 qualifying bikes per year.',
+    url: amexBenefitUrl('terms/platinum'),
+  },
+  {
+    id: 'saks',
+    name: 'Saks Fifth Avenue',
+    limit: '$50 / half-year',
+    cap: 50,
+    cadence: 'semiannual',
+    matches: /saks/i,
+    creditMatches: /saks.*(?:credit|reimbursement)/i,
+    instruction: 'Retired July 1, 2026. Historical credits remain included by posting date.',
+    effectiveUntil: '2026-06-30',
+    url: amexBenefitUrl('view-all/platinum'),
   },
 ]
 
-export const platinumBenefitOptions = platinumBenefits.map(({ id, name }) => ({ id, name }))
+export const platinumBenefitOptions = platinumBenefits
+  .filter(({ effectiveUntil }) => !effectiveUntil)
+  .map(({ id, name }) => ({ id, name }))
 
 const monthIndexes: Record<string, number> = {
   jan: 0,
@@ -214,27 +320,12 @@ export function transactionDateKey(value: string, referenceIso: string) {
   return Number.isNaN(parsed.getTime()) ? '' : dateKey(parsed)
 }
 
-export function formatTransactionDate(value: string, referenceIso: string) {
-  const transactionDate = transactionDateKey(value, referenceIso)
-  const referenceDate = transactionDateKey(referenceIso, referenceIso)
-  if (!transactionDate || !referenceDate) return value
-  if (transactionDate === referenceDate) return 'Today'
-  if (transactionDate === dateKey(addDays(new Date(`${referenceDate}T00:00:00Z`), -1))) {
-    return 'Yesterday'
-  }
-  return value
-}
-
 export function formatActivityDate(value: string, referenceIso: string) {
   const transactionDate = transactionDateKey(value, referenceIso)
   return transactionDate
     ? activityDateFormatter.format(new Date(`${transactionDate}T00:00:00Z`))
     : value
 }
-
-export const isSpendingTransaction = (transaction: Transaction) =>
-  transaction.amount < 0 &&
-  !/income|transfer|payment/i.test(`${transaction.category} ${transaction.merchant}`)
 
 const isSpend = isSpendingTransaction
 const minorUnits = (value: number) => Math.round(value * 100)
@@ -255,17 +346,46 @@ export const spendingCategoryColor = (name: string) => {
   return 'var(--spending-other)'
 }
 
-export function buildMonthlySpending(transactions: Transaction[], referenceIso: string) {
-  const view = buildSpendingView(transactions, referenceIso, 1)
-  return {
-    monthTotal: Math.round(view.total * 100) / 100,
-    categories: view.categories.map(({ name, value, percent }) => ({
-      name,
-      value: Math.round(value * 100) / 100,
-      percent: Math.round(percent * 100) / 100,
-      color: spendingCategoryColor(name),
-    })),
+export function weeklySpendingCategoryPerformance(
+  transactions: Transaction[],
+  referenceIso: string,
+) {
+  const end = calendarDate(referenceIso)
+  const currentStart = addDays(end, -6)
+  const previousEnd = addDays(currentStart, -1)
+  const previousStart = addDays(previousEnd, -6)
+  const totals = (start: Date, through: Date) => {
+    const values = new Map<string, number>()
+    for (const transaction of transactions) {
+      const day = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso)
+      if (
+        transaction.pending ||
+        !isSpend(transaction) ||
+        day < dateKey(start) ||
+        day > dateKey(through)
+      )
+        continue
+      values.set(
+        transaction.category,
+        (values.get(transaction.category) ?? 0) + minorUnits(Math.abs(transaction.amount)),
+      )
+    }
+    return values
   }
+  const current = totals(currentStart, end)
+  const previous = totals(previousStart, previousEnd)
+  return new Map(
+    [...new Set([...current.keys(), ...previous.keys()])].map((category) => {
+      const currentValue = current.get(category) ?? 0
+      const previousValue = previous.get(category) ?? 0
+      const performance = previousValue
+        ? ((previousValue - currentValue) / previousValue) * 100
+        : currentValue
+          ? -100
+          : null
+      return [category, performance]
+    }),
+  )
 }
 
 export function buildMonthlySpendingHistory(
@@ -319,6 +439,20 @@ function rank(
 
 export function spendingPeriodForKey(key: string) {
   return spendingPeriodKeys[key.toLocaleLowerCase()]
+}
+
+export function spendingMonthDirectionForKey(
+  event: Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>,
+) {
+  if (
+    event.altKey ||
+    event.ctrlKey ||
+    event.shiftKey ||
+    (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
+  ) {
+    return undefined
+  }
+  return event.key === 'ArrowLeft' ? -1 : 1
 }
 
 export function spendingPeriodLabel(
@@ -618,94 +752,54 @@ export function sortTransactionsByRecency(transactions: Transaction[], reference
   )
 }
 
-const subscriptionCadences = [
-  { label: 'Monthly', days: 30, tolerance: 5, minimumIntervals: 2 },
-  { label: 'Quarterly', days: 91, tolerance: 11, minimumIntervals: 2 },
-  { label: 'Annual', days: 365, tolerance: 35, minimumIntervals: 1 },
-] as const
-
-export function identifySubscriptions(transactions: Transaction[], referenceIso: string) {
-  const referenceDay = transactionDateKey(referenceIso, referenceIso)
-  const merchants = new Map<string, Array<{ transaction: Transaction; date: string }>>()
-
-  for (const transaction of transactions) {
-    const date = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso)
-    const merchant = transaction.merchant
-      .toLocaleLowerCase()
-      .replaceAll(/[^a-z0-9]+/g, ' ')
-      .trim()
-    if (!merchant || !date || date > referenceDay || transaction.pending || !isSpend(transaction)) {
-      continue
-    }
-    const entries = merchants.get(merchant) ?? []
-    entries.push({ transaction, date })
-    merchants.set(merchant, entries)
-  }
-
-  return [...merchants.values()]
-    .flatMap((entries) => {
-      const amounts = entries
-        .map(({ transaction }) => Math.abs(transaction.amount))
-        .toSorted((left, right) => left - right)
-      const median = amounts[Math.floor(amounts.length / 2)] ?? 0
-      const amountTolerance = Math.max(1, median * 0.1)
-      const consistent = entries
-        .filter(
-          ({ transaction }) => Math.abs(Math.abs(transaction.amount) - median) <= amountTolerance,
-        )
-        .toSorted((left, right) => left.date.localeCompare(right.date))
-      const intervals = consistent
-        .slice(1)
-        .map(
-          ({ date }, index) =>
-            (Date.parse(`${date}T00:00:00Z`) - Date.parse(`${consistent[index].date}T00:00:00Z`)) /
-            dayMs,
-        )
-      const cadence = subscriptionCadences
-        .map((option) => ({
-          ...option,
-          matches: intervals.filter((days) => Math.abs(days - option.days) <= option.tolerance)
-            .length,
-        }))
-        .filter(({ matches, minimumIntervals }) => matches >= minimumIntervals)
-        .toSorted((left, right) => right.matches - left.matches)[0]
-      const latest = consistent.at(-1)
-      return cadence && latest
-        ? [
-            {
-              merchant: latest.transaction.merchant,
-              cadence: cadence.label,
-              occurrences: consistent.length,
-              latestAmount: Math.abs(latest.transaction.amount),
-              lastChargedOn: latest.date,
-            },
-          ]
-        : []
-    })
-    .toSorted(
-      (left, right) =>
-        right.lastChargedOn.localeCompare(left.lastChargedOn) ||
-        left.merchant.localeCompare(right.merchant),
-    )
-}
-
 export function getPlatinumBenefitActivity(transactions: Transaction[], referenceIso: string) {
   const referenceDay = transactionDateKey(referenceIso, referenceIso)
   return transactions
     .flatMap((transaction) => {
       const date = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso)
-      if (!date || date > referenceDay) return []
-      const text = `${transaction.merchant} ${transaction.description ?? ''} ${transaction.category}`
-      const benefit = platinumBenefits.find(
-        ({ id, matches }) => matches.test(text) && !(id === 'uber-cash' && /uber one/i.test(text)),
+      if (
+        !date ||
+        date > referenceDay ||
+        !Number.isFinite(transaction.amount) ||
+        transaction.amount === 0
       )
-      return benefit && date >= benefit.effectiveFrom
+        return []
+      const text = `${transaction.merchant} ${transaction.description ?? ''}`
+      const uberOneSubscription =
+        minorUnits(transaction.amount) === -999 &&
+        transaction.merchant.trim().toLocaleLowerCase() === 'uber'
+      const benefit = platinumBenefits.find(
+        ({ id, matches, creditMatches }) =>
+          (matches.test(text) ||
+            creditMatches.test(text) ||
+            (id === 'uber-one' && uberOneSubscription)) &&
+          !(id === 'uber-cash' && (/uber one/i.test(text) || uberOneSubscription)) &&
+          !(id === 'resy' && !/resy/i.test(text) && date < '2026-09-15'),
+      )
+      // ponytail: conservative descriptor matching; unknown issuer descriptions stay unverified,
+      // not inferred as credits from merchant names or a generic Credit category.
+      const identifiedCredit =
+        benefit?.id !== 'uber-cash' &&
+        transaction.benefitConfirmed !== false &&
+        (transaction.benefitConfirmed === true ||
+          (benefit?.creditMatches.test(text) && !/\brefund\b/i.test(text)))
+      const kind = identifiedCredit
+        ? transaction.amount > 0
+          ? ('credit' as const)
+          : ('reversal' as const)
+        : transaction.amount < 0
+          ? ('purchase' as const)
+          : ('unverified' as const)
+      return benefit &&
+        (!benefit.effectiveFrom || date >= benefit.effectiveFrom) &&
+        (!benefit.effectiveUntil || date <= benefit.effectiveUntil || identifiedCredit)
         ? [
             {
               ...transaction,
               date,
               benefitId: benefit.id,
               benefitName: benefit.name,
+              kind,
               matchEvidence: `Matched by local benefit rules ${benefitRulesVersion}`,
             },
           ]
@@ -714,83 +808,191 @@ export function getPlatinumBenefitActivity(transactions: Transaction[], referenc
     .toSorted((left, right) => right.date.localeCompare(left.date))
 }
 
-const sumCredits = (items: Transaction[]) =>
+const sumCredits = (items: Array<{ amount: number }>) =>
   items.reduce((sum, { amount }) => sum + Math.round(amount * 100), 0) / 100
+
+// ponytail: the card feed has no itemized Uber tender. Assume the monthly allowance was used
+// after any posted matching purchase; replace this only with provider-supplied tender evidence.
+const isPostedUberPurchase = ({
+  benefitId,
+  kind,
+  pending,
+}: {
+  benefitId: string
+  kind: string
+  pending: boolean
+}) => benefitId === 'uber-cash' && kind === 'purchase' && !pending
 
 export function buildPlatinumBenefitHistory(
   activity: ReturnType<typeof getPlatinumBenefitActivity>,
   year: number,
 ) {
   const current = activity.filter(({ date }) => Number(date.slice(0, 4)) === year)
-  const credits = current.filter(({ amount, pending }) => amount > 0 && !pending)
+  const credits = current.filter(
+    ({ kind, pending }) => (kind === 'credit' || kind === 'reversal') && !pending,
+  )
+  const uberPurchases = current.filter(isPostedUberPurchase)
+  const estimatedActivity = [...new Set(uberPurchases.map(({ date }) => date.slice(0, 7)))].map(
+    (month) => {
+      const purchases = uberPurchases.filter(({ date }) => date.startsWith(month))
+      return {
+        id: `estimated-uber-cash-${month}`,
+        merchant: 'Uber Cash',
+        date: purchases.at(-1)!.date,
+        amount: month.endsWith('-12') ? 35 : 15,
+        pending: false,
+        benefitId: 'uber-cash',
+        benefitName: 'Uber Cash',
+        kind: 'estimate' as const,
+        description: `Estimated from ${purchases.length} posted Uber ${purchases.length === 1 ? 'purchase' : 'purchases'}.`,
+      }
+    },
+  )
+  const historyActivity = [...credits, ...estimatedActivity]
 
   return {
     activity: current,
+    estimatedActivity,
     creditedAmount: sumCredits(credits),
-    creditCount: credits.length,
+    estimatedAmount: sumCredits(estimatedActivity),
+    creditCount: credits.filter(({ kind }) => kind === 'credit').length,
     months: Array.from({ length: 12 }, (_, month) => ({
       month: `${year}-${String(month + 1).padStart(2, '0')}`,
       creditedAmount: sumCredits(
         credits.filter(({ date }) => Number(date.slice(5, 7)) === month + 1),
       ),
     })),
-    benefits: platinumBenefitOptions
+    benefits: platinumBenefits
       .map((benefit) => {
-        const matches = credits.filter(({ benefitId }) => benefitId === benefit.id)
-        return { ...benefit, creditedAmount: sumCredits(matches), creditCount: matches.length }
+        const matches = historyActivity.filter(({ benefitId }) => benefitId === benefit.id)
+        return {
+          id: benefit.id,
+          name: benefit.name,
+          retiredOn: benefit.effectiveUntil
+            ? dateKey(addDays(new Date(`${benefit.effectiveUntil}T00:00:00Z`), 1))
+            : undefined,
+          creditedAmount: sumCredits(matches),
+          creditCount: matches.filter(({ kind }) => kind === 'credit').length,
+          estimatedCount: matches.filter(({ kind }) => kind === 'estimate').length,
+        }
       })
       .toSorted((left, right) => right.creditedAmount - left.creditedAmount),
   }
 }
 
-export function buildPlatinumBenefitTracker(transactions: Transaction[], referenceIso: string) {
+export function buildPlatinumBenefitTracker(
+  transactions: Transaction[],
+  referenceIso: string,
+  snapshotIso = referenceIso,
+) {
   const reference = calendarDate(referenceIso)
-  const referenceDay = reference
-  const matchedActivity = getPlatinumBenefitActivity(transactions, referenceIso)
+  const matchedActivity = getPlatinumBenefitActivity(transactions, snapshotIso)
 
   return platinumBenefits
-    .map((benefit) => {
-      const ruleReference =
-        benefit.id === 'hotel' ? calendarDate(referenceIso, 'America/Chicago') : reference
+    .filter(
+      ({ effectiveFrom, effectiveUntil }) =>
+        (!effectiveFrom || effectiveFrom <= dateKey(reference)) &&
+        (!effectiveUntil || effectiveUntil >= dateKey(reference)),
+    )
+    .map((definition) => {
+      const ruleReference = calendarDate(referenceIso, definition.timeZone)
+      const allowance = definition.allowanceChanges?.findLast(
+        ({ from }) => from <= dateKey(ruleReference),
+      )
+      const benefit = { ...definition, ...allowance }
       const window = benefitWindow(ruleReference, benefit.cadence)
+      // A changed cadence starts a new allowance, not a retroactive application of the new cap.
+      const firstDay =
+        allowance && allowance.cadence !== definition.cadence
+          ? allowance.from
+          : definition.effectiveFrom
+      if (firstDay && firstDay > dateKey(window.start))
+        window.start = new Date(`${firstDay}T00:00:00Z`)
       const matches = matchedActivity
-        .filter(({ benefitId }) => benefitId === benefit.id)
+        .filter(({ benefitId, date }) => benefitId === benefit.id && date <= dateKey(ruleReference))
         .map((transaction) => ({ transaction, date: transaction.date }))
       const activity = matches.filter(
-        ({ date }) => date >= dateKey(window.start) && date <= dateKey(window.end),
+        ({ date }) =>
+          benefit.cadence === 'renewal' ||
+          (date >= dateKey(window.start) && date <= dateKey(window.end)),
       )
       const lastCredit = matches
-        .filter(({ transaction }) => transaction.amount > 0 && !transaction.pending)
+        .filter(({ transaction }) => transaction.kind === 'credit' && !transaction.pending)
         .toSorted((left, right) => right.date.localeCompare(left.date))[0]
-      const cap = benefit.id === 'uber-cash' && reference.getUTCMonth() === 11 ? 35 : benefit.cap
-      const creditedAmount =
-        Math.round(
-          activity
-            .filter(({ transaction }) => transaction.amount > 0 && !transaction.pending)
-            .reduce((sum, { transaction }) => sum + transaction.amount, 0) * 100,
-        ) / 100
-      const remainingAmount = Math.max(0, Math.round((cap - creditedAmount) * 100) / 100)
-      const status: 'credited' | 'matched' | 'unused' = creditedAmount
-        ? 'credited'
-        : activity.length
-          ? 'matched'
-          : 'unused'
+      const cap =
+        benefit.id === 'uber-cash' && ruleReference.getUTCMonth() === 11 ? 35 : benefit.cap
+      const credits = activity
+        .map(({ transaction }) => transaction)
+        .filter(({ kind, pending }) => (kind === 'credit' || kind === 'reversal') && !pending)
+      const creditedAmount = sumCredits(credits)
+      const estimatedCreditAmount =
+        benefit.id === 'uber-cash' &&
+        activity.some(({ transaction }) => isPostedUberPurchase(transaction))
+          ? cap
+          : benefit.id === 'uber-cash'
+            ? 0
+            : null
+      const postingDelayDays = benefit.id === 'hotel' ? 90 : 56
+      const hasPriorWindow =
+        !definition.effectiveFrom || definition.effectiveFrom < dateKey(window.start)
+      // ponytail: the feed has no purchase-to-credit link. Near-reset credits and reversals
+      // cannot establish the benefit period; add attribution only with explicit provider evidence.
+      const periodUncertain = credits.some(
+        ({ kind, date }) =>
+          kind === 'reversal' ||
+          (hasPriorWindow && date <= dateKey(addDays(window.start, postingDelayDays - 1))),
+      )
+      const snapshotBeforeWindow =
+        dateKey(calendarDate(snapshotIso, definition.timeZone)) < dateKey(window.start)
+      const remainingAmount =
+        periodUncertain ||
+        snapshotBeforeWindow ||
+        ['uber-cash', 'walmart-plus'].includes(benefit.id) ||
+        benefit.cadence === 'renewal' ||
+        benefit.cadence === 'purchase'
+          ? null
+          : Math.min(cap, Math.max(0, Math.round((cap - creditedAmount) * 100) / 100))
+      const renewalCredit =
+        benefit.cadence === 'renewal' &&
+        lastCredit &&
+        !credits.some(({ kind, date }) => kind === 'reversal' && date >= lastCredit.date)
+          ? lastCredit
+          : undefined
+      const renewalDate = renewalCredit ? new Date(`${renewalCredit.date}T00:00:00Z`) : undefined
+      if (renewalDate) renewalDate.setUTCFullYear(renewalDate.getUTCFullYear() + 4)
+      const status =
+        benefit.id === 'uber-cash'
+          ? 'external'
+          : creditedAmount > 0
+            ? 'credited'
+            : activity.some(({ transaction }) => transaction.kind === 'purchase')
+              ? 'matched'
+              : 'unused'
 
       return {
         ...benefit,
         cap,
+        periodUncertain,
+        snapshotBeforeWindow,
+        postingDelayDays,
+        renewalCheck: renewalDate ? activityDateFormatter.format(renewalDate) : undefined,
         status,
         creditedAmount,
+        estimatedCreditAmount,
         remainingAmount,
+        activity: activity.map(({ transaction }) => transaction),
+        windowStart: dateKey(window.start),
+        windowEnd: dateKey(window.end),
+        windowLabel: `${shortDateFormatter.format(window.start)} – ${shortDateFormatter.format(window.end)}, ${window.end.getUTCFullYear()}`,
         daysRemaining: Math.max(
           0,
-          Math.ceil((window.end.getTime() - referenceDay.getTime()) / dayMs),
+          Math.ceil((window.end.getTime() - ruleReference.getTime()) / dayMs),
         ),
         lastCredit:
           lastCredit && !activity.includes(lastCredit)
             ? {
                 amount: lastCredit.transaction.amount,
-                date: shortDateFormatter.format(new Date(`${lastCredit.date}T00:00:00Z`)),
+                date: activityDateFormatter.format(new Date(`${lastCredit.date}T00:00:00Z`)),
               }
             : undefined,
         reset: shortDateFormatter.format(window.end),
@@ -798,8 +1000,9 @@ export function buildPlatinumBenefitTracker(transactions: Transaction[], referen
     })
     .toSorted(
       (left, right) =>
-        Number(left.remainingAmount === 0) - Number(right.remainingAmount === 0) ||
-        left.daysRemaining - right.daysRemaining ||
-        right.remainingAmount - left.remainingAmount,
+        Number(left.cadence === 'renewal' || left.cadence === 'purchase') -
+          Number(right.cadence === 'renewal' || right.cadence === 'purchase') ||
+        left.windowEnd.localeCompare(right.windowEnd) ||
+        left.name.localeCompare(right.name),
     )
 }

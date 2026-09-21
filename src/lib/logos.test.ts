@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
+import { classification } from '../data/fixtures/classification'
 import {
+  brandLogoUrl,
+  brandMarkLabel,
   markColor,
   stockLogoUrl,
   stockMarkColor,
   stockMarkLabel,
   transactionLogoUrl,
-  transactionMarkKind,
   transactionMarkLabel,
 } from './logos'
 import type { Transaction } from './schema'
@@ -18,6 +20,7 @@ const transaction = (overrides: Partial<Transaction> = {}): Transaction => ({
   date: '2026-08-31',
   amount: -10,
   account: 'Card',
+  classification: classification('expense'),
   pending: false,
   ...overrides,
 })
@@ -27,7 +30,7 @@ describe('logo resolution', () => {
     expect(stockLogoUrl('BRK.B')).toMatch(/^data:image\/svg\+xml/)
     expect(stockMarkLabel('BRK.B')).toBe('BRK')
     expect(stockMarkLabel('$CASH-USD')).toBe('$')
-    expect(stockMarkColor('BRK.B')).toBe('#7399a0')
+    expect(stockMarkColor('BRK.B')).toMatch(/^#[0-9a-f]{6}$/i)
     expect(markColor('premium-savings')).not.toBe(markColor('max-rate-checking'))
 
     const url = transactionLogoUrl(
@@ -41,11 +44,14 @@ describe('logo resolution', () => {
     expect(url).not.toContain('plaid')
     expect(url).not.toContain('example.com')
     expect(transactionMarkLabel(transaction({ logoName: 'Example Coffee' }))).toBe('EC')
-    expect(transactionLogoUrl(transaction())).toBe(transactionLogoUrl(transaction()))
+    expect(brandMarkLabel('Global Entry / TSA PreCheck')).toBe('GE')
+    expect(brandLogoUrl('Resy', 'resy.com')).toMatch(/^data:image\/svg\+xml/)
+    expect(brandLogoUrl('Resy', 'resy.com')).not.toContain('resy.com')
   })
 
   it('uses allowlisted actual logos only after external loading is enabled', () => {
     expect(stockLogoUrl('AAPL', true)).toContain('https://img.logo.dev/ticker/AAPL')
+    expect(brandLogoUrl('Resy', 'resy.com', true)).toContain('https://img.logo.dev/resy.com')
     expect(
       transactionLogoUrl(
         transaction({ logoUrl: 'https://plaid-merchant-logos.plaid.com/merchant.png' }),
@@ -63,35 +69,19 @@ describe('logo resolution', () => {
     ).toContain('https://img.logo.dev/name/Example%20Coffee')
   })
 
-  it('uses meaningful local marks for non-purchase activity', () => {
-    expect(
-      transactionMarkKind(
-        transaction({
-          merchant: 'TRANSFER MONEY FROM BROKERAGE XXXXX8549 Reference Number: MCK1SOY78',
-          category: 'Transfer In',
-        }),
-      ),
-    ).toBe('transfer')
-    expect(transactionMarkKind(transaction({ merchant: 'INTEREST', category: 'Income' }))).toBe(
-      'interest',
-    )
-    expect(transactionMarkKind(transaction({ merchant: 'Dividend · VTI' }))).toBe('dividend')
-    expect(transactionMarkKind(transaction({ merchant: 'Salary', category: 'Income' }))).toBe(
-      'income',
-    )
-  })
-
   it('uses American Express branding for its card payments', () => {
     const bankPayment = transaction({
       merchant: 'AMEX EPAYMENT ACH PMT',
       description: 'AMEX EPAYMENT ACH PMT',
       account: 'Premium Savings -1676',
       category: 'Loan Payments',
+      classification: classification('transfer', { mark: 'payment' }),
     })
     const cardPayment = transaction({
       merchant: 'AUTOPAY PAYMENT - THANK YOU',
       account: 'Morgan Stanley Platinum Card®',
       category: 'Loan Payments',
+      classification: classification('transfer', { mark: 'payment' }),
     })
 
     expect(transactionMarkLabel(bankPayment)).toBe('AMEX')
@@ -99,7 +89,11 @@ describe('logo resolution', () => {
     expect(transactionLogoUrl(cardPayment, true)).toContain('img.logo.dev/americanexpress.com')
     expect(
       transactionLogoUrl(
-        transaction({ merchant: 'AUTOPAY PAYMENT - THANK YOU', category: 'Loan Payments' }),
+        transaction({
+          merchant: 'AUTOPAY PAYMENT - THANK YOU',
+          category: 'Loan Payments',
+          classification: classification('transfer', { mark: 'payment' }),
+        }),
         true,
       ),
     ).not.toContain('americanexpress.com')

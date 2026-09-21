@@ -18,7 +18,7 @@ const COLLECTIONS: [&str; 10] = [
     "brokeragePerformance",
     "possibleDuplicateAccounts",
 ];
-const DATABASE_SCHEMA_VERSION: u32 = 1;
+const DATABASE_SCHEMA_VERSION: u32 = 3;
 
 pub struct Database {
     connection: Connection,
@@ -88,9 +88,13 @@ impl Database {
                    warnings_json TEXT NOT NULL CHECK (json_valid(warnings_json)),
                    error_code TEXT
                  ) STRICT;
+                 CREATE TABLE IF NOT EXISTS workspace (
+                   id INTEGER PRIMARY KEY CHECK (id = 1),
+                   value_json TEXT NOT NULL CHECK (json_valid(value_json))
+                 ) STRICT;
                  CREATE INDEX IF NOT EXISTS sync_runs_finished_at ON sync_runs(finished_at DESC);
-                 CREATE UNIQUE INDEX IF NOT EXISTS account_links_snaptrade_unique ON account_links(snaptrade_account_id);
-                 PRAGMA user_version = 1;
+                 DROP INDEX IF EXISTS account_links_snaptrade_unique;
+                 PRAGMA user_version = 3;
                  COMMIT;",
             )
             .map_err(db_error)?;
@@ -165,6 +169,16 @@ impl Database {
             provider_data: serde_json::from_str(&provider_data).map_err(json_error)?,
             annotations,
             account_links,
+            workspace: self
+                .connection
+                .query_row("SELECT value_json FROM workspace WHERE id = 1", [], |row| {
+                    row.get::<_, String>(0)
+                })
+                .optional()
+                .map_err(db_error)?
+                .map(|json| serde_json::from_str(&json).map_err(json_error))
+                .transpose()?
+                .unwrap_or_default(),
         }))
     }
 
@@ -206,9 +220,7 @@ impl Database {
             .map_err(db_error)?;
         for (id, annotation) in annotations {
             transaction
-                .execute(
-                    "INSERT INTO annotations(transaction_id, category, reviewed, benefit_confirmed) VALUES (?1, ?2, ?3, ?4)",
-                    params![id, annotation.category, annotation.reviewed, annotation.benefit_confirmed],
+                .prepare_cached("INSERT INTO annotations(transaction_id, category, reviewed, benefit_confirmed) VALUES (?1, ?2, ?3, ?4)").map_err(db_error)?.execute(params![id, annotation.category, annotation.reviewed, annotation.benefit_confirmed],
                 )
                 .map_err(db_error)?;
         }
@@ -225,9 +237,7 @@ impl Database {
             .map_err(db_error)?;
         for (plaid, snaptrade) in links {
             transaction
-                .execute(
-                    "INSERT INTO account_links(plaid_account_id, snaptrade_account_id) VALUES (?1, ?2)",
-                    params![plaid, snaptrade],
+                .prepare_cached("INSERT INTO account_links(plaid_account_id, snaptrade_account_id) VALUES (?1, ?2)").map_err(db_error)?.execute(params![plaid, snaptrade],
                 )
                 .map_err(db_error)?;
         }
@@ -261,6 +271,43 @@ impl Database {
             .backup(DatabaseName::Main, path, None)
             .map_err(db_error)?;
         secure_file(path)
+    }
+
+    pub fn replace_workspace(
+        &mut self,
+        workspace: &crate::workspace::Workspace,
+    ) -> Result<(), String> {
+        self.connection
+            .execute(
+                "INSERT OR REPLACE INTO workspace(id, value_json) VALUES (1, ?1)",
+                [serde_json::to_string(workspace).map_err(json_error)?],
+            )
+            .map_err(db_error)?;
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub fn replace_review(
+        &mut self,
+        id: &str,
+        annotation: Option<&Annotation>,
+        workspace: &crate::workspace::Workspace,
+    ) -> Result<(), String> {
+        let transaction = self.connection.transaction().map_err(db_error)?;
+        if let Some(annotation) = annotation {
+            transaction.execute("INSERT OR REPLACE INTO annotations(transaction_id, category, reviewed, benefit_confirmed) VALUES (?1, ?2, ?3, ?4)", params![id, annotation.category, annotation.reviewed, annotation.benefit_confirmed]).map_err(db_error)?;
+        } else {
+            transaction
+                .execute("DELETE FROM annotations WHERE transaction_id = ?1", [id])
+                .map_err(db_error)?;
+        }
+        transaction
+            .execute(
+                "INSERT OR REPLACE INTO workspace(id, value_json) VALUES (1, ?1)",
+                [serde_json::to_string(workspace).map_err(json_error)?],
+            )
+            .map_err(db_error)?;
+        transaction.commit().map_err(db_error)
     }
 
     pub fn sync_runs(&self) -> Result<Vec<SyncRun>, String> {
@@ -370,6 +417,12 @@ fn write_sync_run(
 fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<(), String> {
     transaction
         .execute(
+            "INSERT OR REPLACE INTO workspace(id, value_json) VALUES (1, ?1)",
+            [serde_json::to_string(&state.workspace).map_err(json_error)?],
+        )
+        .map_err(db_error)?;
+    transaction
+        .execute(
             "INSERT INTO state_meta(id, schema_version, revision, plaid_cache_json, provider_data_json)
              VALUES (1, ?1, ?2, ?3, ?4)
              ON CONFLICT(id) DO UPDATE SET schema_version=excluded.schema_version, revision=excluded.revision,
@@ -404,17 +457,17 @@ fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<()
                 .enumerate()
             {
                 let id = entity_id(key, entity, ordinal);
-                transaction.execute(
-                    "INSERT INTO snapshot_entity(section, ordinal, entity_id, value_json) VALUES (?1, ?2, ?3, ?4)",
-                    params![key, ordinal, id, serde_json::to_string(entity).map_err(json_error)?],
+                transaction.prepare_cached("INSERT INTO snapshot_entity(section, ordinal, entity_id, value_json) VALUES (?1, ?2, ?3, ?4)").map_err(db_error)?.execute(params![key, ordinal, id, serde_json::to_string(entity).map_err(json_error)?],
                 ).map_err(db_error)?;
             }
         } else {
             transaction
-                .execute(
-                    "INSERT INTO snapshot_scalar(key, value_json) VALUES (?1, ?2)",
-                    params![key, serde_json::to_string(value).map_err(json_error)?],
-                )
+                .prepare_cached("INSERT INTO snapshot_scalar(key, value_json) VALUES (?1, ?2)")
+                .map_err(db_error)?
+                .execute(params![
+                    key,
+                    serde_json::to_string(value).map_err(json_error)?
+                ])
                 .map_err(db_error)?;
         }
     }
@@ -422,9 +475,7 @@ fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<()
         .execute("DELETE FROM annotations", [])
         .map_err(db_error)?;
     for (id, annotation) in &state.annotations {
-        transaction.execute(
-            "INSERT INTO annotations(transaction_id, category, reviewed, benefit_confirmed) VALUES (?1, ?2, ?3, ?4)",
-            params![id, annotation.category, annotation.reviewed, annotation.benefit_confirmed],
+        transaction.prepare_cached("INSERT INTO annotations(transaction_id, category, reviewed, benefit_confirmed) VALUES (?1, ?2, ?3, ?4)").map_err(db_error)?.execute(params![id, annotation.category, annotation.reviewed, annotation.benefit_confirmed],
         ).map_err(db_error)?;
     }
     transaction
@@ -432,10 +483,11 @@ fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<()
         .map_err(db_error)?;
     for (plaid, snaptrade) in &state.account_links {
         transaction
-            .execute(
+            .prepare_cached(
                 "INSERT INTO account_links(plaid_account_id, snaptrade_account_id) VALUES (?1, ?2)",
-                params![plaid, snaptrade],
             )
+            .map_err(db_error)?
+            .execute(params![plaid, snaptrade])
             .map_err(db_error)?;
     }
     Ok(())
@@ -490,6 +542,43 @@ mod tests {
     use super::*;
 
     #[test]
+    fn version_one_migration_preserves_data_and_the_unique_constraint() {
+        let path =
+            std::env::temp_dir().join(format!("brief-migration-{}.sqlite3", uuid::Uuid::new_v4()));
+        let mut db = Database::open(&path).unwrap();
+        let mut state = crate::storage::empty_state().unwrap();
+        state
+            .account_links
+            .insert("plaid:one".into(), "snaptrade:one".into());
+        db.replace(&state).unwrap();
+        db.connection.execute_batch("CREATE UNIQUE INDEX account_links_snaptrade_unique ON account_links(snaptrade_account_id); PRAGMA user_version = 1;").unwrap();
+        drop(db);
+        let db = Database::open(&path).unwrap();
+        assert_eq!(
+            db.load().unwrap().unwrap().account_links,
+            state.account_links
+        );
+        assert!(db
+            .connection
+            .execute(
+                "INSERT INTO account_links VALUES ('plaid:two', 'snaptrade:one')",
+                []
+            )
+            .is_err());
+        let redundant: u32 = db
+            .connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE name = 'account_links_snaptrade_unique'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(redundant, 0);
+        drop(db);
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
     fn normalized_store_round_trips_and_rejects_duplicate_entity_ids() {
         let mut database = Database::open(Path::new(":memory:")).unwrap();
         let schema_version = database
@@ -515,6 +604,7 @@ mod tests {
             { "id": "same" }, { "id": "same" }
         ]);
         assert!(database.replace(&state).is_err());
+        assert_eq!(database.load().unwrap().unwrap().snapshot, loaded.snapshot);
 
         state.snapshot["transactions"] = serde_json::json!([]);
         state.account_links = BTreeMap::from([

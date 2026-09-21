@@ -32,7 +32,7 @@ export function useRefreshFinance() {
     async ({ silent = false }: { silent?: boolean } = {}) => {
       const startedAt = Date.now()
       const tasks = new Map<string, RefreshProgressTask>()
-      const description = (detail: string, finished = false) =>
+      const description = (detail?: string, finished = false) =>
         createElement(RefreshProgress, {
           detail,
           startedAt,
@@ -61,7 +61,7 @@ export function useRefreshFinance() {
             ) {
               tasks.set(payload.task.id, payload.task)
             }
-            toast.loading(payload.title, { id: toastId, description: description(payload.detail) })
+            toast.loading(payload.title, { id: toastId, description: description() })
           },
         ).catch(() => undefined)
       }
@@ -122,9 +122,11 @@ export function useAutoRefreshFinance(updatedAt: string | undefined, enabled: bo
     }
 
     refreshIfStale()
+    const timer = window.setInterval(refreshIfStale, 60_000)
     window.addEventListener('focus', refreshIfStale)
     document.addEventListener('visibilitychange', refreshIfStale)
     return () => {
+      window.clearInterval(timer)
       window.removeEventListener('focus', refreshIfStale)
       document.removeEventListener('visibilitychange', refreshIfStale)
     }

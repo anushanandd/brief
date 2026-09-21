@@ -33,3 +33,19 @@ describe('graphWindowShortcut', () => {
     expect(graphAccountShortcut(key({ ctrlKey: false }))).toBe('graph-next')
   })
 })
+
+it('uses bare arrows for tickers while retaining Command arrows for other charts', () => {
+  const event = {
+    key: 'ArrowRight',
+    metaKey: false,
+    ctrlKey: false,
+    altKey: false,
+    shiftKey: false,
+  }
+  expect(graphAccountShortcut(event, 'none')).toBe('graph-next')
+  expect(graphAccountShortcut({ ...event, key: 'ArrowLeft' }, 'none')).toBe('graph-previous')
+  expect(graphAccountShortcut({ ...event, metaKey: true }, 'none')).toBeUndefined()
+  expect(graphAccountShortcut({ ...event, shiftKey: true }, 'none')).toBeUndefined()
+  expect(graphAccountShortcut(event)).toBeUndefined()
+  expect(graphAccountShortcut({ ...event, metaKey: true })).toBe('graph-next')
+})

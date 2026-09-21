@@ -1,13 +1,16 @@
 import { useQueryClient, useMutation } from '@tanstack/react-query'
-import { Link, Outlet, useNavigate } from '@tanstack/react-router'
+import { Link, Outlet, useNavigate, useLocation } from '@tanstack/react-router'
 import { listen } from '@tauri-apps/api/event'
+import { FilePlus, History } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
 import { financeQueryKey } from '../hooks/use-finance'
 import { useAutoRefreshFinance, useRefreshFinance } from '../hooks/use-refresh-finance'
 import { isTauri, recoverFinanceState } from '../lib/api'
-import { navigation, primaryNavigation, settingsNavigation } from '../lib/navigation'
+import { shortcutInput, shortcutOverlayOpen } from '../lib/keyboard'
+import { navigation, settingsNavigation } from '../lib/navigation'
+import { adjacentPage, useOrderedNavigation } from '../lib/navigation-preferences'
 import { CommandMenu } from './command-menu'
 import { ShortcutHelp } from './shortcut-help'
 import { Button } from './ui'
@@ -30,6 +33,12 @@ export function navigationShortcutIndex(event: BareShortcutEvent, isEditing: boo
   return Number.isInteger(index) && index >= 0 && index < navigation.length ? index : undefined
 }
 
+export function sidebarShortcutDirection(event: BareShortcutEvent, isEditing: boolean) {
+  if (isEditing || !event.metaKey || event.altKey || event.ctrlKey || event.shiftKey)
+    return undefined
+  return event.key === 'ArrowUp' ? -1 : event.key === 'ArrowDown' ? 1 : undefined
+}
+
 export function listNavigationAction(event: BareShortcutEvent, isEditing: boolean) {
   if (isEditing || hasModifier(event)) return undefined
   if (event.key.toLowerCase() === 'j') return 'next' as const
@@ -43,6 +52,9 @@ export function shortcutHelpShortcut(event: BareShortcutEvent, isEditing: boolea
 }
 
 export function AppShell() {
+  const pages = useOrderedNavigation()
+  const pathname = useLocation({ select: (location) => location.pathname })
+  const settingsLast = pages.at(-1)?.to === '/settings'
   const SettingsIcon = settingsNavigation.icon
   const finance = useFinance()
   const navigate = useNavigate()
@@ -69,10 +81,15 @@ export function AppShell() {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target
-      const isEditing =
-        target instanceof HTMLElement &&
-        (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName))
-      if (commandOpen || shortcutHelpOpen) return
+      const isEditing = shortcutInput(target)
+      if (
+        event.defaultPrevented ||
+        event.isComposing ||
+        commandOpen ||
+        shortcutHelpOpen ||
+        shortcutOverlayOpen()
+      )
+        return
 
       if (shortcutHelpShortcut(event, isEditing)) {
         event.preventDefault()
@@ -83,7 +100,20 @@ export function AppShell() {
       const navigationIndex = navigationShortcutIndex(event, isEditing)
       if (navigationIndex != null) {
         event.preventDefault()
-        void navigate({ to: navigation[navigationIndex].to })
+        void navigate({ to: pages[navigationIndex].to })
+        return
+      }
+
+      const pageDirection = sidebarShortcutDirection(event, isEditing)
+      if (pageDirection) {
+        event.preventDefault()
+        void navigate({
+          to: adjacentPage(
+            pages.map(({ to }) => to),
+            pathname,
+            pageDirection,
+          ),
+        })
         return
       }
 
@@ -137,11 +167,6 @@ export function AppShell() {
         return
       }
 
-      if (event.key === 'ArrowLeft' || event.key === 'ArrowRight') {
-        event.preventDefault()
-        return
-      }
-
       if (event.key.toLowerCase() === 'k') {
         event.preventDefault()
         setCommandOpen(true)
@@ -157,7 +182,7 @@ export function AppShell() {
 
     let disposed = false
     let unlisten: (() => void) | undefined
-    window.addEventListener('keydown', onKeyDown, { capture: true })
+    window.addEventListener('keydown', onKeyDown)
     if (isTauri()) {
       void listen('open-settings', () => navigate({ to: '/settings' })).then((stop) => {
         if (disposed) stop()
@@ -168,9 +193,9 @@ export function AppShell() {
     return () => {
       disposed = true
       unlisten?.()
-      window.removeEventListener('keydown', onKeyDown, { capture: true })
+      window.removeEventListener('keydown', onKeyDown)
     }
-  }, [commandOpen, navigate, refresh, shortcutHelpOpen])
+  }, [commandOpen, navigate, refresh, shortcutHelpOpen, pages, pathname])
 
   return (
     <div className="app-frame">
@@ -181,7 +206,7 @@ export function AppShell() {
         </Link>
 
         <nav className="sidebar-nav">
-          {primaryNavigation.map(({ to, label, icon: Icon, shortcut }) => (
+          {(settingsLast ? pages.slice(0, -1) : pages).map(({ to, label, icon: Icon }) => (
             <Link
               key={to}
               to={to}
@@ -189,25 +214,25 @@ export function AppShell() {
               activeProps={{ className: 'nav-link active' }}
               activeOptions={{ exact: to === '/' }}
               aria-label={label}
-              title={`${label} (${shortcut})`}
             >
               <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
               <span>{label}</span>
             </Link>
           ))}
         </nav>
-        <nav className="sidebar-nav sidebar-nav-secondary" aria-label="Application settings">
-          <Link
-            to={settingsNavigation.to}
-            className="nav-link"
-            activeProps={{ className: 'nav-link active' }}
-            aria-label={settingsNavigation.label}
-            title={`${settingsNavigation.label} (${settingsNavigation.shortcut})`}
-          >
-            <SettingsIcon size={17} strokeWidth={1.8} aria-hidden="true" />
-            <span>{settingsNavigation.label}</span>
-          </Link>
-        </nav>
+        {settingsLast ? (
+          <nav className="sidebar-nav sidebar-nav-secondary" aria-label="Application settings">
+            <Link
+              to={settingsNavigation.to}
+              className="nav-link"
+              activeProps={{ className: 'nav-link active' }}
+              aria-label={settingsNavigation.label}
+            >
+              <SettingsIcon size={17} strokeWidth={1.8} aria-hidden="true" />
+              <span>{settingsNavigation.label}</span>
+            </Link>
+          </nav>
+        ) : null}
       </aside>
 
       <main className="main-content">
@@ -217,6 +242,7 @@ export function AppShell() {
             <p>{finance.data.recovery.message}</p>
             {finance.data.recovery.canRestore ? (
               <Button
+                icon={History}
                 variant="primary"
                 disabled={recovery.isPending}
                 onClick={() => recovery.mutate(true)}
@@ -225,6 +251,7 @@ export function AppShell() {
               </Button>
             ) : null}
             <Button
+              icon={FilePlus}
               variant="destructive"
               disabled={recovery.isPending}
               onClick={() => {
