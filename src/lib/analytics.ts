@@ -4,13 +4,13 @@ import { getPlatinumBenefitActivity, transactionDateKey } from './spending'
 import { incomeActivityGroup, moneyKind, transactionMarkKind } from './transaction-kind'
 
 export const analyticsCharts = [
+  { id: 'cash-flow', label: 'Cash flow' },
   { id: 'income', label: 'Income' },
   { id: 'amex-credits', label: 'Amex credits' },
   { id: 'dividends', label: 'Dividends' },
   { id: 'interest', label: 'Interest' },
   { id: 'fees', label: 'Fees' },
   { id: 'realized', label: 'Realized P/L' },
-  { id: 'cash-flow', label: 'Cash flow' },
 ] as const
 export type AnalyticsChart = (typeof analyticsCharts)[number]['id']
 export type AnalyticsRange = 'week' | 'month' | 'quarter' | 'year' | 'all'
@@ -168,9 +168,10 @@ export const localDateKey = (seconds: number) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
-export function analyticsWindow(data: FinanceSnapshot, search: AnalyticsSearch) {
+export function analyticsWindow(data: FinanceSnapshot, search: AnalyticsSearch, today?: string) {
   const saved = transactionDateKey(data.updatedAt, data.updatedAt)
-  const end = search.to && search.to < saved ? search.to : saved
+  const current = today ?? saved
+  const end = search.to && search.to < current ? search.to : current
   const dates = [
     ...data.transactions.map((t) => transactionDateKey(t.postedOn ?? t.date, data.updatedAt)),
     ...data.trades.map((t) => transactionDateKey(t.date, data.updatedAt)),
@@ -192,6 +193,7 @@ export function analyticsWindow(data: FinanceSnapshot, search: AnalyticsSearch) 
   return {
     start,
     end,
+    savedEnd: saved,
     previousStart,
     previousEnd,
     range,
@@ -206,7 +208,9 @@ export function analyticsReport(entries: AnalyticsEntry[], window: AnalyticsWind
   const total = analyticsTotal(selected)
   // An older imported record supports an imported-period comparison, not complete bank coverage.
   const comparable =
-    window.range !== 'all' && entries.some(({ date }) => date <= window.previousStart)
+    window.range !== 'all' &&
+    window.end <= window.savedEnd &&
+    entries.some(({ date }) => date <= window.previousStart)
   const previous = comparable
     ? analyticsTotal(
         entries.filter(({ date }) => date >= window.previousStart && date <= window.previousEnd),
@@ -251,7 +255,7 @@ export function analyticsReport(entries: AnalyticsEntry[], window: AnalyticsWind
     buckets.push({
       from: cursor,
       to,
-      value: analyticsTotal(items),
+      value: cursor > window.savedEnd ? null : analyticsTotal(items),
       count: items.length,
       entries: items.toSorted((a, b) => b.date.localeCompare(a.date)),
     })

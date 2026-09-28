@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
-import { ChevronRight } from 'lucide-react'
 
+import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
 import { buildActivities } from '../lib/activity'
 import { formatCurrency, formatShares, formatPercent, valueTone } from '../lib/format'
@@ -8,7 +8,8 @@ import { holdingDetail } from '../lib/holding-detail'
 import type { FinanceSnapshot } from '../lib/schema'
 import { AccountMark } from './account-mark'
 import { ActivityList } from './activity-list'
-import { Card, EmptyState, Metric, SectionHeading } from './ui'
+import { ChevronRight } from './icons'
+import { Card, EmptyState, Metric, ScrollCueCard, SectionHeading } from './ui'
 
 export function HoldingPortfolio({ data, ticker }: { data: FinanceSnapshot; ticker: string }) {
   const detail = holdingDetail(data.holdings, ticker)
@@ -71,6 +72,7 @@ export function HoldingAccounts({ data, ticker }: { data: FinanceSnapshot; ticke
 }
 
 export function HoldingActivity({ data, ticker }: { data: FinanceSnapshot; ticker: string }) {
+  const activityScrollRef = useViewportScroll(48)
   const activities = buildActivities(
     {
       transactions: [],
@@ -80,9 +82,10 @@ export function HoldingActivity({ data, ticker }: { data: FinanceSnapshot; ticke
     getAccountDisplayNames(),
   )
   return (
-    <Card className="holding-detail-card">
+    <ScrollCueCard className="holding-detail-card" scrollSelector=".holding-activity-scroll">
       <SectionHeading title="Activity" />
       <div
+        ref={activityScrollRef}
         className="holding-activity-scroll"
         role="region"
         aria-label={`${ticker} activity`}
@@ -94,6 +97,6 @@ export function HoldingActivity({ data, ticker }: { data: FinanceSnapshot; ticke
           emptyMessage={`No imported activity linked to ${ticker || 'this holding'}.`}
         />
       </div>
-    </Card>
+    </ScrollCueCard>
   )
 }

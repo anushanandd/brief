@@ -1,6 +1,8 @@
 use std::{env, path::PathBuf, process::Command};
 
 fn main() {
+    println!("cargo:rerun-if-changed=icons/icon.icns");
+    println!("cargo:rerun-if-changed=icons/128x128@2x.png");
     if env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("macos") {
         build_foundation_model_bridge();
     }

@@ -2,14 +2,7 @@ import { expect, it } from 'vitest'
 
 import { searchShortcutAction } from '../hooks/use-search-shortcuts'
 import { activityDateGroup, groupActivitiesByDate, type ActivityItem } from '../lib/activity'
-import { accountActivityPreviewLimit } from './account-overview'
-import { activityDateBounds, activityMatchesDateRange } from './activities'
-
-it('bounds account previews by their companion content', () => {
-  expect(accountActivityPreviewLimit(4, 0)).toBe(6)
-  expect(accountActivityPreviewLimit(2, 1)).toBe(4)
-  expect(accountActivityPreviewLimit(3, 3)).toBe(7)
-})
+import { activityClearShortcut, activityFilterShortcut } from './activities'
 
 const activity = (id: string, date: string): ActivityItem => ({
   id,
@@ -45,32 +38,6 @@ it('groups activity into relative date sections', () => {
   ])
 })
 
-it('applies inclusive activity date filters', () => {
-  const reference = '2026-09-18T12:00:00Z'
-  expect(
-    activityDateBounds(
-      [activity('latest', '2026-09-18'), activity('earliest', '2026-09-11')],
-      reference,
-    ),
-  ).toEqual(['2026-09-11', '2026-09-18'])
-  expect(
-    activityMatchesDateRange(
-      activity('included', '2026-09-12'),
-      reference,
-      '2026-09-12',
-      '2026-09-18',
-    ),
-  ).toBe(true)
-  expect(
-    activityMatchesDateRange(
-      activity('excluded', '2026-09-11'),
-      reference,
-      '2026-09-12',
-      '2026-09-18',
-    ),
-  ).toBe(false)
-})
-
 it('focuses, clears, and blurs ledger search without stealing input', () => {
   const slash = { key: '/', metaKey: false, ctrlKey: false, altKey: false }
   const escape = { ...slash, key: 'Escape' }
@@ -79,6 +46,27 @@ it('focuses, clears, and blurs ledger search without stealing input', () => {
   expect(searchShortcutAction({ ...slash, metaKey: true }, false, false, false)).toBeUndefined()
   expect(searchShortcutAction(escape, true, true, true)).toBe('clear')
   expect(searchShortcutAction(escape, true, true, false)).toBe('blur')
+})
+
+it('focuses filters with F and clears them with C outside editing and overlays', () => {
+  const event = {
+    key: 'f',
+    altKey: false,
+    ctrlKey: false,
+    metaKey: false,
+    shiftKey: false,
+    repeat: false,
+  }
+  expect(activityFilterShortcut(event, false)).toBe(true)
+  expect(activityFilterShortcut({ ...event, key: 'F' }, false)).toBe(true)
+  expect(activityFilterShortcut({ ...event, key: '1' }, false)).toBe(false)
+  expect(activityFilterShortcut({ ...event, metaKey: true }, false)).toBe(false)
+  expect(activityFilterShortcut(event, true)).toBe(false)
+  expect(activityClearShortcut({ ...event, key: 'c' }, false)).toBe(true)
+  expect(activityClearShortcut({ ...event, key: 'C' }, false)).toBe(true)
+  expect(activityClearShortcut({ ...event, key: 'c', repeat: true }, false)).toBe(false)
+  expect(activityClearShortcut({ ...event, key: 'c', metaKey: true }, false)).toBe(false)
+  expect(activityClearShortcut({ ...event, key: 'c' }, true)).toBe(false)
 })
 
 it('starts a named month group at each calendar boundary and distinguishes prior years', () => {

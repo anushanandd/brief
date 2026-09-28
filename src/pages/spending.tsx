@@ -1,30 +1,33 @@
-import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { useEffect, useMemo, useState } from 'react'
 
 import { ActivityList } from '../components/activity-list'
-import { DonutChart, SpendingLineChart, type DonutSegment } from '../components/charts'
+import { SpendingBarChart } from '../components/charts'
 import { PageError, PageLoading } from '../components/data-state'
+import { ExpectedActivity } from '../components/expected-activity'
 import { PlatinumBenefits } from '../components/platinum-benefits'
 import { SpendingAccountEmptyState } from '../components/spending-account-empty-state'
 import {
   AnimatedCurrency,
-  Button,
   Card,
-  Change,
-  EmptyState,
+  ChartChange,
+  ChartRangeSelect,
   Metric,
-  RangeSelector,
+  ScrollCueCard,
   SectionHeading,
 } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
+import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { getAccountDisplayNames } from '../lib/account-name-preferences'
 import { buildActivities } from '../lib/activity'
-import { formatCompactCurrency, formatCurrency, valueTone, formatActivityName } from '../lib/format'
+import { formatCurrency } from '../lib/format'
 import { pageShortcutBlocked } from '../lib/keyboard'
 import { getExternalLogosEnabled } from '../lib/logos'
 import {
+  buildPlatinumCreditSummary,
+  buildSpendingBars,
   buildSpendingView,
+  isSpendingTransaction,
   resolveSpendingAccount,
   spendingCategoryColor,
   spendingMonthDirectionForKey,
@@ -52,9 +55,11 @@ const spendingPeriodIndicators: Array<{
   accessibleLabel: string
   value: SpendingPeriod
 }> = [
-  { label: 'M', accessibleLabel: '1 month', value: 1 },
-  { label: 'Q', accessibleLabel: '3 months', value: 3 },
-  { label: 'Y', accessibleLabel: '1 year', value: 12 },
+  { label: 'S', accessibleLabel: 'Statement', value: 'statement' },
+  { label: 'W', accessibleLabel: 'Week', value: 'week' },
+  { label: 'M', accessibleLabel: 'Month', value: 1 },
+  { label: 'Q', accessibleLabel: 'Quarter', value: 3 },
+  { label: 'Y', accessibleLabel: 'Year', value: 12 },
   { label: 'A', accessibleLabel: 'All time', value: 0 },
 ]
 
@@ -73,32 +78,30 @@ function useActivityData() {
 
 export function SpendingPage() {
   const { query, data, names, account, transactions } = useActivityData()
-  const [period, setPeriod] = useState<SpendingPeriod>(1)
-  const [monthOffset, setMonthOffset] = useState(0)
+  const [period, setPeriod] = useState<SpendingPeriod>('statement')
+  const [periodOffset, setPeriodOffset] = useState(0)
+  const activityScrollRef = useViewportScroll()
   const referenceIso = data?.updatedAt ?? new Date().toISOString()
-  const periodReference = spendingPeriodReference(transactions, referenceIso, monthOffset)
-  const currentAccountBalance =
-    monthOffset === 0 && account?.value != null ? Math.abs(account.value) : undefined
+  const periodReference = spendingPeriodReference(transactions, referenceIso, periodOffset, period)
+  const accountBalance = account?.value != null ? Math.abs(account.value) : undefined
+  const currentAccountBalance = periodOffset === 0 ? accountBalance : undefined
   const view = useMemo(
     () =>
-      buildSpendingView(
-        transactions,
-        referenceIso,
-        period,
-        periodReference,
-        'statement',
-        currentAccountBalance,
-      ),
+      buildSpendingView(transactions, referenceIso, period, periodReference, currentAccountBalance),
     [currentAccountBalance, period, periodReference, referenceIso, transactions],
+  )
+  const currentStatement = useMemo(
+    () => buildSpendingView(transactions, referenceIso, 'statement', referenceIso, accountBalance),
+    [accountBalance, referenceIso, transactions],
   )
 
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (pageShortcutBlocked(event)) return
       const monthDirection = spendingMonthDirectionForKey(event)
-      if (monthDirection != null) {
+      if (monthDirection != null && period !== 0) {
         event.preventDefault()
-        setMonthOffset((current) =>
+        setPeriodOffset((current) =>
           monthDirection === -1 ? current - 1 : Math.min(0, current + 1),
         )
         return
@@ -108,31 +111,43 @@ export function SpendingPage() {
       if (nextPeriod == null) return
       event.preventDefault()
       setPeriod(nextPeriod)
+      setPeriodOffset(0)
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [])
+  }, [period])
   if (query.isLoading) return <PageLoading />
   if (query.isError || !data) return <PageError />
 
   const selectedPeriod =
-    view.periodBasis === 'statement'
+    view.periodBasis === 'statement' || period === 'week'
       ? statementEndFormatter.format(new Date(`${view.end}T00:00:00Z`))
       : monthYearFormatter.format(new Date(`${view.end}T00:00:00Z`))
-  const periodLabel = spendingPeriodLabel(period, monthOffset, selectedPeriod, view.periodBasis)
+  const periodLabel = spendingPeriodLabel(period, periodOffset, selectedPeriod, view.periodBasis)
   const headlineValue =
-    view.periodBasis === 'statement' && period === 1 ? view.statementBalance : view.total
+    view.periodBasis === 'statement' && period === 'statement' ? view.statementBalance : view.total
   const spendingChange = period ? view.total - view.previousTotal : null
-  const segments: DonutSegment[] = view.categories.map(({ name, value }) => ({
+  const bars = buildSpendingBars(view.transactions, referenceIso, view.start, view.end, period)
+  const segments = view.categories.map(({ name, value }) => ({
     name,
     value,
     color: spendingCategoryColor(name),
   }))
+  const chartCategories = bars.some(({ categories }) =>
+    categories.some(({ name }) => name === 'Credits'),
+  )
+    ? [...segments, { name: 'Credits', value: 0, color: 'var(--positive)' }]
+    : segments
+  const credits = buildPlatinumCreditSummary(transactions, referenceIso, view.start, view.end)
+  const largestAllTime = transactions
+    .filter(isSpendingTransaction)
+    .toSorted((left, right) => Math.abs(right.amount) - Math.abs(left.amount))[0]
   const activities = buildActivities(
     { ...data, transactions: view.transactions, trades: [] },
     names,
     getExternalLogosEnabled(),
   )
+  const activityById = new Map(activities.map((activity) => [activity.id, activity]))
 
   return (
     <div className="page spending-workspace-page">
@@ -142,13 +157,13 @@ export function SpendingPage() {
       ) : (
         <div className="spending-overview-grid">
           <Card className="workspace-brief-card spending-brief-card spending-hero-card">
-            <div className="spending-primary-overview">
-              <section
-                className="spending-total-panel"
-                aria-keyshortcuts="M Q Y A ArrowLeft ArrowRight Meta+ArrowLeft Meta+ArrowRight"
-              >
-                <header className="workspace-brief-heading">
-                  <div>
+            <section
+              className="spending-total-panel"
+              aria-keyshortcuts="S W M Q Y A ArrowLeft ArrowRight"
+            >
+              <header className="workspace-brief-heading">
+                <div>
+                  <div className="spending-balance-stack">
                     <h2
                       className="balance-label"
                       aria-description={
@@ -160,108 +175,107 @@ export function SpendingPage() {
                       {periodLabel}
                     </h2>
                     <AnimatedCurrency className="hero-number" value={headlineValue} />
-                    <div className="chart-summary-row">
-                      {spendingChange != null ? (
-                        <div className="hero-change">
-                          <span className={valueTone(-spendingChange)}>
-                            {formatCurrency(spendingChange)} vs prior period
-                          </span>
-                          <Change value={view.percentChange} favorable="decrease" />
-                        </div>
-                      ) : null}
-                      <div className="spending-period-indicators">
-                        <Button
-                          size="icon-compact"
-                          variant="ghost"
-                          className="icon-only-subtle"
-                          aria-label="Previous spending period"
-                          onClick={() => setMonthOffset((current) => current - 1)}
-                        >
-                          <ChevronLeft size={16} aria-hidden="true" />
-                        </Button>
-                        <RangeSelector
-                          label={`Spending range. Active period: ${periodLabel}`}
-                          options={spendingPeriodIndicators.map((indicator) => ({
-                            ...indicator,
-                            accessibleLabel:
-                              view.periodBasis === 'statement' && indicator.value
-                                ? `${indicator.value} ${indicator.value === 1 ? 'statement' : 'statements'}`
-                                : indicator.accessibleLabel,
-                          }))}
-                          value={period}
-                          onValueChange={setPeriod}
-                        />
-                        <Button
-                          size="icon-compact"
-                          variant="ghost"
-                          className="icon-only-subtle"
-                          aria-label="Next spending period"
-                          disabled={monthOffset === 0}
-                          onClick={() => setMonthOffset((current) => Math.min(0, current + 1))}
-                        >
-                          <ChevronRight size={16} aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </div>
                   </div>
-                </header>
-                <div className="spending-chart-region">
-                  <SpendingLineChart
-                    data={view.trend.map(({ date, current }) => ({ date, value: current }))}
-                    activityMarkers={view.activityMarkers}
-                    startingValue={view.startingBalance}
-                    label={periodLabel}
-                  />
+                  <div className="chart-summary-row">
+                    {spendingChange != null ? (
+                      <ChartChange
+                        amount={spendingChange}
+                        percent={view.percentChange}
+                        favorable="decrease"
+                        ariaLabel="Change versus prior period"
+                      />
+                    ) : null}
+                  </div>
                 </div>
-              </section>
-
-              <div className="spending-category-panel">
-                <div
-                  className="workspace-metric-grid spending-category-metrics"
-                  aria-label="Spending metrics"
-                >
-                  <Metric
-                    label="Pending"
-                    value={formatCurrency(view.pendingTotal)}
-                    detail={
-                      view.periodBasis === 'statement' && period === 1
-                        ? 'Included in the statement balance'
-                        : 'Included in the current total'
-                    }
-                  />
-                  <Metric
-                    label="Largest expense"
-                    value={formatCurrency(view.biggest ? Math.abs(view.biggest.amount) : null)}
-                    detail={
-                      view.biggest ? formatActivityName(view.biggest.merchant) : 'No spending yet'
-                    }
-                  />
-                </div>
-                <div className="spending-category-chart">
-                  <DonutChart
-                    segments={segments}
-                    label="Spending by category"
-                    centerValue={formatCompactCurrency(view.total)}
-                    centerLabel="spent"
-                  />
-                  {!segments.length ? (
-                    <EmptyState>No category spending in this period.</EmptyState>
-                  ) : null}
-                </div>
+                <ChartRangeSelect
+                  label={`Spending range. Active period: ${periodLabel}`}
+                  options={spendingPeriodIndicators}
+                  value={period}
+                  onValueChange={(value) => {
+                    setPeriod(value)
+                    setPeriodOffset(0)
+                  }}
+                />
+              </header>
+              <div className="spending-chart-region">
+                <SpendingBarChart
+                  data={bars}
+                  label={periodLabel}
+                  categories={chartCategories}
+                  activities={activityById}
+                />
               </div>
+              {chartCategories.length ? (
+                <ul
+                  className="analytics-legend bar-chart-legend"
+                  aria-label="Chart legend"
+                  tabIndex={0}
+                >
+                  {chartCategories.map(({ name, color }) => (
+                    <li key={name}>
+                      <i
+                        className="analytics-category-dot"
+                        style={{ background: color }}
+                        aria-hidden="true"
+                      />
+                      {name}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </section>
+          </Card>
+
+          <Card className="spending-category-card spending-category-panel">
+            <SectionHeading title="Metrics" />
+            <div
+              className="account-summary-metrics spending-category-metrics"
+              aria-label="Spending metrics"
+            >
+              <Metric
+                label="Statement estimate"
+                value={formatCurrency(currentStatement.estimatedClosingTotal)}
+              />
+              <Metric label="Daily average" value={formatCurrency(view.dailyAverage)} />
+              <Metric label="Credits earned" value={formatCurrency(credits.earned)} />
+              <Metric label="Est. credits missed" value={formatCurrency(credits.missed)} />
+              <Metric
+                label="Largest"
+                value={formatCurrency(view.biggest ? Math.abs(view.biggest.amount) : null)}
+              />
+              <Metric
+                label="All-time largest"
+                value={formatCurrency(largestAllTime ? Math.abs(largestAllTime.amount) : null)}
+              />
             </div>
           </Card>
 
-          <PlatinumBenefits preview transactions={transactions} snapshotIso={data.updatedAt} />
+          <ScrollCueCard
+            className="spending-transactions-preview"
+            scrollSelector=".spending-activity-scroll"
+          >
+            <SectionHeading title="Activity" />
+            <div
+              ref={activityScrollRef}
+              className="spending-activity-scroll"
+              role="region"
+              aria-label="Spending activity"
+              tabIndex={0}
+              data-keyboard-region
+            >
+              <ActivityList
+                activities={activities}
+                referenceIso={data.updatedAt}
+                emptyMessage="No activity in this range."
+                compact
+              />
+            </div>
+          </ScrollCueCard>
 
-          <Card className="spending-transactions-preview">
-            <SectionHeading title="Recent activity" />
-            <ActivityList
-              activities={activities.slice(0, 10)}
-              referenceIso={data.updatedAt}
-              compact
-            />
-          </Card>
+          <div className="spending-companion">
+            <PlatinumBenefits preview transactions={transactions} snapshotIso={data.updatedAt} />
+            <ExpectedActivity data={data} account={account.id} />
+          </div>
         </div>
       )}
     </div>

@@ -2,9 +2,16 @@ import { isSpendingTransaction } from './transaction-kind'
 export { isSpendingTransaction } from './transaction-kind'
 import type { Account, Transaction } from './schema'
 
-export type SpendingPeriod = 0 | 1 | 3 | 12
+export type SpendingPeriod = 'statement' | 'week' | 0 | 1 | 3 | 12
 export type SpendingPeriodBasis = 'calendar' | 'statement'
-const spendingPeriodKeys: Record<string, SpendingPeriod> = { m: 1, q: 3, y: 12, a: 0 }
+const spendingPeriodKeys: Record<string, SpendingPeriod> = {
+  s: 'statement',
+  w: 'week',
+  m: 1,
+  q: 3,
+  y: 12,
+  a: 0,
+}
 type BenefitCadence = 'monthly' | 'quarterly' | 'semiannual' | 'annual' | 'renewal' | 'purchase'
 const benefitRulesVersion = '2026-09-20'
 const amexBenefitUrl = (path: string) => `https://global.americanexpress.com/card-benefits/${path}`
@@ -447,6 +454,7 @@ export function spendingMonthDirectionForKey(
   if (
     event.altKey ||
     event.ctrlKey ||
+    event.metaKey ||
     event.shiftKey ||
     (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
   ) {
@@ -457,19 +465,17 @@ export function spendingMonthDirectionForKey(
 
 export function spendingPeriodLabel(
   period: SpendingPeriod,
-  monthOffset: number,
+  periodOffset: number,
   selectedPeriod: string,
   basis: SpendingPeriodBasis = 'calendar',
 ) {
-  if (basis === 'statement' && period !== 0) {
-    if (monthOffset === 0) {
-      if (period === 1) return 'Current statement'
-      return `${period} statements`
-    }
-    if (period === 1) return `Statement ending ${selectedPeriod}`
-    return `${period} statements through ${selectedPeriod}`
+  if (period === 'statement') {
+    if (basis === 'statement')
+      return periodOffset === 0 ? 'Current statement' : `Statement ending ${selectedPeriod}`
+    return periodOffset === 0 ? 'This month' : selectedPeriod
   }
-  if (monthOffset === 0) {
+  if (period === 'week') return periodOffset === 0 ? 'This week' : `Week ending ${selectedPeriod}`
+  if (periodOffset === 0) {
     if (period === 1) return 'This month'
     if (period === 3) return 'This quarter'
     if (period === 12) return 'This year'
@@ -488,6 +494,12 @@ export function spendingMonthReference(referenceIso: string, monthOffset: number
     new Date(Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth() + monthOffset + 1, 0)),
   )
   return `${date}T12:00:00Z`
+}
+
+function calendarPeriodStart(date: Date, period: 1 | 3 | 12) {
+  const month =
+    period === 12 ? 0 : period === 3 ? Math.floor(date.getUTCMonth() / 3) * 3 : date.getUTCMonth()
+  return new Date(Date.UTC(date.getUTCFullYear(), month, 1))
 }
 
 function recognizedAmexAutopays(transactions: Transaction[], referenceIso: string) {
@@ -564,25 +576,35 @@ function autopayStatementBoundaries(transactions: Transaction[], referenceIso: s
 export function spendingPeriodReference(
   transactions: Transaction[],
   referenceIso: string,
-  monthOffset: number,
+  periodOffset: number,
+  period: SpendingPeriod,
 ) {
-  if (monthOffset === 0) return referenceIso
+  if (periodOffset === 0 || period === 0) return referenceIso
+  if (period === 'week')
+    return `${dateKey(addDays(calendarDate(referenceIso), periodOffset * 7))}T12:00:00Z`
+  if (typeof period === 'number') {
+    const start = calendarPeriodStart(calendarDate(referenceIso), period)
+    const end = new Date(
+      Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + (periodOffset + 1) * period, 0),
+    )
+    return `${dateKey(end)}T12:00:00Z`
+  }
   const referenceDay = transactionDateKey(referenceIso, referenceIso)
   const boundaries = autopayStatementBoundaries(transactions, referenceIso).filter(
     (date) => date <= referenceDay,
   )
-  if (!boundaries.length) return spendingMonthReference(referenceIso, monthOffset)
+  if (!boundaries.length) return spendingMonthReference(referenceIso, periodOffset)
   const endsOnBoundary = boundaries.at(-1) === referenceDay
   const latestCompletedIndex = boundaries.length - 1 - (endsOnBoundary ? 1 : 0)
-  const selected = boundaries[latestCompletedIndex + monthOffset + 1]
-  return selected ? `${selected}T12:00:00Z` : spendingMonthReference(referenceIso, monthOffset)
+  const selected = boundaries[latestCompletedIndex + periodOffset + 1]
+  return selected ? `${selected}T12:00:00Z` : spendingMonthReference(referenceIso, periodOffset)
 }
 
-function statementPeriodStart(boundaries: string[], end: Date, period: Exclude<SpendingPeriod, 0>) {
+function statementPeriodStart(boundaries: string[], end: Date) {
   const endDay = dateKey(end)
   const priorBoundaries = boundaries.filter((date) => date <= endDay)
   const endsOnBoundary = priorBoundaries.at(-1) === endDay
-  const index = priorBoundaries.length - period - (endsOnBoundary ? 1 : 0)
+  const index = priorBoundaries.length - 1 - (endsOnBoundary ? 1 : 0)
   const boundary = priorBoundaries[index]
   return boundary ? addDays(new Date(`${boundary}T00:00:00Z`), 1) : null
 }
@@ -592,7 +614,6 @@ export function buildSpendingView(
   referenceIso: string,
   period: SpendingPeriod,
   periodReferenceIso = referenceIso,
-  preferredBasis: SpendingPeriodBasis = 'calendar',
   currentAccountBalance?: number,
 ) {
   const end = calendarDate(periodReferenceIso)
@@ -601,28 +622,41 @@ export function buildSpendingView(
     return date ? [{ transaction, date }] : []
   })
   const statementBoundaries =
-    preferredBasis === 'statement' ? autopayStatementBoundaries(transactions, referenceIso) : []
-  const statementStart =
-    period && statementBoundaries.length
-      ? statementPeriodStart(statementBoundaries, end, period)
-      : null
+    period === 'statement' ? autopayStatementBoundaries(transactions, referenceIso) : []
+  const statementStart = statementBoundaries.length
+    ? statementPeriodStart(statementBoundaries, end)
+    : null
   const basis: SpendingPeriodBasis = statementStart ? 'statement' : 'calendar'
-  const start = period
-    ? (statementStart ?? monthStart(end, 1 - period))
-    : new Date(
-        `${
-          parsed
-            .map(({ date }) => date)
-            .filter((date) => date <= dateKey(end))
-            .toSorted()[0] ?? dateKey(end)
-        }T00:00:00Z`,
-      )
+  const calendarPeriod = typeof period === 'number' && period !== 0 ? period : null
+  const start =
+    period === 'week'
+      ? addDays(end, -6)
+      : calendarPeriod
+        ? calendarPeriodStart(end, calendarPeriod)
+        : statementStart
+          ? statementStart
+          : period === 'statement'
+            ? monthStart(end)
+            : new Date(
+                `${
+                  parsed
+                    .map(({ date }) => date)
+                    .filter((date) => date <= dateKey(end))
+                    .toSorted()[0] ?? dateKey(end)
+                }T00:00:00Z`,
+              )
   const previousWindowEnd = addDays(start, -1)
-  const previousStart = period
-    ? ((basis === 'statement'
-        ? statementPeriodStart(statementBoundaries, previousWindowEnd, period)
-        : null) ?? monthStart(start, -period))
-    : start
+  const previousStart =
+    period === 'week'
+      ? addDays(start, -7)
+      : calendarPeriod
+        ? monthStart(start, -calendarPeriod)
+        : period === 'statement'
+          ? basis === 'statement'
+            ? (statementPeriodStart(statementBoundaries, previousWindowEnd) ??
+              monthStart(start, -1))
+            : monthStart(start, -1)
+          : start
   const elapsedDays = Math.floor((end.getTime() - start.getTime()) / dayMs) + 1
   const previousEnd = period
     ? new Date(Math.min(addDays(previousStart, elapsedDays - 1).getTime(), start.getTime() - dayMs))
@@ -673,49 +707,17 @@ export function buildSpendingView(
         ? (inferredOpeningBalance ?? 0)
         : currentAccountBalance - currentNetActivity
       : 0
-  const currentActivityByDate = new Map<string, typeof parsed>()
-  for (const entry of currentEntries) {
-    if (!activityAmount(entry.transaction)) continue
-    const entries = currentActivityByDate.get(entry.date) ?? []
-    entries.push(entry)
-    currentActivityByDate.set(entry.date, entries)
-  }
+  const currentByDate = activityByDate(currentEntries)
   const previousByDate = activityByDate(
     parsed.filter(({ date }) => within(date, previousStart, previousEnd)),
   )
   let currentCumulative = minorUnits(startingBalance)
   let previousCumulative = 0
-  const activityMarkers: Array<{
-    id: string
-    date: string
-    sequence: number
-    count: number
-    value: number
-    direction: 'expense' | 'credit'
-    merchant: string
-    amount: number
-  }> = []
   const trend = Array.from({ length: elapsedDays }, (_, index) => {
     const currentDate = addDays(start, index)
     const currentDateKey = dateKey(currentDate)
     const priorDate = addDays(previousStart, index)
-    const dailyActivity = (currentActivityByDate.get(currentDateKey) ?? []).toSorted(
-      (left, right) => left.transaction.id.localeCompare(right.transaction.id),
-    )
-    for (const [sequence, entry] of dailyActivity.entries()) {
-      const amount = activityAmount(entry.transaction)
-      currentCumulative += amount
-      activityMarkers.push({
-        id: entry.transaction.id,
-        date: currentDateKey,
-        sequence,
-        count: dailyActivity.length,
-        value: currentCumulative / 100,
-        direction: amount > 0 ? 'expense' : 'credit',
-        merchant: entry.transaction.merchant,
-        amount: Math.abs(entry.transaction.amount),
-      })
-    }
+    currentCumulative += currentByDate.get(currentDateKey) ?? 0
     previousCumulative += previousByDate.get(dateKey(priorDate)) ?? 0
     return {
       date: currentDateKey,
@@ -723,6 +725,22 @@ export function buildSpendingView(
       previous: previousCumulative / 100,
     }
   })
+  const previousElapsedDays =
+    Math.floor((previousEnd.getTime() - previousStart.getTime()) / dayMs) + 1
+  const dailyAverage = elapsedDays ? total / elapsedDays : 0
+  const previousDailyAverage = previousElapsedDays ? previousTotal / previousElapsedDays : 0
+  const dailyAveragePercentChange = previousDailyAverage
+    ? ((dailyAverage - previousDailyAverage) / previousDailyAverage) * 100
+    : null
+  const closingBoundary =
+    basis === 'statement' ? statementBoundaries.find((date) => date >= dateKey(end)) : undefined
+  const daysUntilClose = closingBoundary
+    ? Math.max(0, (Date.parse(closingBoundary) - end.getTime()) / dayMs)
+    : null
+  const estimatedClosingTotal =
+    daysUntilClose == null
+      ? null
+      : Math.round((currentCumulative / 100 + dailyAverage * daysUntilClose) * 100) / 100
   return {
     start: dateKey(start),
     end: dateKey(end),
@@ -734,13 +752,89 @@ export function buildSpendingView(
     previousTotal,
     pendingTotal,
     percentChange: previousTotal ? ((total - previousTotal) / previousTotal) * 100 : null,
-    dailyAverage: elapsedDays ? total / elapsedDays : 0,
+    dailyAverage,
+    previousDailyAverage,
+    dailyAveragePercentChange,
+    estimatedClosingTotal,
     biggest: expenses.toSorted((left, right) => Math.abs(right.amount) - Math.abs(left.amount))[0],
     categories: rank(current, previous, ({ category }) => category, total),
     merchants: rank(current, previous, ({ merchant }) => merchant, total),
     trend,
-    activityMarkers,
   }
+}
+
+export function buildSpendingBars(
+  transactions: Transaction[],
+  referenceIso: string,
+  start: string,
+  end: string,
+  period: SpendingPeriod,
+) {
+  const totals = new Map<
+    string,
+    Map<string, { value: number; activities: Array<{ id: string; value: number }> }>
+  >()
+  transactions
+    .filter((transaction) => isSpend(transaction) || transaction.classification.credit)
+    .forEach((transaction) => {
+      const date = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso)
+      const name = transaction.classification.credit ? 'Credits' : transaction.category
+      const categories = totals.get(date) ?? new Map()
+      const category = categories.get(name) ?? { value: 0, activities: [] }
+      const value = minorUnits(Math.abs(transaction.amount)) * (name === 'Credits' ? -1 : 1)
+      category.value += value
+      category.activities.push({
+        id: `spending:${transaction.id}`,
+        value: Math.abs(transaction.amount),
+      })
+      categories.set(name, category)
+      totals.set(date, categories)
+    })
+  const startDate = new Date(`${start}T00:00:00Z`)
+  const days = Math.floor((Date.parse(`${end}T00:00:00Z`) - startDate.getTime()) / dayMs) + 1
+  const bars: Array<{
+    from: string
+    to: string
+    value: number
+    categories: Array<{
+      name: string
+      value: number
+      activities: Array<{ id: string; value: number }>
+    }>
+  }> = []
+  Array.from({ length: Math.max(1, days) }, (_, index) =>
+    dateKey(addDays(startDate, index)),
+  ).forEach((date, index) => {
+    const categories = [...(totals.get(date) ?? new Map()).entries()]
+      .map(([name, category]) => ({
+        name,
+        value: category.value / 100,
+        activities: category.activities,
+      }))
+      .toSorted((left, right) => left.name.localeCompare(right.name))
+    const value = categories.reduce((sum, category) => sum + category.value, 0)
+    const bar = bars.at(-1)
+    const sameBucket =
+      period === 3
+        ? index % 7 !== 0
+        : (period === 12 || period === 0) && bar?.from.slice(0, 7) === date.slice(0, 7)
+    if (bar && sameBucket) {
+      bar.to = date
+      bar.value = (Math.round(bar.value * 100) + Math.round(value * 100)) / 100
+      categories.forEach((category) => {
+        const existing = bar.categories.find(({ name }) => name === category.name)
+        if (existing) {
+          existing.value =
+            (Math.round(existing.value * 100) + Math.round(category.value * 100)) / 100
+          existing.activities.push(...category.activities)
+        } else bar.categories.push(category)
+      })
+      bar.categories.sort((left, right) => left.name.localeCompare(right.name))
+    } else {
+      bars.push({ from: date, to: date, value, categories })
+    }
+  })
+  return bars
 }
 
 export function sortTransactionsByRecency(transactions: Transaction[], referenceIso: string) {
@@ -806,6 +900,16 @@ export function getPlatinumBenefitActivity(transactions: Transaction[], referenc
         : []
     })
     .toSorted((left, right) => right.date.localeCompare(left.date))
+}
+
+export function platinumBenefitCreditIdentity(transaction: Transaction) {
+  const activity = getPlatinumBenefitActivity(
+    [transaction],
+    transaction.postedOn ?? transaction.date,
+  )[0]
+  return activity?.kind === 'credit'
+    ? { id: activity.benefitId, name: activity.benefitName }
+    : undefined
 }
 
 const sumCredits = (items: Array<{ amount: number }>) =>
@@ -1005,4 +1109,45 @@ export function buildPlatinumBenefitTracker(
         left.windowEnd.localeCompare(right.windowEnd) ||
         left.name.localeCompare(right.name),
     )
+}
+
+export function buildPlatinumCreditSummary(
+  transactions: Transaction[],
+  referenceIso: string,
+  start: string,
+  end: string,
+) {
+  const earned = sumCredits(
+    getPlatinumBenefitActivity(transactions, referenceIso).filter(
+      ({ date, kind, pending }) =>
+        date >= start && date <= end && !pending && (kind === 'credit' || kind === 'reversal'),
+    ),
+  )
+  const referenceDay = transactionDateKey(referenceIso, referenceIso)
+  let missed = 0
+  for (
+    let month = monthStart(new Date(`${start}T00:00:00Z`));
+    month <= new Date(`${end}T00:00:00Z`);
+    month = monthStart(month, 1)
+  ) {
+    const windowEnd = dateKey(
+      new Date(Date.UTC(month.getUTCFullYear(), month.getUTCMonth() + 1, 0)),
+    )
+    if (windowEnd < start || windowEnd > end || windowEnd >= referenceDay) continue
+    for (const benefit of buildPlatinumBenefitTracker(
+      transactions,
+      `${windowEnd}T12:00:00Z`,
+      referenceIso,
+    ).filter(
+      ({ cadence, windowEnd: benefitEnd }) =>
+        cadence !== 'renewal' && cadence !== 'purchase' && benefitEnd === windowEnd,
+    )) {
+      const unused =
+        benefit.estimatedCreditAmount == null
+          ? benefit.remainingAmount
+          : Math.max(0, benefit.cap - benefit.estimatedCreditAmount)
+      if (unused != null) missed += minorUnits(unused)
+    }
+  }
+  return { earned, missed: missed / 100 }
 }

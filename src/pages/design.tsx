@@ -1,8 +1,16 @@
-import { Ban, Check, Ellipsis, Save } from 'lucide-react'
+import { Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
 import { ActivityList } from '../components/activity-list'
-import { Button, Card, EmptyState, Metric, RangeSelector, SectionHeading } from '../components/ui'
+import { Ban, Check, Ellipsis, Save } from '../components/icons'
+import {
+  Button,
+  Card,
+  ChartRangeSelect,
+  EmptyState,
+  Metric,
+  SectionHeading,
+} from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 
 const foundations = [
@@ -65,6 +73,15 @@ export function DesignPage() {
         showRefresh={false}
       />
       <div className="design-sections">
+        <Card>
+          <SectionHeading title="Midday study" />
+          <div className="midday-study-links">
+            <Link to="/settings/design/midday/home">Home prototype</Link>
+            <Link to="/settings/design/midday/activity" search={{}}>
+              Activity prototype
+            </Link>
+          </div>
+        </Card>
         <Card>
           <SectionHeading title="Foundations" />
           <div className="design-swatches">
@@ -215,7 +232,7 @@ export function DesignPage() {
         <Card>
           <SectionHeading title="Interaction" />
           <div className="design-controls">
-            <RangeSelector
+            <ChartRangeSelect
               label="Sample date range"
               options={['W', 'M', 'Q', 'A'].map((value) => ({
                 value,

@@ -1,11 +1,14 @@
 import { Liveline, type LivelinePoint, type LivelineSeries } from 'liveline'
 import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
 
+import type { ActivityItem } from '../lib/activity'
 import { type ChartEventGroup, chartEventGroupLabel } from '../lib/chart-events'
-import { formatCompactCurrency, formatCurrency, formatActivityName } from '../lib/format'
+import { formatActivityName, formatCompactCurrency, formatCurrency } from '../lib/format'
 import { graphWindows } from '../lib/graph-preferences'
 import { chartPointAtOrAfter, chartPointsFromStartDate } from '../lib/live-chart'
-import { RangeSelector } from './ui'
+import { ActivityMark } from './activity-list'
+import { ChartRangeSelect } from './ui'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 const DAY_SECONDS = 24 * 60 * 60
 const WEEK_SECONDS = 7 * DAY_SECONDS
@@ -28,6 +31,8 @@ const monthFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   timeZone: 'UTC',
 })
+const spendingCategoryAmount = (name: string, value: number) =>
+  formatCurrency(name === 'Credits' ? Math.abs(value) : value)
 
 function useReducedMotion() {
   return useSyncExternalStore(
@@ -132,7 +137,7 @@ export function DonutChart({
           <small>{centerLabel}</small>
         </span>
       </div>
-      <ol className="donut-legend" aria-label={`${label}, all values`}>
+      <ol className="donut-legend" aria-label={`${label}, all values`} tabIndex={0}>
         {legendSegments.map((segment) => {
           const content = (
             <>
@@ -171,104 +176,138 @@ export function DonutChart({
   )
 }
 
-export function SpendingLineChart({
+export function SpendingBarChart({
   data,
-  activityMarkers,
-  startingValue,
   label,
+  categories,
+  activities,
 }: {
-  data: Array<{ date: string; value: number }>
-  activityMarkers: Array<{
-    id: string
-    date: string
-    sequence: number
-    count: number
+  data: Array<{
+    from: string
+    to: string
     value: number
-    direction: 'expense' | 'credit'
-    merchant: string
-    amount: number
+    categories: Array<{
+      name: string
+      value: number
+      activities: Array<{ id: string; value: number }>
+    }>
   }>
-  startingValue: number
   label: string
+  categories: Array<{ name: string; color: string }>
+  activities: Map<string, ActivityItem>
 }) {
-  const reduceMotion = useReducedMotion()
-  const colors = useChartColors()
-  const markersByDate = new Map<string, typeof activityMarkers>()
-  for (const marker of activityMarkers) {
-    const markers = markersByDate.get(marker.date) ?? []
-    markers.push(marker)
-    markersByDate.set(marker.date, markers)
+  const extents = data.map(({ categories: items }) => ({
+    positive: items.reduce((sum, { value }) => sum + Math.max(0, value), 0),
+    negative: items.reduce((sum, { value }) => sum + Math.min(0, value), 0),
+  }))
+  const maximum = Math.max(0, ...extents.map(({ positive }) => positive))
+  const minimum = Math.min(0, ...extents.map(({ negative }) => negative))
+  const span = maximum - minimum || 1
+  const zero = (maximum / span) * 100
+  const dense = data.length > 12
+  const labelEvery = Math.max(1, Math.ceil(data.length / 8))
+  const colors = new Map(categories.map(({ name, color }) => [name, color]))
+  const axis = Array.from({ length: 5 }, (_, index) => maximum - (span * index) / 4)
+  const barLabel = ({ from, to }: (typeof data)[number]) => {
+    const start = dateFormatter.format(new Date(`${from}T12:00:00Z`))
+    const end = dateFormatter.format(new Date(`${to}T12:00:00Z`))
+    return from === to ? start : `${start}–${end}`
   }
-  const markers: Array<{
-    id: string
-    time: number
-    value: number
-    color: string
-    label: string
-  }> = []
-  let previousValue = startingValue
-  const points = data.flatMap(({ date, value }) => {
-    const dayStart = Date.parse(`${date}T00:00:00Z`) / 1_000
-    if (!Number.isFinite(dayStart)) return []
-    const dailyMarkers = markersByDate.get(date) ?? []
-    if (!dailyMarkers.length) {
-      previousValue = value
-      return [{ time: dayStart + DAY_SECONDS / 2, value }]
-    }
-    const dayPoints: LivelinePoint[] = [{ time: dayStart + DAY_SECONDS / 3, value: previousValue }]
-    for (const marker of dailyMarkers) {
-      const time =
-        dayStart + DAY_SECONDS * (1 / 3 + ((marker.sequence + 1) / (marker.count + 1)) * (1 / 3))
-      dayPoints.push({ time, value: marker.value })
-      markers.push({
-        id: marker.id,
-        time,
-        value: marker.value,
-        color: marker.direction === 'expense' ? colors.negative : colors.positive,
-        label: `${dateFormatter.format(new Date(time * 1_000))} · ${formatActivityName(marker.merchant)} · ${formatCurrency(marker.amount)}`,
-      })
-    }
-    dayPoints.push({ time: dayStart + (DAY_SECONDS * 2) / 3, value })
-    previousValue = value
-    return dayPoints
-  })
-  const firstTime = points[0]?.time ?? 0
-  const lastTime = points.at(-1)?.time ?? firstTime
-  const windowSeconds = Math.max(DAY_SECONDS + 1, (lastTime - firstTime) / 0.935)
-  const value = points.at(-1)?.value ?? 0
-  const lineColor = colors.value
 
   return (
-    <div
-      className="chart-container spending-line-chart"
-      role="group"
-      aria-label={`${label}, cumulative card activity over time with ${markers.length} transaction markers`}
-    >
-      <Liveline
-        data={points}
-        value={value}
-        valueTime={lastTime}
-        endTime={lastTime}
-        continuous={false}
-        fill={false}
-        grid
-        theme="dark"
-        color={lineColor}
-        window={windowSeconds}
-        badge
-        badgeVariant="minimal"
-        currentLine={false}
-        markers={markers}
-        emptyText="No spending in this period"
-        scrub={false}
-        formatValue={formatCurrency}
-        formatTime={(time) => dateFormatter.format(new Date(time * 1_000))}
-        pulse={false}
-        momentum={false}
-        lerpSpeed={reduceMotion ? 1 : 0.4}
-        lineWidth={2.25}
-        style={{ flex: 1, minHeight: 0, height: 'auto' }}
-      />
+    <div className="analytics-plot spending-bar-chart">
+      <div className="analytics-bars" role="group" aria-label={`${label} spending by category`}>
+        <div className="analytics-bar-axis" aria-hidden="true">
+          {axis.map((value, index) => (
+            <span key={index}>{formatCompactCurrency(value)}</span>
+          ))}
+        </div>
+        <div className="analytics-bars-scroll">
+          <div
+            className={`analytics-bars-grid${dense ? ' is-dense' : ''}`}
+            style={{ gridTemplateColumns: `repeat(${data.length}, minmax(32px, 1fr))` }}
+          >
+            {data.map((bar, index) => {
+              let positiveTotal = 0
+              let negativeTotal = 0
+              const description = bar.categories
+                .map(({ name, value }) => `${name} ${spendingCategoryAmount(name, value)}`)
+                .join(', ')
+              return (
+                <div
+                  className="monthly-bar-column analytics-bar-column"
+                  key={bar.from}
+                  role="group"
+                  aria-label={`${barLabel(bar)}: ${formatCurrency(bar.value)}${description ? `. ${description}` : ''}`}
+                >
+                  <div className="analytics-bar-track">
+                    <span className="analytics-bar-zero" style={{ top: `${zero}%` }} />
+                    {bar.categories.map((category) => {
+                      const positive = category.value >= 0
+                      const top = positive
+                        ? ((maximum - (positiveTotal += category.value)) / span) * 100
+                        : ((maximum + Math.abs(negativeTotal)) / span) * 100
+                      if (!positive) negativeTotal += category.value
+                      const date = barLabel(bar)
+                      return (
+                        <Tooltip key={category.name}>
+                          <TooltipTrigger
+                            render={
+                              <span
+                                role="img"
+                                tabIndex={0}
+                                className={`analytics-bar-fill spending-bar-fill${positive ? '' : ' is-negative'}`}
+                                aria-label={`${category.name}, ${date}: ${spendingCategoryAmount(category.name, category.value)}`}
+                                style={{
+                                  top: `${top}%`,
+                                  height: `${(Math.abs(category.value) / span) * 100}%`,
+                                  background: colors.get(category.name),
+                                }}
+                              />
+                            }
+                          />
+                          <TooltipContent
+                            className="treemap-tooltip sankey-tooltip spending-bar-tooltip"
+                            sideOffset={12}
+                          >
+                            <div className="treemap-tooltip-heading">
+                              <strong>
+                                {category.name} · {date}
+                              </strong>
+                              <span>{spendingCategoryAmount(category.name, category.value)}</span>
+                            </div>
+                            <div className="treemap-tooltip-composition">
+                              <ul>
+                                {category.activities.slice(0, 8).flatMap((item) => {
+                                  const activity = activities.get(item.id)
+                                  if (!activity) return []
+                                  const title = formatActivityName(activity.title)
+                                  return [
+                                    <li key={item.id}>
+                                      <ActivityMark activity={activity} />
+                                      <span>{title}</span>
+                                      <strong>{formatCurrency(item.value)}</strong>
+                                    </li>,
+                                  ]
+                                })}
+                              </ul>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      )
+                    })}
+                  </div>
+                  <small>
+                    {!dense || index % labelEvery === 0 || index === data.length - 1
+                      ? barLabel(bar)
+                      : null}
+                  </small>
+                </div>
+              )
+            })}
+          </div>
+        </div>
+      </div>
     </div>
   )
 }
@@ -319,7 +358,7 @@ export function ChartRangeSelector({
   onValueChange: (seconds: number) => void
 }) {
   return (
-    <RangeSelector
+    <ChartRangeSelect
       label="Chart range"
       options={graphWindows.map(({ label, settingsLabel, secs }) => ({
         label,
@@ -329,50 +368,6 @@ export function ChartRangeSelector({
       value={value}
       onValueChange={onValueChange}
     />
-  )
-}
-
-export function PerformanceChartControls({
-  value,
-  onValueChange,
-  netDeposits,
-  benchmark,
-}: {
-  value: number
-  onValueChange: (seconds: number) => void
-  netDeposits?: LivelinePoint[]
-  benchmark?: LivelinePoint[]
-}) {
-  return (
-    <div className="performance-chart-controls">
-      <ul className="performance-chart-key" aria-label="Chart key">
-        <li>
-          <span className="performance-chart-key-line" data-series="value" aria-hidden="true" />
-          <span>Value</span>
-        </li>
-        {netDeposits?.length ? (
-          <li>
-            <span
-              className="performance-chart-key-line"
-              data-series="deposits"
-              aria-hidden="true"
-            />
-            <span>Net deposits</span>
-          </li>
-        ) : null}
-        {benchmark?.length ? (
-          <li>
-            <span
-              className="performance-chart-key-line"
-              data-series="benchmark"
-              aria-hidden="true"
-            />
-            <span>VOO</span>
-          </li>
-        ) : null}
-      </ul>
-      <ChartRangeSelector value={value} onValueChange={onValueChange} />
-    </div>
   )
 }
 
@@ -483,7 +478,7 @@ export function PerformanceChart({
       className="chart-container performance-chart live-performance-chart"
       role="group"
       tabIndex={0}
-      aria-keyshortcuts="W M Q A"
+      aria-keyshortcuts="W M Q Y A"
       aria-label={`Account value over time${benchmark?.length ? ' compared with VOO' : ''}${events.length ? ` with ${events.length} key event markers` : ''}${sessionBoundary ? ', with the regular-market close marked' : ''}`}
     >
       <span className="sr-only" role="status">

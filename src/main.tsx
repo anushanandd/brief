@@ -64,7 +64,7 @@ function StartupReady() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <TooltipProvider delay={0} closeDelay={80}>
+      <TooltipProvider delay={50} closeDelay={80}>
         <FinanceProvider>
           <LiveMarketProvider>
             <RouterProvider router={router} />

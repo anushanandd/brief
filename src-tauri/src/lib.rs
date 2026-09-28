@@ -3,6 +3,7 @@ mod database;
 mod finance_contract;
 mod financial_engine;
 mod foundation_model;
+mod health;
 mod providers;
 mod startup_market;
 mod storage;
@@ -11,6 +12,7 @@ mod workspace;
 
 use std::{
     collections::BTreeMap,
+    path::PathBuf,
     sync::Mutex,
     time::{Duration as StdDuration, Instant},
 };
@@ -25,6 +27,8 @@ use storage::{Annotation, Storage};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 #[cfg(target_os = "macos")]
+use objc2_app_kit::{NSWindow, NSWindowButton};
+#[cfg(target_os = "macos")]
 use tauri::{
     menu::{Menu, MenuItem, Submenu},
     Runtime,
@@ -32,6 +36,24 @@ use tauri::{
 
 const HISTORY_CACHE_HOURS: i64 = 12;
 const DEFAULT_MARKET_UPDATE_INTERVAL_MS: u64 = 10_000;
+
+#[cfg(target_os = "macos")]
+fn hide_window_buttons(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    let native = window.ns_window()? as usize;
+    window.run_on_main_thread(move || {
+        // SAFETY: Tauri owns this NSWindow for the life of the main app window.
+        let native = unsafe { &*(native as *const NSWindow) };
+        for kind in [
+            NSWindowButton::CloseButton,
+            NSWindowButton::MiniaturizeButton,
+            NSWindowButton::ZoomButton,
+        ] {
+            if let Some(button) = native.standardWindowButton(kind) {
+                button.setHidden(true);
+            }
+        }
+    })
+}
 
 fn market_update_interval(milliseconds: Option<u64>) -> StdDuration {
     StdDuration::from_millis(
@@ -171,25 +193,49 @@ async fn recover_finance_state(restore: bool, state: State<'_, AppState>) -> Res
 }
 
 #[tauri::command]
-fn get_holding_thesis(ticker: String, state: State<'_, AppState>) -> Result<String, String> {
-    Ok(state
-        .storage
-        .lock()
-        .map_err(|_| "The local data store is unavailable")?
-        .holding_thesis(&ticker))
-}
-
-#[tauri::command]
-fn save_holding_thesis(
-    ticker: String,
-    thesis: String,
-    state: State<'_, AppState>,
-) -> Result<String, String> {
+fn export_finance_backup(path: String, state: State<'_, AppState>) -> Result<(), String> {
     state
         .storage
         .lock()
         .map_err(|_| "The local data store is unavailable")?
-        .save_holding_thesis(ticker, thesis)
+        .export_backup(&PathBuf::from(path))
+}
+
+#[tauri::command]
+fn inspect_finance_backup(
+    path: String,
+    state: State<'_, AppState>,
+) -> Result<storage::BackupInfo, String> {
+    state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?
+        .inspect_backup(&PathBuf::from(path))
+}
+
+#[tauri::command]
+async fn restore_finance_backup(path: String, state: State<'_, AppState>) -> Result<Value, String> {
+    let _refresh = state.refresh.lock().await;
+    let mut storage = state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?;
+    let workspace = storage.import_backup(&PathBuf::from(path))?;
+    Ok(serde_json::json!({
+        "snapshot": storage.snapshot()?,
+        "workspace": workspace,
+    }))
+}
+
+#[tauri::command]
+fn get_data_health(state: State<'_, AppState>) -> Result<health::HealthReport, String> {
+    let storage = state
+        .storage
+        .lock()
+        .map_err(|_| "The local data store is unavailable")?;
+    let snapshot = serde_json::from_value(storage.snapshot()?)
+        .map_err(|error| format!("Invalid committed snapshot: {error}"))?;
+    Ok(health::report(&snapshot, &storage.sync_runs()?, Utc::now()))
 }
 
 #[tauri::command]
@@ -254,6 +300,17 @@ fn get_provider_connections(
         .plaid_cache
         .clone();
     state.providers.connections(&cache)
+}
+
+#[tauri::command]
+async fn get_plaid_recurring_report(
+    state: State<'_, AppState>,
+) -> Result<providers::PlaidRecurringReport, String> {
+    let _refresh = state
+        .refresh
+        .try_lock()
+        .map_err(|_| "Wait for the current account refresh to finish")?;
+    state.providers.plaid_recurring_report().await
 }
 
 #[tauri::command]
@@ -329,11 +386,10 @@ fn get_foundation_model_status() -> foundation_model::FoundationModelStatus {
 #[tauri::command]
 async fn generate_foundation_explanation(
     evidence: String,
-    purpose: String,
     request_id: String,
     started: tauri::ipc::Channel<()>,
 ) -> Result<String, String> {
-    foundation_model::generate(evidence, purpose, request_id, started).await
+    foundation_model::generate(evidence, request_id, started).await
 }
 
 #[tauri::command]
@@ -550,7 +606,7 @@ async fn start_market_stream(
     updates
         .send(serde_json::json!({"kind": "update", "market": response}))
         .map_err(|error| error.to_string())?;
-    if market.poll_interval_ms.is_none() || symbols.is_empty() {
+    if symbols.is_empty() {
         return Ok(());
     }
 
@@ -760,12 +816,12 @@ fn stop_holding_chart(request_id: String, state: State<'_, AppState>) -> Result<
 #[tauri::command]
 async fn get_market_news(
     symbols: Vec<String>,
-    force: Option<bool>,
+    refresh: Option<bool>,
     state: State<'_, AppState>,
 ) -> Result<providers::news_cache::NewsResult, String> {
     state
         .providers
-        .market_news(symbols, force.unwrap_or(false))
+        .market_news(symbols, refresh.unwrap_or(false))
         .await
 }
 
@@ -1200,7 +1256,8 @@ async fn prepare_refresh(
 
     Ok(ProviderSync {
         sync_id,
-        balances_fresh: plaid_complete && snaptrade_updated,
+        balances_fresh: (!integrations.plaid || plaid_complete)
+            && (!integrations.snaptrade || snaptrade_updated),
         refreshed_account_ids,
         previous_snapshot,
         plaid: provider_data.plaid.unwrap_or_default(),
@@ -1217,6 +1274,22 @@ fn shortcut_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let settings = MenuItem::with_id(app, "open-settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
     if let Some(app_menu) = menu.items()?.first().and_then(|item| item.as_submenu()) {
         app_menu.insert(&settings, 1)?;
+        for child in app_menu.items()? {
+            if let Some(predefined) = child.as_predefined_menuitem() {
+                let label = predefined.text()?.replace('&', "");
+                if label.starts_with("Hide ") && label != "Hide Others" {
+                    app_menu.remove(&child)?;
+                }
+            }
+        }
+        let hide_values = MenuItem::with_id(
+            app,
+            "toggle-sensitive-values",
+            "Hide or Show Values",
+            true,
+            Some("CmdOrCtrl+H"),
+        )?;
+        app_menu.insert(&hide_values, 2)?;
     }
 
     for item in menu.items()? {
@@ -1264,6 +1337,7 @@ fn shortcut_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let week = MenuItem::with_id(app, "graph-week", "1 Week", true, None::<&str>)?;
     let month = MenuItem::with_id(app, "graph-month", "1 Month", true, None::<&str>)?;
     let quarter = MenuItem::with_id(app, "graph-quarter", "3 Months", true, None::<&str>)?;
+    let year = MenuItem::with_id(app, "graph-year", "1 Year", true, None::<&str>)?;
     let all = MenuItem::with_id(app, "graph-all", "All Time", true, None::<&str>)?;
     let graph = Submenu::with_items(
         app,
@@ -1277,6 +1351,7 @@ fn shortcut_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             &week,
             &month,
             &quarter,
+            &year,
             &all,
         ],
     )?;
@@ -1286,13 +1361,17 @@ fn shortcut_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
 }
 
 pub fn run() {
-    let builder = tauri::Builder::default().plugin(tauri_plugin_opener::init());
+    let builder = tauri::Builder::default()
+        .plugin(tauri_plugin_opener::init())
+        .plugin(tauri_plugin_dialog::init());
 
     #[cfg(target_os = "macos")]
     let builder = builder.menu(shortcut_menu).on_menu_event(|app, event| {
         let shortcut = event.id().as_ref();
         if shortcut == "open-settings" {
             let _ = app.emit("open-settings", ());
+        } else if shortcut == "toggle-sensitive-values" {
+            let _ = app.emit("toggle-sensitive-values", ());
         } else if shortcut.starts_with("graph-") {
             let _ = app.emit("graph-shortcut", shortcut.to_string());
         }
@@ -1300,6 +1379,11 @@ pub fn run() {
 
     builder
         .setup(|app| {
+            #[cfg(target_os = "macos")]
+            hide_window_buttons(
+                &app.get_webview_window("main")
+                    .ok_or("Main window unavailable")?,
+            )?;
             app.manage(AppState {
                 startup_market: startup_market::StartupMarket::new(
                     app.path().app_data_dir()?.join("startup-market.sqlite3"),
@@ -1333,12 +1417,15 @@ pub fn run() {
             get_finance_snapshot,
             get_sync_runs,
             recover_finance_state,
+            export_finance_backup,
+            inspect_finance_backup,
+            restore_finance_backup,
+            get_data_health,
             transaction_annotations,
-            get_holding_thesis,
-            save_holding_thesis,
             export_finance_csv,
             get_integration_status,
             get_provider_connections,
+            get_plaid_recurring_report,
             forget_provider_connection,
             get_foundation_model_status,
             generate_foundation_explanation,
@@ -1355,7 +1442,7 @@ pub fn run() {
             get_market_news,
             get_earnings_calendar,
             refresh_finance_snapshot,
-            save_account_link
+            save_account_link,
         ])
         .run(tauri::generate_context!())
         .expect("error while running Brief");

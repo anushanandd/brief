@@ -1,15 +1,26 @@
 import { Link } from '@tanstack/react-router'
-import { ChevronRight, Download } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import { ActivityList } from '../components/activity-list'
-import { MonthlyBarChart, PerformanceChart, PerformanceChartControls } from '../components/charts'
+import { ChartRangeSelector, MonthlyBarChart, PerformanceChart } from '../components/charts'
 import { ValueHistoryEmptyState } from '../components/data-state'
+import { ExpectedActivity } from '../components/expected-activity'
+import { ChevronRight, Download } from '../components/icons'
 import { PositionTable } from '../components/position-table'
 import { SalesTable } from '../components/sales-table'
-import { AnimatedCurrency, Button, Card, Change, Metric, SectionHeading } from '../components/ui'
+import { SnapTradeReference } from '../components/snaptrade-reference'
+import {
+  AnimatedCurrency,
+  Button,
+  Card,
+  ChartChange,
+  Metric,
+  ScrollCueCard,
+  SectionHeading,
+} from '../components/ui'
 import { useFinance } from '../hooks/use-finance'
 import { useLiveFinance } from '../hooks/use-live-finance'
+import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import {
   accountDisplayName,
   getAccountDisplayNames,
@@ -20,7 +31,8 @@ import { buildActivities } from '../lib/activity'
 import { downloadActivityCsv } from '../lib/activity-csv'
 import { buildChartEventGroups } from '../lib/chart-events'
 import { accountValueChart } from '../lib/dashboard-account-views'
-import { formatCurrency, formatPercent, valueTone, formatActivityName } from '../lib/format'
+import { formatCurrency, formatPercent, valueTone } from '../lib/format'
+import { graphWindows } from '../lib/graph-preferences'
 import { buildLiveChartData } from '../lib/live-chart'
 import { getExternalLogosEnabled, transactionMarkKind } from '../lib/logos'
 import type { Account, FinanceSnapshot, Transaction } from '../lib/schema'
@@ -31,30 +43,61 @@ import {
   transactionDateKey,
 } from '../lib/spending'
 
-export function accountActivityPreviewLimit(holdingCount: number, saleCount: number) {
-  const holdingRowsHeight = holdingCount ? Math.min(holdingCount, 3) * 64 : 124
-  const saleRowsHeight = saleCount ? saleCount * 64 : 124
-  return Math.max(1, Math.floor((109 + holdingRowsHeight + saleRowsHeight) / 64))
+const daySeconds = 24 * 60 * 60
+const cents = (value: number) => Math.round(value * 100)
+const analyticsRangeValues = ['week', 'month', 'quarter', 'year', 'all'] as const
+export function accountTransactionSummary(
+  transactions: Transaction[],
+  referenceIso: string,
+  windowSeconds: number,
+) {
+  const end = transactionDateKey(referenceIso, referenceIso)
+  const start = windowSeconds
+    ? new Date(Date.parse(`${end}T00:00:00Z`) - windowSeconds * 1_000).toISOString().slice(0, 10)
+    : ''
+  const posted = transactions.flatMap((transaction) => {
+    const date = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso)
+    return !transaction.pending && date && date <= end ? [{ transaction, date }] : []
+  })
+  const summarize = (items: typeof posted) => {
+    let moneyIn = 0
+    let moneyOut = 0
+    let interest = 0
+    let dividends = 0
+    for (const { transaction } of items) {
+      const amount = cents(transaction.amount)
+      if (amount > 0) moneyIn += amount
+      if (amount < 0) moneyOut -= amount
+      const kind = transactionMarkKind(transaction)
+      if (amount > 0 && kind === 'interest') interest += amount
+      if (amount > 0 && kind === 'dividend') dividends += amount
+    }
+    return {
+      moneyIn: moneyIn / 100,
+      moneyOut: moneyOut / 100,
+      netFlow: (moneyIn - moneyOut) / 100,
+      interest: interest / 100,
+      dividends: dividends / 100,
+    }
+  }
+  const firstDate = posted.toSorted((left, right) => left.date.localeCompare(right.date))[0]?.date
+  const days = windowSeconds
+    ? Math.max(1, windowSeconds / daySeconds)
+    : firstDate
+      ? Math.max(1, (Date.parse(end) - Date.parse(firstDate)) / 86_400_000 + 1)
+      : 1
+  return {
+    range: summarize(posted.filter(({ date }) => !start || date >= start)),
+    allTime: summarize(posted),
+    start,
+    end,
+    days,
+  }
 }
 
-export function accountIncomeBreakdown(transactions: Transaction[], referenceIso: string) {
-  const year = referenceIso.slice(0, 4)
-  return transactions.reduce(
-    (totals, transaction) => {
-      if (
-        transaction.pending ||
-        transaction.amount <= 0 ||
-        !transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso).startsWith(year)
-      ) {
-        return totals
-      }
-      const kind = transactionMarkKind(transaction)
-      if (kind === 'dividend') totals.dividends += transaction.amount
-      if (kind === 'interest') totals.interest += transaction.amount
-      return totals
-    },
-    { dividends: 0, interest: 0 },
-  )
+function sumKnown(values: Array<number | null | undefined>) {
+  const known = values.filter((value): value is number => value != null)
+  return known.length ? known.reduce((total, value) => total + value, 0) : null
 }
 
 export function AccountOverview({
@@ -68,9 +111,13 @@ export function AccountOverview({
   graphWindow: number
   onGraphWindowChange: (seconds: number) => void
 }) {
-  const committed = useFinance().data ?? data
+  const finance = useFinance()
+  const committed = finance.data ?? data
   const [exporting, setExporting] = useState(false)
   const [exportError, setExportError] = useState(false)
+  const salesScrollRef = useViewportScroll(32)
+  const activityScrollRef = useViewportScroll(32)
+  const expectedScrollRef = useViewportScroll<HTMLUListElement>(32)
   const live = useLiveFinance()
   const accountNamesKey = JSON.stringify(getAccountDisplayNames())
   const accountDisplayNames = useMemo(
@@ -79,6 +126,7 @@ export function AccountOverview({
   )
   const accountStartDates = getAccountStartDates()
   const isCombined = account.id === 'all' || account.type === 'combined'
+  const committedAccount = committed.accounts.find(({ id }) => id === account.id)
   const startDate = accountStartDate(data, isCombined ? 'net-worth' : account.id, accountStartDates)
   const externalLogosEnabled = getExternalLogosEnabled()
   const displayName = accountDisplayName(account.id, account.name, accountDisplayNames)
@@ -86,9 +134,7 @@ export function AccountOverview({
     () =>
       new Set(
         isCombined
-          ? committed.accounts
-              .filter(({ id, type }) => id !== 'all' && type !== 'credit')
-              .map(({ id }) => id)
+          ? committed.accounts.filter(({ id }) => id !== 'all').map(({ id }) => id)
           : [
               account.id,
               ...Object.entries(committed.accountLinks ?? {}).flatMap(([plaidId, snaptradeId]) =>
@@ -145,11 +191,17 @@ export function AccountOverview({
     () => buildMonthlySpendingHistory(transactions, data.updatedAt),
     [data.updatedAt, transactions],
   )
-  const income = useMemo(
-    () => accountIncomeBreakdown(transactions, data.updatedAt),
-    [data.updatedAt, transactions],
+  const transactionSummary = useMemo(
+    () => accountTransactionSummary(transactions, data.updatedAt, graphWindow),
+    [data.updatedAt, graphWindow, transactions],
   )
   const isInvestment = isCombined || account.type === 'brokerage' || account.type === 'retirement'
+  const showExpectedActivity = isCombined || !isInvestment
+  const previewLayoutClass = !showExpectedActivity
+    ? ' account-preview-grid-wide-primary'
+    : account.type === 'cash'
+      ? ' account-preview-grid-wide-recent'
+      : ''
   const isCredit = account.type === 'credit'
   const performance = isCombined
     ? undefined
@@ -157,14 +209,16 @@ export function AccountOverview({
         ({ accountId }) => accountId === account.id,
       )
   const chartNow = Date.parse(live.valuationAsOf ?? data.updatedAt) / 1_000
-  const safeChartNow = Number.isFinite(chartNow) ? chartNow : Date.now() / 1_000
+  const now = Date.now() / 1_000
+  const safeChartNow = Number.isFinite(chartNow) ? chartNow : now
+  const marketSeries = live.marketSeries[isCombined ? 'net-worth' : account.id] ?? []
   const { chartData, chartChange, incomplete, historyIsAvailable } = accountValueChart(
     data,
     account,
-    live.marketSeries[isCombined ? 'net-worth' : account.id] ?? [],
+    marketSeries,
     safeChartNow,
     graphWindow,
-    Date.now() / 1_000,
+    now,
     startDate,
   )
   const netDeposits =
@@ -195,15 +249,50 @@ export function AccountOverview({
         : [],
     [committed, isInvestment, isCombined, account.id, graphWindow],
   )
-  const gain = account.knownUnrealizedGain
+  const investmentAccounts = isCombined
+    ? data.accounts.filter(({ type }) => type === 'brokerage' || type === 'retirement')
+    : []
+  const gain = isCombined
+    ? sumKnown(investmentAccounts.map(({ knownUnrealizedGain }) => knownUnrealizedGain))
+    : account.knownUnrealizedGain
   const gainTone = valueTone(gain)
-  const realizedGain = account.estimatedRealizedGainYtd
+  const realizedGain = isCombined
+    ? sumKnown(investmentAccounts.map(({ estimatedRealizedGainYtd }) => estimatedRealizedGainYtd))
+    : account.estimatedRealizedGainYtd
   const realizedGainTone = valueTone(realizedGain)
-  const basisLabel = account.costBasisCoverage === 'partial' ? 'Known cost basis' : 'Cost basis'
   const unrealizedLabel =
-    account.costBasisCoverage === 'partial' ? 'Known unrealized P/L' : 'Unrealized P/L'
-
-  const accountDetailTitle = isCombined ? 'All accounts' : 'Account details'
+    isCombined || account.costBasisCoverage === 'partial'
+      ? 'Known unrealized P/L'
+      : 'Unrealized P/L'
+  const rangeIndex = graphWindows.findIndex(({ secs }) => secs === graphWindow)
+  const analyticsRange = analyticsRangeValues[Math.max(0, rangeIndex)]
+  const groupedBalance = (types: string[]) => {
+    const accounts = data.accounts.filter(({ id, type }) => id !== 'all' && types.includes(type))
+    return accounts.length && accounts.every((item) => item.value != null)
+      ? accounts.reduce((sum, item) => sum + item.value!, 0)
+      : null
+  }
+  const cashBalance = groupedBalance(['cash'])
+  const stockBalance = groupedBalance(['brokerage', 'retirement'])
+  const rangeMarketChanges =
+    performance?.performanceMethod === 'value-only'
+      ? []
+      : (performance?.points.flatMap(({ date, marketChange }) =>
+          marketChange != null &&
+          date <= transactionSummary.end &&
+          (!transactionSummary.start || date >= transactionSummary.start)
+            ? [marketChange]
+            : [],
+        ) ?? [])
+  const rangeUnrealizedGain = rangeMarketChanges.length
+    ? rangeMarketChanges.reduce((sum, value) => sum + cents(value), 0) / 100
+    : null
+  const estimatedInterestRate =
+    account.value && account.value > 0
+      ? (transactionSummary.range.interest / account.value) * (365 / transactionSummary.days) * 100
+      : null
+  const averageMonthlyFlow =
+    (transactionSummary.allTime.netFlow / transactionSummary.days) * (365.2425 / 12)
   const holdingsLink = (
     <Link className="section-heading-link" to="/holdings">
       Holdings <ChevronRight size={14} aria-hidden="true" />
@@ -218,6 +307,61 @@ export function AccountOverview({
       Recent activity <ChevronRight size={14} aria-hidden="true" />
     </Link>
   )
+  const activityPreview = (
+    <ScrollCueCard
+      className="account-preview-card account-activity-preview"
+      scrollSelector=".account-activity-scroll"
+    >
+      <SectionHeading
+        title={activityLink}
+        action={
+          <Button
+            variant="ghost"
+            size="icon"
+            className="icon-only-subtle"
+            aria-label="Download account activity as CSV"
+            title={`Download ${displayName} activity as CSV`}
+            disabled={
+              exporting || !activities.some((item) => isCombined || item.accountId === account.id)
+            }
+            aria-busy={exporting}
+            onClick={async () => {
+              setExporting(true)
+              setExportError(false)
+              try {
+                await downloadActivityCsv(activities, isCombined ? 'all' : account.id, displayName)
+              } catch {
+                setExportError(true)
+              } finally {
+                setExporting(false)
+              }
+            }}
+          >
+            <Download size={16} aria-hidden="true" />
+          </Button>
+        }
+      />
+      {exportError ? (
+        <p role="alert">CSV could not be saved. Try again with a new filename.</p>
+      ) : null}
+      <div
+        ref={activityScrollRef}
+        className="account-activity-scroll"
+        role="region"
+        aria-label="Recent account activity"
+        tabIndex={0}
+        data-keyboard-region
+      >
+        <ActivityList
+          activities={activities}
+          referenceIso={data.updatedAt}
+          emptyMessage="No imported account activity."
+          compact
+          conciseTradeGain
+        />
+      </div>
+    </ScrollCueCard>
+  )
 
   return (
     <div className="account-overview-dashboard">
@@ -228,28 +372,30 @@ export function AccountOverview({
               <h2 className="balance-label">
                 {displayName}
                 {incomplete ? ' · known USD balances only' : ''}
+                {isCombined && data.netWorthProvisional ? ' · provisional balance' : ''}
+                {account.balanceSource === 'unavailable' ? ' · value unavailable' : ''}
               </h2>
               <div className="home-balance-value">
                 <AnimatedCurrency className="hero-number" value={account.value} />
               </div>
-              {!isCredit && historyIsAvailable ? (
-                <div className="chart-summary-row">
-                  <div className="hero-change">
-                    <span className={valueTone(chartChange.change)}>
-                      {formatCurrency(chartChange.change)}
-                    </span>
-                    <Change value={chartChange.percent} />
-                  </div>
-                </div>
-              ) : null}
             </div>
+            {committedAccount?.id.startsWith('snaptrade:') || (!isCredit && historyIsAvailable) ? (
+              <div className="chart-header-aside">
+                {!isCredit && historyIsAvailable ? (
+                  <ChartRangeSelector value={graphWindow} onValueChange={onGraphWindowChange} />
+                ) : null}
+                <SnapTradeReference account={committedAccount} />
+                {account.id.startsWith('snaptrade:') && marketSeries.length ? (
+                  <small className="snaptrade-reference">
+                    SnapTrade daily values · Alpaca intraday projection
+                  </small>
+                ) : null}
+              </div>
+            ) : null}
             {!isCredit && historyIsAvailable ? (
-              <PerformanceChartControls
-                value={graphWindow}
-                onValueChange={onGraphWindowChange}
-                netDeposits={netDeposits}
-                benchmark={benchmark}
-              />
+              <div className="chart-summary-row">
+                <ChartChange amount={chartChange.change} percent={chartChange.percent} />
+              </div>
             ) : null}
           </header>
 
@@ -266,7 +412,11 @@ export function AccountOverview({
                     data={chartData}
                     netDeposits={netDeposits}
                     benchmark={benchmark}
-                    value={account.value}
+                    value={
+                      isCombined && data.netWorthProvisional
+                        ? (chartData.at(-1)?.value ?? account.value)
+                        : account.value
+                    }
                     events={chartEvents}
                     referenceIso={data.updatedAt}
                     startDate={startDate}
@@ -284,74 +434,88 @@ export function AccountOverview({
         </Card>
 
         <Card className="account-overview-summary-card">
-          <SectionHeading title={accountDetailTitle} />
+          <SectionHeading title="Account details" />
           <div className="account-summary-metrics">
             {isCombined ? (
               <>
+                <Metric label="Cash" value={formatCurrency(cashBalance)} />
+                <Metric label="Stock" value={formatCurrency(stockBalance)} />
                 <Metric
-                  label="Accounts"
-                  value={data.accounts.filter(({ id }) => id !== 'all').length}
+                  label="Interest"
+                  value={
+                    <Link
+                      className="metric-link"
+                      to="/analytics"
+                      search={{ chart: 'interest', range: analyticsRange }}
+                    >
+                      {formatCurrency(transactionSummary.range.interest)}
+                    </Link>
+                  }
                 />
-                <Metric label="Holdings" value={positions.length} />
-                <Metric label="Transactions" value={transactions.length} />
                 <Metric
-                  label="Pending"
-                  value={transactions.filter(({ pending }) => pending).length}
+                  label="Dividends"
+                  value={
+                    <Link
+                      className="metric-link"
+                      to="/analytics"
+                      search={{ chart: 'dividends', range: analyticsRange }}
+                    >
+                      {formatCurrency(transactionSummary.range.dividends)}
+                    </Link>
+                  }
                 />
-                <Metric label="Trades" value={trades.length} />
-                <Metric label="Realized sales" value={sales.length} />
+                <Metric label={unrealizedLabel} value={formatCurrency(gain)} tone={gainTone} />
+                <Metric
+                  label="Estimated realized P/L"
+                  value={formatCurrency(realizedGain)}
+                  tone={realizedGainTone}
+                />
               </>
             ) : isInvestment ? (
               <>
-                <Metric label={basisLabel} value={formatCurrency(account.knownCostBasis)} />
                 <Metric
-                  label={unrealizedLabel}
+                  label="Market change"
+                  value={formatCurrency(rangeUnrealizedGain)}
+                  tone={valueTone(rangeUnrealizedGain)}
+                />
+                <Metric label="Cash" value={formatCurrency(account.cashValue)} />
+                <Metric
+                  label={
+                    unrealizedLabel === 'Known unrealized P/L'
+                      ? 'Known total unrealized'
+                      : 'Total unrealized'
+                  }
                   value={formatCurrency(gain)}
-                  detail={formatPercent(account.knownUnrealizedGainPct)}
                   tone={gainTone}
                 />
                 <Metric
-                  label="Dividends YTD"
-                  value={
-                    <Link
-                      className="metric-link"
-                      to="/analytics"
-                      search={{ chart: 'dividends', range: 'year', account: account.id }}
-                    >
-                      {formatCurrency(income.dividends)}
-                    </Link>
-                  }
-                />
-                <Metric
-                  label="Interest YTD"
-                  value={
-                    <Link
-                      className="metric-link"
-                      to="/analytics"
-                      search={{ chart: 'interest', range: 'year', account: account.id }}
-                    >
-                      {formatCurrency(income.interest)}
-                    </Link>
-                  }
-                />
-                <Metric
-                  label="Sale proceeds YTD"
-                  value={formatCurrency(account.saleProceedsYtd)}
-                  detail={`${sales.length} imported ${sales.length === 1 ? 'sale' : 'sales'}`}
-                />
-                <Metric
-                  label="Estimated realized P/L YTD"
-                  value={
-                    <Link
-                      className="metric-link"
-                      to="/analytics"
-                      search={{ chart: 'realized', range: 'year', account: account.id }}
-                    >
-                      {formatCurrency(realizedGain)}
-                    </Link>
-                  }
-                  detail={realizedGain == null ? 'Lots unavailable' : 'Estimated FIFO'}
+                  label="Estimated realized P/L"
+                  value={formatCurrency(realizedGain)}
                   tone={realizedGainTone}
+                />
+                <Metric
+                  label="Dividends"
+                  value={
+                    <Link
+                      className="metric-link"
+                      to="/analytics"
+                      search={{ chart: 'dividends', range: analyticsRange, account: account.id }}
+                    >
+                      {formatCurrency(transactionSummary.range.dividends)}
+                    </Link>
+                  }
+                />
+                <Metric
+                  label="Interest"
+                  value={
+                    <Link
+                      className="metric-link"
+                      to="/analytics"
+                      search={{ chart: 'interest', range: analyticsRange, account: account.id }}
+                    >
+                      {formatCurrency(transactionSummary.range.interest)}
+                    </Link>
+                  }
                 />
               </>
             ) : isCredit ? (
@@ -363,30 +527,38 @@ export function AccountOverview({
                   value={formatCurrency(
                     spending.biggest ? Math.abs(spending.biggest.amount) : null,
                   )}
-                  detail={
-                    spending.biggest ? formatActivityName(spending.biggest.merchant) : undefined
-                  }
                 />
                 <Metric label="Transactions" value={transactions.length} />
               </>
             ) : (
               <>
-                <Metric label="Transactions" value={transactions.length} />
+                <Metric label="Money in" value={formatCurrency(transactionSummary.range.moneyIn)} />
                 <Metric
-                  label="Pending"
-                  value={transactions.filter(({ pending }) => pending).length}
+                  label="Money out"
+                  value={formatCurrency(transactionSummary.range.moneyOut)}
                 />
                 <Metric
-                  label="Interest YTD"
+                  label="Interest"
                   value={
                     <Link
                       className="metric-link"
                       to="/analytics"
-                      search={{ chart: 'interest', range: 'year', account: account.id }}
+                      search={{ chart: 'interest', range: analyticsRange, account: account.id }}
                     >
-                      {formatCurrency(income.interest)}
+                      {formatCurrency(transactionSummary.range.interest)}
                     </Link>
                   }
+                />
+                <Metric label="Est. interest rate" value={formatPercent(estimatedInterestRate)} />
+                <Metric
+                  label="Net flow"
+                  value={formatCurrency(transactionSummary.range.netFlow)}
+                  tone={valueTone(transactionSummary.range.netFlow)}
+                />
+                <Metric
+                  label="All-time monthly avg."
+                  value={formatCurrency(averageMonthlyFlow)}
+                  tone={valueTone(averageMonthlyFlow)}
                 />
               </>
             )}
@@ -394,7 +566,7 @@ export function AccountOverview({
         </Card>
       </div>
 
-      <div className={`account-preview-grid${isInvestment ? '' : ' account-preview-grid-simple'}`}>
+      <div className={`account-preview-grid${previewLayoutClass}`}>
         {isInvestment ? (
           <div className="account-investment-preview-column">
             <Card className="account-preview-card account-holdings-preview">
@@ -404,64 +576,33 @@ export function AccountOverview({
                 externalLogosEnabled={externalLogosEnabled}
               />
             </Card>
-            <Card className="account-preview-card account-sales-preview">
+            <ScrollCueCard
+              className="account-preview-card account-sales-preview"
+              scrollSelector=".financial-table-scroll"
+            >
               <SalesTable
                 sales={sales}
                 externalLogosEnabled={externalLogosEnabled}
                 referenceIso={data.updatedAt}
+                scrollRef={salesScrollRef}
               />
-            </Card>
+            </ScrollCueCard>
           </div>
         ) : null}
 
-        <Card className="account-preview-card account-activity-preview">
-          <SectionHeading
-            title={activityLink}
-            action={
-              <Button
-                variant="ghost"
-                size="icon"
-                className="icon-only-subtle"
-                aria-label="Download account activity as CSV"
-                title={`Download ${displayName} activity as CSV`}
-                disabled={
-                  exporting ||
-                  !activities.some((item) => isCombined || item.accountId === account.id)
-                }
-                aria-busy={exporting}
-                onClick={async () => {
-                  setExporting(true)
-                  setExportError(false)
-                  try {
-                    await downloadActivityCsv(
-                      activities,
-                      isCombined ? 'all' : account.id,
-                      displayName,
-                    )
-                  } catch {
-                    setExportError(true)
-                  } finally {
-                    setExporting(false)
-                  }
-                }}
-              >
-                <Download size={16} aria-hidden="true" />
-              </Button>
-            }
-          />
-          {exportError ? (
-            <p role="alert">CSV could not be saved. Try again with a new filename.</p>
-          ) : null}
-          <ActivityList
-            activities={activities.slice(
-              0,
-              isInvestment ? accountActivityPreviewLimit(positions.length, sales.length) : 3,
-            )}
-            referenceIso={data.updatedAt}
-            emptyMessage="No imported account activity."
-            compact
-          />
-        </Card>
+        <div className="account-activity-preview-column account-recent-preview">
+          {activityPreview}
+        </div>
+        {showExpectedActivity ? (
+          <div className="account-activity-preview-column account-expected-column">
+            <ExpectedActivity
+              data={committed}
+              account={isCombined ? undefined : account.id}
+              className="account-preview-card account-expected-preview"
+              scrollRef={expectedScrollRef}
+            />
+          </div>
+        ) : null}
       </div>
     </div>
   )

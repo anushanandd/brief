@@ -30,7 +30,6 @@ export function HomeOverview({
           label="Portfolio"
           value={formatPercent(metrics.portfolio)}
           tone={valueTone(metrics.portfolio)}
-          detail={`vs ${formatPercent(metrics.benchmark)} S&P 500`}
         />
         <Metric
           label="All accounts"

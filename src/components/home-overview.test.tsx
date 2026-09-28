@@ -38,7 +38,7 @@ it('renders the four deterministic rows without a model or query provider', asyn
   expect(html).toContain('All accounts')
   expect(html).toContain('Spending')
   expect(html).toContain('Income')
-  expect(html).toContain('vs')
+  expect(html).not.toContain('<small')
 })
 
 it('shows posted spending and income totals', async () => {

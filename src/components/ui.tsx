@@ -1,8 +1,11 @@
 import NumberFlow from '@number-flow/react'
-import type { LucideIcon } from 'lucide-react'
-import type { ButtonHTMLAttributes, HTMLAttributes, ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState } from 'react'
+import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from 'react'
 
 import { formatCurrency, formatPercent, valueTone } from '../lib/format'
+import { FilterSelect } from './filter-select'
+import { ChevronDown } from './icons'
+import type { IconComponent } from './icons'
 
 export function AnimatedCurrency({
   value,
@@ -41,7 +44,7 @@ export function Button({
   children,
   ...props
 }: ButtonHTMLAttributes<HTMLButtonElement> & {
-  icon?: LucideIcon
+  icon?: IconComponent
   variant?: 'primary' | 'secondary' | 'ghost' | 'destructive'
   size?: 'default' | 'icon' | 'icon-compact' | 'compact'
 }) {
@@ -63,8 +66,57 @@ export function Button({
   )
 }
 
-export function Card({ className, ...props }: HTMLAttributes<HTMLDivElement>) {
+export function hasMoreBelow({
+  scrollHeight,
+  clientHeight,
+  scrollTop,
+}: Pick<HTMLElement, 'scrollHeight' | 'clientHeight' | 'scrollTop'>) {
+  return scrollHeight - clientHeight - scrollTop > 1
+}
+
+export function Card({ className, ...props }: ComponentPropsWithRef<'div'>) {
   return <div className={`surface-card${className ? ` ${className}` : ''}`} {...props} />
+}
+
+export function ScrollCueCard({
+  className,
+  children,
+  scrollSelector,
+  ...props
+}: Omit<ComponentPropsWithRef<'div'>, 'ref'> & { scrollSelector: string }) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [showScrollCue, setShowScrollCue] = useState(false)
+
+  useLayoutEffect(() => {
+    const card = ref.current
+    if (!card) return undefined
+    const scrollRegion = card.querySelector<HTMLElement>(scrollSelector)
+    if (!scrollRegion) return undefined
+    const update = () => setShowScrollCue(hasMoreBelow(scrollRegion))
+    const observer = new ResizeObserver(update)
+    observer.observe(card)
+    observer.observe(scrollRegion)
+    if (scrollRegion.firstElementChild) observer.observe(scrollRegion.firstElementChild)
+    scrollRegion.addEventListener('scroll', update, { passive: true })
+    update()
+    return () => {
+      observer.disconnect()
+      scrollRegion.removeEventListener('scroll', update)
+    }
+  }, [children, scrollSelector])
+
+  return (
+    <Card ref={ref} className={className} {...props}>
+      <span
+        className="card-scroll-cue"
+        data-visible={showScrollCue || undefined}
+        aria-hidden="true"
+      >
+        <ChevronDown size={18} strokeWidth={1.75} />
+      </span>
+      {children}
+    </Card>
+  )
 }
 
 export function EmptyState({
@@ -88,19 +140,16 @@ export function EmptyState({
 export function Metric({
   label,
   value,
-  detail,
   tone,
 }: {
   label: ReactNode
   value: ReactNode
-  detail?: ReactNode
   tone?: 'positive' | 'negative' | 'muted'
 }) {
   return (
     <div className="metric">
       <span>{label}</span>
       <strong className={tone}>{value}</strong>
-      {detail != null ? <small>{detail}</small> : null}
     </div>
   )
 }
@@ -165,6 +214,58 @@ export function RangeSelector<T extends number | string>({
         </Button>
       ))}
     </div>
+  )
+}
+
+export function ChartRangeSelect<T extends number | string>({
+  label,
+  options,
+  value,
+  onValueChange,
+}: {
+  label: string
+  options: RangeSelectorOption<T>[]
+  value: T
+  onValueChange: (value: T) => void
+}) {
+  return (
+    <FilterSelect
+      blurOnClose
+      className="chart-range-select"
+      label={label}
+      value={String(value)}
+      options={options.map((option) => ({
+        value: String(option.value),
+        label: option.accessibleLabel,
+      }))}
+      onValueChange={(nextValue) => {
+        const option = options.find(({ value: optionValue }) => String(optionValue) === nextValue)
+        if (option) onValueChange(option.value)
+      }}
+    />
+  )
+}
+
+export function ChartChange({
+  amount,
+  percent,
+  favorable = 'increase',
+  ariaLabel,
+}: {
+  amount: number | null | undefined
+  percent: number | null | undefined
+  favorable?: 'increase' | 'decrease'
+  ariaLabel?: string
+}) {
+  const tone = valueTone(amount == null || favorable === 'increase' ? amount : -amount)
+
+  return (
+    <strong className="hero-change" role={ariaLabel ? 'group' : undefined} aria-label={ariaLabel}>
+      <span className={tone}>
+        {amount == null ? '—' : `${amount >= 0 ? '+' : ''}${formatCurrency(amount)}`}
+      </span>
+      <span className={tone}>({formatPercent(percent).replace(/^\+/, '')})</span>
+    </strong>
   )
 }
 

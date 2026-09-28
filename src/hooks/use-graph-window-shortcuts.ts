@@ -9,17 +9,15 @@ const shortcutKeys: Record<string, string> = {
   'graph-week': 'W',
   'graph-month': 'M',
   'graph-quarter': 'Q',
+  'graph-year': 'Y',
   'graph-all': 'A',
 }
 
 type ArrowShortcutEvent = Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>
 
-export function graphAccountShortcut(
-  event: ArrowShortcutEvent,
-  modifier: 'command' | 'none' = 'command',
-) {
+export function graphAccountShortcut(event: ArrowShortcutEvent) {
   if (
-    event.metaKey !== (modifier === 'command') ||
+    event.metaKey ||
     event.ctrlKey ||
     event.shiftKey ||
     event.altKey ||
@@ -90,17 +88,14 @@ export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<
   }, [setGraphWindow])
 }
 
-export function useGraphAccountShortcuts(
-  onDirection: (direction: -1 | 1) => void,
-  modifier: 'command' | 'none' = 'command',
-) {
+export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => void) {
   useEffect(() => {
     const runShortcut = (shortcut: string) => {
       if (shortcut === 'graph-previous') onDirection(-1)
       else if (shortcut === 'graph-next') onDirection(1)
     }
     const onKeyDown = (event: KeyboardEvent) => {
-      const shortcut = graphAccountShortcut(event, modifier)
+      const shortcut = graphAccountShortcut(event)
       if (!shortcut || pageShortcutBlocked(event)) return
       event.preventDefault()
       runShortcut(shortcut)
@@ -121,5 +116,5 @@ export function useGraphAccountShortcuts(
       unlisten?.()
       window.removeEventListener('keydown', onKeyDown)
     }
-  }, [onDirection, modifier])
+  }, [onDirection])
 }

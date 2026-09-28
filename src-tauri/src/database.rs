@@ -1,6 +1,6 @@
 use std::{collections::BTreeMap, fs, path::Path};
 
-use rusqlite::{params, Connection, DatabaseName, OptionalExtension, Transaction};
+use rusqlite::{params, Connection, DatabaseName, OpenFlags, OptionalExtension, Transaction};
 use serde::Serialize;
 use serde_json::{Map, Value};
 
@@ -19,20 +19,21 @@ const COLLECTIONS: [&str; 10] = [
     "possibleDuplicateAccounts",
 ];
 const DATABASE_SCHEMA_VERSION: u32 = 3;
+const DATABASE_APPLICATION_ID: u32 = 0x4252_4946; // BRIF
 
 pub struct Database {
     connection: Connection,
 }
 
-#[derive(Serialize)]
+#[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncRun {
-    id: String,
-    started_at: String,
-    finished_at: String,
-    outcome: String,
-    warnings: Vec<String>,
-    error_code: Option<String>,
+    pub(crate) id: String,
+    pub(crate) started_at: String,
+    pub(crate) finished_at: String,
+    pub(crate) outcome: String,
+    pub(crate) warnings: Vec<String>,
+    pub(crate) error_code: Option<String>,
 }
 
 impl Database {
@@ -94,6 +95,7 @@ impl Database {
                  ) STRICT;
                  CREATE INDEX IF NOT EXISTS sync_runs_finished_at ON sync_runs(finished_at DESC);
                  DROP INDEX IF EXISTS account_links_snaptrade_unique;
+                 PRAGMA application_id = 1112688966;
                  PRAGMA user_version = 3;
                  COMMIT;",
             )
@@ -273,6 +275,45 @@ impl Database {
         secure_file(path)
     }
 
+    pub fn validate_backup(path: &Path) -> Result<(), String> {
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|_| "Backup is not a readable SQLite database".to_string())?;
+        let application_id = connection
+            .query_row("PRAGMA application_id", [], |row| row.get::<_, u32>(0))
+            .map_err(db_error)?;
+        let has_brief_state = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'state_meta')",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(db_error)?;
+        if application_id != DATABASE_APPLICATION_ID && !(application_id == 0 && has_brief_state) {
+            return Err("This is not a Brief backup".into());
+        }
+        let version = connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .map_err(db_error)?;
+        if version > DATABASE_SCHEMA_VERSION {
+            return Err("This backup requires a newer version of Brief".into());
+        }
+        let integrity = connection
+            .query_row("PRAGMA integrity_check", [], |row| row.get::<_, String>(0))
+            .map_err(db_error)?;
+        if integrity != "ok" {
+            return Err("The backup failed SQLite integrity validation".into());
+        }
+        let foreign_key_errors = connection
+            .prepare("PRAGMA foreign_key_check")
+            .and_then(|mut statement| statement.exists([]))
+            .map_err(db_error)?;
+        if foreign_key_errors {
+            return Err("The backup contains invalid references".into());
+        }
+        Ok(())
+    }
+
+    #[cfg(test)]
     pub fn replace_workspace(
         &mut self,
         workspace: &crate::workspace::Workspace,

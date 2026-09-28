@@ -1,31 +1,41 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
+import { open, save } from '@tauri-apps/plugin-dialog'
+import { useEffect, useRef, useState } from 'react'
+import { toast } from 'sonner'
+
+import { PageError, PageLoading, RefreshButton } from '../components/data-state'
+import { FilterSelect } from '../components/filter-select'
 import {
   ArrowDown,
   ArrowUp,
   ChevronRight,
   Cpu,
   Database,
+  Download,
   Fingerprint,
   HardDrive,
   Link2,
   Palette,
   RefreshCw,
+  RotateCcw,
   Save,
   ScrollText,
   Trash2,
   Unlink,
   Wrench,
   X,
-} from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
-
-import { PageError, PageLoading, RefreshButton } from '../components/data-state'
-import { FilterSelect } from '../components/filter-select'
-import { Button, Card, RangeSelector, SectionHeading, StatusDot } from '../components/ui'
+} from '../components/icons'
+import {
+  Button,
+  Card,
+  ChartRangeSelect,
+  RangeSelector,
+  SectionHeading,
+  StatusDot,
+} from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
-import { useFinance } from '../hooks/use-finance'
+import { financeQueryKey, useFinance } from '../hooks/use-finance'
 import { useRefreshFinance } from '../hooks/use-refresh-finance'
 import {
   accountDisplayName,
@@ -37,18 +47,29 @@ import {
   getAccountStartDates,
   saveAccountStartDates,
 } from '../lib/account-start-date-preferences'
+import { analyticsCharts } from '../lib/analytics'
+import {
+  moveAnalyticsChart,
+  saveAnalyticsOrder,
+  useAnalyticsOrder,
+} from '../lib/analytics-order-preferences'
 import {
   authenticateSensitiveAction,
   beginProviderLink,
+  exportFinanceBackup,
   cancelProviderLink,
   type ProviderLinkSession,
   getFoundationModelStatus,
+  inspectFinanceBackup,
   isTauri,
   pollProviderLink,
+  restoreFinanceBackup,
   saveIntegrationCredentials,
   saveAccountLink,
   getProviderConnections,
+  getPlaidRecurringReport,
   forgetProviderConnection,
+  type BackupInfo,
 } from '../lib/api'
 import { dashboardAccountViews } from '../lib/dashboard-account-views'
 import { formatCurrency } from '../lib/format'
@@ -129,6 +150,22 @@ const linkProviderName = (provider: LinkProvider) =>
       ? 'Plaid'
       : 'SnapTrade'
 
+const plaidEnumLabel = (value: string) => {
+  const label = value.replaceAll('_', ' ').toLocaleLowerCase()
+  return label ? `${label[0].toLocaleUpperCase()}${label.slice(1)}` : value
+}
+
+const plaidAmountLabel = (
+  amount: number,
+  currency: string | null,
+  direction: 'inflow' | 'outflow',
+) => {
+  const signed = direction === 'outflow' ? -amount : amount
+  return currency && currency !== 'USD'
+    ? `${signed.toFixed(2)} ${currency}`
+    : formatCurrency(signed)
+}
+
 const dataSources = [
   { id: 'plaid', name: 'Plaid', description: 'Bank and credit card accounts' },
   {
@@ -148,6 +185,7 @@ const dataSources = [
 ] as const
 
 export function SettingsPage() {
+  const hash = useLocation({ select: (location) => location.hash })
   const queryClient = useQueryClient()
   const query = useFinance()
   const refresh = useRefreshFinance()
@@ -156,6 +194,7 @@ export function SettingsPage() {
     queryFn: getProviderConnections,
   })
   const orderedPages = useOrderedNavigation()
+  const orderedCharts = useAnalyticsOrder()
   const [forgettingItem, setForgettingItem] = useState<string | null>(null)
   const forgetConnection = useMutation({
     mutationFn: forgetProviderConnection,
@@ -175,12 +214,24 @@ export function SettingsPage() {
     },
   })
   const [linking, setLinking] = useState<LinkProvider | null>(null)
+  const plaidRecurring = useMutation({
+    mutationFn: getPlaidRecurringReport,
+    onError: (error) => {
+      toast.error('Could not check Plaid recurring transactions', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    },
+  })
   const foundationModel = useQuery({
     queryKey: ['foundation-model-status'],
     queryFn: getFoundationModelStatus,
     staleTime: Number.POSITIVE_INFINITY,
   })
   const [integrationSaving, setIntegrationSaving] = useState<CredentialProvider | null>(null)
+  const [backupBusy, setBackupBusy] = useState<'export' | 'inspect' | 'restore' | null>(null)
+  const [pendingRestore, setPendingRestore] = useState<{ path: string; info: BackupInfo } | null>(
+    null,
+  )
   const [credentialsUnlocked, setCredentialsUnlocked] = useState(false)
   const [credentialsUnlocking, setCredentialsUnlocking] = useState(false)
   const [defaultGraphWindow, setDefaultGraphWindow] = useState(getDefaultGraphWindow)
@@ -217,6 +268,13 @@ export function SettingsPage() {
       activeSession.current = null
     }
   }, [])
+
+  useEffect(() => {
+    if (hash.replace(/^#/, '') !== 'data-sources' || query.isLoading || query.isError) return
+    const heading = document.getElementById('data-sources')
+    heading?.focus({ preventScroll: true })
+    heading?.scrollIntoView({ block: 'start' })
+  }, [hash, query.isError, query.isLoading])
 
   const unlockCredentials = async () => {
     setCredentialsUnlocking(true)
@@ -261,6 +319,72 @@ export function SettingsPage() {
       toast.error(message)
     } finally {
       setIntegrationSaving(null)
+    }
+  }
+
+  const exportBackup = async () => {
+    if (!isTauri()) return
+    setBackupBusy('export')
+    try {
+      const date = new Date().toISOString().slice(0, 10)
+      const path = await save({
+        defaultPath: `Brief ${date}.briefbackup`,
+        filters: [{ name: 'Brief backup', extensions: ['briefbackup'] }],
+      })
+      if (!path) return
+      await exportFinanceBackup(path)
+      toast.success('Financial backup saved')
+    } catch (error) {
+      toast.error('Could not save backup', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setBackupBusy(null)
+    }
+  }
+
+  const chooseBackup = async () => {
+    if (!isTauri()) return
+    setBackupBusy('inspect')
+    try {
+      const path = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Brief backup', extensions: ['briefbackup', 'sqlite3', 'db'] }],
+      })
+      if (!path) return
+      const info = await inspectFinanceBackup(path)
+      setPendingRestore({ path, info })
+    } catch (error) {
+      toast.error('Could not read backup', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setBackupBusy(null)
+    }
+  }
+
+  const restoreBackup = async () => {
+    if (!pendingRestore) return
+    setBackupBusy('restore')
+    try {
+      const snapshot = await restoreFinanceBackup(pendingRestore.path)
+      queryClient.setQueryData(financeQueryKey, snapshot)
+      setPendingRestore(null)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ['transaction-annotations'] }),
+        queryClient.invalidateQueries({ queryKey: ['provider-connections'] }),
+        queryClient.invalidateQueries({ queryKey: ['data-health'] }),
+        queryClient.invalidateQueries({ queryKey: ['portfolio-performance'] }),
+        queryClient.invalidateQueries({ queryKey: ['market-snapshots'] }),
+      ])
+      toast.success('Backup restored')
+    } catch (error) {
+      toast.error('Could not restore backup', {
+        description: error instanceof Error ? error.message : String(error),
+      })
+    } finally {
+      setBackupBusy(null)
     }
   }
 
@@ -436,7 +560,7 @@ export function SettingsPage() {
             </Link>
             <Link to="/logs" className="button-base button-secondary button-default">
               <ScrollText size={16} aria-hidden="true" />
-              <span className="sr-only">Logs</span>
+              <span className="sr-only">Diagnostics</span>
             </Link>
           </>
         }
@@ -485,11 +609,40 @@ export function SettingsPage() {
             </div>
           </Card>
           <Card>
+            <SectionHeading title="Analytics order" />
+            <div className="page-order-list">
+              {orderedCharts.map((id, index) => {
+                const label = analyticsCharts.find((chart) => chart.id === id)!.label
+                return (
+                  <div className="page-order-row" key={id}>
+                    <span aria-hidden="true">{index + 1}</span>
+                    <span>{label}</span>
+                    <Button
+                      icon={ArrowUp}
+                      disabled={index === 0}
+                      aria-label={`Move ${label} chart up`}
+                      onClick={() =>
+                        saveAnalyticsOrder(moveAnalyticsChart(orderedCharts, index, -1))
+                      }
+                    />
+                    <Button
+                      icon={ArrowDown}
+                      disabled={index === orderedCharts.length - 1}
+                      aria-label={`Move ${label} chart down`}
+                      onClick={() =>
+                        saveAnalyticsOrder(moveAnalyticsChart(orderedCharts, index, 1))
+                      }
+                    />
+                  </div>
+                )
+              })}
+            </div>
+          </Card>
+          <Card>
             <SectionHeading title="Charts" />
             <div className="settings-control-row">
               <span>Home range</span>
-              <RangeSelector
-                className="graph-window-options"
+              <ChartRangeSelect
                 label="Default graph range"
                 options={graphWindows.map(({ secs, label, settingsLabel }) => ({
                   value: secs,
@@ -505,8 +658,7 @@ export function SettingsPage() {
             </div>
             <div className="settings-control-row">
               <span>Holdings range</span>
-              <RangeSelector
-                className="graph-window-options"
+              <ChartRangeSelect
                 label="Default Holdings graph range"
                 options={holdingChartRanges}
                 value={holdingChartRange}
@@ -550,7 +702,7 @@ export function SettingsPage() {
               </label>
               <span className="muted">
                 Requests ticker and merchant logos from Logo.dev or Plaid. Turn off to use local
-                initials.
+                category and ticker marks.
               </span>
             </div>
           </Card>
@@ -777,10 +929,82 @@ export function SettingsPage() {
             </Card>
           ) : null}
         </section>
+        <section className="settings-section">
+          <h2 className="settings-section-heading">Local data</h2>
+          <Card>
+            <SectionHeading title="Backup and restore" />
+            <div className="backup-actions">
+              <div>
+                <strong>Portable financial backup</strong>
+                <p className="settings-copy">
+                  Saves the committed snapshot, provider caches, reviews, account links, and local
+                  workspace. Keychain credentials and disposable market caches stay on this Mac.
+                </p>
+              </div>
+              <div className="backup-buttons">
+                <Button
+                  disabled={!isTauri() || backupBusy !== null}
+                  onClick={() => void exportBackup()}
+                >
+                  <Download size={16} aria-hidden="true" />
+                  {backupBusy === 'export' ? 'Saving…' : 'Save backup'}
+                </Button>
+                <Button
+                  disabled={!isTauri() || backupBusy !== null}
+                  onClick={() => void chooseBackup()}
+                >
+                  <RotateCcw size={16} aria-hidden="true" />
+                  {backupBusy === 'inspect' ? 'Validating…' : 'Choose backup'}
+                </Button>
+              </div>
+            </div>
+            <p className="backup-privacy-note">
+              Backup files contain unencrypted financial data. Store them somewhere private.
+            </p>
+            {pendingRestore ? (
+              <div className="backup-confirmation" role="group" aria-label="Confirm backup restore">
+                <div>
+                  <strong>Replace current local financial data?</strong>
+                  <p>
+                    Data through {new Date(pendingRestore.info.updatedAt).toLocaleString()} ·{' '}
+                    {pendingRestore.info.accounts} accounts · {pendingRestore.info.transactions}{' '}
+                    activities · {pendingRestore.info.holdings} holdings
+                  </p>
+                  <small>
+                    Brief validated this copy and will retain the current database before replacing
+                    it. Saved credentials are not changed.
+                  </small>
+                </div>
+                <div className="backup-buttons">
+                  <Button
+                    disabled={backupBusy === 'restore'}
+                    onClick={() => setPendingRestore(null)}
+                  >
+                    Cancel
+                  </Button>
+                  <Button
+                    variant="destructive"
+                    disabled={backupBusy === 'restore'}
+                    onClick={() => void restoreBackup()}
+                  >
+                    {backupBusy === 'restore' ? 'Restoring…' : 'Confirm restore'}
+                  </Button>
+                </div>
+              </div>
+            ) : null}
+          </Card>
+        </section>
         <section className="settings-section settings-section-pair">
           <h2 className="settings-section-heading">Connections</h2>
           <Card>
-            <SectionHeading title="Data sources" action={<RefreshButton />} />
+            <SectionHeading
+              title={
+                <span id="data-sources" tabIndex={-1}>
+                  Data sources
+                </span>
+              }
+              action={<RefreshButton />}
+            />
             <div className="provider-list">
               {providers.map((provider) => (
                 <div className="provider-row" key={provider.id}>
@@ -910,6 +1134,122 @@ export function SettingsPage() {
               ))}
               {connections.data?.length === 0 ? (
                 <p className="settings-copy">No saved Plaid connections.</p>
+              ) : null}
+            </Card>
+            <Card className="plaid-recurring-card">
+              <SectionHeading
+                title="Plaid recurring check"
+                action={
+                  <Button
+                    disabled={
+                      !isTauri() ||
+                      plaidRecurring.isPending ||
+                      !connections.data?.some(({ provider }) => provider === 'plaid')
+                    }
+                    onClick={() => plaidRecurring.mutate()}
+                  >
+                    {plaidRecurring.isPending ? 'Checking…' : 'Check Plaid'}
+                  </Button>
+                }
+              />
+              <p className="settings-copy">
+                Requires Plaid Recurring Transactions access and reads its current streams on
+                demand. Results are not saved or used by Expected activity.
+              </p>
+              {plaidRecurring.isPending ? (
+                <p className="settings-copy" role="status">
+                  Asking Plaid to analyze connected banking activity…
+                </p>
+              ) : null}
+              {plaidRecurring.data ? (
+                <div className="plaid-recurring-connections">
+                  {plaidRecurring.data.connections.map((connection) => (
+                    <section className="plaid-recurring-connection" key={connection.itemId}>
+                      <div className="plaid-recurring-connection-heading">
+                        <strong>{connection.name}</strong>
+                        <small>
+                          {connection.error
+                            ? 'Unavailable'
+                            : `${connection.streams.length} stream${connection.streams.length === 1 ? '' : 's'}`}
+                        </small>
+                      </div>
+                      {connection.error ? (
+                        <p className="plaid-recurring-error" role="alert">
+                          {connection.error}
+                        </p>
+                      ) : connection.streams.length ? (
+                        <ul className="plaid-recurring-list">
+                          {connection.streams.map((stream) => {
+                            const account = data.accounts.find(({ id }) => id === stream.accountId)
+                            return (
+                              <li className="plaid-recurring-row" key={stream.streamId}>
+                                <div className="plaid-recurring-copy">
+                                  <strong>{stream.merchantName ?? stream.description}</strong>
+                                  <small>
+                                    {accountDisplayName(
+                                      account?.id,
+                                      account?.name ?? 'Plaid account',
+                                      accountDisplayNames,
+                                    )}{' '}
+                                    {stream.category ? ` · ${plaidEnumLabel(stream.category)}` : ''}{' '}
+                                    · {plaidEnumLabel(stream.frequency)} · {stream.transactionCount}{' '}
+                                    transaction
+                                    {stream.transactionCount === 1 ? '' : 's'}
+                                  </small>
+                                  <small>
+                                    Seen <time dateTime={stream.firstDate}>{stream.firstDate}</time>{' '}
+                                    – <time dateTime={stream.lastDate}>{stream.lastDate}</time>
+                                    {stream.predictedNextDate ? (
+                                      <>
+                                        {' '}
+                                        · Next{' '}
+                                        <time dateTime={stream.predictedNextDate}>
+                                          {stream.predictedNextDate}
+                                        </time>
+                                      </>
+                                    ) : null}
+                                  </small>
+                                </div>
+                                <span className="plaid-recurring-status">
+                                  <StatusDot tone={stream.isActive ? 'positive' : 'neutral'} />
+                                  {plaidEnumLabel(stream.status)}
+                                  {!stream.isActive ? ' · Inactive' : ''}
+                                </span>
+                                <span className="plaid-recurring-amount">
+                                  <small>Average</small>
+                                  <strong
+                                    className={
+                                      stream.direction === 'inflow' ? 'positive' : 'negative'
+                                    }
+                                  >
+                                    {plaidAmountLabel(
+                                      stream.averageAmount.amount,
+                                      stream.averageAmount.currency,
+                                      stream.direction,
+                                    )}
+                                  </strong>
+                                  <small>
+                                    Last{' '}
+                                    {plaidAmountLabel(
+                                      stream.lastAmount.amount,
+                                      stream.lastAmount.currency,
+                                      stream.direction,
+                                    )}
+                                  </small>
+                                </span>
+                              </li>
+                            )
+                          })}
+                        </ul>
+                      ) : (
+                        <p className="settings-copy">Plaid returned no recurring streams.</p>
+                      )}
+                    </section>
+                  ))}
+                  <small className="plaid-recurring-fetched">
+                    Checked {new Date(plaidRecurring.data.fetchedAt).toLocaleString()}
+                  </small>
+                </div>
               ) : null}
             </Card>
             <Card>

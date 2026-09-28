@@ -70,6 +70,17 @@ struct Recovery {
     can_restore: bool,
 }
 
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BackupInfo {
+    pub updated_at: String,
+    pub revision: u64,
+    pub schema_version: u32,
+    pub accounts: usize,
+    pub transactions: usize,
+    pub holdings: usize,
+}
+
 pub(crate) fn empty_state() -> Result<FinanceState, String> {
     Ok(FinanceState {
         schema_version: 1,
@@ -188,7 +199,10 @@ impl Storage {
             return Ok(false);
         }
 
-        let previous = self.data.snapshot.clone();
+        self.reproject_cached(self.data.snapshot.clone())
+    }
+
+    fn reproject_cached(&mut self, previous: Value) -> Result<bool, String> {
         let now = previous["updatedAt"]
             .as_str()
             .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
@@ -266,6 +280,7 @@ impl Storage {
         self.database.backup(&self.backup_path())?;
         self.database.replace(&next)?;
         self.data = next;
+        self.pending = None;
         Ok(true)
     }
 
@@ -522,41 +537,7 @@ impl Storage {
         Ok(self.data.annotations.clone())
     }
 
-    pub fn holding_thesis(&self, ticker: &str) -> String {
-        self.data
-            .workspace
-            .theses
-            .get(ticker)
-            .cloned()
-            .unwrap_or_default()
-    }
-
-    pub fn save_holding_thesis(
-        &mut self,
-        ticker: String,
-        thesis: String,
-    ) -> Result<String, String> {
-        if ticker.is_empty()
-            || ticker.len() > 32
-            || ticker.trim() != ticker
-            || ticker.chars().any(char::is_control)
-        {
-            return Err("Invalid holding symbol".into());
-        }
-        let thesis = thesis.trim().to_owned();
-        if thesis.chars().count() > 1000 {
-            return Err("Keep the thesis under 1,000 characters".into());
-        }
-        let mut workspace = self.data.workspace.clone();
-        if thesis.is_empty() {
-            workspace.theses.remove(&ticker);
-        } else {
-            workspace.theses.insert(ticker, thesis.clone());
-        }
-        self.save_workspace(workspace)?;
-        Ok(thesis)
-    }
-
+    #[cfg(test)]
     pub fn save_workspace(&mut self, workspace: crate::workspace::Workspace) -> Result<(), String> {
         self.ensure_writable()?;
         workspace.validate()?;
@@ -617,7 +598,6 @@ impl Storage {
         Ok(())
     }
 
-    #[cfg(test)]
     pub fn export_backup(&self, destination: &Path) -> Result<(), String> {
         // A new file only: a mistaken selection cannot overwrite a database or any user file.
         let mut options = OpenOptions::new();
@@ -631,31 +611,39 @@ impl Storage {
             .open(destination)
             .map_err(|_| "Choose a new filename; existing files are never overwritten")?;
         drop(file);
-        let result = self.database.backup(destination);
+        let result = self
+            .database
+            .backup(destination)
+            .and_then(|_| Database::validate_backup(destination));
         if result.is_err() {
             let _ = fs::remove_file(destination);
         }
         result
     }
 
-    #[cfg(test)]
+    pub fn inspect_backup(&self, source: &Path) -> Result<BackupInfo, String> {
+        let (temporary, database, state) = self.validated_backup_copy(source)?;
+        let info = BackupInfo {
+            updated_at: state.snapshot["updatedAt"]
+                .as_str()
+                .unwrap_or_default()
+                .to_string(),
+            revision: state.revision,
+            schema_version: state.schema_version,
+            accounts: state.snapshot["accounts"].as_array().map_or(0, Vec::len),
+            transactions: state.snapshot["transactions"]
+                .as_array()
+                .map_or(0, Vec::len),
+            holdings: state.snapshot["holdings"].as_array().map_or(0, Vec::len),
+        };
+        drop(database);
+        let _ = fs::remove_file(temporary);
+        Ok(info)
+    }
+
     pub fn import_backup(&mut self, source: &Path) -> Result<crate::workspace::Workspace, String> {
-        self.ensure_writable()?;
-        if fs::metadata(source)
-            .map_err(|_| "Backup cannot be read")?
-            .len()
-            > 512 * 1024 * 1024
-        {
-            return Err("Backup exceeds 512 MB".into());
-        }
-        let temporary = self
-            .path
-            .with_extension(format!("{}.import", uuid::Uuid::new_v4()));
-        // Migrate and validate a private copy, never the user's backup.
+        let (temporary, mut database, mut next) = self.validated_backup_copy(source)?;
         let result = (|| {
-            fs::copy(source, &temporary).map_err(|_| "Backup cannot be copied")?;
-            let mut database = Database::open(&temporary)?;
-            let mut next = validate_state(database.load()?.ok_or("This is not a Brief backup")?)?;
             next.revision = self
                 .data
                 .revision
@@ -664,17 +652,51 @@ impl Storage {
                 .ok_or("Revision overflow")?;
             next.snapshot["revision"] = next.revision.into();
             database.replace(&next)?;
+            Database::validate_backup(&temporary)?;
             let retained = self
                 .path
                 .with_extension(format!("retained-{}.sqlite3", uuid::Uuid::new_v4()));
-            self.database.backup(&retained)?;
+            if self.recovery.is_some() && self.path.exists() {
+                fs::copy(&self.path, &retained)
+                    .map_err(|_| "Could not retain the unreadable finance database")?;
+            } else {
+                self.database.backup(&retained)?;
+            }
             self.database.backup(&self.backup_path())?;
             drop(database);
             fs::rename(&temporary, &self.path).map_err(|_| "Could not install backup")?;
             self.database = Database::open(&self.path)?;
             self.data = next;
             self.pending = None;
+            self.recovery = None;
             Ok(self.data.workspace.clone())
+        })();
+        if result.is_err() {
+            let _ = fs::remove_file(&temporary);
+        }
+        result
+    }
+
+    fn validated_backup_copy(
+        &self,
+        source: &Path,
+    ) -> Result<(PathBuf, Database, FinanceState), String> {
+        let metadata = fs::metadata(source).map_err(|_| "Backup cannot be read")?;
+        if !metadata.is_file() || metadata.len() == 0 {
+            return Err("Backup is empty or is not a file".into());
+        }
+        if metadata.len() > 512 * 1024 * 1024 {
+            return Err("Backup exceeds 512 MB".into());
+        }
+        let temporary = self
+            .path
+            .with_extension(format!("{}.import", uuid::Uuid::new_v4()));
+        let result = (|| {
+            fs::copy(source, &temporary).map_err(|_| "Backup cannot be copied")?;
+            Database::validate_backup(&temporary)?;
+            let database = Database::open(&temporary)?;
+            let state = validate_state(database.load()?.ok_or("This is not a Brief backup")?)?;
+            Ok((temporary.clone(), database, state))
         })();
         if result.is_err() {
             let _ = fs::remove_file(&temporary);
@@ -1161,6 +1183,57 @@ mod tests {
     use crate::providers::SnapTradeData;
 
     #[test]
+    fn old_history_corrections_are_removed_during_projection_upgrade() {
+        let directory = directory();
+        let mut storage = Storage::new(directory.clone()).unwrap();
+        storage.data.snapshot["updatedAt"] = "2026-09-10T07:30:00Z".into();
+        storage.data.snapshot["calculationVersion"] = 22.into();
+        storage.data.snapshot["historyCorrections"] = serde_json::json!([{
+            "accountId": "snaptrade:brokerage", "date": "2026-09-08", "value": 200
+        }]);
+        storage.data.provider_data.snaptrade = Some(SnapTradeData {
+            accounts: vec![serde_json::json!({
+                "id": "brokerage", "name": "Brokerage", "institution_name": "Broker",
+                "balance": { "total": { "amount": 200, "currency": "USD" } }
+            })],
+            cash_balances: BTreeMap::from([(
+                "brokerage".into(),
+                vec![serde_json::json!({
+                    "currency": { "code": "USD" }, "cash": 200
+                })],
+            )]),
+            positions: BTreeMap::from([("brokerage".into(), vec![])]),
+            balance_history: BTreeMap::from([(
+                "brokerage".into(),
+                vec![
+                    serde_json::json!({ "date": "2026-09-07", "total_value": 200 }),
+                    serde_json::json!({ "date": "2026-09-08", "total_value": 9200 }),
+                ],
+            )]),
+            ..SnapTradeData::default()
+        });
+        assert!(storage.upgrade_projection().unwrap());
+        assert!(storage.data.snapshot.get("historyCorrections").is_none());
+        assert_eq!(
+            storage.data.snapshot["netWorthHistory"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .find(|point| point["date"] == "2026-09-08")
+                .unwrap()["value"],
+            9200.0
+        );
+        drop(storage);
+        assert!(Storage::new(directory.clone())
+            .unwrap()
+            .data
+            .snapshot
+            .get("historyCorrections")
+            .is_none());
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
     fn older_calculation_versions_rebuild_from_the_committed_cache() {
         let directory = directory();
         let mut storage = Storage::new(directory.clone()).unwrap();
@@ -1175,11 +1248,18 @@ mod tests {
                 "id": "brokerage", "name": "Brokerage", "institution_name": "Broker",
                 "balance": { "total": { "amount": 200, "currency": "USD" } }
             })],
+            cash_balances: BTreeMap::from([(
+                "brokerage".into(),
+                vec![serde_json::json!({
+                    "currency": { "code": "USD" }, "cash": 200
+                })],
+            )]),
+            positions: BTreeMap::from([("brokerage".into(), vec![])]),
             activities: BTreeMap::from([(
                 "brokerage".into(),
                 vec![serde_json::json!({
                     "id": "transfer", "type": "TRANSFER", "amount": 10,
-                    "trade_date": "2026-09-09"
+                    "trade_date": "2026-09-09T15:30:00Z"
                 })],
             )]),
             balance_history: BTreeMap::from([(
@@ -1602,47 +1682,6 @@ mod tests {
         assert!(Storage::new(directory.clone()).is_err());
         drop(storage);
         assert!(Storage::new(directory.clone()).is_ok());
-        fs::remove_dir_all(directory).unwrap();
-    }
-    #[test]
-    fn holding_theses_persist_clear_and_reject_invalid_edits_without_changing_finance() {
-        let directory = directory();
-        let mut storage = Storage::new(directory.clone()).unwrap();
-        let before = storage.snapshot().unwrap();
-        storage
-            .save_holding_thesis("TEST".into(), "  Synthetic adoption hypothesis.  ".into())
-            .unwrap();
-        storage
-            .save_holding_thesis("OTHER".into(), "Different synthetic hypothesis.".into())
-            .unwrap();
-        assert!(storage
-            .save_holding_thesis("TEST".into(), "x".repeat(1001))
-            .is_err());
-        assert!(storage
-            .save_holding_thesis("".into(), "Invalid".into())
-            .is_err());
-        assert_eq!(
-            storage.holding_thesis("TEST"),
-            "Synthetic adoption hypothesis."
-        );
-        assert_eq!(storage.snapshot().unwrap(), before);
-        drop(storage);
-        let mut storage = Storage::new(directory.clone()).unwrap();
-        assert_eq!(
-            storage.holding_thesis("TEST"),
-            "Synthetic adoption hypothesis."
-        );
-        storage
-            .save_holding_thesis("TEST".into(), "".into())
-            .unwrap();
-        drop(storage);
-        let storage = Storage::new(directory.clone()).unwrap();
-        assert_eq!(storage.holding_thesis("TEST"), "");
-        assert_eq!(
-            storage.holding_thesis("OTHER"),
-            "Different synthetic hypothesis."
-        );
-        drop(storage);
         fs::remove_dir_all(directory).unwrap();
     }
 }

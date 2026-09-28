@@ -5,12 +5,16 @@ import seed from '../data/seed.json'
 import {
   earningsEventSchema,
   financeSnapshotSchema,
+  healthReportSchema,
   marketNewsResultSchema,
   marketSnapshotsSchema,
+  plaidRecurringReportSchema,
   type FinanceSnapshot,
   type EarningsEvent,
+  type HealthReport,
   type MarketNewsResult,
   type MarketSnapshots,
+  type PlaidRecurringReport,
 } from './schema'
 
 export const isTauri = () => '__TAURI_INTERNALS__' in window
@@ -75,6 +79,55 @@ export async function getFinanceSnapshot(): Promise<FinanceSnapshot> {
 
 export async function recoverFinanceState(restore: boolean): Promise<FinanceSnapshot> {
   return financeSnapshotSchema.parse(await invoke('recover_finance_state', { restore }))
+}
+
+export type BackupInfo = {
+  updatedAt: string
+  revision: number
+  schemaVersion: number
+  accounts: number
+  transactions: number
+  holdings: number
+}
+
+export async function exportFinanceBackup(path: string): Promise<void> {
+  if (!isTauri()) throw new Error('Backups are available in the Brief desktop app')
+  await invoke('export_finance_backup', { path })
+}
+
+export async function inspectFinanceBackup(path: string): Promise<BackupInfo> {
+  if (!isTauri()) throw new Error('Backups are available in the Brief desktop app')
+  return invoke<BackupInfo>('inspect_finance_backup', { path })
+}
+
+export async function restoreFinanceBackup(path: string): Promise<FinanceSnapshot> {
+  if (!isTauri()) throw new Error('Backups are available in the Brief desktop app')
+  const result = await invoke<{ snapshot: unknown }>('restore_finance_backup', { path })
+  return financeSnapshotSchema.parse(result.snapshot)
+}
+
+export async function getDataHealth(): Promise<HealthReport> {
+  if (!isTauri()) {
+    return healthReportSchema.parse({
+      computedAt: new Date().toISOString(),
+      revision: browserSnapshot().revision ?? 0,
+      overallStatus: 'info',
+      counts: { critical: 0, error: 0, warning: 0, info: 1 },
+      issues: [
+        {
+          id: 'browser-preview',
+          severity: 'info',
+          category: 'environment',
+          title: 'Synthetic browser preview',
+          explanation: 'Native storage and provider checks run only in the Brief desktop app.',
+          evidence: [],
+          affectedItems: [],
+          action: { label: 'Open settings', route: '/settings' },
+        },
+      ],
+    })
+  }
+  return healthReportSchema.parse(await invoke('get_data_health'))
 }
 
 export async function refreshFinanceSnapshot(): Promise<{
@@ -143,6 +196,10 @@ export type ProviderConnection = {
 }
 export async function getProviderConnections(): Promise<ProviderConnection[]> {
   return isTauri() ? invoke('get_provider_connections') : []
+}
+export async function getPlaidRecurringReport(): Promise<PlaidRecurringReport> {
+  if (!isTauri()) throw new Error('Plaid recurring detection is available in the Brief desktop app')
+  return plaidRecurringReportSchema.parse(await invoke('get_plaid_recurring_report'))
 }
 export async function forgetProviderConnection(itemId: string): Promise<void> {
   await invoke('forget_provider_connection', { itemId })
@@ -215,10 +272,10 @@ export async function stopHoldingChart(requestId: string) {
   await invoke('stop_holding_chart', { requestId })
 }
 
-export async function getMarketNews(symbols: string[], force = false): Promise<MarketNewsResult> {
+export async function getMarketNews(symbols: string[], refresh = false): Promise<MarketNewsResult> {
   if (!isTauri())
     return { articles: [], savedAt: null, warning: null, requestsRemaining: 0, canRefresh: false }
-  return marketNewsResultSchema.parse(await invoke('get_market_news', { symbols, force }))
+  return marketNewsResultSchema.parse(await invoke('get_market_news', { symbols, refresh }))
 }
 
 export async function getEarningsCalendar(symbols: string[]): Promise<EarningsEvent[]> {
@@ -242,7 +299,6 @@ let explanationQueue: Promise<unknown> = Promise.resolve()
 export async function generateFoundationExplanation(
   evidence: string,
   signal: AbortSignal | undefined,
-  purpose: 'news' | 'chat',
 ): Promise<string> {
   if (!isTauri()) throw new Error('Apple Intelligence requires the Brief desktop app')
   const result = explanationQueue.then(async () => {
@@ -261,7 +317,6 @@ export async function generateFoundationExplanation(
     try {
       const response = await invoke<string>('generate_foundation_explanation', {
         evidence: evidence.slice(0, 12_000),
-        purpose,
         requestId,
         started,
       })

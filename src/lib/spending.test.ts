@@ -6,6 +6,8 @@ import {
   buildPlatinumBenefitTracker,
   buildPlatinumBenefitHistory,
   buildMonthlySpendingHistory,
+  buildPlatinumCreditSummary,
+  buildSpendingBars,
   buildSpendingView,
   formatActivityDate,
   getPlatinumBenefitActivity,
@@ -44,29 +46,47 @@ const spendingMonthShortcut = (key: string, metaKey = false) =>
 
 describe('spending view', () => {
   it('maps spending ranges and moves through calendar months', () => {
-    expect(['m', 'q', 'y', 'a'].map(spendingPeriodForKey)).toEqual([1, 3, 12, 0])
-    expect(spendingPeriodForKey('w')).toBeUndefined()
+    expect(['s', 'w', 'm', 'q', 'y', 'a'].map(spendingPeriodForKey)).toEqual([
+      'statement',
+      'week',
+      1,
+      3,
+      12,
+      0,
+    ])
     expect(spendingMonthReference('2026-09-03T12:00:00Z', 0)).toBe('2026-09-03T12:00:00Z')
     expect(spendingMonthReference('2026-09-03T12:00:00Z', -1)).toBe('2026-08-31T12:00:00Z')
     expect(spendingMonthReference('2026-09-03T12:00:00Z', -9)).toBe('2025-12-31T12:00:00Z')
+    expect(spendingPeriodReference([], '2026-09-03T12:00:00Z', -1, 'week')).toBe(
+      '2026-08-27T12:00:00Z',
+    )
+    expect(spendingPeriodReference([], '2026-09-03T12:00:00Z', -1, 1)).toBe('2026-08-31T12:00:00Z')
+    expect(spendingPeriodReference([], '2026-09-03T12:00:00Z', -1, 3)).toBe('2026-06-30T12:00:00Z')
+    expect(spendingPeriodReference([], '2026-09-03T12:00:00Z', -1, 12)).toBe('2025-12-31T12:00:00Z')
+    expect(spendingPeriodReference([], '2026-09-03T12:00:00Z', -1, 0)).toBe('2026-09-03T12:00:00Z')
     expect(
-      ([1, 3, 12, 0] as const).map((period) => spendingPeriodLabel(period, 0, 'September 2026')),
-    ).toEqual(['This month', 'This quarter', 'This year', 'All time'])
+      (['week', 1, 3, 12, 0] as const).map((period) =>
+        spendingPeriodLabel(period, 0, 'September 2026'),
+      ),
+    ).toEqual(['This week', 'This month', 'This quarter', 'This year', 'All time'])
+    expect(spendingPeriodLabel('statement', 0, 'Sep 5, 2026', 'statement')).toBe(
+      'Current statement',
+    )
+    expect(spendingPeriodLabel('statement', 0, 'September 2026')).toBe('This month')
+    expect(spendingPeriodLabel('statement', -1, 'Sep 5, 2026', 'statement')).toBe(
+      'Statement ending Sep 5, 2026',
+    )
+    expect(spendingPeriodLabel('week', -1, 'Aug 27, 2026')).toBe('Week ending Aug 27, 2026')
     expect(spendingPeriodLabel(1, -1, 'August 2026')).toBe('August 2026')
     expect(spendingPeriodLabel(3, -1, 'August 2026')).toBe('Quarter through August 2026')
     expect(spendingPeriodLabel(12, -1, 'August 2026')).toBe('Year through August 2026')
     expect(spendingPeriodLabel(0, -1, 'August 2026')).toBe('All time through August 2026')
-    expect(spendingPeriodLabel(1, 0, 'Sep 5, 2026', 'statement')).toBe('Current statement')
-    expect(spendingPeriodLabel(3, 0, 'Sep 5, 2026', 'statement')).toBe('3 statements')
-    expect(spendingPeriodLabel(1, -1, 'Sep 5, 2026', 'statement')).toBe(
-      'Statement ending Sep 5, 2026',
-    )
   })
 
-  it('moves between months with plain or Command arrow shortcuts', () => {
+  it('moves between months with plain arrow shortcuts', () => {
     expect(spendingMonthShortcut('ArrowLeft')).toBe(-1)
-    expect(spendingMonthShortcut('ArrowRight', true)).toBe(1)
-    expect(spendingMonthShortcut('ArrowLeft', true)).toBe(-1)
+    expect(spendingMonthShortcut('ArrowRight')).toBe(1)
+    expect(spendingMonthShortcut('ArrowLeft', true)).toBeUndefined()
     expect(spendingMonthShortcut('m', true)).toBeUndefined()
     expect(
       spendingMonthDirectionForKey({
@@ -79,16 +99,57 @@ describe('spending view', () => {
     ).toBeUndefined()
   })
 
-  it('filters month and all-time views through the selected month', () => {
+  it('aligns month, quarter, and year views to calendar boundaries', () => {
+    const transactions = [
+      transaction({ id: 'january', date: '2026-01-15', amount: -10 }),
+      transaction({ id: 'march', date: '2026-03-31', amount: -20 }),
+      transaction({ id: 'april', date: '2026-04-01', amount: -30 }),
+      transaction({ id: 'may', date: '2026-05-15', amount: -40 }),
+    ]
+    const reference = '2026-05-15T12:00:00Z'
+
+    expect(buildSpendingView(transactions, reference, 1)).toMatchObject({
+      start: '2026-05-01',
+      total: 40,
+    })
+    expect(buildSpendingView(transactions, reference, 3)).toMatchObject({
+      start: '2026-04-01',
+      total: 70,
+    })
+    expect(buildSpendingView(transactions, reference, 12)).toMatchObject({
+      start: '2026-01-01',
+      total: 100,
+    })
+  })
+
+  it('keeps all-time anchored to the snapshot', () => {
     const transactions = [
       transaction({ id: 'january', date: '2026-01-15', amount: -10 }),
       transaction({ id: 'august', date: '2026-08-15', amount: -20 }),
       transaction({ id: 'september', date: '2026-09-01', amount: -30 }),
     ]
-    const selectedMonth = spendingMonthReference('2026-09-03T12:00:00Z', -1)
 
-    expect(buildSpendingView(transactions, '2026-09-03T12:00:00Z', 1, selectedMonth).total).toBe(20)
-    expect(buildSpendingView(transactions, '2026-09-03T12:00:00Z', 0, selectedMonth).total).toBe(30)
+    expect(buildSpendingView(transactions, '2026-09-03T12:00:00Z', 0).total).toBe(60)
+  })
+
+  it('builds a seven-day view with the matching prior-week comparison', () => {
+    const view = buildSpendingView(
+      [
+        transaction({ id: 'current', date: '2026-09-03', amount: -30 }),
+        transaction({ id: 'prior', date: '2026-08-27', amount: -20 }),
+        transaction({ id: 'outside', date: '2026-08-20', amount: -100 }),
+      ],
+      '2026-09-03T12:00:00Z',
+      'week',
+    )
+    expect(view).toMatchObject({
+      start: '2026-08-28',
+      end: '2026-09-03',
+      total: 30,
+      previousTotal: 20,
+      periodBasis: 'calendar',
+    })
+    expect(view.transactions.map(({ id }) => id)).toEqual(['current'])
   })
 
   it('compares category spending across adjacent seven-day windows', () => {
@@ -142,9 +203,8 @@ describe('spending view', () => {
     const current = buildSpendingView(
       transactions,
       '2026-09-14T12:00:00Z',
-      1,
-      '2026-09-14T12:00:00Z',
       'statement',
+      '2026-09-14T12:00:00Z',
     )
     expect(current).toMatchObject({
       start: '2026-08-24',
@@ -155,52 +215,37 @@ describe('spending view', () => {
       periodBasis: 'statement',
     })
     expect(current.trend.at(-1)?.current).toBe(25)
-    expect(current.activityMarkers).toEqual([
-      {
-        id: 'september-pay',
-        date: '2026-09-07',
-        sequence: 0,
-        count: 1,
-        value: 0,
-        direction: 'credit',
-        merchant: 'AUTOPAY PAYMENT RECEIVED - THANK YOU',
-        amount: 110,
-      },
-      {
-        id: 'current-spend',
-        date: '2026-09-12',
-        sequence: 0,
-        count: 1,
-        value: 25,
-        direction: 'expense',
-        merchant: 'Merchant',
-        amount: 25,
-      },
-    ])
+    expect(current.estimatedClosingTotal).toBeGreaterThan(25)
     const anchored = buildSpendingView(
       transactions,
       '2026-09-14T12:00:00Z',
-      1,
-      '2026-09-14T12:00:00Z',
       'statement',
+      '2026-09-14T12:00:00Z',
       42,
     )
     expect(anchored).toMatchObject({ startingBalance: 127, statementBalance: 42 })
     expect(anchored.trend.at(-1)?.current).toBe(42)
-    expect(
-      buildSpendingView(
-        transactions,
-        '2026-09-14T12:00:00Z',
-        3,
-        '2026-09-14T12:00:00Z',
-        'statement',
-      ),
-    ).toMatchObject({ start: '2026-06-23', end: '2026-09-14', total: 125 })
 
-    const priorReference = spendingPeriodReference(transactions, '2026-09-14T12:00:00Z', -1)
+    const calendarMonth = buildSpendingView(
+      transactions,
+      '2026-09-14T12:00:00Z',
+      1,
+      '2026-09-14T12:00:00Z',
+    )
+    expect(calendarMonth).toMatchObject({ start: '2026-09-01', periodBasis: 'calendar' })
+    expect(spendingPeriodReference(transactions, '2026-09-14T12:00:00Z', -1, 1)).toBe(
+      '2026-08-31T12:00:00Z',
+    )
+
+    const priorReference = spendingPeriodReference(
+      transactions,
+      '2026-09-14T12:00:00Z',
+      -1,
+      'statement',
+    )
     expect(priorReference).toBe('2026-08-23T12:00:00Z')
     expect(
-      buildSpendingView(transactions, '2026-09-14T12:00:00Z', 1, priorReference, 'statement'),
+      buildSpendingView(transactions, '2026-09-14T12:00:00Z', 'statement', priorReference),
     ).toMatchObject({
       start: '2026-07-24',
       end: '2026-08-23',
@@ -223,13 +268,12 @@ describe('spending view', () => {
     const view = buildSpendingView(
       transactions,
       '2026-08-14T12:00:00Z',
-      1,
-      '2026-08-14T12:00:00Z',
       'statement',
+      '2026-08-14T12:00:00Z',
     )
 
     expect(view).toMatchObject({ start: '2026-08-01', periodBasis: 'calendar', total: 60 })
-    expect(spendingPeriodReference(transactions, '2026-08-14T12:00:00Z', -1)).toBe(
+    expect(spendingPeriodReference(transactions, '2026-08-14T12:00:00Z', -1, 'statement')).toBe(
       '2026-07-31T12:00:00Z',
     )
   })
@@ -256,6 +300,11 @@ describe('spending view', () => {
       )
       expect(result.previousTotal).toBe(100)
       expect(result.total).toBe(50)
+      expect(result.dailyAverage).toBeCloseTo(50 / 31)
+      expect(result.previousDailyAverage).toBeCloseTo(100 / (year === 2024 ? 29 : 28))
+      expect(result.dailyAveragePercentChange).toBeCloseTo(
+        ((50 / 31 - 100 / (year === 2024 ? 29 : 28)) / (100 / (year === 2024 ? 29 : 28))) * 100,
+      )
     }
   })
 
@@ -400,7 +449,13 @@ describe('spending view', () => {
     const view = buildSpendingView(
       [
         transaction({ id: 'current', amount: -100 }),
-        transaction({ id: 'pending', date: '2026-09-02', amount: -25, pending: true }),
+        transaction({
+          id: 'pending',
+          date: '2026-09-02',
+          category: 'Dining',
+          amount: -25,
+          pending: true,
+        }),
         transaction({
           id: 'payment',
           date: '2026-09-03',
@@ -426,7 +481,87 @@ describe('spending view', () => {
     expect(view.previousTotal).toBe(50)
     expect(view.percentChange).toBe(150)
     expect(view.trend.map(({ current }) => current)).toEqual([100, 125, 85])
+    expect(
+      buildSpendingBars(view.transactions, '2026-09-03T12:00:00Z', view.start, view.end, 1).slice(
+        0,
+        3,
+      ),
+    ).toEqual([
+      {
+        from: '2026-09-01',
+        to: '2026-09-01',
+        value: 100,
+        categories: [
+          {
+            name: 'Shopping',
+            value: 100,
+            activities: [{ id: 'spending:current', value: 100 }],
+          },
+        ],
+      },
+      {
+        from: '2026-09-02',
+        to: '2026-09-02',
+        value: 25,
+        categories: [
+          {
+            name: 'Dining',
+            value: 25,
+            activities: [{ id: 'spending:pending', value: 25 }],
+          },
+        ],
+      },
+      { from: '2026-09-03', to: '2026-09-03', value: 0, categories: [] },
+    ])
     expect(view.trend.at(-1)).toMatchObject({ date: '2026-09-03', previous: 50 })
+  })
+
+  it('plots credits below spending without adding them to spending totals', () => {
+    const view = buildSpendingView(
+      [
+        transaction({ id: 'spend', date: '2026-09-01', amount: -30 }),
+        transaction({
+          id: 'credit',
+          merchant: 'Synthetic credit',
+          category: 'Credit',
+          date: '2026-09-01',
+          amount: 10,
+          classification: classification('reimbursement'),
+        }),
+      ],
+      '2026-09-03T12:00:00Z',
+      1,
+    )
+
+    expect(view.total).toBe(30)
+    expect(
+      buildSpendingBars(view.transactions, '2026-09-03T12:00:00Z', view.start, view.end, 1)[0],
+    ).toMatchObject({
+      value: 20,
+      categories: [
+        { name: 'Credits', value: -10, activities: [{ id: 'spending:credit', value: 10 }] },
+        { name: 'Shopping', value: 30, activities: [{ id: 'spending:spend', value: 30 }] },
+      ],
+    })
+  })
+
+  it('summarizes posted and expired Platinum credit evidence in a range', () => {
+    const transactions = [
+      transaction({
+        id: 'resy-credit',
+        merchant: 'Resy credit',
+        category: 'Credit',
+        date: '2026-09-02',
+        amount: 25,
+        classification: classification('other'),
+      }),
+    ]
+    expect(
+      buildPlatinumCreditSummary(transactions, '2026-09-03T12:00:00Z', '2026-09-01', '2026-09-03'),
+    ).toEqual({ earned: 25, missed: 0 })
+    expect(
+      buildPlatinumCreditSummary([], '2026-09-03T12:00:00Z', '2026-08-01', '2026-08-31').missed,
+    ).toBeGreaterThan(0)
   })
 
   it('groups posted card spending into recent calendar months', () => {
@@ -454,12 +589,13 @@ describe('spending view', () => {
   })
 
   it('uses the computer calendar day instead of UTC month boundaries', () => {
+    const localReference = new Date(2026, 8, 1, 0, 30).toISOString()
     const view = buildSpendingView(
-      [transaction({ date: '2026-08-31', amount: -25 })],
-      '2026-09-01T00:30:00Z',
+      [transaction({ date: '2026-09-01', amount: -25 })],
+      localReference,
       1,
     )
-    expect(view.end).toBe('2026-08-31')
+    expect(view.end).toBe('2026-09-01')
     expect(view.total).toBe(25)
   })
 

@@ -13,6 +13,8 @@ pub struct MarketProjection {
     pub net_worth: f64,
     #[serde(default)]
     pub net_worth_incomplete: bool,
+    #[serde(default)]
+    pub net_worth_provisional: bool,
     pub accounts: Vec<Account>,
     pub holdings: Vec<Holding>,
     pub brokerage_performance: Vec<CurrentPerformance>,
@@ -45,6 +47,8 @@ pub struct Snapshot {
     pub net_worth: f64,
     #[serde(default)]
     pub net_worth_incomplete: bool,
+    #[serde(default)]
+    pub net_worth_provisional: bool,
     pub accounts: Vec<Account>,
     pub holdings: Vec<Holding>,
     #[serde(default)]
@@ -78,6 +82,10 @@ pub struct Account {
     pub r#type: String,
     pub value: Option<f64>,
     #[serde(default)]
+    pub cash_value: Option<f64>,
+    #[serde(default)]
+    pub invested_value: Option<f64>,
+    #[serde(default)]
     pub known_cost_basis: Option<f64>,
     #[serde(default)]
     pub known_unrealized_gain: Option<f64>,
@@ -101,6 +109,10 @@ pub struct Account {
     pub currency: Option<String>,
     #[serde(default)]
     pub balance_fetched_at: Option<String>,
+    #[serde(default)]
+    pub balance_source: Option<String>,
+    #[serde(default)]
+    pub reported_balance: Option<f64>,
     #[serde(default)]
     pub positions_as_of: Option<String>,
     #[serde(default)]
@@ -152,6 +164,10 @@ pub struct Transaction {
     pub occurred_on: Option<String>,
     #[serde(default)]
     pub posted_on: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub location: Option<TransactionLocation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub payment_channel: Option<String>,
     pub amount: f64,
     pub account: String,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -174,6 +190,20 @@ pub struct Transaction {
     pub counterparty_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transaction_code: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionLocation {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub postal_code: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub country: Option<String>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

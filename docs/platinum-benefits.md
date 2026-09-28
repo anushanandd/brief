@@ -29,6 +29,8 @@ Benefit calculations use transactions from the saved spending account. The posti
 
 For a matched benefit, a transaction becomes a detected credit only when it matches the benefit's credit descriptor or has an explicit `benefitConfirmed: true` override. `benefitConfirmed: false` rejects it. Without explicit confirmation, generic refunds, unmatched positive transactions, pending credits, and purchases do not increase issuer-posted credit totals. Identified reversals reduce those totals.
 
+The same identified benefit ID separates recurring positive-credit series in Expected activity. A forecast still requires the normal posted cadence evidence and uses observed transaction amounts; the allowance, an unused benefit, or a purchase match never creates an expected credit.
+
 The feed does not link a purchase to a credit or identify the allowance window that produced a credit. Consequently:
 
 - credits within the first 56 days of a window are period-uncertain when a prior window exists;
@@ -38,6 +40,8 @@ The feed does not link a purchase to a credit or identify the allowance window t
 - uncertain rows keep their evidence but return no remaining amount.
 
 Walmart+, Uber Cash, renewal benefits, and per-purchase benefits never receive a pooled remaining-dollar estimate.
+
+The Spending metrics show posted credits net of reversals inside the selected range. The estimated missed amount includes only allowance windows that ended inside that range and have usable remaining evidence. It includes unused estimated Uber Cash, excludes still-open windows, renewal and per-purchase benefits, and omits uncertain or unavailable remaining amounts such as Walmart+.
 
 ## Uber Cash
 

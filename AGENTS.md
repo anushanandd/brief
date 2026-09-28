@@ -40,7 +40,7 @@ Do not update docs for unrelated implementation details. In the final response, 
 - `FinanceProvider` owns committed data. `LiveMarketProvider` overlays only a compatible Rust valuation projection.
 - One native market service owns held-symbol feeds. Holdings chart selection must not replace portfolio subscriptions or stop them on route cleanup.
 - Keep canonical Holdings bars separate from latest trade or indicative quote observations. The market-price cache is separate from finance state.
-- Spending and Platinum benefits use the saved spending account ID, never provider ordering.
+- Spending and Platinum benefits use the saved spending account ID, never provider ordering. The Accounts selector excludes that account.
 - Rust assigns shared transaction classification after annotations. React reads it through `src/lib/transaction-kind.ts` and must not implement a second policy.
 - Financial calculations are deterministic. Apple Intelligence may explain supplied evidence but must not calculate or mutate finance data.
 - Never put credentials, tokens, or real financial data in logs, fixtures, screenshots, or tests.
@@ -95,3 +95,5 @@ Run checks proportional to the change. Documentation-only changes need no applic
 - Startup reveal waits for local reads, never network or market readiness. Saved observations must not be labeled live.
 - Do not gate native actions with `window.confirm`; the macOS WebView treats it as Cancel. Use an in-app confirmation with pending and error states.
 - Do not run `cargo clean` unless explicitly necessary.
+- The macOS dev icon is embedded in the Rust executable. Regenerate `icon.icns` and `128x128@2x.png` from `icon.svg`, then restart `pnpm tauri dev`; `build.rs` watches the generated assets for rebuilds.
+- `pnpm tauri dev` signs rebuilt native executables through `scripts/macos-signed-runner.sh` so Keychain access survives rebuilds. It uses `APPLE_SIGNING_IDENTITY` or the first valid Apple Development identity.

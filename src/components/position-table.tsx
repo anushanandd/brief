@@ -49,6 +49,7 @@ export function PositionTable({
       role="region"
       aria-label="Holdings"
       tabIndex={0}
+      data-keyboard-region
     >
       <table className={`financial-table position-table position-table-${view}`}>
         <thead>
@@ -87,7 +88,7 @@ export function PositionTable({
               {view === 'positions' ? (
                 <>
                   <td>{formatShares(holding.shares)}</td>
-                  <td>{formatCurrency(holding.price)}</td>
+                  <td className="public-market-value">{formatCurrency(holding.price)}</td>
                   <td>{formatCurrency(holding.costBasis)}</td>
                   <td>{formatCurrency(holding.value)}</td>
                   <td className={valueTone(holding.unrealizedGain)}>
@@ -97,8 +98,8 @@ export function PositionTable({
                 </>
               ) : view === 'market' ? (
                 <>
-                  <td>{formatCurrency(holding.price)}</td>
-                  <td>
+                  <td className="public-market-value">{formatCurrency(holding.price)}</td>
+                  <td className="public-market-value">
                     {marketLoading && holding.dailyChangePct == null ? (
                       <span className="muted" aria-label="Market change loading">
                         …
@@ -107,7 +108,7 @@ export function PositionTable({
                       <Change value={holding.dailyChangePct} />
                     )}
                   </td>
-                  <td>
+                  <td className="public-market-value">
                     {marketLoading && holding.weeklyChangePct == null ? (
                       <span className="muted" aria-label="Market change loading">
                         …

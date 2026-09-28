@@ -1,4 +1,10 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+
+import { AccountMark } from '../components/account-mark'
+import { GroupedActivityList } from '../components/activity-list'
+import { CashFlowSankey } from '../components/cash-flow-sankey'
+import { PageError, PageLoading } from '../components/data-state'
 import {
   ArrowDownUp,
   BadgeDollarSign,
@@ -8,30 +14,29 @@ import {
   Receipt,
   Sprout,
   X,
-} from 'lucide-react'
-import { useCallback, useMemo } from 'react'
-
-import { AccountMark } from '../components/account-mark'
-import { GroupedActivityList } from '../components/activity-list'
-import { CashFlowSankey } from '../components/cash-flow-sankey'
-import { PageError, PageLoading } from '../components/data-state'
+  type IconComponent,
+} from '../components/icons'
+import { PlatinumBenefits } from '../components/platinum-benefits'
 import {
   AnimatedCurrency,
-  Change,
   Button,
+  ChartChange,
+  ChartRangeSelect,
   Card,
   EmptyState,
   Metric,
-  RangeSelector,
+  ScrollCueCard,
   SectionHeading,
 } from '../components/ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
 import { WorkspaceHeader } from '../components/workspace-header'
+import { useActiveSelectionScroll } from '../hooks/use-active-selection-scroll'
 import { useFinance } from '../hooks/use-finance'
 import {
   useGraphAccountShortcuts,
   useGraphWindowShortcuts,
 } from '../hooks/use-graph-window-shortcuts'
+import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
 import { buildActivities } from '../lib/activity'
 import {
@@ -42,12 +47,14 @@ import {
   analyticsReport,
   analyticsTotal,
   analyticsWindow,
+  localDateKey,
   analyticsAccountMatches,
   toggleAnalyticsAccount,
   noAnalyticsAccounts,
   type AnalyticsRange,
   type AnalyticsChart,
 } from '../lib/analytics'
+import { useAnalyticsOrder } from '../lib/analytics-order-preferences'
 import {
   formatCompactCurrency,
   formatCurrency,
@@ -58,20 +65,30 @@ import {
 import { graphWindows } from '../lib/graph-preferences'
 import { briefMerchant } from '../lib/insights'
 import { getExternalLogosEnabled } from '../lib/logos'
-import { cashFlowBreakdown, expectedMoneyEvents } from '../lib/money'
+import { cashFlowBreakdown } from '../lib/money'
 import type { FinanceSnapshot } from '../lib/schema'
+import { resolveSpendingAccount } from '../lib/spending'
 import { getSpendingAccountId } from '../lib/spending-preferences'
 
-const icons = [
-  BadgeDollarSign,
-  CreditCard,
-  Sprout,
-  Percent,
-  Receipt,
-  ChartNoAxesCombined,
-  ArrowDownUp,
-]
-const rangeValues = ['week', 'month', 'quarter', 'all'] as const
+const icons: Record<AnalyticsChart, IconComponent> = {
+  'cash-flow': ArrowDownUp,
+  income: BadgeDollarSign,
+  'amex-credits': CreditCard,
+  dividends: Sprout,
+  interest: Percent,
+  fees: Receipt,
+  realized: ChartNoAxesCombined,
+}
+const iconColors: Record<AnalyticsChart, string> = {
+  'cash-flow': 'var(--chart-secondary)',
+  income: 'var(--positive)',
+  'amex-credits': 'var(--positive)',
+  dividends: 'var(--positive)',
+  interest: 'var(--positive)',
+  fees: 'var(--negative)',
+  realized: 'var(--chart-benchmark)',
+}
+const rangeValues = ['week', 'month', 'quarter', 'year', 'all'] as const
 const ranges = graphWindows.map((range, index) => ({
   value: rangeValues[index],
   label: range.label,
@@ -93,25 +110,43 @@ export function AnalyticsPage() {
 }
 
 function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
+  const switcherRef = useActiveSelectionScroll()
+  const [today, setToday] = useState(() => localDateKey(Date.now() / 1000))
+  useEffect(() => {
+    const update = () => setToday(localDateKey(Date.now() / 1000))
+    const timer = globalThis.setInterval(update, 60_000)
+    globalThis.addEventListener('focus', update)
+    return () => {
+      globalThis.clearInterval(timer)
+      globalThis.removeEventListener('focus', update)
+    }
+  }, [])
+  const activityScrollRef = useViewportScroll()
+  const orderedCharts = useAnalyticsOrder()
   const search = useSearch({ from: '/analytics' })
   const navigate = useNavigate({ from: '/analytics' })
-  const selected = search.chart ?? 'income'
+  const selected = search.chart ?? orderedCharts[0]
   const spendingAccountId = getSpendingAccountId()
+  const spendingAccount = resolveSpendingAccount(data.accounts, spendingAccountId)
+  const benefitTransactions = spendingAccount
+    ? data.transactions.filter(({ accountId }) => accountId === spendingAccount.id)
+    : []
   const names = getAccountDisplayNames()
   const externalLogosEnabled = getExternalLogosEnabled()
-  const window = useMemo(() => analyticsWindow(data, search), [data, search])
+  const window = useMemo(() => analyticsWindow(data, search, today), [data, search, today])
   const reports = useMemo(
     () =>
-      analyticsCharts
-        .map((chart) => ({
+      orderedCharts.map((id) => {
+        const chart = analyticsCharts.find((item) => item.id === id)!
+        return {
           ...chart,
           ...analyticsReport(
             analyticsEntries(data, chart.id, spendingAccountId, search.account, names),
             window,
           ),
-        }))
-        .toSorted((a, b) => (b.total ?? -Infinity) - (a.total ?? -Infinity)),
-    [data, search, spendingAccountId, window, names],
+        }
+      }),
+    [data, search, spendingAccountId, window, names, orderedCharts],
   )
   const report = reports.find(({ id }) => id === selected)!
   const select = (chart: AnalyticsChart) => void navigate({ search: { ...search, chart } })
@@ -142,10 +177,13 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
     search.account !== noAnalyticsAccounts &&
     !accounts.some(({ id }) => analyticsAccountMatches(search.account, id)),
   )
-  const needsSpendingAccount =
+  const needsSpendingAccount = selected === 'amex-credits' && !spendingAccount
+  const incompatibleBenefitAccount =
     selected === 'amex-credits' &&
-    !data.accounts.some(({ id, type }) => id === spendingAccountId && type === 'credit')
-  const unavailable = needsSpendingAccount || missingAccount || !window.valid
+    search.account !== undefined &&
+    !analyticsAccountMatches(search.account, spendingAccountId)
+  const unavailable =
+    needsSpendingAccount || missingAccount || incompatibleBenefitAccount || !window.valid
   const activities = useMemo(
     () =>
       new Map(buildActivities(data, names, externalLogosEnabled).map((item) => [item.id, item])),
@@ -189,12 +227,47 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
     selected === 'cash-flow'
       ? cashFlowBreakdown(data.transactions.filter(({ id }) => flowIds.has(`spending:${id}`)))
       : null
-  const expected =
-    selected === 'cash-flow'
-      ? expectedMoneyEvents(data).filter((event) =>
-          analyticsAccountMatches(search.account, event.accountId),
-        )
-      : []
+  const activityCard = (
+    <ScrollCueCard
+      className="account-preview-card analytics-activities-card"
+      scrollSelector=".analytics-activity-scroll"
+    >
+      <SectionHeading
+        title={
+          <Link className="section-heading-link" to="/activities" search={activitySearch}>
+            {selected === 'amex-credits' ? 'Credit activity' : 'Activities'}
+          </Link>
+        }
+      />
+      <div
+        ref={activityScrollRef}
+        className="analytics-activity-scroll"
+        role="region"
+        aria-label={selected === 'amex-credits' ? 'Credit activity' : 'Analytics activities'}
+        tabIndex={0}
+        data-keyboard-region
+      >
+        <GroupedActivityList
+          activities={report.entries
+            .flatMap((entry) => {
+              const activity = activities.get(entry.id)
+              return activity
+                ? [
+                    {
+                      ...activity,
+                      title: selected === 'income' ? briefMerchant(activity.title) : activity.title,
+                      date: entry.date,
+                    },
+                  ]
+                : []
+            })
+            .toSorted((left, right) => right.date.localeCompare(left.date))}
+          referenceIso={data.updatedAt}
+          emptyMessage="No matching posted activity in this period."
+        />
+      </div>
+    </ScrollCueCard>
+  )
 
   return (
     <div className="page accounts-workspace-page analytics-page">
@@ -206,13 +279,15 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
         ]}
       />
       <nav
+        ref={switcherRef}
         className="account-switcher"
         aria-label="Analytics charts"
-        aria-keyshortcuts="Meta+ArrowLeft Meta+ArrowRight"
+        aria-keyshortcuts="ArrowLeft ArrowRight"
+        data-keyboard-region
       >
         <div className="account-switcher-grid">
           {reports.map((item) => {
-            const Icon = icons[analyticsCharts.findIndex(({ id }) => id === item.id)]
+            const Icon = icons[item.id]
             const missing =
               missingAccount ||
               !window.valid ||
@@ -231,7 +306,14 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                 data-keyboard-row
                 data-keyboard-open
               >
-                <span className="transaction-mark" aria-hidden="true">
+                <span
+                  className="transaction-mark"
+                  style={{
+                    color: missing ? 'var(--text-muted)' : iconColors[item.id],
+                    backgroundColor: `color-mix(in srgb, ${missing ? 'var(--text-muted)' : iconColors[item.id]} 14%, var(--surface-raised))`,
+                  }}
+                  aria-hidden="true"
+                >
                   <Icon size={15} />
                 </span>
                 <span className="account-switcher-copy">
@@ -254,9 +336,14 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
         </div>
       </nav>
       <div className="account-overview-dashboard">
-        <div className="account-overview-primary-grid">
+        <div
+          className={`account-overview-primary-grid${selected === 'amex-credits' ? ' analytics-credits-grid' : ''}`}
+        >
           <div className="analytics-primary">
-            <Card className="account-overview-chart-card analytics-chart-card">
+            <ScrollCueCard
+              className="account-overview-chart-card analytics-chart-card"
+              scrollSelector=".cash-flow-sankey-scroll"
+            >
               <header className="home-balance-header">
                 <div className="home-balance-main">
                   <h2 className="balance-label">
@@ -269,34 +356,27 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                     />
                   </div>
                   <div className="chart-summary-row">
-                    <div className="hero-change" aria-label="Change versus previous period">
-                      <span
-                        className={valueTone(
-                          periodChange == null
-                            ? null
-                            : selected === 'fees'
-                              ? -periodChange
-                              : periodChange,
-                        )}
-                      >
-                        {formatCurrency(periodChange)}
-                      </span>
-                      <Change
-                        value={unavailable ? null : report.percent}
-                        favorable={selected === 'fees' ? 'decrease' : 'increase'}
-                      />
-                    </div>
-                    <RangeSelector<string>
-                      label="Analytics period"
-                      value={window.custom ? '' : window.range}
-                      options={ranges}
-                      onValueChange={(value) => {
-                        const range = ranges.find((option) => option.value === value)
-                        if (range) setRange(range.value)
-                      }}
+                    <ChartChange
+                      amount={periodChange}
+                      percent={unavailable ? null : report.percent}
+                      favorable={selected === 'fees' ? 'decrease' : 'increase'}
+                      ariaLabel="Change versus previous period"
                     />
                   </div>
                 </div>
+                <ChartRangeSelect<string>
+                  label="Analytics period"
+                  value={window.custom ? '' : window.range}
+                  options={
+                    window.custom
+                      ? [{ value: '', label: 'Custom', accessibleLabel: 'Custom' }, ...ranges]
+                      : ranges
+                  }
+                  onValueChange={(value) => {
+                    const range = ranges.find((option) => option.value === value)
+                    if (range) setRange(range.value)
+                  }}
+                />
               </header>
               {unavailable ? (
                 <EmptyState>
@@ -304,6 +384,17 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                     <>
                       Choose a spending account in <Link to="/settings">Settings</Link> to chart
                       Amex credits.
+                    </>
+                  ) : incompatibleBenefitAccount ? (
+                    <>
+                      Amex credits use the saved spending account.{' '}
+                      <Button
+                        size="compact"
+                        variant="ghost"
+                        onClick={() => void navigate({ search: { ...search, account: undefined } })}
+                      >
+                        Clear account filter
+                      </Button>
                     </>
                   ) : missingAccount ? (
                     'This account is unavailable. Select another account.'
@@ -313,6 +404,8 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                 </EmptyState>
               ) : !report.entries.length ? (
                 <EmptyState>No matching posted activity in this period.</EmptyState>
+              ) : selected === 'cash-flow' && flow ? (
+                <CashFlowSankey values={flow} />
               ) : (
                 <AnalyticsBars
                   groupColors={groupColors}
@@ -321,50 +414,14 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                   activities={activities}
                 />
               )}
-            </Card>
-            {flow && !unavailable ? (
-              <Card className="account-group-card">
-                <SectionHeading title="Sources and uses" />
-                <CashFlowSankey values={flow} />
-              </Card>
-            ) : null}
-            <Card className="account-preview-card analytics-activities-card">
-              <SectionHeading
-                title={
-                  <Link className="section-heading-link" to="/activities" search={activitySearch}>
-                    Activities
-                  </Link>
-                }
-              />
-              <div
-                className="analytics-activity-scroll"
-                role="region"
-                aria-label="Analytics activities"
-                tabIndex={0}
-              >
-                <GroupedActivityList
-                  activities={report.entries
-                    .flatMap((entry) => {
-                      const activity = activities.get(entry.id)
-                      return activity
-                        ? [
-                            {
-                              ...activity,
-                              title:
-                                selected === 'income'
-                                  ? briefMerchant(activity.title)
-                                  : activity.title,
-                              date: entry.date,
-                            },
-                          ]
-                        : []
-                    })
-                    .toSorted((left, right) => right.date.localeCompare(left.date))}
-                  referenceIso={data.updatedAt}
-                  emptyMessage="No matching posted activity in this period."
-                />
-              </div>
-            </Card>
+            </ScrollCueCard>
+            {selected === 'amex-credits' ? (
+              spendingAccount ? (
+                <PlatinumBenefits transactions={benefitTransactions} snapshotIso={data.updatedAt} />
+              ) : null
+            ) : (
+              activityCard
+            )}
           </div>
           <div className="analytics-companion">
             <Card className="account-overview-summary-card">
@@ -400,79 +457,70 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                 />
               </div>
             </Card>
-            <Card className="account-overview-summary-card analytics-accounts-card">
-              <SectionHeading
-                title="Accounts"
-                action={
-                  search.account !== undefined ? (
-                    <Button
-                      icon={X}
-                      aria-label="Clear account selection"
-                      size="compact"
-                      variant="ghost"
-                      onClick={() => void navigate({ search: { ...search, account: undefined } })}
-                    >
-                      Clear
-                    </Button>
-                  ) : undefined
-                }
-              />
-              <div className="analytics-breakdown" role="group" aria-label="Chart accounts">
-                {accountRows.map((item) => (
-                  <label className="analytics-breakdown-row analytics-account-row" key={item.id}>
-                    <input
-                      type="checkbox"
-                      checked={analyticsAccountMatches(search.account, item.id)}
-                      onChange={() =>
-                        void navigate({
-                          search: {
-                            ...search,
-                            account: toggleAnalyticsAccount(
-                              search.account,
-                              item.id,
-                              accountRows.map(({ id }) => id),
-                            ),
-                          },
-                        })
-                      }
-                    />
-                    <AccountMark type={item.type} />
-                    <span className="account-row-name">
-                      <strong>{item.label}</strong>
-                      <small>{item.type}</small>
-                    </span>
-                    <strong>
-                      {formatCurrency(needsSpendingAccount || !window.valid ? null : item.value)}
-                    </strong>
-                  </label>
-                ))}
-                {!accountRows.length ? (
-                  <EmptyState>No accounts with matching activity in this period.</EmptyState>
-                ) : null}
-              </div>
-            </Card>
-            {selected === 'cash-flow' ? (
-              <Card className="account-group-card">
-                <SectionHeading title="Expected activity" />
-                {expected.length ? (
-                  <div className="analytics-breakdown">
-                    {expected.map((event) => (
-                      <div className="analytics-breakdown-row" key={event.id}>
-                        <span>
-                          {formatActivityName(event.title)}
-                          <small>{dateLabel(event.date)} · High confidence</small>
+            {selected === 'amex-credits' ? (
+              activityCard
+            ) : (
+              <>
+                <Card className="account-overview-summary-card analytics-accounts-card">
+                  <SectionHeading
+                    title="Accounts"
+                    action={
+                      search.account !== undefined ? (
+                        <Button
+                          icon={X}
+                          aria-label="Clear account selection"
+                          size="compact"
+                          variant="ghost"
+                          onClick={() =>
+                            void navigate({ search: { ...search, account: undefined } })
+                          }
+                        >
+                          Clear
+                        </Button>
+                      ) : undefined
+                    }
+                  />
+                  <div className="analytics-breakdown" role="group" aria-label="Chart accounts">
+                    {accountRows.map((item) => (
+                      <label
+                        className="analytics-breakdown-row analytics-account-row"
+                        key={item.id}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={analyticsAccountMatches(search.account, item.id)}
+                          onChange={() =>
+                            void navigate({
+                              search: {
+                                ...search,
+                                account: toggleAnalyticsAccount(
+                                  search.account,
+                                  item.id,
+                                  accountRows.map(({ id }) => id),
+                                ),
+                              },
+                            })
+                          }
+                        />
+                        <AccountMark type={item.type} />
+                        <span className="account-row-name">
+                          <strong>{item.label}</strong>
+                          <small>{item.type}</small>
                         </span>
-                        <strong>{formatCurrency(event.amount)}</strong>
-                      </div>
+                        <strong>
+                          {formatCurrency(
+                            needsSpendingAccount || !window.valid ? null : item.value,
+                          )}
+                        </strong>
+                      </label>
                     ))}
+                    {!accountRows.length ? (
+                      <EmptyState>No accounts with matching activity in this period.</EmptyState>
+                    ) : null}
                   </div>
-                ) : (
-                  <EmptyState>
-                    More repeated activity is needed before Brief can predict what comes next.
-                  </EmptyState>
-                )}
-              </Card>
-            ) : null}
+                </Card>
+              </>
+            )}
           </div>
         </div>
       </div>
@@ -498,7 +546,7 @@ function AnalyticsBars({
   const zero = max === 0 && min === 0 ? 100 : (max / span) * 100
   const dense = report.buckets.length > 12
   return (
-    <div className="analytics-plot">
+    <div className="analytics-plot analytics-period-plot">
       <div className="analytics-bars" aria-label="Period totals">
         <div className="analytics-bar-axis" aria-hidden="true">
           <span>{formatCompactCurrency(max)}</span>
@@ -507,7 +555,9 @@ function AnalyticsBars({
         <div className="analytics-bars-scroll">
           <div
             className={`analytics-bars-grid${dense ? ' is-dense' : ''}`}
-            style={{ gridTemplateColumns: `repeat(${report.buckets.length}, minmax(32px, 1fr))` }}
+            style={{
+              gridTemplateColumns: `repeat(${report.buckets.length}, minmax(${dense ? 0 : '32px'}, 1fr))`,
+            }}
           >
             {report.buckets.map((bucket, index) => {
               const label = new Date(`${bucket.from}T12:00:00Z`).toLocaleDateString('en-US', {
@@ -582,19 +632,20 @@ function AnalyticsBars({
                                 </div>
                                 <div className="treemap-tooltip-composition">
                                   <ul>
-                                    {entries.slice(0, 8).map((entry) => (
-                                      <li key={entry.id}>
-                                        <span>
-                                          {formatActivityName(
-                                            briefMerchant(
-                                              activities.get(entry.id)?.title ?? entry.group,
-                                            ),
-                                          )}{' '}
-                                          · {dateLabel(entry.date)}
-                                        </span>
-                                        <strong>{formatCurrency(entry.value)}</strong>
-                                      </li>
-                                    ))}
+                                    {entries.slice(0, 8).map((entry) => {
+                                      const activity = activities.get(entry.id)
+                                      const merchant = formatActivityName(
+                                        briefMerchant(activity?.title ?? entry.group),
+                                      )
+                                      return (
+                                        <li key={entry.id}>
+                                          <span>
+                                            {merchant} · {dateLabel(entry.date)}
+                                          </span>
+                                          <strong>{formatCurrency(entry.value)}</strong>
+                                        </li>
+                                      )
+                                    })}
                                     {entries.length > 8 ? (
                                       <li className="muted">
                                         +{entries.length - 8} more · Open activity to view all
@@ -624,20 +675,18 @@ function AnalyticsBars({
           </div>
         </div>
       </div>
-      <div className="analytics-legend-panel">
-        <ul className="analytics-legend" aria-label="Chart legend" tabIndex={0}>
-          {[...new Set(report.entries.map(({ group }) => group))].toSorted().map((group) => (
-            <li key={group}>
-              <i
-                className="analytics-category-dot"
-                style={{ background: groupColors.get(group) }}
-                aria-hidden="true"
-              />
-              {formatActivityName(group)}
-            </li>
-          ))}
-        </ul>
-      </div>
+      <ul className="analytics-legend bar-chart-legend" aria-label="Chart legend" tabIndex={0}>
+        {[...new Set(report.entries.map(({ group }) => group))].toSorted().map((group) => (
+          <li key={group}>
+            <i
+              className="analytics-category-dot"
+              style={{ background: groupColors.get(group) }}
+              aria-hidden="true"
+            />
+            {formatActivityName(group)}
+          </li>
+        ))}
+      </ul>
     </div>
   )
 }

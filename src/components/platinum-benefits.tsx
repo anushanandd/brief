@@ -1,5 +1,18 @@
 import { Popover } from '@base-ui/react/popover'
 import { Link } from '@tanstack/react-router'
+import { useEffect, useState, type ReactNode } from 'react'
+
+import { formatCurrency, formatUpdatedAt, formatActivityName } from '../lib/format'
+import { brandLogoUrl, brandMarkLabel, getExternalLogosEnabled } from '../lib/logos'
+import type { Transaction } from '../lib/schema'
+import {
+  buildPlatinumBenefitTracker,
+  formatActivityDate,
+  getPlatinumBenefitActivity,
+} from '../lib/spending'
+import { getHiddenPlatinumBenefitIds } from '../lib/spending-preferences'
+import { BrandMark } from './brand-mark'
+import { ExternalLink } from './external-link'
 import {
   BedDouble,
   ChevronRight,
@@ -8,32 +21,16 @@ import {
   MonitorPlay,
   Plane,
   ReceiptText,
+  Settings,
   X,
-  type LucideIcon,
-} from 'lucide-react'
-import { useEffect, useState, type ReactNode } from 'react'
-
-import { formatCurrency, formatUpdatedAt, formatActivityName } from '../lib/format'
-import { brandLogoUrl, brandMarkLabel, getExternalLogosEnabled } from '../lib/logos'
-import type { Transaction } from '../lib/schema'
-import {
-  buildPlatinumBenefitHistory,
-  buildPlatinumBenefitTracker,
-  formatActivityDate,
-  getPlatinumBenefitActivity,
-} from '../lib/spending'
-import { getHiddenPlatinumBenefitIds } from '../lib/spending-preferences'
-import { BrandMark } from './brand-mark'
-import { ExternalLink } from './external-link'
-import { FilterSelect } from './filter-select'
+  type IconComponent,
+} from './icons'
 import { Button, Card, EmptyState, SectionHeading } from './ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 type Benefit = ReturnType<typeof buildPlatinumBenefitTracker>[number]
 type BenefitActivity = ReturnType<typeof getPlatinumBenefitActivity>
-type BenefitEvidenceItem =
-  | BenefitActivity[number]
-  | ReturnType<typeof buildPlatinumBenefitHistory>['estimatedActivity'][number]
+type BenefitEvidenceItem = BenefitActivity[number]
 
 const benefitLogoDomains: Record<string, string> = {
   'uber-cash': 'uber.com',
@@ -49,7 +46,7 @@ const benefitLogoDomains: Record<string, string> = {
   saks: 'saksfifthavenue.com',
 }
 
-const benefitIcons: Partial<Record<string, { Icon: LucideIcon; tone: string }>> = {
+const benefitIcons: Partial<Record<string, { Icon: IconComponent; tone: string }>> = {
   'digital-entertainment': { Icon: MonitorPlay, tone: 'entertainment' },
   hotel: { Icon: BedDouble, tone: 'hotel' },
   'airline-fee': { Icon: Plane, tone: 'airline' },
@@ -157,7 +154,6 @@ function BenefitEvidence({
     reversal: 'Credit reversal',
     purchase: '',
     unverified: 'Unverified credit',
-    estimate: 'Estimated Uber Cash credit',
   }
   return (
     <ul className="benefit-evidence" aria-label="Transaction evidence">
@@ -194,9 +190,11 @@ function BenefitEvidence({
 function BenefitRow({
   benefit,
   externalLogosEnabled,
+  compact = false,
 }: {
   benefit: Benefit
   externalLogosEnabled: boolean
+  compact?: boolean
 }) {
   const external = benefit.status === 'external'
   const complete = benefit.remainingAmount === 0 || benefit.estimatedCreditAmount === benefit.cap
@@ -208,7 +206,6 @@ function BenefitRow({
   )
   const qualifyingPurchases = supportingActivity.filter(({ kind }) => kind === 'purchase')
   const visibleSupportingActivity = supportingActivity.filter(({ kind }) => kind !== 'purchase')
-  const purchaseLabel = `${qualifyingPurchases.length} ${qualifyingPurchases.length === 1 ? 'purchase' : 'purchases'}`
   const lastCreditLabel = benefit.lastCredit
     ? `Last detected credit: ${formatCurrency(benefit.lastCredit.amount)} on ${formatActivityDate(benefit.lastCredit.date, benefit.lastCredit.date)}.`
     : null
@@ -250,7 +247,9 @@ function BenefitRow({
             </ExternalLink>
           </BenefitInfo>
         </div>
-        <strong className="benefit-allowance">{benefit.limit}</strong>
+        <strong className="benefit-allowance">
+          {compact ? formatCurrency(benefit.cap) : benefit.limit}
+        </strong>
         <BenefitProgress benefit={benefit} />
         <span className={complete ? 'benefit-detail-status positive' : 'benefit-detail-status'}>
           {benefit.remainingAmount === null
@@ -271,7 +270,9 @@ function BenefitRow({
               >
                 <History size={14} aria-hidden="true" />
               </TooltipTrigger>
-              <TooltipContent sideOffset={6}>{lastCreditLabel}</TooltipContent>
+              <TooltipContent className="benefit-last-credit-tooltip" sideOffset={6}>
+                {lastCreditLabel}
+              </TooltipContent>
             </Tooltip>
           ) : null}
           {qualifyingPurchases.length ? (
@@ -283,14 +284,13 @@ function BenefitRow({
                     size="icon-compact"
                     variant="ghost"
                     className="benefit-evidence-trigger"
-                    aria-label={`${purchaseLabel} for ${benefit.name}`}
+                    aria-label={`Purchase evidence for ${benefit.name}`}
                   />
                 }
               >
                 <ReceiptText size={14} aria-hidden="true" />
               </TooltipTrigger>
               <TooltipContent className="benefit-evidence-tooltip" sideOffset={6}>
-                <strong>{purchaseLabel}</strong>
                 <BenefitEvidence activity={qualifyingPurchases} />
               </TooltipContent>
             </Tooltip>
@@ -313,7 +313,9 @@ function BenefitRow({
         ) : complete ? (
           <small>Full credit detected</small>
         ) : benefit.remainingAmount !== null ? (
-          <small>Estimated remaining {formatCurrency(benefit.remainingAmount)}</small>
+          <small className="benefit-remaining">
+            Estimated remaining {formatCurrency(benefit.remainingAmount)}
+          </small>
         ) : benefit.id === 'walmart-plus' ? (
           <small>Monthly membership reimbursement</small>
         ) : benefit.cadence === 'purchase' ? (
@@ -332,9 +334,11 @@ function BenefitRow({
 function BenefitGroups({
   benefits,
   externalLogosEnabled,
+  compact = false,
 }: {
   benefits: Benefit[]
   externalLogosEnabled: boolean
+  compact?: boolean
 }) {
   const calendarBenefits = benefits.filter(
     ({ cadence }) => cadence !== 'renewal' && cadence !== 'purchase',
@@ -366,6 +370,7 @@ function BenefitGroups({
                 key={benefit.id}
                 benefit={benefit}
                 externalLogosEnabled={externalLogosEnabled}
+                compact={compact}
               />
             ))}
           </section>
@@ -379,6 +384,7 @@ function BenefitGroups({
               key={benefit.id}
               benefit={benefit}
               externalLogosEnabled={externalLogosEnabled}
+              compact={compact}
             />
           ))}
         </section>
@@ -398,7 +404,6 @@ export function PlatinumBenefits({
   preview?: boolean
 }) {
   const [now, setNow] = useState(() => new Date().toISOString())
-  const [selectedYear, setSelectedYear] = useState<number | null>(null)
   useEffect(() => {
     const update = () => setNow(new Date().toISOString())
     const timer = window.setInterval(update, 60_000)
@@ -413,43 +418,35 @@ export function PlatinumBenefits({
   const benefits = buildPlatinumBenefitTracker(transactions, now, snapshotIso).filter(
     ({ id }) => !hidden.includes(id),
   )
-  const activity = getPlatinumBenefitActivity(transactions, snapshotIso)
-  const currentYear = new Date(now).getFullYear()
-  const years = [
-    ...new Set([currentYear, ...activity.map(({ date }) => Number(date.slice(0, 4)))]),
-  ].toSorted((a, b) => b - a)
-  const year = selectedYear ?? currentYear
-  const history = buildPlatinumBenefitHistory(activity, year)
-  const credits = history.activity.filter(
-    ({ kind, pending }) => !pending && (kind === 'credit' || kind === 'reversal'),
-  )
-  const historyEntries: BenefitEvidenceItem[] = [...credits, ...history.estimatedActivity].toSorted(
-    (left, right) => right.date.localeCompare(left.date),
-  )
 
   if (preview)
     return (
       <Card className="spending-benefits-card">
         <SectionHeading
           title={
-            <Link to="/spending/platinum" className="section-heading-link">
+            <Link
+              to="/analytics"
+              search={{ chart: 'amex-credits' }}
+              className="section-heading-link"
+            >
               Platinum benefits <ChevronRight size={16} aria-hidden="true" />
             </Link>
           }
         />
-        <BenefitGroups benefits={benefits} externalLogosEnabled={externalLogosEnabled} />
-        <p className="benefit-preview-note">
-          Posted credits, net of reversals. Not an Amex balance.
-        </p>
+        <BenefitGroups
+          benefits={benefits.slice(0, 3)}
+          externalLogosEnabled={externalLogosEnabled}
+          compact
+        />
       </Card>
     )
 
   return (
-    <div className="platinum-benefits-grid">
-      <Card className="platinum-current-card">
-        <SectionHeading
-          title="Current benefits"
-          action={
+    <Card className="platinum-current-card">
+      <SectionHeading
+        title="Current benefit windows"
+        action={
+          <div className="benefit-heading-actions">
             <BenefitInfo title="benefit tracking">
               <p>
                 Enrollment and complete usage are unavailable. Credits near a reset or involving
@@ -457,87 +454,28 @@ export function PlatinumBenefits({
                 days for hotels.
               </p>
               <p>
-                Totals use posted credits net of reversals on the selected spending account,
-                including hidden and retired benefits, excluding Uber Cash. Most allowances are
-                shared across cards on the Amex account.
+                Totals use posted credits net of reversals on the saved spending account, including
+                hidden and retired benefits, excluding Uber Cash. Most allowances are shared across
+                cards on the Amex account.
               </p>
               <p>Saved {formatUpdatedAt(snapshotIso)} · Terms reviewed Sep 20, 2026.</p>
             </BenefitInfo>
-          }
-        />
-        <BenefitGroups benefits={benefits} externalLogosEnabled={externalLogosEnabled} />
-        <p className="benefit-preview-note">
-          Estimates only. Enrollment and complete usage are unavailable.
-        </p>
-      </Card>
-      <Card className="platinum-history-card">
-        <section className="benefit-history" aria-label="Credit history">
-          <SectionHeading
-            title="Credit history"
-            action={
-              <FilterSelect
-                label="Credit history year"
-                value={String(year)}
-                options={years.map((value) => ({ value: String(value), label: String(value) }))}
-                onValueChange={(value) => setSelectedYear(Number(value))}
-              />
-            }
-          />
-          <div className="benefit-history-total">
-            <span>Posted in {year} · net of reversals</span>
-            <strong>
-              <Link
-                className="metric-link"
-                to="/analytics"
-                search={{ chart: 'amex-credits', from: `${year}-01-01`, to: `${year}-12-31` }}
-              >
-                {formatCurrency(history.creditedAmount)}
-              </Link>
-            </strong>
+            <Link
+              className="button-base button-ghost button-compact"
+              to="/settings"
+              hash="platinum-benefits"
+              aria-label="Manage benefits"
+            >
+              <Settings size={16} aria-hidden="true" />
+            </Link>
           </div>
-          {historyEntries.length ? (
-            <div className="benefit-history-list">
-              {history.benefits
-                .filter(({ id }) => historyEntries.some(({ benefitId }) => benefitId === id))
-                .map((benefit) => (
-                  <section
-                    key={benefit.id}
-                    className="benefit-history-group"
-                    aria-label={`${benefit.name} credit history`}
-                  >
-                    <div className="benefit-history-summary">
-                      <span className="benefit-history-identity">
-                        <h4>{benefit.name}</h4>
-                        <span>
-                          {benefit.estimatedCount
-                            ? `${benefit.estimatedCount} estimated ${benefit.estimatedCount === 1 ? 'credit' : 'credits'}`
-                            : `${benefit.creditCount} ${benefit.creditCount === 1 ? 'credit' : 'credits'}`}
-                        </span>
-                      </span>
-                      <strong>{formatCurrency(benefit.creditedAmount)}</strong>
-                    </div>
-                    {benefit.retiredOn ? (
-                      <p className="benefit-footnote">
-                        Retired {formatActivityDate(benefit.retiredOn, benefit.retiredOn)}
-                      </p>
-                    ) : null}
-                    <BenefitEvidence
-                      activity={historyEntries.filter(({ benefitId }) => benefitId === benefit.id)}
-                      externalLogosEnabled={externalLogosEnabled}
-                    />
-                  </section>
-                ))}
-            </div>
-          ) : (
-            <EmptyState>No identifiable posted or estimated benefit credits in {year}.</EmptyState>
-          )}
-          {history.estimatedAmount ? (
-            <p className="benefit-preview-note">
-              Uber Cash is estimated from Uber purchases and excluded from the posted total.
-            </p>
-          ) : null}
-        </section>
-      </Card>
-    </div>
+        }
+      />
+      <p className="benefit-current-scope">As of today · Saved {formatUpdatedAt(snapshotIso)}</p>
+      <BenefitGroups benefits={benefits} externalLogosEnabled={externalLogosEnabled} />
+      <p className="benefit-preview-note">
+        Estimates only. Enrollment and complete usage are unavailable.
+      </p>
+    </Card>
   )
 }

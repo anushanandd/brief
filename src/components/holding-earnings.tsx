@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
-import { RefreshCw } from 'lucide-react'
 
 import { getEarningsCalendar, isTauri } from '../lib/api'
+import { RefreshCw } from './icons'
 import { Button } from './ui'
 
 const dateFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })

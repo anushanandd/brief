@@ -35,47 +35,58 @@
       "activityAsOf": null,
       "balanceAsOf": null,
       "balanceFetchedAt": "2026-09-09T13:00:00+00:00",
+      "balanceSource": null,
+      "cashValue": null,
       "currency": null,
       "estimatedRealizedGainYtd": null,
       "id": "all",
       "institution": "Brief",
+      "investedValue": null,
       "investmentIncomeYtd": null,
       "knownCostBasis": null,
       "knownUnrealizedGain": null,
       "knownUnrealizedGainPct": null,
       "name": "All accounts",
       "positionsAsOf": null,
+      "reportedBalance": null,
       "saleProceedsYtd": null,
       "type": "combined",
-      "value": 300.22
+      "value": 350.11
     },
     {
       "activityAsOf": null,
       "balanceAsOf": null,
       "balanceFetchedAt": "2026-09-09T07:29:00Z",
+      "balanceSource": null,
+      "cashValue": null,
       "currency": "USD",
       "estimatedRealizedGainYtd": null,
       "id": "plaid:cash",
       "institution": "Bank",
+      "investedValue": null,
       "investmentIncomeYtd": null,
       "knownCostBasis": null,
       "knownUnrealizedGain": null,
       "knownUnrealizedGainPct": null,
       "name": "Checking",
       "positionsAsOf": null,
+      "reportedBalance": null,
       "saleProceedsYtd": null,
       "type": "cash",
       "value": 100.11
     },
     {
       "activityAsOf": null,
-      "balanceAsOf": null,
+      "balanceAsOf": "2026-09-09T11:59:00Z",
       "balanceFetchedAt": null,
+      "balanceSource": "cash-and-positions",
+      "cashValue": 50.0,
       "costBasisCoverage": "complete",
       "currency": "USD",
       "estimatedRealizedGainYtd": 25.0,
       "id": "snaptrade:brokerage",
       "institution": "Broker",
+      "investedValue": 200.0,
       "investmentIncomeYtd": 0.0,
       "knownCostBasis": 150.0,
       "knownUnrealizedGain": 50.0,
@@ -83,22 +94,23 @@
       "name": "Brokerage",
       "positionsAsOf": null,
       "realizedGainCoverage": "complete",
+      "reportedBalance": 100.11,
       "saleProceedsYtd": 100.0,
       "salesYtd": 1,
       "type": "brokerage",
-      "value": 200.11
+      "value": 250.0
     }
   ],
   "benchmarkHistory": [],
   "brokeragePerformance": [
     {
       "accountId": "total",
-      "currentValue": 200.11,
+      "currentValue": 250.0,
       "historySource": "estimated",
       "historyStart": "2026-09-08",
       "institution": "1 account",
       "name": "Combined brokerages",
-      "performanceMethod": "value-with-comparisons",
+      "performanceMethod": "time-weighted",
       "points": [
         {
           "date": "2026-09-08",
@@ -110,22 +122,22 @@
         },
         {
           "date": "2026-09-09",
-          "marketChange": 10.11,
-          "marketChangePct": 5.3211,
+          "marketChange": 60.0,
+          "marketChangePct": 31.5789,
           "netDeposits": 190.0,
           "sp500": null,
-          "value": 200.11
+          "value": 250.0
         }
       ]
     },
     {
       "accountId": "snaptrade:brokerage",
-      "currentValue": 200.11,
+      "currentValue": 250.0,
       "historySource": "provider-estimated",
       "historyStart": "2026-09-08",
       "institution": "Broker",
       "name": "Brokerage",
-      "performanceMethod": "value-with-comparisons",
+      "performanceMethod": "time-weighted",
       "points": [
         {
           "date": "2026-09-08",
@@ -137,16 +149,16 @@
         },
         {
           "date": "2026-09-09",
-          "marketChange": 10.11,
-          "marketChangePct": 5.3211,
+          "marketChange": 60.0,
+          "marketChangePct": 31.5789,
           "netDeposits": 190.0,
           "sp500": null,
-          "value": 200.11
+          "value": 250.0
         }
       ]
     }
   ],
-  "calculationVersion": 16,
+  "calculationVersion": 24,
   "holdings": [
     {
       "accountId": "snaptrade:brokerage",
@@ -176,10 +188,10 @@
     "netWorthChange": 0.0,
     "newTransactionIds": [],
     "observedAt": "2026-09-09T13:00:00+00:00",
-    "previousNetWorth": 300.22,
+    "previousNetWorth": 350.11,
     "previousUpdatedAt": "2026-09-09T12:00:00+00:00"
   },
-  "netWorth": 300.22,
+  "netWorth": 350.11,
   "netWorthHistory": [
     {
       "date": "2026-09-08",
@@ -187,15 +199,16 @@
     },
     {
       "date": "2026-09-09",
-      "value": 300.22
+      "value": 350.11
     }
   ],
   "netWorthHistoryEstimated": true,
   "netWorthIncomplete": false,
+  "netWorthProvisional": true,
   "observedNetWorthHistory": [
     {
       "date": "2026-09-09",
-      "value": 300.22
+      "value": 350.11
     }
   ],
   "possibleDuplicateAccounts": [],
@@ -283,10 +296,17 @@
       "date": "2026-09-07",
       "description": "Coffee",
       "id": "coffee",
+      "location": {
+        "address": "123 Example St",
+        "city": "San Francisco",
+        "postalCode": "94103",
+        "region": "CA"
+      },
       "logoName": "Coffee",
       "logoUrl": "https://plaid-merchant-logos.plaid.com/coffee.png",
       "merchant": "Coffee",
       "occurredOn": "2026-09-07",
+      "paymentChannel": "in store",
       "pending": false,
       "postedOn": "2026-09-08",
       "transactionCode": "digital_payment",

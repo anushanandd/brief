@@ -26,7 +26,6 @@ mod macos {
         fn brief_foundation_model_cancel(request: *const c_char);
         fn brief_foundation_model_generate(
             request: *const c_char,
-            purpose: *const c_char,
             prompt: *const c_char,
             context: *mut c_void,
             callback: extern "C" fn(*mut c_void, *const c_char, *const c_char),
@@ -99,7 +98,6 @@ mod macos {
 
     pub async fn generate(
         evidence: String,
-        purpose: String,
         request_id: String,
         started: tauri::ipc::Channel<()>,
     ) -> Result<String, String> {
@@ -121,10 +119,6 @@ mod macos {
         }
         let prompt = CString::new(evidence)
             .map_err(|_| "The explanation evidence contains unsupported text".to_string())?;
-        if !["news", "chat"].contains(&purpose.as_str()) {
-            return Err("Unknown Apple Intelligence request purpose".into());
-        }
-        let purpose = CString::new(purpose).map_err(|_| "Invalid explanation purpose")?;
         if request_id.is_empty() || request_id.len() > 100 {
             return Err("Invalid explanation request".into());
         }
@@ -137,13 +131,7 @@ mod macos {
         }))
         .cast::<c_void>();
         unsafe {
-            brief_foundation_model_generate(
-                request.0.as_ptr(),
-                purpose.as_ptr(),
-                prompt.as_ptr(),
-                context,
-                complete,
-            )
+            brief_foundation_model_generate(request.0.as_ptr(), prompt.as_ptr(), context, complete)
         };
         // The frontend defers cancellation until native registration has completed.
         started
@@ -179,7 +167,6 @@ mod fallback {
 
     pub async fn generate(
         _evidence: String,
-        _purpose: String,
         _request_id: String,
         _started: tauri::ipc::Channel<()>,
     ) -> Result<String, String> {

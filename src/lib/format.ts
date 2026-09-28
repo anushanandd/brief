@@ -16,6 +16,12 @@ const updatedAtFormatter = new Intl.DateTimeFormat('en-US', {
   hour: 'numeric',
   minute: '2-digit',
 })
+const currentYearUpdatedAtFormatter = new Intl.DateTimeFormat('en-US', {
+  month: 'short',
+  day: 'numeric',
+  hour: 'numeric',
+  minute: '2-digit',
+})
 export const formatCurrency = (value: number | null | undefined) =>
   value == null ? '—' : currencyFormatter.format(value)
 
@@ -24,7 +30,14 @@ export const formatCompactCurrency = (value: number) => compactCurrencyFormatter
 export const formatPercent = (value: number | null | undefined) =>
   value == null ? '—' : `${value >= 0 ? '+' : ''}${value.toFixed(2)}%`
 
-export const formatUpdatedAt = (iso: string) => updatedAtFormatter.format(new Date(iso))
+export const formatUpdatedAt = (iso: string) => {
+  const date = new Date(iso)
+  return (
+    date.getFullYear() === new Date().getFullYear()
+      ? currentYearUpdatedAtFormatter
+      : updatedAtFormatter
+  ).format(date)
+}
 
 export const formatSecurityName = (name: string) => name.replace(/\s+class\b.*$/i, '').trim()
 

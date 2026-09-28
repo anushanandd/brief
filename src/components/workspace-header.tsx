@@ -1,5 +1,4 @@
 import { Link } from '@tanstack/react-router'
-import { Database, TrendingUp } from 'lucide-react'
 import { Fragment, type ReactNode } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
@@ -7,6 +6,7 @@ import { useLiveFinance } from '../hooks/use-live-finance'
 import type { AnalyticsSearch, AnalyticsChart } from '../lib/analytics'
 import { formatUpdatedAt } from '../lib/format'
 import { RefreshButton } from './data-state'
+import { TrendingUp } from './icons'
 
 type WorkspaceParent = {
   label: string
@@ -15,8 +15,13 @@ type WorkspaceParent = {
 
 export type WorkspaceBreadcrumb = {
   label: string
-  to: '/accounts' | '/activities' | '/holdings' | '/analytics'
-  search?: AnalyticsSearch & { category?: string; ticker?: string; analysis?: AnalyticsChart }
+  to: '/accounts' | '/activities' | '/holdings' | '/analytics' | '/settings/design/midday/activity'
+  search?: AnalyticsSearch & {
+    category?: string
+    method?: string
+    ticker?: string
+    analysis?: AnalyticsChart
+  }
 }
 
 export function WorkspaceHeader({
@@ -87,10 +92,9 @@ export function WorkspaceHeader({
           {status}
           {showSnapshot && data?.updatedAt ? (
             <span className={`freshness snapshot-freshness${hasWarning ? ' warning' : ''}`}>
-              <Database size={13} aria-hidden="true" />
+              {status ? '· ' : null}
               <span>
-                Accounts saved{' '}
-                <time dateTime={data.updatedAt}>{formatUpdatedAt(data.updatedAt)}</time>
+                Saved <time dateTime={data.updatedAt}>{formatUpdatedAt(data.updatedAt)}</time>
                 {hasWarning ? ' · Data needs attention' : ''}
               </span>
             </span>
@@ -103,10 +107,20 @@ export function WorkspaceHeader({
   )
 }
 
+export function marketSessionLabel(session: string | undefined, now = new Date()) {
+  if (session !== 'Market closed') return session
+  const weekday = new Intl.DateTimeFormat('en-US', {
+    weekday: 'short',
+    timeZone: 'America/New_York',
+  }).format(now)
+  return weekday === 'Sat' || weekday === 'Sun' ? 'Weekend' : session
+}
+
 export function MarketStatus() {
   const query = useLiveFinance()
   const marketIsActive = query.marketPriceState === 'active'
   const marketIsLoading = query.marketPriceState === 'loading'
+  const session = marketSessionLabel(query.marketSession)
   return (
     <span
       className="freshness market-freshness"
@@ -117,16 +131,14 @@ export function MarketStatus() {
     >
       <TrendingUp size={13} aria-hidden="true" />
       {marketIsActive
-        ? `${query.marketSession} · ${query.marketPriceMessage}`
+        ? `${session} · ${query.marketPriceMessage}`
         : marketIsLoading
           ? query.marketIsSaved
             ? 'Saved prices · updating'
             : 'Checking market prices'
           : query.marketPriceState === 'error'
             ? 'Prices unavailable'
-            : query.marketSession === 'Market closed'
-              ? 'Market closed · prices paused'
-              : 'Prices saved'}
+            : (session ?? 'Prices saved')}
     </span>
   )
 }

@@ -9,7 +9,9 @@ use serde::{de::Error as _, Deserialize, Deserializer};
 use serde_json::{json, Value};
 
 use crate::{
-    finance_contract::{decode, MarketProjection, Provenance, Snapshot, Source},
+    finance_contract::{
+        decode, MarketProjection, Provenance, Snapshot, Source, TransactionLocation,
+    },
     providers::{MarketSnapshot, ProviderSync},
     storage::Annotation,
 };
@@ -20,7 +22,7 @@ const COLORS: [&str; 6] = [
 const SPENDING_COLORS: [&str; 6] = [
     "#477d75", "#4f78a8", "#b58a3f", "#7d6da5", "#a45f79", "#79924b",
 ];
-pub(crate) const CALCULATION_VERSION: u32 = 16;
+pub(crate) const CALCULATION_VERSION: u32 = 24;
 
 #[derive(Debug, Deserialize)]
 struct PlaidBalances {
@@ -95,6 +97,10 @@ struct PlaidTransaction {
     #[serde(default)]
     authorized_datetime: Option<String>,
     #[serde(default)]
+    location: Option<PlaidLocation>,
+    #[serde(default)]
+    payment_channel: Option<String>,
+    #[serde(default)]
     category: Option<Vec<String>>,
     #[serde(default)]
     personal_finance_category: Option<PlaidCategory>,
@@ -102,6 +108,40 @@ struct PlaidTransaction {
     counterparties: Option<Vec<PlaidCounterparty>>,
     #[serde(default)]
     transaction_code: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PlaidLocation {
+    address: Option<String>,
+    city: Option<String>,
+    region: Option<String>,
+    postal_code: Option<String>,
+    country: Option<String>,
+}
+
+impl PlaidLocation {
+    fn project(&self) -> Option<TransactionLocation> {
+        let field = |value: &Option<String>| {
+            value
+                .as_deref()
+                .map(str::trim)
+                .filter(|value| !value.is_empty())
+                .map(str::to_owned)
+        };
+        let location = TransactionLocation {
+            address: field(&self.address),
+            city: field(&self.city),
+            region: field(&self.region),
+            postal_code: field(&self.postal_code),
+            country: field(&self.country),
+        };
+        (location.address.is_some()
+            || location.city.is_some()
+            || location.region.is_some()
+            || location.postal_code.is_some()
+            || location.country.is_some())
+        .then_some(location)
+    }
 }
 
 #[derive(Debug, Deserialize)]
@@ -232,7 +272,79 @@ struct SnapPosition {
     currency: Option<String>,
     #[serde(default, deserialize_with = "optional_decimal")]
     cost_basis: Option<Decimal>,
+    #[serde(default)]
+    cash_equivalent: bool,
     instrument: SnapInstrument,
+}
+
+#[derive(Debug, Deserialize)]
+struct SnapCashBalance {
+    currency: SnapCashCurrency,
+    #[serde(default, deserialize_with = "optional_decimal")]
+    cash: Option<Decimal>,
+}
+
+#[derive(Debug, Deserialize)]
+struct SnapCashCurrency {
+    code: String,
+}
+
+#[derive(Clone, Copy)]
+struct SnapValuation {
+    cash: Decimal,
+    invested: Decimal,
+}
+
+impl SnapValuation {
+    fn total(self) -> Decimal {
+        rounded(self.cash + self.invested)
+    }
+}
+
+fn calculated_snap_valuation(
+    positions: &[SnapPosition],
+    balances: &[Value],
+) -> Option<SnapValuation> {
+    let balances = balances
+        .iter()
+        .map(|value| serde_json::from_value::<SnapCashBalance>(value.clone()).ok())
+        .collect::<Option<Vec<_>>>()?;
+    if balances.is_empty()
+        || balances
+            .iter()
+            .any(|balance| balance.currency.code != "USD")
+    {
+        return None;
+    }
+    let cash = balances
+        .iter()
+        .map(|balance| balance.cash)
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .sum::<Decimal>();
+    let positions = positions
+        .iter()
+        .map(|position| {
+            if position.currency.as_deref() != Some("USD") {
+                return None;
+            }
+            if position.cash_equivalent {
+                return Some(Decimal::ZERO);
+            }
+            if !["stock", "etf", "adr", "cef", "mutualfund"]
+                .contains(&position.instrument.kind.as_deref()?)
+            {
+                return None;
+            }
+            Some(position.units? * position.price?)
+        })
+        .collect::<Option<Vec<_>>>()?
+        .into_iter()
+        .sum::<Decimal>();
+    Some(SnapValuation {
+        cash: rounded(cash),
+        invested: rounded(positions),
+    })
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -1228,7 +1340,9 @@ fn performance_record(
         "currentValue": json_decimal(current_value),
         "historySource": history_source,
         "historyStart": history_start,
-        "performanceMethod": if comparisons_available { "value-with-comparisons" } else { "value-only" },
+        "performanceMethod": if comparisons_available {
+            if source == "estimated" { "modified-dietz" } else { "time-weighted" }
+        } else { "value-only" },
         "points": projected_points,
     })
 }
@@ -1252,9 +1366,22 @@ fn combined_performance(accounts: &[Value]) -> Vec<Value> {
         date_sets.first().cloned().unwrap_or_default(),
         |dates, next| dates.intersection(next).cloned().collect(),
     );
-    let comparisons_available = accounts
+    let comparisons_available = accounts.iter().all(|account| {
+        matches!(
+            account["performanceMethod"].as_str(),
+            Some("time-weighted" | "modified-dietz")
+        )
+    });
+    let performance_method = if !comparisons_available {
+        "value-only"
+    } else if accounts
         .iter()
-        .all(|account| account["performanceMethod"] == "value-with-comparisons");
+        .all(|account| account["performanceMethod"] == "time-weighted")
+    {
+        "time-weighted"
+    } else {
+        "modified-dietz"
+    };
     let mut previous_value: Option<Decimal> = None;
     let points = common
         .into_iter()
@@ -1333,7 +1460,7 @@ fn combined_performance(accounts: &[Value]) -> Vec<Value> {
         "currentValue": json_decimal(current_value),
         "historySource": source,
         "historyStart": points.first().and_then(|point| point["date"].as_str()),
-        "performanceMethod": if comparisons_available { "value-with-comparisons" } else { "value-only" },
+        "performanceMethod": performance_method,
         "points": points,
     })];
     result.extend_from_slice(accounts);
@@ -1379,6 +1506,26 @@ fn observed_history(
         .rev()
         .map(|(date, value)| json!({ "date": date, "value": json_decimal(value) }))
         .collect()
+}
+
+fn brokerage_balances_current(accounts: &[Value], now: DateTime<Utc>) -> bool {
+    accounts
+        .iter()
+        .filter(|account| {
+            account["id"]
+                .as_str()
+                .is_some_and(|id| id.starts_with("snaptrade:"))
+        })
+        .all(|account| {
+            let Some(as_of) = account["balanceAsOf"]
+                .as_str()
+                .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+            else {
+                return false;
+            };
+            let age = now.signed_duration_since(as_of.with_timezone(&Utc));
+            age >= Duration::zero() && age <= Duration::minutes(30)
+        })
 }
 
 fn snapshot_change(
@@ -1538,6 +1685,18 @@ pub fn project(
             )
         })
         .collect::<BTreeMap<_, _>>();
+    let calculated_snap_values = sync
+        .snaptrade
+        .cash_balances
+        .iter()
+        .filter_map(|(id, balances)| {
+            let positions = snap_positions.get(id)?;
+            if sync.snaptrade.positions.get(id)?.len() != positions.len() {
+                return None;
+            }
+            calculated_snap_valuation(positions, balances).map(|value| (id.clone(), value))
+        })
+        .collect::<BTreeMap<_, _>>();
     let snap_activities = sync
         .snaptrade
         .activities
@@ -1592,7 +1751,6 @@ pub fn project(
         .iter()
         .map(|account| account.account_id.as_str())
         .collect::<BTreeSet<_>>();
-
     let committed_at = now.to_rfc3339();
     let today = now.with_timezone(&Local).date_naive();
     let mut accounts = Vec::new();
@@ -1652,10 +1810,12 @@ pub fn project(
     }
     for account in &snap_accounts {
         let total = account.balance.total.as_ref();
-        let value = usd_value(
+        let reported = usd_value(
             total.and_then(|total| total.amount),
             total.and_then(|total| total.currency.as_deref()),
         );
+        let calculated = calculated_snap_values.get(&account.id).copied();
+        let calculated_total = calculated.map(SnapValuation::total);
         let descriptor = format!(
             "{} {}",
             account.name.as_deref().unwrap_or_default(),
@@ -1667,8 +1827,12 @@ pub fn project(
             "name": text(account.name.as_deref().or(account.raw_type.as_deref()), "Investment account"),
             "institution": text(account.institution_name.as_deref(), "Unknown institution"),
             "type": if descriptor.contains("roth") { "retirement" } else { "brokerage" },
-            "value": optional_json_decimal(value),
-            "currency": total.and_then(|total| total.currency.clone()),
+            "value": optional_json_decimal(calculated_total),
+            "cashValue": optional_json_decimal(calculated.map(|value| value.cash)),
+            "investedValue": optional_json_decimal(calculated.map(|value| value.invested)),
+            "balanceSource": if calculated.is_some() { "cash-and-positions" } else { "unavailable" },
+            "reportedBalance": optional_json_decimal(reported),
+            "currency": if calculated.is_some() { Some("USD".to_string()) } else { total.and_then(|total| total.currency.clone()) },
             "balanceAsOf": account.sync_status.as_ref().and_then(|status| status.holdings.as_ref()).and_then(|point| point.last_successful_sync.clone()),
             "balanceFetchedAt": account.balance_fetched_at,
             "positionsAsOf": sync.snaptrade.positions_as_of.get(&account.id).cloned().flatten(),
@@ -1844,6 +2008,8 @@ pub fn project(
     let mut transactions = plaid_transactions.into_iter().filter_map(|transaction| {
         let posted_date = plaid_posted_date(&transaction)?;
         let occurred_date = iso_date(transaction.authorized_datetime.as_deref().or(transaction.authorized_date.as_deref()));
+        let date = occurred_date.clone().unwrap_or_else(|| posted_date.clone());
+        let location = transaction.location.as_ref().and_then(PlaidLocation::project);
         let counterparty = transaction.counterparties.as_ref().and_then(|values| values.iter().find(|value| value.kind.as_deref() == Some("merchant")));
         let payment_app = transaction.counterparties.as_ref().and_then(|values| values.iter().find(|value| value.kind.as_deref() == Some("payment_app")));
         let merchant = transaction.merchant_name.as_deref().or_else(|| counterparty.and_then(|value| value.name.as_deref())).or(transaction.name.as_deref()).unwrap_or("Transaction");
@@ -1852,7 +2018,7 @@ pub fn project(
             "merchant": merchant,
             "description": transaction.name,
             "category": category_name(&transaction),
-            "date": occurred_date.clone().unwrap_or_else(|| posted_date.clone()),
+            "date": date,
             "occurredOn": occurred_date,
             "postedOn": posted_date,
             "amount": json_decimal(-transaction.amount),
@@ -1860,6 +2026,17 @@ pub fn project(
             "accountId": format!("plaid:{}", transaction.account_id),
             "pending": transaction.pending,
         });
+        if let Some(location) = location {
+            projected["location"] = json!(location);
+        }
+        if let Some(channel) = transaction
+            .payment_channel
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+        {
+            projected["paymentChannel"] = channel.into();
+        }
         let logo_url = transaction.logo_url.as_deref().or_else(|| counterparty.and_then(|value| value.logo_url.as_deref()));
         let website = transaction.website.as_deref().or_else(|| counterparty.and_then(|value| value.website.as_deref()));
         if let Some(logo_url) = logo_url {
@@ -1948,6 +2125,7 @@ pub fn project(
             ) else {
                 continue;
             };
+            let posted_on = iso_date(activity.settlement_date.as_deref());
             let ticker = activity_ticker(activity);
             let merchant = if ticker.is_empty() {
                 label.to_string()
@@ -1961,7 +2139,7 @@ pub fn project(
                 "category": category,
                 "date": date,
                 "occurredOn": iso_date(activity.trade_date.as_deref()),
-                "postedOn": iso_date(activity.settlement_date.as_deref()),
+                "postedOn": posted_on,
                 "amount": json_decimal(amount),
                 "account": text(account.name.as_deref().or(account.raw_type.as_deref()), "Investment account"),
                 "accountId": format!("snaptrade:{}", account.id),
@@ -2052,11 +2230,11 @@ pub fn project(
     );
     let mut individual_performance = Vec::new();
     for account in &snap_accounts {
-        let total = account.balance.total.as_ref();
-        let Some(current) = usd_value(
-            total.and_then(|value| value.amount),
-            total.and_then(|value| value.currency.as_deref()),
-        ) else {
+        let Some(current) = calculated_snap_values
+            .get(&account.id)
+            .copied()
+            .map(SnapValuation::total)
+        else {
             continue;
         };
         let history = sync
@@ -2166,7 +2344,8 @@ pub fn project(
             ))
         })
         .collect::<Vec<_>>();
-    let estimated_history = if incomplete {
+    let provisional = !sync.balances_fresh || !brokerage_balances_current(&accounts, now);
+    let mut estimated_history = if incomplete {
         Vec::new()
     } else if plaid_histories.len() == plaid_accounts.len() {
         reconstructed_net_worth_history(
@@ -2176,6 +2355,9 @@ pub fn project(
     } else {
         Vec::new()
     };
+    if provisional {
+        estimated_history.retain(|(date, _)| date != &today);
+    }
     crate::transaction_policy::apply(&mut transactions, &accounts, &BTreeMap::new())?;
     add_investment_metrics(
         &mut accounts,
@@ -2196,7 +2378,8 @@ pub fn project(
         warnings.push("Some account balances have no supported USD value. The total includes known USD balances only.".into());
     }
     if holdings.iter().any(|holding| holding["value"].is_null()) {
-        warnings.push("Some positions are unpriced or use unsupported instruments/currencies. Account totals remain provider-reported.".into());
+        warnings
+            .push("Some positions are unpriced or use unsupported instruments/currencies.".into());
     }
     let refreshed = sync
         .refreshed_account_ids
@@ -2216,7 +2399,7 @@ pub fn project(
         &sync.previous_snapshot,
         net_worth,
         now,
-        sync.balances_fresh && !incomplete,
+        !provisional && !incomplete,
     );
     let (net_worth_history, net_worth_history_estimated) =
         merged_net_worth_history(estimated_history, &observations);
@@ -2233,6 +2416,7 @@ pub fn project(
         updated_at: committed_at,
         net_worth: decode(json_decimal(net_worth))?,
         net_worth_incomplete: incomplete,
+        net_worth_provisional: provisional,
         sync_warnings: warnings,
         accounts: decode(accounts)?,
         holdings: decode(holdings)?,
@@ -2398,6 +2582,9 @@ fn apply_market_snapshots_with_freshness(
             deltas.get(&account.id).copied().unwrap_or_default()
         };
         account.value = money(value + delta);
+        if let Some(invested) = account.invested_value.and_then(decimal) {
+            account.invested_value = money(invested + delta);
+        }
         if let (Some(gain), Some(costed_delta), Some(basis)) = (
             account.known_unrealized_gain.and_then(decimal),
             costed_deltas.get(&account.id),
@@ -2472,7 +2659,10 @@ mod tests {
                 })],
                 transactions: vec![json!({
                     "transaction_id": "coffee", "account_id": "cash", "amount": "5.125", "name": "Coffee", "merchant_name": "Coffee",
-                    "pending": false, "date": "2026-09-08", "authorized_date": "2026-09-07",
+                    "pending": false, "date": "2026-09-08", "datetime": "2026-09-08T09:10:00Z",
+                    "authorized_date": "2026-09-07", "authorized_datetime": "2026-09-07T15:42:00Z",
+                    "location": { "address": "123 Example St", "city": "San Francisco", "region": "CA", "postal_code": "94103" },
+                    "payment_channel": "in store",
                     "logo_url": "https://plaid-merchant-logos.plaid.com/coffee.png", "website": "https://coffee.example",
                     "personal_finance_category": {
                         "primary": "FOOD_AND_DRINK",
@@ -2486,8 +2676,16 @@ mod tests {
             },
             snaptrade: SnapTradeData {
                 accounts: vec![json!({
-                    "id": "brokerage", "name": "Brokerage", "institution_name": "Broker", "balance": { "total": { "amount": "200.105", "currency": "USD" } }
+                    "id": "brokerage", "name": "Brokerage", "institution_name": "Broker", "balance": { "total": { "amount": "200.105", "currency": "USD" } },
+                    "sync_status": { "holdings": { "last_successful_sync": "2026-09-09T11:59:00Z" } }
                 })],
+                cash_balances: BTreeMap::from([(
+                    "brokerage".into(),
+                    vec![json!({
+                        "currency": { "code": "USD" }, "cash": "200.105"
+                    })],
+                )]),
+                positions: BTreeMap::from([("brokerage".into(), vec![])]),
                 balance_history: BTreeMap::from([(
                     "brokerage".into(),
                     vec![json!({ "date": "2026-09-08", "total_value": "190.00" })],
@@ -2502,6 +2700,11 @@ mod tests {
     #[test]
     fn native_finance_fixture_matches_typed_projection() {
         let mut input = sync();
+        input.snaptrade.accounts[0]["balance"]["total"]["amount"] = json!(100.105);
+        input.snaptrade.cash_balances.insert(
+            "brokerage".into(),
+            vec![json!({ "currency": { "code": "USD" }, "cash": 50 })],
+        );
         input.snaptrade.positions.insert("brokerage".into(), vec![json!({
             "units": 2, "price": 100, "cost_basis": 75, "currency": "USD",
             "instrument": { "kind": "stock", "symbol": "TEST", "description": "Synthetic Security" }
@@ -2509,8 +2712,8 @@ mod tests {
         input.snaptrade.activity_complete = true;
         input.snaptrade.history_complete = true;
         input.snaptrade.activities.insert("brokerage".into(), vec![
-            json!({"id":"purchase", "type":"BUY", "amount":225, "trade_date":"2026-09-01", "units":3, "price":75, "symbol":{"symbol":"TEST"}}),
-            json!({"id":"sale", "type":"SELL", "amount":100, "trade_date":"2026-09-08", "units":1, "price":100, "symbol":{"symbol":"TEST"}}),
+            json!({"id":"purchase", "type":"BUY", "amount":225, "trade_date":"2026-09-01T14:00:00Z", "units":3, "price":75, "symbol":{"symbol":"TEST"}}),
+            json!({"id":"sale", "type":"SELL", "amount":100, "trade_date":"2026-09-08T20:15:00Z", "units":1, "price":100, "symbol":{"symbol":"TEST"}}),
         ]);
         let now = DateTime::parse_from_rfc3339("2026-09-09T12:00:00Z")
             .unwrap()
@@ -2577,6 +2780,15 @@ mod tests {
         assert_eq!(snapshot["transactions"][0]["date"], "2026-09-07");
         assert_eq!(snapshot["transactions"][0]["postedOn"], "2026-09-08");
         assert_eq!(
+            snapshot["transactions"][0]["location"]["city"],
+            "San Francisco"
+        );
+        assert_eq!(
+            snapshot["transactions"][0]["location"]["postalCode"],
+            "94103"
+        );
+        assert_eq!(snapshot["transactions"][0]["paymentChannel"], "in store");
+        assert_eq!(
             snapshot["transactions"][0]["logoUrl"],
             "https://plaid-merchant-logos.plaid.com/coffee.png"
         );
@@ -2608,6 +2820,29 @@ mod tests {
         );
         assert!(snapshot["brokeragePerformance"][1]["points"][0]["netDeposits"].is_null());
         assert_eq!(snapshot["provenance"]["calculation"], "rust");
+    }
+
+    #[test]
+    fn plaid_location_skips_empty_fields_and_absent_places() {
+        let location = PlaidLocation {
+            address: Some("  ".into()),
+            city: None,
+            region: Some(" CA ".into()),
+            postal_code: None,
+            country: None,
+        };
+        let projected = location.project().unwrap();
+        assert_eq!(projected.region.as_deref(), Some("CA"));
+        assert!(projected.address.is_none());
+        assert!(PlaidLocation {
+            address: None,
+            city: Some("  ".into()),
+            region: None,
+            postal_code: None,
+            country: None,
+        }
+        .project()
+        .is_none());
     }
 
     #[test]
@@ -2758,7 +2993,7 @@ mod tests {
         )
         .unwrap();
         let account = &snapshot["brokeragePerformance"][1];
-        assert_eq!(account["performanceMethod"], "value-with-comparisons");
+        assert_eq!(account["performanceMethod"], "time-weighted");
         assert_eq!(account["points"][1]["netDeposits"], 200.0);
         assert_eq!(account["points"][1]["sp500"], 201.9);
         assert_eq!(account["points"][1]["marketChange"], 0.11);
@@ -3034,6 +3269,65 @@ mod tests {
     }
 
     #[test]
+    fn cash_and_complete_positions_replace_a_lagging_reported_total() {
+        let mut input = sync();
+        input.snaptrade.accounts[0]["balance"]["total"]["amount"] = json!(300);
+        input.snaptrade.cash_balances.insert(
+            "brokerage".into(),
+            vec![json!({ "currency": { "code": "USD" }, "cash": 50 })],
+        );
+        input.snaptrade.positions.insert("brokerage".into(), vec![
+            json!({ "units": 2, "price": 100, "currency": "USD", "instrument": { "kind": "stock", "symbol": "TEST" } }),
+            json!({ "units": 5, "price": 10, "currency": "USD", "cash_equivalent": true, "instrument": { "kind": "mutualfund", "symbol": "CASH" } }),
+        ]);
+        let snapshot = project_json(&input, &BTreeMap::new(), projection_time()).unwrap();
+        assert_eq!(snapshot["netWorth"], 350.11);
+        assert_eq!(snapshot["accounts"][2]["value"], 250.0);
+        assert_eq!(snapshot["accounts"][2]["cashValue"], 50.0);
+        assert_eq!(snapshot["accounts"][2]["investedValue"], 200.0);
+        assert_eq!(
+            snapshot["accounts"][2]["balanceSource"],
+            "cash-and-positions"
+        );
+
+        input.snaptrade.accounts[0]["balance"]["total"]["amount"] = json!(500);
+        let discrepancy = project_json(&input, &BTreeMap::new(), projection_time()).unwrap();
+        assert_eq!(discrepancy["accounts"][2]["value"], 250.0);
+        assert_eq!(discrepancy["accounts"][2]["reportedBalance"], 500.0);
+
+        input.snaptrade.accounts[0]["balance"]["total"] = json!({});
+        let without_reported = project_json(&input, &BTreeMap::new(), projection_time()).unwrap();
+        assert_eq!(without_reported["accounts"][2]["value"], 250.0);
+        assert!(without_reported["accounts"][2]["reportedBalance"].is_null());
+
+        input.snaptrade.positions.get_mut("brokerage").unwrap().push(json!({
+            "units": 1, "price": 10, "currency": "USD", "instrument": { "kind": "option", "symbol": "OPT" }
+        }));
+        let fallback = project_json(&input, &BTreeMap::new(), projection_time()).unwrap();
+        assert_eq!(fallback["netWorth"], 100.11);
+        assert!(fallback["accounts"][2]["value"].is_null());
+        assert!(fallback["accounts"][2]["cashValue"].is_null());
+        assert!(fallback["accounts"][2]["investedValue"].is_null());
+        assert_eq!(fallback["accounts"][2]["balanceSource"], "unavailable");
+        assert_eq!(fallback["netWorthIncomplete"], true);
+    }
+
+    #[test]
+    fn stale_brokerage_sync_does_not_save_a_false_daily_observation() {
+        let mut input = sync();
+        input.snaptrade.accounts[0]["sync_status"]["holdings"]["last_successful_sync"] =
+            json!("2026-09-08T12:00:00Z");
+        let snapshot = project_json(&input, &BTreeMap::new(), projection_time()).unwrap();
+        assert_eq!(snapshot["netWorthProvisional"], true);
+        assert_eq!(snapshot["observedNetWorthHistory"], json!([]));
+        assert!(snapshot["netWorthHistory"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .all(|point| point["date"] != "2026-09-09"));
+    }
+
+    #[test]
     fn reconstructs_credit_history_as_a_negative_liability() {
         let mut sync = sync();
         sync.plaid.accounts.push(json!({
@@ -3136,7 +3430,23 @@ mod tests {
         committed["holdings"][0]["accountId"] = "snaptrade:brokerage".into();
         committed["brokeragePerformance"] =
             json!([{ "accountId": "total", "currentValue": 100.0 }]);
+        let snap_before = committed["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|account| account["id"] == "snaptrade:brokerage")
+            .unwrap();
+        let cash_before = snap_before["cashValue"].as_f64().unwrap();
+        let invested_before = snap_before["investedValue"].as_f64().unwrap();
         let projected = apply_market_snapshots(&committed, &fresh).unwrap();
         assert_eq!(projected["brokeragePerformance"][0]["currentValue"], 120.0);
+        let snap_after = projected["accounts"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|account| account["id"] == "snaptrade:brokerage")
+            .unwrap();
+        assert_eq!(snap_after["cashValue"], cash_before);
+        assert_eq!(snap_after["investedValue"], invested_before + 20.0);
     }
 }

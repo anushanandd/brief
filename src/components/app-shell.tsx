@@ -1,17 +1,18 @@
 import { useQueryClient, useMutation } from '@tanstack/react-query'
 import { Link, Outlet, useNavigate, useLocation } from '@tanstack/react-router'
 import { listen } from '@tauri-apps/api/event'
-import { FilePlus, History } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
 import { financeQueryKey } from '../hooks/use-finance'
 import { useAutoRefreshFinance, useRefreshFinance } from '../hooks/use-refresh-finance'
+import { useOrderedAnalyticsNavigation } from '../lib/analytics-order-preferences'
 import { isTauri, recoverFinanceState } from '../lib/api'
 import { shortcutInput, shortcutOverlayOpen } from '../lib/keyboard'
-import { navigation, settingsNavigation } from '../lib/navigation'
+import { navigation, secondaryNavigation, settingsNavigation } from '../lib/navigation'
 import { adjacentPage, useOrderedNavigation } from '../lib/navigation-preferences'
 import { CommandMenu } from './command-menu'
+import { Eye, EyeOff, FilePlus, History } from './icons'
 import { ShortcutHelp } from './shortcut-help'
 import { Button } from './ui'
 
@@ -51,9 +52,22 @@ export function shortcutHelpShortcut(event: BareShortcutEvent, isEditing: boolea
   return event.key === '?' && !isEditing && !event.altKey && !event.ctrlKey && !event.metaKey
 }
 
+export function sensitiveValuesShortcut(event: BareShortcutEvent & { repeat: boolean }) {
+  return (
+    event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey &&
+    !event.repeat &&
+    event.key.toLowerCase() === 'h'
+  )
+}
+
 export function AppShell() {
   const pages = useOrderedNavigation()
+  const analyticsNavigation = useOrderedAnalyticsNavigation()
   const pathname = useLocation({ select: (location) => location.pathname })
+  const mainContentRef = useRef<HTMLElement>(null)
   const settingsLast = pages.at(-1)?.to === '/settings'
   const SettingsIcon = settingsNavigation.icon
   const finance = useFinance()
@@ -61,6 +75,7 @@ export function AppShell() {
   const refresh = useRefreshFinance()
   const [commandOpen, setCommandOpen] = useState(false)
   const [shortcutHelpOpen, setShortcutHelpOpen] = useState(false)
+  const [valuesHidden, setValuesHidden] = useState(false)
   const client = useQueryClient()
   useAutoRefreshFinance(
     finance.data?.updatedAt,
@@ -77,11 +92,27 @@ export function AppShell() {
       void client.invalidateQueries({ queryKey: ['market-snapshots'] })
     },
   })
-
+  useLayoutEffect(() => {
+    document.documentElement.toggleAttribute('data-values-hidden', valuesHidden)
+    return () => document.documentElement.removeAttribute('data-values-hidden')
+  }, [valuesHidden])
+  useLayoutEffect(() => {
+    if (mainContentRef.current) mainContentRef.current.scrollTop = 0
+  }, [pathname])
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target
       const isEditing = shortcutInput(target)
+      if (
+        !isTauri() &&
+        sensitiveValuesShortcut(event) &&
+        !event.defaultPrevented &&
+        !event.isComposing
+      ) {
+        event.preventDefault()
+        setValuesHidden((hidden) => !hidden)
+        return
+      }
       if (
         event.defaultPrevented ||
         event.isComposing ||
@@ -117,20 +148,22 @@ export function AppShell() {
         return
       }
 
-      const listAction = listNavigationAction(event, isEditing)
-      if (listAction) {
-        const rows = [...document.querySelectorAll<HTMLElement>('[data-keyboard-row]')].filter(
+      const focused = document.activeElement instanceof HTMLElement ? document.activeElement : null
+      let region = focused?.closest<HTMLElement>('[data-keyboard-region]')
+      while (region?.parentElement?.closest<HTMLElement>('[data-keyboard-region]')) {
+        region = region.parentElement.closest<HTMLElement>('[data-keyboard-region]')
+      }
+      const listAction = region ? listNavigationAction(event, isEditing) : undefined
+      if (listAction && region) {
+        const rows = [...region.querySelectorAll<HTMLElement>('[data-keyboard-row]')].filter(
           (row) => row.getClientRects().length > 0,
         )
-        const focusedRow =
-          document.activeElement instanceof HTMLElement
-            ? document.activeElement.closest<HTMLElement>('[data-keyboard-row]')
-            : null
+        const focusedRow = focused?.closest<HTMLElement>('[data-keyboard-row]')
         if (listAction === 'open') {
           const opener = focusedRow?.matches('[data-keyboard-open]')
             ? focusedRow
             : focusedRow?.querySelector<HTMLElement>('[data-keyboard-open]')
-          if (opener) {
+          if (opener && opener !== focused) {
             event.preventDefault()
             opener.click()
           }
@@ -182,60 +215,147 @@ export function AppShell() {
 
     let disposed = false
     let unlisten: (() => void) | undefined
+    let unlistenPrivacy: (() => void) | undefined
     window.addEventListener('keydown', onKeyDown)
     if (isTauri()) {
       void listen('open-settings', () => navigate({ to: '/settings' })).then((stop) => {
         if (disposed) stop()
         else unlisten = stop
       })
+      void listen('toggle-sensitive-values', () => setValuesHidden((hidden) => !hidden)).then(
+        (stop) => {
+          if (disposed) stop()
+          else unlistenPrivacy = stop
+        },
+      )
     }
 
     return () => {
       disposed = true
       unlisten?.()
+      unlistenPrivacy?.()
       window.removeEventListener('keydown', onKeyDown)
     }
   }, [commandOpen, navigate, refresh, shortcutHelpOpen, pages, pathname])
 
   return (
-    <div className="app-frame">
+    <div
+      className={`app-frame${pathname.startsWith('/settings/design/midday/') ? ' midday-prototype' : ''}`}
+    >
       <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />
       <aside className="sidebar" aria-label="Primary navigation">
-        <Link to="/" className="brand" aria-label="Brief home">
-          <span className="brand-name">Brief</span>
-        </Link>
+        <div className="sidebar-header">
+          <Link to="/" className="brand" aria-label="Brief home">
+            <span className="brand-name">Brief</span>
+          </Link>
+        </div>
 
-        <nav className="sidebar-nav">
-          {(settingsLast ? pages.slice(0, -1) : pages).map(({ to, label, icon: Icon }) => (
-            <Link
-              key={to}
-              to={to}
-              className="nav-link"
-              activeProps={{ className: 'nav-link active' }}
-              activeOptions={{ exact: to === '/' }}
-              aria-label={label}
-            >
-              <Icon size={17} strokeWidth={1.8} aria-hidden="true" />
-              <span>{label}</span>
-            </Link>
-          ))}
-        </nav>
-        {settingsLast ? (
-          <nav className="sidebar-nav sidebar-nav-secondary" aria-label="Application settings">
-            <Link
-              to={settingsNavigation.to}
-              className="nav-link"
-              activeProps={{ className: 'nav-link active' }}
-              aria-label={settingsNavigation.label}
-            >
-              <SettingsIcon size={17} strokeWidth={1.8} aria-hidden="true" />
-              <span>{settingsNavigation.label}</span>
-            </Link>
+        <div className="sidebar-content">
+          <nav className="sidebar-navigation" aria-label="Pages">
+            <section className="sidebar-group">
+              <h2 className="sidebar-group-label">Workspace</h2>
+              <ul className="sidebar-menu">
+                {(settingsLast ? pages.slice(0, -1) : pages).map(({ to, label, icon: Icon }) => (
+                  <li className="sidebar-menu-item" key={to}>
+                    <Link
+                      to={to}
+                      className="sidebar-menu-button"
+                      activeProps={{ className: 'sidebar-menu-button active' }}
+                      activeOptions={{ exact: to === '/' }}
+                      aria-label={label}
+                    >
+                      <Icon size={17} aria-hidden="true" />
+                      <span>{label}</span>
+                    </Link>
+                  </li>
+                ))}
+              </ul>
+            </section>
+
+            <section className="sidebar-group">
+              <h2 className="sidebar-group-label">Analytics</h2>
+              <ul className="sidebar-menu">
+                {analyticsNavigation.map((chart) => {
+                  const Icon = chart.icon
+                  return (
+                    <li className="sidebar-menu-item" key={chart.search.chart}>
+                      <Link
+                        to={chart.to}
+                        search={chart.search}
+                        className="sidebar-menu-button"
+                        activeProps={{ className: 'sidebar-menu-button active' }}
+                      >
+                        <Icon size={17} aria-hidden="true" />
+                        <span>{chart.label}</span>
+                      </Link>
+                    </li>
+                  )
+                })}
+              </ul>
+            </section>
           </nav>
-        ) : null}
+        </div>
+
+        <div className="sidebar-footer">
+          <nav aria-label="Application settings">
+            <ul className="sidebar-menu">
+              <li className="sidebar-menu-item">
+                <button
+                  type="button"
+                  className="sidebar-menu-button privacy-toggle"
+                  aria-label={valuesHidden ? 'Show sensitive values' : 'Hide sensitive values'}
+                  aria-pressed={valuesHidden}
+                  aria-keyshortcuts="Meta+H"
+                  onClick={() => setValuesHidden((hidden) => !hidden)}
+                >
+                  {valuesHidden ? (
+                    <Eye size={17} aria-hidden="true" />
+                  ) : (
+                    <EyeOff size={17} aria-hidden="true" />
+                  )}
+                  <span>{valuesHidden ? 'Show values' : 'Hide values'}</span>
+                </button>
+              </li>
+              {settingsLast ? (
+                <li className="sidebar-menu-item">
+                  <Link
+                    to={settingsNavigation.to}
+                    className="sidebar-menu-button"
+                    activeProps={{ className: 'sidebar-menu-button active' }}
+                    aria-label={settingsNavigation.label}
+                  >
+                    <SettingsIcon size={17} aria-hidden="true" />
+                    <span>{settingsNavigation.label}</span>
+                  </Link>
+                </li>
+              ) : null}
+              {secondaryNavigation.map((destination) => {
+                const Icon = destination.icon
+                return (
+                  <li className="sidebar-menu-item" key={destination.to}>
+                    <Link
+                      to={destination.to}
+                      className="sidebar-menu-button"
+                      activeProps={{ className: 'sidebar-menu-button active' }}
+                      activeOptions={{
+                        exact:
+                          destination.to === '/settings/design'
+                            ? !pathname.startsWith('/settings/design/midday/')
+                            : true,
+                      }}
+                    >
+                      <Icon size={17} aria-hidden="true" />
+                      <span>{destination.label}</span>
+                    </Link>
+                  </li>
+                )
+              })}
+            </ul>
+          </nav>
+        </div>
       </aside>
 
-      <main className="main-content">
+      <main className="main-content" ref={mainContentRef}>
         {finance.data?.recovery ? (
           <section className="sync-notice" aria-label="Local data recovery">
             <h2>Local data needs recovery</h2>
@@ -281,7 +401,13 @@ export function AppShell() {
         {finance.data?.recovery && !finance.data.recovery.canRestore ? null : <Outlet />}
       </main>
 
-      {commandOpen ? <CommandMenu open onOpenChange={setCommandOpen} /> : null}
+      {commandOpen ? (
+        <CommandMenu
+          open
+          onOpenChange={setCommandOpen}
+          onShowShortcuts={() => setShortcutHelpOpen(true)}
+        />
+      ) : null}
       {shortcutHelpOpen ? <ShortcutHelp onClose={() => setShortcutHelpOpen(false)} /> : null}
     </div>
   )

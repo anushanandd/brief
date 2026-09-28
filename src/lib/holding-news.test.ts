@@ -1,9 +1,8 @@
 import { expect, it } from 'vitest'
 
-import { averageNewsSentiment, rankHoldingNews } from './holding-news'
+import { rankHoldingNews } from './holding-news'
 import type { MarketNewsArticle } from './schema'
 
-const now = Date.parse('2026-09-20T12:00:00Z')
 const article = (overrides: Partial<MarketNewsArticle> = {}): MarketNewsArticle => ({
   headline: 'TEST raises earnings guidance after strong demand',
   summary: 'The company raised its guidance, according to its announcement.',
@@ -14,12 +13,13 @@ const article = (overrides: Partial<MarketNewsArticle> = {}): MarketNewsArticle 
   ...overrides,
 })
 
-it('ranks material company news, groups near-duplicates, and preserves different figures', () => {
+it('shows newest stories first, groups near-duplicates, and preserves different figures', () => {
   const groups = rankHoldingNews(
     [
       article({
         headline: 'Markets open higher',
         url: 'https://example.com/market',
+        createdAt: '2026-09-20T08:00:00Z',
         symbols: ['TEST', 'OTHER'],
       }),
       article(),
@@ -28,48 +28,47 @@ it('ranks material company news, groups near-duplicates, and preserves different
       article({
         headline: 'TEST raises earnings guidance by 5 percent',
         url: 'https://example.com/five',
+        createdAt: '2026-09-20T10:00:00Z',
       }),
       article({
         headline: 'TEST raises earnings guidance by 10 percent',
         url: 'https://example.com/ten',
+        createdAt: '2026-09-20T09:00:00Z',
       }),
       article({ symbols: ['OTHER'], url: 'https://example.com/unrelated' }),
+      article({ createdAt: 'invalid', url: 'https://example.com/invalid' }),
     ],
     'TEST',
-    now,
   )
   expect(groups[0].article.url).toBe('https://example.com/earnings')
   expect(groups[0].related.map(({ url }) => url)).toEqual(['https://example.com/syndicated'])
-  expect(groups).toHaveLength(4)
-  expect(groups.at(-1)?.article.headline).toBe('Markets open higher')
+  expect(groups.map(({ article: item }) => item.url)).toEqual([
+    'https://example.com/earnings',
+    'https://example.com/five',
+    'https://example.com/ten',
+    'https://example.com/market',
+  ])
 })
 
-it('prioritizes provider ticker relevance while keeping neutral scores available', () => {
+it('keeps chronology predictable instead of allowing provider scores to reorder the feed', () => {
   const groups = rankHoldingNews(
     [
-      article({ headline: 'Lower relevance', relevanceScore: 0, sentimentScore: 0 }),
       article({
-        headline: 'Direct company announcement',
+        headline: 'Older high-relevance story',
         relevanceScore: 0.95,
-        url: 'https://example.com/direct',
+        createdAt: '2026-09-20T10:00:00Z',
+      }),
+      article({
+        headline: 'Newer low-relevance story',
+        relevanceScore: 0,
+        createdAt: '2026-09-20T12:00:00Z',
+        url: 'https://example.com/newer',
       }),
     ],
     'TEST',
-    now,
   )
-  expect(groups[0].article.relevanceScore).toBe(0.95)
-  expect(groups[1].article.sentimentScore).toBe(0)
-})
-
-it('averages scored primary stories without treating missing values as neutral or counting related copies', () => {
-  const groups = [
-    { article: article({ sentimentScore: 0.6 }), related: [article({ sentimentScore: -1 })] },
-    { article: article({ sentimentScore: 0 }), related: [] },
-    { article: article({ sentimentScore: -0.3 }), related: [] },
-    { article: article({ sentimentScore: null }), related: [] },
-  ]
-  const average = averageNewsSentiment(groups)
-  expect(average.value).toBeCloseTo(0.1)
-  expect(average.count).toBe(3)
-  expect(averageNewsSentiment([])).toEqual({ value: null, count: 0 })
+  expect(groups.map(({ article: item }) => item.url)).toEqual([
+    'https://example.com/newer',
+    'https://example.com/earnings',
+  ])
 })

@@ -4,6 +4,7 @@ import {
   browserHistoryDirection,
   listNavigationAction,
   navigationShortcutIndex,
+  sensitiveValuesShortcut,
   shortcutHelpShortcut,
   sidebarShortcutDirection,
 } from './app-shell'
@@ -28,11 +29,11 @@ describe('browser history shortcuts', () => {
 })
 
 describe('navigation shortcuts', () => {
-  it('uses bare number keys without stealing typing or modified shortcuts', () => {
+  it('uses bare numbers for pages without stealing typing', () => {
     expect(navigationShortcutIndex(key(), false)).toBe(0)
     expect(navigationShortcutIndex(key({ key: '7' }), false)).toBe(6)
-    expect(navigationShortcutIndex(key({ metaKey: true }), false)).toBeUndefined()
     expect(navigationShortcutIndex(key(), true)).toBeUndefined()
+    expect(navigationShortcutIndex(key({ key: '1', metaKey: true }), false)).toBeUndefined()
     expect(navigationShortcutIndex(key({ key: '9' }), false)).toBeUndefined()
   })
 
@@ -44,6 +45,13 @@ describe('navigation shortcuts', () => {
     expect(shortcutHelpShortcut(key({ key: '?', shiftKey: true }), false)).toBe(true)
     expect(shortcutHelpShortcut(key({ key: '?', shiftKey: true }), true)).toBe(false)
   })
+
+  it('ignores removed motion keys', () => {
+    expect(listNavigationAction(key({ key: 'h' }), false)).toBeUndefined()
+    expect(listNavigationAction(key({ key: 'l' }), false)).toBeUndefined()
+    expect(listNavigationAction(key({ key: 'g' }), false)).toBeUndefined()
+    expect(listNavigationAction(key({ key: 'G', shiftKey: true }), false)).toBeUndefined()
+  })
 })
 
 it('cycles sidebar pages only for unmodified Command-Up/Down outside editing', () => {
@@ -54,4 +62,14 @@ it('cycles sidebar pages only for unmodified Command-Up/Down outside editing', (
   expect(
     sidebarShortcutDirection(key({ key: 'ArrowUp', metaKey: true, ctrlKey: true }), false),
   ).toBeUndefined()
+})
+
+it('toggles value masking only for an initial Command-H press', () => {
+  expect(sensitiveValuesShortcut({ ...key({ key: 'h', metaKey: true }), repeat: false })).toBe(true)
+  expect(sensitiveValuesShortcut({ ...key({ key: 'H', metaKey: true }), repeat: false })).toBe(true)
+  expect(sensitiveValuesShortcut({ ...key({ key: 'h', metaKey: true }), repeat: true })).toBe(false)
+  expect(sensitiveValuesShortcut({ ...key({ key: 'h' }), repeat: false })).toBe(false)
+  expect(
+    sensitiveValuesShortcut({ ...key({ key: 'h', metaKey: true, shiftKey: true }), repeat: false }),
+  ).toBe(false)
 })

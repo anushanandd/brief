@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 
 import { PageError, PageLoading } from '../components/data-state'
-import { Card, EmptyState, SectionHeading, StatusDot } from '../components/ui'
+import { Card, EmptyState, ScrollCueCard, SectionHeading, StatusDot } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import { useLiveFinance } from '../hooks/use-live-finance'
@@ -87,7 +87,7 @@ export function LogsPage() {
   return (
     <div className="page logs-page">
       <WorkspaceHeader
-        title="Logs"
+        title="Diagnostics"
         parent={{ label: 'Settings', to: '/settings' }}
         showSnapshot={false}
         showRefresh={false}
@@ -174,7 +174,7 @@ export function LogsPage() {
           </div>
         </Card>
       </div>
-      <Card className="logs-card activity-log-card">
+      <ScrollCueCard className="logs-card activity-log-card" scrollSelector=".activity-log">
         <SectionHeading title="Sync history" />
         <div className="activity-log">
           {syncRuns.data?.map((run) => (
@@ -197,8 +197,8 @@ export function LogsPage() {
             <EmptyState>No refreshes recorded yet.</EmptyState>
           ) : null}
         </div>
-      </Card>
-      <Card className="logs-card activity-log-card">
+      </ScrollCueCard>
+      <ScrollCueCard className="logs-card activity-log-card" scrollSelector=".activity-log">
         <SectionHeading title="Runtime activity" />
         <div className="activity-log" aria-live="polite">
           {query.runtimeLog.length ? (
@@ -217,7 +217,7 @@ export function LogsPage() {
             <EmptyState>No runtime events recorded yet.</EmptyState>
           )}
         </div>
-      </Card>
+      </ScrollCueCard>
       <Card className="logs-card market-data-card">
         <SectionHeading title="Source timestamps" />
         <div className="settings-table-scroll">

@@ -9,7 +9,7 @@ use crate::storage::Annotation;
 
 #[derive(Clone, Default, Deserialize, Serialize, PartialEq)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
-// Legacy decisions remain for compatibility; theses are active local user notes.
+// Legacy decisions remain readable so existing stores and backups are not invalidated.
 pub struct Workspace {
     pub theses: BTreeMap<String, String>,
     pub rules: BTreeMap<String, String>,

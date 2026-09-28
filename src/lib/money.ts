@@ -1,5 +1,6 @@
-import type { FinanceSnapshot, MarketNewsArticle, Transaction } from './schema'
-import { transactionDateKey } from './spending'
+import { websiteDomain } from './logos'
+import type { FinanceSnapshot, Transaction } from './schema'
+import { platinumBenefitCreditIdentity, transactionDateKey } from './spending'
 import { moneyKind } from './transaction-kind'
 export { moneyKind, type MoneyKind } from './transaction-kind'
 
@@ -191,127 +192,450 @@ export function cashFlowBreakdown(transactions: Transaction[]) {
 
 export type ExpectedMoneyEvent = {
   id: string
+  recurringId: string
   title: string
-  kind: 'income' | 'payment' | 'subscription'
+  kind: 'credit' | 'income' | 'payment' | 'subscription'
   date: string
   amount: number
-  confidence: 'High'
+  amountLow: number
+  amountHigh: number
+  frequency: string
+  observations: number
+  lastSeen: string
+  state: 'expected' | 'pending' | 'awaiting-post'
   accountId?: string
+  matchedTransactionId?: string
 }
 
-export const recurringMoneyKey = (transaction: Transaction) =>
-  `${transaction.accountId ?? transaction.account}|${transaction.merchant}`
+const recurringMerchant = (transaction: Transaction) => {
+  const domain = transaction.website && websiteDomain(transaction.website)
+  if (domain) return `domain:${domain.toLocaleLowerCase()}`
+  return transaction.merchant
     .toLocaleLowerCase()
-    .replace(/\d+/g, '')
-    .replace(/[^a-z|]+/g, ' ')
+    .replace(
+      /\b(?:reference|ref|confirmation|transaction)\s*(?:number|no)?\s*:?\s*[a-z0-9-]{5,}\b.*$/i,
+      ' ',
+    )
+    .replace(/\b[x*]{3,}\d{2,}\b/gi, ' ')
+    .replace(/\b\d{5,}\b/g, ' ')
+    .replace(/[^a-z0-9]+/g, ' ')
     .trim()
+}
+
+export const recurringMoneyKey = (transaction: Transaction) => {
+  const benefit = transaction.amount > 0 ? platinumBenefitCreditIdentity(transaction) : undefined
+  return JSON.stringify({
+    version: 3,
+    account: transaction.accountId ?? transaction.account,
+    direction: transaction.amount < 0 ? 'out' : 'in',
+    merchant: benefit ? `platinum-benefit:${benefit.id}` : recurringMerchant(transaction),
+  })
+}
 
 const median = (values: number[]) => {
   const sorted = values.toSorted((left, right) => left - right)
   return sorted[Math.floor(sorted.length / 2)]
 }
 
-function recurringFrequency(days: number) {
-  if (days >= 6 && days <= 9) return 7
-  if (days >= 12 && days <= 16) return 14
-  if (days >= 25 && days <= 36) return Math.round(days)
-  if (days >= 80 && days <= 100) return Math.round(days)
-  if (days >= 350 && days <= 380) return Math.round(days)
-  return undefined
+type Cadence = 'weekly' | 'biweekly' | 'semi-monthly' | 'monthly' | 'quarterly' | 'annual'
+const cadences: Cadence[] = ['semi-monthly', 'biweekly', 'weekly', 'monthly', 'quarterly', 'annual']
+const cadenceLabel: Record<Cadence, string> = {
+  weekly: 'Weekly',
+  biweekly: 'Every two weeks',
+  'semi-monthly': 'Twice monthly',
+  monthly: 'Monthly',
+  quarterly: 'Quarterly',
+  annual: 'Yearly',
+}
+const utcDate = (key: string) => new Date(`${key.slice(0, 10)}T12:00:00Z`)
+const utcKey = (date: Date) => date.toISOString().slice(0, 10)
+const daysBetween = (left: string, right: string) =>
+  Math.round((utcDate(right).getTime() - utcDate(left).getTime()) / dayMs)
+const observedHoliday = (year: number, month: number, day: number) => {
+  const date = new Date(Date.UTC(year, month, day, 12))
+  if (date.getUTCDay() === 6) date.setUTCDate(date.getUTCDate() - 1)
+  if (date.getUTCDay() === 0) date.setUTCDate(date.getUTCDate() + 1)
+  return utcKey(date)
+}
+const nthWeekday = (year: number, month: number, weekday: number, occurrence: number) => {
+  const date = new Date(Date.UTC(year, month, 1, 12))
+  date.setUTCDate(1 + ((weekday - date.getUTCDay() + 7) % 7) + (occurrence - 1) * 7)
+  return utcKey(date)
+}
+const lastWeekday = (year: number, month: number, weekday: number) => {
+  const date = new Date(Date.UTC(year, month + 1, 0, 12))
+  date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() - weekday + 7) % 7))
+  return utcKey(date)
+}
+const isFederalHoliday = (date: Date) => {
+  const key = utcKey(date)
+  const year = date.getUTCFullYear()
+  return new Set([
+    observedHoliday(year, 0, 1),
+    observedHoliday(year + 1, 0, 1),
+    nthWeekday(year, 0, 1, 3),
+    nthWeekday(year, 1, 1, 3),
+    lastWeekday(year, 4, 1),
+    ...(year >= 2021 ? [observedHoliday(year, 5, 19)] : []),
+    observedHoliday(year, 6, 4),
+    nthWeekday(year, 8, 1, 1),
+    nthWeekday(year, 9, 1, 2),
+    observedHoliday(year, 10, 11),
+    nthWeekday(year, 10, 4, 4),
+    observedHoliday(year, 11, 25),
+  ]).has(key)
+}
+const isBusinessDay = (date: Date) =>
+  date.getUTCDay() !== 0 && date.getUTCDay() !== 6 && !isFederalHoliday(date)
+const businessDaysAfter = (left: string, right: string) => {
+  let days = 0
+  for (
+    let time = utcDate(left).getTime() + dayMs;
+    time <= utcDate(right).getTime() && days <= 5;
+    time += dayMs
+  ) {
+    if (isBusinessDay(new Date(time))) days++
+  }
+  return days
+}
+const shiftToBusinessDay = (key: string, direction: -1 | 1) => {
+  const date = utcDate(key)
+  while (!isBusinessDay(date)) date.setUTCDate(date.getUTCDate() + direction)
+  return utcKey(date)
+}
+const monthIndex = (date: Date) => date.getUTCFullYear() * 12 + date.getUTCMonth()
+const monthEnd = (date: Date) =>
+  date.getUTCDate() ===
+  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + 1, 0)).getUTCDate()
+const nextMonthDate = (date: Date, months: number, day: number, endOfMonth: boolean) => {
+  const first = new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + months, 1, 12))
+  const lastDay = new Date(
+    Date.UTC(first.getUTCFullYear(), first.getUTCMonth() + 1, 0),
+  ).getUTCDate()
+  first.setUTCDate(endOfMonth ? lastDay : Math.min(day, lastDay))
+  return first
 }
 
-export function expectedMoneyEvents(data: FinanceSnapshot): ExpectedMoneyEvent[] {
+function matchesCadence(left: string, right: string, cadence: Cadence) {
+  const days = daysBetween(left, right)
+  if (cadence === 'weekly') return Math.abs(days - 7) <= 2
+  if (cadence === 'biweekly') return Math.abs(days - 14) <= 3
+  if (cadence === 'semi-monthly') return days >= 12 && days <= 19
+  const earlier = utcDate(left)
+  const later = utcDate(right)
+  const months = cadence === 'monthly' ? 1 : cadence === 'quarterly' ? 3 : 12
+  return (
+    monthIndex(later) - monthIndex(earlier) === months &&
+    (Math.abs(later.getUTCDate() - earlier.getUTCDate()) <= 4 ||
+      (monthEnd(earlier) && monthEnd(later)))
+  )
+}
+
+function semiMonthlyAnchors(dates: string[]) {
+  if (dates.length < 4) return null
+  const days = dates.map((date) => utcDate(date).getUTCDate())
+  const alternating = [
+    days.filter((_, index) => index % 2 === 0),
+    days.filter((_, index) => index % 2 === 1),
+  ]
+  const anchors = alternating.map(median)
+  const first = Math.min(...anchors)
+  const second = Math.max(...anchors)
+  if (
+    second - first < 12 ||
+    alternating.some((group, index) => group.some((day) => Math.abs(day - anchors[index]) > 3))
+  )
+    return null
+  return {
+    first,
+    second,
+    endOfMonth: dates
+      .filter((date) => Math.abs(utcDate(date).getUTCDate() - second) <= 3)
+      .every((date) => monthEnd(utcDate(date))),
+  }
+}
+
+function nextOccurrence(dates: string[], cadence: Cadence, transaction: Transaction): string {
+  const last = utcDate(dates.at(-1)!)
+  let next: string
+  if (cadence === 'weekly' || cadence === 'biweekly') {
+    next = utcKey(new Date(last.getTime() + (cadence === 'weekly' ? 7 : 14) * dayMs))
+  } else if (cadence === 'semi-monthly') {
+    const anchors = semiMonthlyAnchors(dates)!
+    next = utcKey(
+      last.getUTCDate() <= anchors.first + 3
+        ? nextMonthDate(last, 0, anchors.second, anchors.endOfMonth)
+        : nextMonthDate(last, 1, anchors.first, false),
+    )
+  } else {
+    const anchorDay = median(dates.map((date) => utcDate(date).getUTCDate()))
+    const endOfMonth = dates.every((date) => monthEnd(utcDate(date)))
+    next = utcKey(
+      nextMonthDate(
+        last,
+        cadence === 'monthly' ? 1 : cadence === 'quarterly' ? 3 : 12,
+        anchorDay,
+        endOfMonth,
+      ),
+    )
+  }
+  const evidence = `${transaction.merchant} ${transaction.category} ${transaction.categoryDetail ?? ''} ${transaction.description ?? ''} ${transaction.transactionCode ?? ''}`
+  if (/payroll|paycheck|salary|direct deposit/i.test(evidence)) return shiftToBusinessDay(next, -1)
+  if (
+    /\bach\b|direct debit|rent|mortgage|loan|utility|utilities|electric|water|insurance/i.test(
+      evidence,
+    )
+  )
+    return shiftToBusinessDay(next, 1)
+  return next
+}
+
+function amountClusters(values: Transaction[]) {
+  const clusters: Transaction[][] = []
+  for (const transaction of values) {
+    const amount = Math.abs(transaction.amount)
+    const cluster = clusters
+      .map((entries) => ({
+        entries,
+        typical: median(entries.map((entry) => Math.abs(entry.amount))),
+      }))
+      .filter(({ typical }) => Math.abs(amount - typical) <= Math.max(2, typical * 0.08))
+      .toSorted(
+        (left, right) => Math.abs(amount - left.typical) - Math.abs(amount - right.typical),
+      )[0]?.entries
+    if (cluster) cluster.push(transaction)
+    else clusters.push([transaction])
+  }
+  return clusters
+}
+
+function recurringMoneyTitle(transaction: Transaction, benefitName?: string) {
+  if (benefitName) return benefitName
+  const description = transaction.description?.trim()
+  const banking =
+    /\bach\b|direct deposit|automatic payment|autopay|bill payment|banking|income|loan payments|rent and utilities/i.test(
+      `${transaction.merchant} ${transaction.category} ${transaction.categoryDetail ?? ''} ${transaction.transactionCode ?? ''}`,
+    )
+  return banking && description ? description : transaction.merchant
+}
+
+function recurrenceTraits(transaction: Transaction) {
+  const evidence = `${transaction.merchant} ${transaction.category} ${transaction.categoryDetail ?? ''} ${transaction.description ?? ''}`
+  const kind = moneyKind(transaction)
+  const benefitCredit =
+    transaction.amount > 0 ? platinumBenefitCreditIdentity(transaction) : undefined
+  const debtPayment =
+    transaction.amount < 0 &&
+    kind === 'transfer' &&
+    /loan payments?|credit card payment|card payment|autopay payment/i.test(evidence)
+  return {
+    benefitCredit,
+    credit: Boolean(benefitCredit) || transaction.classification.credit,
+    debtPayment,
+    income: kind === 'income' || kind === 'dividend' || kind === 'interest',
+    subscription: /subscription|streaming|membership|recurring/i.test(evidence),
+    variableBill:
+      debtPayment || /utility|utilities|electric|water|internet|phone|insurance/i.test(evidence),
+    habitual:
+      /grocer|supermarket|food and drink|restaurant|dining|coffee|gas station|fuel|rideshare|taxi|transit|general merchandise|department store|retail/i.test(
+        `${transaction.category} ${transaction.categoryDetail ?? ''}`,
+      ),
+  }
+}
+
+function cadenceFor(values: Transaction[], updatedAt: string, strongAnnualEvidence: boolean) {
+  const ordered = values.toSorted((left, right) =>
+    transactionDateKey(left.postedOn ?? left.date, updatedAt).localeCompare(
+      transactionDateKey(right.postedOn ?? right.date, updatedAt),
+    ),
+  )
+  const dates = ordered.map((transaction) =>
+    transactionDateKey(transaction.postedOn ?? transaction.date, updatedAt),
+  )
+  if (dates.some((date) => !/^\d{4}-\d{2}-\d{2}$/.test(date))) return null
+  let selected: { cadence: Cadence; start: number } | undefined
+  for (const cadence of cadences) {
+    let start = ordered.length - 1
+    while (start > 0 && matchesCadence(dates[start - 1], dates[start], cadence)) start--
+    const run = dates.slice(start)
+    const minimum = cadence === 'semi-monthly' ? 4 : cadence === 'annual' ? 2 : 3
+    if (run.length < minimum || (cadence === 'annual' && !strongAnnualEvidence)) continue
+    if (cadence === 'semi-monthly' && !semiMonthlyAnchors(run)) continue
+    if (!selected || run.length > ordered.length - selected.start) selected = { cadence, start }
+  }
+  if (!selected) return null
+  return {
+    cadence: selected.cadence,
+    transactions: ordered.slice(selected.start),
+    dates: dates.slice(selected.start),
+  }
+}
+
+export function expectedMoneyEvents(
+  data: FinanceSnapshot,
+  today = data.updatedAt.slice(0, 10),
+): ExpectedMoneyEvent[] {
+  // An old saved snapshot cannot establish that a missing payment has stopped.
+  if (daysBetween(data.updatedAt.slice(0, 10), today) > 3) return []
   const groups = new Map<string, Transaction[]>()
   for (const transaction of data.transactions) {
-    if (transaction.pending || moneyKind(transaction) === 'transfer') continue
+    const traits = recurrenceTraits(transaction)
+    if (
+      (moneyKind(transaction) === 'transfer' && !traits.debtPayment) ||
+      !transaction.merchant.trim()
+    )
+      continue
     const key = recurringMoneyKey(transaction)
     const current = groups.get(key) ?? []
     current.push(transaction)
     groups.set(key, current)
   }
-  const today = Date.parse(data.updatedAt.slice(0, 10))
   const events: ExpectedMoneyEvent[] = []
   for (const [key, values] of groups) {
-    const ordered = values.toSorted((left, right) => left.date.localeCompare(right.date)).slice(-6)
-    if (ordered.length < 3) continue
-    const dates = ordered.map((transaction) =>
-      Date.parse(transactionDateKey(transaction.postedOn ?? transaction.date, data.updatedAt)),
-    )
-    const intervals = dates.slice(1).map((date, index) => (date - dates[index]) / dayMs)
-    const frequency = recurringFrequency(median(intervals))
-    if (
-      !frequency ||
-      intervals.some((days) => Math.abs(days - frequency) > Math.max(4, frequency * 0.2))
-    )
-      continue
-    const amounts = ordered.map(({ amount }) => Math.abs(amount))
-    const typicalAmount = median(amounts)
-    if (
-      amounts.some((amount) => Math.abs(amount - typicalAmount) > Math.max(5, typicalAmount * 0.25))
-    )
-      continue
-    const firstExpected = dates.at(-1)! + frequency * dayMs
-    const missed = Math.max(0, Math.ceil((today - firstExpected) / (frequency * dayMs)))
-    const expected = new Date(firstExpected + missed * frequency * dayMs)
-    if (expected.getTime() - today > 120 * dayMs) continue
-    const last = ordered.at(-1)!
-    const kind = moneyKind(last)
-    events.push({
-      id: key,
-      title: last.merchant,
-      kind:
-        kind === 'income' || kind === 'dividend' || kind === 'interest'
-          ? 'income'
-          : /subscription|streaming|membership/i.test(
-                `${last.category} ${last.categoryDetail ?? ''} ${last.description ?? ''}`,
-              )
-            ? 'subscription'
-            : 'payment',
-      date: expected.toISOString().slice(0, 10),
-      amount: money(last.amount > 0 ? typicalAmount : -typicalAmount),
-      confidence: 'High',
-      accountId: last.accountId,
+    const ordered = values
+      .filter(({ pending }) => !pending)
+      .toSorted((left, right) =>
+        transactionDateKey(left.postedOn ?? left.date, data.updatedAt).localeCompare(
+          transactionDateKey(right.postedOn ?? right.date, data.updatedAt),
+        ),
+      )
+      .slice(-12)
+    const latest = ordered.at(-1)
+    if (!latest) continue
+    const accountId = latest.accountId
+    const account = data.accounts.find(({ id }) => id === accountId)
+    const sourceUpdatedAt = account?.activityAsOf ?? account?.balanceFetchedAt
+    if (accountId?.startsWith('plaid:') && (!account || !sourceUpdatedAt)) continue
+    if (sourceUpdatedAt && daysBetween(sourceUpdatedAt.slice(0, 10), today) > 3) continue
+
+    const flexibleAmounts =
+      ordered.every((transaction) => {
+        const traits = recurrenceTraits(transaction)
+        return traits.income || traits.credit
+      }) || ordered.some((transaction) => recurrenceTraits(transaction).variableBill)
+    const clusters = flexibleAmounts ? [ordered] : amountClusters(ordered)
+    const candidateSeries = clusters.map((transactions) => ({
+      transactions,
+      amountBasis: transactions,
+    }))
+    for (const older of clusters) {
+      for (const newer of clusters) {
+        if (
+          older === newer ||
+          older.length < 2 ||
+          newer.length < 2 ||
+          transactionDateKey(older.at(-1)!.postedOn ?? older.at(-1)!.date, data.updatedAt) >=
+            transactionDateKey(newer[0].postedOn ?? newer[0].date, data.updatedAt)
+        )
+          continue
+        candidateSeries.push({
+          transactions: [...older, ...newer],
+          amountBasis: newer,
+        })
+      }
+    }
+
+    const candidates = candidateSeries.flatMap(({ transactions, amountBasis }) => {
+      const traits = recurrenceTraits(transactions.at(-1)!)
+      if (!traits.income && !traits.credit && traits.habitual && !traits.subscription) return []
+      const cadence = cadenceFor(
+        transactions,
+        data.updatedAt,
+        traits.income || traits.credit || traits.subscription || traits.variableBill,
+      )
+      if (!cadence) return []
+      const last = cadence.transactions.at(-1)!
+      const expected = nextOccurrence(cadence.dates, cadence.cadence, last)
+      // A late posting can be pending, but a missed occurrence never advances to another cycle.
+      if (
+        daysBetween(today, expected) > 30 ||
+        (expected < today && businessDaysAfter(expected, today) > 5)
+      )
+        return []
+      const amounts = cadence.transactions.map(({ amount }) => Math.abs(amount))
+      const typicalAmount = median(amountBasis.map(({ amount }) => Math.abs(amount)))
+      return [
+        {
+          ids: new Set(cadence.transactions.map(({ id }) => id)),
+          event: {
+            id: key,
+            recurringId: key,
+            title: recurringMoneyTitle(last, traits.benefitCredit?.name),
+            kind: traits.benefitCredit
+              ? ('credit' as const)
+              : traits.income
+                ? ('income' as const)
+                : traits.subscription
+                  ? ('subscription' as const)
+                  : ('payment' as const),
+            date: expected,
+            amount: money(last.amount > 0 ? typicalAmount : -typicalAmount),
+            amountLow: money(Math.min(...amounts)),
+            amountHigh: money(Math.max(...amounts)),
+            frequency: cadenceLabel[cadence.cadence],
+            observations: cadence.transactions.length,
+            lastSeen: cadence.dates.at(-1)!,
+            state: expected < today ? ('awaiting-post' as const) : ('expected' as const),
+            accountId: last.accountId,
+          },
+        },
+      ]
     })
+    const accepted: typeof candidates = []
+    const usedTransactions = new Set<string>()
+    for (const candidate of candidates.toSorted(
+      (left, right) =>
+        right.event.lastSeen.localeCompare(left.event.lastSeen) ||
+        right.event.observations - left.event.observations,
+    )) {
+      if ([...candidate.ids].some((id) => usedTransactions.has(id))) continue
+      accepted.push(candidate)
+      candidate.ids.forEach((id) => usedTransactions.add(id))
+    }
+    const groupEvents = accepted.map(({ event }, index) => ({
+      ...event,
+      id:
+        accepted.length === 1
+          ? key
+          : `${key}:amount:${Math.round(Math.abs(event.amount) * 100)}:${index}`,
+    }))
+    const pendingTransactions = values.filter((transaction) => transaction.pending)
+    const matches = groupEvents.map((event) =>
+      pendingTransactions.filter((transaction) => {
+        const pendingDate = transactionDateKey(
+          transaction.postedOn ?? transaction.date,
+          data.updatedAt,
+        )
+        const amount = Math.abs(transaction.amount)
+        const tolerance = Math.max(5, Math.abs(event.amount) * 0.25)
+        return (
+          Math.abs(daysBetween(event.date, pendingDate)) <= 5 &&
+          amount >= event.amountLow - tolerance &&
+          amount <= event.amountHigh + tolerance
+        )
+      }),
+    )
+    for (const [index, event] of groupEvents.entries()) {
+      const match = matches[index].length === 1 ? matches[index][0] : undefined
+      const unambiguous =
+        match &&
+        matches.every((other, otherIndex) => otherIndex === index || !other.includes(match))
+      events.push(
+        unambiguous
+          ? {
+              ...event,
+              amount: money(match.amount),
+              state: 'pending',
+              matchedTransactionId: match.id,
+            }
+          : event,
+      )
+    }
   }
   return events.toSorted((left, right) => left.date.localeCompare(right.date)).slice(0, 16)
 }
 
-export function scoreNewsArticle(
-  article: MarketNewsArticle,
-  data: Pick<FinanceSnapshot, 'holdings'>,
-  now = Date.now(),
-) {
-  const positions = new Map<string, number>()
-  let portfolio = 0
-  for (const holding of data.holdings) {
-    if (holding.value == null || holding.value <= 0) continue
-    const symbol = holding.ticker.toLocaleUpperCase()
-    positions.set(symbol, (positions.get(symbol) ?? 0) + holding.value)
-    portfolio += holding.value
-  }
-  const exposure = article.symbols.reduce(
-    (sum, symbol) => sum + (positions.get(symbol.toLocaleUpperCase()) ?? 0),
-    0,
-  )
-  const ageHours = Math.max(0, (now - Date.parse(article.createdAt)) / 3_600_000)
-  const freshness = Math.max(0, 45 - Math.min(45, ageHours * 2))
-  const holdingWeight = portfolio ? Math.min(40, (exposure / portfolio) * 160) : 0
-  const materialTopic =
-    /earnings|guidance|acqui|merger|lawsuit|regulat|dividend|split|contract|partnership/i.test(
-      article.headline,
-    )
-      ? 15
-      : 0
-  const score = Math.round(Math.min(100, freshness + holdingWeight + materialTopic))
-  const reason = materialTopic
-    ? 'Material company event'
-    : exposure
-      ? 'Matches a current holding'
-      : 'Recent market story'
-  return { score, reason }
-}
-
-export function chatEvidence(data: FinanceSnapshot) {
+export function chatEvidence(data: FinanceSnapshot, today = data.updatedAt.slice(0, 10)) {
   const summary = moneySummary(data, 'month')
   return {
     savedAt: data.updatedAt,
@@ -335,7 +659,9 @@ export function chatEvidence(data: FinanceSnapshot) {
       amount: transaction.amount,
       pending: transaction.pending,
     })),
-    upcoming: expectedMoneyEvents(data).slice(0, 8),
+    upcoming: expectedMoneyEvents(data, today)
+      .filter(({ state }) => state === 'expected')
+      .slice(0, 8),
   }
 }
 

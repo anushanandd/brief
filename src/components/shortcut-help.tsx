@@ -1,7 +1,7 @@
-import { X } from 'lucide-react'
 import { useEffect, useRef } from 'react'
 
 import { shortcutGroups } from '../lib/navigation'
+import { X } from './icons'
 import { Button } from './ui'
 
 export function ShortcutHelp({ onClose }: { onClose: () => void }) {
@@ -42,6 +42,9 @@ export function ShortcutHelp({ onClose }: { onClose: () => void }) {
           </Button>
         </header>
         <div className="shortcut-help-list">
+          <p>
+            Tab and Return work with native controls. Bare shortcuts pause while typing in a field.
+          </p>
           {shortcutGroups.map((group) => (
             <section className="shortcut-help-group" key={group.title}>
               <h3>{group.title}</h3>

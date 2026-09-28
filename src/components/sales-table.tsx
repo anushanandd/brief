@@ -1,3 +1,5 @@
+import type { Ref } from 'react'
+
 import { formatCurrency, formatPercent, formatShares, valueTone } from '../lib/format'
 import type { Trade } from '../lib/schema'
 import { formatActivityDate } from '../lib/spending'
@@ -8,10 +10,12 @@ export function SalesTable({
   sales,
   externalLogosEnabled,
   referenceIso,
+  scrollRef,
 }: {
   sales: Trade[]
   externalLogosEnabled: boolean
   referenceIso: string
+  scrollRef?: Ref<HTMLDivElement>
 }) {
   if (!sales.length)
     return (
@@ -22,10 +26,12 @@ export function SalesTable({
     )
   return (
     <div
+      ref={scrollRef}
       className="financial-table-scroll financial-table-scroll-titled"
       role="region"
       aria-label="Realized sales"
       tabIndex={0}
+      data-keyboard-region
     >
       <table className="financial-table sales-table">
         <thead>

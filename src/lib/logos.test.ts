@@ -26,7 +26,7 @@ const transaction = (overrides: Partial<Transaction> = {}): Transaction => ({
 })
 
 describe('logo resolution', () => {
-  it('generates local marks without requesting remote financial identifiers', () => {
+  it('keeps external logos off without generating transaction initials', () => {
     expect(stockLogoUrl('BRK.B')).toMatch(/^data:image\/svg\+xml/)
     expect(stockMarkLabel('BRK.B')).toBe('BRK')
     expect(stockMarkLabel('$CASH-USD')).toBe('$')
@@ -40,9 +40,7 @@ describe('logo resolution', () => {
         logoName: 'Example Coffee',
       }),
     )
-    expect(url).toMatch(/^data:image\/svg\+xml/)
-    expect(url).not.toContain('plaid')
-    expect(url).not.toContain('example.com')
+    expect(url).toBeUndefined()
     expect(transactionMarkLabel(transaction({ logoName: 'Example Coffee' }))).toBe('EC')
     expect(brandMarkLabel('Global Entry / TSA PreCheck')).toBe('GE')
     expect(brandLogoUrl('Resy', 'resy.com')).toMatch(/^data:image\/svg\+xml/)
@@ -96,6 +94,6 @@ describe('logo resolution', () => {
         }),
         true,
       ),
-    ).not.toContain('americanexpress.com')
+    ).toBeUndefined()
   })
 })

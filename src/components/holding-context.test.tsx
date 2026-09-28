@@ -46,14 +46,14 @@ it('shows the selected holding’s earnings date inside News without leaking ano
   }
 })
 
-it('shows provider ticker scores without requesting a model or thesis', () => {
+it('shows concise ticker headlines and scores without requesting a model', () => {
   vi.stubGlobal('window', {})
   const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } })
   client.setQueryData(['holding-news', 'alpha-vantage', 'TEST'], {
     articles: [
       {
         headline: 'Synthetic news',
-        summary: '',
+        summary: 'Synthetic evidence from the company announcement.',
         source: 'Example',
         url: 'https://example.com/story',
         createdAt: '2026-09-21T12:00:00Z',
@@ -75,13 +75,28 @@ it('shows provider ticker scores without requesting a model or thesis', () => {
       </QueryClientProvider>,
     )
     expect(html).toContain('91%')
+    expect(html).toContain('Relevance')
+    expect(html).toContain('Sentiment')
+    expect(html).not.toContain('Alpha Vantage relevance')
+    expect(html).not.toContain('Alpha Vantage sentiment')
     expect(html).toContain('Synthetic news')
+    expect(html).not.toContain('Synthetic evidence from the company announcement.')
     expect(html).toContain('Request budget exhausted')
     expect(html).toContain('Refresh news (uses one API request)')
+    expect(html).not.toContain('local news requests left')
+    expect(html).not.toContain('Saved Sep')
     expect(html).toContain('Somewhat Bearish')
-    expect(html).toContain('Average sentiment -0.30, across 1 scored stories')
+    expect(html).not.toContain('Avg sentiment')
     expect(client.getQueryCache().find({ queryKey: ['foundation-model-status'] })).toBeUndefined()
-    expect(client.getQueryCache().find({ queryKey: ['holding-thesis'] })).toBeUndefined()
+    const disconnected = renderToString(
+      <QueryClientProvider client={client}>
+        <HoldingNews ticker="TEST" connected={false} />
+      </QueryClientProvider>,
+    )
+    expect(disconnected).toContain('Synthetic news')
+    expect(disconnected).toContain(
+      'Connect Alpha Vantage in Settings to refresh. Saved stories remain available.',
+    )
   } finally {
     client.clear()
   }

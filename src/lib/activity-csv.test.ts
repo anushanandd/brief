@@ -35,6 +35,8 @@ it('exports only the selected account, retaining safe text and unchanged amounts
       kind: 'transaction',
       title: '=SUM(1,2)',
       category: 'Other',
+      location: { city: 'San Francisco', region: 'CA' },
+      paymentChannel: 'in store',
       detail: 'Example "account"\nline',
       amount: -12.5,
       pending: true,
@@ -53,6 +55,9 @@ it('exports only the selected account, retaining safe text and unchanged amounts
   const csv = activityCsv(activities)
   expect(csv).toContain('"\'=SUM(1,2)"')
   expect(csv).toContain('"Example ""account""\nline"')
+  expect(csv).toContain('"San Francisco, CA"')
+  expect(csv).toContain('"In store"')
+  expect(csv).toContain('"Brokerage"')
   expect(csv).toContain('"-12.5","true"')
   expect(csv).toContain('"trade:b","brokerage"')
   expect(csv).toContain('"24",""\r\n')
@@ -78,6 +83,6 @@ it('exports only the selected account, retaining safe text and unchanged amounts
     filename: 'All accounts-activity.csv',
   })
   expect(activityCsv([])).toBe(
-    '"ID","Account ID","Date","Type","Description","Category","Detail","Amount","Pending"\r\n',
+    '"ID","Account ID","Date","Type","Description","Category","Location","Method","Detail","Amount","Pending"\r\n',
   )
 })
