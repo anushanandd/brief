@@ -1,7 +1,6 @@
-import { AlertCircle, RefreshCw } from 'lucide-react'
-
 import { useFinance } from '../hooks/use-finance'
 import { useFinanceRefreshState, useRefreshFinance } from '../hooks/use-refresh-finance'
+import { AlertCircle, RefreshCw } from './icons'
 import { Button, EmptyState } from './ui'
 
 export function ValueHistoryEmptyState({
@@ -66,11 +65,6 @@ export function HomeLoading() {
         </div>
       </div>
       <div className="home-secondary-grid home-holdings-row" aria-hidden="true">
-        {[0, 1, 2].map((key) => (
-          <div className="surface-card skeleton-card" key={key} />
-        ))}
-      </div>
-      <div className="home-finance-grid" aria-hidden="true">
         {[0, 1, 2].map((key) => (
           <div className="surface-card skeleton-card" key={key} />
         ))}

@@ -1,13 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024">
-  <defs>
-    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#353836"/>
-      <stop offset="1" stop-color="#1f2120"/>
-    </linearGradient>
-  </defs>
   <!-- Keep the flattened macOS icon inside an 80% optical safe area. -->
   <g transform="translate(100 100) scale(1.609375)">
-    <rect width="512" height="512" rx="116" fill="url(#background)"/>
-    <path d="M173 101v311h86c74 0 125-47 125-119 0-66-42-108-101-108-20 0-38 5-54 14v-98h-56Zm56 190c0-34 22-58 52-58 31 0 51 25 51 62 0 40-22 67-57 67h-46v-71Z" fill="#f4f3ef"/>
+    <rect width="512" height="512" rx="116" fill="#111214"/>
+    <g transform="translate(72 72) scale(3.68)">
+      <path d="M19 19h52v15H34v37H19z" fill="#ffffff"/>
+      <path d="M71 34h15v52H34V71h37z" fill="#7da1bf"/>
+    </g>
   </g>
 </svg>

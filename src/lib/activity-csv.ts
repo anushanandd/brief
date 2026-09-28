@@ -1,6 +1,6 @@
 import { invoke } from '@tauri-apps/api/core'
 
-import type { ActivityItem } from './activity'
+import { activityLocationText, activityMethod, type ActivityItem } from './activity'
 import { isTauri } from './api'
 
 export function activityCsv(activities: ActivityItem[]) {
@@ -13,6 +13,8 @@ export function activityCsv(activities: ActivityItem[]) {
         'Type',
         'Description',
         'Category',
+        'Location',
+        'Method',
         'Detail',
         'Amount',
         'Pending',
@@ -24,6 +26,8 @@ export function activityCsv(activities: ActivityItem[]) {
         item.kind,
         item.title,
         item.category,
+        activityLocationText(item.location),
+        activityMethod(item),
         item.description ? `${item.detail} · ${item.description}` : item.detail,
         item.amount,
         item.pending,

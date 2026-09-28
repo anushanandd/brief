@@ -44,7 +44,7 @@ export function markColor(label: string): string {
 function markUrl(label: string): string {
   const [background, foreground] = markPaletteEntry(label)
   const fontSize = label.length >= 4 ? 20 : label.length === 3 ? 23 : 28
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="${background}"/><text x="32" y="33" fill="${foreground}" font-family="-apple-system,BlinkMacSystemFont,Arial,sans-serif" font-size="${fontSize}" font-weight="700" text-anchor="middle" dominant-baseline="middle">${label}</text></svg>`
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64"><rect width="64" height="64" rx="16" fill="${background}"/><text x="32" y="33" fill="${foreground}" font-family="SF Pro Text,-apple-system,BlinkMacSystemFont,Arial,sans-serif" font-size="${fontSize}" font-weight="700" text-anchor="middle" dominant-baseline="middle">${label}</text></svg>`
 
   return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`
 }
@@ -59,7 +59,7 @@ function logoDevUrl(kind: 'name' | 'ticker' | null, value: string): string {
   return url.toString()
 }
 
-function websiteDomain(value: string): string | undefined {
+export function websiteDomain(value: string): string | undefined {
   try {
     const url = new URL(value.includes('://') ? value : `https://${value}`)
     return url.hostname.replace(/^www\./, '') || undefined
@@ -144,14 +144,12 @@ export function stockLogoUrl(ticker: string, external = false): string {
     : markUrl(stockMarkLabel(ticker))
 }
 
-export function transactionLogoUrl(transaction: Transaction, external = false): string {
-  if (!external) return markUrl(transactionMarkLabel(transaction))
+export function transactionLogoUrl(transaction: Transaction, external = false) {
+  if (!external) return undefined
   const providerLogo = allowedProviderLogo(transaction.logoUrl)
   if (providerLogo) return providerLogo
   if (isAmericanExpressPayment(transaction)) return logoDevUrl(null, 'americanexpress.com')
   const domain = transaction.website ? websiteDomain(transaction.website) : undefined
   if (domain) return logoDevUrl(null, domain)
-  return transaction.logoName
-    ? logoDevUrl('name', transaction.logoName)
-    : markUrl(transactionMarkLabel(transaction))
+  return transaction.logoName ? logoDevUrl('name', transaction.logoName) : undefined
 }

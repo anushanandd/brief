@@ -60,6 +60,36 @@ it('matches account selector changes to the selected chart range and available h
   ).toBe(false)
 })
 
+it('keeps a provisional combined balance out of the chart', () => {
+  const now = Date.parse('2026-09-24T12:00:00Z') / 1000
+  const account = {
+    id: 'all',
+    name: 'All accounts',
+    institution: 'Brief',
+    type: 'combined',
+    value: 9300,
+  }
+  const chart = accountValueChart(
+    {
+      accounts: [account],
+      netWorthProvisional: true,
+      updatedAt: '2026-09-24T12:00:00Z',
+      netWorthHistory: [
+        { date: '2026-09-22', value: 300 },
+        { date: '2026-09-23', value: 300 },
+      ],
+      brokeragePerformance: [],
+      accountBalanceHistory: [],
+    },
+    account,
+    [{ time: now, value: 9300 }],
+    now,
+    0,
+    now,
+  )
+  expect(chart.chartData.at(-1)?.value).toBe(300)
+})
+
 const view = (accountId: string, name = accountId): BrokeragePerformance => ({
   accountId,
   name,

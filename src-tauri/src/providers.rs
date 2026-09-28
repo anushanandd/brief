@@ -157,6 +157,49 @@ pub struct LinkStatus {
     pub status: String,
 }
 
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaidRecurringAmount {
+    amount: f64,
+    currency: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaidRecurringStream {
+    stream_id: String,
+    account_id: String,
+    direction: &'static str,
+    description: String,
+    merchant_name: Option<String>,
+    category: Option<String>,
+    frequency: String,
+    status: String,
+    is_active: bool,
+    first_date: String,
+    last_date: String,
+    predicted_next_date: Option<String>,
+    average_amount: PlaidRecurringAmount,
+    last_amount: PlaidRecurringAmount,
+    transaction_count: usize,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaidRecurringConnection {
+    item_id: String,
+    name: String,
+    streams: Vec<PlaidRecurringStream>,
+    error: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaidRecurringReport {
+    fetched_at: String,
+    connections: Vec<PlaidRecurringConnection>,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderConnection {
@@ -206,6 +249,8 @@ pub struct PlaidData {
 pub struct SnapTradeData {
     pub accounts: Vec<Value>,
     pub positions: BTreeMap<String, Vec<Value>>,
+    #[serde(default)]
+    pub cash_balances: BTreeMap<String, Vec<Value>>,
     #[serde(default, rename = "positionsAsOf")]
     pub positions_as_of: BTreeMap<String, Option<String>>,
     pub activities: BTreeMap<String, Vec<Value>>,
@@ -518,6 +563,46 @@ impl Providers {
             .collect())
     }
 
+    pub async fn plaid_recurring_report(&self) -> Result<PlaidRecurringReport, String> {
+        let credentials = self.plaid_credentials()?;
+        let items = self
+            .read_secret::<Vec<PlaidItem>>(PLAID_ITEMS_KEY)?
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|item| !item.investments)
+            .collect::<Vec<_>>();
+        if items.is_empty() {
+            return Err("Connect a Plaid bank or credit card account first".into());
+        }
+        let mut connections = Vec::with_capacity(items.len());
+        for item in items {
+            let result = self
+                .plaid_request(
+                    &credentials,
+                    "/transactions/recurring/get",
+                    json!({ "access_token": &item.access_token }),
+                )
+                .await
+                .and_then(parse_plaid_recurring_streams);
+            let (streams, error) = match result {
+                Ok(streams) => (streams, None),
+                Err(error) => (Vec::new(), Some(error)),
+            };
+            connections.push(PlaidRecurringConnection {
+                item_id: item.item_id,
+                name: item
+                    .institution_name
+                    .unwrap_or_else(|| "Plaid connection".into()),
+                streams,
+                error,
+            });
+        }
+        Ok(PlaidRecurringReport {
+            fetched_at: Utc::now().to_rfc3339(),
+            connections,
+        })
+    }
+
     pub fn forget_connection(&self, item_id: &str) -> Result<(), String> {
         self.mutate_vault(None, true, |vault| {
             update_plaid_items(vault, |items| items.retain(|item| item.item_id != item_id))
@@ -722,7 +807,12 @@ impl Providers {
             .await
             .map_err(|_| "Could not reach Alpha Vantage")?;
         if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-            cache.provider_limit(&json!({"Note": "rate limit"}), now)?;
+            let retry_after = response
+                .headers()
+                .get(reqwest::header::RETRY_AFTER)
+                .and_then(|value| value.to_str().ok())
+                .and_then(|value| value.parse().ok());
+            cache.provider_throttle(retry_after, now)?;
         }
         if !response.status().is_success() {
             return Err(format!("Alpha Vantage returned {}", response.status()));
@@ -827,7 +917,7 @@ impl Providers {
         market: &MarketSnapshots,
     ) -> Result<Vec<MarketFrame>, String> {
         let symbols = normalize_stock_symbols(symbols.to_vec());
-        if symbols.is_empty() || market.poll_interval_ms.is_none() {
+        if symbols.is_empty() {
             return Ok(Vec::new());
         }
         let credentials = self.alpaca_credentials()?;
@@ -887,7 +977,22 @@ impl Providers {
         F: FnMut(MarketStreamTick) -> Result<(), String> + Send,
     {
         let symbols = normalize_stock_symbols(symbols);
-        if symbols.is_empty() || market.poll_interval_ms.is_none() {
+        if symbols.is_empty() {
+            return Ok(());
+        }
+
+        let chart_seed = previous_close_snapshots(&market.snapshots, &[]);
+        let mut bar_frames = BTreeMap::new();
+        if let Ok(backfill) = self.market_history(&symbols, &market).await {
+            publish_market_backfill(
+                &market,
+                backfill,
+                &chart_seed,
+                &mut bar_frames,
+                &mut publish,
+            )?;
+        }
+        if market.poll_interval_ms.is_none() {
             return Ok(());
         }
 
@@ -897,9 +1002,6 @@ impl Providers {
             .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
             .map(|value| value.with_timezone(&Utc))
             .ok_or_else(|| "Alpaca did not return the next market transition".to_string())?;
-        let chart_seed = previous_close_snapshots(&market.snapshots, &[]);
-        let mut bar_frames = BTreeMap::new();
-
         let mut attempt = 0;
         loop {
             if *cancel.borrow() || Utc::now() >= transition {
@@ -991,21 +1093,13 @@ impl Providers {
                 })?;
             }
             if let Ok(backfill) = self.market_history(&symbols, &market).await {
-                for frame in backfill {
-                    let changed = bar_frames.get(&frame.as_of) != Some(&frame.snapshots);
-                    bar_frames.insert(frame.as_of.clone(), frame.snapshots);
-                    if changed {
-                        publish(MarketStreamTick {
-                            market: market.clone(),
-                            chart_snapshots: Some(chart_snapshots_at(
-                                &frame.as_of,
-                                &chart_seed,
-                                &bar_frames,
-                            )),
-                            chart_as_of: Some(frame.as_of),
-                        })?;
-                    }
-                }
+                publish_market_backfill(
+                    &market,
+                    backfill,
+                    &chart_seed,
+                    &mut bar_frames,
+                    &mut publish,
+                )?;
             }
             let backoff = StdDuration::from_secs(1 << attempt);
             tokio::select! {
@@ -1108,21 +1202,21 @@ impl Providers {
     pub async fn market_news(
         &self,
         symbols: Vec<String>,
-        force: bool,
+        refresh: bool,
     ) -> Result<news_cache::NewsResult, String> {
         let symbols = normalize_stock_symbols(symbols);
         if symbols.len() != 1 {
             return Err("Choose one ticker for news".into());
         }
         let symbol = &symbols[0];
-        let credentials = self.alpha_vantage_credentials()?;
-        let generation = self.credential_generation.load(Ordering::SeqCst);
         let _news_request = self.news.lock().await;
         let mut cache = news_cache::NewsCache::new(self.news_cache_path.as_deref())?;
         let now = Utc::now().timestamp();
-        if !force && cache.recent_attempt(symbol, now)? {
+        if !refresh {
             return cache.result(symbol, now, None);
         }
+        let credentials = self.alpha_vantage_credentials()?;
+        let generation = self.credential_generation.load(Ordering::SeqCst);
         if let Err(error) = cache.reserve(Some(symbol), now) {
             return cache.result(symbol, now, Some(error));
         }
@@ -1142,7 +1236,12 @@ impl Providers {
                 .await
                 .map_err(|_| "Could not reach Alpha Vantage news".to_string())?;
             if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                cache.provider_limit(&json!({"Note": "rate limit"}), now)?;
+                let retry_after = response
+                    .headers()
+                    .get(reqwest::header::RETRY_AFTER)
+                    .and_then(|value| value.to_str().ok())
+                    .and_then(|value| value.parse().ok());
+                cache.provider_throttle(retry_after, now)?;
             }
             if !response.status().is_success() {
                 return Err(format!("Alpha Vantage news returned {}", response.status()));
@@ -1934,6 +2033,7 @@ impl Providers {
                         // accounts, so it cannot be used as an inclusion filter.
                         account["balance_fetched_at"] = Value::String(balance_fetched_at.clone());
                         let positions_path = format!("/accounts/{id}/positions/all");
+                        let cash_path = format!("/accounts/{id}/balances");
                         let history_path = format!("/accounts/{id}/balanceHistory");
                         let activities_path = format!("/accounts/{id}/activities");
                         let cached_history = cached.and_then(|data| data.balance_history.get(&id));
@@ -1943,7 +2043,7 @@ impl Providers {
                             - Duration::days(if recent_only { 30 } else { 730 }))
                         .format("%Y-%m-%d")
                         .to_string();
-                        let (positions, balance_history, activities) = tokio::join!(
+                        let (positions, cash_balances, balance_history, activities) = tokio::join!(
                             self.snaptrade_request(
                                 credentials,
                                 Method::GET,
@@ -1951,6 +2051,20 @@ impl Providers {
                                 vec![],
                                 None,
                             ),
+                            async {
+                                tokio::time::timeout(
+                                    StdDuration::from_secs(5),
+                                    self.snaptrade_request(
+                                        credentials,
+                                        Method::GET,
+                                        &cash_path,
+                                        vec![],
+                                        None,
+                                    ),
+                                )
+                                .await
+                                .map_err(|_| "request timed out".to_string())?
+                            },
                             async {
                                 if !refresh_history {
                                     if let Some(history) = cached_history {
@@ -1997,6 +2111,10 @@ impl Providers {
                         );
                         data.positions
                             .insert(id.clone(), required_array(&positions, "results")?);
+                        match cash_balances.and_then(|value| value.as_array().cloned().ok_or_else(|| "Cash balance response is not a list".into())) {
+                            Ok(balances) => { data.cash_balances.insert(id.clone(), balances); }
+                            Err(_) => data.warnings.push(format!("SnapTrade account {id} cash balance unavailable; using reported total")),
+                        }
                         data.history_complete &= balance_history.is_ok();
                         data.activity_complete &= activities.is_ok();
                         let balance_history = history_or_cached(
@@ -2040,6 +2158,7 @@ impl Providers {
         for account in results {
             data.accounts.extend(account.accounts);
             data.positions.extend(account.positions);
+            data.cash_balances.extend(account.cash_balances);
             data.positions_as_of.extend(account.positions_as_of);
             data.activities.extend(account.activities);
             data.balance_history.extend(account.balance_history);
@@ -2275,6 +2394,7 @@ impl Providers {
     ) -> Result<(Value, usize), String> {
         let safe_to_retry = [
             "/transactions/sync",
+            "/transactions/recurring/get",
             "/accounts/balance/get",
             "/investments/holdings/get",
             "/institutions/get_by_id",
@@ -2597,6 +2717,30 @@ where
             }
         }
     }
+}
+
+fn publish_market_backfill<F>(
+    market: &MarketSnapshots,
+    backfill: Vec<MarketFrame>,
+    chart_seed: &BTreeMap<String, MarketSnapshot>,
+    bar_frames: &mut BTreeMap<String, BTreeMap<String, MarketSnapshot>>,
+    publish: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(MarketStreamTick) -> Result<(), String>,
+{
+    for frame in backfill {
+        let changed = bar_frames.get(&frame.as_of) != Some(&frame.snapshots);
+        bar_frames.insert(frame.as_of.clone(), frame.snapshots);
+        if changed {
+            publish(MarketStreamTick {
+                market: market.clone(),
+                chart_snapshots: Some(chart_snapshots_at(&frame.as_of, chart_seed, bar_frames)),
+                chart_as_of: Some(frame.as_of),
+            })?;
+        }
+    }
+    Ok(())
 }
 
 fn publish_pending_market_updates<F>(
@@ -3342,6 +3486,85 @@ fn required_arrays(value: &Value, fields: &[&str]) -> Result<Vec<Value>, String>
     Ok(values)
 }
 
+fn plaid_recurring_amount(value: &Value, field: &str) -> Result<PlaidRecurringAmount, String> {
+    let amount = value
+        .pointer(&format!("/{field}/amount"))
+        .and_then(Value::as_f64)
+        .filter(|amount| amount.is_finite())
+        .ok_or_else(|| format!("Plaid recurring stream omitted {field}.amount"))?;
+    let currency = value
+        .pointer(&format!("/{field}/iso_currency_code"))
+        .and_then(Value::as_str)
+        .or_else(|| {
+            value
+                .pointer(&format!("/{field}/unofficial_currency_code"))
+                .and_then(Value::as_str)
+        })
+        .map(str::to_owned);
+    Ok(PlaidRecurringAmount { amount, currency })
+}
+
+fn parse_plaid_recurring_stream(
+    value: &Value,
+    direction: &'static str,
+) -> Result<PlaidRecurringStream, String> {
+    let category = value
+        .pointer("/personal_finance_category/primary")
+        .and_then(Value::as_str)
+        .map(str::to_owned)
+        .or_else(|| {
+            value
+                .get("category")
+                .and_then(Value::as_array)
+                .map(|parts| {
+                    parts
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(" · ")
+                })
+        })
+        .filter(|category| !category.is_empty());
+    Ok(PlaidRecurringStream {
+        stream_id: string_field(value, "stream_id")?,
+        account_id: format!("plaid:{}", string_field(value, "account_id")?),
+        direction,
+        description: string_field(value, "description")?,
+        merchant_name: value
+            .get("merchant_name")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        category,
+        frequency: string_field(value, "frequency")?,
+        status: string_field(value, "status")?,
+        is_active: bool_field(value, "is_active")?,
+        first_date: string_field(value, "first_date")?,
+        last_date: string_field(value, "last_date")?,
+        predicted_next_date: value
+            .get("predicted_next_date")
+            .and_then(Value::as_str)
+            .map(str::to_owned),
+        average_amount: plaid_recurring_amount(value, "average_amount")?,
+        last_amount: plaid_recurring_amount(value, "last_amount")?,
+        transaction_count: required_array(value, "transaction_ids")?.len(),
+    })
+}
+
+fn parse_plaid_recurring_streams(value: Value) -> Result<Vec<PlaidRecurringStream>, String> {
+    let mut streams = Vec::new();
+    for (field, direction) in [("inflow_streams", "inflow"), ("outflow_streams", "outflow")] {
+        for stream in required_array(&value, field)? {
+            streams.push(parse_plaid_recurring_stream(&stream, direction)?);
+        }
+    }
+    streams.sort_by(|left, right| {
+        left.predicted_next_date
+            .cmp(&right.predicted_next_date)
+            .then_with(|| left.description.cmp(&right.description))
+    });
+    Ok(streams)
+}
+
 fn plaid_public_tokens(value: &Value) -> Vec<String> {
     let mut tokens = Vec::new();
     for session in array(value, "link_sessions") {
@@ -3583,6 +3806,39 @@ fn supported_snaptrade_account(account: &Value) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn plaid_recurring_report_preserves_provider_evidence_and_direction() {
+        let streams = parse_plaid_recurring_streams(json!({
+            "inflow_streams": [],
+            "outflow_streams": [{
+                "stream_id": "stream-1",
+                "account_id": "account-1",
+                "description": "Example membership",
+                "merchant_name": "Example",
+                "personal_finance_category": { "primary": "ENTERTAINMENT" },
+                "frequency": "MONTHLY",
+                "status": "MATURE",
+                "is_active": true,
+                "first_date": "2026-06-01",
+                "last_date": "2026-09-01",
+                "predicted_next_date": "2026-10-01",
+                "average_amount": { "amount": 12.5, "iso_currency_code": "USD" },
+                "last_amount": { "amount": 13.0, "iso_currency_code": "USD" },
+                "transaction_ids": ["one", "two", "three"]
+            }]
+        }))
+        .expect("valid recurring response");
+
+        assert_eq!(streams.len(), 1);
+        let stream = &streams[0];
+        assert_eq!(stream.account_id, "plaid:account-1");
+        assert_eq!(stream.direction, "outflow");
+        assert_eq!(stream.status, "MATURE");
+        assert_eq!(stream.transaction_count, 3);
+        assert_eq!(stream.average_amount.amount, 12.5);
+        assert_eq!(stream.predicted_next_date.as_deref(), Some("2026-10-01"));
+    }
 
     #[test]
     fn plaid_rejects_cursor_cycles_and_unbounded_pages_but_accepts_noop_completion() {
@@ -3897,6 +4153,39 @@ mod tests {
             ]),
             vec!["AAPL", "BRK.B"],
         );
+    }
+
+    #[tokio::test]
+    async fn saved_news_reads_need_no_credentials_and_spend_no_request() {
+        let path = std::env::temp_dir().join(format!(
+            "brief-provider-news-{}.sqlite3",
+            uuid::Uuid::new_v4()
+        ));
+        let now = Utc::now().timestamp();
+        let mut cache = news_cache::NewsCache::new(Some(&path)).unwrap();
+        cache.reserve(Some("TEST"), now).unwrap();
+        cache
+            .save(
+                "TEST",
+                &json!({"feed": [{
+                    "title": "Synthetic news", "summary": "Synthetic evidence", "source": "Example",
+                    "url": "https://example.com/story", "time_published": "20260921T120000",
+                    "ticker_sentiment": [{"ticker":"TEST", "relevance_score":"0.91", "ticker_sentiment_score":"-0.3", "ticker_sentiment_label":"Somewhat-Bearish"}]
+                }]}),
+                now,
+            )
+            .unwrap();
+        drop(cache);
+
+        let providers = Providers::new().unwrap().with_news_cache(&path).unwrap();
+        let result = providers
+            .market_news(vec!["TEST".into()], false)
+            .await
+            .unwrap();
+        assert_eq!(result.articles.len(), 1);
+        assert_eq!(result.requests_remaining, 19);
+        drop(providers);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
@@ -4216,6 +4505,34 @@ mod tests {
         assert_eq!(frames[0].snapshots["AAPL"].price, 228.0);
         assert_eq!(frames[0].snapshots["AAPL"].previous_close, 225.0);
         assert_eq!(frames[1].as_of, "2026-09-08T01:01:00Z");
+
+        let market = MarketSnapshots {
+            snapshots: seed.clone(),
+            session: "Market closed".into(),
+            feed: "iex".into(),
+            delay_minutes: 0,
+            as_of: Some("2026-09-08T01:02:00Z".into()),
+            next_transition_at: Some("2026-09-08T08:00:00Z".into()),
+            poll_interval_ms: None,
+            history_feed: "iex".into(),
+            history_delay_minutes: 0,
+        };
+        let mut bar_frames = BTreeMap::new();
+        let mut published = Vec::new();
+        let mut publish = |tick: MarketStreamTick| {
+            published.push(tick.chart_as_of.unwrap());
+            Ok(())
+        };
+        publish_market_backfill(
+            &market,
+            frames.clone(),
+            &seed,
+            &mut bar_frames,
+            &mut publish,
+        )
+        .unwrap();
+        publish_market_backfill(&market, frames, &seed, &mut bar_frames, &mut publish).unwrap();
+        assert_eq!(published, ["2026-09-08T01:00:00Z", "2026-09-08T01:01:00Z"]);
         assert_eq!(AlpacaMarketSession::Overnight.history_feed(), "boats");
         assert_eq!(AlpacaMarketSession::Overnight.history_delay_minutes(), 15);
     }

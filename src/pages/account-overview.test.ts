@@ -1,9 +1,9 @@
 import { expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
-import { accountIncomeBreakdown } from './account-overview'
+import { accountTransactionSummary } from './account-overview'
 
-it('splits posted current-year dividends and interest without counting other income', () => {
+it('summarizes selected-range and all-time cash activity', () => {
   const transaction = {
     category: 'Income',
     date: '2026-08-21',
@@ -14,7 +14,7 @@ it('splits posted current-year dividends and interest without counting other inc
     pending: false,
   }
   expect(
-    accountIncomeBreakdown(
+    accountTransactionSummary(
       [
         {
           ...transaction,
@@ -53,6 +53,19 @@ it('splits posted current-year dividends and interest without counting other inc
         },
       ],
       '2026-09-03T12:00:00Z',
+      30 * 24 * 60 * 60,
     ),
-  ).toEqual({ dividends: 12.5, interest: 3.25 })
+  ).toMatchObject({
+    range: {
+      moneyIn: 5_015.75,
+      moneyOut: 0,
+      dividends: 12.5,
+      interest: 3.25,
+      netFlow: 5_015.75,
+    },
+    allTime: { moneyIn: 5_025.75, netFlow: 5_025.75, dividends: 22.5, interest: 3.25 },
+    start: '2026-08-04',
+    end: '2026-09-03',
+    days: 30,
+  })
 })

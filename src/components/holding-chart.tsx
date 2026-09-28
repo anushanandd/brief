@@ -1,11 +1,10 @@
 import { Liveline } from 'liveline'
-import { ChartCandlestick, ChartNoAxesCombined } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
 import { useGraphAccountShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useHoldingPrices } from '../hooks/use-holding-prices'
-import { formatCurrency, formatSecurityName, valueTone } from '../lib/format'
+import { formatCurrency, formatSecurityName } from '../lib/format'
 import {
   getDefaultHoldingChartRange,
   holdingChartPoints,
@@ -20,7 +19,7 @@ import {
 import { pageShortcutBlocked } from '../lib/keyboard'
 import type { FinanceSnapshot } from '../lib/schema'
 import { useChartColors } from './charts'
-import { AnimatedCurrency, Button, Card, Change, EmptyState, RangeSelector } from './ui'
+import { AnimatedCurrency, Card, ChartChange, ChartRangeSelect, EmptyState } from './ui'
 
 function LoadingText({ children }: { children: string }) {
   const [visible, setVisible] = useState(false)
@@ -44,7 +43,6 @@ export function HoldingChart({
   const colors = useChartColors()
   const tickerKey = [...new Set(holdings.map((holding) => holding.ticker))].join(',')
   const tickers = useMemo(() => tickerKey.split(','), [tickerKey])
-  const [mode, setMode] = useState<'line' | 'candle'>('candle')
   const [range, setRange] = useState(getDefaultHoldingChartRange)
   const supported = finance.marketSymbols.includes(ticker)
   const prices = useHoldingPrices(ticker, range, finance.liveMarketEnabled && supported, tickers)
@@ -56,7 +54,7 @@ export function HoldingChart({
     },
     [index, tickers, onTickerChange],
   )
-  useGraphAccountShortcuts(move, 'none')
+  useGraphAccountShortcuts(move)
   const holding = holdings.find((position) => position.ticker === ticker)
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
@@ -156,18 +154,15 @@ export function HoldingChart({
           </div>
           <div className="chart-summary-row">
             {change ? (
-              <div
-                className="hero-change"
-                role="group"
-                aria-label={`${savedChange ? 'Saved bar-close change' : 'Bar-close change'}${
+              <ChartChange
+                amount={change.change}
+                percent={change.percent}
+                ariaLabel={`${savedChange ? 'Saved bar-close change' : 'Bar-close change'}${
                   prices.savedComparison
                     ? `, verified ${new Date(prices.savedComparison.asOf).toLocaleString()}`
                     : ''
                 }`}
-              >
-                <span className={valueTone(change.change)}>{formatCurrency(change.change)}</span>
-                <Change value={change.percent} />
-              </div>
+              />
             ) : (
               <span className="holding-chart-status">
                 {loadingHistory ? historyStatus : 'Range change unavailable'}
@@ -176,6 +171,12 @@ export function HoldingChart({
           </div>
         </div>
         <div className="holding-chart-controls">
+          <ChartRangeSelect
+            label="Security price range"
+            options={holdingChartRanges}
+            value={range}
+            onValueChange={setRange}
+          />
           <div className="holding-chart-status">
             {(!holding ||
               !supported ||
@@ -192,19 +193,14 @@ export function HoldingChart({
             {history ? (
               <details className="holding-chart-provenance">
                 <summary>
-                  {mode === 'candle'
-                    ? candleLabel
-                    : history.resolution < 86400
-                      ? `${history.resolution / 60}m bars`
-                      : 'Daily bars'}
+                  {candleLabel}
                   {history.delayMinutes ? ` · ${history.delayMinutes}m delayed` : ''}
                   {chartEnd !== now ? ' · Last observed day' : ''}
                   {last ? ` · Last ${holdingChartTime(last.time, prices.now)}` : ''}
                 </summary>
                 <span className="holding-chart-provenance">
                   {history.feeds.join(' + ').toUpperCase()} · Split-adjusted · Chart times ET;
-                  closed sessions compressed. Lines connect reported closes, not intervening
-                  executions.
+                  closed sessions compressed. Candles show reported OHLC bars.
                   {quote
                     ? ` ${latestLabel ?? 'Latest quote'} is separate from historical bars.`
                     : ''}
@@ -229,28 +225,6 @@ export function HoldingChart({
               <span className="holding-chart-provenance">{prices.historyError}</span>
             ) : null}
           </div>
-          <div className="holding-chart-mode" role="group" aria-label="Chart style">
-            <Button
-              icon={ChartNoAxesCombined}
-              size="icon-compact"
-              aria-label="Line chart"
-              aria-pressed={mode === 'line'}
-              onClick={() => setMode('line')}
-            />
-            <Button
-              icon={ChartCandlestick}
-              size="icon-compact"
-              aria-label="Candlestick chart"
-              aria-pressed={mode === 'candle'}
-              onClick={() => setMode('candle')}
-            />
-          </div>
-          <RangeSelector
-            label="Security price range"
-            options={holdingChartRanges}
-            value={range}
-            onValueChange={setRange}
-          />
         </div>
       </header>
       <div className="brokerage-chart-viewport">
@@ -296,8 +270,8 @@ export function HoldingChart({
             </div>
             <Liveline
               className="liveline-chart-canvas"
-              key={`${ticker}:${range}:${mode}`}
-              mode={mode}
+              key={`${ticker}:${range}`}
+              mode="candle"
               candles={candleChart.candles}
               candleWidth={candleChart.width}
               data={timeline.points}

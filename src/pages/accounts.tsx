@@ -2,11 +2,10 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
 import { AccountMark } from '../components/account-mark'
-import { AccountRow } from '../components/account-row'
 import { PageError, PageLoading } from '../components/data-state'
-import { PositionTable } from '../components/position-table'
-import { Card, EmptyState, Metric, SectionHeading } from '../components/ui'
+import { EmptyState } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
+import { useActiveSelectionScroll } from '../hooks/use-active-selection-scroll'
 import {
   useGraphAccountShortcuts,
   useGraphWindowShortcuts,
@@ -17,22 +16,9 @@ import { accountStartDate, getAccountStartDates } from '../lib/account-start-dat
 import { accountValueChart } from '../lib/dashboard-account-views'
 import { formatCurrency, formatPercent, valueTone } from '../lib/format'
 import { getDefaultGraphWindow } from '../lib/graph-preferences'
-import { getExternalLogosEnabled } from '../lib/logos'
 import type { Account, FinanceSnapshot } from '../lib/schema'
+import { getSpendingAccountId } from '../lib/spending-preferences'
 import { AccountOverview } from './account-overview'
-
-function sumKnown(values: Array<number | null | undefined>) {
-  const known = values.filter((value): value is number => value != null)
-  return known.length ? known.reduce((total, value) => total + value, 0) : values.length ? null : 0
-}
-
-function accountData(data: FinanceSnapshot) {
-  const accounts = data.accounts.filter(({ id }) => id !== 'all')
-  return {
-    investments: accounts.filter(({ type }) => type === 'brokerage' || type === 'retirement'),
-    cash: accounts.filter(({ type }) => type === 'cash'),
-  }
-}
 
 function useAccountsPage() {
   const query = useLiveFinance()
@@ -42,7 +28,6 @@ function useAccountsPage() {
     state: 'ready' as const,
     data: query.data,
     names: getAccountDisplayNames(),
-    externalLogos: getExternalLogosEnabled(),
   }
 }
 
@@ -62,25 +47,15 @@ function AccountsWorkspace({
   names: ReturnType<typeof getAccountDisplayNames>
 }) {
   const routeSearch = useSearch({ from: '/accounts' })
+  const switcherRef = useActiveSelectionScroll()
   const live = useLiveFinance()
   const startDates = getAccountStartDates()
   const now = Date.now() / 1_000
   const valuationTime = Date.parse(live.valuationAsOf ?? data.updatedAt) / 1_000
   const navigate = useNavigate({ from: '/accounts' })
-  const visibleData = useMemo(() => {
-    const creditIds = new Set(
-      data.accounts.filter(({ type }) => type === 'credit').map(({ id }) => id),
-    )
-    return {
-      ...data,
-      accounts: data.accounts.filter(({ id }) => !creditIds.has(id)),
-      transactions: data.transactions.filter(
-        ({ accountId }) => !accountId || !creditIds.has(accountId),
-      ),
-    }
-  }, [data])
+  const spendingAccountId = getSpendingAccountId()
   const accounts = useMemo(() => {
-    const allAccount: Account = visibleData.accounts.find(({ id }) => id === 'all') ?? {
+    const allAccount: Account = data.accounts.find(({ id }) => id === 'all') ?? {
       id: 'all',
       name: 'All accounts',
       institution: 'Brief',
@@ -89,15 +64,15 @@ function AccountsWorkspace({
     }
     return [
       allAccount,
-      ...visibleData.accounts
-        .filter(({ id }) => id !== 'all')
+      ...data.accounts
+        .filter(({ id }) => id !== 'all' && id !== spendingAccountId)
         .toSorted((left, right) => {
           if (left.value == null) return right.value == null ? 0 : 1
           if (right.value == null) return -1
           return right.value - left.value
         }),
     ]
-  }, [data.netWorth, visibleData.accounts])
+  }, [data.accounts, data.netWorth, spendingAccountId])
   const [graphWindow, setGraphWindow] = useState(getDefaultGraphWindow)
   useGraphWindowShortcuts(setGraphWindow)
   const selectedAccount =
@@ -131,20 +106,25 @@ function AccountsWorkspace({
         }
       />
 
-      <nav className="account-switcher" aria-label="Connected accounts">
-        <div className="account-switcher-grid">
+      <nav
+        ref={switcherRef}
+        className="account-switcher account-switcher-single-row"
+        aria-label="Connected accounts"
+        data-keyboard-region
+      >
+        <div className="account-switcher-grid account-switcher-grid-single-row">
           {accounts.map((account) => {
             const active = account.id === selectedAccount?.id
             const chartId =
               account.id === 'all' || account.type === 'combined' ? 'net-worth' : account.id
             const view = accountValueChart(
-              visibleData,
+              data,
               account,
               live.marketSeries[chartId] ?? [],
               Number.isFinite(valuationTime) ? valuationTime : now,
               graphWindow,
               now,
-              accountStartDate(visibleData, chartId, startDates),
+              accountStartDate(data, chartId, startDates),
             )
             const percent =
               view.historyIsAvailable && account.type !== 'credit' ? view.chartChange.percent : null
@@ -185,147 +165,13 @@ function AccountsWorkspace({
 
       {selectedAccount ? (
         <AccountOverview
+          key={selectedAccount.id}
           account={selectedAccount}
-          data={visibleData}
+          data={data}
           graphWindow={graphWindow}
           onGraphWindowChange={setGraphWindow}
         />
       ) : null}
-    </div>
-  )
-}
-
-export function InvestmentAccountsPage() {
-  const page = useAccountsPage()
-  if (page.state === 'loading') return <PageLoading />
-  if (page.state === 'error') return <PageError />
-
-  const { data, names, externalLogos } = page
-  const { investments } = accountData(data)
-  const positions = data.holdings
-    .filter(({ accountId }) => investments.some(({ id }) => id === accountId))
-    .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
-  const total =
-    data.brokeragePerformance.find(({ accountId }) => accountId === 'total')?.currentValue ??
-    sumKnown(investments.map(({ value }) => value))
-  const basis = sumKnown(investments.map(({ knownCostBasis }) => knownCostBasis))
-  const gain = sumKnown(investments.map(({ knownUnrealizedGain }) => knownUnrealizedGain))
-  const income = sumKnown(investments.map(({ investmentIncomeYtd }) => investmentIncomeYtd))
-  const leading = positions[0]
-  const concentration = leading?.value != null && total ? (leading.value / total) * 100 : null
-
-  return (
-    <div className="page accounts-workspace-page">
-      <WorkspaceHeader title="Investments" parent={{ label: 'Accounts', to: '/accounts' }} />
-
-      <Card className="workspace-brief-card">
-        <header className="workspace-brief-heading">
-          <div>
-            <span className="balance-label">Combined portfolio</span>
-            <strong className="hero-number">{formatCurrency(total)}</strong>
-          </div>
-          <p>Provider-backed values across {investments.length} accounts</p>
-        </header>
-        <div className="workspace-metric-grid">
-          <Metric label="Known cost basis" value={formatCurrency(basis)} />
-          <Metric
-            label="Known unrealized P/L"
-            value={formatCurrency(gain)}
-            tone={valueTone(gain)}
-          />
-          <Metric label="Investment income YTD" value={formatCurrency(income)} />
-          <Metric
-            label="Largest position"
-            value={leading?.ticker ?? '—'}
-            detail={concentration == null ? undefined : `${concentration.toFixed(1)}% of portfolio`}
-          />
-        </div>
-      </Card>
-
-      <div className="accounts-overview-grid investment-workspace-grid">
-        <Card className="account-group-card">
-          <SectionHeading
-            title="Investment accounts"
-            detail="Open an account for its complete statement."
-          />
-          <div className="account-workspace-list">
-            {investments.map((account) => (
-              <AccountRow
-                key={account.id}
-                account={account}
-                displayName={accountDisplayName(account.id, account.name, names)}
-                detail={`${data.holdings.filter(({ accountId }) => accountId === account.id).length} positions · ${formatCurrency(account.knownUnrealizedGain)} P/L`}
-              />
-            ))}
-            {!investments.length ? <EmptyState>No investment accounts.</EmptyState> : null}
-          </div>
-        </Card>
-
-        <Card className="account-group-card portfolio-positions-card">
-          <PositionTable
-            title="Largest positions"
-            positions={positions.slice(0, 8)}
-            externalLogosEnabled={externalLogos}
-            view="summary"
-            emptyMessage="No positions in these accounts."
-          />
-        </Card>
-      </div>
-    </div>
-  )
-}
-
-export function CashAccountsPage() {
-  const page = useAccountsPage()
-  if (page.state === 'loading') return <PageLoading />
-  if (page.state === 'error') return <PageError />
-
-  const { data, names } = page
-  const { cash } = accountData(data)
-  const cashValue = sumKnown(cash.map(({ value }) => value))
-  const cashTransactions = data.transactions.filter(({ accountId }) =>
-    cash.some(({ id }) => id === accountId),
-  )
-
-  return (
-    <div className="page accounts-workspace-page">
-      <WorkspaceHeader title="Cash" parent={{ label: 'Accounts', to: '/accounts' }} />
-
-      <Card className="workspace-brief-card">
-        <header className="workspace-brief-heading">
-          <div>
-            <span className="balance-label">Available cash</span>
-            <strong className="hero-number">{formatCurrency(cashValue)}</strong>
-          </div>
-          <p>Committed provider balances</p>
-        </header>
-        <div className="workspace-metric-grid workspace-metric-grid-three">
-          <Metric label="Accounts" value={String(cash.length)} />
-          <Metric label="Transactions" value={String(cashTransactions.length)} />
-          <Metric
-            label="Institutions"
-            value={String(new Set(cash.map(({ institution }) => institution)).size)}
-          />
-        </div>
-      </Card>
-
-      <Card className="account-group-card cash-accounts-list">
-        <SectionHeading
-          title="Cash accounts"
-          detail="Checking, savings, and other cash balances."
-        />
-        <div className="account-workspace-list">
-          {cash.map((account) => (
-            <AccountRow
-              key={account.id}
-              account={account}
-              displayName={accountDisplayName(account.id, account.name, names)}
-              detail={`${data.transactions.filter(({ accountId }) => accountId === account.id).length} imported transactions`}
-            />
-          ))}
-          {!cash.length ? <EmptyState>No cash accounts.</EmptyState> : null}
-        </div>
-      </Card>
     </div>
   )
 }

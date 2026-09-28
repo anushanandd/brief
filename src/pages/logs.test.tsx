@@ -6,7 +6,7 @@ import empty from '../data/empty.json'
 import { LogsPage } from './logs'
 
 const market = vi.hoisted(() => ({ state: 'active', saved: false }))
-vi.mock('../components/workspace-header', () => ({ WorkspaceHeader: () => <h1>Logs</h1> }))
+vi.mock('../components/workspace-header', () => ({ WorkspaceHeader: () => <h1>Diagnostics</h1> }))
 vi.mock('../hooks/use-refresh-finance', () => ({ useFinanceRefreshState: () => false }))
 vi.mock('../hooks/use-finance', () => ({
   useFinance: () => ({

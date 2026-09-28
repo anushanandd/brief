@@ -104,11 +104,11 @@ export function reduceHoldingChart(
 }
 
 export const holdingChartRanges = [
-  { label: 'D', value: 86400, accessibleLabel: '1 day' },
-  { label: 'W', value: 7 * 86400, accessibleLabel: '1 week' },
-  { label: 'M', value: 30 * 86400, accessibleLabel: '1 month' },
-  { label: 'Y', value: 365 * 86400, accessibleLabel: '1 year' },
-  { label: 'A', value: 0, accessibleLabel: 'All available history' },
+  { label: 'D', value: 86400, accessibleLabel: 'Day' },
+  { label: 'W', value: 7 * 86400, accessibleLabel: 'Week' },
+  { label: 'M', value: 30 * 86400, accessibleLabel: 'Month' },
+  { label: 'Y', value: 365 * 86400, accessibleLabel: 'Year' },
+  { label: 'A', value: 0, accessibleLabel: 'All time' },
 ]
 
 const holdingChartRangeKey = 'brief.holdingChartRange'

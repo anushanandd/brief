@@ -42,6 +42,26 @@ it.each(['positions', 'market', 'summary'] as const)(
   },
 )
 
+it('marks public security prices and market changes separately from position values', () => {
+  const holding = {
+    ...position,
+    price: 25,
+    value: 53.13,
+    dailyChangePct: 1,
+    weeklyChangePct: 2,
+  }
+  const market = renderToStaticMarkup(
+    <PositionTable positions={[holding]} view="market" externalLogosEnabled={false} />,
+  )
+  const positions = renderToStaticMarkup(
+    <PositionTable positions={[holding]} view="positions" externalLogosEnabled={false} />,
+  )
+  expect(market.match(/class="public-market-value"/g)).toHaveLength(3)
+  expect(market).toContain('class="public-market-value">$25.00</td>')
+  expect(market).toContain('<td>$53.13</td>')
+  expect(positions.match(/class="public-market-value"/g)).toHaveLength(1)
+})
+
 it('keeps unmatched sales visible without inventing profit or a current-year date', () => {
   const html = renderToStaticMarkup(
     <SalesTable

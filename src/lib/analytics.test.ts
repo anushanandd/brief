@@ -261,6 +261,17 @@ it('compares preceding equal-length periods and does not extrapolate absent hist
   })
 })
 
+it('extends the month chart through today without treating days after a stale snapshot as zero', () => {
+  const data = { ...snapshot(), updatedAt: '2026-09-21T12:00:00Z' }
+  data.transactions = [transaction('saved', 75, { date: '2026-09-21' })]
+  const window = analyticsWindow(data, { range: 'month' }, '2026-09-25')
+  const report = analyticsReport(analyticsEntries(data, 'income', ''), window)
+  expect(window).toMatchObject({ start: '2026-08-27', end: '2026-09-25', savedEnd: '2026-09-21' })
+  expect(report.buckets.at(-5)).toMatchObject({ from: '2026-09-21', value: 75 })
+  expect(report.buckets.slice(-4).map(({ value }) => value)).toEqual([null, null, null, null])
+  expect(report.previous).toBeNull()
+})
+
 it('validates incoming chart/date state and preserves account scope', () => {
   const search = analyticsSearch({
     chart: 'interest',

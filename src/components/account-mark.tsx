@@ -1,12 +1,6 @@
-import {
-  ChartNoAxesCombined,
-  CreditCard,
-  Landmark,
-  WalletCards,
-  type LucideIcon,
-} from 'lucide-react'
+import { ChartNoAxesCombined, CreditCard, Landmark, WalletCards, type IconComponent } from './icons'
 
-const accountMarks: Record<string, LucideIcon> = {
+const accountMarks: Record<string, IconComponent> = {
   combined: Landmark,
   brokerage: ChartNoAxesCombined,
   retirement: Landmark,

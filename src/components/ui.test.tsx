@@ -1,15 +1,37 @@
-import { Save } from 'lucide-react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
-import { selectedFilterValues, toggleFilterValue } from './ledger-filters'
-import { AnimatedCurrency, Button, Change, RangeSelector } from './ui'
+import { Save } from './icons'
+import { selectedFilterValues } from './ledger-filters'
+import {
+  AnimatedCurrency,
+  Button,
+  Change,
+  ChartChange,
+  ChartRangeSelect,
+  hasMoreBelow,
+  RangeSelector,
+} from './ui'
+
+it('shows a card scroll cue only while content remains below', () => {
+  expect(hasMoreBelow({ scrollHeight: 300, clientHeight: 200, scrollTop: 0 })).toBe(true)
+  expect(hasMoreBelow({ scrollHeight: 300, clientHeight: 200, scrollTop: 100 })).toBe(false)
+  expect(hasMoreBelow({ scrollHeight: 200, clientHeight: 200, scrollTop: 0 })).toBe(false)
+})
 
 it('renders available currency with NumberFlow and keeps unavailable values static', () => {
   expect(
     renderToStaticMarkup(<AnimatedCurrency className="hero-number" value={1234.5} />),
   ).toContain('<number-flow-react')
   expect(renderToStaticMarkup(<AnimatedCurrency value={null} />)).toContain('—')
+})
+
+it('formats graph changes as a bold signed amount with a parenthesized percentage', () => {
+  const html = renderToStaticMarkup(<ChartChange amount={10} percent={1.22} />)
+  expect(html).toContain('<strong class="hero-change"')
+  expect(html).toContain(
+    '<span class="positive">+$10.00</span><span class="positive">(1.22%)</span>',
+  )
 })
 
 it('uses context when coloring changes', () => {
@@ -23,14 +45,29 @@ it.each([0, -0, null, undefined])('uses a neutral tone for %s', (value) => {
   expect(renderToStaticMarkup(<Change value={value} />)).toContain('change muted')
 })
 
-it('parses and toggles multi-select ledger filters', () => {
+it('parses available ledger filter values', () => {
   expect(selectedFilterValues('cash,missing,credit', ['cash', 'credit'])).toEqual([
     'cash',
     'credit',
   ])
-  expect(toggleFilterValue(['cash'], 'credit')).toEqual(['cash', 'credit'])
-  expect(toggleFilterValue(['cash', 'credit'], 'cash')).toEqual(['credit'])
-  expect(toggleFilterValue(['cash'], '')).toEqual(['cash'])
+})
+
+it('renders graph ranges as an accessible dropdown', () => {
+  const html = renderToStaticMarkup(
+    <ChartRangeSelect
+      label="Chart range"
+      options={[
+        { value: 'week', label: 'W', accessibleLabel: 'One week' },
+        { value: 'month', label: 'M', accessibleLabel: 'One month' },
+      ]}
+      value="week"
+      onValueChange={() => undefined}
+    />,
+  )
+
+  expect(html).toMatch(/role="combobox"[^>]*aria-label="Chart range"/)
+  expect(html).toContain('ledger-select-trigger chart-range-select')
+  expect(html).toContain('One week')
 })
 
 it('labels shared range controls with their full meanings', () => {

@@ -20,6 +20,7 @@ describe('graphWindowShortcut', () => {
     expect(graphRangeShortcut(key({ ctrlKey: false, key: 'w', metaKey: false }))).toBe(604_800)
     expect(graphRangeShortcut(key({ ctrlKey: false, key: 'M', metaKey: false }))).toBe(2_592_000)
     expect(graphRangeShortcut(key({ ctrlKey: false, key: 'q', metaKey: false }))).toBe(7_776_000)
+    expect(graphRangeShortcut(key({ ctrlKey: false, key: 'y', metaKey: false }))).toBe(31_536_000)
     expect(graphRangeShortcut(key({ ctrlKey: false, key: 'a', metaKey: false }))).toBe(0)
     expect(graphRangeShortcut(key({ ctrlKey: false, key: 'w' }))).toBeUndefined()
   })
@@ -30,11 +31,11 @@ describe('graphWindowShortcut', () => {
     expect(graphWindowShortcut(key({ ctrlKey: false }))).toBeUndefined()
     expect(graphWindowShortcut(key({ metaKey: false }))).toBeUndefined()
     expect(graphAccountShortcut(key())).toBeUndefined()
-    expect(graphAccountShortcut(key({ ctrlKey: false }))).toBe('graph-next')
+    expect(graphAccountShortcut(key({ ctrlKey: false }))).toBeUndefined()
   })
 })
 
-it('uses bare arrows for tickers while retaining Command arrows for other charts', () => {
+it('uses bare arrows for chart selections', () => {
   const event = {
     key: 'ArrowRight',
     metaKey: false,
@@ -42,10 +43,8 @@ it('uses bare arrows for tickers while retaining Command arrows for other charts
     altKey: false,
     shiftKey: false,
   }
-  expect(graphAccountShortcut(event, 'none')).toBe('graph-next')
-  expect(graphAccountShortcut({ ...event, key: 'ArrowLeft' }, 'none')).toBe('graph-previous')
-  expect(graphAccountShortcut({ ...event, metaKey: true }, 'none')).toBeUndefined()
-  expect(graphAccountShortcut({ ...event, shiftKey: true }, 'none')).toBeUndefined()
-  expect(graphAccountShortcut(event)).toBeUndefined()
-  expect(graphAccountShortcut({ ...event, metaKey: true })).toBe('graph-next')
+  expect(graphAccountShortcut(event)).toBe('graph-next')
+  expect(graphAccountShortcut({ ...event, key: 'ArrowLeft' })).toBe('graph-previous')
+  expect(graphAccountShortcut({ ...event, metaKey: true })).toBeUndefined()
+  expect(graphAccountShortcut({ ...event, shiftKey: true })).toBeUndefined()
 })

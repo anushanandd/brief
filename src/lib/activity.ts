@@ -1,22 +1,134 @@
 import { accountDisplayName, type AccountDisplayNames } from './account-name-preferences'
 import { formatCurrency } from './format'
 import { transactionLogoUrl, transactionMarkKind } from './logos'
-import type { FinanceSnapshot } from './schema'
+import type { FinanceSnapshot, Transaction } from './schema'
 import { isSpendingTransaction, transactionDateKey } from './spending'
+import type { TransactionMarkKind } from './transaction-kind'
 
 export type ActivityItem = {
   id: string
   kind: 'spending' | 'transaction' | 'income' | 'credit' | 'transfer' | 'trade'
+  mark?: TransactionMarkKind
   accountId?: string
+  account?: string
   category: string
   title: string
   detail: string
   date: string
+  location?: Transaction['location']
+  paymentChannel?: string
   amount: number
+  estimatedRealizedGain?: number | null
   pending?: boolean
   description?: string
   logoUrl?: string
   website?: string
+}
+
+export type ActivitySortColumn =
+  | 'description'
+  | 'account'
+  | 'category'
+  | 'location'
+  | 'method'
+  | 'date'
+  | 'amount'
+export type ActivitySort = { column: ActivitySortColumn; direction: 'asc' | 'desc' }
+
+export function activityLocationText(location?: ActivityItem['location']) {
+  if (!location) return ''
+  return [
+    location.address,
+    [location.city, location.region].filter(Boolean).join(', '),
+    location.postalCode,
+    location.country,
+  ]
+    .filter(Boolean)
+    .join(' · ')
+}
+
+export function activityLocationLabel(location?: ActivityItem['location']) {
+  const place = [location?.city, location?.region, location?.country].filter(Boolean).join(', ')
+  return place || location?.postalCode || (location?.address ? 'Address' : '—')
+}
+
+export function paymentChannelLabel(channel?: string) {
+  const value = channel?.trim().replaceAll(/[_-]+/g, ' ')
+  return value ? value[0].toUpperCase() + value.slice(1).toLowerCase() : ''
+}
+
+export function activityMethod(activity: ActivityItem) {
+  return activity.kind === 'trade' || activity.accountId?.startsWith('snaptrade:')
+    ? 'Brokerage'
+    : paymentChannelLabel(activity.paymentChannel)
+}
+
+export function activityMatchesSearch(activity: ActivityItem, query: string) {
+  const text = query.trim().toLocaleLowerCase()
+  if (!text) return true
+  const fields = {
+    description: `${activity.title} ${activity.description ?? ''}`,
+    account: activity.account ?? '',
+    category: activity.category,
+    method: activityMethod(activity),
+    location: activityLocationText(activity.location),
+    amount: `${activity.amount} ${formatCurrency(activity.amount)}`,
+    date: activity.date,
+  }
+  const scoped = /^(description|account|category|method|location|amount|date):\s*(.*)$/.exec(text)
+  if (scoped && !scoped[2].trim()) return false
+  const source = scoped
+    ? (Object.entries(fields).find(([name]) => name === scoped[1])?.[1] ?? '')
+    : `${Object.values(fields).join(' ')} ${activity.detail}`
+  const terms = (scoped ? scoped[2] : text).split(/\s+/).filter(Boolean)
+  return terms.every((term) => source.toLocaleLowerCase().includes(term))
+}
+
+export function linkedAccountIds(
+  accountIds: readonly (string | undefined)[],
+  accountLinks: Readonly<Record<string, string>> = {},
+) {
+  const ids = new Set(accountIds.filter((id): id is string => Boolean(id)))
+  for (const [plaidId, snaptradeId] of Object.entries(accountLinks)) {
+    if (ids.has(plaidId) || ids.has(snaptradeId)) {
+      ids.add(plaidId)
+      ids.add(snaptradeId)
+    }
+  }
+  return ids
+}
+
+export function sortActivities(
+  activities: ActivityItem[],
+  referenceIso: string,
+  sort: ActivitySort,
+) {
+  const direction = sort.direction === 'asc' ? 1 : -1
+  const value = (activity: ActivityItem) =>
+    sort.column === 'description'
+      ? activity.title
+      : sort.column === 'account'
+        ? (activity.account ?? '')
+        : sort.column === 'location'
+          ? [
+              activity.location?.city,
+              activity.location?.region,
+              activity.location?.country,
+              activity.location?.postalCode,
+              activity.location?.address,
+            ]
+              .filter(Boolean)
+              .join(' · ')
+          : sort.column === 'method'
+            ? activityMethod(activity)
+            : sort.column === 'date'
+              ? transactionDateKey(activity.date, referenceIso)
+              : activity.category
+  return activities.toSorted((left, right) => {
+    if (sort.column === 'amount') return direction * (left.amount - right.amount)
+    if (sort.column === 'date') return direction * value(left).localeCompare(value(right))
+    return direction * value(left).localeCompare(value(right), undefined, { sensitivity: 'base' })
+  })
 }
 
 export function buildActivities(
@@ -27,6 +139,11 @@ export function buildActivities(
   const transactions = data.transactions.map((transaction): ActivityItem => {
     const mark = transactionMarkKind(transaction)
     const isCredit = transaction.classification.credit
+    const account = accountDisplayName(
+      transaction.accountId,
+      transaction.account,
+      accountDisplayNames,
+    )
     const category = isCredit ? 'Credit' : transaction.category || 'Other'
     const kind =
       mark === 'transfer'
@@ -41,11 +158,15 @@ export function buildActivities(
     return {
       id: `spending:${transaction.id}`,
       kind,
+      mark,
       accountId: transaction.accountId,
+      account,
       category,
       title: transaction.merchant,
-      detail: `${accountDisplayName(transaction.accountId, transaction.account, accountDisplayNames)} · ${category}`,
+      detail: `${account} · ${category}`,
       date: transaction.date,
+      location: transaction.location,
+      paymentChannel: transaction.paymentChannel,
       amount: transaction.amount,
       pending: transaction.pending,
       description:
@@ -60,6 +181,7 @@ export function buildActivities(
   })
   const trades = data.trades.map((trade): ActivityItem => {
     const type = trade.type.toLocaleUpperCase()
+    const account = accountDisplayName(trade.accountId, trade.account, accountDisplayNames)
     const verb = type.includes('BUY')
       ? 'Bought'
       : type.includes('SELL')
@@ -71,10 +193,11 @@ export function buildActivities(
       id: `trade:${trade.id}`,
       kind: 'trade',
       accountId: trade.accountId,
+      account,
       category: 'Trade',
       title: `${verb} ${trade.ticker ?? 'security'}`,
       detail: [
-        accountDisplayName(trade.accountId, trade.account, accountDisplayNames),
+        account,
         trade.units != null ? `${trade.units} shares` : trade.description,
         trade.estimatedRealizedGain != null
           ? `Estimated FIFO P/L ${formatCurrency(trade.estimatedRealizedGain)}`
@@ -84,6 +207,7 @@ export function buildActivities(
         .join(' · '),
       date: trade.date,
       amount: trade.amount,
+      estimatedRealizedGain: trade.estimatedRealizedGain,
     }
   })
   return [...transactions, ...trades].toSorted(

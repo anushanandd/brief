@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
-import { Settings } from 'lucide-react'
 
+import { Settings } from './icons'
 import { Card, EmptyState } from './ui'
 
 export function SpendingAccountEmptyState() {

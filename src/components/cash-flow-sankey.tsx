@@ -283,8 +283,7 @@ export function CashFlowSankey({ values }: { values: CashFlowSankeyValues }) {
           ))}
         </svg>
         <span className="sankey-pool-label">
-          <strong>Cash available</strong>
-          <small>{formatCurrency(model.total)}</small>
+          <strong>{formatCurrency(model.total)}</strong>
         </span>
         {sources.map((flow) => (
           <FlowLabel flow={flow} side="source" key={flow.id} />

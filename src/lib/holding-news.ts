@@ -1,4 +1,3 @@
-import { scoreNewsArticle } from './money'
 import type { MarketNewsArticle } from './schema'
 
 export type NewsGroup = { article: MarketNewsArticle; related: MarketNewsArticle[] }
@@ -35,25 +34,13 @@ function sameStory(left: MarketNewsArticle, right: MarketNewsArticle) {
   return overlap >= 3 && overlap / new Set([...a, ...b]).size >= 0.75
 }
 
-export function rankHoldingNews(
-  articles: MarketNewsArticle[],
-  ticker: string,
-  now: number,
-): NewsGroup[] {
-  const score = (article: MarketNewsArticle) =>
-    article.relevanceScore != null
-      ? article.relevanceScore * 100
-      : scoreNewsArticle(article, { holdings: [] }, now).score +
-        30 / Math.max(1, article.symbols.length)
+export function rankHoldingNews(articles: MarketNewsArticle[], ticker: string): NewsGroup[] {
   const ranked = articles
     .filter(
       (article) =>
         article.symbols.includes(ticker) && Number.isFinite(Date.parse(article.createdAt)),
     )
-    .toSorted(
-      (a, b) =>
-        score(b) - score(a) || b.createdAt.localeCompare(a.createdAt) || a.url.localeCompare(b.url),
-    )
+    .toSorted((a, b) => b.createdAt.localeCompare(a.createdAt) || a.url.localeCompare(b.url))
   const groups: NewsGroup[] = []
   for (const article of ranked) {
     const group = groups.find((candidate) => sameStory(candidate.article, article))
@@ -65,14 +52,4 @@ export function rankHoldingNews(
       group.related.push(article)
   }
   return groups
-}
-
-export function averageNewsSentiment(groups: NewsGroup[]) {
-  const scores = groups
-    .map(({ article }) => article.sentimentScore)
-    .filter((score): score is number => score != null && Number.isFinite(score))
-  return {
-    value: scores.length ? scores.reduce((sum, score) => sum + score, 0) / scores.length : null,
-    count: scores.length,
-  }
 }

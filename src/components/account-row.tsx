@@ -1,10 +1,10 @@
 import { Link } from '@tanstack/react-router'
-import { ChevronRight } from 'lucide-react'
 import type { ReactNode } from 'react'
 
 import { formatCurrency } from '../lib/format'
 import type { Account } from '../lib/schema'
 import { AccountMark } from './account-mark'
+import { ChevronRight } from './icons'
 
 export function AccountRow({
   account,

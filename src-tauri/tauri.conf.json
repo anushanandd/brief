@@ -22,7 +22,9 @@
         "visible": false,
         "backgroundColor": "#08090a",
         "theme": "Dark",
-        "decorations": false,
+        "decorations": true,
+        "titleBarStyle": "Overlay",
+        "hiddenTitle": true,
         "fullscreen": false
       }
     ],

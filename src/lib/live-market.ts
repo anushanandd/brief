@@ -4,6 +4,25 @@ import { startMarketStream, stopMarketStream } from './api'
 import { upsertLiveChartPoint } from './live-chart'
 import type { FinanceSnapshot, MarketProjection, MarketSnapshots } from './schema'
 
+const MARKET_CHART_INTERVAL = 5 * 60
+const MAX_MARKET_CHART_POINTS = 7 * 24 * 12 + 1
+
+function downsampleMarketSeries(points: LivelinePoint[]) {
+  const ordered = points.toSorted((left, right) => left.time - right.time)
+  const first = ordered[0]
+  if (!first) return []
+  const buckets = new Map<number, LivelinePoint>()
+  for (const point of ordered.slice(1)) {
+    buckets.set(Math.floor(point.time / MARKET_CHART_INTERVAL), point)
+  }
+  const sampled = [first, ...buckets.values()].filter(
+    (point, index, values) => index === 0 || point.time !== values[index - 1].time,
+  )
+  return sampled.length <= MAX_MARKET_CHART_POINTS
+    ? sampled
+    : [sampled[0], ...sampled.slice(-(MAX_MARKET_CHART_POINTS - 1))]
+}
+
 export function compatibleMarketProjection(
   saved: Pick<FinanceSnapshot, 'revision' | 'updatedAt'>,
   projection?: Pick<MarketProjection, 'revision' | 'updatedAt'>,
@@ -35,6 +54,8 @@ export function applyLiveProjection(
         ? {
             ...account,
             value: live.value,
+            cashValue: live.cashValue,
+            investedValue: live.investedValue,
             knownUnrealizedGain: live.knownUnrealizedGain,
             knownUnrealizedGainPct: live.knownUnrealizedGainPct,
           }
@@ -54,12 +75,19 @@ export function liveMarketSeries(
   current: Record<string, LivelinePoint[]>,
   market: MarketSnapshots,
 ) {
-  if (market.chartSeries) return market.chartSeries
+  if (market.chartSeries) {
+    return Object.fromEntries(
+      Object.entries(market.chartSeries).map(([id, points]) => [
+        id,
+        downsampleMarketSeries(points),
+      ]),
+    )
+  }
   if (!market.chartPoint) return current
   return Object.fromEntries(
     Object.entries(market.chartPoint).map(([id, point]) => {
       const points = upsertLiveChartPoint(current[id] ?? [], point.value, point.time)
-      return [id, points.length > 2 ? [points[0], points.at(-1)!] : points]
+      return [id, downsampleMarketSeries(points)]
     }),
   )
 }

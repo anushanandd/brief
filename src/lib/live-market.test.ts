@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import seed from '../data/seed.json'
 import { startMarketStream, stopMarketStream } from './api'
-import { applyLiveProjection, subscribeLiveMarket } from './live-market'
+import { applyLiveProjection, liveMarketSeries, subscribeLiveMarket } from './live-market'
 import { financeSnapshotSchema, marketSnapshotsSchema, type MarketProjection } from './schema'
 
 vi.mock('./api', () => ({
@@ -44,11 +44,34 @@ it('rejects stale revisions and timestamps and retains immutable history referen
   expect(saved.netWorth).not.toBe(123)
 })
 
+it('retains previous close and five-minute portfolio projections instead of only endpoints', () => {
+  let series: Record<string, Array<{ time: number; value: number }>> = {}
+  for (const [time, value] of [
+    [1_000, 100],
+    [1_200, 101],
+    [1_260, 102],
+    [1_320, 103],
+    [2_400, 104],
+  ]) {
+    series = liveMarketSeries(series, {
+      ...closedMarket(),
+      chartPoint: { brokerage: { time, value } },
+    })
+  }
+  expect(series.brokerage).toEqual([
+    { time: 960, value: 100 },
+    { time: 1_320, value: 103 },
+    { time: 2_400, value: 104 },
+  ])
+})
+
 it('atomically replaces every current valuation while retaining committed evidence', () => {
   const saved = { ...financeSnapshotSchema.parse(seed), revision: 4 }
   const accounts = saved.accounts.map((account, index) => ({
     ...account,
     value: account.value == null ? null : account.value + index + 10,
+    cashValue: 25 + index,
+    investedValue: 75 + index,
   }))
   const holdings = saved.holdings.map((holding, index) => ({
     ...holding,

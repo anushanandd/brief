@@ -2,14 +2,15 @@ const DAY_SECONDS = 24 * 60 * 60
 const DEFAULT_GRAPH_WINDOW = 7 * DAY_SECONDS
 
 export const graphWindows = [
-  { label: 'W', settingsLabel: '1 week', secs: 7 * DAY_SECONDS },
-  { label: 'M', settingsLabel: '1 month', secs: 30 * DAY_SECONDS },
-  { label: 'Q', settingsLabel: '3 months', secs: 90 * DAY_SECONDS },
+  { label: 'W', settingsLabel: 'Week', secs: 7 * DAY_SECONDS },
+  { label: 'M', settingsLabel: 'Month', secs: 30 * DAY_SECONDS },
+  { label: 'Q', settingsLabel: 'Quarter', secs: 90 * DAY_SECONDS },
+  { label: 'Y', settingsLabel: 'Year', secs: 365 * DAY_SECONDS },
   { label: 'A', settingsLabel: 'All time', secs: 0 },
 ]
 
 export function graphWindowForKey(key: string) {
-  return graphWindows[['w', 'm', 'q', 'a'].indexOf(key.toLocaleLowerCase())]?.secs
+  return graphWindows[['w', 'm', 'q', 'y', 'a'].indexOf(key.toLocaleLowerCase())]?.secs
 }
 
 export function adjacentGraphWindow(current: number, direction: -1 | 1) {

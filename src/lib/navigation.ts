@@ -1,12 +1,22 @@
 import {
   Activity,
+  ArrowDownUp,
+  BadgeDollarSign,
   ChartNoAxesCombined,
   BriefcaseBusiness,
+  CreditCard,
   House,
   Landmark,
+  Palette,
+  Percent,
+  Receipt,
+  ScrollText,
   Settings,
+  ShieldCheck,
+  Sprout,
   WalletCards,
-} from 'lucide-react'
+} from '../components/icons'
+import { analyticsCharts } from './analytics'
 
 export const primaryNavigation = [
   { to: '/', label: 'Home', icon: House, shortcut: '1' },
@@ -26,11 +36,28 @@ export const settingsNavigation = {
 
 export const navigation = [...primaryNavigation, settingsNavigation] as const
 
-export const commandDestinations = [
-  ...navigation,
-  { label: 'Investment accounts', to: '/accounts/investments', icon: Landmark },
-  { label: 'Cash accounts', to: '/accounts/cash', icon: Landmark },
+export const secondaryNavigation = [
+  { to: '/health', label: 'Data health', icon: ShieldCheck },
+  { to: '/logs', label: 'Diagnostics', icon: ScrollText },
+  { to: '/settings/design', label: 'Design', icon: Palette },
 ] as const
+
+const analyticsIcons = {
+  'cash-flow': ArrowDownUp,
+  income: BadgeDollarSign,
+  'amex-credits': CreditCard,
+  dividends: Sprout,
+  interest: Percent,
+  fees: Receipt,
+  realized: ChartNoAxesCombined,
+}
+
+export const analyticsNavigation = analyticsCharts.map((chart) => ({
+  to: '/analytics' as const,
+  label: chart.label,
+  icon: analyticsIcons[chart.id],
+  search: { chart: chart.id },
+}))
 
 const navigationShortcutRange = `${navigation[0].shortcut}–${navigation.at(-1)?.shortcut}`
 
@@ -40,11 +67,13 @@ export const shortcutGroups = [
     shortcuts: [
       [navigationShortcutRange, 'Open primary pages'],
       ['?', 'Show keyboard shortcuts'],
-      ['⌘K', 'Open quick actions'],
+      ['⌘K', 'Search actions and activity'],
+      ['? in quick actions', 'Ask Brief'],
       ['⌘[ / ⌘]', 'Go back / forward'],
       ['⌘↑ / ⌘↓', 'Previous / next sidebar page'],
       ['⌘,', 'Open Settings'],
       ['⌘R', 'Refresh data'],
+      ['⌘H', 'Hide / show sensitive values'],
     ],
   },
   {
@@ -52,24 +81,33 @@ export const shortcutGroups = [
     shortcuts: [
       ['/', 'Focus search'],
       ['esc', 'Clear search, then blur'],
-      ['J / K', 'Move down / up'],
+      ['J / K', 'Move down / up in the focused list'],
       ['return', 'Open the focused row'],
+    ],
+  },
+  {
+    title: 'Activity',
+    shortcuts: [
+      ['F', 'Open filters'],
+      ['C', 'Clear all filters'],
+      ['↑ / ↓ · return', 'Choose an account, category, or method'],
+      ['tab', 'Adjust the date range'],
+      ['tab · return', 'Remove a selected filter tag'],
     ],
   },
   {
     title: 'Spending',
     shortcuts: [
-      ['M / Q / Y / A', 'Month / quarter / year / all time'],
-      ['← / →', 'Previous / next month'],
+      ['S / W / M / Q / Y / A', 'Statement / week / month / quarter / year / all time'],
+      ['← / →', 'Previous / next period'],
     ],
   },
   {
     title: 'Charts',
     shortcuts: [
-      ['W / M / Q / A', 'Week / month / quarter / all time'],
+      ['W / M / Q / Y / A', 'Week / month / quarter / year / all time'],
       ['D / W / M / Y / A', 'Holdings: day / week / month / year / all time'],
-      ['← / →', 'Holdings: previous / next ticker'],
-      ['⌘← / ⌘→', 'Previous / next account or analytics chart'],
+      ['← / →', 'Previous / next account, analytics chart, or holding'],
       ['⌘⌃← / ⌘⌃→', 'Previous / next date view'],
     ],
   },

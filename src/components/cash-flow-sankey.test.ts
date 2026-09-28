@@ -109,6 +109,7 @@ describe('cash-flow Sankey model', () => {
 
     expect(html).toContain('sankey-label-source')
     expect(html).toContain('sankey-pool-label')
+    expect(html).not.toContain('Cash available')
     expect(html).toContain('sankey-label-use')
     expect(html.match(/sankey-label-interactive/g)).toHaveLength(2)
     expect(html.match(/sankey-link-interactive/g)).toHaveLength(2)

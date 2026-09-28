@@ -2,7 +2,7 @@ import { Liveline } from 'liveline'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { ChartRangeSelector, DonutChart, PerformanceChart } from './charts'
+import { ChartRangeSelector, DonutChart, PerformanceChart, SpendingBarChart } from './charts'
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -29,6 +29,9 @@ it('labels every nonzero donut segment in descending order', () => {
   )
 
   expect(markup.match(/class="donut-legend-item"/g)).toHaveLength(6)
+  expect(markup).toContain(
+    'class="donut-legend" aria-label="Spending by category, all values" tabindex="0"',
+  )
   expect(markup.indexOf('>Travel<')).toBeLessThan(markup.indexOf('>Dining<'))
   expect(markup).toContain('>Entertainment<')
   expect(markup).toContain('aria-label="Entertainment: $10.00 (10.0%)"')
@@ -61,6 +64,93 @@ it('exposes account composition in a keyboard-accessible legend', () => {
   expect(html).toContain('aria-label="$75.00"')
 })
 
+it('renders accessible category-stacked spending bars with five axis labels', () => {
+  const html = renderToStaticMarkup(
+    <SpendingBarChart
+      label="This week"
+      activities={
+        new Map([
+          [
+            'spending:dining',
+            {
+              id: 'spending:dining',
+              kind: 'spending' as const,
+              category: 'Dining',
+              title: 'Cafe',
+              detail: 'Card · Dining',
+              date: '2026-09-01',
+              amount: -30,
+              logoUrl: 'data:image/svg+xml,cafe',
+            },
+          ],
+          [
+            'spending:travel',
+            {
+              id: 'spending:travel',
+              kind: 'spending' as const,
+              category: 'Travel',
+              title: 'Airline',
+              detail: 'Card · Travel',
+              date: '2026-09-01',
+              amount: -10,
+              logoUrl: 'data:image/svg+xml,airline',
+            },
+          ],
+          [
+            'spending:credit',
+            {
+              id: 'spending:credit',
+              kind: 'credit' as const,
+              category: 'Credit',
+              title: 'Statement credit',
+              detail: 'Card · Credit',
+              date: '2026-09-01',
+              amount: 5,
+            },
+          ],
+        ])
+      }
+      categories={[
+        { name: 'Dining', color: '#fff' },
+        { name: 'Travel', color: '#aaa' },
+        { name: 'Credits', color: '#0f0' },
+      ]}
+      data={[
+        {
+          from: '2026-09-01',
+          to: '2026-09-01',
+          value: 35,
+          categories: [
+            {
+              name: 'Dining',
+              value: 30,
+              activities: [{ id: 'spending:dining', value: 30 }],
+            },
+            {
+              name: 'Travel',
+              value: 10,
+              activities: [{ id: 'spending:travel', value: 10 }],
+            },
+            {
+              name: 'Credits',
+              value: -5,
+              activities: [{ id: 'spending:credit', value: 5 }],
+            },
+          ],
+        },
+      ]}
+    />,
+  )
+  expect(html).toContain('class="analytics-plot spending-bar-chart"')
+  expect(html).toContain('aria-label="Sep 1: $35.00. Dining $30.00, Travel $10.00, Credits $5.00"')
+  expect(html).toContain('aria-label="Dining, Sep 1: $30.00"')
+  expect(html).toContain('aria-label="Travel, Sep 1: $10.00"')
+  expect(html).toContain('aria-label="Credits, Sep 1: $5.00"')
+  expect(html.match(/analytics-bar-fill spending-bar-fill/g)).toHaveLength(3)
+  expect(html).toContain('spending-bar-fill is-negative')
+  expect(html.match(/analytics-bar-axis[\s\S]*?<span/g)).toBeTruthy()
+})
+
 it('renders range controls and the regular-market close marker', () => {
   const now = Date.parse('2026-09-03T12:00:00Z') / 1_000
   const points = [
@@ -81,10 +171,8 @@ it('renders range controls and the regular-market close marker', () => {
       />
     </>,
   )
-  const labels = [...html.matchAll(/<button[^>]*>(.*?)<\/button>/g)].map((match) =>
-    match[1].replaceAll(/<[^>]*>/g, ''),
-  )
-  expect(labels.slice(0, 4)).toEqual(['W', 'M', 'Q', 'A'])
+  expect(html).toMatch(/role="combobox"[^>]*aria-label="Chart range"/)
+  expect(html).toContain('All time')
   expect(html).toContain('Chart range: All time')
   expect(html).toContain('aria-label="Regular market close"')
   expect(html).toContain('with the regular-market close marked')
@@ -92,7 +180,7 @@ it('renders range controls and the regular-market close marker', () => {
 
 it.each([
   [0, 'All time'],
-  [30 * 24 * 60 * 60, '1 month'],
+  [30 * 24 * 60 * 60, 'Month'],
 ])('keeps range %s distinct when all history spans one month', (selectedWindow, label) => {
   const firstTime = 1_788_307_200
   const points = [

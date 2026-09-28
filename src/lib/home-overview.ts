@@ -15,7 +15,12 @@ const dateKey = (seconds: number) => {
 
 // Partial native market-change intervals use the same linear boundary estimate as value charts.
 function performance(
-  history: Array<{ date: string; value: number; marketChange?: number | null }>,
+  history: Array<{
+    date: string
+    value: number
+    marketChange?: number | null
+    marketChangePct?: number | null
+  }>,
   range: OverviewRange,
   market: boolean,
 ) {
@@ -35,13 +40,21 @@ function performance(
   const baseline = opening.value + (next ? next.value - opening.value : 0) * fraction
   if (!baseline) return null
   if (!market) return ((closing.value - baseline) / Math.abs(baseline)) * 100
-  let gain = 0
+  let linked = 1
   for (let index = before + 1; index < points.length; index++) {
     const point = points[index]
-    if (point.marketChange == null) return null
-    gain += point.marketChange * (index === before + 1 ? 1 - fraction : 1)
+    const prior = points[index - 1]
+    const weight = index === before + 1 ? 1 - fraction : 1
+    const intervalReturn =
+      point.marketChangePct != null
+        ? (point.marketChangePct / 100) * weight
+        : point.marketChange != null && (index === before + 1 ? baseline : prior.value)
+          ? (point.marketChange * weight) / Math.abs(index === before + 1 ? baseline : prior.value)
+          : null
+    if (intervalReturn == null) return null
+    linked *= 1 + intervalReturn
   }
-  return (gain / Math.abs(baseline)) * 100
+  return Math.round((linked - 1) * 1e12) / 1e10
 }
 
 const total = (items: Transaction[]) =>
@@ -95,7 +108,10 @@ export function homeOverviewMetrics(
     portfolio:
       comparable &&
       !accountValueIncomplete(data, 'total') &&
-      portfolio?.performanceMethod === 'value-with-comparisons'
+      portfolio &&
+      ['time-weighted', 'modified-dietz', 'value-with-comparisons'].includes(
+        portfolio?.performanceMethod ?? '',
+      )
         ? performance(portfolio.points, comparisonRange, true)
         : null,
     benchmark: comparable ? performance(data.benchmarkHistory, comparisonRange, false) : null,

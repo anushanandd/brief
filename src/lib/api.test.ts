@@ -26,7 +26,7 @@ describe('refresh process', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
 
-  it('only bypasses daily news freshness for an explicit refresh', async () => {
+  it('only requests provider news for an explicit refresh', async () => {
     const result = {
       articles: [],
       savedAt: null,
@@ -38,12 +38,12 @@ describe('refresh process', () => {
     expect(await getMarketNews(['TEST'])).toEqual(result)
     expect(mockedInvoke).toHaveBeenLastCalledWith('get_market_news', {
       symbols: ['TEST'],
-      force: false,
+      refresh: false,
     })
     await getMarketNews(['TEST'], true)
     expect(mockedInvoke).toHaveBeenLastCalledWith('get_market_news', {
       symbols: ['TEST'],
-      force: true,
+      refresh: true,
     })
   })
 
@@ -129,7 +129,7 @@ describe('native explanation cancellation', () => {
         : Promise.resolve(undefined),
     )
     const controller = new AbortController()
-    const result = generateFoundationExplanation('Synthetic evidence', controller.signal, 'chat')
+    const result = generateFoundationExplanation('Synthetic evidence', controller.signal)
     const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' })
     await Promise.resolve()
     const args = mockedInvoke.mock.calls[0][1]
@@ -141,7 +141,7 @@ describe('native explanation cancellation', () => {
       !(args.started instanceof Channel)
     )
       throw new Error('Missing native registration channel')
-    expect(args.purpose).toBe('chat')
+    expect(args).not.toHaveProperty('purpose')
     controller.abort()
     expect(mockedInvoke).toHaveBeenCalledTimes(1)
     args.started.onmessage(null)
@@ -155,7 +155,7 @@ describe('native explanation cancellation', () => {
     const controller = new AbortController()
     controller.abort()
     await expect(
-      generateFoundationExplanation('Synthetic evidence', controller.signal, 'chat'),
+      generateFoundationExplanation('Synthetic evidence', controller.signal),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(mockedInvoke).not.toHaveBeenCalled()
   })

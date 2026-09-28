@@ -6,6 +6,8 @@ const accountSchema = z.object({
   institution: z.string(),
   type: z.string(),
   value: z.number().nullable(),
+  cashValue: z.number().nullable().optional(),
+  investedValue: z.number().nullable().optional(),
   knownCostBasis: z.number().nullable().optional(),
   knownUnrealizedGain: z.number().nullable().optional(),
   knownUnrealizedGainPct: z.number().nullable().optional(),
@@ -18,6 +20,8 @@ const accountSchema = z.object({
   currency: z.string().nullable().optional(),
   balanceAsOf: z.string().nullable().optional(),
   balanceFetchedAt: z.string().nullable().optional(),
+  balanceSource: z.enum(['reported', 'cash-and-positions', 'unavailable']).nullable().optional(),
+  reportedBalance: z.number().nullable().optional(),
   positionsAsOf: z.string().nullable().optional(),
   activityAsOf: z.string().nullable().optional(),
 })
@@ -128,6 +132,7 @@ export const financeSnapshotSchema = z.object({
   updatedAt: z.string(),
   netWorth: z.number(),
   netWorthIncomplete: z.boolean().optional(),
+  netWorthProvisional: z.boolean().optional(),
   recovery: z.object({ message: z.string(), canRestore: z.boolean() }).optional(),
   accounts: z.array(accountSchema),
   netWorthHistory: z.array(z.object({ date: z.string(), value: z.number() })),
@@ -170,6 +175,16 @@ export const financeSnapshotSchema = z.object({
       date: z.string(),
       occurredOn: z.string().nullable().optional(),
       postedOn: z.string().nullable().optional(),
+      location: z
+        .object({
+          address: z.string().optional(),
+          city: z.string().optional(),
+          region: z.string().optional(),
+          postalCode: z.string().optional(),
+          country: z.string().optional(),
+        })
+        .optional(),
+      paymentChannel: z.string().optional(),
       amount: z.number(),
       account: z.string(),
       accountId: z.string().optional(),
@@ -237,6 +252,31 @@ export type Transaction = FinanceSnapshot['transactions'][number]
 export type Trade = FinanceSnapshot['trades'][number]
 export type AccountMovement = FinanceSnapshot['accountMovements'][number]
 export type SnapshotChange = NonNullable<FinanceSnapshot['lastChange']>
+
+export const healthReportSchema = z.object({
+  computedAt: z.string(),
+  revision: z.number().int().nonnegative(),
+  overallStatus: z.enum(['healthy', 'info', 'warning', 'error', 'critical']),
+  counts: z.object({
+    critical: z.number().int().nonnegative(),
+    error: z.number().int().nonnegative(),
+    warning: z.number().int().nonnegative(),
+    info: z.number().int().nonnegative(),
+  }),
+  issues: z.array(
+    z.object({
+      id: z.string(),
+      severity: z.enum(['info', 'warning', 'error', 'critical']),
+      category: z.string(),
+      title: z.string(),
+      explanation: z.string(),
+      evidence: z.array(z.string()),
+      affectedItems: z.array(z.object({ id: z.string(), name: z.string() })),
+      action: z.object({ label: z.string(), route: z.string() }),
+    }),
+  ),
+})
+export type HealthReport = z.infer<typeof healthReportSchema>
 
 const marketSnapshotSchema = z.object({
   symbol: z.string(),
@@ -375,7 +415,7 @@ export const marketNewsSchema = z.array(
     summary: z.string(),
     source: z.string(),
     url: z.string().url().startsWith('https://'),
-    createdAt: z.string(),
+    createdAt: z.string().datetime({ offset: true }),
     symbols: z.array(z.string()),
     relevanceScore: z.number().min(0).max(1).nullish(),
     sentimentScore: z.number().min(-1).max(1).nullish(),
@@ -403,3 +443,38 @@ export const earningsEventSchema = z.object({
   currency: z.string().nullable(),
 })
 export type EarningsEvent = z.infer<typeof earningsEventSchema>
+
+const plaidRecurringAmountSchema = z.object({
+  amount: z.number().finite(),
+  currency: z.string().nullable(),
+})
+export const plaidRecurringReportSchema = z.object({
+  fetchedAt: z.string().datetime({ offset: true }),
+  connections: z.array(
+    z.object({
+      itemId: z.string(),
+      name: z.string(),
+      error: z.string().nullable(),
+      streams: z.array(
+        z.object({
+          streamId: z.string(),
+          accountId: z.string(),
+          direction: z.enum(['inflow', 'outflow']),
+          description: z.string(),
+          merchantName: z.string().nullable(),
+          category: z.string().nullable(),
+          frequency: z.string(),
+          status: z.string(),
+          isActive: z.boolean(),
+          firstDate: z.string(),
+          lastDate: z.string(),
+          predictedNextDate: z.string().nullable(),
+          averageAmount: plaidRecurringAmountSchema,
+          lastAmount: plaidRecurringAmountSchema,
+          transactionCount: z.number().int().nonnegative(),
+        }),
+      ),
+    }),
+  ),
+})
+export type PlaidRecurringReport = z.infer<typeof plaidRecurringReportSchema>

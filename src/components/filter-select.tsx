@@ -1,5 +1,7 @@
 import { Select } from '@base-ui/react/select'
-import { Check, ChevronsUpDown } from 'lucide-react'
+import { useRef } from 'react'
+
+import { Check, ChevronDown } from './icons'
 
 export type FilterSelectOption = { value: string; label: string }
 
@@ -8,29 +10,44 @@ export function FilterSelect({
   value,
   options,
   onValueChange,
+  className,
+  blurOnClose = false,
   disabled = false,
 }: {
   label: string
+  blurOnClose?: boolean
+  className?: string
   disabled?: boolean
   value: string
   options: FilterSelectOption[]
   onValueChange: (value: string) => void
 }) {
+  const triggerRef = useRef<HTMLButtonElement>(null)
   return (
     <Select.Root
       disabled={disabled}
       items={options}
       value={value}
+      onOpenChangeComplete={(open) => {
+        if (!open && blurOnClose) {
+          // Base UI restores trigger focus in an unmount microtask.
+          setTimeout(() => triggerRef.current?.blur())
+        }
+      }}
       onValueChange={(nextValue) => {
         if (nextValue != null) onValueChange(nextValue)
       }}
     >
-      <Select.Trigger className="ledger-select-trigger" aria-label={label}>
+      <Select.Trigger
+        ref={triggerRef}
+        className={`ledger-select-trigger${className ? ` ${className}` : ''}`}
+        aria-label={label}
+      >
         <Select.Value className="ledger-select-value">
           {options.find((option) => option.value === value)?.label}
         </Select.Value>
         <Select.Icon className="ledger-select-icon">
-          <ChevronsUpDown size={13} aria-hidden="true" />
+          <ChevronDown size={13} aria-hidden="true" />
         </Select.Icon>
       </Select.Trigger>
       <Select.Portal>

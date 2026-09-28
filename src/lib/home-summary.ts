@@ -110,8 +110,9 @@ export function buildHomeSummary(
     return !currency || currency === 'USD'
   }
 
-  const upcomingEvents = expectedMoneyEvents(data).filter(
-    ({ date }) => date >= today && Date.parse(date) <= Date.parse(today) + 30 * dayMs,
+  const upcomingEvents = expectedMoneyEvents(data, today).filter(
+    ({ date, state }) =>
+      state === 'expected' && date >= today && Date.parse(date) <= Date.parse(today) + 30 * dayMs,
   )
   const upcomingAmounts = upcomingEvents.map(({ amount }) => Math.abs(amount))
   const forwardCandidates: Candidate[] = upcomingEvents.map((event) => {
@@ -127,10 +128,10 @@ export function buildHomeSummary(
         15,
       date: event.date,
       amount: Math.abs(event.amount),
-      recurringId: event.id,
+      recurringId: event.recurringId,
       direction: event.amount < 0 ? 'outflow' : 'inflow',
       formattedAmount: amount,
-      sentence: `Estimated ${event.amount < 0 ? 'payment' : 'income'} of ${amount} for ${formatActivityName(event.title).slice(0, 80)} ${homeSummaryTiming(event.date, today)}.`,
+      sentence: `Estimated ${event.kind === 'credit' ? 'credit' : event.amount < 0 ? 'payment' : 'income'} of ${amount} for ${formatActivityName(event.title).slice(0, 80)} ${homeSummaryTiming(event.date, today)}.`,
     }
   })
 

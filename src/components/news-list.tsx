@@ -1,7 +1,6 @@
-import { ArrowUpRight } from 'lucide-react'
-
 import type { MarketNewsArticle } from '../lib/schema'
 import { ExternalLink } from './external-link'
+import { ArrowUpRight } from './icons'
 import { EmptyState } from './ui'
 
 const newsDate = new Intl.DateTimeFormat('en-US', {
@@ -22,7 +21,7 @@ export function NewsList({
 }) {
   if (!articles.length) return <EmptyState>{emptyMessage}</EmptyState>
   return (
-    <div className="news-list">
+    <div className="news-list" role="region" aria-label="News" tabIndex={0} data-keyboard-region>
       {articles.map((article) => (
         <div className="news-story" key={article.url}>
           <ExternalLink
@@ -43,8 +42,8 @@ export function NewsList({
             </span>
             <ArrowUpRight size={15} aria-hidden="true" />
           </ExternalLink>
-          <div className="news-provider-scores" aria-label="Ticker relevance and sentiment">
-            <span aria-label="Ticker relevance, 0 to 100 percent">
+          <div className="news-provider-scores">
+            <span>
               Relevance ·{' '}
               {article.relevanceScore == null
                 ? '—'
@@ -58,9 +57,8 @@ export function NewsList({
                     ? 'negative'
                     : 'muted'
               }
-              aria-label="Ticker sentiment, minus 1 to plus 1"
             >
-              {article.sentimentLabel?.replaceAll('-', ' ') ?? 'Sentiment unavailable'}
+              Sentiment · {article.sentimentLabel?.replaceAll('-', ' ') ?? 'Unavailable'}
               {article.sentimentScore == null
                 ? ''
                 : ` · ${article.sentimentScore > 0 ? '+' : ''}${article.sentimentScore.toFixed(2)}`}

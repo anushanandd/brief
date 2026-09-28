@@ -10,7 +10,8 @@ export function accountValueChart(
     | 'brokeragePerformance'
     | 'accountBalanceHistory'
     | 'updatedAt'
-  >,
+  > &
+    Partial<Pick<FinanceSnapshot, 'netWorthProvisional'>>,
   account: Account,
   livePoints: Parameters<typeof buildLiveChartData>[1],
   valuationTime: number,
@@ -28,10 +29,17 @@ export function accountValueChart(
         : ((investment ? data.brokeragePerformance : data.accountBalanceHistory).find(
             ({ accountId }) => accountId === account.id,
           )?.points ?? [])
+  const chartValue =
+    combined && data.netWorthProvisional ? (history.at(-1)?.value ?? account.value) : account.value
   const chartData =
     account.value == null
       ? []
-      : buildLiveChartData(history, livePoints, account.value, valuationTime)
+      : buildLiveChartData(
+          history,
+          combined && data.netWorthProvisional ? [] : livePoints,
+          chartValue ?? account.value,
+          valuationTime,
+        )
   const incomplete = accountValueIncomplete(data, combined ? 'all' : account.id)
   return {
     chartData,
