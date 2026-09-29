@@ -31,7 +31,6 @@ vi.mock('../hooks/use-finance', () => ({
             amount: -20,
             pending: false,
             classification: {
-              brokerageIncomeTransfer: false,
               credit: false,
               kind: 'expense',
               mark: 'initial',

@@ -27,6 +27,9 @@ impl NewsCache {
             None => Connection::open_in_memory(),
         }
         .map_err(|_| "News storage is unavailable")?;
+        if let Some(path) = path {
+            crate::database::secure_file(path)?;
+        }
         db.execute_batch("CREATE TABLE IF NOT EXISTS news (symbol TEXT PRIMARY KEY, payload TEXT, saved INTEGER, attempted INTEGER NOT NULL, warning TEXT);
             CREATE TABLE IF NOT EXISTS requests (at INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS cooldown (id INTEGER PRIMARY KEY CHECK(id=1), until INTEGER NOT NULL, period TEXT NOT NULL DEFAULT 'minute');
@@ -266,10 +269,16 @@ impl NewsCache {
                 |r| r.get(0),
             )
             .optional()
+            .map(|body: Option<String>| {
+                body.filter(|value| value.len() <= super::http::MAX_PROVIDER_RESPONSE_BYTES)
+            })
             .map_err(|_| "Earnings cache is unavailable".into())
     }
 
     pub fn save_earnings(&self, body: &str, now: i64) -> Result<(), String> {
+        if body.len() > super::http::MAX_PROVIDER_RESPONSE_BYTES {
+            return Err("Earnings response is too large to save".into());
+        }
         self.0
             .execute(
                 "INSERT OR REPLACE INTO earnings VALUES (1, ?1, ?2)",

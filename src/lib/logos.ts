@@ -1,5 +1,5 @@
 import { transactionMarkKind } from './transaction-kind'
-export { transactionMarkKind, isBrokerageIncomeTransfer } from './transaction-kind'
+export { transactionMarkKind } from './transaction-kind'
 import type { Transaction } from './schema'
 
 const externalLogosKey = 'brief.externalLogosEnabled'

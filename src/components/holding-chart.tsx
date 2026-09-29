@@ -19,7 +19,9 @@ import {
 import { pageShortcutBlocked } from '../lib/keyboard'
 import type { FinanceSnapshot } from '../lib/schema'
 import { useChartColors } from './charts'
-import { AnimatedCurrency, Card, ChartChange, ChartRangeSelect, EmptyState } from './ui'
+import { Info } from './icons'
+import { AnimatedCurrency, Button, Card, ChartChange, ChartRangeSelect, EmptyState } from './ui'
+import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 function LoadingText({ children }: { children: string }) {
   const [visible, setVisible] = useState(false)
@@ -152,79 +154,102 @@ export function HoldingChart({
           <div className="home-balance-value">
             <AnimatedCurrency key={ticker} className="hero-number" value={price} />
           </div>
-          <div className="chart-summary-row">
-            {change ? (
-              <ChartChange
-                amount={change.change}
-                percent={change.percent}
-                ariaLabel={`${savedChange ? 'Saved bar-close change' : 'Bar-close change'}${
-                  prices.savedComparison
-                    ? `, verified ${new Date(prices.savedComparison.asOf).toLocaleString()}`
-                    : ''
-                }`}
-              />
-            ) : (
-              <span className="holding-chart-status">
-                {loadingHistory ? historyStatus : 'Range change unavailable'}
-              </span>
-            )}
-          </div>
         </div>
         <div className="holding-chart-controls">
-          <ChartRangeSelect
-            label="Security price range"
-            options={holdingChartRanges}
-            value={range}
-            onValueChange={setRange}
-          />
-          <div className="holding-chart-status">
-            {(!holding ||
-              !supported ||
-              !finance.liveMarketEnabled ||
-              prices.error ||
-              !prices.visible ||
-              stale ||
-              connection?.status === 'reconnecting' ||
-              connection?.status === 'unavailable') && (
-              <span role="status" className="holding-chart-provenance">
-                {status}
-              </span>
-            )}
-            {history ? (
-              <details className="holding-chart-provenance">
-                <summary>
-                  {candleLabel}
-                  {history.delayMinutes ? ` · ${history.delayMinutes}m delayed` : ''}
-                  {chartEnd !== now ? ' · Last observed day' : ''}
-                  {last ? ` · Last ${holdingChartTime(last.time, prices.now)}` : ''}
-                </summary>
-                <span className="holding-chart-provenance">
-                  {history.feeds.join(' + ').toUpperCase()} · Split-adjusted · Chart times ET;
-                  closed sessions compressed. Candles show reported OHLC bars.
-                  {quote
-                    ? ` ${latestLabel ?? 'Latest quote'} is separate from historical bars.`
-                    : ''}
-                  <span className="holding-chart-provenance">
-                    {marketStatus}
-                    {quote ? (
-                      <time dateTime={new Date(quote.time * 1000).toISOString()}>
-                        {` · ${holdingChartTime(quote.time, prices.now, true)}`}
-                      </time>
+          <div className="holding-chart-actions">
+            <ChartRangeSelect
+              label="Security price range"
+              options={holdingChartRanges}
+              value={range}
+              onValueChange={setRange}
+            />
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    type="button"
+                    size="icon-compact"
+                    variant="ghost"
+                    className="icon-only-subtle"
+                    aria-label="Price chart details"
+                  />
+                }
+              >
+                <Info size={16} aria-hidden="true" />
+              </TooltipTrigger>
+              <TooltipContent
+                className="holding-chart-tooltip"
+                side="bottom"
+                align="end"
+                sideOffset={6}
+              >
+                {history ? (
+                  <>
+                    <p>
+                      {candleLabel} · {history.feeds.join(' + ').toUpperCase()}
+                      {history.delayMinutes ? ` · ${history.delayMinutes}m delayed` : ''}
+                    </p>
+                    <p>
+                      Last bar: {last ? new Date(last.time * 1000).toLocaleString() : 'Unavailable'}
+                      {chartEnd !== now ? ' · Last observed day' : ''}
+                    </p>
+                    <p>
+                      Reported OHLC · split-adjusted · ET; closed sessions compressed.
+                      {quote ? ` ${latestLabel ?? 'Latest quote'} is separate from bars.` : ''}
+                    </p>
+                    {history.cached ? <p>Saved history awaiting verification.</p> : null}
+                    {!history.cached && savedChange ? (
+                      <p>Last verified bar-close comparison.</p>
                     ) : null}
-                  </span>
-                  {history.cached
-                    ? ' Saved history is awaiting verification.'
-                    : savedChange
-                      ? ' Showing the last verified bar-close comparison.'
-                      : ''}
-                  {last ? ` Last bar: ${new Date(last.time * 1000).toLocaleString()}.` : ''}
-                </span>
-              </details>
-            ) : null}
-            {prices.historyError ? (
-              <span className="holding-chart-provenance">{prices.historyError}</span>
-            ) : null}
+                  </>
+                ) : (
+                  <p>
+                    {loadingHistory
+                      ? historyStatus
+                      : (prices.historyError ?? 'Price history unavailable.')}
+                  </p>
+                )}
+                <p>
+                  {marketStatus}
+                  {quote ? (
+                    <time dateTime={new Date(quote.time * 1000).toISOString()}>
+                      {` · ${holdingChartTime(quote.time, prices.now, true)}`}
+                    </time>
+                  ) : null}
+                </p>
+              </TooltipContent>
+            </Tooltip>
           </div>
+          {!holding ||
+          !supported ||
+          !finance.liveMarketEnabled ||
+          prices.error ||
+          prices.historyError ||
+          !prices.visible ||
+          stale ||
+          connection?.status === 'reconnecting' ||
+          connection?.status === 'unavailable' ? (
+            <span role="status" className="holding-chart-status">
+              {prices.historyError ?? status}
+            </span>
+          ) : null}
+        </div>
+        <div className="chart-summary-row">
+          {change ? (
+            <ChartChange
+              amount={change.change}
+              percent={change.percent}
+              ariaLabel={`${savedChange ? 'Saved bar-close change' : 'Bar-close change'}${
+                prices.savedComparison
+                  ? `, verified ${new Date(prices.savedComparison.asOf).toLocaleString()}`
+                  : ''
+              }`}
+            />
+          ) : (
+            <span className="holding-chart-status">
+              {loadingHistory ? historyStatus : 'Range change unavailable'}
+            </span>
+          )}
         </div>
       </header>
       <div className="brokerage-chart-viewport">

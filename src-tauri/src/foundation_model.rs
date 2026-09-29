@@ -26,7 +26,8 @@ mod macos {
         fn brief_foundation_model_cancel(request: *const c_char);
         fn brief_foundation_model_generate(
             request: *const c_char,
-            prompt: *const c_char,
+            question: *const c_char,
+            evidence: *const c_char,
             context: *mut c_void,
             callback: extern "C" fn(*mut c_void, *const c_char, *const c_char),
         );
@@ -97,6 +98,7 @@ mod macos {
     }
 
     pub async fn generate(
+        question: String,
         evidence: String,
         request_id: String,
         started: tauri::ipc::Channel<()>,
@@ -107,17 +109,23 @@ mod macos {
             .clone()
             .try_lock_owned()
             .map_err(|_| "An explanation is already being generated")?;
-        if status().state != "available" {
-            return Err(status().message.into());
+        let status = status();
+        if status.state != "available" {
+            return Err(status.message.into());
         }
+        let question = question.trim();
         let evidence = evidence.trim();
-        if evidence.is_empty() {
-            return Err("Add evidence before requesting an explanation".into());
+        if question.chars().count() < 4 || evidence.is_empty() {
+            return Err("Add a question and evidence before requesting an explanation".into());
         }
-        if evidence.chars().count() > 12_000 {
-            return Err("Explanation evidence exceeds the 12,000 character limit".into());
+        if question.chars().count() > 1_000
+            || question.chars().count() + evidence.chars().count() > 12_000
+        {
+            return Err("Explanation request exceeds the 12,000 character limit".into());
         }
-        let prompt = CString::new(evidence)
+        let question = CString::new(question)
+            .map_err(|_| "The explanation question contains unsupported text".to_string())?;
+        let evidence = CString::new(evidence)
             .map_err(|_| "The explanation evidence contains unsupported text".to_string())?;
         if request_id.is_empty() || request_id.len() > 100 {
             return Err("Invalid explanation request".into());
@@ -131,7 +139,13 @@ mod macos {
         }))
         .cast::<c_void>();
         unsafe {
-            brief_foundation_model_generate(request.0.as_ptr(), prompt.as_ptr(), context, complete)
+            brief_foundation_model_generate(
+                request.0.as_ptr(),
+                question.as_ptr(),
+                evidence.as_ptr(),
+                context,
+                complete,
+            )
         };
         // The frontend defers cancellation until native registration has completed.
         started
@@ -166,6 +180,7 @@ mod fallback {
     pub fn cancel(_request_id: String) {}
 
     pub async fn generate(
+        _question: String,
         _evidence: String,
         _request_id: String,
         _started: tauri::ipc::Channel<()>,

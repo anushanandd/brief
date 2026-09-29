@@ -44,6 +44,8 @@ pub struct Snapshot {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub recovery: Option<Recovery>,
     pub updated_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub calendar_date: Option<String>,
     pub net_worth: f64,
     #[serde(default)]
     pub net_worth_incomplete: bool,

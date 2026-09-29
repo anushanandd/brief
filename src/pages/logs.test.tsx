@@ -25,9 +25,9 @@ vi.mock('../hooks/use-live-finance', () => ({
   }),
 }))
 
-function renderLogs() {
+function renderLogs(syncRuns: unknown[] = []) {
   const client = new QueryClient()
-  client.setQueryData(['sync-runs', 1], [])
+  client.setQueryData(['sync-runs', 1], syncRuns)
   const html = renderToString(
     <QueryClientProvider client={client}>
       <LogsPage />
@@ -52,4 +52,37 @@ it('keeps a failed market refresh visible when saved observations remain availab
   const html = renderLogs()
   expect(html).toContain('Saved · unavailable')
   expect(html).toContain('Synthetic market failure')
+})
+
+it('shows a compact provider failure without exposing raw provider payloads', () => {
+  const html = renderLogs([
+    {
+      id: 'run',
+      startedAt: '2026-09-18T20:00:00Z',
+      finishedAt: '2026-09-18T20:00:01Z',
+      outcome: 'failed',
+      warnings: [],
+      errorCode: 'provider_refresh_failed',
+      details: {
+        phase: 'provider',
+        warningCount: 0,
+        providers: [
+          {
+            provider: 'Plaid',
+            endpoint: '/accounts/balance/get',
+            kind: 'provider',
+            httpStatus: 429,
+            errorCode: 'INSTITUTION_RATE_LIMIT',
+            attempts: 1,
+            retryable: true,
+            retryAt: '2026-09-18T21:00:00Z',
+          },
+        ],
+      },
+    },
+  ])
+
+  expect(html).toContain('Plaid · INSTITUTION_RATE_LIMIT')
+  expect(html).toContain('retry after')
+  expect(html).not.toContain('/accounts/balance/get')
 })

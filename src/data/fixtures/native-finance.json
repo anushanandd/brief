@@ -159,6 +159,7 @@
     }
   ],
   "calculationVersion": 24,
+  "calendarDate": "2026-09-09",
   "holdings": [
     {
       "accountId": "snaptrade:brokerage",
@@ -285,7 +286,6 @@
       "categoryConfidence": "VERY_HIGH",
       "categoryDetail": "FOOD_AND_DRINK_COFFEE",
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",

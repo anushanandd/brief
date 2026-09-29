@@ -9,12 +9,14 @@ import {
   marketNewsResultSchema,
   marketSnapshotsSchema,
   plaidRecurringReportSchema,
+  syncRunSchema,
   type FinanceSnapshot,
   type EarningsEvent,
   type HealthReport,
   type MarketNewsResult,
   type MarketSnapshots,
   type PlaidRecurringReport,
+  type SyncRun,
 } from './schema'
 
 export const isTauri = () => '__TAURI_INTERNALS__' in window
@@ -55,17 +57,9 @@ export type IntegrationStatus = {
   alphaVantage: boolean
 }
 
-export type SyncRun = {
-  id: string
-  startedAt: string
-  finishedAt: string
-  outcome: 'committed' | 'failed'
-  warnings: string[]
-  errorCode?: string
-}
-
 export async function getSyncRuns(): Promise<SyncRun[]> {
-  return isTauri() ? invoke<SyncRun[]>('get_sync_runs') : []
+  if (!isTauri()) return []
+  return syncRunSchema.array().parse(await invoke<unknown>('get_sync_runs'))
 }
 
 const browserSnapshot = (): FinanceSnapshot => financeSnapshotSchema.parse(seed)
@@ -297,6 +291,7 @@ export async function getFoundationModelStatus(): Promise<FoundationModelStatus>
 
 let explanationQueue: Promise<unknown> = Promise.resolve()
 export async function generateFoundationExplanation(
+  question: string,
   evidence: string,
   signal: AbortSignal | undefined,
 ): Promise<string> {
@@ -316,7 +311,8 @@ export async function generateFoundationExplanation(
     signal?.addEventListener('abort', cancel, { once: true })
     try {
       const response = await invoke<string>('generate_foundation_explanation', {
-        evidence: evidence.slice(0, 12_000),
+        question: question.slice(0, 1_000),
+        evidence: evidence.slice(0, 11_000),
         requestId,
         started,
       })

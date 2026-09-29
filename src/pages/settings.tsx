@@ -937,8 +937,9 @@ export function SettingsPage() {
               <div>
                 <strong>Portable financial backup</strong>
                 <p className="settings-copy">
-                  Saves the committed snapshot, provider caches, reviews, account links, and local
-                  workspace. Keychain credentials and disposable market caches stay on this Mac.
+                  Saves the committed snapshot, provider caches, reviews, account links, and sync
+                  history. Keychain credentials, display preferences, and disposable caches stay on
+                  this Mac.
                 </p>
               </div>
               <div className="backup-buttons">

@@ -588,6 +588,20 @@ it('shows the selected holding without duplicating the portfolio holdings table'
     'aria-current="page">BBB',
   )
   expect(html).toMatch(/role="combobox"[^>]*aria-label="Security price range"/)
+  const holdingChart = html.slice(html.indexOf('holding-chart-card'))
+  const holdingSummary = holdingChart.slice(
+    holdingChart.indexOf('chart-summary-row'),
+    holdingChart.indexOf('</header>'),
+  )
+  expect(holdingSummary).not.toContain('chart-range-select')
+  expect(holdingSummary).toContain('Range change unavailable')
+  expect(holdingChart.slice(0, holdingChart.indexOf('chart-summary-row'))).toContain(
+    'aria-label="Price chart details"',
+  )
+  expect(holdingChart.slice(0, holdingChart.indexOf('chart-summary-row'))).toContain(
+    'chart-range-select',
+  )
+  expect(holdingChart).not.toContain('<details class="holding-chart-provenance">')
   expect(html).not.toContain('aria-label="Chart style"')
   expect(html).not.toContain('aria-label="Line chart"')
   expect(html).not.toContain('aria-label="Candlestick chart"')
@@ -632,7 +646,7 @@ it('links each Home ledger preview to its primary page', async () => {
   expect(main).toContain('href="/holdings"')
   expect(main).toContain('href="/activities"')
   expect(main.match(/<h2>Overview<\/h2>/g)).toHaveLength(1)
-  expect(main.match(/class="financial-activity-row/g)).toHaveLength(8)
+  expect(main.match(/class="financial-activity-row/g)).toHaveLength(2)
   expect(main).not.toContain('home-finance-grid')
   expect(main).not.toContain('class="treemap"')
 })
@@ -663,23 +677,50 @@ it('shows labeled account-position dots beneath the Home chart', async () => {
   expect(html).toContain('aria-pressed="true"')
 })
 
-it('places Home and Accounts range dropdowns at the top right without line legends', async () => {
+it('places graph ranges at the top right, above the change row', async () => {
   scenario.accountType = 'brokerage'
   scenario.homeHistory = true
-  const html = await renderRoute('/')
-  const controlsStart = html.indexOf('home-balance-header')
-  const controls = html.slice(controlsStart, html.indexOf('</header>', controlsStart))
-  expect(controls).toContain('ledger-select-trigger chart-range-select')
-  expect(controls).not.toContain('aria-label="Chart key"')
+  for (const path of ['/', '/accounts?account=selected']) {
+    const html = await renderRoute(path, '')
+    const chart = html.slice(html.indexOf('home-balance-header'))
+    const headerEnd = chart.indexOf('</header>')
+    const summary = chart.slice(chart.indexOf('chart-summary-row'), headerEnd)
+    expect(summary).toContain('hero-change')
+    expect(summary).not.toContain('chart-range-select')
+    expect(chart.slice(0, chart.indexOf('chart-summary-row'))).toContain('chart-range-select')
+    expect(chart.slice(headerEnd, chart.indexOf('brokerage-chart-viewport'))).not.toContain(
+      'chart-range-select',
+    )
+    expect(chart).not.toContain('aria-label="Chart key"')
+  }
+  for (const [path, heading] of [
+    ['/analytics?chart=income', 'home-balance-header'],
+    ['/spending', 'workspace-brief-heading'],
+  ]) {
+    if (path === '/spending') scenario.accountType = 'credit'
+    const html = await renderRoute(path)
+    expect(html).toContain(heading)
+    const chart = html.slice(html.indexOf(heading))
+    const summary = chart.slice(chart.indexOf('chart-summary-row'), chart.indexOf('</header>'))
+    expect(summary).toContain('hero-change')
+    if (path === '/analytics?chart=income') {
+      expect(summary).not.toContain('chart-range-select')
+      expect(chart.slice(0, chart.indexOf('chart-summary-row'))).toContain('chart-range-select')
+    } else {
+      expect(chart.slice(0, chart.indexOf('</header>'))).toContain('chart-range-select')
+    }
+  }
+})
 
-  const accountHtml = await renderRoute('/accounts?account=selected', '')
-  const accountControlsStart = accountHtml.indexOf('home-balance-header')
-  const accountControls = accountHtml.slice(
-    accountControlsStart,
-    accountHtml.indexOf('</header>', accountControlsStart),
+it('limits Home recent activity to the number of accounts in its card', async () => {
+  const html = await renderRoute('/')
+  const accounts = html.slice(
+    html.indexOf('accounts-overview-card'),
+    html.indexOf('home-activity-card'),
   )
-  expect(accountControls).toContain('ledger-select-trigger chart-range-select')
-  expect(accountControls).not.toContain('aria-label="Chart key"')
+  const activity = html.slice(html.indexOf('home-activity-card'))
+  expect(accounts.match(/class="account-row"/g)).toHaveLength(2)
+  expect(activity.match(/class="financial-activity-row"/g)).toHaveLength(2)
 })
 
 it('keeps account details out of the organized sidebar', async () => {
@@ -798,10 +839,10 @@ it('uses the shared Spending range control and keyboard period navigation', asyn
   expect(spendingPanel).toContain('aria-keyshortcuts="S W M Q Y A ArrowLeft ArrowRight"')
   expect(html).not.toContain('aria-label="Previous spending period"')
   expect(html).not.toContain('aria-label="Next spending period"')
-  expect(spendingHeader).toMatch(
+  expect(spendingPanel).toMatch(
     /role="combobox"[^>]*aria-label="Spending range\. Active period: This month"/,
   )
-  expect(spendingHeader).toContain('Statement')
+  expect(spendingPanel).toContain('Statement')
 })
 
 it('renders supported history with accessible range controls in the account workspace', async () => {
@@ -815,6 +856,9 @@ it('renders supported history with accessible range controls in the account work
   expect(chartHeader).toContain('class="chart-summary-row"')
   expect(chartHeader).toContain('class="hero-change"')
   expect(chartHeader).toContain('ledger-select-trigger chart-range-select')
+  expect(chartHeader.indexOf('chart-range-select')).toBeLessThan(
+    chartHeader.indexOf('chart-summary-row'),
+  )
   expect(chartHeader).toMatch(/role="combobox"[^>]*aria-label="Chart range"/)
   expect(chartHeader).toContain('Week')
   expect(html).toContain('role="status">Chart range: <!-- -->Week</span>')
@@ -937,6 +981,12 @@ it('shows the dated SnapTrade total on individual brokerage graphs only', async 
 
   const account = await renderRoute('/accounts?account=snaptrade%3Aselected')
   const accountText = account.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ')
+  const chartHeader = account.slice(
+    account.indexOf('home-balance-header'),
+    account.indexOf('</header>', account.indexOf('home-balance-header')),
+  )
+  expect(chartHeader).toContain('SnapTrade:')
+  expect(chartHeader).not.toContain('chart-range-select')
   expect(accountText).toContain('SnapTrade: $900.00 (Sep 2, 2026)')
   expect(accountText).toContain('Cash$200.00')
   expect(accountText).toContain('Total unrealized')
@@ -1124,7 +1174,7 @@ it('shows Analytics dollar and percentage changes versus the matching previous p
   const html = await renderRoute('/analytics?chart=amex-credits&from=2026-09-02&to=2026-09-02')
   const comparison = html.slice(
     html.indexOf('aria-label="Change versus previous period"'),
-    html.indexOf('aria-label="Analytics period"'),
+    html.indexOf('</header>', html.indexOf('aria-label="Change versus previous period"')),
   )
   expect(comparison).toContain('-$10.00')
   expect(comparison).toContain('-33.33%')

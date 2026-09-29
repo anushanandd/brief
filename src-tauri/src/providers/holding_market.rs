@@ -320,6 +320,7 @@ fn parse_bar(value: &Value, feed: &str) -> Result<PriceBar, String> {
 // cancelled trade. Failed/incomplete downloads never replace the prior result.
 fn cache_connection(path: &Path) -> Result<Connection, String> {
     let db = Connection::open(path).map_err(|_| "Price cache unavailable")?;
+    crate::database::secure_file(path)?;
     db.busy_timeout(StdDuration::from_secs(2))
         .map_err(|_| "Price cache unavailable")?;
     db.execute_batch(
@@ -493,7 +494,9 @@ impl Providers {
                 .send()
                 .await;
             if let Ok(response) = response {
-                if let Ok(payload) = provider_response("Market calendar", response).await {
+                if let Ok(payload) =
+                    provider_response("Market calendar", "/v2/calendar", response).await
+                {
                     return parse_calendar(&payload);
                 }
             }

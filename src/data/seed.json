@@ -523,7 +523,6 @@
       "account": "Platinum Card",
       "pending": true,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
@@ -542,7 +541,6 @@
       "account": "Platinum Card",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
@@ -560,7 +558,6 @@
       "account": "Chase Checking",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "income",
         "mark": "income",
@@ -579,7 +576,6 @@
       "account": "Platinum Card",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
@@ -598,7 +594,6 @@
       "account": "Platinum Card",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
@@ -617,7 +612,6 @@
       "account": "Platinum Card",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
@@ -636,7 +630,6 @@
       "account": "Chase Checking",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
@@ -655,7 +648,6 @@
       "account": "Platinum Card",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
@@ -674,7 +666,6 @@
       "account": "Platinum Card",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
@@ -693,7 +684,6 @@
       "account": "Platinum Card",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
@@ -711,7 +701,6 @@
       "account": "Fidelity",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "dividend",
         "mark": "dividend",
@@ -730,7 +719,6 @@
       "account": "Platinum Card",
       "pending": false,
       "classification": {
-        "brokerageIncomeTransfer": false,
         "credit": false,
         "kind": "expense",
         "mark": "initial",
