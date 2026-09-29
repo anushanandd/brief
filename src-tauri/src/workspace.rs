@@ -110,9 +110,7 @@ impl Workspace {
     }
 }
 
-// Native save/open panels without another runtime dependency. No paths or financial
-// content are interpolated into AppleScript; the user chooses the destination.
-pub fn choose_csv_destination(filename: &str) -> Result<Option<std::path::PathBuf>, String> {
+pub fn validate_csv_filename(filename: &str) -> Result<(), String> {
     if filename.len() > 240
         || !filename.ends_with(".csv")
         || filename.starts_with('.')
@@ -122,20 +120,7 @@ pub fn choose_csv_destination(filename: &str) -> Result<Option<std::path::PathBu
     {
         return Err("Invalid CSV filename".into());
     }
-    let script = "on run argv\nreturn POSIX path of (choose file name with prompt \"Export account activity CSV\" default name (item 1 of argv))\nend run";
-    let result = std::process::Command::new("/usr/bin/osascript")
-        .args(["-e", script])
-        .arg(filename)
-        .output()
-        .map_err(|_| "Could not open the macOS file picker")?;
-    if !result.status.success() {
-        if String::from_utf8_lossy(&result.stderr).contains("(-128)") {
-            return Ok(None);
-        }
-        return Err("Could not complete file selection".into());
-    }
-    let path = String::from_utf8(result.stdout).map_err(|_| "Invalid selected path")?;
-    Ok(Some(std::path::PathBuf::from(path.trim_end_matches('\n'))))
+    Ok(())
 }
 
 #[cfg(test)]
@@ -146,14 +131,14 @@ mod tests {
     use std::fs;
 
     #[test]
-    fn csv_picker_rejects_invalid_names_before_opening() {
+    fn csv_export_rejects_invalid_names_before_opening() {
         for name in [
             "../other.csv",
             "folder/file.csv",
             "bad\nname.csv",
             "not-a-csv.txt",
         ] {
-            assert!(choose_csv_destination(name).is_err());
+            assert!(validate_csv_filename(name).is_err());
         }
     }
 

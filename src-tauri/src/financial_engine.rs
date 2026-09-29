@@ -3,7 +3,7 @@ use std::{
     str::FromStr,
 };
 
-use chrono::{DateTime, Datelike, Duration, Local, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use rust_decimal::{prelude::ToPrimitive, Decimal, RoundingStrategy};
 use serde::{de::Error as _, Deserialize, Deserializer};
 use serde_json::{json, Value};
@@ -1470,7 +1470,7 @@ fn combined_performance(accounts: &[Value]) -> Vec<Value> {
 fn observed_history(
     previous: &Value,
     current: Decimal,
-    now: DateTime<Utc>,
+    calendar_date: NaiveDate,
     fresh: bool,
 ) -> Vec<Value> {
     let mut observations = previous["observedNetWorthHistory"]
@@ -1492,10 +1492,7 @@ fn observed_history(
         })
         .collect::<BTreeMap<_, _>>();
     if fresh {
-        observations.insert(
-            now.with_timezone(&Local).date_naive().to_string(),
-            rounded(current),
-        );
+        observations.insert(calendar_date.to_string(), rounded(current));
     }
     observations
         .into_iter()
@@ -1651,6 +1648,7 @@ pub fn project(
     sync: &ProviderSync,
     account_links: &BTreeMap<String, String>,
     now: DateTime<Utc>,
+    calendar_date: NaiveDate,
 ) -> Result<Snapshot, String> {
     let mut warnings = Vec::new();
     let plaid_accounts =
@@ -1752,7 +1750,7 @@ pub fn project(
         .map(|account| account.account_id.as_str())
         .collect::<BTreeSet<_>>();
     let committed_at = now.to_rfc3339();
-    let today = now.with_timezone(&Local).date_naive();
+    let today = calendar_date;
     let mut accounts = Vec::new();
     for account in &plaid_accounts {
         let is_credit = account.kind == "credit";
@@ -2367,11 +2365,7 @@ pub fn project(
         &today[..4],
     );
 
-    let month_start = now
-        .with_timezone(&Local)
-        .date_naive()
-        .with_day(1)
-        .unwrap_or_else(|| now.with_timezone(&Local).date_naive());
+    let month_start = calendar_date.with_day(1).unwrap_or(calendar_date);
     let spending = spending_projection(&transactions, month_start);
 
     if incomplete {
@@ -2398,7 +2392,7 @@ pub fn project(
     let observations = observed_history(
         &sync.previous_snapshot,
         net_worth,
-        now,
+        calendar_date,
         !provisional && !incomplete,
     );
     let (net_worth_history, net_worth_history_estimated) =
@@ -2414,6 +2408,7 @@ pub fn project(
         calculation_version: Some(CALCULATION_VERSION),
         revision: None,
         updated_at: committed_at,
+        calendar_date: Some(calendar_date.to_string()),
         net_worth: decode(json_decimal(net_worth))?,
         net_worth_incomplete: incomplete,
         net_worth_provisional: provisional,
@@ -2458,9 +2453,11 @@ pub fn apply_annotations(
         .as_str()
         .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
         .ok_or("Committed snapshot timestamp is invalid")?;
-    let month_start = updated_at
-        .with_timezone(&Local)
-        .date_naive()
+    let calendar_date = projected["calendarDate"]
+        .as_str()
+        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
+        .unwrap_or_else(|| updated_at.date_naive());
+    let month_start = calendar_date
         .with_day(1)
         .ok_or("Committed snapshot calendar date is invalid")?;
     let accounts = projected["accounts"]
@@ -2478,7 +2475,7 @@ pub fn apply_annotations(
             account.get("investmentIncomeYtd")?;
             Some((
                 id.to_owned(),
-                investment_income(transactions, id, &updated_at.format("%Y").to_string()),
+                investment_income(transactions, id, &calendar_date.format("%Y").to_string()),
             ))
         })
         .collect::<BTreeMap<_, _>>();
@@ -2639,7 +2636,8 @@ mod tests {
         links: &BTreeMap<String, String>,
         now: DateTime<Utc>,
     ) -> Result<Value, String> {
-        serde_json::to_value(super::project(sync, links, now)?).map_err(|error| error.to_string())
+        serde_json::to_value(super::project(sync, links, now, now.date_naive())?)
+            .map_err(|error| error.to_string())
     }
 
     use crate::providers::{PlaidData, SnapTradeData};
@@ -2718,10 +2716,11 @@ mod tests {
         let now = DateTime::parse_from_rfc3339("2026-09-09T12:00:00Z")
             .unwrap()
             .with_timezone(&Utc);
-        let first = super::project(&input, &BTreeMap::new(), now).unwrap();
+        let first = super::project(&input, &BTreeMap::new(), now, now.date_naive()).unwrap();
         input.previous_snapshot = serde_json::to_value(first).unwrap();
+        let later = now + Duration::hours(1);
         let mut snapshot =
-            super::project(&input, &BTreeMap::new(), now + Duration::hours(1)).unwrap();
+            super::project(&input, &BTreeMap::new(), later, later.date_naive()).unwrap();
         snapshot.revision = Some(2);
         snapshot.transactions[0].benefit_confirmed = Some(false);
         snapshot.provider_status = Some(BTreeMap::from([(
@@ -2900,7 +2899,7 @@ mod tests {
 
     #[test]
     fn annotations_are_applied_by_the_native_view_projection() {
-        let snapshot = project_json(
+        let mut snapshot = project_json(
             &sync(),
             &BTreeMap::new(),
             DateTime::parse_from_rfc3339("2026-09-09T07:30:00Z")
@@ -2908,6 +2907,8 @@ mod tests {
                 .with_timezone(&Utc),
         )
         .unwrap();
+        snapshot["updatedAt"] = "2026-10-01T00:30:00Z".into();
+        snapshot["calendarDate"] = "2026-09-30".into();
         let annotations = BTreeMap::from([(
             "coffee".into(),
             Annotation {

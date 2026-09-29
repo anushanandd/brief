@@ -3,7 +3,12 @@ import { describe, expect, it } from 'vitest'
 import empty from '../data/empty.json'
 import nativeFinance from '../data/fixtures/native-finance.json'
 import nativeNews from '../data/fixtures/native-news.json'
-import { marketNewsSchema, marketNewsResultSchema, plaidRecurringReportSchema } from './schema'
+import {
+  marketNewsSchema,
+  marketNewsResultSchema,
+  plaidRecurringReportSchema,
+  syncRunSchema,
+} from './schema'
 import { financeSnapshotSchema } from './schema'
 
 describe('finance snapshot migrations', () => {
@@ -62,6 +67,42 @@ it('preserves native saved news, sentiment and quota status across IPC', () => {
   expect(marketNewsResultSchema.safeParse({ ...nativeNews, requestsRemaining: -1 }).success).toBe(
     false,
   )
+})
+
+it('validates bounded refresh diagnostics at the IPC boundary', () => {
+  const run = {
+    id: 'run',
+    startedAt: '2026-09-21T12:00:00Z',
+    finishedAt: '2026-09-21T12:00:02Z',
+    outcome: 'failed',
+    warnings: [],
+    errorCode: 'provider_refresh_failed',
+    details: {
+      phase: 'provider',
+      warningCount: 0,
+      providers: [
+        {
+          provider: 'Plaid',
+          endpoint: '/transactions/sync',
+          kind: 'provider',
+          httpStatus: 429,
+          errorCode: 'INSTITUTION_RATE_LIMIT',
+          requestRef: '0123456789ab',
+          attempts: 1,
+          retryable: true,
+          retryAt: '2026-09-21T13:00:00Z',
+        },
+      ],
+    },
+  } as const
+
+  expect(syncRunSchema.parse(run)).toEqual(run)
+  expect(
+    syncRunSchema.safeParse({
+      ...run,
+      details: { ...run.details, providers: [{ ...run.details.providers[0], attempts: 9 }] },
+    }).success,
+  ).toBe(false)
 })
 
 it('preserves Plaid recurring evidence across IPC', () => {

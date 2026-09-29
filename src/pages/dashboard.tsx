@@ -10,14 +10,7 @@ import { HomeSummary } from '../components/home-summary'
 import { ChevronRight } from '../components/icons'
 import { PositionTable } from '../components/position-table'
 import { SnapTradeReference } from '../components/snaptrade-reference'
-import {
-  AnimatedCurrency,
-  Card,
-  ChartChange,
-  EmptyState,
-  ScrollCueCard,
-  SectionHeading,
-} from '../components/ui'
+import { AnimatedCurrency, Card, ChartChange, EmptyState, SectionHeading } from '../components/ui'
 import { MarketStatus, WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import {
@@ -110,10 +103,7 @@ function DashboardContent({ prototype = false }: { prototype?: boolean }) {
   const details = useMemo(() => {
     if (!committed) return undefined
     return {
-      latestActivities: buildActivities(committed, accountDisplayNames, externalLogosEnabled).slice(
-        0,
-        10,
-      ),
+      latestActivities: buildActivities(committed, accountDisplayNames, externalLogosEnabled),
     }
   }, [committed, accountDisplayNames, externalLogosEnabled])
   const chartEvents = useMemo(
@@ -352,10 +342,7 @@ function DashboardContent({ prototype = false }: { prototype?: boolean }) {
           </div>
         </Card>
 
-        <ScrollCueCard
-          className="home-overview-card home-activity-card"
-          scrollSelector=".financial-activity-list"
-        >
+        <Card className="home-overview-card home-activity-card">
           <SectionHeading
             title={
               <Link to="/activities" className="section-heading-link">
@@ -363,8 +350,12 @@ function DashboardContent({ prototype = false }: { prototype?: boolean }) {
               </Link>
             }
           />
-          <ActivityList activities={latestActivities} referenceIso={data.updatedAt} compact />
-        </ScrollCueCard>
+          <ActivityList
+            activities={latestActivities.slice(0, accounts.length)}
+            referenceIso={data.updatedAt}
+            compact
+          />
+        </Card>
       </div>
     </div>
   )

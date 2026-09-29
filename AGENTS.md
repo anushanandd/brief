@@ -35,14 +35,14 @@ Do not update docs for unrelated implementation details. In the final response, 
 ## Invariants
 
 - Rust owns provider access, credentials, the committed snapshot, and durable finance state. Credentials and provider tokens belong only in macOS Keychain.
-- Refreshes are staged, validated, and atomically committed. Failure must leave the previous snapshot and caches usable.
+- Refreshes are staged, bounded by one 120-second provider/projection deadline, validated, and atomically committed. Failure must leave the previous snapshot and caches usable.
 - Plaid cursor and page changes stay temporary until pagination and the matching balance request complete.
 - `FinanceProvider` owns committed data. `LiveMarketProvider` overlays only a compatible Rust valuation projection.
 - One native market service owns held-symbol feeds. Holdings chart selection must not replace portfolio subscriptions or stop them on route cleanup.
 - Keep canonical Holdings bars separate from latest trade or indicative quote observations. The market-price cache is separate from finance state.
 - Spending and Platinum benefits use the saved spending account ID, never provider ordering. The Accounts selector excludes that account.
 - Rust assigns shared transaction classification after annotations. React reads it through `src/lib/transaction-kind.ts` and must not implement a second policy.
-- Financial calculations are deterministic. Apple Intelligence may explain supplied evidence but must not calculate or mutate finance data.
+- Financial calculations are deterministic. Persist the projection calendar date rather than recomputing it from the machine's current timezone. Apple Intelligence may explain supplied evidence but must not calculate or mutate finance data.
 - Never put credentials, tokens, or real financial data in logs, fixtures, screenshots, or tests.
 
 ## Code map
@@ -50,11 +50,14 @@ Do not update docs for unrelated implementation details. In the final response, 
 - `src/lib/api.ts`: browser fallback and Tauri IPC client
 - `src/lib/schema.ts`: renderer runtime contract
 - `src/hooks/`: committed finance state, refresh, and live-market overlay
-- `src-tauri/src/lib.rs`: Tauri commands and orchestration
+- `src-tauri/src/lib.rs`: Tauri app state and command registration
+- `src-tauri/src/refresh.rs`: refresh and commit orchestration
+- `src-tauri/src/market.rs`: live-market command orchestration
 - `src-tauri/src/finance_contract.rs`: native output types
 - `src-tauri/src/financial_engine.rs`: canonical projection
 - `src-tauri/src/transaction_policy.rs`: transaction classification
-- `src-tauri/src/providers.rs`: integrations and provider caches
+- `src-tauri/src/providers/mod.rs`: shared provider contracts and caches
+- `src-tauri/src/providers/http.rs`: provider errors, retries, and diagnostics
 - `src-tauri/src/providers/market_stream.rs`: shared held-symbol sockets
 - `src-tauri/src/providers/holding_market.rs`: security history and price cache
 - `src-tauri/src/storage.rs`: staging, validation, recovery, and commits
@@ -94,6 +97,8 @@ Run checks proportional to the change. Documentation-only changes need no applic
 - All-time Holdings history may reuse a prefix only after fresh full verification and an identical overlap.
 - Startup reveal waits for local reads, never network or market readiness. Saved observations must not be labeled live.
 - Do not gate native actions with `window.confirm`; the macOS WebView treats it as Cancel. Use an in-app confirmation with pending and error states.
+- Do not rename or replace a SQLite database while a connection has it open. Normal backup restore uses SQLite's Backup API; filesystem replacement is only for recovery paths with no open primary connection.
+- Keep the app-data directory and financial/cache databases private, bound provider response bodies before decoding, and remove migrated legacy plaintext only after a valid SQLite backup exists.
 - Do not run `cargo clean` unless explicitly necessary.
 - The macOS dev icon is embedded in the Rust executable. Regenerate `icon.icns` and `128x128@2x.png` from `icon.svg`, then restart `pnpm tauri dev`; `build.rs` watches the generated assets for rebuilds.
 - `pnpm tauri dev` signs rebuilt native executables through `scripts/macos-signed-runner.sh` so Keychain access survives rebuilds. It uses `APPLE_SIGNING_IDENTITY` or the first valid Apple Development identity.

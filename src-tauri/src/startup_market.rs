@@ -57,6 +57,7 @@ impl StartupMarket {
         }
     }
     pub fn load(&self, snapshot: &Value) -> Option<MarketSnapshots> {
+        crate::database::secure_file(&self.path).ok()?;
         let db =
             Connection::open_with_flags(&self.path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .ok()?;
@@ -90,6 +91,7 @@ impl StartupMarket {
         let result = (|| -> Option<()> {
             let basis = identity(snapshot)?;
             let db = Connection::open(&self.path).ok()?;
+            crate::database::secure_file(&self.path).ok()?;
             db.execute_batch("CREATE TABLE IF NOT EXISTS startup (id INTEGER PRIMARY KEY CHECK(id=1), basis TEXT NOT NULL, market TEXT NOT NULL, saved TEXT NOT NULL);").ok()?;
             db.execute(
                 "INSERT OR REPLACE INTO startup VALUES (1, ?1, ?2, ?3)",

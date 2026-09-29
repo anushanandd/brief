@@ -5,8 +5,8 @@ import { boundedTransactionTitle, CashFlowSankey, cashFlowSankeyModel } from './
 
 describe('cash-flow Sankey model', () => {
   it('limits displayed transaction titles to five words', () => {
-    expect(boundedTransactionTitle('Transfer money from brokerage account ending 8549')).toBe(
-      'Transfer money from brokerage account…',
+    expect(boundedTransactionTitle('Transfer money from a brokerage account')).toBe(
+      'Transfer money from a brokerage…',
     )
     expect(boundedTransactionTitle('Zelle from Alex')).toBe('Zelle from Alex')
   })

@@ -355,14 +355,6 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                       value={unavailable ? null : report.total}
                     />
                   </div>
-                  <div className="chart-summary-row">
-                    <ChartChange
-                      amount={periodChange}
-                      percent={unavailable ? null : report.percent}
-                      favorable={selected === 'fees' ? 'decrease' : 'increase'}
-                      ariaLabel="Change versus previous period"
-                    />
-                  </div>
                 </div>
                 <ChartRangeSelect<string>
                   label="Analytics period"
@@ -377,6 +369,14 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                     if (range) setRange(range.value)
                   }}
                 />
+                <div className="chart-summary-row">
+                  <ChartChange
+                    amount={periodChange}
+                    percent={unavailable ? null : report.percent}
+                    favorable={selected === 'fees' ? 'decrease' : 'increase'}
+                    ariaLabel="Change versus previous period"
+                  />
+                </div>
               </header>
               {unavailable ? (
                 <EmptyState>

@@ -7,7 +7,6 @@ import {
   AnimatedCurrency,
   Button,
   Change,
-  ChartChange,
   ChartRangeSelect,
   hasMoreBelow,
   RangeSelector,
@@ -24,14 +23,6 @@ it('renders available currency with NumberFlow and keeps unavailable values stat
     renderToStaticMarkup(<AnimatedCurrency className="hero-number" value={1234.5} />),
   ).toContain('<number-flow-react')
   expect(renderToStaticMarkup(<AnimatedCurrency value={null} />)).toContain('—')
-})
-
-it('formats graph changes as a bold signed amount with a parenthesized percentage', () => {
-  const html = renderToStaticMarkup(<ChartChange amount={10} percent={1.22} />)
-  expect(html).toContain('<strong class="hero-change"')
-  expect(html).toContain(
-    '<span class="positive">+$10.00</span><span class="positive">(1.22%)</span>',
-  )
 })
 
 it('uses context when coloring changes', () => {

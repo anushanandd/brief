@@ -115,7 +115,6 @@ export const transactionClassificationSchema = z.object({
   spending: z.boolean(),
   credit: z.boolean(),
   zelle: z.boolean(),
-  brokerageIncomeTransfer: z.boolean(),
 })
 
 export const financeSnapshotSchema = z.object({
@@ -130,6 +129,7 @@ export const financeSnapshotSchema = z.object({
     .optional(),
   observedNetWorthHistory: z.array(z.object({ date: z.string(), value: z.number() })).optional(),
   updatedAt: z.string(),
+  calendarDate: z.string().optional(),
   netWorth: z.number(),
   netWorthIncomplete: z.boolean().optional(),
   netWorthProvisional: z.boolean().optional(),
@@ -252,6 +252,34 @@ export type Transaction = FinanceSnapshot['transactions'][number]
 export type Trade = FinanceSnapshot['trades'][number]
 export type AccountMovement = FinanceSnapshot['accountMovements'][number]
 export type SnapshotChange = NonNullable<FinanceSnapshot['lastChange']>
+
+const providerDiagnosticSchema = z.object({
+  provider: z.string().max(32),
+  endpoint: z.string().max(96),
+  kind: z.string().max(32),
+  httpStatus: z.number().int().min(100).max(599).optional(),
+  errorType: z.string().max(64).optional(),
+  errorCode: z.string().max(64).optional(),
+  requestRef: z.string().length(12).optional(),
+  attempts: z.number().int().min(0).max(3),
+  retryable: z.boolean(),
+  retryAt: z.string().optional(),
+})
+
+export const syncRunSchema = z.object({
+  id: z.string(),
+  startedAt: z.string(),
+  finishedAt: z.string(),
+  outcome: z.enum(['committed', 'failed']),
+  warnings: z.array(z.string()),
+  errorCode: z.string().optional(),
+  details: z.object({
+    phase: z.string().max(32),
+    providers: z.array(providerDiagnosticSchema).max(24),
+    warningCount: z.number().int().nonnegative().max(999),
+  }),
+})
+export type SyncRun = z.infer<typeof syncRunSchema>
 
 export const healthReportSchema = z.object({
   computedAt: z.string(),

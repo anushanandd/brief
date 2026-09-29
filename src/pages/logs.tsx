@@ -8,6 +8,7 @@ import { useLiveFinance } from '../hooks/use-live-finance'
 import { useFinanceRefreshState } from '../hooks/use-refresh-finance'
 import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
 import { getSyncRuns } from '../lib/api'
+import type { SyncRun } from '../lib/schema'
 
 const logTimeFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
@@ -20,6 +21,18 @@ const logTimeFormatter = new Intl.DateTimeFormat('en-US', {
 const formatTime = (value?: string | number | null) => {
   if (!value || !Number.isFinite(new Date(value).getTime())) return 'Unknown'
   return logTimeFormatter.format(new Date(value))
+}
+
+const syncRunSummary = (run: SyncRun) => {
+  const failure = run.details.providers.at(0)
+  if (failure) {
+    const reason = failure.errorCode ?? failure.errorType ?? failure.httpStatus ?? failure.kind
+    const attempts = failure.attempts > 1 ? ` · ${failure.attempts} attempts` : ''
+    const retry = failure.retryAt ? ` · retry after ${formatTime(failure.retryAt)}` : ''
+    return `${failure.provider} · ${reason}${attempts}${retry}`
+  }
+  if (run.details.warningCount) return `${run.details.warningCount} warning(s)`
+  return run.errorCode ? run.details.phase.replaceAll('_', ' ') : 'No warnings'
 }
 
 export function LogsPage() {
@@ -184,10 +197,7 @@ export function LogsPage() {
               <StatusDot tone={run.outcome === 'committed' ? 'positive' : 'negative'} />
               <div>
                 <strong>{run.outcome === 'committed' ? 'Committed' : 'Failed safely'}</strong>
-                <small>
-                  {run.errorCode ??
-                    (run.warnings.length ? `${run.warnings.length} warning(s)` : 'No warnings')}
-                </small>
+                <small>{syncRunSummary(run)}</small>
               </div>
             </div>
           ))}

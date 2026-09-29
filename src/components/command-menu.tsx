@@ -384,10 +384,8 @@ export function CommandMenu({
     setAskError(undefined)
     try {
       const response = await generateFoundationExplanation(
-        JSON.stringify({
-          question,
-          evidence: chatEvidence(finance.data, localDateKey(Date.now() / 1000)),
-        }),
+        question,
+        JSON.stringify(chatEvidence(finance.data, localDateKey(Date.now() / 1000))),
         controller.signal,
       )
       setAnswer(response)

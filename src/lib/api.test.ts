@@ -129,7 +129,11 @@ describe('native explanation cancellation', () => {
         : Promise.resolve(undefined),
     )
     const controller = new AbortController()
-    const result = generateFoundationExplanation('Synthetic evidence', controller.signal)
+    const result = generateFoundationExplanation(
+      'What changed?',
+      'Synthetic evidence',
+      controller.signal,
+    )
     const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' })
     await Promise.resolve()
     const args = mockedInvoke.mock.calls[0][1]
@@ -141,7 +145,7 @@ describe('native explanation cancellation', () => {
       !(args.started instanceof Channel)
     )
       throw new Error('Missing native registration channel')
-    expect(args).not.toHaveProperty('purpose')
+    expect(args).toMatchObject({ question: 'What changed?', evidence: 'Synthetic evidence' })
     controller.abort()
     expect(mockedInvoke).toHaveBeenCalledTimes(1)
     args.started.onmessage(null)
@@ -155,7 +159,7 @@ describe('native explanation cancellation', () => {
     const controller = new AbortController()
     controller.abort()
     await expect(
-      generateFoundationExplanation('Synthetic evidence', controller.signal),
+      generateFoundationExplanation('What changed?', 'Synthetic evidence', controller.signal),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(mockedInvoke).not.toHaveBeenCalled()
   })

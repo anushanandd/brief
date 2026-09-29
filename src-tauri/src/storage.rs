@@ -12,7 +12,7 @@ use serde_json::Value;
 use std::io::Write;
 
 use crate::{
-    database::{Database, SyncRun},
+    database::{Database, SyncDiagnostics, SyncRun},
     finance_contract::{PerformancePoint, Point, Snapshot},
     providers::{PlaidCache, ProviderDataCache, ProviderSync},
 };
@@ -52,6 +52,29 @@ struct PendingRefresh {
     plaid_cache: PlaidCache,
     provider_data: ProviderDataCache,
     warnings: Vec<String>,
+    diagnostics: SyncDiagnostics,
+}
+
+pub(crate) enum CommitError {
+    Validation(String),
+    Persistence(String),
+}
+
+impl CommitError {
+    pub(crate) fn code(&self) -> &'static str {
+        match self {
+            Self::Validation(_) => "validation_failed",
+            Self::Persistence(_) => "commit_failed",
+        }
+    }
+}
+
+impl std::fmt::Display for CommitError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Validation(message) | Self::Persistence(message) => formatter.write_str(message),
+        }
+    }
 }
 
 pub struct Storage {
@@ -132,13 +155,59 @@ fn load_database(path: &Path) -> Result<(Database, FinanceState), String> {
     Ok((database, validate_state(data)?))
 }
 
+const LEGACY_FINANCE_FILES: [&str; 5] = [
+    "finance-state.json",
+    "finance-state.backup.json",
+    "finance-snapshot.json",
+    "plaid-cache.json",
+    "provider-data.json",
+];
+
+fn protect_directory(directory: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
+            .map_err(|error| format!("Could not protect local financial data: {error}"))?;
+    }
+    for name in [
+        "finance-state.sqlite3",
+        "finance-state.backup.sqlite3",
+        "market-prices.sqlite3",
+        "news.sqlite3",
+        "startup-market.sqlite3",
+    ] {
+        crate::database::secure_file(&directory.join(name))?;
+    }
+    Ok(())
+}
+
+fn remove_migrated_legacy_files(directory: &Path) {
+    for name in LEGACY_FINANCE_FILES {
+        let _ = fs::remove_file(directory.join(name));
+    }
+}
+
+fn clear_legacy_diagnostics(data: &mut FinanceState) {
+    data.snapshot["syncWarnings"] = Value::Array(Vec::new());
+    if let Some(statuses) = data.snapshot["providerStatus"].as_object_mut() {
+        for status in statuses.values_mut() {
+            status["error"] = Value::Null;
+        }
+    }
+    data.plaid_cache.clear_legacy_diagnostics();
+    data.provider_data.clear_legacy_diagnostics();
+}
+
 fn legacy_state(directory: &Path) -> Result<FinanceState, String> {
     let state_path = directory.join("finance-state.json");
     if state_path.exists() {
-        return read(&state_path);
+        let mut data = read(&state_path)?;
+        clear_legacy_diagnostics(&mut data);
+        return Ok(data);
     }
     let snapshot_path = directory.join("finance-snapshot.json");
-    Ok(FinanceState {
+    let mut data = FinanceState {
         schema_version: 1,
         revision: 0,
         snapshot: if snapshot_path.exists() {
@@ -152,7 +221,9 @@ fn legacy_state(directory: &Path) -> Result<FinanceState, String> {
         annotations: BTreeMap::new(),
         account_links: BTreeMap::new(),
         workspace: Default::default(),
-    })
+    };
+    clear_legacy_diagnostics(&mut data);
+    Ok(data)
 }
 
 impl Storage {
@@ -164,7 +235,13 @@ impl Storage {
         self.database.sync_runs()
     }
 
-    pub fn record_failed_sync(&mut self, id: &str, started_at: &str, error_code: &str) {
+    pub fn record_failed_sync(
+        &mut self,
+        id: &str,
+        started_at: &str,
+        error_code: &str,
+        diagnostics: SyncDiagnostics,
+    ) {
         let _ = self.database.record_sync_run(
             id,
             started_at,
@@ -172,6 +249,7 @@ impl Storage {
             "failed",
             &[],
             Some(error_code),
+            &diagnostics,
         );
     }
 
@@ -203,11 +281,18 @@ impl Storage {
     }
 
     fn reproject_cached(&mut self, previous: Value) -> Result<bool, String> {
-        let now = previous["updatedAt"]
+        let updated_at = previous["updatedAt"]
             .as_str()
-            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok());
+        let now = updated_at
+            .as_ref()
             .map(|value| value.with_timezone(&chrono::Utc))
             .unwrap_or_else(chrono::Utc::now);
+        let calendar_date = previous["calendarDate"]
+            .as_str()
+            .and_then(|value| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
+            .or_else(|| updated_at.as_ref().map(|value| value.date_naive()))
+            .unwrap_or_else(|| now.date_naive());
         let sync = ProviderSync {
             sync_id: "cached-projection-upgrade".into(),
             balances_fresh: false,
@@ -230,6 +315,7 @@ impl Storage {
             &sync,
             &self.data.account_links,
             now,
+            calendar_date,
         )?)
         .map_err(|error| error.to_string())?;
         let revision = self
@@ -340,19 +426,25 @@ impl Storage {
 
     pub fn new(directory: PathBuf) -> Result<Self, String> {
         fs::create_dir_all(&directory).map_err(|error| error.to_string())?;
+        protect_directory(&directory)?;
+        let lock_path = directory.join("finance-state.lock");
         let process_lock = OpenOptions::new()
             .read(true)
             .write(true)
             .create(true)
             .truncate(false)
-            .open(directory.join("finance-state.lock"))
+            .open(&lock_path)
             .map_err(|error| error.to_string())?;
+        crate::database::secure_file(&lock_path)?;
         process_lock.try_lock().map_err(|error| {
             format!("Cannot lock financial data; another Brief instance may be open: {error}")
         })?;
         let path = directory.join("finance-state.sqlite3");
         let backup_path = directory.join("finance-state.backup.sqlite3");
         let existing = path.exists();
+        let legacy_present = LEGACY_FINANCE_FILES
+            .iter()
+            .any(|name| directory.join(name).exists());
         let loaded = if existing {
             load_database(&path)
         } else if backup_path.exists() {
@@ -388,6 +480,9 @@ impl Storage {
                 )
             }
         };
+        if recovery.is_none() && legacy_present && database.backup(&backup_path).is_ok() {
+            remove_migrated_legacy_files(&directory);
+        }
         Ok(Self {
             _process_lock: process_lock,
             path,
@@ -398,6 +493,7 @@ impl Storage {
         })
     }
 
+    #[cfg(test)]
     pub fn stage(
         &mut self,
         id: &str,
@@ -406,6 +502,27 @@ impl Storage {
         plaid_cache: PlaidCache,
         provider_data: ProviderDataCache,
         warnings: Vec<String>,
+    ) -> Result<String, String> {
+        self.stage_with_diagnostics(
+            id,
+            started_at,
+            revision,
+            plaid_cache,
+            provider_data,
+            warnings,
+            SyncDiagnostics::default(),
+        )
+    }
+
+    pub fn stage_with_diagnostics(
+        &mut self,
+        id: &str,
+        started_at: &str,
+        revision: u64,
+        plaid_cache: PlaidCache,
+        provider_data: ProviderDataCache,
+        warnings: Vec<String>,
+        diagnostics: SyncDiagnostics,
     ) -> Result<String, String> {
         self.ensure_writable()?;
         if revision != self.data.revision {
@@ -418,13 +535,14 @@ impl Storage {
             plaid_cache,
             provider_data,
             warnings,
+            diagnostics,
             expires: Instant::now() + Duration::from_secs(120),
         });
         Ok(id.into())
     }
 
-    pub fn commit(&mut self, id: &str, mut snapshot: Snapshot) -> Result<Value, String> {
-        self.ensure_writable()?;
+    pub fn commit(&mut self, id: &str, mut snapshot: Snapshot) -> Result<Value, CommitError> {
+        self.ensure_writable().map_err(CommitError::Validation)?;
         let pending = self
             .pending
             .as_ref()
@@ -433,13 +551,15 @@ impl Storage {
                     && pending.revision == self.data.revision
                     && pending.expires > Instant::now()
             })
-            .ok_or("Refresh expired or was superseded; refresh again")?;
-        validate_projected_snapshot(&snapshot)?;
+            .ok_or_else(|| {
+                CommitError::Validation("Refresh expired or was superseded; refresh again".into())
+            })?;
+        validate_projected_snapshot(&snapshot).map_err(CommitError::Validation)?;
         let revision = self
             .data
             .revision
             .checked_add(1)
-            .ok_or("Snapshot revision overflow")?;
+            .ok_or_else(|| CommitError::Validation("Snapshot revision overflow".into()))?;
         snapshot.revision = Some(revision);
         let mut warnings = pending.warnings.clone();
         warnings.extend(snapshot.sync_warnings);
@@ -447,7 +567,8 @@ impl Storage {
         warnings.dedup();
         snapshot.sync_warnings = warnings.clone();
         snapshot.provider_status = Some(pending.provider_data.sync_status.clone());
-        let snapshot = serde_json::to_value(snapshot).map_err(|error| error.to_string())?;
+        let snapshot = serde_json::to_value(snapshot)
+            .map_err(|error| CommitError::Validation(error.to_string()))?;
         let next = FinanceState {
             schema_version: 1,
             revision,
@@ -461,28 +582,47 @@ impl Storage {
         let sync_run_warnings = (!warnings.is_empty())
             .then(|| vec![format!("{} warning(s)", warnings.len())])
             .unwrap_or_default();
-        self.database.backup(&self.backup_path())?;
-        self.database.replace_with_sync_run(
-            &next,
+        let backup_path = self.backup_path();
+        self.database
+            .backup(&backup_path)
+            .map_err(CommitError::Persistence)?;
+        self.database
+            .replace(&next)
+            .map_err(CommitError::Persistence)?;
+        let details = SyncDiagnostics::new(
+            "committed",
+            pending.diagnostics.providers.clone(),
+            warnings.len(),
+        );
+        let _ = self.database.record_sync_run(
             &pending.id,
             &pending.started_at,
             &chrono::Utc::now().to_rfc3339(),
+            "committed",
             &sync_run_warnings,
-        )?;
+            None,
+            &details,
+        );
         self.data = next;
         self.pending = None;
-        self.snapshot()
+        self.snapshot().map_err(CommitError::Persistence)
     }
 
     #[cfg(test)]
     fn commit_value(&mut self, id: &str, value: Value) -> Result<Value, String> {
         self.commit(id, crate::finance_contract::decode(value)?)
+            .map_err(|error| error.to_string())
     }
 
     pub fn fail_pending(&mut self, id: &str, error_code: &str) {
         let Some(pending) = self.pending.as_ref().filter(|pending| pending.id == id) else {
             return;
         };
+        let details = SyncDiagnostics::new(
+            error_code.trim_end_matches("_failed"),
+            pending.diagnostics.providers.clone(),
+            pending.warnings.len(),
+        );
         let _ = self.database.record_sync_run(
             id,
             &pending.started_at,
@@ -492,6 +632,7 @@ impl Storage {
                 .then(|| vec![format!("{} warning(s)", pending.warnings.len())])
                 .unwrap_or_default(),
             Some(error_code),
+            &details,
         );
         self.pending = None;
     }
@@ -663,9 +804,15 @@ impl Storage {
                 self.database.backup(&retained)?;
             }
             self.database.backup(&self.backup_path())?;
-            drop(database);
-            fs::rename(&temporary, &self.path).map_err(|_| "Could not install backup")?;
-            self.database = Database::open(&self.path)?;
+            if self.recovery.is_some() {
+                drop(database);
+                fs::rename(&temporary, &self.path).map_err(|_| "Could not install backup")?;
+                self.database = Database::open(&self.path)?;
+            } else {
+                self.database.restore_from(&database)?;
+                drop(database);
+                let _ = fs::remove_file(&temporary);
+            }
             self.data = next;
             self.pending = None;
             self.recovery = None;
@@ -692,7 +839,7 @@ impl Storage {
             .path
             .with_extension(format!("{}.import", uuid::Uuid::new_v4()));
         let result = (|| {
-            fs::copy(source, &temporary).map_err(|_| "Backup cannot be copied")?;
+            Database::copy_backup(source, &temporary)?;
             Database::validate_backup(&temporary)?;
             let database = Database::open(&temporary)?;
             let state = validate_state(database.load()?.ok_or("This is not a Brief backup")?)?;
@@ -807,6 +954,13 @@ fn validate_snapshot(value: &Value) -> Result<(), String> {
 fn validate_projected_snapshot(snapshot: &Snapshot) -> Result<(), String> {
     chrono::DateTime::parse_from_rfc3339(&snapshot.updated_at)
         .map_err(|_| "Invalid snapshot timestamp")?;
+    if snapshot
+        .calendar_date
+        .as_deref()
+        .is_some_and(|date| !valid_date(date))
+    {
+        return Err("Invalid snapshot calendar date".into());
+    }
     let ids = snapshot
         .accounts
         .iter()
@@ -1424,7 +1578,7 @@ mod tests {
     }
 
     #[test]
-    fn failed_commit_retains_original_run_identity_and_committed_state() {
+    fn failed_validation_retains_original_run_identity_and_committed_state() {
         let directory = directory();
         let mut storage = Storage::new(directory.clone()).unwrap();
         let original = storage.data.snapshot.clone();
@@ -1440,10 +1594,11 @@ mod tests {
                 vec![],
             )
             .unwrap();
-        assert!(storage
-            .commit_value("synthetic-run", serde_json::json!({"netWorth": 999}))
-            .is_err());
-        storage.fail_pending("synthetic-run", "commit_failed");
+        let mut invalid: Snapshot = crate::finance_contract::decode(original.clone()).unwrap();
+        invalid.net_worth = 999.0;
+        let error = storage.commit("synthetic-run", invalid).unwrap_err();
+        assert_eq!(error.code(), "validation_failed");
+        storage.fail_pending("synthetic-run", error.code());
         assert_eq!(storage.data.snapshot, original);
         assert_eq!(
             storage.database.load().unwrap().unwrap().snapshot,
@@ -1452,7 +1607,8 @@ mod tests {
         let runs = serde_json::to_value(storage.sync_runs().unwrap()).unwrap();
         assert_eq!(runs[0]["id"], "synthetic-run");
         assert_eq!(runs[0]["startedAt"], started);
-        assert_eq!(runs[0]["errorCode"], "commit_failed");
+        assert_eq!(runs[0]["errorCode"], "validation_failed");
+        assert_eq!(runs[0]["details"]["phase"], "validation");
         assert!(storage.pending.is_none());
         drop(storage);
         fs::remove_dir_all(directory).unwrap();
@@ -1544,17 +1700,64 @@ mod tests {
         fs::remove_dir_all(directory).unwrap();
     }
     #[test]
-    fn migrates_without_removing_legacy_data() {
+    fn migrates_legacy_data_then_removes_plaintext_sources() {
         let directory = directory();
         fs::create_dir_all(&directory).unwrap();
         let legacy = directory.join("finance-snapshot.json");
         let mut snapshot: Value =
             serde_json::from_str(include_str!("../../src/data/empty.json")).unwrap();
         snapshot["accounts"][0]["balanceAsOf"] = "2026-09-05".into();
+        snapshot["syncWarnings"] = serde_json::json!(["raw account message"]);
+        snapshot["providerStatus"] = serde_json::json!({
+            "plaid": {"updatedAt": null, "error": "raw account message"}
+        });
         atomic_write(&legacy, &snapshot).unwrap();
+        fs::write(directory.join("news.sqlite3"), b"synthetic cache").unwrap();
         let storage = Storage::new(directory.clone()).unwrap();
+        snapshot["syncWarnings"] = serde_json::json!([]);
+        snapshot["providerStatus"]["plaid"]["error"] = Value::Null;
         assert_eq!(storage.data.snapshot, snapshot);
-        assert!(legacy.exists());
+        assert!(!legacy.exists());
+        assert!(storage.backup_path().exists());
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(
+                fs::metadata(&directory).unwrap().permissions().mode() & 0o777,
+                0o700
+            );
+            assert_eq!(
+                fs::metadata(&storage.path).unwrap().permissions().mode() & 0o777,
+                0o600
+            );
+            assert_eq!(
+                fs::metadata(storage.backup_path())
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+            assert_eq!(
+                fs::metadata(directory.join("news.sqlite3"))
+                    .unwrap()
+                    .permissions()
+                    .mode()
+                    & 0o777,
+                0o600
+            );
+        }
+        drop(storage);
+        fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[test]
+    fn inspecting_an_open_primary_uses_a_consistent_sqlite_backup() {
+        let directory = directory();
+        let storage = Storage::new(directory.clone()).unwrap();
+        let info = storage.inspect_backup(&storage.path).unwrap();
+        assert_eq!(info.revision, storage.data.revision);
+        drop(storage);
         fs::remove_dir_all(directory).unwrap();
     }
 

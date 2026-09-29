@@ -232,19 +232,6 @@ describe('financial activities', () => {
         transactions: [
           {
             ...snapshot.transactions[0],
-            id: 'brokerage-income',
-            merchant: 'TRANSFER MONEY FROM BROKERAGE XXXXX8549 Reference Number: MCK1SOY78',
-            classification: classification('income', { brokerageIncomeTransfer: true }),
-          },
-        ],
-      })[0],
-    ).toMatchObject({ kind: 'income' })
-    expect(
-      buildActivities({
-        ...snapshot,
-        transactions: [
-          {
-            ...snapshot.transactions[0],
             id: 'credit',
             merchant: 'Platinum Digital Entertainment Credit',
             category: 'Entertainment',

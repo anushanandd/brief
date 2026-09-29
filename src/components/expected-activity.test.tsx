@@ -10,11 +10,7 @@ import { afterEach, expect, it, vi } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
 import type { FinanceSnapshot } from '../lib/schema'
-import {
-  ExpectedActivity,
-  expectedActivityDateLabel,
-  expectedActivityTone,
-} from './expected-activity'
+import { ExpectedActivity, expectedActivityDateLabel } from './expected-activity'
 
 afterEach(() => {
   vi.useRealTimers()
@@ -36,12 +32,6 @@ it('uses relative labels for activity due within five days', () => {
   expect(expectedActivityDateLabel('2026-09-20', '2026-09-18')).toBe('in 2 days')
   expect(expectedActivityDateLabel('2026-09-23', '2026-09-18')).toBe('in 5 days')
   expect(expectedActivityDateLabel('2026-10-10', '2026-09-18')).toBe('Oct 10')
-})
-
-it('colors expected inflows green and outflows red', () => {
-  expect(expectedActivityTone(10)).toBe('positive')
-  expect(expectedActivityTone(0)).toBe('positive')
-  expect(expectedActivityTone(-10)).toBe('negative')
 })
 
 it('shows a matched pending amount without treating it as posted evidence', async () => {

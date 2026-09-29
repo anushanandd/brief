@@ -11,17 +11,9 @@ pub async fn authenticate_sensitive_action() -> Result<(), String> {
         // SAFETY: LAContext is created, used, and retained on this blocking thread until the
         // framework invokes the reply block. All arguments use the generated framework bindings.
         let context = unsafe { LAContext::new() };
-        let biometrics = LAPolicy::DeviceOwnerAuthenticationWithBiometrics;
-        // Prefer Touch ID and use the normal macOS owner-authentication fallback only when this
-        // Mac has no enrolled biometrics.
-        let policy = if unsafe { context.canEvaluatePolicy_error(biometrics) }.is_ok() {
-            biometrics
-        } else {
-            let device_owner = LAPolicy::DeviceOwnerAuthentication;
-            unsafe { context.canEvaluatePolicy_error(device_owner) }
-                .map_err(|error| error.to_string())?;
-            device_owner
-        };
+        // macOS manages Touch ID and the normal password fallback for this policy.
+        let policy = LAPolicy::DeviceOwnerAuthentication;
+        unsafe { context.canEvaluatePolicy_error(policy) }.map_err(|error| error.to_string())?;
 
         let reason = NSString::from_str("edit provider credentials");
         let (sender, receiver) = mpsc::sync_channel(1);

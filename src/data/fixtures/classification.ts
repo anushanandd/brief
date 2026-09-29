@@ -19,7 +19,6 @@ export function classification(
     spending: kind === 'expense',
     credit: kind === 'reimbursement',
     zelle: false,
-    brokerageIncomeTransfer: false,
     ...overrides,
   }
 }

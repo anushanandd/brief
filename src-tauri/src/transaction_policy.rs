@@ -39,7 +39,6 @@ pub struct Classification {
     #[serde(default)]
     pub credit: bool,
     pub zelle: bool,
-    pub brokerage_income_transfer: bool,
 }
 fn contains(text: &str, terms: &[&str]) -> bool {
     terms.iter().any(|term| text.contains(term))
@@ -59,8 +58,7 @@ pub fn classify(t: &Transaction) -> Classification {
         ),
         &["zelle"],
     );
-    let brokerage_income_transfer = merchant.contains("transfer money from brokerage xxxxx8549");
-    let income_override = brokerage_income_transfer || (t.amount > 0.0 && zelle);
+    let income_override = t.amount > 0.0 && zelle;
     let spending = t.amount < 0.0 && !contains(&text, &["income", "transfer", "payment"]);
     let mark = if income_override {
         Mark::Income
@@ -165,7 +163,6 @@ pub fn classify(t: &Transaction) -> Classification {
         kind,
         spending,
         zelle,
-        brokerage_income_transfer,
     }
 }
 
@@ -307,6 +304,14 @@ mod tests {
                 "Loan Payments",
                 -20.0,
                 Mark::Payment,
+                Kind::Transfer,
+                false,
+            ),
+            (
+                "Transfer money from a brokerage account",
+                "Transfer",
+                500.0,
+                Mark::Transfer,
                 Kind::Transfer,
                 false,
             ),

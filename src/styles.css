@@ -1001,19 +1001,6 @@ kbd {
 .home-holdings-row {
   margin-top: 24px;
 }
-.home-activity-card {
-  display: flex;
-  min-height: 0;
-  overflow: hidden;
-  flex-direction: column;
-  contain: size;
-}
-.home-activity-card .financial-activity-list {
-  min-height: 0;
-  overflow-y: auto;
-  flex: 1;
-  overscroll-behavior-y: contain;
-}
 .home-activity-card .financial-activity-row {
   min-height: 64px;
 }
@@ -4021,10 +4008,6 @@ p {
   .account-preview-grid > * {
     grid-column: auto;
   }
-
-  .home-activity-card {
-    min-height: 320px;
-  }
 }
 
 @media (max-width: 1150px) {
@@ -4392,29 +4375,33 @@ p {
   }
 }
 
-.holding-chart-provenance {
-  display: block;
-  margin-top: 4px;
-}
-
 .holding-chart-controls {
   display: grid;
   justify-self: end;
   justify-items: end;
-  align-content: space-between;
-  align-self: stretch;
-  gap: 8px;
+  gap: 4px;
   max-width: 360px;
   text-align: right;
+}
+.holding-chart-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.holding-chart-tooltip {
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px;
+  text-align: left;
+}
+.holding-chart-tooltip p {
+  margin: 0;
+}
+.holding-chart-tooltip p + p {
+  margin-top: 6px;
 }
 
 .holding-chart-card .home-balance-header {
   grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);
-}
-
-.holding-chart-card .chart-summary-row {
-  flex-wrap: wrap;
-  row-gap: 4px;
 }
 
 .holding-chart-controls .holding-chart-status {
@@ -4522,9 +4509,6 @@ p {
     gap: 16px;
   }
   .holding-chart-controls {
-    justify-self: start;
-    justify-items: start;
-    text-align: left;
     max-width: none;
   }
 }

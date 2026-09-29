@@ -7,8 +7,6 @@ export const transactionMarkKind = (t: Transaction) => t.classification.mark
 export const moneyKind = (t: Transaction) => t.classification.kind
 export const isSpendingTransaction = (t: Transaction) => t.classification.spending
 export const isZelle = (t: Transaction) => t.classification.zelle
-export const isBrokerageIncomeTransfer = (t: Transaction) =>
-  t.classification.brokerageIncomeTransfer
 
 /** Presentation groups for records already admitted to the Income chart. */
 export function incomeActivityGroup(transaction: Transaction) {

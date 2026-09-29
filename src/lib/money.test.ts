@@ -296,19 +296,6 @@ describe('money model', () => {
     expect(moneyKind({ ...zelle, category: 'Reimbursement' })).toBe('income')
   })
 
-  it('counts the identified brokerage transfer title as income', () => {
-    const brokerageTransfer = transaction({
-      id: 'brokerage-transfer',
-      amount: 500,
-      merchant: 'TRANSFER MONEY FROM BROKERAGE XXXXX8549 Reference Number: MCK1SOY78',
-      category: 'Transfer In',
-      classification: classification('income', { brokerageIncomeTransfer: true }),
-    })
-
-    expect(moneyKind(brokerageTransfer)).toBe('income')
-    expect(moneySummary(snapshot([brokerageTransfer]), 'month').income).toBe(500)
-  })
-
   it('requires at least three observations for a monthly series', () => {
     const data = snapshot([
       transaction({

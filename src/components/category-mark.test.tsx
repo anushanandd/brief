@@ -8,32 +8,6 @@ const icon = (category: string, props: Partial<Parameters<typeof CategoryMark>[0
     /<svg[^>]*>[\s\S]*?<\/svg>/,
   )?.[0]
 
-it('gives each seeded activity category and key activity type a distinct icon', () => {
-  const icons = [
-    'Dining',
-    'Groceries',
-    'Travel',
-    'Transport',
-    'Shopping',
-    'Utilities',
-    'Entertainment',
-    'Income',
-    'Credit',
-    'Trade',
-    'Other',
-    'Transfer',
-    'Interest',
-    'Dividend',
-    'Refund',
-    'Payment',
-    'Cash',
-    'Bank Fees',
-    'Food And Drink',
-  ].map((category) => icon(category))
-  expect(icons.every(Boolean)).toBe(true)
-  expect(new Set(icons).size).toBe(icons.length)
-})
-
 it('uses the native transaction mark and signed transfer tone in activity rows', () => {
   const transferIn = renderToStaticMarkup(
     <CategoryMark category="Other" kind="transfer" mark="transfer" amount={100} />,

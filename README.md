@@ -22,9 +22,9 @@ Browser development uses deterministic synthetic data from `src/data/seed.json`.
 
 ## Privacy and storage
 
-Provider credentials and access tokens are stored in macOS Keychain. The committed snapshot, provider caches, annotations, account links, and sync history are stored in `finance-state.sqlite3` under the app data directory. Market, startup, and news caches use separate local SQLite files.
+Provider credentials and access tokens are stored in macOS Keychain. The committed snapshot, provider caches, annotations, account links, and bounded, redacted sync diagnostics are stored in `finance-state.sqlite3` under the app data directory. Market, startup, and news caches use separate local SQLite files.
 
-The finance database and caches are ordinary local application files; Keychain does not encrypt them. Protect the macOS account with normal login security and FileVault. Portable `.briefbackup` files are also unencrypted financial databases. They exclude Keychain credentials and disposable market, startup, and news caches, and should be stored somewhere private.
+The finance database and caches are ordinary local application files; Keychain does not encrypt them. Brief restricts its app-data directory and local database permissions on macOS, but the macOS account should still use normal login security and FileVault. Portable `.briefbackup` files are also unencrypted financial databases. They exclude Keychain credentials, renderer display preferences, and disposable market, startup, and news caches, and should be stored somewhere private.
 
 Financial providers are read-only. Remote merchant and security logos are disabled by default; enabling them allows Logo.dev or Plaid's logo host to receive the relevant ticker or merchant-domain identifier.
 
