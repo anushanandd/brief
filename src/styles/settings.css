@@ -1,0 +1,673 @@
+/* Settings dialog. */
+
+.benefit-visibility-settings {
+  scroll-margin-top: 24px;
+}
+.settings-table-scroll {
+  overflow-x: auto;
+  margin-top: 12px;
+}
+.settings-account-table,
+.source-time-table {
+  width: 100%;
+  border-collapse: collapse;
+  text-align: left;
+  font-size: var(--type-body);
+}
+.settings-account-table th,
+.settings-account-table td {
+  padding: 12px 16px 12px 0;
+  height: 64px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.source-time-table th,
+.source-time-table td {
+  padding: 10px 16px 10px 0;
+  height: 48px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.settings-account-table thead th,
+.source-time-table thead th {
+  height: 36px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+}
+.settings-account-table th:last-child,
+.settings-account-table td:last-child,
+.source-time-table th:last-child,
+.source-time-table td:last-child {
+  padding-right: 0;
+}
+.settings-account-table tbody tr:last-child > *,
+.source-time-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+.settings-account-table small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+}
+.settings-account-table input {
+  width: 100%;
+  min-width: 148px;
+  height: var(--control-height);
+  padding: 0 12px;
+  border: var(--hairline) solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-background);
+  box-shadow: var(--shadow-input);
+  color: var(--text-primary);
+  font: inherit;
+}
+.logs-count,
+.activity-log-row > time,
+.source-time-table time {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+.source-time-table time {
+  white-space: nowrap;
+}
+.source-time-table tbody th {
+  min-width: 160px;
+  font-weight: 600;
+}
+.activity-log {
+  max-height: 360px;
+  overflow-y: auto;
+  margin-top: 8px;
+}
+.activity-log-row {
+  padding: 10px 0;
+}
+.connection-row > div {
+  padding: 10px 0;
+  overflow-wrap: anywhere;
+}
+.settings-overview-warning {
+  margin: 0 0 16px;
+  padding: 12px 16px;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--surface);
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+}
+.settings-trust-card {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
+  padding: 6px;
+}
+.settings-trust-item {
+  display: grid;
+  min-width: 0;
+  min-height: 64px;
+  padding: 12px 16px;
+  grid-template-columns: 18px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-radius: calc(var(--radius-card) - 8px);
+  color: var(--text-secondary);
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.settings-trust-link:hover {
+  background: var(--hover-wash);
+}
+.settings-trust-item > span {
+  display: grid;
+  min-width: 0;
+  gap: 4px;
+}
+.settings-trust-item small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.settings-trust-item strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-trust-link:hover strong {
+  color: var(--accent);
+}
+
+/* Settings: one scrolling page. A sticky search filters rows; the rail tracks sections. */
+/* Settings dialog: opens over the current page, addressed by #settings/<section>. */
+.settings-dialog {
+  width: min(1000px, calc(100vw - 96px));
+  max-width: none;
+  height: min(740px, calc(100dvh - 96px));
+  max-height: none;
+  margin: auto;
+  padding: 0;
+  /* Clip, not hidden: the dialog itself must never scroll, even programmatically. */
+  overflow: clip;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-modal);
+  outline: 0;
+  background: var(--popup-sheen), var(--popup-surface);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  opacity: 1;
+  transform: none;
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    transform var(--duration-modal-lift) var(--ease-lift);
+}
+.settings-dialog::backdrop {
+  background: var(--dialog-backdrop);
+  -webkit-backdrop-filter: var(--dialog-backdrop-filter);
+  backdrop-filter: var(--dialog-backdrop-filter);
+  opacity: 1;
+  transition: opacity var(--duration-modal) var(--ease-out);
+}
+@starting-style {
+  .settings-dialog[open] {
+    opacity: 0;
+    transform: var(--modal-enter-from);
+  }
+  .settings-dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+:root:has(.settings-dialog[open]) .main-content {
+  overflow: hidden;
+}
+.settings-panel {
+  --settings-sticky-offset: 20px;
+  position: relative;
+  display: grid;
+  height: 100%;
+  grid-template-columns: 224px minmax(0, 1fr);
+}
+.settings-panel-nav {
+  display: flex;
+  min-height: 0;
+  padding: 20px 12px;
+  flex-direction: column;
+  gap: 8px;
+  overflow-y: auto;
+  border-right: var(--hairline) solid var(--border-subtle);
+}
+.settings-panel-nav h2 {
+  margin: 0;
+  padding: 2px 10px 8px;
+  font-family: var(--font-editorial);
+  font-size: var(--type-page);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.settings-panel-nav ul {
+  display: grid;
+  gap: 2px;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-rail-link {
+  display: grid;
+  min-height: 32px;
+  padding: 0 10px;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  font-weight: 500;
+  transition:
+    background-color var(--duration-quick) var(--ease-out),
+    color var(--duration-quick) var(--ease-out);
+}
+.settings-rail-link > svg {
+  color: var(--text-tertiary);
+}
+.settings-rail-link:hover {
+  background: var(--hover-wash);
+  color: var(--text-primary);
+}
+.settings-rail-link[aria-current='location'] {
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+}
+.settings-rail-link[aria-current='location'] > svg {
+  color: var(--text-primary);
+}
+.settings-rail-link[aria-disabled='true'] {
+  opacity: 0.4;
+  pointer-events: none;
+}
+.settings-rail-link small {
+  min-width: 20px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--text-primary);
+  font-size: var(--type-micro);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.settings-panel-content {
+  display: grid;
+  min-width: 0;
+  min-height: 0;
+  /* The right gutter keeps the close button clear of section actions. */
+  padding: 28px 64px 48px 32px;
+  align-content: start;
+  gap: 32px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.settings-close {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 2;
+}
+.settings-panel-content > .settings-overview-warning {
+  margin: 0;
+}
+.settings-panel-content > .settings-trust-card {
+  margin: 0 0 0 -12px;
+  padding: 0;
+}
+.settings-panel-content .settings-trust-item strong {
+  white-space: normal;
+}
+.settings-panel-loading {
+  display: block;
+}
+.settings-search {
+  display: flex;
+  height: 34px;
+  padding: 0 6px 0 10px;
+  align-items: center;
+  gap: 10px;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: var(--glass-control);
+  box-shadow: var(--shadow-input);
+  backdrop-filter: var(--glass-filter);
+  color: var(--text-tertiary);
+  transition: border-color var(--duration-quick) var(--ease-out);
+}
+.settings-search:focus-within {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+.settings-search input {
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  flex: 1;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+}
+.settings-panel .settings-search input {
+  background: transparent;
+}
+.settings-search input::placeholder {
+  color: var(--text-tertiary);
+}
+.settings-search input::-webkit-search-cancel-button {
+  display: none;
+}
+.settings-search :where(input):focus-visible {
+  outline: 0;
+}
+.settings-search kbd {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-small);
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--type-micro);
+}
+.settings-search-status {
+  min-height: 0;
+  margin: 0;
+  padding-left: 2px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.settings-panel-content > .empty-state {
+  min-height: 200px;
+}
+.settings-panel-content mark {
+  border-radius: var(--radius-small);
+  background: var(--accent-soft);
+  color: inherit;
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+.settings-section {
+  display: grid;
+  min-width: 0;
+  gap: 0;
+  scroll-margin-top: var(--settings-sticky-offset);
+  outline: 0;
+}
+.settings-section[hidden],
+.settings-item[hidden] {
+  display: none;
+}
+.settings-section-header {
+  display: flex;
+  min-height: 28px;
+  padding-bottom: 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.settings-section-header h2 {
+  margin: 0;
+  font-size: var(--type-section);
+  font-weight: 500;
+  letter-spacing: -0.015em;
+}
+.settings-section > .settings-notice {
+  margin: 0 0 10px;
+  font-size: var(--type-meta);
+}
+.settings-section-meta {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+/* Rows sit directly on the dialog surface: hairlines separate rows and groups, no cards. */
+.settings-group:not(:has(> .settings-item:not([hidden]))) {
+  display: none;
+}
+.settings-group ~ .settings-group {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.settings-section-header + .settings-group,
+.settings-section-header + .settings-notice + .settings-group {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.settings-item {
+  position: relative;
+  min-width: 0;
+  padding: 16px 0;
+  scroll-margin-top: calc(var(--settings-sticky-offset) + 12px);
+  outline: 0;
+}
+.settings-item:not([hidden]) ~ .settings-item:not([hidden]) {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.settings-item::before {
+  position: absolute;
+  inset: 0 -12px;
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  content: '';
+  opacity: 0;
+  pointer-events: none;
+}
+.settings-item[data-flash]::before {
+  animation: settings-flash 1600ms var(--ease-out); /* scale-exempt: a highlight that fades as you read */
+}
+@keyframes settings-flash {
+  0%,
+  35% {
+    opacity: 1;
+  }
+  100% {
+    opacity: 0;
+  }
+}
+.settings-control-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 24px;
+}
+.settings-block-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.settings-block-header + * {
+  margin-top: 12px;
+}
+.settings-control-copy {
+  display: grid;
+  min-width: 0;
+  max-width: 520px;
+  gap: 4px;
+}
+.settings-control-copy strong {
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.settings-control-copy small {
+  display: grid;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+.settings-control-lead {
+  display: flex;
+  min-width: 0;
+  align-items: flex-start;
+  gap: 12px;
+}
+/* Settings marks are compact versions of the shared transaction marks. */
+.settings-panel .transaction-mark {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-control);
+}
+.settings-panel .settings-list-mark,
+.settings-panel .settings-account-name .transaction-mark,
+.settings-panel .settings-list-copy-marked .transaction-mark,
+.settings-panel .benefit-visibility-options .transaction-mark {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-inner);
+}
+.settings-panel .transaction-mark svg {
+  width: 14px;
+  height: 14px;
+}
+.settings-list-copy.settings-list-copy-marked,
+.settings-account-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.settings-list-copy-marked > span:last-child,
+.settings-account-name > span:last-child {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.settings-account-name small {
+  margin-top: 0;
+}
+.settings-block .benefit-visibility-options label {
+  gap: 10px;
+}
+.settings-block .benefit-visibility-options input {
+  order: -1;
+}
+.settings-control-action {
+  display: inline-flex;
+  min-width: 0;
+  flex: none;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-button-group {
+  display: inline-flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.settings-caution {
+  margin: 0;
+  color: var(--warning);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+.settings-reset {
+  color: var(--text-tertiary);
+}
+.settings-reset-confirmation {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.settings-reset-confirmation small {
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+
+/* Switch: a native checkbox, so keyboard, form, and accessibility behavior stay intact. */
+.settings-switch {
+  position: relative;
+  flex: none;
+  width: 34px;
+  height: 20px;
+  margin: 0;
+  border-radius: 999px;
+  appearance: none;
+  background: color-mix(in srgb, var(--text-primary) 16%, transparent);
+  cursor: pointer;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.settings-switch::before {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff; /* scale-exempt: macOS switch knob */
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3); /* scale-exempt: macOS switch knob */
+  content: '';
+  transition: transform var(--duration-quick) var(--ease-out);
+}
+.settings-switch:checked {
+  background: var(--accent);
+}
+.settings-switch:checked::before {
+  transform: translateX(14px);
+}
+.settings-switch:active::before {
+  transform: scale(0.92);
+}
+.settings-switch:checked:active::before {
+  transform: translateX(14px) scale(0.92);
+}
+.settings-switch:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.settings-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.settings-list-row {
+  display: grid;
+  min-height: 44px;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+}
+.settings-list-row + .settings-list-row {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.settings-list-row:has(> :only-child),
+.settings-list-row:not(:has(> :nth-child(3))) {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+.settings-list-copy {
+  display: grid;
+  min-width: 0;
+  padding: 6px 0;
+  gap: 2px;
+}
+.settings-list-copy strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-list-copy small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.settings-list-copy-inline {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.settings-list-copy-inline > svg {
+  flex: none;
+  color: var(--text-tertiary);
+}
+.settings-list-index {
+  width: 16px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: center;
+}
+.settings-list-key {
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.settings-order-buttons {
+  display: inline-flex;
+  gap: 2px;
+}
+.settings-block .benefit-visibility-settings {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+.settings-block .benefit-visibility-options {
+  grid-template-columns: repeat(auto-fill, minmax(168px, 1fr));
+  gap: 2px 16px;
+  margin: 0;
+}
+.settings-block .benefit-visibility-options label {
+  min-height: 34px;
+  padding: 0;
+}
+.settings-block .settings-table-scroll {
+  margin-top: 6px;
+}
+.settings-block .empty-state {
+  min-height: 96px;
+  padding: 16px 0;
+}

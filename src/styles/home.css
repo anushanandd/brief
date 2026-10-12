@@ -1,0 +1,525 @@
+/* Today: what needs action and the next two weeks, beside the overview metrics. */
+
+.home-overview-summary .account-summary-metrics {
+  padding: 0 0 20px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+
+.coming-up {
+  padding-top: 16px;
+}
+.coming-up-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+/* Titles within a card read as section titles, like every card's own. */
+.coming-up-heading > h3,
+.period-totals > h3 {
+  margin: 0;
+  font-size: var(--type-section);
+  font-weight: 500;
+  line-height: var(--heading-line);
+  letter-spacing: -0.015em;
+}
+.coming-up-link {
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.coming-up-link:hover {
+  color: var(--accent);
+}
+.coming-up-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.coming-up-row {
+  display: grid;
+  min-height: 48px;
+  padding: 8px 0;
+  grid-template-columns: 44px var(--mark-size) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.coming-up-row:last-child {
+  border-bottom: 0;
+}
+.coming-up-row > time,
+.coming-up-copy > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.coming-up-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.coming-up-copy > strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.coming-up-row > .sensitive-value {
+  font-size: var(--type-body);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.coming-up-quiet {
+  margin: 8px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+}
+
+/* Portfolio cards share these quiet evidence rows. */
+.portfolio-card {
+  min-width: 0;
+  padding: var(--card-padding);
+}
+.portfolio-note {
+  margin: 12px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+
+.portfolio-returns {
+  width: 100%;
+  margin-top: 8px;
+}
+.portfolio-returns th:first-child {
+  text-align: left;
+}
+.portfolio-returns tbody th {
+  font-weight: 500;
+}
+/* The allocation card is companion-width, so its bars give the name and track less room. */
+.portfolio-card .ranked-bars-row {
+  grid-template-columns: minmax(56px, 0.7fr) minmax(40px, 1fr) auto;
+  gap: 12px;
+}
+
+/* Figures from a native ledger query, in an answer or pinned to Today. */
+.ledger-result-facts {
+  display: grid;
+  margin: 8px 0 0;
+  grid-template-columns: repeat(auto-fill, minmax(132px, 1fr));
+  gap: 8px 16px;
+}
+.ledger-result-facts dt {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.ledger-result-facts dd {
+  margin: 2px 0 0;
+  font-size: var(--type-body);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.ledger-result-table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.ledger-result-table th,
+.ledger-result-table td {
+  height: 28px;
+  padding: 0 8px 0 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  text-align: left;
+  white-space: nowrap;
+}
+.ledger-result-table th {
+  color: var(--text-tertiary);
+  font-weight: 500;
+}
+.ledger-result-table tr:last-child > td {
+  border-bottom: 0;
+}
+.ledger-result-more,
+.pinned-question {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.pinned-grid {
+  display: grid;
+  margin-top: 16px;
+  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+  gap: 16px;
+}
+.pinned-card {
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--card-padding);
+}
+.command-evidence {
+  display: grid;
+  margin-top: 12px;
+  gap: 8px;
+}
+.command-evidence > h3 {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.command-evidence > details {
+  padding: 8px 0;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.command-evidence summary {
+  cursor: pointer;
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.command-evidence summary > small {
+  margin-left: 8px;
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+.command-evidence .button-base {
+  margin-top: 8px;
+}
+.command-evidence-none {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+/* A destination's view strip sits a card gap above what follows it. */
+.spending-workspace-page > .account-switcher {
+  margin-bottom: 16px;
+}
+
+/* Today rows share one gap, and cards in a row share one height. */
+.overview-page .home-primary-grid {
+  align-items: stretch;
+}
+.overview-page .home-secondary-grid {
+  gap: 16px;
+}
+.overview-page .home-holdings-row {
+  margin-top: 16px;
+}
+.overview-page .accounts-overview-card {
+  align-self: stretch;
+}
+/* Portfolio tables are dense evidence, so their rows are compact. */
+.portfolio-card .financial-table th,
+.portfolio-card .financial-table td,
+.security-taxes .financial-table th,
+.security-taxes .financial-table td {
+  height: var(--row-height-compact);
+  padding-block: 6px;
+}
+.pinned-grid {
+  margin-top: 16px;
+}
+
+/* The main chart takes whatever height its row has, so the column beside it never leaves a
+   gap under it. */
+.overview-page .net-worth-card {
+  display: flex;
+  flex-direction: column;
+}
+.overview-page .brokerage-chart-viewport {
+  display: flex;
+  min-height: 200px;
+  flex: 1 1 auto;
+}
+.overview-page .brokerage-chart-slide,
+.overview-page .brokerage-chart-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.overview-page .performance-chart {
+  height: auto;
+  min-height: 200px;
+  flex: 1 1 auto;
+}
+.overview-page .brokerage-chart-content > .empty-state {
+  flex: 1 1 auto;
+}
+/* Sections inside a card are separated from each other, never from the card's edge. */
+.home-overview-summary .coming-up:last-child {
+  border-bottom: 0;
+}
+
+/* Today's companion lists are one line per row. */
+.home-overview-summary .coming-up-row,
+.home-overview-summary .home-overview-summary .coming-up {
+  padding-block: 12px;
+}
+.home-overview-summary .account-summary-metrics {
+  padding-bottom: 12px;
+}
+.coming-up-heading h3 > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+}
+/* The right card is what's ahead: what needs action, then what's expected. */
+.home-ahead-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+
+/* Spent and income for the chart's period, at the top of the right card. */
+.period-totals {
+  padding-top: 0;
+}
+
+.period-totals > h3 > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+}
+.period-totals-value {
+  display: grid;
+  gap: 2px;
+  white-space: nowrap;
+}
+.period-totals-value > small {
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.overview-page .net-worth-card {
+  padding-bottom: var(--card-padding);
+}
+.overview-page .brokerage-chart-content > .empty-state {
+  min-height: 200px;
+}
+/* A need is a whole-row link, quiet until hovered; urgent needs mark their date. */
+.needs-row {
+  color: inherit;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.needs-row:hover {
+  background: var(--hover-wash);
+}
+.needs-row.is-urgent > time {
+  color: var(--negative);
+}
+.needs-list .coming-up-list > li:last-child > .coming-up-row {
+  border-bottom: 0;
+}
+.needs-list .coming-up-copy > small {
+  white-space: normal;
+}
+
+/* Taxes: the estimate beside the 1099 preview, then wash sales beside losses to harvest. */
+.taxes-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+  align-items: start;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+.taxes-grid + .taxes-grid {
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+@media (max-width: 1100px) {
+  .taxes-grid,
+  .taxes-grid + .taxes-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.taxes-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.taxes-copy {
+  margin: 12px 0 16px;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.taxes-forms {
+  margin: 4px 0 0;
+}
+.taxes-forms > div {
+  display: grid;
+  padding: 10px 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 12px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.taxes-forms > div:last-child {
+  border-bottom: 0;
+}
+.taxes-forms dt {
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+}
+.taxes-forms dd {
+  display: grid;
+  margin: 0;
+  justify-items: end;
+  gap: 2px;
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.taxes-forms dd > small,
+.taxes-list small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+}
+.taxes-list {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.taxes-list > li,
+.taxes-list-link {
+  display: grid;
+  min-height: 48px;
+  padding: 10px 0;
+  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  font-variant-numeric: tabular-nums;
+}
+.taxes-list > li + li {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.taxes-list > li:has(> .taxes-list-link) {
+  display: block;
+  padding: 0;
+}
+.taxes-list-link {
+  color: inherit;
+}
+.taxes-list-link:hover {
+  background: var(--hover-wash);
+}
+.taxes-list > li > span,
+.taxes-list-link > span {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.taxes-list > li > span:last-child,
+.taxes-list-link > span:last-child {
+  justify-items: end;
+  font-weight: 500;
+}
+.taxes-note {
+  max-width: 72ch;
+}
+.needs-list .coming-up-copy > strong {
+  white-space: normal;
+}
+
+/* Today's companion: what needs you, then what is coming, each its own card. */
+.home-companion {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 16px;
+}
+.home-companion .coming-up {
+  padding-top: 0;
+}
+/* The chart's period in figures, at the foot of the hero it describes. */
+.home-period-totals {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.home-period-totals .account-summary-metrics {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+.home-preview-more {
+  margin-top: 8px;
+}
+
+/* In the companion's narrow column a row is mark, words, then figure, with the date under the
+   figure: titles keep the width they need instead of wrapping word by word. */
+.home-companion .coming-up-row {
+  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
+  grid-template-areas:
+    'mark copy amount'
+    'mark copy date';
+  row-gap: 2px;
+}
+.home-companion .coming-up-row > time,
+.home-companion .coming-up-row > span:first-child:empty {
+  grid-area: date;
+  justify-self: end;
+}
+.home-companion .coming-up-row > .transaction-mark,
+.home-companion .coming-up-row > .brand-mark,
+.home-companion .coming-up-row > :nth-child(2) {
+  grid-area: mark;
+}
+.home-companion .coming-up-row > .coming-up-copy {
+  grid-area: copy;
+}
+.home-companion .coming-up-row > :last-child {
+  grid-area: amount;
+  justify-self: end;
+}
+.home-companion .coming-up-copy > strong {
+  display: -webkit-box;
+  overflow: hidden;
+  white-space: normal;
+  text-wrap: balance;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+.home-companion .needs-list .coming-up-copy > small {
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* Today: the hero with its holdings and activity previews beside a column of what needs you,
+   what is coming, and the accounts. Each column stacks on its own so neither leaves a gap. */
+.home-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+  align-items: start;
+  gap: 16px;
+}
+.home-main {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.home-previews {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Each preview ends with its rows rather than stretching to the longer one. */
+  align-items: start;
+  gap: 16px;
+}
+.home-previews > .surface-card,
+.home-companion > .surface-card {
+  min-width: 0;
+}
+@media (max-width: 1350px) {
+  .home-previews {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 1050px) {
+  .home-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

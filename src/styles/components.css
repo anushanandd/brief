@@ -1,0 +1,844 @@
+/* Shared controls, cards, metrics, charts, marks, and lists. */
+
+.button-base {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: auto;
+  min-height: var(--button-height);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  font-size: var(--type-body);
+  font-weight: 500;
+  cursor: pointer;
+  flex: none;
+  transition:
+    color var(--duration-quick) var(--ease-out),
+    opacity var(--duration-quick) var(--ease-out),
+    transform var(--duration-quick) var(--ease-out);
+}
+.button-base:active {
+  transform: scale(0.97);
+}
+.button-compact {
+  min-height: var(--button-height-compact);
+  padding-inline: 6px;
+}
+.button-icon {
+  width: 28px;
+  min-height: 28px;
+  padding: 0;
+}
+.button-icon-compact {
+  width: 24px;
+  min-height: 24px;
+  padding: 0;
+}
+.button-base:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.refresh-icon-active {
+  animation: refresh-spin 650ms linear infinite; /* scale-exempt: one turn of the spinner */
+}
+.refresh-button-active:disabled {
+  opacity: 1;
+  cursor: wait;
+}
+@keyframes refresh-spin {
+  to {
+    transform: rotate(1turn);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .refresh-icon-active {
+    animation: none;
+  }
+}
+.button-primary,
+.button-secondary,
+.button-ghost {
+  background: transparent;
+  color: var(--text-secondary);
+  box-shadow: none;
+}
+.button-base:hover {
+  background: transparent;
+  color: var(--text-primary);
+}
+/* Consequence buttons are solid so a repair or an erase reads before its label does. */
+.button-positive,
+.button-destructive,
+.button-positive:hover,
+.button-destructive:hover {
+  padding-inline: 10px;
+  color: var(--button-text);
+}
+.button-positive,
+.button-positive:hover {
+  background: var(--positive);
+}
+.button-destructive,
+.button-destructive:hover {
+  background: var(--negative);
+}
+.button-positive:hover:not(:disabled),
+.button-destructive:hover:not(:disabled) {
+  opacity: 0.86;
+}
+.icon-only-subtle {
+  color: var(--text-primary);
+}
+.icon-only-subtle:hover {
+  background: transparent;
+  color: var(--text-tertiary);
+}
+
+.surface-card {
+  position: relative;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-card);
+  background: var(--card-fill);
+  box-shadow: var(--shadow-card);
+  backdrop-filter: var(--glass-filter);
+  min-width: 0;
+}
+.card-scroll-cue {
+  position: absolute;
+  z-index: 1;
+  bottom: 8px;
+  left: 50%;
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: var(--popup-surface);
+  color: var(--text-secondary);
+  backdrop-filter: var(--glass-filter);
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--duration-quick) var(--ease-out);
+}
+.card-scroll-cue[data-visible] {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .card-scroll-cue {
+    transition-duration: var(--duration-instant) !important;
+  }
+}
+.section-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+.section-heading > :first-child {
+  min-width: 0;
+}
+.section-heading h2 {
+  margin: 0;
+  font-size: var(--type-section);
+  font-weight: 500;
+  line-height: var(--heading-line);
+  letter-spacing: -0.015em;
+}
+/* A control beside a heading overhangs it instead of making it taller, so every card's title
+   sits the same distance from its top edge. */
+.section-heading-action {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  line-height: var(--heading-line);
+}
+.section-heading-action:has(button, [role='combobox']) {
+  margin-block: calc((var(--heading-line) - var(--button-height)) / 2);
+}
+.section-heading p {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.positive,
+.change.positive {
+  color: var(--positive);
+}
+.negative,
+.change.negative {
+  color: var(--negative);
+}
+.muted,
+.change.muted {
+  color: var(--text-tertiary);
+}
+.change {
+  font-size: var(--type-body);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.hero-number {
+  display: block;
+  font-size: var(--type-hero);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.hero-change {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 12px;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+.hero-change-unavailable {
+  font-weight: 500;
+}
+.net-worth-card {
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.home-balance-header {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: flex-start;
+  gap: 0 24px;
+  margin-bottom: 24px;
+}
+.home-balance-main {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 0;
+}
+.home-balance-main:only-child {
+  grid-column: 1 / -1;
+}
+.chart-header-aside {
+  display: grid;
+  min-width: 0;
+  justify-items: end;
+  align-self: start;
+  gap: 6px;
+}
+.snaptrade-reference {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.home-balance-header .balance-label {
+  margin-bottom: 4px;
+  white-space: normal;
+}
+.hero-number::part(fraction) {
+  color: var(--text-tertiary);
+}
+.hero-number::part(currency) {
+  font-weight: 400;
+}
+.hero-number::part(fraction) {
+  font-size: 0.62em;
+  letter-spacing: -0.02em;
+}
+.home-balance-header .hero-number {
+  --number-flow-mask-height: 0.125em;
+}
+.home-balance-value {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+.home-balance-value .change {
+  flex: none;
+}
+.home-balance-value + .hero-change {
+  margin-top: 8px;
+}
+.chart-summary-row {
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  margin-top: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.chart-summary-row .hero-change {
+  margin-top: 0;
+  white-space: nowrap;
+}
+.home-balance-header > .chart-summary-row {
+  grid-column: 1 / -1;
+}
+.chart-summary-row > .chart-range-select {
+  margin-left: auto;
+  flex: none;
+}
+.tooltip-positioner {
+  z-index: 40;
+}
+.tooltip-arrow {
+  width: 10px;
+  height: 5px;
+  overflow: visible;
+  fill: var(--popup-surface);
+  stroke: var(--popup-border);
+  stroke-width: 0.75px;
+}
+.tooltip-arrow[data-side='bottom'] {
+  rotate: 180deg;
+}
+.tooltip-arrow[data-side='left'] {
+  rotate: -90deg;
+}
+.tooltip-arrow[data-side='right'] {
+  rotate: 90deg;
+}
+.tooltip-content {
+  box-sizing: border-box;
+  width: max-content;
+  max-width: min(420px, calc(100vw - 24px));
+  padding: 8px 10px;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-control);
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-popup);
+  color: var(--text-primary);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+  pointer-events: none;
+  -webkit-backdrop-filter: var(--popup-filter);
+  backdrop-filter: var(--popup-filter);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--duration-instant) var(--ease-out),
+    scale var(--duration-instant) var(--ease-out);
+}
+.tooltip-content[data-starting-style],
+.tooltip-content[data-ending-style] {
+  opacity: 0;
+  scale: 0.98;
+}
+.tooltip-content[data-instant] {
+  transition: none;
+}
+.treemap-tooltip {
+  padding: 12px;
+}
+.treemap-tooltip-heading,
+.treemap-tooltip-metrics > div,
+.treemap-tooltip-composition li {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+}
+.treemap-tooltip-heading strong,
+.treemap-tooltip-composition li span {
+  min-width: 0;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.treemap-tooltip-heading > span,
+.treemap-tooltip-metrics dd,
+.treemap-tooltip-composition strong {
+  flex: none;
+  font-variant-numeric: tabular-nums;
+}
+.treemap-tooltip-heading > span,
+.treemap-tooltip-composition > span,
+.treemap-tooltip-metrics dt {
+  color: var(--text-tertiary);
+}
+.treemap-tooltip-metrics {
+  display: grid;
+  gap: 4px;
+  margin: 10px 0 0;
+}
+.treemap-tooltip-metrics dt,
+.treemap-tooltip-metrics dd {
+  margin: 0;
+}
+.treemap-tooltip-composition {
+  padding-top: 10px;
+  margin-top: 10px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.treemap-tooltip-composition > span {
+  display: block;
+  margin-bottom: 4px;
+  font-size: var(--type-meta);
+  font-weight: 600;
+}
+.treemap-tooltip-composition ul {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.treemap-tooltip-composition strong {
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.spending-bar-tooltip {
+  font-size: var(--type-body);
+}
+.spending-bar-tooltip .treemap-tooltip-composition li {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.spending-bar-tooltip .treemap-tooltip-composition strong {
+  font-size: var(--type-body);
+}
+.spending-bar-tooltip-label {
+  color: var(--text-tertiary);
+  font-size: inherit;
+}
+.spending-bar-tooltip .transaction-mark {
+  flex: none;
+}
+.home-overview-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.brokerage-performance-card {
+  position: relative;
+  overflow: hidden;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.brokerage-performance-card .home-balance-header {
+  margin-bottom: 12px;
+}
+.home-primary-grid,
+.home-secondary-grid {
+  display: grid;
+  gap: 16px;
+}
+.home-secondary-grid {
+  align-items: stretch;
+  grid-template-columns: minmax(0, 1fr) repeat(2, var(--companion-card-width));
+}
+.brokerage-chart-viewport {
+  overflow: hidden;
+  margin-top: 0;
+}
+.brokerage-chart-slide,
+.brokerage-chart-content {
+  width: 100%;
+}
+.performance-chart {
+  margin-top: 0;
+  height: 240px;
+}
+.live-performance-chart {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  flex-direction: column;
+}
+/* Comparison lines stay visible; their optional Liveline toggles stay out of the layout. */
+.live-performance-chart > div:not(.liveline-chart-canvas) {
+  display: none !important;
+}
+.brokerage-holdings-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+  align-self: start;
+}
+/* Position tables drop their least decision-relevant columns before Value clips.
+   Wider tables elsewhere keep scrolling inside their cards. */
+.financial-table-scroll:has(> .position-table) {
+  container: position-table / inline-size;
+}
+@container position-table (max-width: 640px) {
+  .position-table-market :is(th, td):nth-child(4),
+  .position-table-positions :is(th, td):nth-child(4) {
+    display: none;
+  }
+}
+@container position-table (max-width: 540px) {
+  .position-table-market :is(th, td):nth-child(2),
+  .position-table-positions :is(th, td):nth-child(2) {
+    display: none;
+  }
+}
+@container position-table (max-width: 500px) {
+  .position-table-positions :is(th, td):nth-child(3) {
+    display: none;
+  }
+}
+@container position-table (max-width: 440px) {
+  .position-table-market :is(th, td):nth-child(5) {
+    display: none;
+  }
+}
+.brokerage-holdings-card .financial-table-scroll-titled thead th {
+  padding-bottom: 12px;
+}
+.home-holdings-row {
+  margin-top: 16px;
+}
+.home-activity-card .financial-activity-row {
+  min-height: 64px;
+}
+.accounts-overview-card {
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+  align-self: start;
+}
+.accounts-overview-card .account-row {
+  min-height: 64px;
+}
+/* A category total that expands to its accounts; the group owns the divider. */
+.account-group {
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.account-group:last-child {
+  border-bottom: 0;
+}
+.account-group .account-row {
+  border-bottom: 0;
+}
+.account-group-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.account-group-row:hover > svg {
+  transform: none;
+}
+.account-group[data-open] > .account-group-row > svg {
+  color: var(--text-secondary);
+  transform: rotate(180deg);
+}
+.account-group .account-row-nested {
+  padding-left: 12px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.account-row-nested .account-row-name > small {
+  text-transform: none;
+}
+.account-group-accounts {
+  animation: account-group-enter var(--duration-quick) var(--ease-out);
+}
+@keyframes account-group-enter {
+  from {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-group-accounts {
+    animation: none;
+  }
+  .account-group-row > svg {
+    transition: none;
+  }
+}
+.overview-list {
+  margin-top: 12px;
+}
+.financial-activity-link:hover .financial-activity-copy strong {
+  color: var(--accent);
+}
+.metric {
+  min-width: 0;
+  padding: 0 16px;
+  border-left: var(--hairline) solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.metric:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+.metric:last-child {
+  padding-right: 0;
+}
+.metric > span {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* Figures break only at spaces: an amount never splits across lines. */
+.metric > strong {
+  display: block;
+  margin-top: 8px;
+  font-size: var(--type-section);
+  font-weight: 500;
+  white-space: normal;
+  overflow-wrap: normal;
+}
+.position-security {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 160px;
+  width: 100%;
+}
+.position-security .asset-mark {
+  border-radius: 50%;
+}
+.position-security .asset-mark img {
+  padding: 0;
+  object-fit: cover;
+}
+.position-security > span:last-child {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.position-security strong {
+  font-weight: 600;
+}
+.position-security small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-weight: 400;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: var(--type-meta);
+  max-width: 220px;
+}
+.position-security:hover strong {
+  color: var(--accent);
+}
+.financial-activity-list {
+  margin-top: 12px;
+}
+.financial-activity-row {
+  display: grid;
+  align-items: center;
+  gap: 12px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-size: var(--type-body);
+  font-variant-numeric: tabular-nums;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  min-height: var(--row-height);
+  padding: 10px 0;
+}
+.financial-activity-row:last-child {
+  border-bottom: 0;
+}
+.financial-activity-link {
+  cursor: pointer;
+}
+
+.financial-activity-copy,
+.financial-activity-meta {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+.financial-activity-copy strong,
+.financial-activity-copy small,
+.financial-activity-meta small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.financial-activity-copy strong,
+.financial-activity-meta strong {
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+.financial-activity-copy small,
+.financial-activity-meta small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.financial-activity-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+}
+.financial-activity-title strong {
+  min-width: 0;
+}
+.financial-activity-external {
+  display: inline-flex;
+  flex: none;
+  color: var(--ink);
+}
+.financial-activity-meta {
+  align-items: flex-end;
+  text-align: right;
+}
+.transaction-mark.activity-mark-trade {
+  background: color-mix(in srgb, var(--chart-benchmark) 12%, var(--surface-raised));
+  color: var(--chart-benchmark);
+}
+.transaction-mark.activity-mark-transfer {
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+}
+.transaction-mark.activity-mark-income,
+.transaction-mark.activity-mark-credit,
+.transaction-mark.activity-mark-transfer-in {
+  background: var(--positive-soft);
+  color: var(--positive);
+}
+.transaction-mark.activity-mark-transfer-out {
+  background: var(--negative-soft);
+  color: var(--negative);
+}
+.section-heading-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.section-heading-link svg {
+  color: var(--text-tertiary);
+  transition:
+    color var(--duration-quick) var(--ease-out),
+    transform var(--duration-quick) var(--ease-out);
+}
+.section-heading-link:hover svg {
+  color: currentColor;
+  transform: translateX(2px);
+}
+.section-heading-link:hover {
+  color: var(--accent);
+}
+.spending-detail-card {
+  min-width: 0;
+  margin-bottom: 16px;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.spending-detail-note {
+  margin: 16px 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.spending-detail-note a {
+  color: var(--text-primary);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.transaction-description {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.financial-activity-copy .financial-activity-benefit.is-positive {
+  color: var(--positive);
+}
+.financial-activity-copy .financial-activity-benefit.is-warning {
+  color: var(--warning);
+}
+.chart-container {
+  width: 100%;
+  min-width: 0;
+}
+.asset-mark {
+  display: grid;
+  place-items: center;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  border-radius: 50%;
+  color: var(--data-foreground);
+  font-size: var(--type-body);
+  font-weight: 600;
+  box-shadow: inset 0 0 0 1px var(--data-border);
+}
+.transaction-mark {
+  display: grid;
+  place-items: center;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  border-radius: 50%;
+  background: var(--surface-hover);
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+.transaction-mark svg.brief-icon * {
+  stroke-width: 1.8;
+}
+.account-mark-combined {
+  background: color-mix(in srgb, var(--text-secondary) 13%, var(--surface-raised));
+  color: var(--text-secondary);
+}
+.account-mark-brokerage {
+  background: color-mix(in srgb, var(--accent) 14%, var(--surface-raised));
+  color: var(--accent);
+}
+.account-mark-retirement {
+  background: color-mix(in srgb, var(--holding-4) 14%, var(--surface-raised));
+  color: var(--holding-4);
+}
+.account-mark-cash {
+  background: color-mix(in srgb, var(--positive) 12%, var(--surface-raised));
+  color: var(--positive);
+}
+.account-mark-credit {
+  background: color-mix(in srgb, var(--negative) 12%, var(--surface-raised));
+  color: var(--negative);
+}
+.transaction-mark.brand-mark img {
+  padding: 0;
+  object-fit: cover;
+}
+.transaction-mark-interest,
+.transaction-mark-dividend,
+.transaction-mark-income,
+.transaction-mark-refund {
+  background: var(--positive-soft);
+  color: var(--positive);
+}
+.transaction-mark-transfer,
+.transaction-mark-payment,
+.transaction-mark-cash {
+  background: color-mix(in srgb, var(--chart-secondary) 13%, var(--surface-raised));
+  color: var(--chart-secondary);
+}
+.transaction-mark-fee {
+  background: var(--negative-soft);
+  color: var(--negative);
+}
+.brand-mark {
+  position: relative;
+  display: grid;
+  flex: 0 0 auto;
+  overflow: hidden;
+  place-items: center;
+}
+.brand-mark.asset-mark img {
+  padding: 0;
+  object-fit: cover;
+}
+.brand-mark img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  box-sizing: border-box;
+  padding: 4px;
+  object-fit: contain;
+  background: var(--surface-raised);
+}
+.brand-mark > span:not(.sr-only) {
+  display: grid;
+  width: 100%;
+  height: 100%;
+  place-items: center;
+}

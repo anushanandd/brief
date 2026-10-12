@@ -1,0 +1,531 @@
+/* Workspace header, selector rails, and overview grids. */
+
+.workspace-header {
+  margin-bottom: 24px;
+  align-items: center;
+}
+.workspace-header > div:first-child {
+  min-width: 0;
+}
+.workspace-header p {
+  max-width: 680px;
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.workspace-brief-card {
+  min-width: 0;
+  padding: var(--card-padding);
+}
+.workspace-brief-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+}
+.workspace-brief-heading .balance-label {
+  margin-bottom: 12px;
+}
+.workspace-brief-heading .hero-number {
+  font-size: var(--type-hero);
+}
+.workspace-brief-heading > p {
+  max-width: 360px;
+  margin: 2px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.55;
+  text-align: right;
+}
+.workspace-metric-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 28px;
+  padding-top: 20px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.accounts-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+  margin-top: 16px;
+}
+.account-group-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.account-switcher {
+  min-width: 0;
+  max-width: 100%;
+  padding: 4px;
+  border: var(--hairline) solid var(--glass-edge);
+  border-radius: var(--radius-card);
+  background: var(--card-fill);
+  backdrop-filter: var(--glass-filter);
+}
+/* One rail for every selector: it scrolls instead of wrapping into orphan rows. */
+.account-switcher-grid {
+  display: grid;
+  min-width: 0;
+  grid-auto-columns: var(--strip-item-width);
+  grid-auto-flow: column;
+  gap: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+  scroll-padding-inline: 4px;
+  scroll-snap-type: x proximity;
+  border-radius: calc(var(--radius-card) - 4px);
+  --rail-fade-start: 0px;
+  --rail-fade-end: 0px;
+  mask-image: linear-gradient(
+    to right,
+    transparent,
+    #000 var(--rail-fade-start),
+    #000 calc(100% - var(--rail-fade-end)),
+    transparent
+  );
+}
+.account-switcher-grid > * {
+  scroll-snap-align: start;
+}
+@property --rail-fade-start {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@property --rail-fade-end {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes rail-edge-fade {
+  0% {
+    --rail-fade-start: 0px;
+    --rail-fade-end: 40px;
+  }
+  6% {
+    --rail-fade-start: 40px;
+  }
+  94% {
+    --rail-fade-end: 40px;
+  }
+  100% {
+    --rail-fade-start: 40px;
+    --rail-fade-end: 0px;
+  }
+}
+@supports (animation-timeline: scroll()) {
+  .account-switcher-grid {
+    animation: rail-edge-fade linear both;
+    animation-timeline: scroll(self inline);
+  }
+}
+.account-switcher-button {
+  display: grid;
+  height: 60px;
+  padding: 0 16px 0 12px;
+  grid-template-columns: var(--mark-size) minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  border-radius: calc(var(--radius-card) - 4px);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    transform var(--duration-quick) var(--ease-out),
+    background-color var(--duration-quick) var(--ease-out);
+}
+.account-switcher-button:hover {
+  background: var(--hover-wash);
+  color: var(--text-primary);
+}
+.account-switcher-button:hover .account-switcher-copy > strong {
+  color: var(--text-primary);
+}
+.account-switcher-button:active {
+  transform: scale(0.985);
+}
+.account-switcher-button[aria-current='page'] {
+  background: var(--sidebar-accent);
+}
+.account-switcher-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 2px;
+}
+.account-switcher-copy > span,
+.account-switcher-copy > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-switcher-copy > span {
+  font-size: var(--type-meta);
+  font-weight: 600;
+}
+.account-switcher-copy > strong {
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.account-switcher-copy > .account-switcher-value {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  white-space: normal;
+  overflow: visible;
+}
+.account-switcher-value > span {
+  white-space: nowrap;
+}
+/* Page and report icons sit on the same tinted disc as account marks. */
+.strip-icon-mark {
+  background: color-mix(in srgb, var(--mark-tone) 12%, var(--surface-raised));
+  color: var(--mark-tone);
+}
+.account-overview-dashboard {
+  margin-top: 16px;
+}
+.home-primary-grid,
+.account-overview-primary-grid,
+.account-preview-grid {
+  display: grid;
+  align-items: start;
+  gap: 16px;
+}
+.home-primary-grid,
+.account-overview-primary-grid {
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+}
+.account-overview-chart-card,
+.account-overview-summary-card,
+.account-preview-card {
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--card-padding);
+}
+.account-overview-summary-card,
+.account-preview-card {
+  padding-bottom: var(--card-padding-end);
+}
+.account-overview-chart-card {
+  position: relative;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+  background: var(--card-fill);
+}
+.account-overview-chart-card .monthly-bar-chart {
+  height: 330px;
+}
+/* Companion metrics run two to a row; one whose figure needs more room takes its own row
+   rather than splitting the amount. */
+.account-summary-metrics,
+.investments-side-stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  margin-top: 16px;
+  padding-bottom: 16px;
+}
+/* Space, not rules, separates companion metrics. */
+.account-summary-metrics > .metric,
+.investments-side-stats > .metric {
+  min-width: auto;
+  flex: 1 0 calc(50% - 12px);
+}
+.account-summary-metrics .metric,
+.account-summary-metrics .metric:first-child {
+  display: flex;
+  min-height: 0;
+  padding: 0;
+  flex-direction: column;
+  border: 0;
+}
+.account-summary-metrics .metric > strong,
+.investments-side-stats > .metric > strong {
+  margin-top: 6px;
+  font-size: var(--type-figure);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.2;
+}
+.account-preview-grid {
+  margin-top: 16px;
+  grid-template-columns: minmax(0, 1fr) repeat(2, var(--companion-card-width));
+}
+.account-preview-grid-wide-primary,
+.account-preview-grid-wide-recent {
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+}
+.account-preview-grid-wide-recent .account-recent-preview {
+  grid-column: 1;
+}
+.account-preview-grid-wide-recent .account-expected-column {
+  grid-column: 2;
+}
+.account-investment-preview-column {
+  grid-column: 1;
+}
+.account-recent-preview {
+  grid-column: 2;
+}
+.account-expected-column {
+  grid-column: 3;
+}
+.account-investment-preview-column,
+.account-activity-preview-column {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 16px;
+}
+.account-expected-preview .expected-activity-list {
+  max-height: 320px;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.account-activity-preview .financial-activity-list {
+  margin-top: 8px;
+}
+.account-sales-preview .financial-table-scroll,
+.spending-activity-scroll,
+.holding-activity-scroll,
+.analytics-activity-scroll {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.monthly-bar-chart {
+  display: grid;
+  height: 260px;
+  padding-top: 12px;
+  grid-template-columns: auto repeat(6, minmax(0, 1fr));
+  align-items: end;
+  gap: 12px;
+}
+.monthly-bar-axis {
+  display: flex;
+  height: calc(100% - 48px);
+  margin-block: 24px;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.monthly-bar-column {
+  display: grid;
+  min-width: 0;
+  height: 100%;
+  grid-template-rows: 16px minmax(0, 1fr) 16px;
+  gap: 8px;
+  text-align: center;
+}
+.monthly-bar-column > strong,
+.monthly-bar-column > small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.monthly-bar-track {
+  display: flex;
+  min-height: 0;
+  align-items: flex-end;
+  justify-content: center;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.monthly-bar-track > span {
+  width: min(34px, 66%);
+  min-height: 0;
+  border-radius: var(--radius-small) var(--radius-small) 1px 1px;
+  background: var(--chart-secondary);
+}
+.monthly-bar-track > span.current {
+  background: var(--chart-primary);
+}
+
+/* All accounts: the chart over balances and recent activity, with the totals beside them. */
+.all-accounts-overview {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+  align-items: start;
+  gap: 16px;
+}
+.all-accounts-main,
+.all-accounts-side {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.all-accounts-lists {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  align-items: start;
+  gap: 16px;
+}
+.accounts-composition-card {
+  padding-bottom: var(--card-padding-end);
+}
+.accounts-composition-bar {
+  display: flex;
+  height: 8px;
+  margin: 12px 0 4px;
+  overflow: hidden;
+  gap: 2px;
+  border-radius: 999px;
+}
+.accounts-composition-bar > i {
+  display: block;
+  min-width: 2px;
+  height: 100%;
+}
+.accounts-composition {
+  margin: 8px 0 0;
+}
+.accounts-composition > div {
+  display: flex;
+  font-size: var(--type-body);
+  min-height: 36px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.accounts-composition > div:last-child {
+  border-bottom: 0;
+}
+.accounts-composition dt {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+}
+.accounts-composition dd {
+  display: flex;
+  margin: 0;
+  align-items: baseline;
+  gap: 8px;
+  white-space: nowrap;
+}
+.accounts-composition dd > small {
+  min-width: 44px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  text-align: right;
+}
+.accounts-connection-notice {
+  display: flex;
+  padding: 12px 16px;
+  align-items: center;
+  gap: 12px;
+  border-radius: var(--radius-card);
+  background: var(--warning-soft);
+}
+.accounts-connection-notice > span:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+.accounts-connection-notice strong {
+  font-weight: 500;
+}
+.accounts-connection-notice small {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.account-group-section-heading {
+  display: flex;
+  padding: 12px 0 4px;
+  align-items: baseline;
+  gap: 12px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.account-group-section-heading > h3 {
+  flex: 1;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.account-group-section-heading > small {
+  font-size: var(--type-meta);
+}
+.account-group-section-heading > strong {
+  /* Lines up with the row values above the chevron column. */
+  margin-right: 28px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+/* An unavailable value's note under the institution keeps its own case. */
+.account-row-name > small + small {
+  text-transform: none;
+}
+@media (max-width: 1250px) {
+  .all-accounts-lists {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+@media (max-width: 1050px) {
+  .all-accounts-overview {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* An account's further figures, one disclosure under the ones that decide something. */
+.account-details-more {
+  margin-top: 8px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.account-details-more > summary {
+  display: flex;
+  padding: 10px 0 4px;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  list-style: none;
+  cursor: default;
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.account-details-more > summary::-webkit-details-marker {
+  display: none;
+}
+.account-details-more > summary::after {
+  width: 6px;
+  height: 6px;
+  margin-left: 2px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  content: '';
+  transform: rotate(-45deg);
+  transition: transform var(--duration-quick) var(--ease-out);
+}
+.account-details-more[open] > summary::after {
+  transform: rotate(45deg);
+}
+.account-details-more > summary:hover {
+  color: var(--text-secondary);
+}
+.account-details-more > summary > small {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}

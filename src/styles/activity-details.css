@@ -1,0 +1,234 @@
+/* The transaction details dialog. Loads right after activity.css, whose cascade it continues. */
+
+/* Transaction details: a modal like Settings, on the same surface. */
+/* The inspector: details and edits for one activity, docked to the right edge so the list
+   it came from stays in view beside it. */
+.transaction-dialog {
+  width: min(480px, calc(100vw - 96px));
+  max-width: none;
+  height: calc(100dvh - 24px);
+  max-height: calc(100dvh - 24px);
+  margin: 12px 12px 12px auto;
+  padding: 0;
+  overflow: hidden;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-card);
+  outline: 0;
+  background: var(--popup-sheen), var(--popup-surface);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    transform var(--duration-modal-lift) var(--ease-lift);
+}
+.transaction-dialog::backdrop {
+  /* Lighter than a modal's: the page behind stays readable. */
+  background: color-mix(in srgb, var(--dialog-backdrop) 45%, transparent);
+  transition: opacity var(--duration-modal) var(--ease-out);
+}
+@starting-style {
+  .transaction-dialog[open] {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+  .transaction-dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+.transaction-details {
+  display: flex;
+  height: 100%;
+  max-height: inherit;
+  flex-direction: column;
+}
+.transaction-details-header {
+  display: grid;
+  padding: 16px 16px 0 20px;
+  grid-template-columns: 36px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.transaction-details-header > .transaction-mark,
+.transaction-details-header > .brand-mark {
+  width: 36px;
+  height: 36px;
+}
+.transaction-details-header h2 {
+  margin: 0;
+  overflow: hidden;
+  font-family: var(--font-editorial);
+  font-size: var(--type-page);
+  font-weight: 400;
+  line-height: 1.25;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transaction-details-header p {
+  display: flex;
+  min-width: 0;
+  margin: 2px 0 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.transaction-details-hero {
+  padding: 12px 20px 16px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.transaction-details-hero .hero-number {
+  font-size: var(--type-hero);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+.transaction-details-hero p {
+  display: flex;
+  margin: 4px 0 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 10px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.transaction-details-tag {
+  display: inline-flex;
+  min-height: 22px;
+  padding: 0 8px;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.transaction-details-tag.is-positive {
+  background: var(--positive-soft);
+  color: var(--positive);
+}
+.transaction-details-body {
+  display: grid;
+  min-height: 0;
+  /* One column in the inspector: facts, then edits, then history. */
+  grid-template-columns: minmax(0, 1fr);
+  align-content: start;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.transaction-details-facts {
+  margin: 0;
+  padding: 4px 20px 12px;
+}
+.transaction-details-facts > div {
+  display: grid;
+  padding: 10px 0;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: baseline;
+  gap: 12px;
+}
+.transaction-details-facts > div + div {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.transaction-details-facts dt {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.transaction-details-facts dd {
+  display: grid;
+  margin: 0;
+  justify-items: start;
+  gap: 4px;
+  font-size: var(--type-body);
+}
+.transaction-details-facts dd > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.transaction-details-value {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.transaction-details-value > span:last-child {
+  display: grid;
+  min-width: 0;
+  line-height: 1.35;
+}
+.transaction-details-value small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.transaction-details-value .transaction-mark {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+.transaction-details-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--accent);
+  font-size: var(--type-meta);
+}
+.transaction-details-facts dd.transaction-details-raw {
+  display: block;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--type-meta);
+  overflow-wrap: anywhere;
+}
+.transaction-details-history {
+  padding: 16px 20px;
+  border-left: var(--hairline) solid var(--border-subtle);
+}
+.transaction-details-history h3 {
+  display: flex;
+  margin: 0 0 4px;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+.transaction-details-history h3 > span {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+}
+.transaction-details-history ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.transaction-details-history li {
+  display: grid;
+  min-height: 34px;
+  grid-template-columns: auto minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 12px;
+  border-top: var(--hairline) solid var(--border-subtle);
+  font-size: var(--type-body);
+  font-variant-numeric: tabular-nums;
+}
+.transaction-details-history li > span {
+  overflow: hidden;
+  color: var(--text-primary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.transaction-details-history li > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.transaction-details-history li > strong {
+  font-weight: 500;
+  text-align: right;
+}
+.transaction-details-history li.is-current > span {
+  font-weight: 600;
+}
+.transaction-details-header h2:focus {
+  outline: none;
+}
+.transaction-details-history li.is-expected > span {
+  color: var(--accent);
+}

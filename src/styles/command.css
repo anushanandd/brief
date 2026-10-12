@@ -1,0 +1,663 @@
+/* Command palette, key caps, keyboard shortcuts, key guide, and focus hints. */
+
+/* Palette rows lead with the same tinted marks as accounts and activity elsewhere in Brief. */
+.command-mark {
+  --mark-tone: var(--text-secondary);
+  background: color-mix(in srgb, var(--mark-tone) 14%, var(--surface-raised));
+  color: var(--mark-tone);
+}
+.command-mark svg.brief-icon * {
+  stroke-width: 1.8;
+}
+.command-mark-accent {
+  --mark-tone: var(--accent);
+}
+.command-mark-data-1 {
+  --mark-tone: var(--data-1);
+}
+.command-mark-data-2 {
+  --mark-tone: var(--data-2);
+}
+.command-mark-data-3 {
+  --mark-tone: var(--data-3);
+}
+.command-mark-data-4 {
+  --mark-tone: var(--data-4);
+}
+.command-mark-data-6 {
+  --mark-tone: var(--data-6);
+}
+.command-empty {
+  margin: 0;
+  padding: 32px 12px;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  text-align: center;
+}
+.command-answer {
+  padding: 16px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.command-answer > strong {
+  color: var(--accent);
+  font-size: var(--type-meta);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.command-answer > p {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  line-height: 1.55;
+}
+/* One key cap per key, shared by the palette, the key guide, and Keyboard shortcuts. */
+.keys {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+.keys-chord {
+  display: inline-flex;
+  gap: 2px;
+}
+kbd.keycap {
+  display: inline-flex;
+  box-sizing: border-box;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  padding: 0 4px;
+  border: 1px solid color-mix(in srgb, var(--text-tertiary) 32%, transparent);
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: var(--type-micro);
+  font-weight: 500;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+/* Command palette, after claude.ai's: quiet rows, visible type tabs, and a static key footer. */
+.command-modes {
+  display: flex;
+  width: fit-content;
+  gap: 2px;
+  margin: 0 auto 10px;
+  padding: 4px;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-control);
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-popup);
+  -webkit-backdrop-filter: var(--popup-filter);
+  backdrop-filter: var(--popup-filter);
+}
+.command-modes > button {
+  padding: 4px 12px;
+  border: 0;
+  border-radius: var(--radius-inner);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  cursor: pointer;
+}
+.command-modes > button[aria-pressed='true'] {
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+}
+.command-palette-dialog .command-popup {
+  border-radius: var(--radius-modal);
+}
+.command-palette-dialog .command-input-wrap {
+  gap: 8px;
+  height: 52px;
+  padding: 0 10px 0 16px;
+  border-bottom: 0;
+}
+.command-close {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-inner);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.command-close:hover {
+  background: var(--hover-wash);
+  color: var(--text-primary);
+}
+.command-chip {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 2px;
+  padding: 2px 4px 2px 8px;
+  border-radius: var(--radius-inner);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--type-meta);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.command-chip-pending {
+  padding-right: 8px;
+  background: var(--sidebar-accent);
+  color: var(--text-secondary);
+}
+.command-chip > button {
+  display: grid;
+  place-items: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+.command-chip > button:hover {
+  background: color-mix(in srgb, currentColor 18%, transparent);
+}
+.command-tabs {
+  display: flex;
+  gap: 2px;
+  padding: 0 12px 10px;
+  overflow-x: auto;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.command-tabs > button {
+  flex: 0 0 auto;
+  padding: 4px 8px;
+  border: 0;
+  border-radius: var(--radius-inner);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  cursor: pointer;
+}
+.command-tabs > button:hover {
+  color: var(--text-secondary);
+}
+.command-tabs > button[aria-selected='true'] {
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+}
+.command-palette-dialog .command-list {
+  max-height: min(400px, 52vh);
+  padding: 6px 8px 8px;
+}
+.command-palette-dialog .command-group + .command-group {
+  margin-top: 4px;
+  padding-top: 0;
+  border-top: 0;
+}
+.command-palette-dialog .command-group [cmdk-group-heading] {
+  padding: 10px 12px 4px;
+  font-size: var(--type-meta);
+}
+.command-palette-dialog .command-group [cmdk-item] {
+  grid-template-columns: 24px 1fr auto;
+  gap: 10px;
+  min-height: 36px;
+  padding: 6px 12px;
+}
+.command-palette-dialog .command-group [cmdk-item].command-result-item {
+  min-height: 48px;
+}
+.command-palette-dialog .command-group [cmdk-item][data-selected='true'] {
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+  font-weight: inherit;
+}
+.command-palette-dialog .command-group [cmdk-item] .transaction-mark,
+.command-palette-dialog .command-group [cmdk-item] .asset-mark,
+.command-mark {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+}
+.command-palette-dialog .command-group [cmdk-item] .asset-mark {
+  font-size: 8.5px; /* scale-exempt: a ticker inside a small mark */
+  letter-spacing: -0.02em;
+}
+.command-item-copy mark {
+  background: none;
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.command-item-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.command-favorite {
+  color: var(--data-2);
+  fill: currentColor;
+}
+.command-more {
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--radius-small);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.command-more:hover {
+  background: var(--hover-wash);
+  color: var(--text-primary);
+}
+.command-more[aria-expanded='true'] {
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+}
+.command-palette-dialog .command-empty {
+  display: grid;
+  justify-items: center;
+  gap: 10px;
+  padding: 40px 12px;
+}
+.command-empty-action {
+  padding: 4px 10px;
+  border: 0;
+  border-radius: var(--radius-inner);
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+  font-size: var(--type-meta);
+  cursor: pointer;
+}
+.command-ask {
+  min-height: 64px;
+  padding: 0 16px 16px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.command-ask-status {
+  margin: 12px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.command-ask .command-answer {
+  padding: 16px 0 0;
+  border-top: 0;
+}
+.command-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 16px;
+  min-height: 38px;
+  padding: 6px 16px;
+  border-top: var(--hairline) solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.command-footer-hint {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.command-footer-notice {
+  color: var(--text-secondary);
+}
+.command-menu-popover {
+  position: absolute;
+  z-index: 1;
+  width: 248px;
+  padding: 6px;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: calc(var(--radius-modal) - 8px);
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-popup);
+  -webkit-backdrop-filter: var(--popup-filter);
+  backdrop-filter: var(--popup-filter);
+}
+.command-menu-header {
+  display: grid;
+  gap: 2px;
+  margin-bottom: 4px;
+  padding: 6px 8px 8px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.command-menu-header strong,
+.command-menu-header small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.command-menu-header strong {
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.command-menu-header small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.command-menu-popover > button {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 32px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-inner);
+  background: transparent;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  text-align: left;
+  cursor: pointer;
+}
+.command-menu-popover > button > span:first-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.command-menu-popover > button[data-active='true'] {
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+}
+.command-menu-popover > button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.command-menu-separated {
+  position: relative;
+  margin-top: 8px;
+}
+.command-menu-separated::before {
+  position: absolute;
+  top: -5px;
+  right: 8px;
+  left: 8px;
+  border-top: var(--hairline) solid var(--border-subtle);
+  content: '';
+}
+
+/* Keyboard shortcuts (⌘/): every shortcut, one row each, in Settings' dialog frame. */
+.shortcuts-dialog {
+  width: min(520px, calc(100vw - 48px));
+  max-width: none;
+  max-height: min(720px, calc(100dvh - 64px));
+  margin: auto;
+  padding: 0;
+  overflow: hidden;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-modal);
+  outline: 0;
+  background: var(--popup-sheen), var(--popup-surface);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    transform var(--duration-modal-lift) var(--ease-lift);
+}
+.shortcuts-dialog::backdrop {
+  background: var(--dialog-backdrop);
+  -webkit-backdrop-filter: var(--dialog-backdrop-filter);
+  backdrop-filter: var(--dialog-backdrop-filter);
+}
+@starting-style {
+  .shortcuts-dialog[open] {
+    opacity: 0;
+    transform: var(--modal-enter-from);
+  }
+}
+.shortcuts-panel {
+  display: flex;
+  max-height: inherit;
+  flex-direction: column;
+}
+.shortcuts-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 20px 16px 4px 24px;
+}
+.shortcuts-header h2 {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: var(--type-page);
+  font-weight: 400;
+}
+.shortcuts-body {
+  overflow: auto;
+  padding: 0 24px 20px;
+}
+.shortcuts-section h3 {
+  margin: 12px 0 0;
+  padding: 8px 0;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+.shortcuts-section ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.shortcuts-section li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 37px;
+  padding: 8px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+}
+.shortcuts-section li:last-child {
+  border-bottom: 0;
+}
+.shortcuts-keys,
+.shortcuts-key {
+  display: inline-flex;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 8px;
+}
+.shortcuts-or {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+
+/* Contextual key guide: a compact panel centred over the content, styled like the
+   Keyboard shortcuts dialog. It appears on every prefix key, so it does not animate. */
+.key-guide {
+  position: fixed;
+  z-index: 60;
+  right: 24px;
+  bottom: 20px;
+  left: calc(var(--sidebar-width) + 24px);
+  display: flex;
+  width: min(760px, calc(100vw - var(--sidebar-width) - 48px));
+  max-height: min(56vh, 520px);
+  margin-inline: auto;
+  flex-direction: column;
+  overflow: hidden;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-card);
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-popup);
+  color: var(--text-primary);
+  -webkit-backdrop-filter: var(--popup-filter);
+  backdrop-filter: var(--popup-filter);
+}
+.key-guide-header {
+  display: flex;
+  padding: 12px 10px 4px 20px;
+  align-items: center;
+  justify-content: space-between;
+}
+.key-guide-header h2 {
+  display: flex;
+  margin: 0;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-editorial);
+  font-size: var(--type-page);
+  font-weight: 400;
+}
+.key-guide-header h2.key-guide-prefix {
+  min-height: 30px;
+  font-family: inherit;
+  font-size: var(--type-body);
+}
+.key-guide-header h2.key-guide-prefix > span:not(.keys) {
+  color: var(--text-tertiary);
+}
+.key-guide-sections {
+  display: grid;
+  min-height: 0;
+  padding: 0 20px 12px;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  align-items: start;
+  gap: 0 32px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.key-guide-section h3 {
+  margin: 10px 0 2px;
+  padding: 6px 0;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+.key-guide-section ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.key-guide-section li + li {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.key-guide-section button {
+  display: flex;
+  width: calc(100% + 16px);
+  min-height: 34px;
+  margin-inline: -8px;
+  padding: 6px 8px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--type-body);
+  text-align: left;
+  cursor: pointer;
+}
+.key-guide-section button:not(:disabled):hover {
+  background: var(--hover-wash);
+  color: var(--text-primary);
+}
+.key-guide-section button:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+.key-guide-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.key-guide-keys {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+.key-guide > footer {
+  display: flex;
+  min-height: 36px;
+  padding: 0 20px;
+  align-items: center;
+  gap: 16px;
+  border-top: var(--hairline) solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.key-guide > footer > span {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+.key-guide-all {
+  display: inline-flex;
+  margin-left: auto;
+  padding: 0;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--type-meta);
+  cursor: pointer;
+}
+.key-guide-all:hover {
+  color: var(--text-primary);
+}
+.focus-hints {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  pointer-events: none;
+}
+.focus-hints-status {
+  position: fixed;
+  top: 18px;
+  left: 50%;
+  display: flex;
+  min-height: 38px;
+  padding: 0 12px;
+  align-items: center;
+  gap: 10px;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-control);
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-popup);
+  color: var(--text-primary);
+  font-size: var(--type-meta);
+  transform: translateX(-50%);
+}
+.focus-hints-status span {
+  color: var(--text-tertiary);
+}
+.focus-hint {
+  position: fixed;
+  min-width: 22px;
+  height: 20px;
+  padding: 0 4px;
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-small);
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-card);
+  color: var(--text-primary);
+  font-size: var(--type-meta);
+  font-weight: 600;
+  pointer-events: auto;
+  transform: translate(-4px, -9px);
+}
+.key-guide-empty {
+  margin: 12px 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+}

@@ -1,0 +1,576 @@
+/* Spending charts: the pace chart, category bars, merchants, recurring, and fee break-even. */
+
+/* Running spend against the previous period. */
+.pace-chart {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  margin: 0;
+  gap: 8px;
+}
+.pace-chart-plot {
+  position: relative;
+  height: 220px;
+  margin: 16px 56px 0 0;
+  cursor: crosshair;
+}
+.pace-chart-plot > svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+.pace-chart-grid {
+  stroke: var(--border-subtle);
+  stroke-width: 0.5;
+}
+.pace-chart-previous {
+  fill: none;
+  stroke: var(--text-tertiary);
+  stroke-dasharray: 4 4;
+  stroke-width: 1.5;
+}
+.pace-chart-area {
+  fill: color-mix(in srgb, var(--pace-accent, var(--accent)) 12%, transparent);
+}
+.pace-chart-current {
+  fill: none;
+  stroke: var(--pace-accent, var(--accent));
+  stroke-linejoin: round;
+  stroke-width: 2;
+}
+.pace-chart-projection {
+  fill: none;
+  stroke: var(--pace-accent, var(--accent));
+  stroke-dasharray: 1 5;
+  stroke-linecap: round;
+  stroke-width: 2;
+}
+.pace-chart-transaction {
+  position: absolute;
+  width: 7px;
+  height: 7px;
+  border: 1.5px solid var(--background);
+  border-radius: 50%;
+  background: var(--pace-accent, var(--accent));
+  cursor: default;
+  transform: translate(-50%, -50%);
+}
+.pace-chart-transaction::before {
+  position: absolute;
+  inset: -6px;
+  content: '';
+}
+.pace-chart-transaction {
+  pointer-events: none;
+}
+.pace-chart-crosshair {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--border-strong);
+  pointer-events: none;
+}
+.pace-chart-scrub-dot {
+  position: absolute;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  background: var(--pace-accent, var(--accent));
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+.pace-chart-readout {
+  position: absolute;
+  z-index: 2;
+  top: 0;
+  display: grid;
+  min-width: 220px;
+  gap: 6px;
+  pointer-events: none;
+  transform: translateX(12px);
+}
+.pace-chart-readout.is-flipped {
+  transform: translateX(calc(-100% - 12px));
+}
+.pace-chart-crosshair,
+.pace-chart-scrub-dot,
+.pace-chart-readout {
+  opacity: 0;
+  transition: opacity var(--duration-quick) var(--ease-out);
+}
+.pace-chart-readout {
+  transition:
+    opacity var(--duration-quick) var(--ease-out),
+    transform var(--duration-quick) var(--ease-out);
+}
+.pace-chart-crosshair.is-visible,
+.pace-chart-scrub-dot.is-visible,
+.pace-chart-readout.is-visible {
+  opacity: 1;
+}
+@media (prefers-reduced-motion: reduce) {
+  .pace-chart-readout {
+    transition: opacity var(--duration-quick) var(--ease-out);
+  }
+}
+/* Drag across days to open the rows behind them. */
+.pace-chart-plot[data-selectable] {
+  cursor: crosshair;
+  touch-action: none;
+  user-select: none;
+}
+.pace-chart-selection {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-inline: var(--hairline) solid var(--border-strong);
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+.pace-chart-transaction.is-active {
+  outline: 2px solid var(--text-secondary);
+  outline-offset: 1px;
+}
+.pace-chart-dot {
+  position: absolute;
+  pointer-events: none;
+  width: 9px;
+  height: 9px;
+  border: 2px solid var(--background);
+  border-radius: 50%;
+  background: var(--pace-accent, var(--accent));
+  transform: translate(-50%, -50%);
+}
+.pace-chart-axis {
+  position: absolute;
+  inset: 0 -56px 0 auto;
+  width: 48px;
+}
+.pace-chart-axis > span {
+  position: absolute;
+  right: 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+  transform: translateY(-50%);
+}
+.pace-chart-dates {
+  display: flex;
+  margin-right: 56px;
+  justify-content: space-between;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.pace-chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 20px;
+  padding-top: 8px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.pace-chart-legend > span {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.pace-chart-legend strong {
+  color: var(--text-primary);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.pace-chart-legend small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.pace-key {
+  display: inline-block;
+  width: 14px;
+  height: 0;
+  align-self: center;
+  border-top: 2px solid var(--pace-accent, var(--accent));
+}
+.pace-key-previous {
+  border-top: 1.5px dashed var(--text-tertiary);
+}
+.pace-key-projection {
+  border-top: 2px dotted var(--pace-accent, var(--accent));
+}
+
+/* Largest-first category bars; rows expand to the activity behind them. */
+.ranked-bars {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.ranked-bars > li {
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.ranked-bars > li:last-child {
+  border-bottom: 0;
+}
+.ranked-bars-row {
+  display: grid;
+  width: 100%;
+  min-height: 40px;
+  padding: 0;
+  grid-template-columns: minmax(120px, 0.9fr) minmax(80px, 1.6fr) minmax(84px, auto) 84px;
+  align-items: center;
+  gap: 16px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+}
+.ranked-bars-totals .ranked-bars-row {
+  grid-template-columns: minmax(120px, 0.9fr) minmax(80px, 1.8fr) minmax(84px, auto);
+}
+button.ranked-bars-row {
+  cursor: pointer;
+}
+button.ranked-bars-row:hover .ranked-bars-name {
+  color: var(--text-primary);
+}
+
+.ranked-bars-name {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+}
+.ranked-bars-name > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.ranked-bars-name > i {
+  width: 8px;
+  height: 8px;
+  flex: none;
+  border-radius: 50%;
+}
+.ranked-bars-chevron {
+  flex: none;
+  margin-left: -4px;
+  color: var(--text-tertiary);
+  transition: transform var(--duration-quick) var(--ease-out);
+}
+li[data-open] .ranked-bars-chevron {
+  transform: rotate(90deg);
+}
+.ranked-bars-track {
+  position: relative;
+  height: 6px;
+  border-radius: 999px;
+  background: var(--hover-wash);
+}
+/* The usual amount by this point, a tick across the track. */
+.ranked-bars-typical {
+  position: absolute;
+  top: -3px;
+  bottom: -3px;
+  width: 2px;
+  border-radius: 1px;
+  background: var(--text-secondary);
+  transform: translateX(-50%);
+}
+.ranked-bars > li[data-dimmed] .ranked-bars-row {
+  opacity: 0.55;
+}
+.ranked-bars-row {
+  transition: opacity var(--duration-quick) var(--ease-out);
+}
+button.ranked-bars-row[aria-pressed='true'] .ranked-bars-name {
+  font-weight: 600;
+}
+.ranked-bars-track > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+}
+.ranked-bars-row > strong {
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-align: right;
+}
+.ranked-bars-row > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  text-align: right;
+}
+.ranked-bars-row > small.positive {
+  color: var(--positive);
+}
+.ranked-bars-row > small.negative {
+  color: var(--negative);
+}
+.ranked-bars-details {
+  padding: 0 0 8px 18px; /* scale-exempt: aligns with the row label after its chevron */
+}
+.ranked-bars-details .financial-activity-list {
+  margin-top: 0;
+}
+/* Merchants inside a selected category. */
+.category-merchants ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.category-merchants li + li {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.category-merchant-row {
+  display: grid;
+  width: 100%;
+  min-height: var(--row-height);
+  padding: 6px 0;
+  grid-template-columns: 14px 32px minmax(0, 1fr) minmax(48px, 0.6fr) minmax(76px, auto);
+  align-items: center;
+  gap: 10px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+
+.category-merchant-name {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.category-merchant-name > span {
+  overflow: hidden;
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.category-merchant-name > small {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.category-merchant-share {
+  height: 4px;
+  border-radius: 999px;
+  background: var(--hover-wash);
+}
+.category-merchant-share > span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--text-tertiary);
+}
+.category-merchant-row > strong {
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-align: right;
+}
+.category-merchant-activity {
+  padding: 0 0 8px 24px;
+}
+.category-merchants-footer {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+}
+.category-merchants-footer > button {
+  padding: 0;
+  margin-top: 4px;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--type-meta);
+  cursor: pointer;
+}
+.category-merchants-footer > button:hover {
+  color: var(--text-primary);
+}
+.ranked-bars-empty {
+  margin: 16px 0 8px;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+}
+
+.analytics-breakdown-card .ranked-bars {
+  margin-top: 12px;
+}
+
+/* Activity is the body of the page: it sits under the hero at full width and scrolls inside
+   its own card, so the companion's categories, benefits, and trips stay beside it. */
+.spending-ledger-card {
+  display: flex;
+  min-height: 0;
+  flex-direction: column;
+}
+.spending-ledger-card > .spending-activity-scroll {
+  min-height: 280px;
+  max-height: 640px;
+}
+.spending-ledger-count {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.spending-account-empty {
+  padding: var(--card-padding);
+}
+.spending-account-empty .empty-state {
+  padding-top: 0;
+}
+
+/* Recurring: the monthly cost and its price changes beside the expected series. */
+.recurring-grid {
+  display: grid;
+  margin-top: 16px;
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+  align-items: start;
+  gap: 16px;
+}
+.recurring-main {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.recurring-summary-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.recurring-summary .balance-label {
+  margin-bottom: 4px;
+}
+.recurring-summary-line {
+  margin: 8px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+}
+.recurring-changes {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.recurring-changes > ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.recurring-change-row {
+  display: grid;
+  min-height: 48px;
+  padding: 8px 0;
+  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  color: inherit;
+  text-decoration: none;
+  font-variant-numeric: tabular-nums;
+}
+.recurring-changes li:last-child .recurring-change-row {
+  border-bottom: 0;
+}
+.recurring-change-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.recurring-change-copy > strong {
+  overflow: hidden;
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.recurring-change-copy > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.recurring-change-row > strong {
+  font-size: var(--type-body);
+  font-weight: 500;
+  white-space: nowrap;
+}
+.recurring-expected-card,
+.recurring-subscriptions-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+@media (max-width: 1050px) {
+  .recurring-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* Fee break-even: one sentence over a meter that fills as credits recover the fee. */
+.benefit-fee-recovery {
+  display: grid;
+  margin: 12px 0 4px;
+  gap: 8px;
+}
+.benefit-fee-recovery > p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  font-variant-numeric: tabular-nums;
+}
+.benefit-fee-recovery > p > strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.benefit-fee-recovery > p > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+}
+.benefit-fee-meter {
+  height: 6px;
+}
+
+/* In the companion a category is two lines: its name and amount, then its bar and change, so
+   the figures never run past the card at the companion's width. */
+.spending-companion .ranked-bars-row {
+  min-height: 48px;
+  padding: 8px 0;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    'name amount'
+    'track change';
+  row-gap: 6px;
+  column-gap: 12px;
+}
+.spending-companion .ranked-bars-row > .ranked-bars-name {
+  grid-area: name;
+}
+.spending-companion .ranked-bars-row > .ranked-bars-track {
+  grid-area: track;
+  height: 4px;
+}
+.spending-companion .ranked-bars-row > strong {
+  grid-area: amount;
+}
+.spending-companion .ranked-bars-row > small {
+  grid-area: change;
+  min-width: 64px;
+}
+.spending-companion .ranked-bars-totals .ranked-bars-row {
+  grid-template-areas:
+    'name amount'
+    'track track';
+}
+.spending-category-card .section-heading {
+  flex-wrap: wrap;
+  row-gap: 2px;
+}

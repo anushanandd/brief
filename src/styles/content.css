@@ -1,0 +1,266 @@
+/* Titles, empty states, account rows, and financial tables. */
+
+.workspace-title {
+  min-width: 0;
+  flex: 1 1 200px;
+}
+
+.workspace-actions {
+  display: flex;
+  min-width: 0;
+  margin-left: auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+}
+
+.workspace-status {
+  display: flex;
+  min-width: 0;
+  min-height: 28px;
+  margin: 0 -8px;
+  padding: 0 8px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px 12px;
+  flex-wrap: wrap;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  font: inherit;
+  text-align: right;
+  cursor: pointer;
+  transition: background-color var(--duration-instant) var(--ease-out);
+}
+
+.workspace-status:hover,
+.workspace-status[data-popup-open] {
+  background: var(--hover-wash);
+}
+
+.workspace-status:empty {
+  display: none;
+}
+
+.workspace-title h1 {
+  overflow-wrap: anywhere;
+}
+
+.empty-state {
+  /* Quiet and compact: an empty card says so in a line and lets its neighbours set the size. */
+  display: grid;
+  width: 100%;
+  padding: 12px 0 4px;
+  align-content: start;
+  justify-items: start;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  line-height: 1.45;
+  text-align: left;
+}
+
+.empty-state > strong {
+  color: var(--text-primary);
+  font-size: var(--type-body);
+}
+
+.empty-state > p {
+  max-width: 440px;
+  margin: 0;
+}
+
+.empty-state > .button-base {
+  margin-top: 2px;
+}
+
+/* Unavailable charts keep their footprint as a quiet ghost plot, so the card
+   doesn't jump when history arrives and never implies a plotted value. */
+.brokerage-chart-content > .empty-state,
+.brokerage-chart-viewport > .empty-state,
+.analytics-chart-card > .empty-state {
+  --ghost-rule: color-mix(in srgb, var(--text-primary) 5%, transparent);
+  min-height: 330px;
+  padding: 24px;
+  align-content: center;
+  justify-items: center;
+  text-align: center;
+  border-bottom: var(--hairline) dashed color-mix(in srgb, var(--text-primary) 14%, transparent);
+  background-image: linear-gradient(
+    to bottom,
+    var(--ghost-rule) var(--hairline),
+    transparent var(--hairline)
+  );
+  background-size: 100% calc(100% / 3);
+}
+.brokerage-chart-viewport > .empty-state {
+  height: 100%;
+}
+
+.account-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto 16px;
+  min-height: var(--row-height);
+  padding: 10px 0;
+  align-items: center;
+  gap: 12px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-size: var(--type-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.account-row:last-child {
+  border-bottom: 0;
+}
+
+.account-row-name,
+.account-row-values {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.account-row-name > strong,
+.account-row-name > small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.account-row-name > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  text-transform: capitalize;
+}
+
+.account-row-values {
+  align-items: flex-end;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.account-row-values > small {
+  font-size: var(--type-meta);
+}
+
+.account-row > svg {
+  color: var(--text-tertiary);
+  transition:
+    color var(--duration-quick) var(--ease-out),
+    transform var(--duration-quick) var(--ease-out);
+}
+.account-row:hover > svg {
+  color: var(--text-secondary);
+  transform: translateX(2px);
+}
+
+.account-row:hover .account-row-name > strong {
+  color: var(--accent);
+}
+
+/* Room for row hover to bleed, given back in the margin so cells align with the heading. */
+.financial-table-scroll {
+  width: calc(100% + 8px);
+  max-width: none;
+  min-width: 0;
+  margin: 12px -4px 0;
+  padding: 4px;
+  overflow-x: auto;
+  overscroll-behavior-x: contain;
+}
+
+.financial-table-scroll-titled {
+  margin-top: 0;
+  padding-top: 0;
+}
+
+.financial-table .section-heading {
+  color: var(--text-primary);
+}
+
+.financial-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--type-body);
+  font-variant-numeric: tabular-nums;
+}
+
+.financial-table th,
+.financial-table td {
+  height: var(--row-height);
+  padding: 10px 12px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  text-align: right;
+  white-space: nowrap;
+}
+
+.financial-table thead th {
+  height: var(--control-height);
+  border-bottom: 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+
+.financial-table-scroll-titled thead th {
+  height: auto;
+  padding-top: 0;
+  padding-bottom: 8px;
+}
+
+.financial-table th:first-child,
+.financial-table td:first-child {
+  padding-left: 0;
+  text-align: left;
+}
+
+.financial-table th:last-child,
+.financial-table td:last-child {
+  padding-right: 0;
+}
+
+.financial-table tbody tr:last-child > * {
+  border-bottom: 0;
+}
+
+.financial-table td > strong,
+.financial-table td > small {
+  display: block;
+}
+
+.financial-table td > small {
+  margin-top: 4px;
+  font-size: var(--type-meta);
+}
+
+.financial-table .change {
+  font-weight: 500;
+}
+
+.holding-account-name {
+  max-width: 180px;
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+}
+
+.financial-activity-copy .transaction-description {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.financial-activity-meta > small {
+  max-width: 150px;
+  color: var(--text-primary);
+  white-space: normal;
+  line-height: 1.4;
+}
+.financial-activity-date time,
+.financial-activity-date small {
+  color: var(--text-primary);
+}
+
+.financial-activity-meta > strong {
+  white-space: nowrap;
+}

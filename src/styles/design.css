@@ -1,0 +1,122 @@
+/* Design reference page. */
+
+.design-sections {
+  display: grid;
+  gap: 16px;
+}
+.design-sections .surface-card {
+  padding: var(--card-padding);
+}
+.design-swatches {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 12px;
+}
+.design-swatch {
+  display: grid;
+  gap: 8px;
+  font-size: var(--type-meta);
+  color: var(--text-secondary);
+}
+.design-color {
+  height: 40px;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+}
+.design-type-samples {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 32px;
+}
+.design-type-samples > div {
+  display: grid;
+  gap: 8px;
+  align-content: start;
+  font-variant-numeric: tabular-nums;
+}
+.design-type-samples .muted {
+  font-size: var(--type-meta);
+  text-transform: capitalize;
+}
+.design-page code {
+  font-family: var(--font-mono);
+  font-size: var(--type-meta);
+  overflow-wrap: anywhere;
+}
+.design-note {
+  font-size: var(--type-meta);
+  color: var(--text-tertiary);
+  margin: 16px 0 0;
+  line-height: 1.6;
+}
+.design-details {
+  margin-top: 24px;
+  border-top: var(--hairline) solid var(--border-subtle);
+  padding-top: 16px;
+}
+.design-details summary {
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+}
+.design-token-list {
+  margin: 16px 0 0;
+  font-size: var(--type-meta);
+}
+.design-token-list > div {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 8px 0;
+}
+.design-token-list dd {
+  margin: 0;
+  color: var(--text-secondary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.design-controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin-top: 16px;
+}
+.design-controls label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: var(--type-body);
+}
+.design-controls input:not([type='checkbox']) {
+  width: 160px;
+}
+.design-comparison {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 24px;
+  margin-top: 24px;
+}
+.design-comparison > div {
+  min-width: 0;
+}
+.design-example-bar {
+  display: flex;
+  height: 24px;
+  gap: 2px;
+  margin-top: 16px;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+}
+.design-loading {
+  display: grid;
+  align-content: center;
+  justify-items: start;
+  gap: 8px;
+}
+@media (max-width: 1050px) {
+  .design-type-samples {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
