@@ -1,103 +1,100 @@
-# Brief interface system
+# Interface system
 
-Brief should feel like a private macOS financial instrument: calm, compact, and evidence-first. `src/styles.css` and shared React components are the implementation source of truth; this document records the stable design rules.
+Brief should feel like a private macOS financial instrument: calm, compact, and evidence-first. This file records the rules that keep the interface coherent. The tokens in `src/styles/tokens.css` and the shared components in `src/components/` are the implementation; read them for exact values.
 
 ## Principles
 
-- Prefer clear hierarchy and dense, reusable rows over decorative dashboard chrome.
-- Reserve color for selection, status, category identity, and financial meaning.
-- Show missing or incomplete evidence explicitly. Never imply precision with placeholders or color alone.
-- Use card-based navigation rather than horizontal top tabs.
-- Keep headings concise. Put necessary scope, provenance, and instructions beside the relevant value, control, or state instead of beneath the heading.
-- The supported interface is desktop-only at widths of 860 px and above.
+- **Evidence first.** Show what the data supports. Label saved, delayed, estimated, incomplete, and unavailable values explicitly, and never imply precision with placeholders or color alone.
+- **Quiet by default.** Use hierarchy and dense, reusable rows rather than decorative dashboard chrome. Color is for selection, status, category identity, and financial meaning.
+- **Say it once.** Headings are short. Put scope, provenance, and instructions beside the value or control they describe, not in a subtitle. Use breadcrumbs for query-backed scope such as account, ticker, or date range.
+- **Desktop only.** The app supports widths of 860 px and above. Narrow widths stack cards; there is no mobile navigation model.
+- **Cards, not tabs.** Navigation uses the sidebar and cards. Never use horizontal top tabs. Money heads its page and its reports with one strip of cards (Spending, Recurring, then its reports), so moving between them keeps the frame. Investments is headed by its holdings (the portfolio, then each holding by value); its reports open from the period card and lead back through the breadcrumb.
+- **One selector.** Money and Investments are each headed by `SelectorStrip`: equal cards, each with its figure and its dollar change over the page's period, opening on that period. Pages never build their own. Accounts have types and grow in number, so Accounts lists them by group instead, and ⌘← and ⌘→ still step through them.
+- **One list.** A page shows its transactions once. A breakdown narrows or switches to that list (Spending's categories focus its Activity; a report's Breakdown/Transactions switch, kept in the URL) and never expands into a second copy beside it.
+- **Today previews, pages own.** Today is the overview: net worth, what needs you, what is coming, and compact, read-only previews of holdings, accounts, and recent activity, each headed by a link to the page that owns it.
+- **One highlight.** Hover uses `--hover-wash` and the current or selected item uses `--sidebar-accent`, in the sidebar, selectors, menus, and the command palette alike. An open report highlights its destination in the sidebar, not its own row.
 
-## Foundations
+## Tokens
 
-Shared tokens live in `:root` in `src/styles.css`.
+| Role             | Tokens                                                                                                                                                                    |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Surfaces         | `--background`, `--surface`, `--popup-surface`, `--control-background`, `--border-subtle`                                                                                 |
+| Text             | `--text-primary`, `--text-secondary`, `--text-tertiary` (three inks; rules are the ink at `--rule-strength`)                                                              |
+| Interaction      | `--accent`, `--accent-soft`, `--control-border`, `--hover-wash`, `--ease-out`, `--ease-in-out`                                                                            |
+| Financial status | `--positive`, `--warning`, `--negative`                                                                                                                                   |
+| Data categories  | `--data-1` … `--data-7`                                                                                                                                                   |
+| Type scale       | `--type-micro`, `--type-meta`, `--type-body`, `--type-section`, `--type-figure` (companion metrics), `--type-page`, `--type-metric`, `--type-hero`                        |
+| Geometry         | `--radius-small`, `--radius-inner`, `--radius-control`, `--radius-card`, `--radius-modal`, `--card-padding`, `--card-padding-end`, `--companion-card-width`               |
+| Sizes            | `--control-height` (fields), `--button-height`, `--button-height-compact`, `--mark-size`, `--heading-line`, `--strip-item-width`, `--row-height`, `--row-height-compact`  |
+| Motion           | `--duration-instant`, `--duration-quick`, `--duration-modal`, `--duration-modal-lift`, `--duration-reveal`, `--ease-out`, `--ease-in-out`, `--ease-lift`, `--ease-reveal` |
 
-| Role                | Tokens                                                                                                              |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------- |
-| Canvas and surfaces | `--background`, `--surface`, `--popup-surface`, `--control-background`                                              |
-| Text                | `--text-primary`, `--text-secondary`, `--text-muted`                                                                |
-| Interaction         | `--accent`, `--accent-soft`, `--control-border`                                                                     |
-| Financial status    | `--positive`, `--warning`, `--negative`                                                                             |
-| Data categories     | `--data-1` through `--data-7`                                                                                       |
-| Typography          | `--type-meta`, `--type-body`, `--type-section`, `--type-page`, `--type-metric`, `--type-hero`                       |
-| Geometry            | `--radius-control`, `--radius-card`, `--card-padding`, `--companion-card-width`, `--control-height`, `--row-height` |
+Don't add page-local colors, sizes, durations, or easing when a token exists. Spacing stays on the 4 px scale (with 2, 6, 10, and 28 for fine work). `src/styles/tokens.test.ts` enforces spacing, type, radius, motion, and color; a declaration that must leave the scale says why in a `scale-exempt` comment.
 
-The macOS SF Pro system stack is used for body text, controls, metrics, and code-like text. Editorial titles use Iowan Old Style with Palatino, Book Antiqua, Georgia, and generic serif fallbacks. The Brief wordmark and page titles use the regular-weight editorial face. Financial values use tabular numerals.
+## Type
 
-Interface icons use Hugeicons Free Stroke Rounded through `src/components/icons.tsx`, with a 1.75 default stroke width and sizes set by their existing controls and marks.
+- SF Pro (the system stack) for text, controls, and numbers. Iowan Old Style for the wordmark and page titles.
+- Financial values use tabular numerals and come from `src/lib/format.ts`, never a local formatter. Rows, metrics, and selectors show cents. Changes and returns carry two decimals and a sign; shares of a whole (weight, allocation, utilization) carry one decimal and none. Sentences round to whole dollars and one decimal. A change of zero carries no sign, and a negative one carries a true minus (U+2212); copies and exports translate it back to a hyphen. An amount never splits across lines: a metric too wide for its column takes its own row.
+- Lists name a date's year only when it isn't the snapshot's year. Chart axes read in the user's time zone; market session marks read in Eastern time and say "ET". Bank descriptors are display-cased (`displayCase`) in titles and kept raw where they are evidence. Hero amounts keep the integer dominant, with the currency symbol and cents smaller and tertiary.
+- Icons come from Hugeicons Stroke Rounded through `src/components/icons.tsx`.
 
-Cards use the shared translucent surface, subtle border, 16 px radius, and 24 px standard padding. Standard companion cards use the Account details width: 27.5% of the available row with a 280 px floor. Rows with two companions reserve that width for each and let the primary card fill the remainder. Controls use an 8 px radius. The standard row height is 64 px. The page is centered to a 1560 px maximum, with a fixed 256 px sidebar; page horizontal padding decreases from 48 px to 32 px below 1050 px. The sidebar follows shadcn’s header/content/group/menu/footer composition with uniform full-width rows, quiet section labels, and no darker overlay than the app canvas. Durable subpages are grouped beneath the primary workspace menu. The sidebar links to the Accounts workspace but does not list individual accounts. The Accounts workspace account selector excludes the saved spending account and keeps every remaining account in one horizontally scrollable row; selectors show the display name, value, and signed range change without provider or institution metadata.
+## Surfaces and layout
 
-The native window opens maximized with macOS decorations and an overlaid, hidden title bar so its corners remain rounded. Its traffic-light controls are hidden. The white semibold Brief wordmark uses page-title typography, aligns vertically with page titles, and shares the Workspace sidebar label’s left edge.
-
-The app frame and background stay fixed to the window. Longer routes scroll inside the main content pane without moving the frame; Activity keeps its results and filters as the card scroll regions. Changing routes resets the main content pane to its top.
+- Cards pad `--card-padding` on every side, or `--card-padding-end` at the bottom when they end in rows. A card's title sits on `--heading-line`; a control beside it overhangs that line instead of making the heading taller, so every title is the same distance from its card's top.
+- Cards use the shared surface (`--card-fill`; in Custom, a fade from clear at the top to a light tint at the base), a hairline, the card radius, and standard padding. All borders and dividers are `--hairline`: half a pixel on Retina, a whole one on 1× displays. Nothing draws a focus outline. Popups and tooltips are solid surfaces. Modals (command palette, Settings) lift on `--shadow-modal` over a blurred, dimmed page and rise in on `--modal-enter-from`. Activity details open as an inspector docked to the right edge, over a lighter backdrop, so the list stays readable beside it.
+- A primary card sits beside companion cards of `--companion-card-width`. Related cards are 16 px apart, and major groups 24 px.
+- `WorkspaceHeader` owns the route title, data status, and route actions.
+- The app frame stays fixed. Content scrolls inside the main pane, and long lists scroll inside their cards.
+- A card ends where its content ends. Cards side by side align to the top rather than stretching to the taller one, and a full-height list card shrinks to a short list; only a chart's plot keeps a fixed height when it is empty.
+- There is no light appearance. Dark follows Robinhood Legend's dark theme: a black canvas with panels set apart by hairlines, grey controls, and blue-grey inks. Custom is the image-backed translucent theme, with a faint grain over its card fade so the gradient can't band. Both share one token contract.
+- Scroll bars are hidden everywhere. A card that scrolls shows a cue at its foot (`ScrollCueCard`), and the selector rail fades its edges.
+- Icons use four sizes: 12 inline with meta text, 14 inline with body text, 15 inside marks, 16 in controls.
 
 ## Color
 
-- Green and red represent favorable and unfavorable financial direction only when a signed value or text also communicates the meaning.
-- The seven data colors identify categories and series; they are not gain/loss colors.
-- Asset categories use their semantic aliases from `src/styles.css`.
-- Unsupported or unavailable data uses the muted text treatment, not a success or failure color.
-- Do not add page-local colors when a semantic token already exists.
+- Green and red mean favorable and unfavorable only alongside a signed value or text.
+- The seven data colors identify categories and series, never gain or loss. Their order and per-theme steps are what keep neighbours apart under colour-vision deficiency. Every theme's series colors reach 3:1 on its surfaces and its tertiary ink reaches 4.5:1, enforced by `src/styles/contrast.test.ts`. A mark still never carries identity without a visible label.
+- Unavailable data uses muted text, not a status color. A value that does not apply (earnings for a fund, contributions for an account with no flows) is left out, never dashed. A zero reads $0.00 only when the window holds posted records.
+- Personal amounts render through `.sensitive-value` so screen privacy (⌘H) can mask them. Public prices and market charts stay visible.
 
 ## Components
 
-Use the shared components before creating page-specific variants:
+Reach for the shared component before creating a variant:
 
-- `Card` for surfaces
-- `SectionHeading` for card titles and a right-side action
-- `Metric` for concise label/value pairs only; do not add secondary metric details
-- `Button` for actions and icon controls
-- `ChartRangeSelect` for graph and date ranges; it uses a compact transparent trigger and concise names such as Week, Month, Quarter, and Year. Use `RangeSelector` for compact non-date choices
-- `EmptyState` for unavailable, empty, or blocked content
-- shared account, activity, position, and sale rows for financial lists
+- `Card`, `SectionHeading` (title plus one right-side action), `Metric` (label and value only)
+- `Button`: labels stay visible at default and compact sizes. Icon-only buttons need an accessible name. `positive` (repair, connect, save) and `destructive` (forget, remove, erase) are solid fills; everything else stays quiet.
+- `ChartRangeSelect` for every compact single choice, including chart periods and Settings options. Activity's date button offers presets only; exact dates are typed in search or set in its filters card.
+- Search fields use `AutofillField`: the best match finishes as ghost text and Tab accepts it a word at a time, as in the command palette.
+- `EmptyState` for empty, unavailable, or blocked content: one short line, left-aligned, so an empty card never sets the height of its row. Inside a chart it keeps the chart's footprint as a ghost plot so cards don't jump.
+- `RankedBars` for largest-first breakdowns (categories, groups), with change against the comparable window when one exists and a tick for the usual amount when history supports one. With `onSelect`, a row selects one item that focuses or filters the page's list; a row expands to the activity behind it only where no list beside it shows that activity.
+- Shared account, activity, position, and sale rows for financial lists.
+- When the Activity ledger is too narrow, places, then categories, then accounts give way; amounts and dates never clip. Missing merchant logos fall back to the transaction or category mark, never generated initials.
+- Tooltips hold compact evidence for chart and data marks only. Interactive or explanatory content belongs in a click-to-open popover.
 
-Icon-only controls require an accessible name. Stateful controls expose the appropriate `aria-pressed`, `aria-expanded`, `aria-busy`, or disabled state. Wide financial tables scroll inside their cards.
-Activity ledger rows and filters show account type marks and distinct category marks beside their names. Actual merchant logos are preferred when enabled; missing or disabled merchant logos fall back to the native transaction or category mark, never generated initials. Native transaction marks determine row icons for transfers, interest, dividends, payments, refunds, and fees; known spending categories use meaningful distinct icons. Activity dates and pending labels use primary text. Activity search stays a single-line control. Borderless remove controls for selected account, category, method, date range, and analytics scope sit to its right in the ledger toolbar, with muted scope labels and normal value text. The Activity search and filter search have transparent surfaces and no focus outline; their caret and adjacent icon or key hint change provide focus feedback. Search, the date-range menu, and Download share the ledger toolbar, with the menu immediately left of Download. A persistent Filters card sits to the right of the ledger with Accounts, Categories, and Methods in one scrollable column and Clear all beside its heading. At narrow desktop widths the cards stack to keep the ledger usable. F focuses the card's filter search; arrow keys and Return choose available values, Escape clears the search and leaves filter selection, C clears all filters outside text entry. After a filter choice, focus moves to the filter region so page shortcuts work again. The date-range menu supports native keyboard selection; Custom reveals the two-thumb day-range slider immediately below the toolbar, with each thumb keyboard adjustable. Presets apply immediately and the selected date range appears as a removable toolbar tag. Frequent keyboard actions do not animate. Filter marks share one compact size, and options omit Enter glyphs. Search text and the selected date range limit available filter options. Each option group also respects the other selected facets, while chosen options leave their groups until their tags are removed. Number keys open sidebar pages outside text entry. Left and right arrows change the selected account, analytics chart, holding, or spending period. Location shows the method’s colored mark beside city and state; when location is missing it shows the method label and filters by method. An icon beside a supplied place reveals its street address in a tooltip. Brokerage activity uses its own method mark. There is no separate Method column; method filtering remains in the Filters card. Missing values use an unavailable marker. Description, account, category, location, and date cells apply filters when clicked or activated by keyboard. Description and location use search; the full description remains in the description control's accessible name without a hover tooltip. Merchant websites use a separate link beside the description. Account, category, location, date, and amount columns size from all loaded activity rows, including rows outside the current filters, so filtering does not move dividers. Category and location use compact width limits for unusually long labels. Description takes the remaining width with a 180 px minimum; its displayed titles show at most five words and truncate when needed. The Activity page stays fixed to the window; results, filters, and overflowing toolbar tags scroll inside their cards. Wide results scroll inside the ledger card. Row dates are centered and omit the visible year and time. Negative activity amounts use the negative color token without bold weight. The ledger uses aligned vertical column dividers and horizontal row separators. Column headings use text only, matching the row text color and size in bold; description rows use regular weight and white text.
-Cards with vertical overflow show a bottom chevron on a faded, borderless circular surface while more content remains below; it disappears at the end of the scroll region.
+## Charts and data
 
-Tooltips are for compact evidence attached to chart or data marks, not for ordinary labels or controls. Interactive eligibility or terms content belongs in a click-to-open popover. Popup surfaces use the shared elevated material and must remain keyboard-dismissible.
-
-## Layout
-
-`WorkspaceHeader` owns the route title, snapshot or market status, and route actions. Related cards use 16 px gaps; major Home groups use 24 px gaps. At supported narrower widths, overview grids collapse rather than introducing a mobile navigation model; three-card rows stack at 1350 px and below so their primary card does not become unusably narrow. Account details, account Recent and Expected activity, Spending Metrics, Platinum benefits and Expected activity, and Home Accounts and Recent activity share the standard companion width; Home Holdings fills the remaining column. Individual investment accounts omit Expected activity, keep Recent activity in the right companion column, and let Holdings and Realized sales fill the wider primary column. Cash accounts place Recent activity in the wide left column and Expected activity in the right companion column.
-
-Do not duplicate visible page contents in subtitles. Use breadcrumbs for query-backed scope such as the selected account, ticker, category, or date range.
-
-## Charts and financial data
-
-- Chart range controls sit at the header’s top right. Holdings bar, feed, and observation details live behind a keyboard-accessible info tooltip beside the range; unavailable market states remain visible. SnapTrade reference and projection labels remain beside the chart value.
-- Use explicit labels for saved, delayed, estimated, incomplete, and unavailable data.
-- Account details follow the chart range. All accounts shows cash and investment balances, range investment income, and total gain evidence. Cash accounts show range inflows, outflows, net flow and interest, an estimated annualized rate, and average monthly net flow across imported history. Brokerage accounts show range market P/L, current cash, total unrealized and estimated realized P/L, and range dividends and interest.
-- Supported SnapTrade account details keep native current cash separate from range and gain metrics.
-- Canonical daily history, five-minute intraday projections, latest observations, comparisons, and cash-flow markers remain visually and semantically distinct.
-- Chart colors come from shared CSS tokens. Line charts omit persistent series-key legends.
-- Shared pie and donut charts place their legends to the right of the visualization.
-- Bar-chart legends sit in one centered row below the plot, scrolling horizontally inside the card only when needed.
-- Analytics cash flow uses the sources-and-uses Sankey in the primary chart card instead of period bars.
-- Cash flow opens first in Analytics by default. Settings controls the order of Analytics charts in the workspace, sidebar, and command menu.
-- Spending keeps its range-scoped category bars separate from the companion card containing estimated statement close, daily average, posted and estimated missed credits, and range and all-time largest expenses. It uses the shared chart range control without pointer stepper arrows; Left and Right move between periods from the keyboard. Statement is the default range; month, quarter, year, and all-time ranges use calendar periods. The period label and hero value stay in their own tight stack. Bar segments place credits below zero and expose category, period, amount, and merchant activity on hover or keyboard focus; activity uses actual merchant logos when available and category marks otherwise. Activity sits left of a companion stack with a short Platinum preview above the saved-card Expected activity. Accounts is the canonical cross-account Expected activity location: All accounts shows the combined forecast, while a selected banking account scopes it to that account. Individual brokerage and retirement views omit Expected activity. Banking views place Recent activity left of Expected activity. Compact expected rows reuse the source transaction’s Activity mark, show account and cadence as secondary text, and keep right-aligned estimated amounts with relative near-term due dates. The merchant is a link to Activity with both a description search and the source account filter so the supporting transactions are immediately visible. A keyboard-accessible info icon beside the merchant reveals posted evidence in a tooltip. An unambiguous pending match replaces the due-date label with `Pending` but does not increase the posted observation count. Expected inflows and credits use the positive tone; outflows use the negative tone. Analytics → Amex credits places Current benefit windows below the chart and Overview above Credit activity in the companion column. Activity and sales lists in Analytics, Accounts, Spending, and Holdings stop at the visible window bottom and scroll within their cards. Home Recent activity shows at most one row per account in the adjacent Accounts card, expands in the page flow, and does not scroll within its card. Account Expected activity uses the same viewport-based scroll ceiling as Recent activity. Current benefit windows remain independent of the chart period; estimated Uber Cash stays separate from posted totals. The narrow Spending benefit preview uses a compact cap, progress bar, and single status line; duplicate remaining-period text stays in the full Analytics view.
-- Every chart has an accessible label; hover-only information must have a keyboard-accessible equivalent.
-- Holdings detail stays scoped to the selected ticker and does not repeat the portfolio-wide holdings table already available on Home. Its price graph is candlestick-only; range remains externally controlled and there is no chart-style toggle. Below the overview, Accounts and Activity share the row with a wider News card whose feed uses the available viewport height.
-- Holdings news is newest-first after duplicate grouping. Keep refresh as a compact heading action, show saved stories while disconnected, label relevance and sentiment without provider chrome, and keep rows to source, time, headline, and metrics.
-- Never present interpolated or estimated display values as observed financial evidence.
-
-The patched Liveline behavior and upgrade constraints are documented in [../docs/liveline-patch-review.md](../docs/liveline-patch-review.md).
+- Every chart has an accessible label.
+- Investments follows the app's chart range, chosen in its main chart card, and every card there follows it. No other card carries its own range.
+- News carries each story's relevance to its company (0–100) as a quiet badge; stories that only mention the company fold away. Summaries are made in the background, never behind a button.
+- The investment summary is a short paragraph about today (the move against the S&P 500 and who led it), then up to two headlines with their publisher, time, and link. It repeats nothing another card shows and never phrases a cause itself.
+- Keep canonical history, intraday projections, latest observations, comparisons, and cash-flow markers visually distinct.
+- Never present interpolated or estimated values as observed evidence. A range change with no comparison reads "Change unavailable".
+- Chart colors come from tokens. Line charts have no persistent legend; a comparison chart may carry a caption that states the compared values.
+- The patched chart library is documented in [docs/liveline-patch-review.md](../docs/liveline-patch-review.md).
 
 ## Interaction and accessibility
 
-- Preserve native button, link, form, and dialog semantics.
-- Focus uses a visible two-pixel outline; full-row controls may inset it. The Activity text searches use the transparent focus treatment described above.
-- Support keyboard operation for every interactive path.
-- The command palette searches Activity descriptions and other ledger fields, previews matching entries, and opens account, category, method, and date filters. Search results use the Activity route's shareable query.
-- Keep direct feedback brief and interruptible. Avoid ornamental page transitions.
-- Respect `prefers-reduced-motion`; `src/styles.css` reduces animation and transition duration globally.
-- Loading, empty, error, hover, active, focus, and disabled states must remain distinguishable.
-- Scrollable regions retain keyboard access and visible focus.
+- Brief behaves as a Mac app. Every app and page command appears in the menu bar, grouped Go, View, and Actions; only Command shortcuts that never edit text get a menu key equivalent. Rows have a context menu (Open, Copy Row, Copy Amount) and ⌘C copies the focused row; both leave out what screen privacy hides. `brief://` links open any view (`brief://holdings/VTI`), and the context menu copies one for the current view.
+- Every control outside a list row names its command in `data-command`, so the pointer reaches nothing the palette, menu bar, and keyboard can't. Rows are covered by the list commands. `src/pages/routes.test.tsx` checks this on every page.
+- Keep native button, link, form, and dialog semantics. Stateful controls expose `aria-pressed`, `aria-expanded`, `aria-busy`, or disabled state.
+- The keyboard works through shortcuts, not focus: no element draws a focus ring and Tab doesn't move focus. Text fields still take focus for typing. Menus and dialogs hand focus back to their opener so shortcuts like the arrow keys continue in place.
+- Arrows have one meaning everywhere: ⌘↑ and ⌘↓ move between sidebar pages, ⌘← and ⌘→ step through the page's selector, bare ← and → move through time where a page has periods, and bare ↑ and ↓ move through the focused list like J and K (on Activity, ↓ selects the first row and F opens the filters card beside the ledger). Command arrows stay with a text field while it has focus.
+- Shortcuts are defined once in the action registry and drive the command palette (⌘K), the key guide (`?`), and Keyboard shortcuts (⌘/). Bare shortcuts pause during text entry. `g` then a letter opens a destination and `g r` then a letter opens a report. App shortcuts pause while a dialog is open, so the transaction inspector handles its own keys (J/K, C, T, S, F) and lists them in its footer.
+- Motion is brief and interruptible. Animate transform, opacity, or color with `--ease-out`, never layout properties. Frequent keyboard actions don't animate. `prefers-reduced-motion` reduces all motion.
+- The page arrives once per launch, after the window shows: its blocks rise 12 px and come into focus from a 3 px blur, in reading order. Nothing else uses blur.
+- Speed is a feature: a step through the sidebar or a selector paints within 100 ms (`navigationBudgetMs`), and a selector loads the cards either side ahead of the step.
+- Loading, empty, error, hover, active, and disabled states must stay distinguishable.
+- Consequential actions (recovery, erasure, credential changes) use an in-app confirmation with Cancel focused, pending feedback, and inline errors.
 
-Settings → Connections includes an on-demand Plaid recurring check for manual provider evaluation. It uses compact evidence rows for account, category, cadence, observation count, first/last/next dates, provider status, average amount, and last amount. The card states that results are neither saved nor used by Expected activity.
+## Settings
 
-Settings → Design renders synthetic previews of the current tokens and shared components. Its controls are local previews and do not persist financial or display state.
+Settings is a modal dialog, not a route. `#settings/<section-or-row>` opens it at a target, and ⌘, opens it. In-app links use `SettingsLink`. Rows sit directly on the dialog surface, separated by hairlines: title and consequence on the left, control on the right. A row has a description only when its title isn't self-explanatory, and a billed option's description states the cost. Each section that owns preferences has its own Reset. Settings stays usable when the snapshot can't load.

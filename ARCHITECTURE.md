@@ -1,160 +1,185 @@
 # Architecture
 
-Brief is a single-user macOS app with no server or cloud-sync layer. Rust owns provider access, credentials, the committed financial snapshot, and durable finance state. React owns presentation, URL state, view-only derivations, and local display preferences.
+Brief is a single-user macOS app built with Tauri. Rust owns everything that touches money or secrets: provider access, credentials, calculations, and durable state. React owns presentation and view state. Nothing runs on a server.
 
 ```text
-Plaid / SnapTrade / Alpaca / Alpha Vantage
-                      │
-                      ▼
-             Rust provider boundary
-        credentials, retries, pagination
-                      │
-                      ▼
-             staged provider caches
-                      │
-                      ▼
-             Rust financial engine
-       typed parsing, Decimal calculations,
-       classification, reconciliation
-                      │
-                      ▼
-       validation + one SQLite transaction
-                      │ Tauri IPC
-                      ▼
-          Zod validation + React Query
-                      │
-                      ▼
-                   routes
+Plaid · SnapTrade · Alpaca · SEC EDGAR · Alpha Vantage · CNBC RSS
+                 │  read-only, retried, bounded
+                 ▼
+      providers ──► staged provider caches
+                 │
+                 ▼
+      financial_engine: typed records, Decimal math
+                 │
+                 ▼
+      storage: validate, then commit in one SQLite transaction
+                 │  on every read
+                 ▼
+      annotations + rules + settings ──► insights
+                 │  Tauri IPC
+                 ▼
+      Zod validation ──► React Query ──► routes
 ```
 
-Live market valuation and selected-security chart history are separate from the committed refresh path. They may overlay or accompany a snapshot, but they never rewrite it.
+Live market prices travel a separate path and may overlay a committed snapshot, but never rewrite it.
 
 ## Invariants
 
-- Provider credentials and access tokens stay in macOS Keychain.
-- Rust is the authority for the committed snapshot and shared transaction classification.
-- Refresh work is staged against a revision, validated, and committed atomically. Failure leaves the prior snapshot and provider caches usable.
-- Plaid pagination mutates temporary per-Item state. A cursor and its transactions become eligible for publication only after pagination and the corresponding balance request succeed.
-- Missing, unsupported, or foreign-currency values remain unavailable; they are not converted to zero.
-- `FinanceProvider` owns committed data. `LiveMarketProvider` may apply only a revision- and timestamp-compatible Rust market projection.
-- The portfolio market session and the selected Holdings chart have separate request owners. Selecting or leaving a chart must not replace the portfolio subscriptions.
-- Spending and Platinum benefits resolve the saved spending account by ID.
-- Apple Intelligence receives bounded evidence and returns ephemeral text. It is not a calculation authority and has no finance-state mutation path.
-- A successful provider fetch does not by itself prove that brokerage balances are current. Confirmed daily net-worth observations require a recent holdings sync; unaligned totals remain provisional.
+- **Secrets:** credentials and provider tokens live only in macOS Keychain. Logs, diagnostics, fixtures, and tests never contain credentials, tokens, raw provider messages, or real financial data.
+- **Atomic refresh:** a refresh is staged, bounded by one 120-second deadline, validated, and committed in a single transaction. Any failure leaves the previous snapshot and caches usable.
+- **Plaid paging:** cursor and page changes stay temporary until pagination and the matching balance request both succeed.
+- **No invented values:** missing, unsupported, or non-USD values stay unavailable. They are never converted to zero, and an incomplete total says so.
+- **One policy, in Rust:** transaction classification, forecasts, statement cycles, benefit rules, attention items, period changes, and Data health are computed in Rust. React formats them and never reimplements them.
+- **Determinism:** results depend only on the snapshot, annotations, rules, settings, and the local calendar day. Each projection stores its calendar date so a timezone change can't move a month boundary. The one exception is the investment summary, which also reads the market sessions saved for its period: a closed session's layers stay as they were computed.
+- **Settings that change results** (spending account, account names and start dates, benefit visibility, the billed Plaid products, background refresh, notifications, the card product each extra card is tracked as, the tax profile, and account tax treatments) live in the finance database, never in renderer storage.
+- **Spending account by ID:** statements and Platinum benefits use the saved account ID, never provider ordering. Spending may cover one account or every USD account, and never treats another card as the saved one.
+- **Billed calls are opt-in:** Plaid live balances, Liabilities, Investments Transactions, and Recurring Transactions never run on an ordinary or background refresh unless the user chose them. Each is its own Plaid charge, and its Settings row says so.
+- **Apple Intelligence has no authority:** in answers it may quote only results from read-only Rust tools. It cannot calculate or change finance data, and it writes nothing in the investment summary. Each answer is returned with the tool queries that ran, so its figures can be checked. A query pinned to Today is rerun by Rust from saved data, without the model.
+- **Brief never infers a cause:** the investment summary's reasons are publishers' headlines, quoted as published with the publisher, time, and link, and shown only when a headline names a holding that led the day and says it moved that way, or is a market wrap saying the market moved its way.
 
-## State ownership
+## State
 
-| State                                                                                                      | Owner                                        | Persistence                  |
-| ---------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ---------------------------- |
-| Committed snapshot and provider caches                                                                     | Rust storage                                 | `finance-state.sqlite3`      |
-| Transaction annotations and confirmed account links                                                        | Rust storage                                 | `finance-state.sqlite3`      |
-| Redacted sync runs                                                                                         | Rust storage                                 | `finance-state.sqlite3`      |
-| Provider credentials and access tokens                                                                     | Rust providers                               | macOS Keychain               |
-| React Query snapshot and route state                                                                       | React                                        | Memory                       |
-| Display names, chart settings, page order, spending account, benefit visibility, and external-logo consent | Renderer preference modules                  | WebView local storage        |
-| Current portfolio valuation projection                                                                     | Rust market service and `LiveMarketProvider` | Memory only                  |
-| Saved startup market observations                                                                          | Rust startup-market cache                    | `startup-market.sqlite3`     |
-| Verified Holdings history                                                                                  | Rust holding-market pipeline                 | `market-prices.sqlite3`      |
-| Alpha Vantage news and earnings cache                                                                      | Rust news provider                           | `news.sqlite3`               |
-| Apple Intelligence answer                                                                                  | Command menu                                 | Memory only                  |
-| On-demand Plaid recurring report                                                                           | Rust provider boundary and Settings          | Memory only                  |
-| Data Health report                                                                                         | Rust deterministic projection                | Derived on request           |
-| Sensitive-value screen mask                                                                                | React AppShell                               | Memory only                  |
-| Browser preview                                                                                            | Renderer                                     | `src/data/seed.json` fixture |
+| State                                                                                                                  | Owner                                | Stored in                |
+| ---------------------------------------------------------------------------------------------------------------------- | ------------------------------------ | ------------------------ |
+| Snapshot, provider caches, imported statement files, annotations, rules, finance settings, account links, sync history | Rust `storage`                       | `finance-state.sqlite3`  |
+| Credentials and provider tokens                                                                                        | Rust `providers::vault`              | macOS Keychain           |
+| Insights and Data health                                                                                               | Rust `insights`, `health`            | Derived on each read     |
+| Live portfolio valuation                                                                                               | Rust `market` + `LiveMarketProvider` | Memory                   |
+| Saved market frame for fast startup                                                                                    | Rust `startup_market`                | `startup-market.sqlite3` |
+| Verified security history                                                                                              | Rust `providers::holding_market`     | `market-prices.sqlite3`  |
+| Market sessions (layers, fits, groups, quiet state, calibration counts, events)                                        | Rust `summary`, `storage`            | `finance-state.sqlite3`  |
+| News, SEC filings, insider trades, reported quarters, period summaries, and earnings                                   | Rust `providers::news_cache`         | `news.sqlite3`           |
+| Display preferences (theme, page order, masking defaults, logo consent, pinned queries)                                | React                                | WebView local storage    |
+| Browser preview data                                                                                                   | React                                | `src/data/seed.json`     |
 
-SQLite files contain financial data and are not encrypted by Keychain. Brief restricts its app-data directory to mode `0700` and local database files to `0600` on Unix platforms.
+Only `finance-state.sqlite3` is authoritative. The other databases are disposable caches. Their failure never affects finance data, and recovery ignores them. The app-data directory is `0700` and database files are `0600`, but SQLite files are not encrypted.
+
+## Refresh and commit
+
+`refresh_finance_snapshot` runs once at a time:
+
+1. Take the refresh lock and start the 120-second deadline.
+2. Read credentials from Keychain and copy the committed revision and caches.
+3. Fetch each provider into temporary state. A provider failure keeps its last usable cache and adds a notice. A provider with no cache can't be invented.
+4. Stage the candidate caches against the original revision.
+5. Project with `financial_engine::project`. Malformed provider records are skipped with a notice.
+6. Validate the snapshot: identifiers, references, currencies, totals, and histories.
+7. Back up the database, then replace the snapshot and caches in one SQLite transaction.
+8. Record a redacted sync diagnostic separately, so diagnostics can never block a valid commit.
+
+Provider specifics:
+
+- **Plaid** balances come from Plaid's cached `/accounts/get`. The billed `/accounts/balance/get` runs only on an explicit live-balance refresh. Reconstructed balance history claims the requested 730-day window only after Plaid reports its historical pull complete; until then it starts at the earliest transaction received. Transactions use Plaid's v2 category taxonomy, and an Item cached under another taxonomy is rebuilt once from a fresh cursor. When enabled, `/liabilities/get` supplies statement dates; its failure is a notice, never a failed refresh. Response bodies are capped at 32 MiB, and safe reads retry at most twice.
+- **Plaid transactions** are requested with the institution's original descriptor. A cache saved in an older request format (`PLAID_TRANSACTION_FORMAT`) is rebuilt once from a fresh cursor, as a taxonomy change is.
+- **Plaid Investments Transactions** (opt-in) reads each investment Item's last 24 months of trades, dividends (qualified or not, when the institution says), fund distributions, fees, and contributions. Its failure is a notice; holdings still commit. Gains are estimated only for accounts whose whole available history was read.
+- **Plaid Recurring Transactions** (opt-in) saves Plaid's streams. A series every covering stream reports inactive and tombstoned is no longer forecast; Brief's own policy still decides everything else.
+- **Alpaca corporate actions** (splits and cash dividends for every held or traded symbol) are fetched once a day and committed with the refresh, because splits change lots and gains. A position's pre-split trades are restated only when the restated history explains the shares held and the recorded one doesn't, so a broker's already-adjusted history is never adjusted twice.
+- **Institution logos** are looked up on Logo.dev by exact domain, from the website Plaid (`/institutions/get_by_id` with optional metadata, once per connection) or SnapTrade (each brokerage login) reports, only when logos are enabled. Without one, an account shows its type's icon.
+- **SnapTrade** accounts are valued from cash plus positions. The provider-reported total is evidence only. A holdings sync older than 30 minutes keeps the combined history provisional. Its balance history reaches back at most a year and skips days, so a skipped day carries the prior balance plus known deposits and withdrawals. Shares a stock plan allocates arrive with no cash amount; they count as a deposit worth that day's Alpaca close, and without a close they are left out.
+
+Net-worth history counts a transfer between two tracked accounts once, even while its legs post on different days. When a provider files one leg of such a transfer as income or spending, an equal and opposite transfer leg in another tracked account within five days makes it a transfer too, unless its category was chosen by hand or by rule. A total's history (net worth, the combined brokerages, an account's holdings) starts at the earliest history among its parts, and each part counts from its own first point; a part known only by today's value leaves the total without history, since it would enter as a jump.
+
+**Imported statements** (CSV or XLSX exports, `statements/`) fill an account's history from before its provider's first reported activity; from that day on the provider is the source of truth. The saved file is authoritative and is parsed again on every projection, so which rows count follows the provider's current history. Rust finds the table using `statements/vocabulary.json`, checks the rows against the statement's printed total and running balances, and refuses a file whose total disagrees. A row a provider reports a few days later is matched and not added; rows two overlapping statements share count once, while identical rows within one statement all count. Rows for a Plaid cash or card account are projected as Plaid records, so they share Plaid's categories, the transaction policy, and the reconstructed balance history, which then reaches back past Plaid's window. An import or removal re-projects saved provider data without the network and commits like a refresh.
+
+Refresh triggers: a visible app refreshes silently when the snapshot is at least an hour old. Opt-in background refresh (`background.rs`) keeps the app alive with its window hidden and refreshes when the snapshot is at least 20 hours old. While background refresh is on, a menu bar item reopens, refreshes, or quits the hidden app. With notifications also on, a background refresh posts at most three notifications for new needs (payment due, cash shortfall, credit expiring, a card closing its statement with a high share of its limit in use, a possible duplicate charge), once each per run; they can appear on a locked screen, so they never contain an amount.
+
+## Transactions and insights
+
+Provider categories come from `financial_engine/categories.json`, a versioned map from Plaid's primary and detailed codes to about twenty top-level categories, an optional `subcategory` label (shown only when Plaid's confidence is not `UNKNOWN`), and a transaction kind. When a provider category applies, that kind decides the transaction's meaning; the name and text policy covers refunds, unknown codes, and manual or rule categories. A positive issuer statement-credit descriptor (the benefit rules' credit descriptors, or Amex/Platinum "… Credit"/"… Reimbursement") is always a credit, because Plaid files these under the benefit's spending category, a transfer, or a fee.
+
+Annotations also carry tags, a split, a refund link, and whether the transaction is someone else's money. A split divides one transaction's amount between categories: its parts share the amount's sign and sum to it exactly in cents, every category total counts the parts, and a split saved for another amount is ignored. A refund linked to a purchase takes that purchase's category and reduces spending. Someone else's money (kind `owed`), set by hand, is neither spending nor income: a purchase made for someone, or what they paid back, Zelle included. A refund of such a purchase is someone else's too, and so is a card credit the benefit rules pair with it.
+
+Category at read time, in order: a manual annotation, then the most specific category rule, then the provider category. A manual or rule category drops the provider subcategory. A posted transaction inherits the annotation of the pending transaction it replaced (`pendingTransactionId`). Outgoing payment-app transfers (Plaid's `TRANSFER_OUT_TRANSFER_OUT_FROM_APPS`, or Zelle) become "Payments To People" and count as spending, mirroring incoming Zelle as income. The committed snapshot keeps provider categories, and React reads classification through `src/lib/transaction-kind.ts`.
+
+`insights::derive` computes these from the typed snapshot, once edits are applied, and never persists anything. A read parses the committed snapshot once into the typed contract; the policy, insights, and Rust's own readers work on that, and it is serialized once for the renderer. `Storage` reuses a derived view for at most 30 seconds while saved data, edits, and the calendar day are unchanged:
+
+- `forecast`: recurring bills and income across accounts
+- `statement`: card statement dates, from Plaid Liabilities when available, otherwise inferred
+- `benefits`: Amex Platinum credits from the rule data in `insights/amex-platinum.json` (see [docs/platinum-benefits.md](docs/platinum-benefits.md)), with posted credits set against the annual fee since its last charge. Another credit card is tracked only when the user assigns it a card product; the spending card needs no assignment. Each closed window carries its verdict (missed when the card used the benefit, unclaimed when it never did, settling, or unknown), and the windows with allowance left come in the order to use them
+- `refundSuggestions`: unlinked refunds from the last 90 days with exactly one purchase they could repay; the transaction inspector offers the link
+- `plan`: month-to-date spending, cash coverage, and runway. Cash starts from available balances where the bank reports them, so pending holds count, and a pending bill already in that balance isn't subtracted again
+- `attention`: at most three payment-due or cash-shortfall alerts
+- `brief`: every need for action (the alerts above, a used card credit about to expire, cash expected to run short), which notifications report, and the expected events Today lists as coming up
+- `subscriptions`: subscription series with a charge due within a year, each normalized to a monthly cost, and their monthly total. A fixed charge repriced once is still a subscription, forecast at its new price, with the change reported
+- `cash`: known cash carried 90 days through the recurring activity that reaches cash accounts, with a range from the amounts each series has posted; unavailable while any cash balance is unknown. It starts from available balances, as `plan` does
+- `credit`: utilization per card and across cards with a reported limit, each card's next statement close (issuer cycle for the spending card, otherwise a month after the last statement, marked estimated), and interest charged on the last statement
+- `anomalies`: possible duplicates (exactly two identical posted charges from one merchant on one day, at least $10, in the last 60 days) and unusual amounts (far above a merchant's median by its robust spread, with five earlier charges). Marking a transaction reviewed dismisses either
+- `trips`: runs of in-store spending away from home regions (regions with a share of in-store purchase days across several months), with the placeless travel and transport charges on their days
+- `taxes`: this year's and last year's taxable interest, dividends, short- and long-term gains, and wash sales (same ticker within 30 days in any account; a tax-advantaged replacement makes the loss permanent), harvest values, and open wash-sale windows. With a tax profile, an estimate stacked on the user's other income using `insights/tax-tables.json`, a range while dividends are unclassified. A year without tables has no estimate
+- `dividends`: each held security's last-year dividend pace, yield, next announced payment, and annual income
+- `recurringCheck`: Plaid's mature streams Brief doesn't forecast, for Data health
+- `returns`: time-weighted and money-weighted returns per brokerage account beside the benchmark, only where the history records deposits and covers the whole window
+- `periods`, `exposure` (`reconcile`): the combined brokerages' statement for each chart window, the one source of the Investments page's period figures: start + deposits − withdrawals + investment gain = end, daily-linked time-weighted ("how your investments did") and money-weighted ("how your money did") returns beside the S&P 500 over the same days, annualized only from a year, a waterfall whose realized gains, dividends, interest, fees, and taxes are booked from the ledger with unrealized change as the plug, and drawdown, volatility, and beta; and how concentrated the holdings are (effective holdings, top-five weight)
+- `allocation`: known USD positions by security, instrument kind, and account
+- `recap`: for each chart period (the trailing week, month, three months, year, and all history), spending against the period of the same length before it, income, and the top categories; a period that starts before saved activity is marked partial
+- `spending`: for each scope Spending offers (an account, or all of them) and each period of a kind (statement, rolling week, month, quarter, year) back to the start of its history, what is usual by this point by category (up to three earlier periods cut at the same day, when history covers two), the current period carried to its end at its pace once a week of it has passed, and each statement's opening balance. The renderer sums each period's activity and draws it
+- `changes`: for each chart period (a week, a month, three months, a year, all history), each account's balance change from its daily history and the number of posted transactions; an account whose history starts later is left out and the period says so
+- `interest`: each cash account's interest posted in each chart period, with its rate a year on today's balance, and its monthly net flow over all its posted history once that spans two months
+- `lots`: open tax lots per position, estimated first-in-first-out from saved trades (each sale's gain is split into short- and long-term parts by the lots it consumed, and each lot carries a tax-if-sold estimate with a tax profile); shares no saved purchase explains make a position partial, and history that contradicts the position has no lots; a fully explained position also has a money-weighted return
+- `movers`: the day's change by position from saved prices, not the live overlay
+- `accountsTotal`: the total and history without the saved spending card, which Spending presents on its own. Today's totals and the Accounts "All accounts" view use it; the snapshot's `netWorth` still includes the card. Live points subtract the card balance, which is not market-driven.
+- `securities`, `allocation`, `longTermSoon`: holdings merged across accounts with weight and gain, exposure with a concentration flag (one security at 20% or more), and lots turning long-term within 60 days (taxable accounts only)
+- `investmentAttention`: only what calls for a decision: a concentrated holding, taxable lots turning long-term with a gain, and taxable losses large enough to harvest, plus the holdings large enough that their earnings dates matter
+- `ledger`: read-only queries for Apple Intelligence, capped at 25 rows, including credit cards, taxes, trips, subscriptions, and dividend income from the insights above
+
+`insights/golden.rs` replays results recorded from the former TypeScript implementation.
 
 ## Startup and recovery
 
-`Storage::new` restricts the app-data directory, acquires `finance-state.lock` so two Brief processes cannot write the finance store concurrently, then opens and validates `finance-state.sqlite3`. If no database exists, validated legacy JSON is imported once. After both the canonical database and its SQLite backup are durable, the migrated plaintext JSON sources are removed.
+`Storage::new` locks the app-data directory against a second Brief process, then opens and validates the finance database. Legacy JSON is imported once and deleted only after a valid SQLite backup exists.
 
-If the primary database is missing, unreadable, or newer than the app supports, Brief loads a valid retained backup into an in-memory, read-only recovery state when possible. Writes remain blocked until the user restores that state or explicitly starts a new snapshot. Replaced primary and backup files are retained before recovery changes are installed.
+If the database is missing, unreadable, or from a newer version, Brief opens a valid retained backup read-only. Writes stay blocked until the user restores it or starts fresh, and original files are kept either way.
 
-The renderer imports legacy annotations before requesting the annotation-aware snapshot, validates native data with Zod, and loads integration status. A compatible saved market frame may be applied after the committed snapshot is available. The native window is initially hidden and is revealed after these local startup reads settle; a three-second native watchdog prevents it from remaining hidden indefinitely. Network readiness is not part of the reveal boundary.
+The window stays hidden until local reads finish, with a three-second watchdog. Startup never waits on the network.
 
-When configured providers exist, the renderer checks snapshot age on startup, focus, visibility changes, and a one-minute timer. A visible app silently refreshes when the committed snapshot is at least one hour old, with attempts limited to once per hour in the running process.
+## Backups and erasure
 
-## Provider refresh and commit
+- **Backups** (`.briefbackup`): SQLite Backup API copies of the whole finance database, excluding Keychain, display preferences, and caches. Export and restore require a single-use macOS authentication. Restore validates the application ID, schema version, integrity, and typed state before installing through the open connection, then advances the revision.
+- **Preferences** (`.briefsettings`): a bounded JSON file of display preferences, with no financial data.
+- **Erasure:** clears the finance database, retained copies, and caches, but keeps Keychain credentials. Removing credentials is a separate action.
 
-`refresh_finance_snapshot` is one native operation:
+## Live market data
 
-1. Acquire the single-refresh lock and establish one 120-second deadline for provider work and projection. A projection that finishes after the deadline has no commit path.
-2. Read credentials from Keychain and copy the committed revision and provider caches.
-3. Refresh providers into temporary state. Response bodies are read incrementally and rejected above 32 MiB. Safe Plaid reads may make at most two retries with capped jitter after network or server failures. Mutations are single-attempt, and institution-level throttling is deferred to a later refresh. A provider failure may retain its last usable cache and add a warning; a source with no safe cache cannot be silently invented.
-4. Stage the candidate caches with the original revision, refresh ID, bounded provider diagnostics, and a 120-second lease.
-5. Run `financial_engine::project`. Provider compatibility JSON is decoded into typed records; malformed provider records are excluded with warnings. Monetary aggregation uses `rust_decimal::Decimal` and rounds at output boundaries.
-6. Validate the typed `Snapshot`, identifiers, references, currencies, totals, histories, and reconciliation constraints.
-7. Back up the last valid database and replace snapshot and provider state in one SQLite transaction.
-8. Record the bounded sync diagnostic separately on a best-effort basis, so diagnostic persistence can never reject an otherwise valid snapshot commit, then update in-memory committed state.
+When the app is visible and Alpaca is configured, one app-level market service streams held symbols, reprices positions, and sends `MarketProjection` updates. React applies an update only when its `revision` and `updatedAt` match the committed snapshot. The Holdings chart has its own request-scoped pipeline: it keeps canonical bars separate from latest trades and quotes, and never replaces the portfolio subscriptions.
 
-Provider errors retain structured status, type, code, retryability, safe endpoint, attempt count, retry deadline, and a one-way request reference until the Tauri boundary; raw provider messages are not surfaced. Projection, timeout, validation, and commit failures record a safe phase and error code where possible and retain the prior committed state. Diagnostics never store credentials, payloads, query strings, account identifiers, financial values, or raw provider messages. Manual refresh progress events contain fixed labels and non-sensitive timing/count information.
+Earnings (Alpha Vantage) are fetched only on request and spend a local daily budget. A holding's news refreshes when it is opened with saved stories at least 30 minutes old, at most once a minute per ticker, leaving Alpaca's shared per-minute limit to the market stream. A refresh fetches Alpaca (Benzinga) stories and, when an SEC contact email is saved, the company's current and periodic reports from EDGAR (8-K, or 6-K from foreign issuers, and 10-Q and 10-K), whose terms require that contact in every request. Filings appear among the company's stories, so a holding without recent filings shows nothing extra. Rust drops generated filler and analyst ratings and, each time stories are read, tags each story's scope and events from its headline and scores its relevance to the company from 0 to 100 (how few tickers it names, and whether its headline names the ticker or the company's EDGAR name); a story below 40 only mentions the company, as broker notes on peers and roundups do, and never counts as evidence. On launch, and at most every ten minutes, `refresh_portfolio_news` saves the past week's stories for every held stock from one paged Alpaca request and checks EDGAR for the holdings whose filings are oldest, so summaries are ready before a holding is opened. It also reads CNBC's market-section RSS feeds (`providers::feeds`), whose headlines name the causes of market, macro, and theme moves that may name no holding (a report on a private company, say); their tickers are read from the companies a headline names. Each holding's recent Form 4s are read once each (open-market purchases and sales only, with whether a sale was under a 10b5-1 plan). Moves are compared with SPY and a sector fund chosen from the company's SEC industry code (an approximation). The Investments overview reuses this: `get_portfolio_today` prices held positions, SPY, and known sector funds in one Alpaca snapshot to rank each position's dollar effect, `get_portfolio_sectors` groups held stocks by sector, asking EDGAR once about stocks it has never classified. The summary's period report splits the period among the holdings: each day's start-of-day weight times the security's daily return from closes adjusted for splits and dividends, with cash and anything unpriced as one more row so a day's parts sum to its return, Carino-smoothed so the period's parts sum to the period's return. Dollars rank the return drivers and each security's own return the top movers; a holding whose saved trades don't explain its shares is listed as unpriced, never guessed.
 
-Rust applies saved annotations before assigning transaction classification. The renderer consumes that classification through `src/lib/transaction-kind.ts`; it does not infer a second transaction policy. Transfer descriptions and account-number fragments never establish income by themselves.
-
-For supported USD SnapTrade accounts, Rust values the account from the cash balance and every position, excluding positions already counted in cash, and exposes the same native calculation as separate current cash and invested values. Missing or unsupported cash or position data makes the current account value and breakdown unavailable and the combined total incomplete; the provider-reported total is comparison evidence only. Individual brokerage graphs show that reported total with its last holdings sync date (or fetch date when sync time is unavailable). Combined graphs omit it. Historical brokerage charts use provider history. A brokerage holdings sync older than 30 minutes prevents a new daily net-worth observation and keeps the current combined chart provisional.
-
-## Persistence
-
-`database.rs` defines constrained SQLite tables for scalar snapshot fields, ordered entities, provider metadata, annotations, account links, sync runs, and compatibility workspace state. Schema version 4 added bounded `details_json`; version 5 clears raw provider messages that older builds may have retained in diagnostic fields. SQLite uses foreign keys, `STRICT` tables, full synchronous writes, and schema versioning through `PRAGMA user_version`.
-
-Before committed state replacements and user edits, storage creates `finance-state.backup.sqlite3`. Annotation and account-link edits update their dedicated tables rather than replacing the full snapshot. Recovery and compatibility helpers preserve original files instead of deleting them.
-
-Portable backup uses SQLite's live Backup API and exports the complete canonical finance database, including provider caches, annotations, account links, sync history, and compatibility workspace state. It excludes Keychain credentials, renderer display preferences, and the disposable market, startup, and news databases. Exported files are mode `0600` on macOS but are not encrypted. Restore first copies the selected database through SQLite's Backup API into the app-data directory, checks the Brief application ID, supported schema version, SQLite integrity, foreign keys, and typed finance state, then retains the current database. In normal operation SQLite's Backup API installs the validated source through the existing primary connection; recovery mode may rename only when no connection has the primary open. The restored revision is advanced so stale live projections cannot overlay it.
-
-The calculation-version upgrade removes legacy dated history corrections and rebuilds history from cached provider data.
-
-The market, startup, and news databases are independent caches. Their failure cannot invalidate the committed finance database, and they are not part of finance recovery.
-
-## Data Health
-
-Data Health is a read-only Rust projection over the committed snapshot and redacted sync-run history. It reports recovery state, incomplete valuations, possible duplicate accounts, provider and quote freshness, limited investment history, cost-basis coverage, and unresolved classifications. Findings have deterministic IDs and navigation targets; the renderer does not independently reimplement check policy or mutate financial state to clear an issue.
-
-## Live market and Holdings data
-
-When the native app is visible, Alpaca is configured, and supported held symbols exist, `LiveMarketProvider` starts one app-level market request. Rust owns the feed registry, snapshots, WebSocket lifecycle, periodic REST reconciliation, and temporary portfolio recalculation. The calculation keeps the committed cash value fixed while repricing eligible positions. The initial request fetches the prior 24 hours of one-minute bars even when the market is closed; React receives narrow `MarketProjection` updates and applies them only when both `revision` and `updatedAt` match the committed snapshot, retaining the first observation and five-minute portfolio points for the recent chart segment. Transactions and durable histories retain their committed identity.
-
-The startup-market cache stores a disposable same-snapshot observation frame so compatible saved values can appear before current market data arrives. Saved frames remain labeled as saved and do not claim a live connection.
-
-Holdings starts a separate request-scoped chart pipeline. Rust publishes canonical OHLCV bars and keeps latest trade or indicative quote observations separate. Verified slices are cached in `market-prices.sqlite3`; failed refreshes leave prior cache entries intact. Chart selection updates the chart request but does not change the held-symbol portfolio subscriptions. History downloads and warming share the native two-request semaphore.
-
-Alpha Vantage news and earnings are fetched outside the finance refresh transaction. Their cache and failures cannot alter the committed snapshot.
-News reads are cache-only and do not require credentials or consume provider quota; only the explicit Refresh news action sends a news request. Saved stories remain visible while disconnected or rate-limited. The shared news cache counts requests before sending them and reserves five of the free-tier allowance for earnings and credential checks. A daily-limit response with unused local capacity permits one short recheck before a full-day provider cooldown.
+`get_investment_summary` describes a returns window for the portfolio or one holding; Rust writes every sentence, and the renderer only styles them. News volume tracks company size, not importance, so nothing ranks by how much was written. One model of "unusual" serves today, the period, and a holding's page: each session's move in layers (below), whose own part is measured in the holding's own typical day (a robust standard deviation), so a volatile stock's ordinary month is ordinary and a steady stock's real move stands out. Each session's record (`summary::sessions`) holds every holding's market, group, and own parts in percent and, when its shares are known, dollars, with the fit behind them (fund, betas, R², window) and the groups that moved; a closed session's record is saved in the finance database, past sessions are filled from a year of closes before the period's first, and today's stays provisional until the close. A period's layers are its sessions' summed, a holding's period kind follows them (own when its own part was at least a typical period, with its group only when the group's part was the larger), and an event's reaction is the holding's own part that session and the next. A beta from under 120 days of history is shrunk toward its prior (the industry fund's beta to the market; for a group, one for the industry fund and zero for another). Each record also counts the session's fund groups, loose groups, and unusual own moves, and Diagnostics shows the rates, so thresholds are measured before they are tuned. Prices on this path are adjusted for splits and dividends. Every day here is a New York trading session (`session`, with NYSE holidays and early closes computed by rule): a story or filing is priced by the first session that closes after it, and a period runs through the latest session that has opened. While that session trades, the latest price stands in for its close; before the open and after the close, today is its close, never a pre-market or after-hours price, and the summary says which. Events come from an event log (`summary::eventlog`) kept with each closed session in six families, each event with its provenance (sourced, observed, or reported), its own time, its source's, and Brief's first save: the ledger's trades and cash activity; corporate actions from the refresh's daily Alpaca read; EDGAR reports by accession number, an amendment folding into what it amends, and chains (an earnings report and its quarterly filing, a deal and its completion) of which only the ends are listed; market-wide days from a reviewed calendar (`summary/eventlog/macro-calendar.json`, Federal Reserve decisions; BLS dates are added only from the published schedule) and published rules (NYSE early closes, S&P 500 rebalances); stories, clustered per company per day with the first report anchoring each; and observed flags (a holding's own move of at least 2.5 typical days, volume twice its median, a 52-week extreme, a fall from the high crossing 5, 10, or 20%). A fact reported twice is listed once: the ledger's credit over the action that expected it, an action or filing over news about it, and a flag only as evidence for the event it measured. Events rank by visible components compared in order (dollars on the portfolio, the holding's own move, the kind's typical effect, whether it was the first report), never a combined score, and on the portfolio each stock supplies at most one. A minor event the stock plainly ignored is left out. A session is quiet for a holding with no sourced event, its own move under 1.5 typical days, and ordinary volume, and for the portfolio when nothing was flagged and its dollars were within one of its typical days. Half an hour after each close, or on the next launch, a close job (`close.rs`) refreshes the portfolio's stories and filings and records that session and any missing in the month before, once per session; it never calls Plaid. The portfolio also names the stocks whose period was unusual for them, whatever their size. Your trades and dividends come from the snapshot; a dividend counts toward a holding only when its activity names the ticker. A company's latest quarter comes from EDGAR's XBRL facts (two requests a week per ticker, only with a saved SEC contact): revenue, the same calendar quarter a year earlier, and net margin, each only when the company tagged it. Each session's layers (`summary::layers`) are each holding's beta times the S&P 500, its beta times its group fund's move beyond the market, and the rest, its own, in dollars. A holding's group fund is whichever sector or theme fund (chips and software apart from Technology) best fits its moves beyond the market in both halves of the past year; its SEC industry code's fund keeps the place unless another fits clearly better. A group moved when its fund's day beyond the market was noticeable for the fund and most members went along; holdings that moved the same way beyond the market together, whose own moves tend to go together, form a group too. The day itself is told in a few lines (`summary::brief`): the portfolio's (or the holding's) move in percent and dollars beside the S&P 500's, then the holdings that led it (up to three moving its way, each at least 15% of its dollars); a day under 0.25% is one line. Up to two headlines (`summary::headlines`) follow, from saved stories between the previous session's close and the next open: for each leading holding, the newest whose headline names it and says it moved its way (or, about one or two companies, says no way), never one that points the other way or only restates the move; then, when the S&P 500 moved at least 0.3%, the newest market wrap saying it moved its way. A quiet day gets none. The renderer warms the portfolio's summary in the background on launch. Each run is logged in memory with its stages' timings and the provider failures it saw (Diagnostics); a part that couldn't load and a year of prices the request's page limit cut short are listed as unavailable with their symbols. Data health warns when saved stories are over two days old or the latest summary run failed, and notes a calibration rate out of range (after a month of sessions, a fund flagged more than three times a month).
 
 ## Renderer boundary
 
-`src/lib/api.ts` is the IPC client and browser fallback. Native financial snapshots and market, news, and earnings payloads are parsed by schemas in `src/lib/schema.ts` before use. A synthetic contract fixture is checked from both Rust and TypeScript to catch native/renderer field drift.
+`src/lib/api.ts` is the only IPC client. Every native payload is parsed by Zod in `src/lib/schema.ts`. A synthetic fixture (`src/data/fixtures/native-finance.json`) is checked from both Rust and TypeScript to catch contract drift.
 
-React may derive date ranges, chart geometry, filters, analytics buckets, spending periods, and presentation totals from the validated snapshot. Those values are view state and are never sent back as a replacement financial snapshot. Rust persists the local calendar date used by each projection so annotation reprojection cannot change month or year after a timezone change. Durable edits use narrow commands for annotations and account links.
+React may derive view state (date ranges, filters, chart geometry, range totals in cents) but never sends a snapshot back. Edits go through narrow commands: annotations, settings, rules, and account links. Each returns the updated snapshot.
 
-Expected activity is a deterministic, non-persistent renderer projection over posted transactions. It groups by account, direction, and stable merchant identity; recognized Platinum credits instead use the existing benefit ID so issuer-level website enrichment cannot merge separate credits. It suppresses habitual spending, separates fixed-amount series before cadence detection, uses detailed descriptions for generic banking streams, and retains negative loan or card payments even though native classification correctly treats them as transfers. Variable debt payments use their observed range, and recent posting days determine the calendar anchor. Pending transactions are only unambiguous matches, never recurrence evidence. Predictions use observed credit amounts rather than benefit allowances and account for weekends and U.S. federal holidays for bank-scheduled activity. Stale snapshots, stale Plaid accounts, ambiguous pending matches, and unsupported series produce no invented state.
+## Codemap
 
-Settings may request Plaid's `/transactions/recurring/get` endpoint for connected banking Items. Rust reads Item tokens from Keychain, validates the provider response into a narrow stream report, and returns no credentials. The renderer validates the IPC result and displays provider status, cadence, dates, amounts, and evidence count for manual comparison. Reports remain in memory, are never committed, and do not affect Expected activity or refresh success.
+**Rust (`src-tauri/src`)**
 
-The native macOS app menu sends a `toggle-sensitive-values` event for ⌘H. `AppShell` owns the temporary renderer mask, which obscures personal numbers and balance-history charts while leaving public security prices, market changes, and price histories visible. It never changes the financial snapshot or exports.
+- `lib.rs`: app state and startup; `commands/`: the Tauri commands by area (finance, backups, integrations, assistant, investments); `window.rs`: the main window and `brief://` links; `files.rs`: user-chosen files, read within a size bound and written only as new private files
+- `refresh.rs`: refresh orchestration
+- `providers/`: one module per provider, plus `http` (errors, retries, diagnostics), `vault` (Keychain), `market_stream` (shared sockets), `holding_market` (security history), `news` (stories and their relevance), `feeds` (CNBC RSS), `sec` (EDGAR), `insiders` (Form 4 trades), `portfolio` (today's move and sectors), `corporate_actions` (Alpaca's splits and dividends), `closes` (daily closes for the summary), `fundamentals` (EDGAR's reported quarters), and `news_cache` (one connection to `news.sqlite3`, shared by news, EDGAR, and the earnings budget)
+- `summary/`: a returns window described, from saved data and prices: `sessions` in layers, `eventlog`, and the day's `brief` with its `headlines`
+- `financial_engine/`: the projection, one phase per module. `records` (typed provider data), `accounts`, `holdings`, `transactions` (Plaid), `activities` (SnapTrade), `imported` (statement rows), `investments`, `gains` (split restatement and first-in-first-out gains), `history`, `performance`, `values`
+- `statements/`: reading, checking, and planning imported statement files
+- `storage/`: staging and commit. `annotations` (edits to transactions), `backup` (backups, restore, recovery), `legacy` (pre-database files), `validate` (checks every snapshot)
+- `database.rs`: the finance database; `database/migrations`: its schema, migrated forward in place
+- `transaction_policy.rs`: read-time classification
+- `insights/`: forecasts, statements, benefits, plan, attention, cash, returns, allocation, recap, lots, period changes, refunds, and ledger
+- `health.rs`: Data health checks
+- `market.rs`, `startup_market.rs`: live valuation and the saved startup frame
+- `numeric.rs`: cents and medians, rounded one way everywhere
+- `close.rs`: the market close job
+- `session.rs`: New York trading sessions, the one definition of a day for market data
+- `settings.rs`, `rules.rs`, `background.rs`, `notify.rs` (opt-in notifications and the menu bar item), `native_menu.rs`, `authentication.rs`, `foundation_model.rs`
 
-The native projection retains Plaid's readable transaction location fields and payment channel when supplied, trims empty values, and keeps them separate from transaction and posting dates. Activity displays location and channel in separate columns, with a street address available from the location icon. Filtered CSV exports include both fields. Older committed snapshots rebuild them from the saved provider cache through the calculation-version upgrade; missing provider fields remain unavailable.
+**React (`src`)**
 
-The command menu may send a bounded question and a separate local evidence object to Apple's on-device Foundation Model. The native prompt identifies the question as the user request and the evidence as untrusted JSON data, permits repeating supplied values, forbids new financial calculations and advice, and returns text only. Requests are serialized, cancellable, limited to 12,000 combined characters, and time out after 45 seconds.
-
-## Code boundaries
-
-- `src-tauri/src/providers/mod.rs`: shared provider contracts and response parsing
-- `src-tauri/src/providers/http.rs`: structured provider errors, retry decisions, and redacted diagnostics
-- `src-tauri/src/providers/{plaid,snaptrade,alpaca,alpha_vantage,vault}.rs`: provider-specific access, linking, and credential boundaries
-- `src-tauri/src/providers/market_stream.rs`: shared Alpaca socket registry
-- `src-tauri/src/providers/holding_market.rs`: selected-security history and market-price cache
-- `src-tauri/src/financial_engine.rs`: canonical projection and live valuation calculations
-- `src-tauri/src/health.rs`: deterministic committed-data diagnostics
-- `src-tauri/src/transaction_policy.rs`: shared transaction classification
-- `src-tauri/src/finance_contract.rs`: serializable native output types
-- `src-tauri/src/storage.rs`: staging, validation, recovery, and commit policy
-- `src-tauri/src/database.rs`: SQLite schema and transactions
-- `src-tauri/src/lib.rs`: Tauri app state and command registration
-- `src-tauri/src/refresh.rs`: staged provider refresh and commit orchestration
-- `src-tauri/src/market.rs`: live portfolio and selected-security orchestration
-- `src/lib/api.ts`: renderer IPC client and browser seed fallback
-- `src/lib/schema.ts`: renderer trust-boundary validation
-- `src/hooks/finance-provider.tsx`: committed renderer state
-- `src/hooks/live-market-provider.tsx`: compatible live valuation overlay
-- `src/lib/spending.ts`: view-only spending and Platinum rules
-- `src/lib/analytics.ts`: view-only analytics projections
+- `lib/api.ts`, `lib/schema.ts` (a barrel over `lib/schema/`): IPC and validation
+- `lib/preference.ts`: one stored display preference; every preference module builds on it
+- `hooks/finance-provider.tsx`, `hooks/live-market-provider.tsx`: committed data and the live overlay
+- `pages/`: one file per route
+- `components/settings/`: the Settings dialog's sections
+- `components/`: shared UI
+- `lib/`: view-only derivations (spending periods, analytics, filters, formatting)
+- `styles.css`: imports the partials in `styles/` in cascade order
