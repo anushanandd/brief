@@ -1,5 +1,8 @@
 import type { MarketNewsArticle } from './schema'
 
+/** A story at least this relevant is about the company (Rust's `RELEVANT`). */
+export const RELEVANT = 40
+
 export type NewsGroup = { article: MarketNewsArticle; related: MarketNewsArticle[] }
 const tokens = (headline: string) =>
   new Set(
@@ -52,4 +55,46 @@ export function rankHoldingNews(articles: MarketNewsArticle[], ticker: string): 
       group.related.push(article)
   }
   return groups
+}
+
+const hourMs = 3_600_000
+export const newsDigestHours = 48
+
+// Event stories (earnings, deals, leadership) count more than general coverage.
+const taggedWeight = 1
+const untaggedWeight = 0.5
+
+/**
+ * The few company stories most likely to explain a move, for chart markers. Deterministic and
+ * instant: weight halves each day, and wider coverage of the same story counts in its favor.
+ */
+export function holdingNewsDigest(groups: NewsGroup[], now: number, limit = 3) {
+  const recent = groups.filter(
+    ({ article }) =>
+      article.scope === 'company' &&
+      now - Date.parse(article.createdAt) <= newsDigestHours * hourMs,
+  )
+  const score = ({ article, related }: NewsGroup) => {
+    const tagged = [article, ...related].some(({ tags }) => tags.length)
+    const ageHours = Math.max(0, (now - Date.parse(article.createdAt)) / hourMs)
+    return (
+      (tagged ? taggedWeight : untaggedWeight) *
+      0.5 ** (ageHours / 24) *
+      (1 + 0.25 * Math.min(related.length, 4))
+    )
+  }
+  const top = recent
+    .map((group) => ({ group, score: score(group) }))
+    .toSorted((a, b) => b.score - a.score || a.group.article.url.localeCompare(b.group.article.url))
+    .slice(0, limit)
+    .map(({ group }) => group)
+  return { top, storyCount: recent.length }
+}
+
+/** Saved stories older than this refresh on their own when a holding is opened. */
+export const newsRefreshMinutes = 30
+
+export function newsNeedsRefresh(savedAt: string | null | undefined, now: number) {
+  const saved = savedAt ? Date.parse(savedAt) : Number.NaN
+  return !Number.isFinite(saved) || now - saved >= newsRefreshMinutes * 60_000
 }

@@ -1,1325 +1,342 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { Link, useLocation } from '@tanstack/react-router'
-import { open, save } from '@tauri-apps/plugin-dialog'
-import { useEffect, useRef, useState } from 'react'
-import { toast } from 'sonner'
+import { useQuery } from '@tanstack/react-query'
+import { Link } from '@tanstack/react-router'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { RefObject } from 'react'
 
-import { PageError, PageLoading, RefreshButton } from '../components/data-state'
-import { FilterSelect } from '../components/filter-select'
+import { acceptAutofill, AutofillField, autofillCompletion } from '../components/autofill'
 import {
-  ArrowDown,
-  ArrowUp,
+  ChartCandlestick,
+  ChartNoAxesCombined,
   ChevronRight,
-  Cpu,
   Database,
-  Download,
-  Fingerprint,
-  HardDrive,
+  EyeOff,
+  Landmark,
   Link2,
+  List,
   Palette,
-  RefreshCw,
-  RotateCcw,
-  Save,
-  ScrollText,
-  Trash2,
-  Unlink,
+  ReceiptText,
+  Search,
+  WandSparkles,
   Wrench,
   X,
 } from '../components/icons'
+import type { IconComponent } from '../components/icons'
+import { SettingsSearchProvider } from '../components/settings-ui'
+import { AccountsSection } from '../components/settings/accounts'
+import { AdvancedSection, MarketSection } from '../components/settings/advanced'
 import {
-  Button,
-  Card,
-  ChartRangeSelect,
-  RangeSelector,
-  SectionHeading,
-  StatusDot,
-} from '../components/ui'
-import { WorkspaceHeader } from '../components/workspace-header'
-import { financeQueryKey, useFinance } from '../hooks/use-finance'
-import { useRefreshFinance } from '../hooks/use-refresh-finance'
+  AppearanceSection,
+  ChartsSection,
+  NavigationSection,
+} from '../components/settings/appearance'
+import { ConnectionsSection } from '../components/settings/connections'
+import { DataSection, PrivacySection } from '../components/settings/data'
+import { RulesSection } from '../components/settings/rules'
+import { TaxesSection } from '../components/settings/taxes'
+import { Button, EmptyState, StatusDot } from '../components/ui'
+import { useFinance } from '../hooks/use-finance'
+import { getDataHealth } from '../lib/api'
+import { countOf, formatUpdatedAt } from '../lib/format'
 import {
-  accountDisplayName,
-  getAccountDisplayNames,
-  saveAccountDisplayNames,
-} from '../lib/account-name-preferences'
-import {
-  accountStartDate,
-  getAccountStartDates,
-  saveAccountStartDates,
-} from '../lib/account-start-date-preferences'
-import { analyticsCharts } from '../lib/analytics'
-import {
-  moveAnalyticsChart,
-  saveAnalyticsOrder,
-  useAnalyticsOrder,
-} from '../lib/analytics-order-preferences'
-import {
-  authenticateSensitiveAction,
-  beginProviderLink,
-  exportFinanceBackup,
-  cancelProviderLink,
-  type ProviderLinkSession,
-  getFoundationModelStatus,
-  inspectFinanceBackup,
-  isTauri,
-  pollProviderLink,
-  restoreFinanceBackup,
-  saveIntegrationCredentials,
-  saveAccountLink,
-  getProviderConnections,
-  getPlaidRecurringReport,
-  forgetProviderConnection,
-  type BackupInfo,
-} from '../lib/api'
-import { dashboardAccountViews } from '../lib/dashboard-account-views'
-import { formatCurrency } from '../lib/format'
-import {
-  getChartAccountPreferences,
-  getDefaultGraphWindow,
-  graphWindows,
-  reconcileChartAccountPreferences,
-  saveChartAccountPreferences,
-  saveDefaultGraphWindow,
-} from '../lib/graph-preferences'
-import {
-  getDefaultHoldingChartRange,
-  holdingChartRanges,
-  saveDefaultHoldingChartRange,
-} from '../lib/holding-prices'
-import { getExternalLogosEnabled, saveExternalLogosEnabled } from '../lib/logos'
-import {
-  getMarketUpdateInterval,
-  marketUpdateIntervals,
-  saveMarketUpdateInterval,
-} from '../lib/market-preferences'
-import { movePage, savePageOrder, useOrderedNavigation } from '../lib/navigation-preferences'
-import { platinumBenefitOptions } from '../lib/spending'
-import {
-  getHiddenPlatinumBenefitIds,
-  getSpendingAccountId,
-  saveHiddenPlatinumBenefitIds,
-  saveSpendingAccountId,
-} from '../lib/spending-preferences'
+  searchSettings,
+  settingsHashForPath,
+  settingsSections,
+  type SettingsSectionId,
+} from '../lib/settings-search'
 
-const wait = (duration: number) => new Promise((resolve) => window.setTimeout(resolve, duration))
-type CredentialProvider = 'plaid' | 'snaptrade' | 'alpaca' | 'alphavantage'
-type LinkProvider = 'plaid' | 'plaid-investments' | 'snaptrade'
-const credentialProviders: Array<{
-  id: CredentialProvider
-  name: string
-  fields: Array<{ label: string; placeholder: string; secret?: boolean }>
-}> = [
-  {
-    id: 'plaid',
-    name: 'Plaid',
-    fields: [
-      { label: 'Client ID', placeholder: 'Plaid client ID' },
-      { label: 'Secret', placeholder: 'Plaid secret' },
-    ],
-  },
-  {
-    id: 'snaptrade',
-    name: 'SnapTrade',
-    fields: [
-      { label: 'Client ID', placeholder: 'SnapTrade client ID' },
-      { label: 'Consumer key', placeholder: 'Consumer key' },
-    ],
-  },
-  {
-    id: 'alpaca',
-    name: 'Alpaca',
-    fields: [
-      { label: 'API key ID', placeholder: 'Alpaca API key ID' },
-      { label: 'Secret key', placeholder: 'Alpaca secret key' },
-    ],
-  },
-  {
-    id: 'alphavantage',
-    name: 'Alpha Vantage',
-    fields: [{ label: 'API key', placeholder: 'Alpha Vantage API key', secret: true }],
-  },
-]
-const providerName = (provider: CredentialProvider) =>
-  credentialProviders.find(({ id }) => id === provider)?.name ?? provider
-const isLinkProvider = (provider: string): provider is LinkProvider =>
-  provider === 'plaid' || provider === 'plaid-investments' || provider === 'snaptrade'
-const linkProviderName = (provider: LinkProvider) =>
-  provider === 'plaid-investments'
-    ? 'Plaid Investments'
-    : provider === 'plaid'
-      ? 'Plaid'
-      : 'SnapTrade'
-
-const plaidEnumLabel = (value: string) => {
-  const label = value.replaceAll('_', ' ').toLocaleLowerCase()
-  return label ? `${label[0].toLocaleUpperCase()}${label.slice(1)}` : value
+function reducedMotion() {
+  return window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
 }
 
-const plaidAmountLabel = (
-  amount: number,
-  currency: string | null,
-  direction: 'inflow' | 'outflow',
-) => {
-  const signed = direction === 'outflow' ? -amount : amount
-  return currency && currency !== 'USD'
-    ? `${signed.toFixed(2)} ${currency}`
-    : formatCurrency(signed)
+const sectionIcons: Record<SettingsSectionId, IconComponent> = {
+  connections: Link2,
+  rules: WandSparkles,
+  accounts: Landmark,
+  taxes: ReceiptText,
+  appearance: Palette,
+  charts: ChartNoAxesCombined,
+  navigation: List,
+  privacy: EyeOff,
+  market: ChartCandlestick,
+  data: Database,
+  advanced: Wrench,
 }
 
-const dataSources = [
-  { id: 'plaid', name: 'Plaid', description: 'Bank and credit card accounts' },
-  {
-    id: 'plaid-investments',
-    name: 'Plaid Investments',
-    description: 'Brokerage and stock plan accounts',
-  },
-  { id: 'snaptrade', name: 'SnapTrade', description: 'Investment accounts' },
-  { id: 'alpaca', name: 'Alpaca', description: 'Market quotes' },
-  { id: 'alphavantage', name: 'Alpha Vantage', description: 'Earnings dates, news and sentiment' },
-  {
-    id: 'intelligence',
-    name: 'Apple Intelligence',
-    description: 'Private, on-device explanations',
-  },
-  { id: 'local', name: 'Local cache', description: 'On-device financial snapshot' },
-] as const
+function TrustSummary({ onShow }: { onShow: (id: string) => void }) {
+  const finance = useFinance()
+  const health = useQuery({
+    queryKey: ['data-health', finance.data?.revision],
+    queryFn: getDataHealth,
+    enabled: Boolean(finance.data),
+  })
+  const providers = Object.values(finance.integrationStatus)
+  const configured = providers.filter(Boolean).length
+  const healthCount = health.data?.issues.length
+  return (
+    <div className="settings-trust-card" role="group" aria-label="Status summary">
+      <div className="settings-trust-item">
+        <StatusDot tone={finance.data ? 'positive' : finance.isError ? 'negative' : 'neutral'} />
+        <span>
+          <small>Last saved</small>
+          <strong>
+            {finance.data
+              ? formatUpdatedAt(finance.data.updatedAt)
+              : finance.isError
+                ? 'Unavailable'
+                : 'Loading…'}
+          </strong>
+        </span>
+      </div>
+      <a
+        href="#settings/connections"
+        className="settings-trust-item settings-trust-link"
+        onClick={(event) => {
+          event.preventDefault()
+          onShow('connections')
+        }}
+      >
+        <Link2 size={16} aria-hidden="true" />
+        <span>
+          <small>Connections</small>
+          <strong>
+            {configured ? `${configured} of ${providers.length} configured` : 'None configured'}
+          </strong>
+        </span>
+        <ChevronRight size={15} aria-hidden="true" />
+      </a>
+      <Link to="/health" className="settings-trust-item settings-trust-link">
+        <StatusDot
+          tone={
+            health.isError || health.data?.overallStatus === 'critical'
+              ? 'negative'
+              : health.data?.overallStatus === 'healthy'
+                ? 'positive'
+                : 'warning'
+          }
+        />
+        <span>
+          <small>Data health</small>
+          <strong>
+            {health.isPending
+              ? 'Checking…'
+              : health.isError
+                ? 'Unavailable'
+                : healthCount
+                  ? countOf(healthCount, 'issue')
+                  : 'All checks passed'}
+          </strong>
+        </span>
+        <ChevronRight size={15} aria-hidden="true" />
+      </Link>
+    </div>
+  )
+}
 
-export function SettingsPage() {
-  const hash = useLocation({ select: (location) => location.hash })
-  const queryClient = useQueryClient()
-  const query = useFinance()
-  const refresh = useRefreshFinance()
-  const connections = useQuery({
-    queryKey: ['provider-connections', query.data?.revision],
-    queryFn: getProviderConnections,
-  })
-  const orderedPages = useOrderedNavigation()
-  const orderedCharts = useAnalyticsOrder()
-  const [forgettingItem, setForgettingItem] = useState<string | null>(null)
-  const forgetConnection = useMutation({
-    mutationFn: forgetProviderConnection,
-    onSuccess: (_, itemId) => {
-      queryClient.setQueriesData<NonNullable<typeof connections.data>>(
-        { queryKey: ['provider-connections'] },
-        (current) => current?.filter((connection) => connection.itemId !== itemId),
-      )
-      setForgettingItem(null)
-      toast.success('Connection forgotten locally. Refresh to update accounts.')
-      void queryClient.invalidateQueries({ queryKey: ['provider-connections'] })
+/** Tracks the section nearest the top of the scrolling pane for the section list. */
+function useActiveSection(content: RefObject<HTMLElement | null>, dependency: unknown) {
+  const [active, setActive] = useState<string>(settingsSections[0].id)
+  useEffect(() => {
+    const root = content.current
+    const sections = [
+      ...(root?.querySelectorAll<HTMLElement>('[data-settings-section]') ?? []),
+    ].filter((section) => !section.hidden)
+    if (!root || !sections.length || typeof IntersectionObserver === 'undefined') return undefined
+    const visible = new Map<string, boolean>()
+    const observer = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) visible.set(entry.target.id, entry.isIntersecting)
+        const first = sections.find((section) => visible.get(section.id))
+        if (first) setActive(first.id)
+      },
+      { root, rootMargin: '-24px 0px -60% 0px' },
+    )
+    for (const section of sections) observer.observe(section)
+    return () => observer.disconnect()
+  }, [content, dependency])
+  return [active, setActive] as const
+}
+
+/** The Settings dialog body: section list and search on the left, every section on the right. */
+export function SettingsPanel({
+  target,
+  titleId,
+  onShow,
+  onClose,
+}: {
+  target: string
+  titleId: string
+  onShow: (id?: string) => void
+  onClose: () => void
+}) {
+  const finance = useFinance()
+  const [query, setQuery] = useState('')
+  const search = useMemo(() => searchSettings(query), [query])
+  const searchRef = useRef(search)
+  searchRef.current = search
+  const inputRef = useRef<HTMLInputElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
+  const [active, setActive] = useActiveSection(contentRef, search)
+
+  const scrollToTarget = useCallback(
+    (id: string) => {
+      const element = document.getElementById(id)
+      if (!element) return
+      element.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' })
+      element.focus({ preventScroll: true })
+      const section = element.closest<HTMLElement>('[data-settings-section]')
+      if (section) setActive(section.id)
+      if (!element.matches('[data-settings-item]')) return
+      element.dataset.flash = ''
+      window.setTimeout(() => delete element.dataset.flash, 1600)
     },
-    onError: (error) => {
-      toast.error('Could not forget connection', {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    },
-  })
-  const [linking, setLinking] = useState<LinkProvider | null>(null)
-  const plaidRecurring = useMutation({
-    mutationFn: getPlaidRecurringReport,
-    onError: (error) => {
-      toast.error('Could not check Plaid recurring transactions', {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    },
-  })
-  const foundationModel = useQuery({
-    queryKey: ['foundation-model-status'],
-    queryFn: getFoundationModelStatus,
-    staleTime: Number.POSITIVE_INFINITY,
-  })
-  const [integrationSaving, setIntegrationSaving] = useState<CredentialProvider | null>(null)
-  const [backupBusy, setBackupBusy] = useState<'export' | 'inspect' | 'restore' | null>(null)
-  const [pendingRestore, setPendingRestore] = useState<{ path: string; info: BackupInfo } | null>(
-    null,
+    [setActive],
   )
-  const [credentialsUnlocked, setCredentialsUnlocked] = useState(false)
-  const [credentialsUnlocking, setCredentialsUnlocking] = useState(false)
-  const [defaultGraphWindow, setDefaultGraphWindow] = useState(getDefaultGraphWindow)
-  const [holdingChartRange, setHoldingChartRange] = useState(getDefaultHoldingChartRange)
-  const [marketUpdateInterval, setMarketUpdateInterval] = useState(getMarketUpdateInterval)
-  const [savedChartAccountPreferences, setSavedChartAccountPreferences] = useState(
-    getChartAccountPreferences,
-  )
-  const [accountDisplayNames, setAccountDisplayNames] = useState(getAccountDisplayNames)
-  const [accountStartDates, setAccountStartDates] = useState(getAccountStartDates)
-  const [externalLogosEnabled, setExternalLogosEnabled] = useState(getExternalLogosEnabled)
-  const [spendingAccountId, setSpendingAccountId] = useState(getSpendingAccountId)
-  const [hiddenPlatinumBenefitIds, setHiddenPlatinumBenefitIds] = useState(
-    getHiddenPlatinumBenefitIds,
-  )
-  const [credentials, setCredentials] = useState<Record<CredentialProvider, string[]>>({
-    plaid: ['', ''],
-    snaptrade: ['', ''],
-    alpaca: ['', ''],
-    alphavantage: [''],
-  })
-  const [linkPhase, setLinkPhase] = useState<'browser' | 'checking' | 'refreshing'>('browser')
-  const browserCompleted = useRef(false)
-  const linkAttempt = useRef(0)
-  const activeSession = useRef<ProviderLinkSession | null>(null)
-  const linkingProvider = useRef<LinkProvider | null>(null)
 
   useEffect(() => {
-    return () => {
-      linkAttempt.current += 1
-      linkingProvider.current = null
-      if (activeSession.current)
-        void cancelProviderLink(activeSession.current).catch(() => undefined)
-      activeSession.current = null
+    const id = target ? settingsHashForPath(`/settings#${target}`) : undefined
+    if (!id) {
+      // Opening Settings without a destination starts in search, ready to type.
+      inputRef.current?.focus({ preventScroll: true })
+      return undefined
     }
-  }, [])
-
-  useEffect(() => {
-    if (hash.replace(/^#/, '') !== 'data-sources' || query.isLoading || query.isError) return
-    const heading = document.getElementById('data-sources')
-    heading?.focus({ preventScroll: true })
-    heading?.scrollIntoView({ block: 'start' })
-  }, [hash, query.isError, query.isLoading])
-
-  const unlockCredentials = async () => {
-    setCredentialsUnlocking(true)
-    try {
-      await authenticateSensitiveAction()
-      setCredentialsUnlocked(true)
-      toast.success('Credential editing unlocked')
-    } catch (error) {
-      toast.error(error instanceof Error ? error.message : String(error))
-    } finally {
-      setCredentialsUnlocking(false)
-    }
-  }
-
-  const saveIntegration = async (provider: CredentialProvider) => {
-    setIntegrationSaving(provider)
-    try {
-      const [clientId, secret] = credentials[provider]
-      const status = await saveIntegrationCredentials(
-        provider,
-        provider === 'plaid'
-          ? { clientId, secret }
-          : provider === 'snaptrade'
-            ? { clientId, consumerKey: secret }
-            : provider === 'alpaca'
-              ? { clientId, secret }
-              : { clientId },
-      )
-      queryClient.setQueryData(['integration-status'], status)
-      void queryClient.invalidateQueries({ queryKey: ['market-snapshots'] })
-      setCredentials((current) => ({
-        ...current,
-        [provider]: current[provider].map(() => ''),
-      }))
-      setCredentialsUnlocked(false)
-      toast.success(`${providerName(provider)} credentials saved and tested`)
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error)
-      if (message.includes('Authenticate before replacing saved credentials')) {
-        setCredentialsUnlocked(false)
-      }
-      toast.error(message)
-    } finally {
-      setIntegrationSaving(null)
-    }
-  }
-
-  const exportBackup = async () => {
-    if (!isTauri()) return
-    setBackupBusy('export')
-    try {
-      const date = new Date().toISOString().slice(0, 10)
-      const path = await save({
-        defaultPath: `Brief ${date}.briefbackup`,
-        filters: [{ name: 'Brief backup', extensions: ['briefbackup'] }],
-      })
-      if (!path) return
-      await exportFinanceBackup(path)
-      toast.success('Financial backup saved')
-    } catch (error) {
-      toast.error('Could not save backup', {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setBackupBusy(null)
-    }
-  }
-
-  const chooseBackup = async () => {
-    if (!isTauri()) return
-    setBackupBusy('inspect')
-    try {
-      const path = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: 'Brief backup', extensions: ['briefbackup', 'sqlite3', 'db'] }],
-      })
-      if (!path) return
-      const info = await inspectFinanceBackup(path)
-      setPendingRestore({ path, info })
-    } catch (error) {
-      toast.error('Could not read backup', {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setBackupBusy(null)
-    }
-  }
-
-  const restoreBackup = async () => {
-    if (!pendingRestore) return
-    setBackupBusy('restore')
-    try {
-      const snapshot = await restoreFinanceBackup(pendingRestore.path)
-      queryClient.setQueryData(financeQueryKey, snapshot)
-      setPendingRestore(null)
-      await Promise.all([
-        queryClient.invalidateQueries({ queryKey: ['transaction-annotations'] }),
-        queryClient.invalidateQueries({ queryKey: ['provider-connections'] }),
-        queryClient.invalidateQueries({ queryKey: ['data-health'] }),
-        queryClient.invalidateQueries({ queryKey: ['portfolio-performance'] }),
-        queryClient.invalidateQueries({ queryKey: ['market-snapshots'] }),
-      ])
-      toast.success('Backup restored')
-    } catch (error) {
-      toast.error('Could not restore backup', {
-        description: error instanceof Error ? error.message : String(error),
-      })
-    } finally {
-      setBackupBusy(null)
-    }
-  }
-
-  const cancelLink = async () => {
-    linkAttempt.current += 1
-    linkingProvider.current = null
-    setLinking(null)
-    const session = activeSession.current
-    activeSession.current = null
-    if (session)
-      await cancelProviderLink(session).catch(() =>
-        toast.error('Could not cancel the native connection check'),
-      )
-  }
-  const connectProvider = async (provider: LinkProvider, itemId?: string) => {
-    if (linkingProvider.current) {
-      toast.info(`Finish the ${linkProviderName(linkingProvider.current)} connection first`)
-      return
-    }
-    const credentialProvider = provider === 'plaid-investments' ? 'plaid' : provider
-    if (!integrationStatus[credentialProvider]) {
-      toast.error(`Save your ${providerName(credentialProvider)} credentials first`)
-      return
-    }
-    const attemptId = linkAttempt.current + 1
-    linkAttempt.current = attemptId
-    linkingProvider.current = provider
-    setLinking(provider)
-    setLinkPhase('browser')
-    browserCompleted.current = false
-    try {
-      const session = await beginProviderLink(provider, itemId)
-      if (linkAttempt.current !== attemptId) {
-        await cancelProviderLink(session)
-        return
-      }
-      activeSession.current = session
-      toast.info('Finish connecting in your browser')
-      for (let attempt = 0; attempt < 150; attempt += 1) {
-        await wait(2_000)
-        if (linkAttempt.current !== attemptId) return
-        const result = await pollProviderLink(session, browserCompleted.current)
-        if (linkAttempt.current !== attemptId) return
-        if (result.status === 'connected') {
-          setLinkPhase('refreshing')
-          await refresh()
-          if (linkAttempt.current !== attemptId) return
-          void connections.refetch()
-          toast.success(`${linkProviderName(provider)} connected`)
-          return
-        }
-      }
-      throw new Error('The connection window expired. Try again when you are ready.')
-    } catch (error) {
-      if (linkAttempt.current === attemptId)
-        toast.error(error instanceof Error ? error.message : String(error))
-    } finally {
-      if (linkAttempt.current === attemptId) {
-        if (activeSession.current)
-          void cancelProviderLink(activeSession.current).catch(() => undefined)
-        activeSession.current = null
-        linkingProvider.current = null
-        setLinking(null)
-      }
-    }
-  }
-  if (query.isLoading) return <PageLoading />
-  if (query.isError || !query.data) return <PageError />
-
-  const data = query.data
-  const integrationStatus = query.integrationStatus
-  const isConfigured = (provider: CredentialProvider) =>
-    provider === 'alphavantage' ? integrationStatus.alphaVantage : integrationStatus[provider]
-  const foundationModelStatus = foundationModel.data ?? {
-    state: 'unavailable',
-    message: foundationModel.isLoading ? 'Checking availability…' : 'Unavailable',
-  }
-  const creditAccounts = data.accounts.filter(({ type }) => type === 'credit')
-  const selectedSpendingAccount = creditAccounts.some(({ id }) => id === spendingAccountId)
-    ? spendingAccountId
-    : ''
-  const chartViews = dashboardAccountViews(data)
-  const chartViewsById = new Map(chartViews.map((view) => [view.accountId, view]))
-  const chartAccountPreferences = reconcileChartAccountPreferences(
-    chartViews.map(({ accountId }) => accountId),
-    savedChartAccountPreferences,
-  )
-  const visibleChartAccountCount = chartAccountPreferences.filter(({ visible }) => visible).length
-  const renameableAccounts = data.accounts
-    .filter(({ id }) => id !== 'all')
-    .toSorted(
-      (left, right) =>
-        left.institution.localeCompare(right.institution) || left.name.localeCompare(right.name),
+    // A deep link always wins over a search that would hide its target.
+    const hiddenBySearch = Boolean(
+      searchRef.current && document.getElementById(id)?.closest('[hidden]'),
     )
-  const updateAccountDisplayName = (accountId: string, name: string) => {
-    const next = { ...accountDisplayNames }
-    if (name) next[accountId] = name
-    else delete next[accountId]
-    setAccountDisplayNames(next)
-    saveAccountDisplayNames(next)
-  }
-  const updateAccountStartDate = (accountId: string, date: string) => {
-    const next = { ...accountStartDates }
-    if (date) next[accountId] = date
-    else delete next[accountId]
-    setAccountStartDates(saveAccountStartDates(next))
-  }
-  const updateChartAccountPreferences = (next: typeof chartAccountPreferences) => {
-    saveChartAccountPreferences(next)
-    setSavedChartAccountPreferences(next)
-  }
-  const moveChartAccount = (index: number, direction: -1 | 1) => {
-    const destination = index + direction
-    if (destination < 0 || destination >= chartAccountPreferences.length) return
-    const next = [...chartAccountPreferences]
-    const current = next[index]
-    next[index] = next[destination]
-    next[destination] = current
-    updateChartAccountPreferences(next)
-  }
-  const providers = dataSources.map((provider) => {
-    if (provider.id === 'local') return { ...provider, status: 'local', lastSync: 'Current' }
-    if (provider.id === 'intelligence') {
-      return {
-        ...provider,
-        status: foundationModelStatus.state === 'available' ? 'ready' : 'error',
-        lastSync:
-          foundationModelStatus.state === 'available' ? 'Ready' : foundationModelStatus.message,
-      }
-    }
-    const credentialProvider = provider.id === 'plaid-investments' ? 'plaid' : provider.id
-    const configured = isConfigured(credentialProvider)
-    const health = data.providerStatus?.[credentialProvider]
-    const connected = data.accounts.some(
-      (account) =>
-        account.id.startsWith(`${provider.id === 'plaid-investments' ? 'plaid' : provider.id}:`) &&
-        (provider.id !== 'plaid' || account.type === 'cash' || account.type === 'credit') &&
-        (provider.id !== 'plaid-investments' ||
-          account.type === 'brokerage' ||
-          account.type === 'retirement'),
-    )
-    return {
-      ...provider,
-      status: !configured ? 'neutral' : health?.error ? 'error' : 'ready',
-      lastSync: health?.error
-        ? `Using saved data · ${health.error}`
-        : (provider.id === 'alpaca' || provider.id === 'alphavantage') && configured
-          ? 'Configured'
-          : connected
-            ? 'Connected'
-            : configured
-              ? 'Ready to connect'
-              : 'Not configured',
-    }
-  })
+    if (hiddenBySearch) setQuery('')
+    const timer = window.setTimeout(() => scrollToTarget(id), hiddenBySearch ? 60 : 0)
+    return () => window.clearTimeout(timer)
+  }, [target, scrollToTarget])
+
+  const firstResult = search
+    ? settingsSections.flatMap(({ entries }) => entries).find(({ id }) => search.entryIds.has(id))
+    : undefined
+
+  const completion = autofillCompletion(query, [
+    ...settingsSections.map(({ title }) => title),
+    ...settingsSections.flatMap(({ entries }) => entries.map(({ title }) => title)),
+  ])
 
   return (
-    <div className="page settings-page">
-      <WorkspaceHeader
-        title="Settings"
-        showSnapshot={false}
-        showRefresh={false}
-        actions={
-          <>
-            {linking ? (
-              <Button icon={X} onClick={() => void cancelLink()}>
-                Cancel connection
-              </Button>
-            ) : null}
-            <Link to="/settings/design" className="button-base button-secondary button-default">
-              <Palette size={16} aria-hidden="true" />
-              <span className="sr-only">Design</span>
-            </Link>
-            <Link to="/logs" className="button-base button-secondary button-default">
-              <ScrollText size={16} aria-hidden="true" />
-              <span className="sr-only">Diagnostics</span>
-            </Link>
-          </>
+    <div
+      className="settings-panel"
+      onKeyDown={(event) => {
+        if (event.key === '/' && event.target !== inputRef.current) {
+          event.preventDefault()
+          inputRef.current?.focus()
         }
-      />
-
-      <div className="settings-sections">
-        <section className="settings-section settings-section-pair">
-          <h2 className="settings-section-heading">Display</h2>
-          <Card>
-            <SectionHeading title="Page order" />
-            <div className="page-order-list">
-              {orderedPages.map(({ to, label, icon: Icon }, index) => (
-                <div className="page-order-row" key={to}>
-                  <Icon size={16} aria-hidden="true" />
-                  <span>{label}</span>
-                  <Button
-                    icon={ArrowUp}
-                    disabled={index === 0}
-                    aria-label={`Move ${label} page up`}
-                    onClick={() =>
-                      savePageOrder(
-                        movePage(
-                          orderedPages.map((page) => page.to),
-                          index,
-                          -1,
-                        ),
-                      )
-                    }
-                  />
-                  <Button
-                    icon={ArrowDown}
-                    disabled={index === orderedPages.length - 1}
-                    aria-label={`Move ${label} page down`}
-                    onClick={() =>
-                      savePageOrder(
-                        movePage(
-                          orderedPages.map((page) => page.to),
-                          index,
-                          1,
-                        ),
-                      )
-                    }
-                  />
-                </div>
-              ))}
-            </div>
-          </Card>
-          <Card>
-            <SectionHeading title="Analytics order" />
-            <div className="page-order-list">
-              {orderedCharts.map((id, index) => {
-                const label = analyticsCharts.find((chart) => chart.id === id)!.label
-                return (
-                  <div className="page-order-row" key={id}>
-                    <span aria-hidden="true">{index + 1}</span>
-                    <span>{label}</span>
-                    <Button
-                      icon={ArrowUp}
-                      disabled={index === 0}
-                      aria-label={`Move ${label} chart up`}
-                      onClick={() =>
-                        saveAnalyticsOrder(moveAnalyticsChart(orderedCharts, index, -1))
-                      }
-                    />
-                    <Button
-                      icon={ArrowDown}
-                      disabled={index === orderedCharts.length - 1}
-                      aria-label={`Move ${label} chart down`}
-                      onClick={() =>
-                        saveAnalyticsOrder(moveAnalyticsChart(orderedCharts, index, 1))
-                      }
-                    />
-                  </div>
-                )
-              })}
-            </div>
-          </Card>
-          <Card>
-            <SectionHeading title="Charts" />
-            <div className="settings-control-row">
-              <span>Home range</span>
-              <ChartRangeSelect
-                label="Default graph range"
-                options={graphWindows.map(({ secs, label, settingsLabel }) => ({
-                  value: secs,
-                  label,
-                  accessibleLabel: settingsLabel,
-                }))}
-                value={defaultGraphWindow}
-                onValueChange={(secs) => {
-                  saveDefaultGraphWindow(secs)
-                  setDefaultGraphWindow(secs)
-                }}
-              />
-            </div>
-            <div className="settings-control-row">
-              <span>Holdings range</span>
-              <ChartRangeSelect
-                label="Default Holdings graph range"
-                options={holdingChartRanges}
-                value={holdingChartRange}
-                onValueChange={(value) => {
-                  saveDefaultHoldingChartRange(value)
-                  setHoldingChartRange(value)
-                }}
-              />
-            </div>
-            <div className="settings-control-row">
-              <span>Live price updates</span>
-              <RangeSelector
-                className="graph-window-options"
-                label="Live price updates"
-                options={marketUpdateIntervals.map(({ seconds, label, settingsLabel }) => ({
-                  value: seconds,
-                  label,
-                  accessibleLabel: settingsLabel,
-                }))}
-                value={marketUpdateInterval}
-                onValueChange={(seconds) => {
-                  saveMarketUpdateInterval(seconds)
-                  setMarketUpdateInterval(seconds)
-                }}
-              />
-            </div>
-
-            <div className="settings-control-row">
-              <label className="external-logo-setting">
-                <input
-                  type="checkbox"
-                  checked={externalLogosEnabled}
-                  onChange={(event) => {
-                    saveExternalLogosEnabled(event.target.checked)
-                    setExternalLogosEnabled(event.target.checked)
-                  }}
-                />
-                <span>
-                  <strong>Company and merchant logos</strong>
-                </span>
-              </label>
-              <span className="muted">
-                Requests ticker and merchant logos from Logo.dev or Plaid. Turn off to use local
-                category and ticker marks.
-              </span>
-            </div>
-          </Card>
-          <Card>
-            <div className="chart-account-settings">
-              <SectionHeading title="Home accounts" />
-              <div className="chart-account-options">
-                {chartAccountPreferences.map((preference, index) => {
-                  const chart = chartViewsById.get(preference.accountId)
-                  if (!chart) return null
-                  return (
-                    <div className="chart-account-option" key={preference.accountId}>
-                      <label>
-                        <input
-                          type="checkbox"
-                          checked={preference.visible}
-                          disabled={preference.visible && visibleChartAccountCount === 1}
-                          onChange={(event) =>
-                            updateChartAccountPreferences(
-                              chartAccountPreferences.map((item) =>
-                                item.accountId === preference.accountId
-                                  ? { ...item, visible: event.target.checked }
-                                  : item,
-                              ),
-                            )
-                          }
-                        />
-                        <span>
-                          <strong>
-                            {accountDisplayName(chart.accountId, chart.name, accountDisplayNames)}
-                          </strong>
-                          <small>
-                            {chart.institution} · {formatCurrency(chart.currentValue)}
-                          </small>
-                        </span>
-                      </label>
-                      <div className="chart-account-order">
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          type="button"
-                          disabled={index === 0}
-                          aria-label={`Move ${accountDisplayName(chart.accountId, chart.name, accountDisplayNames)} up`}
-                          onClick={() => moveChartAccount(index, -1)}
-                        >
-                          <ArrowUp size={14} aria-hidden="true" />
-                        </Button>
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          type="button"
-                          disabled={index === chartAccountPreferences.length - 1}
-                          aria-label={`Move ${accountDisplayName(chart.accountId, chart.name, accountDisplayNames)} down`}
-                          onClick={() => moveChartAccount(index, 1)}
-                        >
-                          <ArrowDown size={14} aria-hidden="true" />
-                        </Button>
-                      </div>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-          </Card>
-        </section>
-        <section className="settings-section">
-          <h2 className="settings-section-heading">Spending</h2>
-          <Card>
-            <SectionHeading title="Spending account" />
-            <div className="settings-field">
-              <span>Credit account</span>
-              <FilterSelect
-                label="Credit account"
-                value={selectedSpendingAccount}
-                disabled={!creditAccounts.length}
-                options={[
-                  {
-                    value: '',
-                    label: creditAccounts.length
-                      ? 'Choose an account'
-                      : 'No credit accounts connected',
-                  },
-                  ...creditAccounts.map((account) => ({
-                    value: account.id,
-                    label: `${accountDisplayName(account.id, account.name, accountDisplayNames)} · ${account.institution}`,
-                  })),
-                ]}
-                onValueChange={(accountId) => {
-                  saveSpendingAccountId(accountId)
-                  setSpendingAccountId(accountId)
-                }}
-              />
-            </div>
-            <fieldset className="benefit-visibility-settings" id="platinum-benefits">
-              <legend>Visible Platinum benefits</legend>
-              <div className="benefit-visibility-options">
-                {platinumBenefitOptions.map((benefit) => (
-                  <label key={benefit.id}>
-                    <input
-                      type="checkbox"
-                      checked={!hiddenPlatinumBenefitIds.includes(benefit.id)}
-                      onChange={(event) => {
-                        const next = event.target.checked
-                          ? hiddenPlatinumBenefitIds.filter((id) => id !== benefit.id)
-                          : [...hiddenPlatinumBenefitIds, benefit.id]
-                        saveHiddenPlatinumBenefitIds(next)
-                        setHiddenPlatinumBenefitIds(next)
-                      }}
-                    />
-                    <span>{benefit.name}</span>
-                  </label>
-                ))}
-              </div>
-            </fieldset>
-          </Card>
-        </section>
-        <section className="settings-section">
-          <h2 className="settings-section-heading">Accounts</h2>
-          <Card>
-            <SectionHeading title="Account details" />
-            <div className="settings-table-scroll">
-              <table className="settings-account-table">
-                <thead>
-                  <tr>
-                    <th scope="col">Account</th>
-                    <th scope="col">Display name</th>
-                    <th scope="col">Start date</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {renameableAccounts.map((account) => (
-                    <tr key={account.id}>
-                      <th scope="row">
-                        <strong>{account.name}</strong>
-                        <small>
-                          {account.institution} · {account.type}
-                        </small>
-                      </th>
-                      <td>
-                        <input
-                          type="text"
-                          maxLength={80}
-                          value={accountDisplayNames[account.id] ?? ''}
-                          placeholder="Provider name"
-                          aria-label={`Display name for ${account.name}`}
-                          onChange={(event) =>
-                            updateAccountDisplayName(account.id, event.target.value)
-                          }
-                        />
-                      </td>
-                      <td>
-                        <input
-                          type="date"
-                          max={data.updatedAt.slice(0, 10)}
-                          value={accountStartDate(data, account.id, accountStartDates) ?? ''}
-                          aria-label={`Start date for ${account.name}`}
-                          onChange={(event) =>
-                            updateAccountStartDate(account.id, event.target.value)
-                          }
-                        />
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-            {!renameableAccounts.length ? (
-              <p className="settings-copy">No connected accounts to edit.</p>
-            ) : null}
-          </Card>
-          {(data.possibleDuplicateAccounts?.length ?? 0) ||
-          Object.keys(data.accountLinks ?? {}).length ? (
-            <Card>
-              <SectionHeading title="Linked accounts" />
-              <div className="account-name-settings">
-                {(data.possibleDuplicateAccounts ?? []).map((candidate) => (
-                  <div className="account-name-setting" key={candidate.plaidAccountId}>
-                    <span>
-                      <strong>Possible duplicate</strong>
-                      <small>{candidate.description}</small>
-                    </span>
-                    <Button
-                      icon={Link2}
-                      onClick={() => {
-                        void saveAccountLink(candidate.plaidAccountId, candidate.snaptradeAccountId)
-                          .then(() => refresh())
-                          .then(() => toast.success('Accounts linked after provider confirmation'))
-                          .catch((error) =>
-                            toast.error(error instanceof Error ? error.message : String(error)),
-                          )
-                      }}
-                    >
-                      Confirm same account
-                    </Button>
-                  </div>
-                ))}
-                {Object.entries(data.accountLinks ?? {}).map(
-                  ([plaidAccountId, snaptradeAccountId]) => (
-                    <div className="account-name-setting" key={plaidAccountId}>
-                      <span>
-                        <strong>Confirmed linked account</strong>
-                        <small>
-                          {plaidAccountId} → {snaptradeAccountId}
-                        </small>
-                      </span>
-                      <Button
-                        icon={Unlink}
-                        variant="destructive"
-                        onClick={() => {
-                          void saveAccountLink(plaidAccountId)
-                            .then(() => refresh())
-                            .then(() => toast.success('Account link removed'))
-                            .catch((error) =>
-                              toast.error(error instanceof Error ? error.message : String(error)),
-                            )
-                        }}
-                      >
-                        Unlink
-                      </Button>
-                    </div>
-                  ),
-                )}
-              </div>
-            </Card>
-          ) : null}
-        </section>
-        <section className="settings-section">
-          <h2 className="settings-section-heading">Local data</h2>
-          <Card>
-            <SectionHeading title="Backup and restore" />
-            <div className="backup-actions">
-              <div>
-                <strong>Portable financial backup</strong>
-                <p className="settings-copy">
-                  Saves the committed snapshot, provider caches, reviews, account links, and sync
-                  history. Keychain credentials, display preferences, and disposable caches stay on
-                  this Mac.
-                </p>
-              </div>
-              <div className="backup-buttons">
-                <Button
-                  disabled={!isTauri() || backupBusy !== null}
-                  onClick={() => void exportBackup()}
-                >
-                  <Download size={16} aria-hidden="true" />
-                  {backupBusy === 'export' ? 'Saving…' : 'Save backup'}
-                </Button>
-                <Button
-                  disabled={!isTauri() || backupBusy !== null}
-                  onClick={() => void chooseBackup()}
-                >
-                  <RotateCcw size={16} aria-hidden="true" />
-                  {backupBusy === 'inspect' ? 'Validating…' : 'Choose backup'}
-                </Button>
-              </div>
-            </div>
-            <p className="backup-privacy-note">
-              Backup files contain unencrypted financial data. Store them somewhere private.
-            </p>
-            {pendingRestore ? (
-              <div className="backup-confirmation" role="group" aria-label="Confirm backup restore">
-                <div>
-                  <strong>Replace current local financial data?</strong>
-                  <p>
-                    Data through {new Date(pendingRestore.info.updatedAt).toLocaleString()} ·{' '}
-                    {pendingRestore.info.accounts} accounts · {pendingRestore.info.transactions}{' '}
-                    activities · {pendingRestore.info.holdings} holdings
-                  </p>
-                  <small>
-                    Brief validated this copy and will retain the current database before replacing
-                    it. Saved credentials are not changed.
-                  </small>
-                </div>
-                <div className="backup-buttons">
-                  <Button
-                    disabled={backupBusy === 'restore'}
-                    onClick={() => setPendingRestore(null)}
-                  >
-                    Cancel
-                  </Button>
-                  <Button
-                    variant="destructive"
-                    disabled={backupBusy === 'restore'}
-                    onClick={() => void restoreBackup()}
-                  >
-                    {backupBusy === 'restore' ? 'Restoring…' : 'Confirm restore'}
-                  </Button>
-                </div>
-              </div>
-            ) : null}
-          </Card>
-        </section>
-        <section className="settings-section settings-section-pair">
-          <h2 className="settings-section-heading">Connections</h2>
-          <Card>
-            <SectionHeading
-              title={
-                <span id="data-sources" tabIndex={-1}>
-                  Data sources
-                </span>
-              }
-              action={<RefreshButton />}
+      }}
+    >
+      <aside className="settings-panel-nav">
+        <h2 id={titleId}>Settings</h2>
+        <div className="settings-search">
+          <Search size={15} aria-hidden="true" />
+          <AutofillField query={query} completion={completion}>
+            <input
+              ref={inputRef}
+              type="text"
+              aria-label="Search settings"
+              aria-describedby="settings-search-status"
+              placeholder="Search"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              onKeyDown={(event) => {
+                if (acceptAutofill(event, completion, setQuery)) return
+                if (event.key !== 'Enter' || !firstResult) return
+                event.preventDefault()
+                scrollToTarget(firstResult.id)
+              }}
             />
-            <div className="provider-list">
-              {providers.map((provider) => (
-                <div className="provider-row" key={provider.id}>
-                  <span className="provider-icon">
-                    {provider.id === 'intelligence' ? (
-                      <Cpu size={17} />
-                    ) : provider.id === 'local' ? (
-                      <HardDrive size={17} />
-                    ) : (
-                      <Database size={17} />
-                    )}
-                  </span>
-                  <span>
-                    <strong>{provider.name}</strong>
-                  </span>
-                  <span className="provider-status">
-                    <StatusDot
-                      tone={
-                        provider.status === 'error'
-                          ? 'negative'
-                          : provider.status === 'neutral'
-                            ? 'neutral'
-                            : 'positive'
-                      }
-                    />
-                    {linking === provider.id
-                      ? linkPhase === 'refreshing'
-                        ? 'Refreshing accounts…'
-                        : linkPhase === 'checking'
-                          ? 'Checking connection…'
-                          : 'Waiting for browser…'
-                      : provider.lastSync}
-                  </span>
-                  {linking === 'snaptrade' && provider.id === 'snaptrade' ? (
-                    <Button
-                      disabled={linkPhase !== 'browser'}
-                      onClick={() => {
-                        browserCompleted.current = true
-                        setLinkPhase('checking')
-                      }}
-                    >
-                      Done in browser
-                    </Button>
-                  ) : isLinkProvider(provider.id) ? (
-                    <Button
-                      aria-label={`Connect ${provider.name}`}
-                      disabled={Boolean(linking)}
-                      onClick={() => {
-                        if (isLinkProvider(provider.id)) void connectProvider(provider.id)
-                      }}
-                    >
-                      <ChevronRight size={16} aria-hidden="true" />
-                    </Button>
-                  ) : (
-                    <span />
-                  )}
-                </div>
-              ))}
-            </div>
-          </Card>
-          <div className="settings-section">
-            <Card>
-              <SectionHeading title="Bank connections" />
-              {connections.isError ? (
-                <p className="settings-copy">
-                  Could not load connections.{' '}
-                  <Button icon={RefreshCw} onClick={() => void connections.refetch()}>
-                    Retry
-                  </Button>
-                </p>
-              ) : null}
-              {connections.isPending ? <p className="settings-copy">Loading connections…</p> : null}
-              {connections.data?.map((connection) => (
-                <div className="provider-row provider-connection-row" key={connection.itemId}>
-                  <div>
-                    <strong>{connection.name}</strong>
-                    <p className="settings-copy">
-                      {connection.error ?? 'Connected'} ·{' '}
-                      {connection.provider === 'plaid-investments' ? 'Investments' : 'Banking'}
-                    </p>
-                  </div>
-                  <Button
-                    icon={Wrench}
-                    disabled={Boolean(linking) || forgetConnection.isPending}
-                    onClick={() => void connectProvider(connection.provider, connection.itemId)}
+          </AutofillField>
+          {query ? (
+            <Button
+              size="icon-compact"
+              variant="ghost"
+              aria-label="Clear search"
+              onClick={() => {
+                setQuery('')
+                inputRef.current?.focus()
+              }}
+            >
+              <X size={12} aria-hidden="true" />
+            </Button>
+          ) : (
+            <kbd aria-hidden="true">/</kbd>
+          )}
+        </div>
+        <p id="settings-search-status" className="settings-search-status" role="status">
+          {search?.total ? `${countOf(search.total, 'match', 'matches')} · Return to jump` : ''}
+        </p>
+        <nav aria-label="Settings sections">
+          <ul>
+            {settingsSections.map((section) => {
+              const Icon = sectionIcons[section.id]
+              const count = search?.counts.get(section.id) ?? 0
+              const dimmed = Boolean(search && !count)
+              return (
+                <li key={section.id}>
+                  <a
+                    href={`#settings/${section.id}`}
+                    className="settings-rail-link"
+                    aria-current={!search && active === section.id ? 'location' : undefined}
+                    aria-disabled={dimmed || undefined}
+                    tabIndex={dimmed ? -1 : undefined}
+                    onClick={(event) => {
+                      event.preventDefault()
+                      if (dimmed) return
+                      if (target === section.id) scrollToTarget(section.id)
+                      else onShow(section.id)
+                    }}
                   >
-                    Repair
-                  </Button>
-                  <Button
-                    icon={Trash2}
-                    variant="destructive"
-                    disabled={Boolean(linking) || forgetConnection.isPending}
-                    onClick={() => setForgettingItem(connection.itemId)}
-                  >
-                    Forget locally
-                  </Button>
-                  {forgettingItem === connection.itemId ? (
-                    <div
-                      className="connection-confirmation"
-                      role="group"
-                      aria-label={`Forget ${connection.name} locally`}
-                    >
-                      <p>
-                        Forget {connection.name}? Saved accounts disappear after the next successful
-                        refresh. This does not revoke access at Plaid or your bank.
-                      </p>
-                      <div>
-                        <Button
-                          icon={X}
-                          disabled={forgetConnection.isPending}
-                          onClick={() => setForgettingItem(null)}
-                        >
-                          Cancel
-                        </Button>
-                        <Button
-                          icon={Trash2}
-                          variant="destructive"
-                          disabled={forgetConnection.isPending || Boolean(linking)}
-                          onClick={() => forgetConnection.mutate(connection.itemId)}
-                        >
-                          {forgetConnection.isPending ? 'Forgetting…' : 'Confirm forget'}
-                        </Button>
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ))}
-              {connections.data?.length === 0 ? (
-                <p className="settings-copy">No saved Plaid connections.</p>
-              ) : null}
-            </Card>
-            <Card className="plaid-recurring-card">
-              <SectionHeading
-                title="Plaid recurring check"
-                action={
-                  <Button
-                    disabled={
-                      !isTauri() ||
-                      plaidRecurring.isPending ||
-                      !connections.data?.some(({ provider }) => provider === 'plaid')
-                    }
-                    onClick={() => plaidRecurring.mutate()}
-                  >
-                    {plaidRecurring.isPending ? 'Checking…' : 'Check Plaid'}
-                  </Button>
-                }
-              />
-              <p className="settings-copy">
-                Requires Plaid Recurring Transactions access and reads its current streams on
-                demand. Results are not saved or used by Expected activity.
-              </p>
-              {plaidRecurring.isPending ? (
-                <p className="settings-copy" role="status">
-                  Asking Plaid to analyze connected banking activity…
-                </p>
-              ) : null}
-              {plaidRecurring.data ? (
-                <div className="plaid-recurring-connections">
-                  {plaidRecurring.data.connections.map((connection) => (
-                    <section className="plaid-recurring-connection" key={connection.itemId}>
-                      <div className="plaid-recurring-connection-heading">
-                        <strong>{connection.name}</strong>
-                        <small>
-                          {connection.error
-                            ? 'Unavailable'
-                            : `${connection.streams.length} stream${connection.streams.length === 1 ? '' : 's'}`}
-                        </small>
-                      </div>
-                      {connection.error ? (
-                        <p className="plaid-recurring-error" role="alert">
-                          {connection.error}
-                        </p>
-                      ) : connection.streams.length ? (
-                        <ul className="plaid-recurring-list">
-                          {connection.streams.map((stream) => {
-                            const account = data.accounts.find(({ id }) => id === stream.accountId)
-                            return (
-                              <li className="plaid-recurring-row" key={stream.streamId}>
-                                <div className="plaid-recurring-copy">
-                                  <strong>{stream.merchantName ?? stream.description}</strong>
-                                  <small>
-                                    {accountDisplayName(
-                                      account?.id,
-                                      account?.name ?? 'Plaid account',
-                                      accountDisplayNames,
-                                    )}{' '}
-                                    {stream.category ? ` · ${plaidEnumLabel(stream.category)}` : ''}{' '}
-                                    · {plaidEnumLabel(stream.frequency)} · {stream.transactionCount}{' '}
-                                    transaction
-                                    {stream.transactionCount === 1 ? '' : 's'}
-                                  </small>
-                                  <small>
-                                    Seen <time dateTime={stream.firstDate}>{stream.firstDate}</time>{' '}
-                                    – <time dateTime={stream.lastDate}>{stream.lastDate}</time>
-                                    {stream.predictedNextDate ? (
-                                      <>
-                                        {' '}
-                                        · Next{' '}
-                                        <time dateTime={stream.predictedNextDate}>
-                                          {stream.predictedNextDate}
-                                        </time>
-                                      </>
-                                    ) : null}
-                                  </small>
-                                </div>
-                                <span className="plaid-recurring-status">
-                                  <StatusDot tone={stream.isActive ? 'positive' : 'neutral'} />
-                                  {plaidEnumLabel(stream.status)}
-                                  {!stream.isActive ? ' · Inactive' : ''}
-                                </span>
-                                <span className="plaid-recurring-amount">
-                                  <small>Average</small>
-                                  <strong
-                                    className={
-                                      stream.direction === 'inflow' ? 'positive' : 'negative'
-                                    }
-                                  >
-                                    {plaidAmountLabel(
-                                      stream.averageAmount.amount,
-                                      stream.averageAmount.currency,
-                                      stream.direction,
-                                    )}
-                                  </strong>
-                                  <small>
-                                    Last{' '}
-                                    {plaidAmountLabel(
-                                      stream.lastAmount.amount,
-                                      stream.lastAmount.currency,
-                                      stream.direction,
-                                    )}
-                                  </small>
-                                </span>
-                              </li>
-                            )
-                          })}
-                        </ul>
-                      ) : (
-                        <p className="settings-copy">Plaid returned no recurring streams.</p>
-                      )}
-                    </section>
-                  ))}
-                  <small className="plaid-recurring-fetched">
-                    Checked {new Date(plaidRecurring.data.fetchedAt).toLocaleString()}
-                  </small>
-                </div>
-              ) : null}
-            </Card>
-            <Card>
-              <SectionHeading title="Provider credentials" />
+                    <Icon size={16} aria-hidden="true" />
+                    <span>{section.title}</span>
+                    {search && count ? <small>{count}</small> : null}
+                  </a>
+                </li>
+              )
+            })}
+          </ul>
+        </nav>
+      </aside>
 
-              <div className="integration-grid">
-                {credentialProviders.map(({ id, name, fields }) => {
-                  const configured = isConfigured(id)
-                  const values = credentials[id]
-                  return (
-                    <details className="integration-form" key={id}>
-                      <summary className="integration-title">
-                        <strong>{name}</strong>
-                        <StatusDot tone={configured ? 'positive' : 'neutral'} />
-                        <small>{configured ? 'Configured' : 'Not configured'}</small>
-                      </summary>
-                      {configured && !credentialsUnlocked ? (
-                        <div className="integration-locked">
-                          <Button
-                            icon={Fingerprint}
-                            size="compact"
-                            disabled={!isTauri() || credentialsUnlocking}
-                            onClick={() => void unlockCredentials()}
-                          >
-                            {credentialsUnlocking ? 'Authenticating…' : 'Edit credentials'}
-                          </Button>
-                        </div>
-                      ) : (
-                        <>
-                          {fields.map(({ label, placeholder, secret }, index) => (
-                            <label key={label}>
-                              <span>{label}</span>
-                              <input
-                                type={secret || index ? 'password' : 'text'}
-                                value={values[index]}
-                                onChange={(event) =>
-                                  setCredentials((current) => {
-                                    const next = [...current[id]]
-                                    next[index] = event.target.value
-                                    return { ...current, [id]: next }
-                                  })
-                                }
-                                placeholder={placeholder}
-                                autoComplete={secret || index ? 'new-password' : 'off'}
-                              />
-                            </label>
-                          ))}
-                          <Button
-                            icon={Save}
-                            variant="primary"
-                            size="compact"
-                            disabled={
-                              !isTauri() ||
-                              integrationSaving !== null ||
-                              values.some((value) => !value)
-                            }
-                            onClick={() => void saveIntegration(id)}
-                          >
-                            {integrationSaving === id ? 'Testing…' : 'Save and test'}
-                          </Button>
-                        </>
-                      )}
-                    </details>
-                  )
-                })}
-              </div>
-            </Card>
-          </div>
-        </section>
+      <div className="settings-panel-content" ref={contentRef}>
+        <Button
+          icon={X}
+          size="icon"
+          variant="ghost"
+          className="settings-close"
+          aria-label="Close settings"
+          aria-keyshortcuts="Escape"
+          onClick={onClose}
+        />
+        {finance.annotationWarning ? (
+          <p className="settings-overview-warning" role="status">
+            {finance.annotationWarning}
+          </p>
+        ) : null}
+        <SettingsSearchProvider value={search}>
+          {search ? null : <TrustSummary onShow={onShow} />}
+          {search && !search.total ? (
+            <EmptyState title={`No settings match “${query.trim()}”`}>
+              Try theme, backup, or credentials.
+            </EmptyState>
+          ) : null}
+          <ConnectionsSection />
+          <AccountsSection />
+          <TaxesSection />
+          <RulesSection />
+          <AppearanceSection />
+          <ChartsSection />
+          <NavigationSection />
+          <PrivacySection />
+          <MarketSection />
+          <DataSection />
+          <AdvancedSection />
+        </SettingsSearchProvider>
       </div>
     </div>
   )

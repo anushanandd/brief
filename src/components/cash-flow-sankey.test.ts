@@ -1,7 +1,12 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 
-import { boundedTransactionTitle, CashFlowSankey, cashFlowSankeyModel } from './cash-flow-sankey'
+import {
+  boundedTransactionTitle,
+  CashFlowSankey,
+  cashFlowSankeyModel,
+  spreadLabels,
+} from './cash-flow-sankey'
 
 describe('cash-flow Sankey model', () => {
   it('limits displayed transaction titles to five words', () => {
@@ -115,5 +120,13 @@ describe('cash-flow Sankey model', () => {
     expect(html.match(/sankey-link-interactive/g)).toHaveLength(2)
     expect(html).toContain('Payment $120.00 on Sep 1')
     expect(html).toContain('Cafe $100.00 on Sep 5')
+  })
+})
+
+describe('Sankey label placement', () => {
+  it('keeps crowded labels apart and inside the chart', () => {
+    expect(spreadLabels([100, 102, 104], 38, 19, 300)).toEqual([100, 138, 176])
+    expect(spreadLabels([290, 295], 38, 19, 300)).toEqual([262, 300])
+    expect(spreadLabels([10], 38, 19, 300)).toEqual([19])
   })
 })

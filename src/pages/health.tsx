@@ -1,13 +1,16 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 
-import { PageError, PageLoading, RefreshButton } from '../components/data-state'
+import { PageError, PageLoading } from '../components/data-state'
 import { AlertCircle, Info, ShieldCheck } from '../components/icons'
-import { Card, EmptyState, SectionHeading, StatusDot } from '../components/ui'
+import { SettingsLink } from '../components/settings-dialog'
+import { Card, EmptyState, StatusDot } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import { getDataHealth } from '../lib/api'
+import { countOf } from '../lib/format'
 import type { HealthReport } from '../lib/schema'
+import { settingsHashForPath } from '../lib/settings-search'
 
 const labels = {
   critical: 'Critical',
@@ -20,13 +23,12 @@ function IssueLink({ issue }: { issue: HealthReport['issues'][number] }) {
   const route = issue.action.route
   if (route.startsWith('/settings'))
     return (
-      <Link
+      <SettingsLink
         className="button-base button-secondary button-compact"
-        to="/settings"
-        hash={route.split('#')[1]}
+        target={settingsHashForPath(route)}
       >
         {issue.action.label}
-      </Link>
+      </SettingsLink>
     )
   if (route.startsWith('/activities'))
     return (
@@ -68,89 +70,95 @@ export function HealthPage() {
     return issues.length ? [{ severity, issues }] : []
   })
 
+  const severityTone = {
+    critical: 'negative',
+    error: 'negative',
+    warning: 'warning',
+    info: 'neutral',
+  } as const
+
   return (
     <div className="page health-page">
-      <WorkspaceHeader title="Data health" actions={<RefreshButton />} />
+      <WorkspaceHeader title="Data health" />
       <Card className={`health-summary health-${report.overallStatus}`}>
-        <div className="health-summary-mark" aria-hidden="true">
-          <StatusIcon size={24} />
+        <div className="health-summary-status">
+          <div className="health-summary-mark" aria-hidden="true">
+            <StatusIcon size={22} />
+          </div>
+          <div>
+            <strong>
+              {report.overallStatus === 'healthy'
+                ? 'All checks passed'
+                : `${countOf(report.issues.length, 'issue')} found`}
+            </strong>
+            <small>Snapshot {report.revision} · checked locally</small>
+          </div>
         </div>
-        <div>
-          <span>Committed data</span>
-          <strong>
-            {report.overallStatus === 'healthy'
-              ? 'All checks passed'
-              : `${report.issues.length} ${report.issues.length === 1 ? 'issue' : 'issues'} found`}
-          </strong>
-          <small>Revision {report.revision} · checked locally</small>
-        </div>
-        <div className="health-counts" aria-label="Issue counts">
+        <dl className="health-counts" aria-label="Issue counts">
           {(['critical', 'error', 'warning', 'info'] as const).map((severity) => (
-            <span key={severity}>
-              <StatusDot
-                tone={
-                  severity === 'info' ? 'neutral' : severity === 'warning' ? 'warning' : 'negative'
-                }
-              />
-              {report.counts[severity]} {severity}
-            </span>
+            <div key={severity} data-empty={report.counts[severity] === 0 || undefined}>
+              <dt>
+                <StatusDot
+                  tone={report.counts[severity] === 0 ? 'neutral' : severityTone[severity]}
+                />
+                {labels[severity]}
+              </dt>
+              <dd>{report.counts[severity]}</dd>
+            </div>
           ))}
-        </div>
+        </dl>
       </Card>
 
       {!sections.length ? (
-        <Card>
-          <EmptyState title="No data issues found">
-            Brief checked committed values, freshness, account links, classifications, and return
-            coverage.
-          </EmptyState>
+        <Card className="health-empty">
+          <EmptyState title="No data issues found">Every check passed.</EmptyState>
         </Card>
       ) : null}
 
-      {sections.map(({ severity, issues }) => (
-        <section className="health-section" key={severity}>
-          <h2>{labels[severity]}</h2>
-          <div className="health-issue-grid">
-            {issues.map((issue) => {
-              const Icon = severity === 'info' ? Info : AlertCircle
-              return (
-                <Card className="health-issue" key={issue.id}>
-                  <SectionHeading
-                    title={issue.title}
-                    action={
-                      <span className={`health-severity health-severity-${severity}`}>
-                        <Icon size={14} aria-hidden="true" />
-                        {labels[severity]}
-                      </span>
-                    }
-                  />
-                  <p>{issue.explanation}</p>
-                  {issue.evidence.length ? (
-                    <ul className="health-evidence" aria-label="Evidence">
-                      {issue.evidence.map((evidence) => (
-                        <li key={evidence}>{evidence}</li>
-                      ))}
-                    </ul>
-                  ) : null}
-                  {issue.affectedItems.length ? (
-                    <details className="health-affected">
-                      <summary>{issue.affectedItems.length} affected records</summary>
-                      <ul>
-                        {issue.affectedItems.map((item) => (
-                          <li key={item.id}>{item.name}</li>
+      {sections.map(({ severity, issues }) => {
+        const Icon = severity === 'info' ? Info : AlertCircle
+        return (
+          <section className="health-section" key={severity}>
+            <h2>
+              {labels[severity]}
+              <span>{issues.length}</span>
+            </h2>
+            <Card className="health-issue-list">
+              {issues.map((issue) => (
+                <article className={`health-issue health-issue-${severity}`} key={issue.id}>
+                  <span className="health-issue-mark" aria-hidden="true">
+                    <Icon size={16} />
+                  </span>
+                  <div className="health-issue-body">
+                    <h3>{issue.title}</h3>
+                    <p>{issue.explanation}</p>
+                    {issue.evidence.length ? (
+                      <ul className="health-evidence" aria-label="Evidence">
+                        {issue.evidence.map((evidence) => (
+                          <li key={evidence}>{evidence}</li>
                         ))}
                       </ul>
-                    </details>
-                  ) : null}
+                    ) : null}
+                    {issue.affectedItems.length ? (
+                      <details className="health-affected">
+                        <summary>{issue.affectedItems.length} affected records</summary>
+                        <ul>
+                          {issue.affectedItems.map((item) => (
+                            <li key={item.id}>{item.name}</li>
+                          ))}
+                        </ul>
+                      </details>
+                    ) : null}
+                  </div>
                   <div className="health-action">
                     <IssueLink issue={issue} />
                   </div>
-                </Card>
-              )
-            })}
-          </div>
-        </section>
-      ))}
+                </article>
+              ))}
+            </Card>
+          </section>
+        )
+      })}
     </div>
   )
 }

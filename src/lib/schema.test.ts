@@ -3,13 +3,15 @@ import { describe, expect, it } from 'vitest'
 import empty from '../data/empty.json'
 import nativeFinance from '../data/fixtures/native-finance.json'
 import nativeNews from '../data/fixtures/native-news.json'
+import nativeSummary from '../data/fixtures/native-summary.json'
+import seedInsights from '../data/seed-insights.json'
 import {
+  investmentSummarySchema,
   marketNewsSchema,
   marketNewsResultSchema,
-  plaidRecurringReportSchema,
   syncRunSchema,
 } from './schema'
-import { financeSnapshotSchema } from './schema'
+import { financeSnapshotSchema, insightsSchema } from './schema'
 
 describe('finance snapshot migrations', () => {
   it('derives cost basis for snapshots saved before the field existed', () => {
@@ -41,7 +43,7 @@ it('accepts the native serialized contract without losing fields or changing val
   expect(financeSnapshotSchema.parse(nativeFinance)).toEqual(nativeFinance)
 })
 
-it('preserves Alpha Vantage ticker scores and rejects values outside their provider scales', () => {
+it('preserves news tags and rejects unknown tags and unsafe links', () => {
   const article = {
     headline: 'Synthetic news',
     summary: '',
@@ -49,24 +51,29 @@ it('preserves Alpha Vantage ticker scores and rejects values outside their provi
     url: 'https://example.com/story',
     createdAt: '2026-09-21T12:00:00Z',
     symbols: ['TEST'],
-    relevanceScore: 0.91,
-    sentimentScore: -0.3,
-    sentimentLabel: 'Somewhat-Bearish',
+    scope: 'company',
+    tags: ['earnings'],
+    relevance: 90,
   }
   expect(marketNewsSchema.parse([article])[0]).toEqual(article)
-  expect(marketNewsSchema.safeParse([{ ...article, relevanceScore: 2 }]).success).toBe(false)
-  expect(marketNewsSchema.safeParse([{ ...article, createdAt: 'not-a-date' }]).success).toBe(false)
-  expect(
-    marketNewsSchema.safeParse([{ ...article, sentimentScore: null, sentimentLabel: null }])
-      .success,
-  ).toBe(true)
-})
-
-it('preserves native saved news, sentiment and quota status across IPC', () => {
-  expect(marketNewsResultSchema.parse(nativeNews)).toEqual(nativeNews)
-  expect(marketNewsResultSchema.safeParse({ ...nativeNews, requestsRemaining: -1 }).success).toBe(
+  expect(marketNewsSchema.safeParse([{ ...article, relevance: 101 }]).success).toBe(false)
+  expect(marketNewsSchema.safeParse([{ ...article, tags: ['sentiment'] }]).success).toBe(false)
+  expect(marketNewsSchema.safeParse([{ ...article, scope: 'other' }]).success).toBe(false)
+  expect(marketNewsSchema.safeParse([{ ...article, url: 'http://example.com' }]).success).toBe(
     false,
   )
+  expect(marketNewsSchema.safeParse([{ ...article, createdAt: 'not-a-date' }]).success).toBe(false)
+})
+
+it('preserves native saved news, relevance, and filings across IPC', () => {
+  expect(marketNewsResultSchema.parse(nativeNews)).toEqual(nativeNews)
+  const filing = nativeNews.filings[0]
+  expect(
+    marketNewsResultSchema.safeParse({
+      ...nativeNews,
+      filings: [{ ...filing, url: 'https://example.com/not-sec' }],
+    }).success,
+  ).toBe(false)
 })
 
 it('validates bounded refresh diagnostics at the IPC boundary', () => {
@@ -105,42 +112,44 @@ it('validates bounded refresh diagnostics at the IPC boundary', () => {
   ).toBe(false)
 })
 
-it('preserves Plaid recurring evidence across IPC', () => {
-  const report = {
-    fetchedAt: '2026-09-21T12:00:00Z',
-    connections: [
-      {
-        itemId: 'item',
-        name: 'Example Bank',
-        error: null,
-        streams: [
-          {
-            streamId: 'stream',
-            accountId: 'plaid:account',
-            direction: 'outflow',
-            description: 'Example membership',
-            merchantName: 'Example',
-            category: 'ENTERTAINMENT',
-            frequency: 'MONTHLY',
-            status: 'MATURE',
-            isActive: true,
-            firstDate: '2026-06-01',
-            lastDate: '2026-09-01',
-            predictedNextDate: '2026-10-01',
-            averageAmount: { amount: 12.5, currency: 'USD' },
-            lastAmount: { amount: 13, currency: 'USD' },
-            transactionCount: 4,
-          },
-        ],
-      },
-    ],
-  } as const
+it('preserves native insights computed by Rust from the synthetic seed', () => {
+  const parsed = insightsSchema.parse(seedInsights.insights)
+  expect(parsed).toEqual(seedInsights.insights)
+  expect(parsed.benefitOptions.length).toBeGreaterThan(0)
+  expect(parsed.benefits?.accountId).toBe(seedInsights.spendingAccountId)
+})
 
-  expect(plaidRecurringReportSchema.parse(report)).toEqual(report)
+it('preserves a native investment summary and rejects unsafe links and unknown states', () => {
+  expect(investmentSummarySchema.parse(nativeSummary)).toEqual(nativeSummary)
+  const event = nativeSummary.events[0]
+  const withEvent = (changes: Record<string, unknown>) => ({
+    ...nativeSummary,
+    events: [{ ...event, ...changes }],
+  })
+  expect(investmentSummarySchema.safeParse(withEvent({ url: 'http://example.com' })).success).toBe(
+    false,
+  )
+  expect(investmentSummarySchema.safeParse(withEvent({ family: 'rumor' })).success).toBe(false)
+  // Rank components are bounded buckets, never a free score.
   expect(
-    plaidRecurringReportSchema.safeParse({
-      ...report,
-      connections: [{ ...report.connections[0], streams: [{ direction: 'guess' }] }],
+    investmentSummarySchema.safeParse(withEvent({ rank: { ...event.rank, zBucket: 9 } })).success,
+  ).toBe(false)
+  // A headline links only over https.
+  const brief = nativeSummary.brief
+  expect(
+    investmentSummarySchema.safeParse({
+      ...nativeSummary,
+      brief: {
+        ...brief,
+        headlines: [{ ...brief.headlines[0], url: 'javascript:alert(1)' }],
+      },
+    }).success,
+  ).toBe(false)
+  // Reported quarters link only to SEC EDGAR.
+  expect(
+    investmentSummarySchema.safeParse({
+      ...nativeSummary,
+      fundamentals: { ...nativeSummary.fundamentals, url: 'https://example.com/report' },
     }).success,
   ).toBe(false)
 })

@@ -1,120 +1,76 @@
-import { listen } from '@tauri-apps/api/event'
-import { useEffect, type Dispatch, type SetStateAction } from 'react'
+import { useMemo, type Dispatch, type SetStateAction } from 'react'
 
-import { isTauri } from '../lib/api'
-import { adjacentGraphWindow, graphWindowForKey } from '../lib/graph-preferences'
-import { pageShortcutBlocked } from '../lib/keyboard'
+import { useRegisterActions, type AppAction } from '../lib/action-system'
+import { adjacentGraphWindow, graphWindows } from '../lib/graph-preferences'
 
-const shortcutKeys: Record<string, string> = {
-  'graph-week': 'W',
-  'graph-month': 'M',
-  'graph-quarter': 'Q',
-  'graph-year': 'Y',
-  'graph-all': 'A',
-}
+// Ids name the range, so saved usage and pinned commands keep working.
+const rangeIds = ['graph-week', 'graph-month', 'graph-quarter', 'graph-year', 'graph-all']
 
-type ArrowShortcutEvent = Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey' | 'shiftKey'>
-
-export function graphAccountShortcut(event: ArrowShortcutEvent) {
-  if (
-    event.metaKey ||
-    event.ctrlKey ||
-    event.shiftKey ||
-    event.altKey ||
-    (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
-  ) {
-    return undefined
-  }
-  return event.key === 'ArrowLeft' ? 'graph-previous' : 'graph-next'
-}
-
-export function graphRangeShortcut(event: ArrowShortcutEvent) {
-  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return undefined
-  return graphWindowForKey(event.key)
-}
-
-export function graphWindowShortcut(event: ArrowShortcutEvent) {
-  if (
-    !event.metaKey ||
-    !event.ctrlKey ||
-    event.shiftKey ||
-    event.altKey ||
-    (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight')
-  ) {
-    return undefined
-  }
-  return event.key === 'ArrowLeft' ? 'graph-window-previous' : 'graph-window-next'
-}
-
+/** W, M, Q, Y, and A choose a chart's range; ⌘⌃← and ⌘⌃→ step through them. */
 export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<number>>) {
-  useEffect(() => {
-    const runShortcut = (shortcut: string) => {
-      if (shortcut === 'graph-window-previous' || shortcut === 'graph-window-next') {
-        setGraphWindow((current) =>
-          adjacentGraphWindow(current, shortcut === 'graph-window-previous' ? -1 : 1),
-        )
-        return
-      }
-      const next = graphWindowForKey(shortcutKeys[shortcut] ?? '')
-      if (next != null) setGraphWindow(next)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      const shortcut = graphWindowShortcut(event)
-      const range = graphRangeShortcut(event)
-      if ((!shortcut && range == null) || pageShortcutBlocked(event)) {
-        return
-      }
-      event.preventDefault()
-      if (shortcut) runShortcut(shortcut)
-      else if (range != null) setGraphWindow(range)
-    }
-
-    let disposed = false
-    let unlisten: (() => void) | undefined
-    window.addEventListener('keydown', onKeyDown)
-    if (isTauri()) {
-      void listen<string>('graph-shortcut', (event) => {
-        if (!pageShortcutBlocked()) runShortcut(event.payload)
-      }).then((stop) => {
-        if (disposed) stop()
-        else unlisten = stop
-      })
-    }
-    return () => {
-      disposed = true
-      unlisten?.()
-      window.removeEventListener('keydown', onKeyDown)
-    }
+  const actions = useMemo<AppAction[]>(() => {
+    const step = (direction: -1 | 1) => () =>
+      setGraphWindow((current) => adjacentGraphWindow(current, direction))
+    return [
+      ...graphWindows.map(({ label, settingsLabel, secs }, index) => ({
+        id: `graph.range.${rangeIds[index]}`,
+        title: `Show ${settingsLabel}`,
+        search: `chart graph range ${settingsLabel}`,
+        group: 'View',
+        scope: 'page' as const,
+        bindings: [{ sequence: [label.toLowerCase()], label }],
+        repeatable: true,
+        run: () => setGraphWindow(secs),
+      })),
+      {
+        id: 'graph.window.previous',
+        title: 'Previous date view',
+        group: 'View',
+        scope: 'page',
+        bindings: [{ sequence: ['Meta+Control+ArrowLeft'], label: '⌘⌃←' }],
+        repeatable: true,
+        run: step(-1),
+      },
+      {
+        id: 'graph.window.next',
+        title: 'Next date view',
+        group: 'View',
+        scope: 'page',
+        bindings: [{ sequence: ['Meta+Control+ArrowRight'], label: '⌘⌃→' }],
+        repeatable: true,
+        run: step(1),
+      },
+    ]
   }, [setGraphWindow])
+  useRegisterActions(actions)
 }
 
+/** ⌘← and ⌘→ step through a page's selector; bare arrows are left to time on the page. */
 export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => void) {
-  useEffect(() => {
-    const runShortcut = (shortcut: string) => {
-      if (shortcut === 'graph-previous') onDirection(-1)
-      else if (shortcut === 'graph-next') onDirection(1)
-    }
-    const onKeyDown = (event: KeyboardEvent) => {
-      const shortcut = graphAccountShortcut(event)
-      if (!shortcut || pageShortcutBlocked(event)) return
-      event.preventDefault()
-      runShortcut(shortcut)
-    }
-    let disposed = false
-    let unlisten: (() => void) | undefined
-    window.addEventListener('keydown', onKeyDown)
-    if (isTauri()) {
-      void listen<string>('graph-shortcut', (event) => {
-        if (!pageShortcutBlocked()) runShortcut(event.payload)
-      }).then((stop) => {
-        if (disposed) stop()
-        else unlisten = stop
-      })
-    }
-    return () => {
-      disposed = true
-      unlisten?.()
-      window.removeEventListener('keydown', onKeyDown)
-    }
-  }, [onDirection])
+  const actions = useMemo<AppAction[]>(
+    () => [
+      {
+        id: 'graph.selection.previous',
+        title: 'Previous in selector',
+        search: 'previous account holding report chart selector strip',
+        group: 'View',
+        scope: 'page',
+        bindings: [{ sequence: ['Meta+ArrowLeft'], label: '⌘←' }],
+        repeatable: true,
+        run: () => onDirection(-1),
+      },
+      {
+        id: 'graph.selection.next',
+        title: 'Next in selector',
+        search: 'next account holding report chart selector strip',
+        group: 'View',
+        scope: 'page',
+        bindings: [{ sequence: ['Meta+ArrowRight'], label: '⌘→' }],
+        repeatable: true,
+        run: () => onDirection(1),
+      },
+    ],
+    [onDirection],
+  )
+  useRegisterActions(actions)
 }

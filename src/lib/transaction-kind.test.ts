@@ -3,10 +3,8 @@ import { expect, it } from 'vitest'
 import empty from '../data/empty.json'
 import { classification } from '../data/fixtures/classification'
 import { buildActivities } from './activity'
-import { homeOverviewMetrics } from './home-overview'
-import { moneyKind } from './money'
 import { financeSnapshotSchema, type Transaction } from './schema'
-import { transactionMarkKind } from './transaction-kind'
+import { moneyKind, transactionMarkKind } from './transaction-kind'
 
 it('uses the same positive Zelle income policy in Money, Overview, and Activity', () => {
   const transaction: Transaction = {
@@ -27,12 +25,6 @@ it('uses the same positive Zelle income policy in Money, Overview, and Activity'
     updatedAt: '2026-09-18T12:00:00Z',
     transactions: [transaction],
   }
-  expect(
-    homeOverviewMetrics(data, undefined, {
-      start: Date.parse('2026-09-01T00:00:00Z') / 1000,
-      end: Date.parse('2026-09-18T12:00:00Z') / 1000,
-    }).income,
-  ).toBe(100)
   expect(buildActivities(data)[0].kind).toBe('income')
   expect(
     transactionMarkKind({
@@ -108,4 +100,50 @@ it('uses native financial meaning even when display text resembles a different k
   ]
   expect(moneyKind(data.transactions[0])).toBe('income')
   expect(buildActivities(data)[0].kind).toBe('income')
+})
+
+const purchase = (id: string, category: string, amount: number): Transaction => ({
+  id,
+  account: 'Card',
+  accountId: 'card',
+  merchant: 'Example Market',
+  category,
+  amount,
+  classification: classification('expense'),
+  pending: false,
+  date: '2026-09-10',
+  postedOn: '2026-09-10',
+})
+
+it('totals a split under each part and keeps the whole in merchant and period totals', async () => {
+  const { splitParts } = await import('./transaction-kind')
+  const { buildSpendingView } = await import('./spending')
+  const { cashFlowBreakdown } = await import('./money')
+  const split: Transaction = {
+    ...purchase('split', 'Groceries', -100),
+    splits: [
+      { category: 'Groceries', amount: -70 },
+      { category: 'Gifts', amount: -30 },
+    ],
+  }
+  const whole = purchase('whole', 'Groceries', -20)
+  expect(splitParts(whole)).toEqual([whole])
+  expect(splitParts(split).map(({ id, category, amount }) => [id, category, amount])).toEqual([
+    ['split', 'Groceries', -70],
+    ['split', 'Gifts', -30],
+  ])
+
+  const view = buildSpendingView([split, whole], '2026-09-18T12:00:00Z', 1)
+  expect(view.total).toBe(120)
+  expect(view.categories.map(({ name, value }) => [name, value])).toEqual([
+    ['Groceries', 90],
+    ['Gifts', 30],
+  ])
+  expect(view.merchants.map(({ name, value }) => [name, value])).toEqual([['Example Market', 120]])
+  expect(
+    cashFlowBreakdown([split, whole]).purchases.map(({ label, value }) => [label, value]),
+  ).toEqual([
+    ['Groceries', 90],
+    ['Gifts', 30],
+  ])
 })

@@ -1,11 +1,11 @@
 import { formatCurrency, formatPercent, formatActivityName } from './format'
-import { transactionMarkKind } from './logos'
-import type { FinanceSnapshot } from './schema'
-import { formatActivityDate, isSpendingTransaction, transactionDateKey } from './spending'
+import type { FinanceSnapshot, ListedEvent } from './schema'
+import { formatActivityDate, transactionDateKey } from './spending'
+import { isSpendingTransaction, transactionMarkKind } from './transaction-kind'
 
 const DAY_SECONDS = 24 * 60 * 60
 
-export type ChartEventKind = 'income' | 'expense' | 'transfer' | 'buy' | 'sale'
+export type ChartEventKind = 'income' | 'expense' | 'transfer' | 'buy' | 'sale' | 'event'
 
 export type ChartEvent = {
   id: string
@@ -14,7 +14,8 @@ export type ChartEvent = {
   title: string
   amount?: number
   profitLossPct?: number
-  direction: 'in' | 'out'
+  // Sourced events have no direction of their own; their markers stay neutral.
+  direction: 'in' | 'out' | 'none'
   accountId?: string
   note?: string
   score: number
@@ -51,10 +52,44 @@ function eventLimit(windowSeconds: number) {
   return 12
 }
 
+const eventTime = (value: string) =>
+  new Date(value).toLocaleString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  })
+
+/**
+ * The summary's ranked events as chart markers, each with its three times: when it happened,
+ * when it was published, and when Brief saved it. Ledger events are already the activity's.
+ */
+export function summaryChartEvents(events: ListedEvent[]): ChartEvent[] {
+  return events
+    .filter((event) => event.family !== 'ledger')
+    .map((event, index) => ({
+      id: `summary:${event.id}`,
+      date: event.session,
+      kind: 'event' as const,
+      title: event.ticker ? `${event.ticker} ${event.title}` : event.title,
+      direction: 'none' as const,
+      note: [
+        event.at ? `happened ${eventTime(event.at)}` : null,
+        event.publishedAt ? `published ${eventTime(event.publishedAt)}` : null,
+        `saved ${eventTime(event.ingestedAt)}`,
+      ]
+        .filter(Boolean)
+        .join(', '),
+      // Listed in Rust's rank order; the first outranks any one activity.
+      score: 4 - index / Math.max(1, events.length),
+    }))
+}
+
 export function buildChartEventGroups(
   data: FinanceSnapshot,
   accountId: string,
   windowSeconds: number,
+  extra: ChartEvent[] = [],
 ): ChartEventGroup[] {
   const relevantAccounts = chartAccountIds(data, accountId)
   const includesAccount = (id?: string) => !relevantAccounts || (!!id && relevantAccounts.has(id))
@@ -154,6 +189,7 @@ export function buildChartEventGroups(
   const displayEvents = [
     ...events.filter(({ id }) => !pairedTransfers.has(id)),
     ...internalTransfers,
+    ...extra,
   ]
   const end = Date.parse(`${data.updatedAt.slice(0, 10)}T23:59:59Z`)
   const start = windowSeconds ? end - windowSeconds * 1_000 : Number.NEGATIVE_INFINITY

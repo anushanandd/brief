@@ -1,23 +1,18 @@
-import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useNavigate, useRouter, useSearch } from '@tanstack/react-router'
+import { useEffect, useMemo } from 'react'
 
-import { AccountMark } from '../components/account-mark'
 import { PageError, PageLoading } from '../components/data-state'
-import { EmptyState } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
-import { useActiveSelectionScroll } from '../hooks/use-active-selection-scroll'
 import {
   useGraphAccountShortcuts,
   useGraphWindowShortcuts,
 } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
-import { accountDisplayName, getAccountDisplayNames } from '../lib/account-name-preferences'
-import { accountStartDate, getAccountStartDates } from '../lib/account-start-date-preferences'
-import { accountValueChart } from '../lib/dashboard-account-views'
-import { formatCurrency, formatPercent, valueTone } from '../lib/format'
-import { getDefaultGraphWindow } from '../lib/graph-preferences'
+import { accountDisplayName } from '../lib/account-names'
+import { withoutSpendingCard } from '../lib/dashboard-account-views'
+import { financeSettings } from '../lib/finance-settings'
+import { useGraphWindow } from '../lib/graph-preferences'
 import type { Account, FinanceSnapshot } from '../lib/schema'
-import { getSpendingAccountId } from '../lib/spending-preferences'
 import { AccountOverview } from './account-overview'
 
 function useAccountsPage() {
@@ -26,8 +21,8 @@ function useAccountsPage() {
   if (query.isError || !query.data) return { state: 'error' as const }
   return {
     state: 'ready' as const,
-    data: query.data,
-    names: getAccountDisplayNames(),
+    data: withoutSpendingCard(query.data),
+    names: financeSettings(query.data).accountNames,
   }
 }
 
@@ -44,16 +39,10 @@ function AccountsWorkspace({
   names,
 }: {
   data: FinanceSnapshot
-  names: ReturnType<typeof getAccountDisplayNames>
+  names: Record<string, string>
 }) {
   const routeSearch = useSearch({ from: '/accounts' })
-  const switcherRef = useActiveSelectionScroll()
-  const live = useLiveFinance()
-  const startDates = getAccountStartDates()
-  const now = Date.now() / 1_000
-  const valuationTime = Date.parse(live.valuationAsOf ?? data.updatedAt) / 1_000
-  const navigate = useNavigate({ from: '/accounts' })
-  const spendingAccountId = getSpendingAccountId()
+  const spendingAccountId = financeSettings(data).spendingAccountId ?? ''
   const accounts = useMemo(() => {
     const allAccount: Account = data.accounts.find(({ id }) => id === 'all') ?? {
       id: 'all',
@@ -73,20 +62,39 @@ function AccountsWorkspace({
         }),
     ]
   }, [data.accounts, data.netWorth, spendingAccountId])
-  const [graphWindow, setGraphWindow] = useState(getDefaultGraphWindow)
+  const [graphWindow, setGraphWindow] = useGraphWindow()
   useGraphWindowShortcuts(setGraphWindow)
   const selectedAccount =
     accounts.find(({ id }) => id === (routeSearch.account ?? 'all')) ?? accounts[0]
-
+  // The grouped list is the way in; ⌘← and ⌘→ still step through every account in its order.
+  const navigate = useNavigate()
+  const router = useRouter()
+  const index = accounts.findIndex(({ id }) => id === selectedAccount?.id)
+  const linkAt = (offset: number) => {
+    const account = accounts[(index + offset + accounts.length) % accounts.length]
+    return {
+      to: '/accounts' as const,
+      search: { account: account.id === 'all' ? undefined : account.id },
+    }
+  }
   useGraphAccountShortcuts((direction) => {
-    if (accounts.length < 2) return
-    const currentIndex = Math.max(
-      0,
-      accounts.findIndex(({ id }) => id === selectedAccount?.id),
-    )
-    const next = accounts[(currentIndex + direction + accounts.length) % accounts.length]
-    void navigate({ search: { account: next.id === 'all' ? undefined : next.id } })
+    if (accounts.length > 1) void navigate(linkAt(direction))
   })
+  const neighbourKey =
+    accounts.length > 1 ? `${linkAt(-1).search.account}:${linkAt(1).search.account}` : ''
+  useEffect(() => {
+    if (!neighbourKey) return undefined
+    const [previous, next] = neighbourKey.split(':')
+    const idle = globalThis.requestIdleCallback ?? ((run: () => void) => setTimeout(run, 50))
+    const cancel = globalThis.cancelIdleCallback ?? clearTimeout
+    const handle = idle(() => {
+      for (const account of [previous, next])
+        void router
+          .preloadRoute({ to: '/accounts', search: { account: account || undefined } })
+          .catch(() => undefined)
+    })
+    return () => cancel(handle)
+  }, [neighbourKey, router])
 
   return (
     <div className="page accounts-workspace-page">
@@ -106,63 +114,6 @@ function AccountsWorkspace({
         }
       />
 
-      <nav
-        ref={switcherRef}
-        className="account-switcher account-switcher-single-row"
-        aria-label="Connected accounts"
-        data-keyboard-region
-      >
-        <div className="account-switcher-grid account-switcher-grid-single-row">
-          {accounts.map((account) => {
-            const active = account.id === selectedAccount?.id
-            const chartId =
-              account.id === 'all' || account.type === 'combined' ? 'net-worth' : account.id
-            const view = accountValueChart(
-              data,
-              account,
-              live.marketSeries[chartId] ?? [],
-              Number.isFinite(valuationTime) ? valuationTime : now,
-              graphWindow,
-              now,
-              accountStartDate(data, chartId, startDates),
-            )
-            const percent =
-              view.historyIsAvailable && account.type !== 'credit' ? view.chartChange.percent : null
-            return (
-              <Link
-                className="account-switcher-button"
-                activeOptions={{ exact: true }}
-                data-keyboard-row
-                data-keyboard-open
-                aria-current={active ? 'page' : undefined}
-                key={account.id}
-                to="/accounts"
-                search={{ account: account.id === 'all' ? undefined : account.id }}
-              >
-                <AccountMark type={account.type} />
-                <span className="account-switcher-copy">
-                  <span>{accountDisplayName(account.id, account.name, names)}</span>
-                  <strong className="account-switcher-value">
-                    <span>{formatCurrency(account.value)}</span>
-                    <span
-                      className={valueTone(percent)}
-                      aria-label={
-                        percent == null
-                          ? 'Selected range change unavailable'
-                          : `${formatPercent(percent)} balance change in selected range`
-                      }
-                    >
-                      {formatPercent(percent)}
-                    </span>
-                  </strong>
-                </span>
-              </Link>
-            )
-          })}
-          {!accounts.length ? <EmptyState>No connected accounts.</EmptyState> : null}
-        </div>
-      </nav>
-
       {selectedAccount ? (
         <AccountOverview
           key={selectedAccount.id}
@@ -170,6 +121,7 @@ function AccountsWorkspace({
           data={data}
           graphWindow={graphWindow}
           onGraphWindowChange={setGraphWindow}
+          excludedActivityAccountId={spendingAccountId}
         />
       ) : null}
     </div>

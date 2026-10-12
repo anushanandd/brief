@@ -1,63 +1,601 @@
 {
-  "updatedAt": "2026-08-31T21:42:00Z",
-  "netWorth": 286421.78,
+  "accountBalanceHistory": [
+    {
+      "accountId": "chase",
+      "currentValue": 49229.67,
+      "historySource": "transaction-derived",
+      "historyStart": "2026-08-26",
+      "institution": "Chase",
+      "name": "Checking",
+      "performanceMethod": "value-only",
+      "points": [
+        {
+          "date": "2026-08-26",
+          "netDeposits": null,
+          "sp500": null,
+          "value": 44407.92
+        },
+        {
+          "date": "2026-08-28",
+          "netDeposits": null,
+          "sp500": null,
+          "value": 44407.92
+        },
+        {
+          "date": "2026-08-29",
+          "netDeposits": null,
+          "sp500": null,
+          "value": 49229.67
+        },
+        {
+          "date": "2026-08-31",
+          "netDeposits": null,
+          "sp500": null,
+          "value": 49229.67
+        }
+      ]
+    },
+    {
+      "accountId": "amex",
+      "currentValue": -2418.33,
+      "historySource": "transaction-derived",
+      "historyStart": "2026-08-20",
+      "institution": "American Express",
+      "name": "Platinum Card",
+      "performanceMethod": "value-only",
+      "points": [
+        {
+          "date": "2026-08-20",
+          "netDeposits": null,
+          "sp500": null,
+          "value": -1440.92
+        },
+        {
+          "date": "2026-08-22",
+          "netDeposits": null,
+          "sp500": null,
+          "value": -1452.91
+        },
+        {
+          "date": "2026-08-23",
+          "netDeposits": null,
+          "sp500": null,
+          "value": -1516.08
+        },
+        {
+          "date": "2026-08-24",
+          "netDeposits": null,
+          "sp500": null,
+          "value": -2158.28
+        },
+        {
+          "date": "2026-08-27",
+          "netDeposits": null,
+          "sp500": null,
+          "value": -2287.28
+        },
+        {
+          "date": "2026-08-28",
+          "netDeposits": null,
+          "sp500": null,
+          "value": -2331.91
+        },
+        {
+          "date": "2026-08-30",
+          "netDeposits": null,
+          "sp500": null,
+          "value": -2418.33
+        },
+        {
+          "date": "2026-08-31",
+          "netDeposits": null,
+          "sp500": null,
+          "value": -2418.33
+        }
+      ]
+    }
+  ],
+  "accountMovements": [
+    {
+      "accountId": "fidelity",
+      "change": 1294.22,
+      "id": "2026-08-31T21:42:00Z:fidelity",
+      "name": "Individual brokerage",
+      "observedAt": "2026-08-31T21:42:00Z"
+    },
+    {
+      "accountId": "amex",
+      "change": -428.16,
+      "id": "2026-08-31T21:42:00Z:amex",
+      "name": "Platinum Card",
+      "observedAt": "2026-08-31T21:42:00Z"
+    }
+  ],
   "accounts": [
     {
       "id": "all",
-      "name": "All accounts",
       "institution": "Brief",
+      "name": "All accounts",
       "type": "combined",
-      "value": 286421.78
+      "value": 284581.56
     },
     {
+      "costBasisCoverage": "complete",
+      "currency": "USD",
       "id": "fidelity",
-      "name": "Individual brokerage",
       "institution": "Fidelity",
-      "type": "brokerage",
-      "value": 189830.14,
+      "investmentIncomeYtd": 94.16,
       "knownCostBasis": 124731.6,
       "knownUnrealizedGain": 32200.92,
       "knownUnrealizedGainPct": 25.8162,
-      "investmentIncomeYtd": 94.16,
+      "name": "Individual brokerage",
       "saleProceedsYtd": 0,
       "salesYtd": 0,
-      "costBasisCoverage": "complete",
-      "currency": "USD"
+      "subtype": "brokerage",
+      "taxTreatment": "taxable",
+      "type": "brokerage",
+      "value": 189830.14
     },
     {
+      "costBasisCoverage": "complete",
+      "currency": "USD",
+      "estimatedRealizedGainYtd": 307.55,
       "id": "schwab",
-      "name": "Roth IRA",
       "institution": "Charles Schwab",
-      "type": "retirement",
-      "value": 49780.3,
+      "investmentIncomeYtd": 0,
       "knownCostBasis": 26617.21,
       "knownUnrealizedGain": 8393.43,
       "knownUnrealizedGainPct": 31.5338,
-      "investmentIncomeYtd": 0,
+      "name": "Roth IRA",
+      "realizedGainCoverage": "complete",
       "saleProceedsYtd": 1157.55,
       "salesYtd": 1,
-      "estimatedRealizedGainYtd": 307.55,
-      "realizedGainCoverage": "complete",
-      "costBasisCoverage": "complete",
-      "currency": "USD"
+      "subtype": "roth",
+      "taxTreatment": "taxFree",
+      "type": "retirement",
+      "value": 49780.3
     },
     {
+      "availableBalance": 48917.27,
+      "currency": "USD",
+      "holderCategory": "personal",
       "id": "chase",
-      "name": "Checking",
       "institution": "Chase",
+      "name": "Checking",
+      "officialName": "Chase Total Checking",
+      "subtype": "checking",
       "type": "cash",
-      "value": 49229.67,
-      "currency": "USD"
+      "value": 49229.67
     },
     {
+      "currency": "USD",
       "id": "amex",
-      "name": "Platinum Card",
       "institution": "American Express",
+      "name": "Platinum Card",
+      "officialName": "The Platinum Card®",
+      "subtype": "credit card",
       "type": "credit",
-      "value": -2418.33,
-      "currency": "USD"
+      "value": -2418.33
+    },
+    {
+      "availableBalance": 4159.78,
+      "creditLimit": 6000.0,
+      "currency": "USD",
+      "id": "freedom",
+      "institution": "Chase",
+      "liability": {
+        "aprs": [
+          {
+            "balanceSubjectToApr": 1472.36,
+            "interestCharged": 28.11,
+            "percentage": 24.24,
+            "type": "purchase_apr"
+          },
+          {
+            "balanceSubjectToApr": null,
+            "interestCharged": null,
+            "percentage": 29.99,
+            "type": "cash_apr"
+          }
+        ],
+        "isOverdue": false,
+        "lastPaymentAmount": 40.0,
+        "lastPaymentDate": "2026-08-26",
+        "lastStatementBalance": 1512.36,
+        "lastStatementDate": "2026-08-03",
+        "minimumPayment": 40.0,
+        "nextPaymentDueDate": "2026-08-28",
+        "purchaseApr": 24.24
+      },
+      "name": "Freedom Unlimited",
+      "officialName": "Chase Freedom Unlimited®",
+      "subtype": "credit card",
+      "type": "credit",
+      "value": -1840.22
     }
   ],
+  "benchmarkHistory": [],
+  "brokeragePerformance": [
+    {
+      "accountId": "total",
+      "currentValue": 239610.44,
+      "institution": "All brokerages",
+      "name": "Total",
+      "points": [
+        {
+          "date": "Mar",
+          "netDeposits": 199000,
+          "sp500": 199000,
+          "value": 207540
+        },
+        {
+          "date": "Apr",
+          "netDeposits": 199000,
+          "sp500": 203640,
+          "value": 212120
+        },
+        {
+          "date": "May",
+          "netDeposits": 201000,
+          "sp500": 200690,
+          "value": 208350
+        },
+        {
+          "date": "Jun",
+          "netDeposits": 201000,
+          "sp500": 210230,
+          "value": 222060
+        },
+        {
+          "date": "Jul",
+          "netDeposits": 207000,
+          "sp500": 219960,
+          "value": 231030
+        },
+        {
+          "date": "Aug",
+          "netDeposits": 207000,
+          "sp500": 225760,
+          "value": 239610.44
+        }
+      ]
+    },
+    {
+      "accountId": "fidelity",
+      "currentValue": 189830.14,
+      "institution": "Fidelity",
+      "name": "Individual brokerage",
+      "points": [
+        {
+          "date": "Mar",
+          "netDeposits": 158000,
+          "sp500": 158000,
+          "value": 164520
+        },
+        {
+          "date": "Apr",
+          "netDeposits": 158000,
+          "sp500": 161680,
+          "value": 168240
+        },
+        {
+          "date": "May",
+          "netDeposits": 160000,
+          "sp500": 159340,
+          "value": 165810
+        },
+        {
+          "date": "Jun",
+          "netDeposits": 160000,
+          "sp500": 166910,
+          "value": 176940
+        },
+        {
+          "date": "Jul",
+          "netDeposits": 163000,
+          "sp500": 173840,
+          "value": 183720
+        },
+        {
+          "date": "Aug",
+          "netDeposits": 163000,
+          "sp500": 178420,
+          "value": 189830.14
+        }
+      ]
+    },
+    {
+      "accountId": "schwab",
+      "currentValue": 49780.3,
+      "institution": "Charles Schwab",
+      "name": "Roth IRA",
+      "points": [
+        {
+          "date": "Mar",
+          "netDeposits": 41000,
+          "sp500": 41000,
+          "value": 43020
+        },
+        {
+          "date": "Apr",
+          "netDeposits": 41000,
+          "sp500": 41960,
+          "value": 43880
+        },
+        {
+          "date": "May",
+          "netDeposits": 41000,
+          "sp500": 41350,
+          "value": 42540
+        },
+        {
+          "date": "Jun",
+          "netDeposits": 41000,
+          "sp500": 43320,
+          "value": 45120
+        },
+        {
+          "date": "Jul",
+          "netDeposits": 44000,
+          "sp500": 46120,
+          "value": 47310
+        },
+        {
+          "date": "Aug",
+          "netDeposits": 44000,
+          "sp500": 47340,
+          "value": 49780.3
+        }
+      ]
+    }
+  ],
+  "dividendHistory": [
+    {
+      "exDate": "2025-09-26",
+      "payableDate": "2025-09-30",
+      "rate": 0.8817,
+      "special": false,
+      "symbol": "VTI"
+    },
+    {
+      "exDate": "2025-12-22",
+      "payableDate": "2025-12-26",
+      "rate": 0.9535,
+      "special": false,
+      "symbol": "VTI"
+    },
+    {
+      "exDate": "2026-03-26",
+      "payableDate": "2026-03-31",
+      "rate": 0.8402,
+      "special": false,
+      "symbol": "VTI"
+    },
+    {
+      "exDate": "2026-06-26",
+      "payableDate": "2026-06-30",
+      "rate": 0.9083,
+      "special": false,
+      "symbol": "VTI"
+    },
+    {
+      "exDate": "2026-09-25",
+      "payableDate": "2026-09-30",
+      "rate": 0.921,
+      "special": false,
+      "symbol": "VTI"
+    },
+    {
+      "exDate": "2025-11-20",
+      "payableDate": "2025-12-11",
+      "rate": 0.83,
+      "special": false,
+      "symbol": "MSFT"
+    },
+    {
+      "exDate": "2026-02-19",
+      "payableDate": "2026-03-12",
+      "rate": 0.83,
+      "special": false,
+      "symbol": "MSFT"
+    },
+    {
+      "exDate": "2026-05-21",
+      "payableDate": "2026-06-11",
+      "rate": 0.83,
+      "special": false,
+      "symbol": "MSFT"
+    },
+    {
+      "exDate": "2026-08-20",
+      "payableDate": "2026-09-10",
+      "rate": 0.83,
+      "special": false,
+      "symbol": "MSFT"
+    },
+    {
+      "exDate": "2025-11-10",
+      "payableDate": "2025-11-13",
+      "rate": 0.26,
+      "special": false,
+      "symbol": "AAPL"
+    },
+    {
+      "exDate": "2026-02-09",
+      "payableDate": "2026-02-12",
+      "rate": 0.26,
+      "special": false,
+      "symbol": "AAPL"
+    },
+    {
+      "exDate": "2026-05-11",
+      "payableDate": "2026-05-14",
+      "rate": 0.26,
+      "special": false,
+      "symbol": "AAPL"
+    },
+    {
+      "exDate": "2026-08-10",
+      "payableDate": "2026-08-13",
+      "rate": 0.26,
+      "special": false,
+      "symbol": "AAPL"
+    }
+  ],
+  "holdings": [
+    {
+      "accountId": "fidelity",
+      "color": "#272727",
+      "costBasis": 63602.67,
+      "dailyChangePct": 0.48,
+      "identifiers": {
+        "cusip": "922908769",
+        "exchange": "ARCX"
+      },
+      "instrumentSubtype": "etf",
+      "name": "Vanguard Total Stock Market ETF",
+      "price": 338.12,
+      "shares": 248,
+      "ticker": "VTI",
+      "totalChangePct": 31.84,
+      "unrealizedGain": 20251.09,
+      "value": 83853.76,
+      "weeklyChangePct": 1.82,
+      "weeklyReferenceDate": "2026-08-24",
+      "weeklyReferencePrice": 332.0762
+    },
+    {
+      "accountId": "fidelity",
+      "color": "#6b7280",
+      "costBasis": 30853.29,
+      "dailyChangePct": 0.12,
+      "identifiers": {
+        "cusip": "921937835",
+        "exchange": "XNAS"
+      },
+      "instrumentSubtype": "etf",
+      "name": "Vanguard Total Bond Market ETF",
+      "price": 74.83,
+      "shares": 430,
+      "ticker": "BND",
+      "totalChangePct": 4.29,
+      "unrealizedGain": 1323.61,
+      "value": 32176.9,
+      "weeklyChangePct": 0.44,
+      "weeklyReferenceDate": "2026-08-24",
+      "weeklyReferencePrice": 74.5022
+    },
+    {
+      "accountId": "schwab",
+      "color": "#c07d48",
+      "costBasis": 21614.57,
+      "dailyChangePct": -0.31,
+      "identifiers": {
+        "cusip": "921909768",
+        "exchange": "XNAS"
+      },
+      "instrumentSubtype": "etf",
+      "name": "Vanguard Total International Stock ETF",
+      "price": 71.22,
+      "shares": 360,
+      "ticker": "VXUS",
+      "totalChangePct": 18.62,
+      "unrealizedGain": 4024.63,
+      "value": 25639.2,
+      "weeklyChangePct": -1.2,
+      "weeklyReferenceDate": "2026-08-24",
+      "weeklyReferencePrice": 72.085
+    },
+    {
+      "accountId": "fidelity",
+      "color": "#4f8f76",
+      "costBasis": 14567.66,
+      "dailyChangePct": 1.04,
+      "identifiers": {
+        "cusip": "594918104",
+        "exchange": "XNAS"
+      },
+      "industry": "Packaged Software",
+      "instrumentSubtype": "common stock",
+      "name": "Microsoft",
+      "price": 512.0,
+      "sector": "Technology Services",
+      "shares": 41,
+      "ticker": "MSFT",
+      "totalChangePct": 44.1,
+      "unrealizedGain": 6424.34,
+      "value": 20992.0,
+      "weeklyChangePct": 3.14,
+      "weeklyReferenceDate": "2026-08-24",
+      "weeklyReferencePrice": 496.4126
+    },
+    {
+      "accountId": "fidelity",
+      "color": "#858585",
+      "costBasis": 15707.98,
+      "dailyChangePct": -0.22,
+      "identifiers": {
+        "cusip": "037833100",
+        "exchange": "XNAS"
+      },
+      "industry": "Telecommunications Equipment",
+      "instrumentSubtype": "common stock",
+      "name": "Apple",
+      "price": 231.51,
+      "sector": "Electronic Technology",
+      "shares": 86,
+      "ticker": "AAPL",
+      "totalChangePct": 26.75,
+      "unrealizedGain": 4201.88,
+      "value": 19909.86,
+      "weeklyChangePct": -0.86,
+      "weeklyReferenceDate": "2026-08-24",
+      "weeklyReferencePrice": 233.5183
+    },
+    {
+      "accountId": "schwab",
+      "color": "#76a53b",
+      "costBasis": 5002.64,
+      "dailyChangePct": 2.43,
+      "identifiers": {
+        "cusip": "67066G104",
+        "exchange": "XNAS"
+      },
+      "industry": "Semiconductors",
+      "instrumentSubtype": "common stock",
+      "name": "NVIDIA",
+      "price": 180.22,
+      "sector": "Electronic Technology",
+      "shares": 52,
+      "ticker": "NVDA",
+      "totalChangePct": 87.33,
+      "unrealizedGain": 4368.8,
+      "value": 9371.44,
+      "weeklyChangePct": 7.9,
+      "weeklyReferenceDate": "2026-08-24",
+      "weeklyReferencePrice": 167.025
+    }
+  ],
+  "lastChange": {
+    "accountChanges": [
+      {
+        "accountId": "fidelity",
+        "change": 1294.22,
+        "name": "Individual brokerage"
+      },
+      {
+        "accountId": "amex",
+        "change": -428.16,
+        "name": "Platinum Card"
+      }
+    ],
+    "netWorthChange": 1485.59,
+    "newTransactionIds": ["tx-1"],
+    "observedAt": "2026-08-31T21:42:00Z",
+    "previousNetWorth": 284936.19,
+    "previousUpdatedAt": "2026-08-30T21:42:00Z"
+  },
+  "netWorth": 284581.56,
   "netWorthHistory": [
     {
       "date": "Mar",
@@ -81,650 +619,2253 @@
     },
     {
       "date": "Aug",
-      "value": 286421.78
-    }
-  ],
-  "benchmarkHistory": [],
-  "brokeragePerformance": [
-    {
-      "accountId": "total",
-      "name": "Total",
-      "institution": "All brokerages",
-      "currentValue": 239610.44,
-      "points": [
-        {
-          "date": "Mar",
-          "value": 207540,
-          "netDeposits": 199000,
-          "sp500": 199000
-        },
-        {
-          "date": "Apr",
-          "value": 212120,
-          "netDeposits": 199000,
-          "sp500": 203640
-        },
-        {
-          "date": "May",
-          "value": 208350,
-          "netDeposits": 201000,
-          "sp500": 200690
-        },
-        {
-          "date": "Jun",
-          "value": 222060,
-          "netDeposits": 201000,
-          "sp500": 210230
-        },
-        {
-          "date": "Jul",
-          "value": 231030,
-          "netDeposits": 207000,
-          "sp500": 219960
-        },
-        {
-          "date": "Aug",
-          "value": 239610.44,
-          "netDeposits": 207000,
-          "sp500": 225760
-        }
-      ]
-    },
-    {
-      "accountId": "fidelity",
-      "name": "Individual brokerage",
-      "institution": "Fidelity",
-      "currentValue": 189830.14,
-      "points": [
-        {
-          "date": "Mar",
-          "value": 164520,
-          "netDeposits": 158000,
-          "sp500": 158000
-        },
-        {
-          "date": "Apr",
-          "value": 168240,
-          "netDeposits": 158000,
-          "sp500": 161680
-        },
-        {
-          "date": "May",
-          "value": 165810,
-          "netDeposits": 160000,
-          "sp500": 159340
-        },
-        {
-          "date": "Jun",
-          "value": 176940,
-          "netDeposits": 160000,
-          "sp500": 166910
-        },
-        {
-          "date": "Jul",
-          "value": 183720,
-          "netDeposits": 163000,
-          "sp500": 173840
-        },
-        {
-          "date": "Aug",
-          "value": 189830.14,
-          "netDeposits": 163000,
-          "sp500": 178420
-        }
-      ]
-    },
-    {
-      "accountId": "schwab",
-      "name": "Roth IRA",
-      "institution": "Charles Schwab",
-      "currentValue": 49780.3,
-      "points": [
-        {
-          "date": "Mar",
-          "value": 43020,
-          "netDeposits": 41000,
-          "sp500": 41000
-        },
-        {
-          "date": "Apr",
-          "value": 43880,
-          "netDeposits": 41000,
-          "sp500": 41960
-        },
-        {
-          "date": "May",
-          "value": 42540,
-          "netDeposits": 41000,
-          "sp500": 41350
-        },
-        {
-          "date": "Jun",
-          "value": 45120,
-          "netDeposits": 41000,
-          "sp500": 43320
-        },
-        {
-          "date": "Jul",
-          "value": 47310,
-          "netDeposits": 44000,
-          "sp500": 46120
-        },
-        {
-          "date": "Aug",
-          "value": 49780.3,
-          "netDeposits": 44000,
-          "sp500": 47340
-        }
-      ]
-    }
-  ],
-  "accountBalanceHistory": [
-    {
-      "accountId": "chase",
-      "name": "Checking",
-      "institution": "Chase",
-      "currentValue": 49229.67,
-      "historySource": "transaction-derived",
-      "historyStart": "2026-08-26",
-      "performanceMethod": "value-only",
-      "points": [
-        {
-          "date": "2026-08-26",
-          "value": 44407.92,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-28",
-          "value": 44407.92,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-29",
-          "value": 49229.67,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-31",
-          "value": 49229.67,
-          "netDeposits": null,
-          "sp500": null
-        }
-      ]
-    },
-    {
-      "accountId": "amex",
-      "name": "Platinum Card",
-      "institution": "American Express",
-      "currentValue": -2418.33,
-      "historySource": "transaction-derived",
-      "historyStart": "2026-08-20",
-      "performanceMethod": "value-only",
-      "points": [
-        {
-          "date": "2026-08-20",
-          "value": -1440.92,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-22",
-          "value": -1452.91,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-23",
-          "value": -1516.08,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-24",
-          "value": -2158.28,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-27",
-          "value": -2287.28,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-28",
-          "value": -2331.91,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-30",
-          "value": -2418.33,
-          "netDeposits": null,
-          "sp500": null
-        },
-        {
-          "date": "2026-08-31",
-          "value": -2418.33,
-          "netDeposits": null,
-          "sp500": null
-        }
-      ]
-    }
-  ],
-  "holdings": [
-    {
-      "ticker": "VTI",
-      "name": "Vanguard Total Stock Market ETF",
-      "accountId": "fidelity",
-      "shares": 248,
-      "price": 338.12,
-      "value": 83853.76,
-      "costBasis": 63602.67,
-      "unrealizedGain": 20251.09,
-      "dailyChangePct": 0.48,
-      "weeklyChangePct": 1.82,
-      "weeklyReferencePrice": 332.0762,
-      "weeklyReferenceDate": "2026-08-24",
-      "totalChangePct": 31.84,
-      "color": "#272727"
-    },
-    {
-      "ticker": "BND",
-      "name": "Vanguard Total Bond Market ETF",
-      "accountId": "fidelity",
-      "shares": 430,
-      "price": 74.83,
-      "value": 32176.9,
-      "costBasis": 30853.29,
-      "unrealizedGain": 1323.61,
-      "dailyChangePct": 0.12,
-      "weeklyChangePct": 0.44,
-      "weeklyReferencePrice": 74.5022,
-      "weeklyReferenceDate": "2026-08-24",
-      "totalChangePct": 4.29,
-      "color": "#6b7280"
-    },
-    {
-      "ticker": "VXUS",
-      "name": "Vanguard Total International Stock ETF",
-      "accountId": "schwab",
-      "shares": 360,
-      "price": 71.22,
-      "value": 25639.2,
-      "costBasis": 21614.57,
-      "unrealizedGain": 4024.63,
-      "dailyChangePct": -0.31,
-      "weeklyChangePct": -1.2,
-      "weeklyReferencePrice": 72.085,
-      "weeklyReferenceDate": "2026-08-24",
-      "totalChangePct": 18.62,
-      "color": "#c07d48"
-    },
-    {
-      "ticker": "MSFT",
-      "name": "Microsoft",
-      "accountId": "fidelity",
-      "shares": 41,
-      "price": 512.0,
-      "value": 20992.0,
-      "costBasis": 14567.66,
-      "unrealizedGain": 6424.34,
-      "dailyChangePct": 1.04,
-      "weeklyChangePct": 3.14,
-      "weeklyReferencePrice": 496.4126,
-      "weeklyReferenceDate": "2026-08-24",
-      "totalChangePct": 44.1,
-      "color": "#4f8f76"
-    },
-    {
-      "ticker": "AAPL",
-      "name": "Apple",
-      "accountId": "fidelity",
-      "shares": 86,
-      "price": 231.51,
-      "value": 19909.86,
-      "costBasis": 15707.98,
-      "unrealizedGain": 4201.88,
-      "dailyChangePct": -0.22,
-      "weeklyChangePct": -0.86,
-      "weeklyReferencePrice": 233.5183,
-      "weeklyReferenceDate": "2026-08-24",
-      "totalChangePct": 26.75,
-      "color": "#858585"
-    },
-    {
-      "ticker": "NVDA",
-      "name": "NVIDIA",
-      "accountId": "schwab",
-      "shares": 52,
-      "price": 180.22,
-      "value": 9371.44,
-      "costBasis": 5002.64,
-      "unrealizedGain": 4368.8,
-      "dailyChangePct": 2.43,
-      "weeklyChangePct": 7.9,
-      "weeklyReferencePrice": 167.025,
-      "weeklyReferenceDate": "2026-08-24",
-      "totalChangePct": 87.33,
-      "color": "#76a53b"
-    }
-  ],
-  "trades": [
-    {
-      "id": "trade-1",
-      "type": "BUY",
-      "date": "2026-08-30",
-      "amount": -1690.6,
-      "account": "Individual brokerage",
-      "accountId": "fidelity",
-      "ticker": "VTI",
-      "units": 5,
-      "price": 338.12
-    },
-    {
-      "id": "trade-2",
-      "type": "SELL",
-      "date": "2026-08-27",
-      "amount": 1157.55,
-      "account": "Roth IRA",
-      "accountId": "schwab",
-      "ticker": "AAPL",
-      "units": 5,
-      "price": 231.51,
-      "realizedCostBasis": 850,
-      "estimatedRealizedGain": 307.55,
-      "estimatedRealizedGainPct": 36.1824,
-      "realizedGainMethod": "estimated-fifo"
+      "value": 284581.56
     }
   ],
   "spending": {
-    "monthTotal": 6842.33,
     "categories": [
       {
+        "color": "#232424",
         "name": "Housing",
-        "value": 2850.0,
         "percent": 41.65,
-        "color": "#232424"
+        "value": 2850.0
       },
       {
+        "color": "#b87543",
         "name": "Travel",
-        "value": 1284.2,
         "percent": 18.77,
-        "color": "#b87543"
+        "value": 1284.2
       },
       {
+        "color": "#c9684b",
         "name": "Dining",
-        "value": 934.71,
         "percent": 13.66,
-        "color": "#c9684b"
+        "value": 934.71
       },
       {
+        "color": "#9d9588",
         "name": "Shopping",
-        "value": 721.86,
         "percent": 10.55,
-        "color": "#9d9588"
+        "value": 721.86
       },
       {
+        "color": "#d5d1c8",
         "name": "Other",
-        "value": 1051.56,
         "percent": 15.37,
-        "color": "#d5d1c8"
-      }
-    ]
-  },
-  "lastChange": {
-    "observedAt": "2026-08-31T21:42:00Z",
-    "previousUpdatedAt": "2026-08-30T21:42:00Z",
-    "previousNetWorth": 284936.19,
-    "netWorthChange": 1485.59,
-    "accountChanges": [
-      {
-        "accountId": "fidelity",
-        "name": "Individual brokerage",
-        "change": 1294.22
-      },
-      {
-        "accountId": "amex",
-        "name": "Platinum Card",
-        "change": -428.16
+        "value": 1051.56
       }
     ],
-    "newTransactionIds": ["tx-1"]
+    "monthTotal": 6842.33
   },
-  "accountMovements": [
+  "trades": [
     {
-      "id": "2026-08-31T21:42:00Z:fidelity",
-      "observedAt": "2026-08-31T21:42:00Z",
+      "account": "Individual brokerage",
       "accountId": "fidelity",
-      "name": "Individual brokerage",
-      "change": 1294.22
+      "amount": -1690.6,
+      "date": "2026-08-30",
+      "id": "trade-1",
+      "price": 338.12,
+      "ticker": "VTI",
+      "type": "BUY",
+      "units": 5
     },
     {
-      "id": "2026-08-31T21:42:00Z:amex",
-      "observedAt": "2026-08-31T21:42:00Z",
-      "accountId": "amex",
-      "name": "Platinum Card",
-      "change": -428.16
+      "account": "Roth IRA",
+      "accountId": "schwab",
+      "amount": 1157.55,
+      "date": "2026-08-27",
+      "estimatedRealizedGain": 307.55,
+      "estimatedRealizedGainPct": 36.1824,
+      "id": "trade-2",
+      "price": 231.51,
+      "realizedCostBasis": 850,
+      "realizedGainMethod": "estimated-fifo",
+      "ticker": "AAPL",
+      "type": "SELL",
+      "units": 5
+    },
+    {
+      "account": "Individual brokerage",
+      "accountId": "fidelity",
+      "amount": 2291.4,
+      "date": "2026-08-12",
+      "estimatedLongTermGain": 0.0,
+      "estimatedRealizedGain": -412.3,
+      "estimatedRealizedGainPct": -15.2495,
+      "estimatedShortTermGain": -412.3,
+      "id": "trade-4",
+      "price": 229.14,
+      "realizedCostBasis": 2703.7,
+      "realizedGainMethod": "estimated-fifo",
+      "ticker": "AAPL",
+      "type": "SELL",
+      "units": 10
+    },
+    {
+      "account": "Individual brokerage",
+      "accountId": "fidelity",
+      "amount": 2148.4,
+      "date": "2026-05-14",
+      "estimatedLongTermGain": 620.4,
+      "estimatedRealizedGain": 620.4,
+      "estimatedRealizedGainPct": 40.6021,
+      "estimatedShortTermGain": 0.0,
+      "id": "trade-3",
+      "price": 537.1,
+      "realizedCostBasis": 1528.0,
+      "realizedGainMethod": "estimated-fifo",
+      "ticker": "MSFT",
+      "type": "SELL",
+      "units": 4
     }
   ],
   "transactions": [
     {
-      "id": "tx-1",
-      "merchant": "United Airlines",
-      "logoName": "United Airlines",
+      "account": "Platinum Card",
       "accountId": "amex",
-      "category": "Travel",
-      "date": "Aug 31",
       "amount": -428.16,
-      "account": "Platinum Card",
+      "category": "Travel",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "United Airlines",
+          "type": "merchant",
+          "website": "www.united.com"
+        }
+      ],
+      "date": "Aug 31",
+      "description": null,
+      "id": "tx-1",
+      "logoName": "United Airlines",
+      "merchant": "United Airlines",
+      "occurredOn": null,
       "pending": true,
-      "classification": {
-        "credit": false,
-        "kind": "expense",
-        "mark": "initial",
-        "spending": true,
-        "zelle": false
-      }
+      "postedOn": null,
+      "website": "https://www.united.com"
     },
     {
-      "id": "tx-2",
-      "merchant": "Whole Foods Market",
-      "logoName": "Whole Foods Market",
-      "accountId": "amex",
-      "category": "Groceries",
-      "date": "Aug 30",
-      "amount": -86.42,
       "account": "Platinum Card",
-      "pending": false,
+      "accountId": "amex",
+      "amount": -86.42,
+      "category": "Groceries",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "expense",
         "mark": "initial",
         "spending": true,
         "zelle": false
-      }
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Whole Foods Market",
+          "type": "merchant",
+          "website": "www.wholefoodsmarket.com"
+        }
+      ],
+      "date": "Aug 30",
+      "description": null,
+      "id": "tx-2",
+      "location": {
+        "address": "1765 California St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "postalCode": "94109",
+        "region": "CA",
+        "storeNumber": "10052"
+      },
+      "logoName": "Whole Foods Market",
+      "merchant": "Whole Foods Market",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.wholefoodsmarket.com"
     },
     {
-      "id": "tx-3",
-      "merchant": "Salary",
-      "accountId": "chase",
-      "category": "Income",
-      "date": "Aug 29",
-      "amount": 4821.75,
       "account": "Chase Checking",
-      "pending": false,
+      "accountId": "chase",
+      "amount": 4821.75,
+      "category": "Income",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "income",
         "mark": "income",
         "spending": false,
         "zelle": false
-      }
+      },
+      "date": "Aug 29",
+      "description": null,
+      "id": "tx-3",
+      "merchant": "Salary",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
     },
     {
-      "id": "tx-4",
-      "merchant": "Uber",
-      "logoName": "Uber",
+      "account": "Platinum Card",
       "accountId": "amex",
-      "category": "Transport",
-      "date": "Aug 28",
       "amount": -31.88,
-      "account": "Platinum Card",
-      "pending": false,
+      "category": "Transport",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "expense",
         "mark": "initial",
         "spending": true,
         "zelle": false
-      }
-    },
-    {
-      "id": "tx-5",
-      "merchant": "Blue Bottle Coffee",
-      "logoName": "Blue Bottle Coffee",
-      "accountId": "amex",
-      "category": "Dining",
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Uber",
+          "type": "merchant",
+          "website": "www.uber.com"
+        }
+      ],
       "date": "Aug 28",
+      "description": null,
+      "id": "tx-4",
+      "logoName": "Uber",
+      "merchant": "Uber",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.uber.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
       "amount": -12.75,
-      "account": "Platinum Card",
-      "pending": false,
+      "category": "Dining",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "expense",
         "mark": "initial",
         "spending": true,
         "zelle": false
-      }
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Blue Bottle Coffee",
+          "type": "merchant",
+          "website": "bluebottlecoffee.com"
+        },
+        {
+          "confidence": "HIGH",
+          "name": "Square",
+          "type": "payment_processor"
+        }
+      ],
+      "date": "Aug 28",
+      "description": null,
+      "id": "tx-5",
+      "location": {
+        "address": "66 Mint St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "postalCode": "94103",
+        "region": "CA"
+      },
+      "logoName": "Blue Bottle Coffee",
+      "merchant": "Blue Bottle Coffee",
+      "merchantEntityId": "synthetic-blue-bottle",
+      "occurredOn": null,
+      "originalDescription": "SQ *BLUE BOTTLE COFFE San Francisco CA",
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://bluebottlecoffee.com"
     },
     {
-      "id": "tx-6",
-      "merchant": "Apple",
-      "logoName": "Apple",
+      "account": "Platinum Card",
       "accountId": "amex",
-      "category": "Shopping",
-      "date": "Aug 27",
       "amount": -129.0,
-      "account": "Platinum Card",
-      "pending": false,
+      "category": "Shopping",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "expense",
         "mark": "initial",
         "spending": true,
         "zelle": false
-      }
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Apple",
+          "type": "merchant",
+          "website": "www.apple.com"
+        }
+      ],
+      "date": "Aug 27",
+      "description": null,
+      "id": "tx-6",
+      "logoName": "Apple",
+      "merchant": "Apple",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.apple.com"
     },
     {
-      "id": "tx-7",
-      "merchant": "PG&E",
-      "logoName": "PG&E",
-      "accountId": "chase",
-      "category": "Utilities",
-      "date": "Aug 26",
-      "amount": -118.42,
       "account": "Chase Checking",
-      "pending": false,
+      "accountId": "chase",
+      "amount": -118.42,
+      "category": "Utilities",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "expense",
         "mark": "initial",
         "spending": true,
         "zelle": false
-      }
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "PG&E",
+          "type": "merchant",
+          "website": "www.pge.com"
+        }
+      ],
+      "date": "Aug 26",
+      "description": null,
+      "id": "tx-7",
+      "logoName": "PG&E",
+      "merchant": "PG&E",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.pge.com"
     },
     {
-      "id": "tx-8",
-      "merchant": "Airbnb",
-      "logoName": "Airbnb",
+      "account": "Platinum Card",
       "accountId": "amex",
-      "category": "Travel",
-      "date": "Aug 24",
       "amount": -642.2,
-      "account": "Platinum Card",
-      "pending": false,
+      "category": "Travel",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "expense",
         "mark": "initial",
         "spending": true,
         "zelle": false
-      }
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Airbnb",
+          "type": "merchant",
+          "website": "www.airbnb.com"
+        }
+      ],
+      "date": "Aug 24",
+      "description": null,
+      "id": "tx-8",
+      "logoName": "Airbnb",
+      "merchant": "Airbnb",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.airbnb.com"
     },
     {
-      "id": "tx-9",
-      "merchant": "Trader Joe's",
-      "logoName": "Trader Joe's",
+      "account": "Platinum Card",
       "accountId": "amex",
-      "category": "Groceries",
-      "date": "Aug 23",
       "amount": -63.17,
-      "account": "Platinum Card",
-      "pending": false,
+      "category": "Groceries",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "expense",
         "mark": "initial",
         "spending": true,
         "zelle": false
-      }
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Trader Joe's",
+          "type": "merchant",
+          "website": "www.traderjoes.com"
+        }
+      ],
+      "date": "Aug 23",
+      "description": null,
+      "id": "tx-9",
+      "location": {
+        "address": "401 Bay St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.8053,
+        "lon": -122.4128,
+        "postalCode": "94133",
+        "region": "CA"
+      },
+      "logoName": "Trader Joe's",
+      "merchant": "Trader Joe's",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.traderjoes.com"
     },
     {
-      "id": "tx-10",
-      "merchant": "Spotify",
-      "logoName": "Spotify",
+      "account": "Platinum Card",
       "accountId": "amex",
+      "amount": -12.99,
       "category": "Entertainment",
-      "date": "Aug 22",
-      "amount": -11.99,
-      "account": "Platinum Card",
-      "pending": false,
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "expense",
         "mark": "initial",
         "spending": true,
         "zelle": false
-      }
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Spotify",
+          "type": "merchant",
+          "website": "www.spotify.com"
+        }
+      ],
+      "date": "Aug 22",
+      "description": null,
+      "id": "tx-10",
+      "logoName": "Spotify",
+      "merchant": "Spotify",
+      "occurredOn": null,
+      "paymentChannel": "online",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.spotify.com"
     },
     {
-      "id": "tx-11",
-      "merchant": "Dividend · VTI",
-      "accountId": "fidelity",
-      "category": "Income",
-      "date": "Aug 21",
-      "amount": 94.16,
       "account": "Fidelity",
-      "pending": false,
+      "accountId": "fidelity",
+      "amount": 94.16,
+      "category": "Income",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "dividend",
         "mark": "dividend",
         "spending": false,
         "zelle": false
-      }
+      },
+      "date": "Aug 21",
+      "description": null,
+      "id": "tx-11",
+      "merchant": "Dividend · VTI",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
     },
     {
-      "id": "tx-12",
-      "merchant": "Sweetgreen",
-      "logoName": "Sweetgreen",
-      "accountId": "amex",
-      "category": "Dining",
-      "date": "Aug 20",
-      "amount": -24.65,
       "account": "Platinum Card",
-      "pending": false,
+      "accountId": "amex",
+      "amount": -24.65,
+      "category": "Dining",
+      "categorySource": "provider",
       "classification": {
         "credit": false,
         "kind": "expense",
         "mark": "initial",
         "spending": true,
         "zelle": false
-      }
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Sweetgreen",
+          "type": "merchant",
+          "website": "www.sweetgreen.com"
+        }
+      ],
+      "date": "Aug 20",
+      "description": null,
+      "id": "tx-12",
+      "logoName": "Sweetgreen",
+      "merchant": "Sweetgreen",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.sweetgreen.com"
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": 4821.75,
+      "category": "Income",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "income",
+        "mark": "income",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-06-05",
+      "description": "ACME CORP PAYROLL DIRECT DEPOSIT",
+      "id": "tx-101",
+      "merchant": "Salary",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": 4821.75,
+      "category": "Income",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "income",
+        "mark": "income",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-06-19",
+      "description": "ACME CORP PAYROLL DIRECT DEPOSIT",
+      "id": "tx-102",
+      "merchant": "Salary",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": 4821.75,
+      "category": "Income",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "income",
+        "mark": "income",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-07-03",
+      "description": "ACME CORP PAYROLL DIRECT DEPOSIT",
+      "id": "tx-103",
+      "merchant": "Salary",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": 4821.75,
+      "category": "Income",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "income",
+        "mark": "income",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-07-17",
+      "description": "ACME CORP PAYROLL DIRECT DEPOSIT",
+      "id": "tx-104",
+      "merchant": "Salary",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": 4821.75,
+      "category": "Income",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "income",
+        "mark": "income",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-07-31",
+      "description": "ACME CORP PAYROLL DIRECT DEPOSIT",
+      "id": "tx-105",
+      "merchant": "Salary",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": 4821.75,
+      "category": "Income",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "income",
+        "mark": "income",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-08-14",
+      "description": "ACME CORP PAYROLL DIRECT DEPOSIT",
+      "id": "tx-106",
+      "merchant": "Salary",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": -2400.0,
+      "category": "Rent And Utilities",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-06-01",
+      "description": "ACH RENT PAYMENT",
+      "id": "tx-107",
+      "merchant": "Example Property Mgmt",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": -2400.0,
+      "category": "Rent And Utilities",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-07-01",
+      "description": "ACH RENT PAYMENT",
+      "id": "tx-108",
+      "merchant": "Example Property Mgmt",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": -2400.0,
+      "category": "Rent And Utilities",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-08-03",
+      "description": "ACH RENT PAYMENT",
+      "id": "tx-109",
+      "merchant": "Example Property Mgmt",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": -96.2,
+      "category": "Utilities",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "PG&E",
+          "type": "merchant",
+          "website": "www.pge.com"
+        }
+      ],
+      "date": "2026-06-26",
+      "description": "PG&E utility bill",
+      "id": "tx-110",
+      "merchant": "PG&E",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.pge.com"
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": -131.55,
+      "category": "Utilities",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "PG&E",
+          "type": "merchant",
+          "website": "www.pge.com"
+        }
+      ],
+      "date": "2026-07-27",
+      "description": "PG&E utility bill",
+      "id": "tx-111",
+      "merchant": "PG&E",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.pge.com"
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": -1985.4,
+      "category": "Loan Payments",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "transfer",
+        "mark": "payment",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-06-10",
+      "description": "AMERICAN EXPRESS ACH PMT credit card payment",
+      "id": "tx-112",
+      "merchant": "American Express",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": 1985.4,
+      "category": "Transfer",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "transfer",
+        "mark": "transfer",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-06-10",
+      "description": null,
+      "id": "tx-113",
+      "merchant": "AUTOPAY PAYMENT - THANK YOU",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": -2240.18,
+      "category": "Loan Payments",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "transfer",
+        "mark": "payment",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-07-10",
+      "description": "AMERICAN EXPRESS ACH PMT credit card payment",
+      "id": "tx-114",
+      "merchant": "American Express",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": 2240.18,
+      "category": "Transfer",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "transfer",
+        "mark": "transfer",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-07-10",
+      "description": null,
+      "id": "tx-115",
+      "merchant": "AUTOPAY PAYMENT - THANK YOU",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": -2118.66,
+      "category": "Loan Payments",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "transfer",
+        "mark": "payment",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-08-10",
+      "description": "AMERICAN EXPRESS ACH PMT credit card payment",
+      "id": "tx-116",
+      "merchant": "American Express",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": 2118.66,
+      "category": "Transfer",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "transfer",
+        "mark": "transfer",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-08-10",
+      "description": null,
+      "id": "tx-117",
+      "merchant": "AUTOPAY PAYMENT - THANK YOU",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -11.99,
+      "category": "Entertainment",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Spotify",
+          "type": "merchant",
+          "website": "www.spotify.com"
+        }
+      ],
+      "date": "2026-06-22",
+      "description": "Spotify subscription",
+      "id": "tx-118",
+      "merchant": "Spotify",
+      "occurredOn": null,
+      "paymentChannel": "online",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.spotify.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -11.99,
+      "category": "Entertainment",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Spotify",
+          "type": "merchant",
+          "website": "www.spotify.com"
+        }
+      ],
+      "date": "2026-07-22",
+      "description": "Spotify subscription",
+      "id": "tx-119",
+      "merchant": "Spotify",
+      "occurredOn": null,
+      "paymentChannel": "online",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.spotify.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -15.49,
+      "category": "Entertainment",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Netflix",
+          "type": "merchant",
+          "website": "www.netflix.com"
+        }
+      ],
+      "date": "2026-06-12",
+      "description": "Netflix streaming subscription",
+      "id": "tx-120",
+      "merchant": "Netflix",
+      "occurredOn": null,
+      "paymentChannel": "online",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.netflix.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -15.49,
+      "category": "Entertainment",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Netflix",
+          "type": "merchant",
+          "website": "www.netflix.com"
+        }
+      ],
+      "date": "2026-07-12",
+      "description": "Netflix streaming subscription",
+      "id": "tx-121",
+      "merchant": "Netflix",
+      "occurredOn": null,
+      "paymentChannel": "online",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.netflix.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -15.49,
+      "category": "Entertainment",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Netflix",
+          "type": "merchant",
+          "website": "www.netflix.com"
+        }
+      ],
+      "date": "2026-08-12",
+      "description": "Netflix streaming subscription",
+      "id": "tx-122",
+      "merchant": "Netflix",
+      "occurredOn": null,
+      "paymentChannel": "online",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.netflix.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -13.99,
+      "category": "Entertainment",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Disney Plus",
+          "type": "merchant",
+          "website": "www.disneyplus.com"
+        }
+      ],
+      "date": "2026-06-15",
+      "description": "Disney+ subscription",
+      "id": "tx-123",
+      "merchant": "Disney Plus",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.disneyplus.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": 13.99,
+      "category": "Transfer",
+      "categorySource": "provider",
+      "classification": {
+        "credit": true,
+        "kind": "reimbursement",
+        "mark": "refund",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-06-17",
+      "description": "Amex Platinum digital entertainment credit",
+      "id": "tx-124",
+      "merchant": "Digital Entertainment Credit",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -13.99,
+      "category": "Entertainment",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Disney Plus",
+          "type": "merchant",
+          "website": "www.disneyplus.com"
+        }
+      ],
+      "date": "2026-07-15",
+      "description": "Disney+ subscription",
+      "id": "tx-125",
+      "merchant": "Disney Plus",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.disneyplus.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": 13.99,
+      "category": "Transfer",
+      "categorySource": "provider",
+      "classification": {
+        "credit": true,
+        "kind": "reimbursement",
+        "mark": "refund",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-07-17",
+      "description": "Amex Platinum digital entertainment credit",
+      "id": "tx-126",
+      "merchant": "Digital Entertainment Credit",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -13.99,
+      "category": "Entertainment",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Disney Plus",
+          "type": "merchant",
+          "website": "www.disneyplus.com"
+        }
+      ],
+      "date": "2026-08-15",
+      "description": "Disney+ subscription",
+      "id": "tx-127",
+      "merchant": "Disney Plus",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.disneyplus.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": 13.99,
+      "category": "Transfer",
+      "categorySource": "provider",
+      "classification": {
+        "credit": true,
+        "kind": "reimbursement",
+        "mark": "refund",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-08-17",
+      "description": "Amex Platinum digital entertainment credit",
+      "id": "tx-128",
+      "merchant": "Digital Entertainment Credit",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -260.0,
+      "category": "Personal Care",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Equinox",
+          "type": "merchant",
+          "website": "www.equinox.com"
+        }
+      ],
+      "date": "2026-06-02",
+      "description": "Equinox membership",
+      "id": "tx-129",
+      "merchant": "Equinox",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.equinox.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -260.0,
+      "category": "Personal Care",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Equinox",
+          "type": "merchant",
+          "website": "www.equinox.com"
+        }
+      ],
+      "date": "2026-07-02",
+      "description": "Equinox membership",
+      "id": "tx-130",
+      "merchant": "Equinox",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.equinox.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -260.0,
+      "category": "Personal Care",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Equinox",
+          "type": "merchant",
+          "website": "www.equinox.com"
+        }
+      ],
+      "date": "2026-08-03",
+      "description": "Equinox membership",
+      "id": "tx-131",
+      "merchant": "Equinox",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.equinox.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -180.4,
+      "category": "Dining",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-07-08",
+      "description": null,
+      "id": "tx-132",
+      "merchant": "Resy - Example Bistro",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": 100.0,
+      "category": "Transfer",
+      "categorySource": "provider",
+      "classification": {
+        "credit": true,
+        "kind": "reimbursement",
+        "mark": "refund",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-07-12",
+      "description": "Amex Platinum Resy credit",
+      "id": "tx-133",
+      "merchant": "Resy credit",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -18.4,
+      "category": "Transport",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Uber",
+          "type": "merchant",
+          "website": "www.uber.com"
+        }
+      ],
+      "date": "2026-06-06",
+      "description": null,
+      "id": "tx-134",
+      "merchant": "Uber",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.uber.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -23.75,
+      "category": "Transport",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Uber",
+          "type": "merchant",
+          "website": "www.uber.com"
+        }
+      ],
+      "date": "2026-06-20",
+      "description": null,
+      "id": "tx-135",
+      "merchant": "Uber",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.uber.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -14.1,
+      "category": "Transport",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Uber",
+          "type": "merchant",
+          "website": "www.uber.com"
+        }
+      ],
+      "date": "2026-07-09",
+      "description": null,
+      "id": "tx-136",
+      "merchant": "Uber",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.uber.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -31.2,
+      "category": "Transport",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Uber",
+          "type": "merchant",
+          "website": "www.uber.com"
+        }
+      ],
+      "date": "2026-07-25",
+      "description": null,
+      "id": "tx-137",
+      "merchant": "Uber",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.uber.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -19.85,
+      "category": "Transport",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Uber",
+          "type": "merchant",
+          "website": "www.uber.com"
+        }
+      ],
+      "date": "2026-08-08",
+      "description": null,
+      "id": "tx-138",
+      "merchant": "Uber",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.uber.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -92.14,
+      "category": "Groceries",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Whole Foods Market",
+          "type": "merchant",
+          "website": "www.wholefoodsmarket.com"
+        }
+      ],
+      "date": "2026-06-07",
+      "description": null,
+      "id": "tx-139",
+      "location": {
+        "address": "1765 California St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "postalCode": "94109",
+        "region": "CA",
+        "storeNumber": "10052"
+      },
+      "merchant": "Whole Foods Market",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.wholefoodsmarket.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -71.38,
+      "category": "Groceries",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Whole Foods Market",
+          "type": "merchant",
+          "website": "www.wholefoodsmarket.com"
+        }
+      ],
+      "date": "2026-06-21",
+      "description": null,
+      "id": "tx-140",
+      "location": {
+        "address": "1765 California St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "postalCode": "94109",
+        "region": "CA",
+        "storeNumber": "10052"
+      },
+      "merchant": "Whole Foods Market",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.wholefoodsmarket.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -104.62,
+      "category": "Groceries",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Whole Foods Market",
+          "type": "merchant",
+          "website": "www.wholefoodsmarket.com"
+        }
+      ],
+      "date": "2026-07-05",
+      "description": null,
+      "id": "tx-141",
+      "location": {
+        "address": "1765 California St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "postalCode": "94109",
+        "region": "CA",
+        "storeNumber": "10052"
+      },
+      "merchant": "Whole Foods Market",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.wholefoodsmarket.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -88.03,
+      "category": "Groceries",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Whole Foods Market",
+          "type": "merchant",
+          "website": "www.wholefoodsmarket.com"
+        }
+      ],
+      "date": "2026-07-19",
+      "description": null,
+      "id": "tx-142",
+      "location": {
+        "address": "1765 California St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "postalCode": "94109",
+        "region": "CA",
+        "storeNumber": "10052"
+      },
+      "merchant": "Whole Foods Market",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.wholefoodsmarket.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -97.45,
+      "category": "Groceries",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Whole Foods Market",
+          "type": "merchant",
+          "website": "www.wholefoodsmarket.com"
+        }
+      ],
+      "date": "2026-08-02",
+      "description": null,
+      "id": "tx-143",
+      "location": {
+        "address": "1765 California St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "postalCode": "94109",
+        "region": "CA",
+        "storeNumber": "10052"
+      },
+      "merchant": "Whole Foods Market",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.wholefoodsmarket.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -79.9,
+      "category": "Groceries",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Whole Foods Market",
+          "type": "merchant",
+          "website": "www.wholefoodsmarket.com"
+        }
+      ],
+      "date": "2026-08-16",
+      "description": null,
+      "id": "tx-144",
+      "location": {
+        "address": "1765 California St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "postalCode": "94109",
+        "region": "CA",
+        "storeNumber": "10052"
+      },
+      "merchant": "Whole Foods Market",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.wholefoodsmarket.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -12.75,
+      "category": "Dining",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Blue Bottle Coffee",
+          "type": "merchant",
+          "website": "bluebottlecoffee.com"
+        }
+      ],
+      "date": "2026-06-09",
+      "description": null,
+      "id": "tx-145",
+      "location": {
+        "address": "66 Mint St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "postalCode": "94103",
+        "region": "CA"
+      },
+      "merchant": "Blue Bottle Coffee",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://bluebottlecoffee.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -12.75,
+      "category": "Dining",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Blue Bottle Coffee",
+          "type": "merchant",
+          "website": "bluebottlecoffee.com"
+        }
+      ],
+      "date": "2026-06-23",
+      "description": null,
+      "id": "tx-146",
+      "location": {
+        "address": "66 Mint St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "postalCode": "94103",
+        "region": "CA"
+      },
+      "merchant": "Blue Bottle Coffee",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://bluebottlecoffee.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -12.75,
+      "category": "Dining",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Blue Bottle Coffee",
+          "type": "merchant",
+          "website": "bluebottlecoffee.com"
+        }
+      ],
+      "date": "2026-07-14",
+      "description": null,
+      "id": "tx-147",
+      "location": {
+        "address": "66 Mint St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "postalCode": "94103",
+        "region": "CA"
+      },
+      "merchant": "Blue Bottle Coffee",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://bluebottlecoffee.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -12.75,
+      "category": "Dining",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Blue Bottle Coffee",
+          "type": "merchant",
+          "website": "bluebottlecoffee.com"
+        }
+      ],
+      "date": "2026-07-28",
+      "description": null,
+      "id": "tx-148",
+      "location": {
+        "address": "66 Mint St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "postalCode": "94103",
+        "region": "CA"
+      },
+      "merchant": "Blue Bottle Coffee",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://bluebottlecoffee.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -12.75,
+      "category": "Dining",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Blue Bottle Coffee",
+          "type": "merchant",
+          "website": "bluebottlecoffee.com"
+        }
+      ],
+      "date": "2026-08-11",
+      "description": null,
+      "id": "tx-149",
+      "location": {
+        "address": "66 Mint St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "postalCode": "94103",
+        "region": "CA"
+      },
+      "merchant": "Blue Bottle Coffee",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://bluebottlecoffee.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -64.0,
+      "category": "Dining",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Blue Bottle Coffee",
+          "type": "merchant",
+          "website": "bluebottlecoffee.com"
+        }
+      ],
+      "date": "2026-08-29",
+      "description": "Blue Bottle Coffee beans and gear",
+      "id": "tx-150",
+      "location": {
+        "address": "66 Mint St",
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "postalCode": "94103",
+        "region": "CA"
+      },
+      "merchant": "Blue Bottle Coffee",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://bluebottlecoffee.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -54.2,
+      "category": "Home Improvement",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-08-27",
+      "description": null,
+      "id": "tx-151",
+      "merchant": "Example Hardware",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -54.2,
+      "category": "Home Improvement",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-08-27",
+      "description": null,
+      "id": "tx-152",
+      "merchant": "Example Hardware",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -64.18,
+      "category": "Dining",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Franklin Barbecue",
+          "type": "merchant",
+          "website": "franklinbbq.com"
+        }
+      ],
+      "date": "2026-08-13",
+      "description": null,
+      "id": "tx-153",
+      "location": {
+        "address": "900 E 11th St",
+        "city": "Austin",
+        "country": "US",
+        "lat": 30.2701,
+        "lon": -97.7313,
+        "postalCode": "78702",
+        "region": "TX"
+      },
+      "logoName": "Franklin Barbecue",
+      "merchant": "Franklin Barbecue",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://franklinbbq.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -289.0,
+      "category": "Shopping",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-08-14",
+      "description": null,
+      "id": "tx-154",
+      "location": {
+        "address": "1522 S Congress Ave",
+        "city": "Austin",
+        "country": "US",
+        "lat": 30.2503,
+        "lon": -97.7493,
+        "postalCode": "78704",
+        "region": "TX"
+      },
+      "logoName": "Allens Boots",
+      "merchant": "Allens Boots",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -212.4,
+      "category": "Dining",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Uchi",
+          "type": "merchant",
+          "website": "uchi.uchirestaurants.com"
+        }
+      ],
+      "date": "2026-08-15",
+      "description": null,
+      "id": "tx-155",
+      "location": {
+        "address": "801 S Lamar Blvd",
+        "city": "Austin",
+        "country": "US",
+        "lat": 30.2573,
+        "lon": -97.7604,
+        "postalCode": "78704",
+        "region": "TX"
+      },
+      "logoName": "Uchi",
+      "merchant": "Uchi",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://uchi.uchirestaurants.com"
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -612.0,
+      "category": "Travel",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-08-13",
+      "description": null,
+      "id": "tx-156",
+      "logoName": "Hotel San José",
+      "merchant": "Hotel San José",
+      "occurredOn": null,
+      "paymentChannel": "online",
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Platinum Card",
+      "accountId": "amex",
+      "amount": -23.4,
+      "category": "Transport",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Uber",
+          "type": "merchant",
+          "website": "www.uber.com"
+        }
+      ],
+      "date": "2026-08-14",
+      "description": null,
+      "id": "tx-157",
+      "logoName": "Uber",
+      "merchant": "Uber",
+      "occurredOn": null,
+      "paymentChannel": "online",
+      "pending": false,
+      "postedOn": null,
+      "website": "https://www.uber.com"
+    },
+    {
+      "account": "Fidelity",
+      "accountId": "fidelity",
+      "amount": 34.03,
+      "category": "Income",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "dividend",
+        "mark": "dividend",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-08-14",
+      "description": null,
+      "dividendType": "qualified",
+      "id": "tx-158",
+      "merchant": "Dividend · MSFT",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Chase Checking",
+      "accountId": "chase",
+      "amount": 18.42,
+      "category": "Income",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "interest",
+        "mark": "interest",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-08-31",
+      "description": "INTEREST PAYMENT",
+      "id": "tx-159",
+      "merchant": "Interest Payment",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Freedom Unlimited",
+      "accountId": "freedom",
+      "amount": -146.8,
+      "category": "Groceries",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "expense",
+        "mark": "initial",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-08-18",
+      "description": null,
+      "id": "tx-160",
+      "location": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7692,
+        "lon": -122.4153,
+        "region": "CA"
+      },
+      "merchant": "Rainbow Grocery",
+      "occurredOn": null,
+      "paymentChannel": "in store",
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Freedom Unlimited",
+      "accountId": "freedom",
+      "amount": -28.11,
+      "category": "Fees",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "fee",
+        "mark": "interest",
+        "spending": true,
+        "zelle": false
+      },
+      "date": "2026-08-03",
+      "description": null,
+      "id": "tx-161",
+      "merchant": "Purchase Interest Charge",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
     }
-  ]
+  ],
+  "updatedAt": "2026-08-31T21:42:00Z"
 }

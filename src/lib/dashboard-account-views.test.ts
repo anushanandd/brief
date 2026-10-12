@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
+import { insights } from '../data/fixtures/insights'
 import {
   accountValueChart,
-  accountWeeklyChangePct,
   accountValueIncomplete,
   hasValueHistory,
   dashboardAccountViews,
   dashboardAssetBreakdown,
+  withoutSpendingCard,
+  withoutSpendingCardPoints,
 } from './dashboard-account-views'
 import type { FinanceSnapshot } from './schema'
 
@@ -99,63 +101,6 @@ const view = (accountId: string, name = accountId): BrokeragePerformance => ({
 })
 
 describe('dashboard account views', () => {
-  it('requires actual balance history for seven-day balance changes', () => {
-    const account = {
-      id: 'account',
-      name: 'Account',
-      institution: 'Broker',
-      type: 'brokerage',
-      value: 120,
-    }
-    expect(
-      accountWeeklyChangePct(
-        {
-          updatedAt: '2026-09-08T12:00:00Z',
-          accountBalanceHistory: [
-            {
-              ...view('account'),
-              currentValue: 120,
-              points: [
-                { date: '2026-09-01', value: 100, netDeposits: null, sp500: null },
-                { date: '2026-09-08', value: 120, netDeposits: null, sp500: null },
-              ],
-            },
-          ],
-          brokeragePerformance: [],
-          holdings: [],
-        },
-        account,
-      ),
-    ).toBe(20)
-    expect(
-      accountWeeklyChangePct(
-        {
-          updatedAt: '2026-09-08T12:00:00Z',
-          accountBalanceHistory: [],
-          brokeragePerformance: [],
-          holdings: [
-            {
-              ticker: 'VTI',
-              name: 'VTI',
-              accountId: 'account',
-              shares: 1,
-              price: 100,
-              value: 100,
-              costBasis: null,
-              dailyChangePct: 0,
-              weeklyChangePct: 11.11,
-              weeklyReferencePrice: 90,
-              weeklyReferenceDate: '2026-09-01',
-              totalChangePct: 0,
-              color: '#000',
-            },
-          ],
-        },
-        account,
-      ),
-    ).toBeNull()
-  })
-
   it('keeps investment accounts while breaking them into holdings', () => {
     expect(
       dashboardAssetBreakdown({
@@ -275,4 +220,31 @@ it('requires two distinct supported history dates after the chosen start date', 
   const points = [point, { date: '2026-09-02', value: 110 }]
   expect(hasValueHistory(points)).toBe(true)
   expect(hasValueHistory(points, '2026-09-02')).toBe(false)
+})
+
+it('leaves the spending card out of the All accounts total, history, and live points', () => {
+  const data = {
+    accounts: [
+      { id: 'all', name: 'All accounts', institution: 'Brief', type: 'combined', value: 900.1 },
+      { id: 'card', name: 'Card', institution: 'Example', type: 'credit', value: -300.2 },
+    ],
+    netWorthHistory: [{ date: '2026-09-01', value: 800 }],
+    insights: insights({
+      accountsTotal: {
+        excludedAccountId: 'card',
+        excludedValue: -300.2,
+        value: 1200.3,
+        history: [{ date: '2026-09-01', value: 950 }],
+      },
+    }),
+  }
+  const scoped = withoutSpendingCard(data)
+  expect(scoped.accounts.find(({ id }) => id === 'all')?.value).toBe(1200.3)
+  expect(scoped.accounts.find(({ id }) => id === 'card')?.value).toBe(-300.2)
+  expect(scoped.netWorthHistory).toEqual([{ date: '2026-09-01', value: 950 }])
+  expect(withoutSpendingCardPoints(data, [{ time: 1, value: 905.1 }])).toEqual([
+    { time: 1, value: 1205.3 },
+  ])
+  const unscoped = { ...data, insights: undefined }
+  expect(withoutSpendingCard(unscoped)).toBe(unscoped)
 })

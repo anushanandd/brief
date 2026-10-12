@@ -4,12 +4,17 @@ import { z } from 'zod'
 import { isTauri } from './api'
 import { financeSnapshotSchema } from './schema'
 
+const splitSchema = z.object({ category: z.string().min(1).max(100), amount: z.number() })
 const annotationsSchema = z.record(
   z.string(),
   z.object({
     category: z.string().min(1).max(100).optional(),
     reviewed: z.boolean().optional(),
     benefitConfirmed: z.boolean().optional(),
+    tags: z.array(z.string()).optional(),
+    splits: z.array(splitSchema).optional(),
+    refundOf: z.string().optional(),
+    other: z.boolean().optional(),
   }),
 )
 export type TransactionAnnotations = z.infer<typeof annotationsSchema>
@@ -26,10 +31,29 @@ export async function saveTransactionAnnotation(
   id: string,
   annotation: TransactionAnnotations[string],
 ) {
-  const change = annotationsSchema.parse({ [id]: annotation })
+  return saveTransactionAnnotations({ [id]: annotation })
+}
+
+// An empty category, tag list, split list, or refund id clears that field; false clears other.
+const annotationChangesSchema = z.record(
+  z.string(),
+  z.object({
+    category: z.string().max(100).optional(),
+    reviewed: z.boolean().optional(),
+    benefitConfirmed: z.boolean().optional(),
+    tags: z.array(z.string().max(40)).max(12).optional(),
+    splits: z.array(splitSchema).max(12).optional(),
+    refundOf: z.string().max(200).optional(),
+    other: z.boolean().optional(),
+  }),
+)
+export type TransactionAnnotationChanges = z.infer<typeof annotationChangesSchema>
+
+export async function saveTransactionAnnotations(changes: TransactionAnnotationChanges) {
+  const parsed = annotationChangesSchema.parse(changes)
   if (isTauri()) {
     return annotationResultSchema.parse(
-      await invoke('transaction_annotations', { changes: change, importing: false }),
+      await invoke('transaction_annotations', { changes: parsed, importing: false }),
     )
   }
   throw new Error('Transaction edits require the Brief desktop app')
@@ -47,9 +71,7 @@ function legacyAnnotations(warnings: string[]): TransactionAnnotations {
       if (!raw) continue
       values = JSON.parse(raw)
     } catch {
-      warnings.push(
-        'Some legacy transaction annotations could not be read; original entries were retained.',
-      )
+      warnings.push('Couldn’t read some legacy annotations; originals kept')
       continue
     }
     if (!values || typeof values !== 'object' || Array.isArray(values)) continue
@@ -87,9 +109,7 @@ export async function loadTransactionAnnotations(): Promise<{
         ...annotationsSchema.parse(JSON.parse(localStorage.getItem('brief:annotations') ?? '{}')),
       }
     } catch {
-      warnings.push(
-        'Saved transaction annotations could not be read. Finance data remains available.',
-      )
+      warnings.push('Couldn’t read saved annotations')
     }
   }
   return { annotations, ...(warnings.length ? { warning: [...new Set(warnings)].join(' ') } : {}) }

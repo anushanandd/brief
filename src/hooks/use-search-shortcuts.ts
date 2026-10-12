@@ -1,45 +1,59 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useEffectEvent, useMemo, useRef } from 'react'
 
-import { shortcutInput, shortcutOverlayOpen } from '../lib/keyboard'
+import { useRegisterActions, type AppAction } from '../lib/action-system'
+import { shortcutOverlayOpen } from '../lib/keyboard'
 
-type SearchShortcutEvent = Pick<KeyboardEvent, 'altKey' | 'ctrlKey' | 'key' | 'metaKey'>
-
-export function searchShortcutAction(
-  event: SearchShortcutEvent,
-  isEditing: boolean,
-  isSearchFocused: boolean,
-  hasQuery: boolean,
-) {
-  if (event.key === 'Escape' && isSearchFocused) return hasQuery ? 'clear' : 'blur'
-  if (event.key === '/' && !event.metaKey && !event.ctrlKey && !event.altKey && !isEditing) {
-    return 'focus'
-  }
-  return undefined
+/** Escape in the search field clears a query, then leaves the field. */
+export function searchEscapeAction(hasQuery: boolean) {
+  return hasQuery ? 'clear' : 'blur'
 }
 
 export function useSearchShortcuts(query: string, setQuery: (value: string) => void) {
   const inputRef = useRef<HTMLInputElement>(null)
+  const actions = useMemo<AppAction[]>(
+    () => [
+      {
+        id: 'search.focus',
+        title: 'Focus page search',
+        search: 'find search current page',
+        group: 'Here',
+        scope: 'page',
+        bindings: [{ sequence: ['/'], label: '/' }],
+        run: () => inputRef.current?.focus(),
+      },
+      ...(query
+        ? [
+            {
+              id: 'search.clear',
+              title: 'Clear page search',
+              search: 'reset query',
+              group: 'Here',
+              scope: 'page' as const,
+              run: () => setQuery(''),
+            },
+          ]
+        : []),
+    ],
+    [query, setQuery],
+  )
+  useRegisterActions(actions)
 
+  // The key dispatcher leaves keys typed in a field to the field, so the search field handles
+  // its own Escape.
+  const escape = useEffectEvent(() => {
+    if (searchEscapeAction(query.length > 0) === 'clear') setQuery('')
+    else inputRef.current?.blur()
+  })
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key !== 'Escape' || event.target !== inputRef.current) return
       if (event.defaultPrevented || event.isComposing || shortcutOverlayOpen()) return
-      const target = event.target
-      const isEditing = shortcutInput(target)
-      const action = searchShortcutAction(
-        event,
-        isEditing,
-        target === inputRef.current,
-        query.length > 0,
-      )
-      if (!action) return
       event.preventDefault()
-      if (action === 'focus') inputRef.current?.focus()
-      else if (action === 'clear') setQuery('')
-      else inputRef.current?.blur()
+      escape()
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [query, setQuery])
+  }, [])
 
   return inputRef
 }

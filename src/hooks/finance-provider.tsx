@@ -1,8 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
+import { listen } from '@tauri-apps/api/event'
 import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
 
 import { loadTransactionAnnotations } from '../lib/annotations'
-import { getFinanceSnapshot, getIntegrationStatus } from '../lib/api'
+import { getFinanceSnapshot, getIntegrationStatus, isTauri } from '../lib/api'
+import { localDateKey } from '../lib/dates'
+import { importLegacyFinanceSettings } from '../lib/finance-settings'
+import { formatUpdatedAt } from '../lib/format'
 import { FinanceContext, financeQueryKey } from './use-finance'
 
 export type RuntimeLogEntry = {
@@ -46,10 +50,15 @@ function useBaseFinanceState() {
     },
     [],
   )
-  // Import legacy annotations before reading the native, annotation-aware view.
+  // Import legacy renderer settings and annotations before reading the native view.
   const annotations = useQuery({
     queryKey: ['transaction-annotations'],
-    queryFn: loadTransactionAnnotations,
+    queryFn: async () => {
+      const settingsWarning = await importLegacyFinanceSettings()
+      const result = await loadTransactionAnnotations()
+      const warning = [result.warning, settingsWarning].filter(Boolean).join(' ')
+      return { ...result, warning: warning || undefined }
+    },
     staleTime: Number.POSITIVE_INFINITY,
   })
   const query = useQuery({
@@ -58,6 +67,8 @@ function useBaseFinanceState() {
     enabled: annotations.isSuccess || annotations.isError,
     staleTime: Number.POSITIVE_INFINITY,
   })
+  const insightsDay = query.data?.insights?.today
+  const refetchSnapshot = query.refetch
   const tickers = useMemo(
     () =>
       [
@@ -79,9 +90,40 @@ function useBaseFinanceState() {
       'Local cache',
       'Finance snapshot loaded',
       'positive',
-      `Revision ${query.data.revision ?? 0} · saved ${query.data.updatedAt}`,
+      `Revision ${query.data.revision ?? 0} · saved ${formatUpdatedAt(query.data.updatedAt)}`,
     )
   }, [appendRuntimeLog, query.data, query.dataUpdatedAt])
+
+  // A background refresh commits while the window is hidden; reread when it reports one.
+  useEffect(() => {
+    if (!isTauri()) return undefined
+    let stop: (() => void) | undefined
+    let disposed = false
+    void listen('finance-snapshot-updated', () => void refetchSnapshot()).then((unlisten) => {
+      if (disposed) unlisten()
+      else stop = unlisten
+    })
+    return () => {
+      disposed = true
+      stop?.()
+    }
+  }, [refetchSnapshot])
+
+  // Native insights describe "today", so a new calendar day rereads the saved snapshot.
+
+  useEffect(() => {
+    // The synthetic preview is pinned to its seed date.
+    if (!insightsDay || !isTauri()) return undefined
+    const check = () => {
+      if (localDateKey(Date.now() / 1000) !== insightsDay) void refetchSnapshot()
+    }
+    const timer = window.setInterval(check, 60_000)
+    window.addEventListener('focus', check)
+    return () => {
+      window.clearInterval(timer)
+      window.removeEventListener('focus', check)
+    }
+  }, [insightsDay, refetchSnapshot])
 
   useEffect(() => {
     if (!integration.data) return
@@ -110,7 +152,7 @@ function useBaseFinanceState() {
     isError: query.isError,
     error: query.error,
     annotationWarning: annotations.isError
-      ? 'Transaction annotations could not be loaded. Finance data remains available.'
+      ? 'Couldn’t load annotations'
       : annotations.data?.warning,
     data: query.data,
     annotations: annotations.data?.annotations ?? {},
@@ -119,6 +161,7 @@ function useBaseFinanceState() {
       snaptrade: false,
       alpaca: false,
       alphaVantage: false,
+      sec: false,
     },
     integrationStatusLoading: integration.isLoading,
     liveMarketEnabled: integration.data?.alpaca === true && !query.data?.recovery,

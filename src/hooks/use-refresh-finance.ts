@@ -29,7 +29,10 @@ export function useRefreshFinance() {
   const queryClient = useQueryClient()
 
   return useCallback(
-    async ({ silent = false }: { silent?: boolean } = {}) => {
+    async ({
+      silent = false,
+      liveBalances = false,
+    }: { silent?: boolean; liveBalances?: boolean } = {}) => {
       const startedAt = Date.now()
       const tasks = new Map<string, RefreshProgressTask>()
       const description = (detail?: string, finished = false) =>
@@ -41,11 +44,7 @@ export function useRefreshFinance() {
         })
       const toastId = silent
         ? undefined
-        : toast.loading('Preparing refresh…', {
-            description: description(
-              'Unlocking credentials and reading the last committed snapshot.',
-            ),
-          })
+        : toast.loading('Preparing refresh…', { description: description() })
       let stopListening: (() => void) | undefined
 
       if (!silent && isTauri()) {
@@ -69,7 +68,7 @@ export function useRefreshFinance() {
       try {
         const { snapshot, warnings } = await queryClient.fetchQuery({
           queryKey: refreshQueryKey,
-          queryFn: refreshFinanceSnapshot,
+          queryFn: () => refreshFinanceSnapshot({ liveBalances }),
           staleTime: 0,
         })
         queryClient.setQueryData(financeQueryKey, snapshot)

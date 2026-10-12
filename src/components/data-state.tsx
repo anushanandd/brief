@@ -10,15 +10,14 @@ export function ValueHistoryEmptyState({
   incomplete: boolean
   valueAvailable: boolean
 }) {
+  // Chart placeholders are one muted line, like every other empty state.
   return (
-    <EmptyState
-      title={incomplete ? 'Complete balance unavailable' : 'Historical series unavailable'}
-    >
+    <EmptyState>
       {incomplete
-        ? 'Only known USD balances are shown. History and changes require complete account values.'
+        ? 'Complete balance unavailable: history needs every account’s value.'
         : valueAvailable
-          ? 'The current provider balance is available, but there is not enough supported history to plot.'
-          : 'The provider has not supplied a usable USD balance or history.'}
+          ? 'No history yet.'
+          : 'No usable USD balance or history from the provider.'}
     </EmptyState>
   )
 }
@@ -111,6 +110,7 @@ export function RefreshButton() {
       disabled={isRefreshing || Boolean(recovery)}
       aria-busy={isRefreshing}
       aria-label={isRefreshing ? 'Refreshing accounts' : 'Refresh accounts'}
+      data-command="finance.refresh"
       title={isRefreshing ? 'Refreshing accounts' : 'Refresh accounts'}
     >
       <RefreshCw

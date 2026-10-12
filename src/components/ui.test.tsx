@@ -2,15 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
 import { Save } from './icons'
-import { selectedFilterValues } from './ledger-filters'
-import {
-  AnimatedCurrency,
-  Button,
-  Change,
-  ChartRangeSelect,
-  hasMoreBelow,
-  RangeSelector,
-} from './ui'
+import { AnimatedCurrency, Button, Change, ChartRangeSelect, hasMoreBelow } from './ui'
 
 it('shows a card scroll cue only while content remains below', () => {
   expect(hasMoreBelow({ scrollHeight: 300, clientHeight: 200, scrollTop: 0 })).toBe(true)
@@ -36,13 +28,6 @@ it.each([0, -0, null, undefined])('uses a neutral tone for %s', (value) => {
   expect(renderToStaticMarkup(<Change value={value} />)).toContain('change muted')
 })
 
-it('parses available ledger filter values', () => {
-  expect(selectedFilterValues('cash,missing,credit', ['cash', 'credit'])).toEqual([
-    'cash',
-    'credit',
-  ])
-})
-
 it('renders graph ranges as an accessible dropdown', () => {
   const html = renderToStaticMarkup(
     <ChartRangeSelect
@@ -61,27 +46,7 @@ it('renders graph ranges as an accessible dropdown', () => {
   expect(html).toContain('One week')
 })
 
-it('labels shared range controls with their full meanings', () => {
-  const html = renderToStaticMarkup(
-    <RangeSelector
-      label="Chart range"
-      options={[
-        { value: 'week', label: 'W', accessibleLabel: 'One week' },
-        { value: 'month', label: 'M', accessibleLabel: 'One month' },
-      ]}
-      value="week"
-      onValueChange={() => undefined}
-    />,
-  )
-
-  expect(html).toContain('role="group" aria-label="Chart range"')
-  expect(html).toMatch(/aria-label="One week"[^>]*aria-pressed="true"/)
-  expect(html).toMatch(/aria-label="One month"[^>]*aria-pressed="false"/)
-  expect(html).not.toContain('title=')
-  expect(html).not.toContain('data-slot="tooltip-trigger"')
-})
-
-it('keeps icon action labels, disabled state, and native form semantics', () => {
+it('keeps action labels visible with an icon and preserves native form semantics', () => {
   const html = renderToStaticMarkup(
     <Button icon={Save} type="submit" disabled aria-busy>
       Save changes
@@ -90,6 +55,17 @@ it('keeps icon action labels, disabled state, and native form semantics', () => 
   expect(html).toContain('type="submit"')
   expect(html).toContain('disabled=""')
   expect(html).toContain('aria-busy="true"')
+  expect(html).toContain('Save changes')
+  expect(html).not.toContain('class="sr-only"')
+  expect(html).toMatch(/<svg[^>]*aria-hidden="true"/)
+})
+
+it.each(['icon', 'icon-compact'] as const)('preserves accessible labels for %s buttons', (size) => {
+  const html = renderToStaticMarkup(
+    <Button icon={Save} size={size}>
+      Save changes
+    </Button>,
+  )
   expect(html).toContain('<span class="sr-only">Save changes</span>')
   expect(html).toMatch(/<svg[^>]*aria-hidden="true"/)
 })

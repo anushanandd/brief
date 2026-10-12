@@ -3,12 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { classification } from '../data/fixtures/classification'
 import {
   activityMatchesSearch,
+  activityPlace,
   activityMethod,
   linkedAccountIds,
   buildActivities,
   sortActivities,
   type ActivityItem,
   type ActivitySort,
+  activityTotals,
 } from './activity'
 import { financeSnapshotSchema } from './schema'
 
@@ -277,4 +279,63 @@ describe('financial activities', () => {
     })
     expect(snapshot.transactions[0].account).toBe('Platinum Card')
   })
+})
+
+it('describes where a purchase happened in one place, then adds the street, channel, or site', () => {
+  const base: ActivityItem = {
+    id: 'place',
+    kind: 'spending',
+    title: 'Example',
+    detail: '',
+    category: 'Dining',
+    date: '2026-09-01',
+    amount: -10,
+  }
+  expect(
+    activityPlace({
+      ...base,
+      paymentChannel: 'in store',
+      location: { address: '1 Main St', city: 'Oakland', region: 'CA', country: 'US' },
+    }),
+  ).toEqual({ kind: 'place', primary: 'Oakland, CA', secondary: '1 Main St' })
+  expect(
+    activityPlace({
+      ...base,
+      paymentChannel: 'in store',
+      location: { city: 'Paris', country: 'FR' },
+    }),
+  ).toEqual({ kind: 'place', primary: 'Paris · FR', secondary: 'In store' })
+  expect(
+    activityPlace({ ...base, paymentChannel: 'online', website: 'https://www.example.com/a' }),
+  ).toEqual({ kind: 'online', primary: 'Online', secondary: 'example.com' })
+  expect(activityPlace({ ...base, paymentChannel: 'other' })).toEqual({
+    kind: 'none',
+    primary: '—',
+    secondary: '',
+  })
+})
+
+const item = (kind: ActivityItem['kind'], amount: number): ActivityItem => ({
+  id: `${kind}:${amount}`,
+  kind,
+  category: 'Example',
+  title: 'Example',
+  detail: '',
+  date: '2026-09-16',
+  amount,
+})
+
+it('totals spending and income for a filtered list in cents, ignoring transfers and trades', () => {
+  expect(
+    activityTotals([
+      item('spending', -0.1),
+      item('spending', -0.2),
+      item('spending', 5),
+      item('income', 100.3),
+      item('transfer', -500),
+      item('trade', -1000),
+      item('credit', 20),
+    ]),
+  ).toEqual({ spent: 0.3, income: 100.3, net: 100 })
+  expect(activityTotals([])).toEqual({ spent: 0, income: 0, net: 0 })
 })

@@ -11,7 +11,13 @@ vi.mock('../hooks/use-refresh-finance', () => ({ useFinanceRefreshState: () => f
 vi.mock('../hooks/use-finance', () => ({
   useFinance: () => ({
     data: { ...empty, revision: 1 },
-    integrationStatus: { plaid: true, snaptrade: true, alpaca: true, alphaVantage: true },
+    integrationStatus: {
+      plaid: true,
+      snaptrade: true,
+      alpaca: true,
+      alphaVantage: true,
+      sec: true,
+    },
     marketSymbols: ['TEST'],
     runtimeLog: [],
   }),
@@ -43,7 +49,7 @@ it('reads current market status and observation times and counts every configure
   const html = renderLogs()
   expect(html).toContain('<strong>Live</strong>')
   expect(html).toContain('dateTime="2026-09-18T20:00:00Z"')
-  expect(html.replaceAll('<!-- -->', '')).toContain('4/4 configured')
+  expect(html.replaceAll('<!-- -->', '')).toContain('5 of 5 configured')
 })
 
 it('keeps a failed market refresh visible when saved observations remain available', () => {

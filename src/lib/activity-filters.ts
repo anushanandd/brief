@@ -1,14 +1,13 @@
-import { activityMatchesSearch, activityMethod, type ActivityItem } from './activity'
+import {
+  activityInCategory,
+  activityMatchesSearch,
+  activityMethod,
+  type ActivityItem,
+} from './activity'
+import { addDays } from './dates'
 import { graphWindows } from './graph-preferences'
+import { preference } from './preference'
 import { transactionDateKey } from './spending'
-
-const dayMs = 86_400_000
-const activityDateFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
 
 export function activityMatchesDateRange(
   activity: ActivityItem,
@@ -19,18 +18,6 @@ export function activityMatchesDateRange(
   if (!from && !to) return true
   const date = transactionDateKey(activity.date, referenceIso)
   return Boolean(date) && (!from || date >= from) && (!to || date <= to)
-}
-
-export function activityDateBounds(activities: ActivityItem[], referenceIso: string) {
-  let earliest: string | undefined
-  let latest: string | undefined
-  for (const activity of activities) {
-    const date = transactionDateKey(activity.date, referenceIso)
-    if (!date) continue
-    if (!earliest || date < earliest) earliest = date
-    if (!latest || date > latest) latest = date
-  }
-  return earliest && latest ? ([earliest, latest] as const) : undefined
 }
 
 export function activityFilterCandidates(
@@ -51,7 +38,7 @@ export function activityFilterCandidates(
   const inAccount = (activity: ActivityItem) =>
     !accountIds || (activity.accountId != null && accountIds.has(activity.accountId))
   const inCategory = (activity: ActivityItem) =>
-    !categories.length || categories.includes(activity.category || 'Other')
+    !categories.length || categories.some((category) => activityInCategory(activity, category))
   const inMethod = (activity: ActivityItem) =>
     !methods.length || methods.includes(activityMethod(activity))
   const accountActivities = searched.filter(inAccount)
@@ -63,9 +50,16 @@ export function activityFilterCandidates(
   }
 }
 
-export const formatActivityDate = (date: string) =>
-  activityDateFormatter.format(new Date(`${date}T00:00:00Z`))
+/** Whether Activity shows its filters card; a remembered layout, not a filter. */
+export const activityFiltersOpen = preference(
+  'brief:activity-filters-open',
+  (raw) => raw === 'true',
+)
+
 export const filterValue = (values: string[]) => values.join(',') || undefined
+/** The values a comma-separated filter names that are still options. */
+export const selectedFilterValues = (query: string | undefined, options: string[]) =>
+  (query ?? '').split(',').filter((value) => options.includes(value))
 
 export type ActivityDateRange = 'w' | 'm' | 'q' | 'y' | 'a' | 'custom'
 const activityDateRangeKeys = ['w', 'm', 'q', 'y', 'a'] as const
@@ -82,9 +76,7 @@ export function activityDatePreset(preset: Exclude<ActivityDateRange, 'custom'>,
   const days = graphWindows[activityDateRangeKeys.indexOf(preset)].secs / 86_400
   if (!days) return { from: undefined, to: undefined }
   return {
-    from: new Date(Date.parse(`${today}T00:00:00Z`) - (days - 1) * dayMs)
-      .toISOString()
-      .slice(0, 10),
+    from: addDays(today, 1 - days),
     to: today,
   }
 }

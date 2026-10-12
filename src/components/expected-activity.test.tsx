@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
+import { expectedEvent, insights } from '../data/fixtures/insights'
 import type { FinanceSnapshot } from '../lib/schema'
 import { ExpectedActivity, expectedActivityDateLabel } from './expected-activity'
 
@@ -69,9 +70,28 @@ it('shows a matched pending amount without treating it as posted evidence', asyn
     ],
   }
 
+  data.insights = insights({
+    expected: [
+      expectedEvent({
+        id: 'phone',
+        recurringId: 'phone',
+        title: 'Phone Utility',
+        date: '2026-09-18',
+        amount: -102,
+        amountLow: 100,
+        amountHigh: 100,
+        lastSeen: '2026-08-18',
+        state: 'pending',
+        accountId: 'cash',
+        matchedTransactionId: 'phone-pending',
+        sourceTransactionId: 'phone-2',
+      }),
+    ],
+  })
+
   const html = await renderExpectedActivity(<ExpectedActivity data={data} />)
   expect(html).toContain('Pending')
-  expect(html).toContain('aria-label="Pending amount: -$102.00"')
+  expect(html).toContain('aria-label="Pending amount: −$102.00"')
 })
 
 it('scopes recurring subscriptions to the selected account', async () => {
@@ -106,6 +126,18 @@ it('scopes recurring subscriptions to the selected account', async () => {
       })),
     ),
   }
+  data.insights = insights({
+    expected: ['selected', 'other'].map((accountId) =>
+      expectedEvent({
+        id: accountId,
+        recurringId: accountId,
+        title: `${accountId} streaming`,
+        kind: 'subscription',
+        accountId,
+        sourceTransactionId: `${accountId}-2026-08-20`,
+      }),
+    ),
+  })
   const render = () => renderExpectedActivity(<ExpectedActivity data={data} account="selected" />)
   const html = await render()
   expect(html).toContain('selected streaming')
@@ -125,14 +157,15 @@ it('scopes recurring subscriptions to the selected account', async () => {
   expect(html).toContain('class="financial-activity-meta"')
   expect(html).toContain('<time dateTime="2026-09-20">in 2 days</time>')
   expect(html).toContain('class="expected-activity-amount negative"')
-  expect(html).toContain('aria-label="Estimated amount: -$15.00"')
+  expect(html).toContain('aria-label="Estimated amount: −$15.00"')
   expect(html).not.toContain('https://img.logo.dev')
   expect(html).not.toContain('Based on 3')
-  expect(html).toContain('-$15.00')
+  expect(html).toContain('−$15.00')
   expect(html).not.toContain('No longer expected')
   expect(html).not.toContain('other streaming')
 
-  vi.setSystemTime(new Date('2026-09-25T12:00:00Z'))
-  expect(await render()).toContain('Refresh saved activity to check what is expected next.')
+  // Native insights forecast nothing from a snapshot saved more than three days ago.
+  data.insights = insights({ today: '2026-09-25', expected: [] })
+  expect(await render()).toContain('Refresh to see what’s coming up.')
   expect(await render()).not.toContain('selected streaming')
 })

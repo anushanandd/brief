@@ -1,6 +1,7 @@
 import type { LivelinePoint } from 'liveline'
 
 import { startMarketStream, stopMarketStream } from './api'
+import { errorMessage } from './errors'
 import { upsertLiveChartPoint } from './live-chart'
 import type { FinanceSnapshot, MarketProjection, MarketSnapshots } from './schema'
 
@@ -137,7 +138,7 @@ export function subscribeLiveMarket(
       .then(() => {
         if (disposed || active !== id) void stopMarketStream(id).catch(() => undefined)
       })
-      .catch((error: unknown) => failed(error instanceof Error ? error.message : String(error)))
+      .catch((error: unknown) => failed(errorMessage(error)))
   }
   start()
   return () => {

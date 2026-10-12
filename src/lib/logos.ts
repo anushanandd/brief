@@ -1,6 +1,6 @@
-import { transactionMarkKind } from './transaction-kind'
-export { transactionMarkKind } from './transaction-kind'
+import { preference } from './preference'
 import type { Transaction } from './schema'
+import { transactionMarkKind } from './transaction-kind'
 
 const externalLogosKey = 'brief.externalLogosEnabled'
 const logoDevPublishableKey = 'pk_N6b6KnYTRcOsjU__6zKUqA'
@@ -80,13 +80,10 @@ function allowedProviderLogo(value?: string): string | undefined {
   }
 }
 
-export function getExternalLogosEnabled(): boolean {
-  return typeof window !== 'undefined' && window.localStorage.getItem(externalLogosKey) === 'true'
-}
+const externalLogos = preference(externalLogosKey, (raw) => raw === 'true')
 
-export function saveExternalLogosEnabled(enabled: boolean) {
-  window.localStorage.setItem(externalLogosKey, String(enabled))
-}
+export const getExternalLogosEnabled = externalLogos.get
+export const saveExternalLogosEnabled = externalLogos.save
 
 export function stockMarkLabel(ticker: string): string {
   const normalized = ticker.trim().toUpperCase()
@@ -128,6 +125,58 @@ export function brandLogoUrl(name: string, domain?: string, external = false): s
   return external && domain ? logoDevUrl(null, domain) : markUrl(brandMarkLabel(name))
 }
 
+/**
+ * Institutions whose provider-reported website isn't the brand people know, keyed by the
+ * institution name in lowercase. These win over the provider's website.
+ */
+const brandDomains: Record<string, string> = {
+  'e*trade from morgan stanley': 'etrade.com',
+}
+
+/** Common institutions' domains, for when a provider reports no website. */
+const knownDomains: Record<string, string> = {
+  ally: 'ally.com',
+  'ally bank': 'ally.com',
+  'american express': 'americanexpress.com',
+  amex: 'americanexpress.com',
+  'bank of america': 'bankofamerica.com',
+  'capital one': 'capitalone.com',
+  chase: 'chase.com',
+  'charles schwab': 'schwab.com',
+  citi: 'citi.com',
+  citibank: 'citi.com',
+  discover: 'discover.com',
+  'e*trade': 'etrade.com',
+  'e-trade': 'etrade.com',
+  etrade: 'etrade.com',
+  fidelity: 'fidelity.com',
+  'fidelity investments': 'fidelity.com',
+  'goldman sachs': 'goldmansachs.com',
+  'interactive brokers': 'interactivebrokers.com',
+  marcus: 'marcus.com',
+  'morgan stanley': 'morganstanley.com',
+  'navy federal credit union': 'navyfederal.org',
+  pnc: 'pnc.com',
+  robinhood: 'robinhood.com',
+  schwab: 'schwab.com',
+  sofi: 'sofi.com',
+  'td bank': 'td.com',
+  'us bank': 'usbank.com',
+  'u.s. bank': 'usbank.com',
+  vanguard: 'vanguard.com',
+  'wells fargo': 'wellsfargo.com',
+}
+
+/** An account's logo from Logo.dev by exact domain, only when company logos are enabled. */
+export function institutionLogoUrl(
+  account: { institution?: string; domain?: string },
+  external = false,
+) {
+  const name = account.institution?.trim().toLowerCase() ?? ''
+  const domain = brandDomains[name] ?? account.domain ?? knownDomains[name]
+  return external && domain ? logoDevUrl(null, domain) : undefined
+}
+
 export function transactionMarkLabel(transaction: Transaction): string {
   if (isAmericanExpressPayment(transaction)) return 'AMEX'
   return brandMarkLabel(transaction.logoName?.trim() || transaction.merchant.trim())
@@ -144,11 +193,29 @@ export function stockLogoUrl(ticker: string, external = false): string {
     : markUrl(stockMarkLabel(ticker))
 }
 
+/**
+ * Plaid recognized the merchant (over 90% confident). Below that, Plaid's merchant name is text
+ * cleaned from the bank descriptor, not a known business, so a lookup would guess a brand.
+ */
+function recognizedMerchant(transaction: Transaction) {
+  return Boolean(
+    transaction.counterparties?.some(
+      ({ type, confidence }) =>
+        type === 'merchant' && (confidence === 'VERY_HIGH' || confidence === 'HIGH'),
+    ),
+  )
+}
+
+/**
+ * A merchant's logo: Plaid's own when it has one, otherwise Logo.dev by the merchant's website
+ * or name, but only for a merchant Plaid recognized. Anything else shows its category mark.
+ */
 export function transactionLogoUrl(transaction: Transaction, external = false) {
   if (!external) return undefined
   const providerLogo = allowedProviderLogo(transaction.logoUrl)
   if (providerLogo) return providerLogo
   if (isAmericanExpressPayment(transaction)) return logoDevUrl(null, 'americanexpress.com')
+  if (!recognizedMerchant(transaction)) return undefined
   const domain = transaction.website ? websiteDomain(transaction.website) : undefined
   if (domain) return logoDevUrl(null, domain)
   return transaction.logoName ? logoDevUrl('name', transaction.logoName) : undefined

@@ -2,7 +2,6 @@ import type { Transaction } from './schema'
 
 // Native policy is authoritative; missing fields are rejected at the IPC boundary.
 export type TransactionMarkKind = Transaction['classification']['mark']
-export type MoneyKind = Transaction['classification']['kind']
 export const transactionMarkKind = (t: Transaction) => t.classification.mark
 export const moneyKind = (t: Transaction) => t.classification.kind
 export const isSpendingTransaction = (t: Transaction) => t.classification.spending
@@ -18,4 +17,14 @@ export function incomeActivityGroup(transaction: Transaction) {
   if (mark === 'interest') return 'Interest'
   if (/\bpayroll\b|\bpaycheck\b|\bsalary\b/i.test(transaction.merchant)) return 'Payroll'
   return transaction.merchant.trim().replace(/\s+/g, ' ')
+}
+
+/**
+ * A transaction as the parts its categories total over: one per saved split, each with that
+ * part's category and amount, or the transaction itself. Parts keep the transaction's id.
+ */
+export function splitParts(transaction: Transaction): Transaction[] {
+  return transaction.splits?.length
+    ? transaction.splits.map((part) => ({ ...transaction, ...part }))
+    : [transaction]
 }

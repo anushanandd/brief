@@ -26,6 +26,25 @@
           "value": 100.11
         }
       ]
+    },
+    {
+      "accountId": "plaid:card",
+      "currentValue": -300.0,
+      "historySource": "unavailable",
+      "historyStart": "2026-09-09",
+      "institution": "Bank",
+      "name": "Card",
+      "performanceMethod": "value-only",
+      "points": [
+        {
+          "date": "2026-09-09",
+          "marketChange": null,
+          "marketChangePct": null,
+          "netDeposits": null,
+          "sp500": null,
+          "value": -300.0
+        }
+      ]
     }
   ],
   "accountLinks": {},
@@ -51,16 +70,68 @@
       "reportedBalance": null,
       "saleProceedsYtd": null,
       "type": "combined",
-      "value": 350.11
+      "value": 550.11
     },
     {
       "activityAsOf": null,
+      "availableBalance": 1700.0,
+      "balanceAsOf": null,
+      "balanceFetchedAt": "2026-09-09T07:29:00Z",
+      "balanceSource": null,
+      "cashValue": null,
+      "creditLimit": 2000.0,
+      "currency": "USD",
+      "estimatedRealizedGainYtd": null,
+      "id": "plaid:card",
+      "institution": "Bank",
+      "investedValue": null,
+      "investmentIncomeYtd": null,
+      "knownCostBasis": null,
+      "knownUnrealizedGain": null,
+      "knownUnrealizedGainPct": null,
+      "liability": {
+        "aprs": [
+          {
+            "balanceSubjectToApr": 120.0,
+            "interestCharged": 2.47,
+            "percentage": 24.99,
+            "type": "purchase_apr"
+          },
+          {
+            "balanceSubjectToApr": null,
+            "interestCharged": null,
+            "percentage": 29.99,
+            "type": "cash_apr"
+          }
+        ],
+        "isOverdue": false,
+        "lastPaymentAmount": null,
+        "lastPaymentDate": null,
+        "lastStatementBalance": 250.0,
+        "lastStatementDate": "2026-08-25",
+        "minimumPayment": 35.0,
+        "nextPaymentDueDate": "2026-09-19",
+        "purchaseApr": 24.99
+      },
+      "name": "Card",
+      "positionsAsOf": null,
+      "reportedBalance": null,
+      "saleProceedsYtd": null,
+      "subtype": "credit card",
+      "type": "credit",
+      "value": -300.0
+    },
+    {
+      "activityAsOf": null,
+      "availableBalance": 90.1,
       "balanceAsOf": null,
       "balanceFetchedAt": "2026-09-09T07:29:00Z",
       "balanceSource": null,
       "cashValue": null,
       "currency": "USD",
+      "domain": "bank.example",
       "estimatedRealizedGainYtd": null,
+      "holderCategory": "personal",
       "id": "plaid:cash",
       "institution": "Bank",
       "investedValue": null,
@@ -69,11 +140,40 @@
       "knownUnrealizedGain": null,
       "knownUnrealizedGainPct": null,
       "name": "Checking",
+      "officialName": "Everyday Checking",
       "positionsAsOf": null,
       "reportedBalance": null,
       "saleProceedsYtd": null,
+      "subtype": "checking",
       "type": "cash",
       "value": 100.11
+    },
+    {
+      "activityAsOf": null,
+      "balanceAsOf": null,
+      "balanceFetchedAt": null,
+      "balanceSource": null,
+      "cashValue": null,
+      "costBasisCoverage": "partial",
+      "currency": "USD",
+      "estimatedRealizedGainYtd": null,
+      "id": "plaid:hsa",
+      "institution": "Bank",
+      "investedValue": null,
+      "investmentIncomeYtd": 3.21,
+      "knownCostBasis": 350.0,
+      "knownUnrealizedGain": 50.0,
+      "knownUnrealizedGainPct": 14.2857,
+      "name": "Health Savings",
+      "positionsAsOf": null,
+      "realizedGainCoverage": "unavailable",
+      "reportedBalance": null,
+      "saleProceedsYtd": 0.0,
+      "salesYtd": 0,
+      "subtype": "hsa",
+      "taxTreatment": "taxFree",
+      "type": "retirement",
+      "value": 500.0
     },
     {
       "activityAsOf": null,
@@ -83,6 +183,7 @@
       "cashValue": 50.0,
       "costBasisCoverage": "complete",
       "currency": "USD",
+      "domain": "broker.example",
       "estimatedRealizedGainYtd": 25.0,
       "id": "snaptrade:brokerage",
       "institution": "Broker",
@@ -97,6 +198,7 @@
       "reportedBalance": 100.11,
       "saleProceedsYtd": 100.0,
       "salesYtd": 1,
+      "taxTreatment": "taxable",
       "type": "brokerage",
       "value": 250.0
     }
@@ -105,28 +207,39 @@
   "brokeragePerformance": [
     {
       "accountId": "total",
-      "currentValue": 250.0,
-      "historySource": "estimated",
-      "historyStart": "2026-09-08",
-      "institution": "1 account",
+      "currentValue": 750.0,
+      "historySource": "unavailable",
+      "historyStart": "2026-09-09",
+      "institution": "2 accounts",
       "name": "Combined brokerages",
-      "performanceMethod": "time-weighted",
+      "performanceMethod": "value-only",
       "points": [
         {
-          "date": "2026-09-08",
+          "date": "2026-09-09",
           "marketChange": null,
           "marketChangePct": null,
-          "netDeposits": 190.0,
+          "netDeposits": null,
           "sp500": null,
-          "value": 190.0
-        },
+          "value": 750.0
+        }
+      ]
+    },
+    {
+      "accountId": "plaid:hsa",
+      "currentValue": 500.0,
+      "historySource": "unavailable",
+      "historyStart": "2026-09-09",
+      "institution": "Bank",
+      "name": "Health Savings",
+      "performanceMethod": "value-only",
+      "points": [
         {
           "date": "2026-09-09",
-          "marketChange": 60.0,
-          "marketChangePct": 31.5789,
-          "netDeposits": 190.0,
+          "marketChange": null,
+          "marketChangePct": null,
+          "netDeposits": null,
           "sp500": null,
-          "value": 250.0
+          "value": 500.0
         }
       ]
     },
@@ -158,12 +271,82 @@
       ]
     }
   ],
-  "calculationVersion": 24,
+  "calculationVersion": 35,
   "calendarDate": "2026-09-09",
+  "dividendHistory": [
+    {
+      "exDate": "2026-09-20",
+      "payableDate": "2026-09-25",
+      "rate": 0.4,
+      "special": false,
+      "symbol": "FUND"
+    }
+  ],
   "holdings": [
     {
-      "accountId": "snaptrade:brokerage",
+      "accountId": "plaid:hsa",
       "color": "#232424",
+      "costBasis": 350.0,
+      "currency": "USD",
+      "dailyChangePct": null,
+      "identifiers": {
+        "cusip": "000000001",
+        "exchange": "XNAS",
+        "figi": "BBG000000001",
+        "isin": "US0000000001"
+      },
+      "industry": "Investment Trusts",
+      "instrumentKind": "etf",
+      "instrumentSubtype": "etf",
+      "marketAsOf": null,
+      "name": "Synthetic Fund",
+      "price": 40.0,
+      "quoteEligible": false,
+      "sector": "Finance",
+      "shares": 10.0,
+      "ticker": "FUND",
+      "totalChangePct": 14.29,
+      "unrealizedGain": 50.0,
+      "valuationNote": null,
+      "value": 400.0,
+      "vestedShares": 6.0,
+      "vestedValue": 240.0,
+      "weeklyChangePct": null,
+      "weeklyReferenceDate": null,
+      "weeklyReferencePrice": null
+    },
+    {
+      "accountId": "plaid:hsa",
+      "color": "#71877c",
+      "costBasis": null,
+      "currency": "USD",
+      "dailyChangePct": null,
+      "fixedIncome": {
+        "faceValue": 100.0,
+        "issueDate": "2026-03-31",
+        "maturityDate": "2027-03-31",
+        "yieldPercent": 4.25,
+        "yieldType": "yield_to_maturity"
+      },
+      "instrumentKind": "fixed income",
+      "instrumentSubtype": "bill",
+      "marketAsOf": null,
+      "name": "Synthetic Treasury",
+      "price": 100.0,
+      "quoteEligible": false,
+      "shares": 1.0,
+      "ticker": "Synthetic Treasury",
+      "totalChangePct": null,
+      "unrealizedGain": null,
+      "valuationNote": null,
+      "value": 100.0,
+      "weeklyChangePct": null,
+      "weeklyReferenceDate": null,
+      "weeklyReferencePrice": null
+    },
+    {
+      "accountId": "snaptrade:brokerage",
+      "color": "#b87543",
       "costBasis": 150.0,
       "currency": "USD",
       "dailyChangePct": null,
@@ -185,31 +368,27 @@
   ],
   "lastChange": {
     "accountChanges": [],
-    "comparisonComplete": true,
+    "comparisonComplete": false,
     "netWorthChange": 0.0,
     "newTransactionIds": [],
     "observedAt": "2026-09-09T13:00:00+00:00",
-    "previousNetWorth": 350.11,
+    "previousNetWorth": 550.11,
     "previousUpdatedAt": "2026-09-09T12:00:00+00:00"
   },
-  "netWorth": 350.11,
+  "netWorth": 550.11,
   "netWorthHistory": [
     {
-      "date": "2026-09-08",
-      "value": 290.11
-    },
-    {
       "date": "2026-09-09",
-      "value": 350.11
+      "value": 550.11
     }
   ],
-  "netWorthHistoryEstimated": true,
+  "netWorthHistoryEstimated": false,
   "netWorthIncomplete": false,
   "netWorthProvisional": true,
   "observedNetWorthHistory": [
     {
       "date": "2026-09-09",
-      "value": 350.11
+      "value": 550.11
     }
   ],
   "possibleDuplicateAccounts": [],
@@ -230,12 +409,28 @@
       "updatedAt": "2026-09-09T12:00:00+00:00"
     }
   },
+  "recurringStreams": [
+    {
+      "accountId": "plaid:cash",
+      "averageAmount": 5.13,
+      "description": "Coffee",
+      "direction": "out",
+      "frequency": "WEEKLY",
+      "isActive": true,
+      "lastDate": "2026-09-08",
+      "merchantName": "Coffee",
+      "predictedNextDate": "2026-09-15",
+      "status": "MATURE",
+      "streamId": "stream-coffee",
+      "transactionIds": ["coffee"]
+    }
+  ],
   "revision": 2,
   "spending": {
     "categories": [
       {
         "color": "#c9684b",
-        "name": "Food And Drink",
+        "name": "Dining",
         "percent": 100.0,
         "value": 5.13
       }
@@ -250,8 +445,10 @@
       "amount": 100.0,
       "date": "2026-09-08",
       "description": null,
+      "estimatedLongTermGain": 0.0,
       "estimatedRealizedGain": 25.0,
       "estimatedRealizedGainPct": 33.3333,
+      "estimatedShortTermGain": 25.0,
       "id": "sale",
       "price": 100.0,
       "realizedCostBasis": 75.0,
@@ -274,17 +471,35 @@
       "ticker": "TEST",
       "type": "BUY",
       "units": 3.0
+    },
+    {
+      "account": "Health Savings",
+      "accountId": "plaid:hsa",
+      "amount": -80.0,
+      "date": "2026-08-03",
+      "description": "BUY FUND",
+      "estimatedRealizedGain": null,
+      "estimatedRealizedGainPct": null,
+      "id": "plaid-investment:fund-buy",
+      "price": 40.0,
+      "realizedCostBasis": null,
+      "ticker": "FUND",
+      "type": "BUY",
+      "units": 2.0
     }
   ],
   "transactions": [
     {
       "account": "Checking",
       "accountId": "plaid:cash",
+      "accountOwner": "Synthetic Holder",
       "amount": -5.13,
       "benefitConfirmed": false,
-      "category": "Food And Drink",
+      "category": "Dining",
       "categoryConfidence": "VERY_HIGH",
       "categoryDetail": "FOOD_AND_DRINK_COFFEE",
+      "categorySource": "provider",
+      "checkNumber": "1042",
       "classification": {
         "credit": false,
         "kind": "expense",
@@ -292,6 +507,19 @@
         "spending": true,
         "zelle": false
       },
+      "counterparties": [
+        {
+          "confidence": "VERY_HIGH",
+          "name": "Coffee",
+          "type": "merchant",
+          "website": "coffee.example"
+        },
+        {
+          "confidence": "HIGH",
+          "name": "Square",
+          "type": "payment_app"
+        }
+      ],
       "counterpartyType": "payment_app",
       "date": "2026-09-07",
       "description": "Coffee",
@@ -299,18 +527,46 @@
       "location": {
         "address": "123 Example St",
         "city": "San Francisco",
+        "lat": 37.7749,
+        "lon": -122.4194,
         "postalCode": "94103",
-        "region": "CA"
+        "region": "CA",
+        "storeNumber": "0412"
       },
       "logoName": "Coffee",
       "logoUrl": "https://plaid-merchant-logos.plaid.com/coffee.png",
       "merchant": "Coffee",
+      "merchantEntityId": "entity-coffee",
       "occurredOn": "2026-09-07",
+      "originalDescription": "SQ *COFFEE 0412 SAN FRANCISCO CA",
       "paymentChannel": "in store",
       "pending": false,
       "postedOn": "2026-09-08",
+      "subcategory": "Coffee",
       "transactionCode": "digital_payment",
       "website": "https://coffee.example"
+    },
+    {
+      "account": "Health Savings",
+      "accountId": "plaid:hsa",
+      "amount": 3.21,
+      "category": "Dividend",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "dividend",
+        "mark": "dividend",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-09-01",
+      "description": "FUND DIVIDEND",
+      "dividendType": "qualified",
+      "id": "plaid-investment:fund-dividend",
+      "merchant": "Dividend · FUND",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
     }
   ],
   "updatedAt": "2026-09-09T13:00:00+00:00"

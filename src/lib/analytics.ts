@@ -1,44 +1,81 @@
-import { accountDisplayName, type AccountDisplayNames } from './account-name-preferences'
+import { accountDisplayName, type AccountDisplayNames } from './account-names'
+import { dayKey, dayMs, dayStart, localDateKey, validDate } from './dates'
+import { type ChartPeriod, chartPeriods } from './graph-preferences'
+import { cents } from './money'
 import type { FinanceSnapshot } from './schema'
-import { getPlatinumBenefitActivity, transactionDateKey } from './spending'
+import { transactionDateKey } from './spending'
 import { incomeActivityGroup, moneyKind, transactionMarkKind } from './transaction-kind'
 
+/** A report and how its page reads. */
+type ReportDefinition = {
+  id: string
+  label: string
+  /** Money, beside Spending, or Investments. */
+  group: 'money' | 'investments'
+  /** The chart's heading, when it says more than the label. */
+  heading?: string
+  /** Whether a smaller total is the better change, as with fees. */
+  lowerIsBetter?: boolean
+  /** Payers are listed by a short name, as the chart lists them. */
+  briefTitles?: boolean
+  /** The saved spending card's credits: its benefits and credit activity, never other accounts. */
+  benefits?: boolean
+  /** Money in and out drawn as a flow instead of bars. */
+  flow?: boolean
+  /** What the report's records are called in its figures. */
+  records?: { count: string; average: string; largest: string }
+}
+
+// Money's strip lists its reports in this order, after Spending and Recurring.
 export const analyticsCharts = [
-  { id: 'cash-flow', label: 'Cash flow' },
-  { id: 'income', label: 'Income' },
-  { id: 'amex-credits', label: 'Amex credits' },
-  { id: 'dividends', label: 'Dividends' },
-  { id: 'interest', label: 'Interest' },
-  { id: 'fees', label: 'Fees' },
-  { id: 'realized', label: 'Realized P/L' },
-] as const
+  { id: 'cash-flow', label: 'Cash flow', group: 'money', flow: true },
+  { id: 'income', label: 'Income', group: 'money', briefTitles: true },
+  { id: 'interest', label: 'Interest', group: 'money' },
+  { id: 'fees', label: 'Fees', group: 'money', lowerIsBetter: true },
+  { id: 'amex-credits', label: 'Benefits', group: 'money', benefits: true },
+  { id: 'dividends', label: 'Dividends', group: 'investments' },
+  {
+    id: 'realized',
+    label: 'Realized P/L',
+    group: 'investments',
+    heading: 'Estimated realized P/L',
+    records: { count: 'Imported sales', average: 'Average sale P/L', largest: 'Largest sale P/L' },
+  },
+] as const satisfies readonly ReportDefinition[]
 export type AnalyticsChart = (typeof analyticsCharts)[number]['id']
-export type AnalyticsRange = 'week' | 'month' | 'quarter' | 'year' | 'all'
-export const analyticsRanges: AnalyticsRange[] = ['week', 'month', 'quarter', 'year', 'all']
+export type AnalyticsGroup = (typeof analyticsCharts)[number]['group']
+export const analyticsDefinition = (chart: AnalyticsChart): ReportDefinition =>
+  analyticsCharts.find(({ id }) => id === chart)!
+export const analyticsGroup = (chart: AnalyticsChart): AnalyticsGroup =>
+  analyticsDefinition(chart).group
 export type AnalyticsSearch = {
   chart?: AnalyticsChart
-  range?: AnalyticsRange
+  range?: ChartPeriod
   account?: string
   from?: string
   to?: string
+  /** The lower card lists the report's transactions instead of its breakdown. */
+  view?: 'transactions'
+  /** One breakdown group the transactions are narrowed to. */
+  group?: string
 }
-export const analyticsChart = (value: unknown) => analyticsCharts.find(({ id }) => id === value)?.id
 
-export function validDate(value: unknown) {
-  if (typeof value !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(value)) return undefined
-  const time = Date.parse(`${value}T00:00:00Z`)
-  return Number.isFinite(time) && new Date(time).toISOString().slice(0, 10) === value
-    ? value
-    : undefined
-}
+/** A report's search without its lower card's view, for a link to another report. */
+export const withoutReportView = ({ view: _view, group: _group, ...search }: AnalyticsSearch) =>
+  search
+export const analyticsChart = (value: unknown) => analyticsCharts.find(({ id }) => id === value)?.id
 
 export function analyticsSearch(search: Record<string, unknown>): AnalyticsSearch {
   return {
     chart: analyticsChart(search.chart),
-    range: analyticsRanges.find((range) => range === search.range),
+    range: chartPeriods.find((range) => range === search.range),
     account: typeof search.account === 'string' && search.account ? search.account : undefined,
     from: validDate(search.from),
     to: validDate(search.to),
+    ...(search.view === 'transactions' ? { view: 'transactions' as const } : {}),
+    ...(search.view === 'transactions' && typeof search.group === 'string' && search.group
+      ? { group: search.group }
+      : {}),
   }
 }
 
@@ -96,14 +133,18 @@ export function analyticsEntries(
   const transactions = data.transactions.filter(
     (transaction) => !transaction.pending && eligible(transaction.accountId),
   )
-  if (chart === 'amex-credits')
-    return getPlatinumBenefitActivity(
-      transactions.filter(
-        ({ accountId: id }) => Boolean(spendingAccountId) && id === spendingAccountId,
-      ),
-      data.updatedAt,
+  if (chart === 'amex-credits') {
+    // Native benefit rules classify the saved card's activity; this only scopes it.
+    const benefits = data.insights?.benefits
+    return (
+      benefits && spendingAccountId && benefits.accountId === spendingAccountId
+        ? benefits.activity
+        : []
     )
-      .filter(({ kind }) => kind === 'credit' || kind === 'reversal')
+      .filter(
+        ({ kind, pending, accountId: id }) =>
+          !pending && eligible(id) && (kind === 'credit' || kind === 'reversal'),
+      )
       .map((transaction) => ({
         id: `spending:${transaction.id}`,
         date: transaction.date,
@@ -111,6 +152,7 @@ export function analyticsEntries(
         accountId: transaction.accountId,
         group: transaction.benefitName,
       }))
+  }
 
   return transactions.flatMap((transaction) => {
     const date = transactionDateKey(transaction.postedOn ?? transaction.date, data.updatedAt)
@@ -151,6 +193,7 @@ export function analyticsEntries(
         fee: 'Fees',
         tax: 'Taxes',
         transfer: 'Transfers',
+        owed: 'For others',
         other: 'Other',
       }[kind]
     }
@@ -160,16 +203,8 @@ export function analyticsEntries(
   })
 }
 
-const dayMs = 86_400_000
-const iso = (time: number) => new Date(time).toISOString().slice(0, 10)
-const at = (date: string) => Date.parse(`${date}T00:00:00Z`)
-export const localDateKey = (seconds: number) => {
-  const date = new Date(seconds * 1000)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
-
 export function analyticsWindow(data: FinanceSnapshot, search: AnalyticsSearch, today?: string) {
-  const saved = transactionDateKey(data.updatedAt, data.updatedAt)
+  const saved = localDateKey(Date.parse(data.updatedAt) / 1000)
   const current = today ?? saved
   const end = search.to && search.to < current ? search.to : current
   const dates = [
@@ -186,10 +221,10 @@ export function analyticsWindow(data: FinanceSnapshot, search: AnalyticsSearch, 
       ? (dates[0] ?? end)
       : range === 'year'
         ? `${end.slice(0, 4)}-01-01`
-        : iso(at(end) - (rangeDays - 1) * dayMs))
-  const days = Math.round((at(end) - at(start)) / dayMs) + 1
-  const previousStart = iso(at(start) - Math.max(1, days) * dayMs)
-  const previousEnd = iso(at(start) - dayMs)
+        : dayKey(dayStart(end) - (rangeDays - 1) * dayMs))
+  const days = Math.round((dayStart(end) - dayStart(start)) / dayMs) + 1
+  const previousStart = dayKey(dayStart(start) - Math.max(1, days) * dayMs)
+  const previousEnd = dayKey(dayStart(start) - dayMs)
   return {
     start,
     end,
@@ -209,11 +244,16 @@ export function analyticsReport(entries: AnalyticsEntry[], window: AnalyticsWind
   // An older imported record supports an imported-period comparison, not complete bank coverage.
   const comparable =
     window.range !== 'all' &&
-    window.end <= window.savedEnd &&
+    window.savedEnd >= window.start &&
     entries.some(({ date }) => date <= window.previousStart)
+  // Past a stale snapshot, compare only the days the snapshot covers against as many prior days.
+  const previousEnd =
+    window.end <= window.savedEnd
+      ? window.previousEnd
+      : dayKey(dayStart(window.previousStart) + dayStart(window.savedEnd) - dayStart(window.start))
   const previous = comparable
     ? analyticsTotal(
-        entries.filter(({ date }) => date >= window.previousStart && date <= window.previousEnd),
+        entries.filter(({ date }) => date >= window.previousStart && date <= previousEnd),
       )
     : null
   const percent =
@@ -229,7 +269,7 @@ export function analyticsReport(entries: AnalyticsEntry[], window: AnalyticsWind
   const breakdown = [...groups]
     .map(([label, items]) => ({ label, value: analyticsTotal(items), count: items.length }))
     .toSorted((a, b) => Math.abs(b.value ?? 0) - Math.abs(a.value ?? 0))
-  const days = (at(window.end) - at(window.start)) / dayMs + 1
+  const days = (dayStart(window.end) - dayStart(window.start)) / dayMs + 1
   const unit = days <= 45 ? 'day' : days > 3 * 366 ? 'year' : 'month'
   const buckets: Array<{
     from: string
@@ -244,13 +284,13 @@ export function analyticsReport(entries: AnalyticsEntry[], window: AnalyticsWind
     const date = new Date(`${cursor}T00:00:00Z`)
     const next =
       unit === 'day'
-        ? at(cursor) + dayMs
+        ? dayStart(cursor) + dayMs
         : Date.UTC(
             date.getUTCFullYear() + (unit === 'year' ? 1 : 0),
             unit === 'year' ? 0 : date.getUTCMonth() + 1,
             1,
           )
-    const to = iso(Math.min(next - dayMs, at(window.end)))
+    const to = dayKey(Math.min(next - dayMs, dayStart(window.end)))
     const items = selected.filter((entry) => entry.date >= cursor && entry.date <= to)
     buckets.push({
       from: cursor,
@@ -259,7 +299,7 @@ export function analyticsReport(entries: AnalyticsEntry[], window: AnalyticsWind
       count: items.length,
       entries: items.toSorted((a, b) => b.date.localeCompare(a.date)),
     })
-    cursor = iso(next)
+    cursor = dayKey(next)
   }
   const average = selected.length && total != null ? total / selected.length : null
   const largest =
@@ -298,11 +338,11 @@ export function analyticsBarStack(entries: AnalyticsEntry[]) {
         a.id.localeCompare(b.id),
     )
     .map((entry) => {
-      const cents = Math.round(entry.value! * 100)
-      const start = cents < 0 ? negative : positive
-      if (cents < 0) negative += cents
-      else positive += cents
-      return { ...entry, start: start / 100, end: (start + cents) / 100 }
+      const value = cents(entry.value!)
+      const start = value < 0 ? negative : positive
+      if (value < 0) negative += value
+      else positive += value
+      return { ...entry, start: start / 100, end: (start + value) / 100 }
     })
   return { positive: positive / 100, negative: negative / 100, segments }
 }

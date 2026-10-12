@@ -1,9 +1,8 @@
-import { useMemo, useSyncExternalStore } from 'react'
+import { useMemo } from 'react'
 
 import { navigation } from './navigation'
+import { preference } from './preference'
 
-const key = 'brief.pageOrder'
-const changed = 'brief:page-order'
 export type PagePath = (typeof navigation)[number]['to']
 
 export function parsePageOrder(raw: string | null): PagePath[] {
@@ -26,37 +25,26 @@ export function movePage(order: PagePath[], index: number, direction: -1 | 1) {
     [next[index], next[target]] = [next[target], next[index]]
   return next
 }
-export function savePageOrder(order: PagePath[]) {
-  window.localStorage.setItem(key, JSON.stringify(order))
-  window.dispatchEvent(new Event(changed))
-}
-const snapshot = () => (typeof window === 'undefined' ? null : window.localStorage.getItem(key))
-const subscribe = (notify: () => void) => {
-  const onStorage = (event: StorageEvent) => {
-    if (event.key === key || event.key === null) notify()
-  }
-  window.addEventListener(changed, notify)
-  window.addEventListener('storage', onStorage)
-  return () => {
-    window.removeEventListener(changed, notify)
-    window.removeEventListener('storage', onStorage)
-  }
-}
+const pageOrder = preference('brief.pageOrder', parsePageOrder, JSON.stringify)
+export const savePageOrder = pageOrder.save
 export function useOrderedNavigation() {
-  const raw = useSyncExternalStore(subscribe, snapshot, () => null)
+  const order = pageOrder.use()
   return useMemo(
     () =>
-      parsePageOrder(raw).map((path, index) => ({
+      order.map((path, index) => ({
         ...navigation.find(({ to }) => to === path)!,
-        shortcut: String(index + 1),
+        shortcut: `⌘${index + 1}`,
       })),
-    [raw],
+    [order],
   )
 }
+
+/** Whether the sidebar shows its reports. */
+export const reportsGroupOpen = preference('brief:sidebar-analytics-open', (raw) => raw === 'true')
 export function adjacentPage(order: PagePath[], pathname: string, direction: -1 | 1) {
   const current = order.findIndex((path) =>
     path === '/' ? pathname === '/' : pathname === path || pathname.startsWith(`${path}/`),
   )
-  const index = current < 0 ? order.indexOf('/settings') : current
+  const index = current < 0 ? (direction > 0 ? -1 : 0) : current
   return order[(index + direction + order.length) % order.length]
 }
