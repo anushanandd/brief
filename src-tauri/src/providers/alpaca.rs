@@ -1,3 +1,7 @@
+use super::market_stream::{
+    consume_market_stream, newest_market_time, previous_close_snapshots, publish_market_backfill,
+    stream_snapshot, update_stream_price, ChartFrames, StreamPacing,
+};
 use super::*;
 
 impl Providers {
@@ -90,39 +94,33 @@ impl Providers {
         let joined = symbols.join(",");
         let start = start.to_rfc3339();
         let end = end.to_rfc3339();
-        let mut page_token: Option<String> = None;
         let mut frames = BTreeMap::<String, BTreeMap<String, MarketSnapshot>>::new();
-        for _ in 0..20 {
-            let mut parameters = vec![
-                ("symbols", joined.as_str()),
-                ("timeframe", "1Min"),
-                ("start", start.as_str()),
-                ("end", end.as_str()),
-                ("limit", "10000"),
-                ("feed", market.history_feed.as_str()),
-                ("adjustment", "split"),
-                ("sort", "asc"),
-            ];
-            if let Some(token) = page_token.as_deref() {
-                parameters.push(("page_token", token));
-            }
-            let payload = self
-                .alpaca_request(&credentials, "/v2/stocks/bars", &parameters)
-                .await?;
-            for frame in parse_market_bar_frames(&payload, &market.snapshots) {
-                frames
-                    .entry(frame.as_of)
-                    .or_default()
-                    .extend(frame.snapshots);
-            }
-            page_token = payload
-                .get("next_page_token")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            if page_token.is_none() {
-                break;
-            }
-        }
+        let parameters = [
+            ("symbols", joined.as_str()),
+            ("timeframe", "1Min"),
+            ("start", start.as_str()),
+            ("end", end.as_str()),
+            ("limit", "10000"),
+            ("feed", market.history_feed.as_str()),
+            ("adjustment", "split"),
+            ("sort", "asc"),
+        ];
+        self.alpaca_pages(
+            &credentials,
+            "/v2/stocks/bars",
+            &parameters,
+            20,
+            |payload| {
+                for frame in parse_market_bar_frames(payload, &market.snapshots) {
+                    frames
+                        .entry(frame.as_of)
+                        .or_default()
+                        .extend(frame.snapshots);
+                }
+                Ok(())
+            },
+        )
+        .await?;
         Ok(frames
             .into_iter()
             .map(|(as_of, snapshots)| MarketFrame { as_of, snapshots })
@@ -145,16 +143,9 @@ impl Providers {
             return Ok(());
         }
 
-        let chart_seed = previous_close_snapshots(&market.snapshots, &[]);
-        let mut bar_frames = BTreeMap::new();
+        let mut chart = ChartFrames::new(previous_close_snapshots(&market.snapshots, &[]));
         if let Ok(backfill) = self.market_history(&symbols, &market).await {
-            publish_market_backfill(
-                &market,
-                backfill,
-                &chart_seed,
-                &mut bar_frames,
-                &mut publish,
-            )?;
+            publish_market_backfill(&market, backfill, &mut chart, &mut publish)?;
         }
         if market.poll_interval_ms.is_none() {
             return Ok(());
@@ -166,6 +157,10 @@ impl Providers {
             .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
             .map(|value| value.with_timezone(&Utc))
             .ok_or_else(|| "Alpaca did not return the next market transition".to_string())?;
+        let pacing = StreamPacing {
+            until: transition,
+            every: update_interval,
+        };
         let mut attempt = 0;
         loop {
             if *cancel.borrow() || Utc::now() >= transition {
@@ -194,11 +189,9 @@ impl Providers {
             let consumption = consume_market_stream(
                 &feed,
                 &symbols,
-                transition,
+                &pacing,
                 &mut market,
-                &chart_seed,
-                &mut bar_frames,
-                update_interval,
+                &mut chart,
                 &mut cancel,
                 &mut publish,
             );
@@ -257,13 +250,7 @@ impl Providers {
                 })?;
             }
             if let Ok(backfill) = self.market_history(&symbols, &market).await {
-                publish_market_backfill(
-                    &market,
-                    backfill,
-                    &chart_seed,
-                    &mut bar_frames,
-                    &mut publish,
-                )?;
+                publish_market_backfill(&market, backfill, &mut chart, &mut publish)?;
             }
             let backoff = StdDuration::from_secs(1 << attempt);
             tokio::select! {
@@ -314,45 +301,32 @@ impl Providers {
 
         let joined = missing.join(",");
         let mut references = BTreeMap::new();
-        let mut page_token: Option<String> = None;
-        for _ in 0..20 {
-            let mut parameters = vec![
-                ("symbols", joined.as_str()),
-                ("timeframe", "1Day"),
-                ("start", start.as_str()),
-                ("end", end.as_str()),
-                ("limit", "1000"),
-                ("feed", "iex"),
-                ("adjustment", "split"),
-                ("sort", "asc"),
-            ];
-            if let Some(token) = page_token.as_deref() {
-                parameters.push(("page_token", token));
-            }
-            let Ok(payload) = self
-                .alpaca_request(credentials, "/v2/stocks/bars", &parameters)
-                .await
-            else {
-                break;
-            };
-            for (symbol, reference) in parse_weekly_reference_closes(&payload, &reference_date) {
-                references
-                    .entry(symbol)
-                    .and_modify(|current: &mut WeeklyReference| {
-                        if reference.date > current.date {
-                            *current = reference.clone();
-                        }
-                    })
-                    .or_insert(reference);
-            }
-            page_token = payload
-                .get("next_page_token")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            if page_token.is_none() {
-                break;
-            }
-        }
+        let parameters = [
+            ("symbols", joined.as_str()),
+            ("timeframe", "1Day"),
+            ("start", start.as_str()),
+            ("end", end.as_str()),
+            ("limit", "1000"),
+            ("feed", "iex"),
+            ("adjustment", "split"),
+            ("sort", "asc"),
+        ];
+        // A failed page keeps the references read before it.
+        let _ = self
+            .alpaca_pages(credentials, "/v2/stocks/bars", &parameters, 20, |payload| {
+                for (symbol, reference) in parse_weekly_reference_closes(payload, &reference_date) {
+                    references
+                        .entry(symbol)
+                        .and_modify(|current: &mut WeeklyReference| {
+                            if reference.date > current.date {
+                                *current = reference.clone();
+                            }
+                        })
+                        .or_insert(reference);
+                }
+                Ok(())
+            })
+            .await;
 
         if let Ok(mut cache) = self.weekly_closes.lock() {
             cache.attempted_symbols.extend(missing);
@@ -376,9 +350,12 @@ impl Providers {
             .ok_or_else(|| "Alpaca returned no historical prices for VOO".to_string())
     }
 
+    /// Daily closes for Plaid stock-plan holdings and for shares a SnapTrade stock plan
+    /// allocated, which arrive without a price.
     pub async fn sync_security_history(
         &self,
         plaid: &PlaidData,
+        snaptrade: Option<&SnapTradeData>,
     ) -> Result<BTreeMap<String, Vec<Value>>, String> {
         let stock_plan_accounts = plaid
             .investment_accounts
@@ -412,6 +389,26 @@ impl Providers {
                     .is_some_and(|id| security_ids.contains(id))
             })
             .filter_map(|security| security.get("ticker_symbol").and_then(Value::as_str))
+            .chain(
+                snaptrade
+                    .into_iter()
+                    .flat_map(|data| data.activities.values().flatten())
+                    .filter(|activity| {
+                        activity
+                            .get("description")
+                            .and_then(Value::as_str)
+                            .is_some_and(|text| {
+                                text.to_ascii_lowercase().contains("allocate shares")
+                            })
+                    })
+                    .filter_map(|activity| {
+                        let symbol = activity.get("symbol")?;
+                        symbol
+                            .get("raw_symbol")
+                            .or_else(|| symbol.get("symbol"))
+                            .and_then(Value::as_str)
+                    }),
+            )
             .filter_map(|symbol| stock_symbol(symbol).ok())
             .collect::<BTreeSet<_>>()
             .into_iter()
@@ -427,6 +424,50 @@ impl Providers {
             })?;
         self.sync_security_history_from_alpaca(&credentials, &symbols, "split")
             .await
+    }
+
+    /// Splits and cash dividends for these symbols since `since`, through dividends announced
+    /// for the coming months.
+    pub async fn sync_corporate_actions(
+        &self,
+        symbols: &[String],
+        since: chrono::NaiveDate,
+    ) -> Result<Vec<CorporateAction>, String> {
+        if symbols.is_empty() {
+            return Ok(Vec::new());
+        }
+        let credentials = self
+            .read_secret::<AlpacaCredentials>(ALPACA_CREDENTIALS_KEY)?
+            .ok_or_else(|| {
+                "Alpaca credentials are required for splits and dividends".to_string()
+            })?;
+        let start = since.format("%Y-%m-%d").to_string();
+        let end = (Utc::now() + Duration::days(CORPORATE_ACTIONS_AHEAD_DAYS))
+            .format("%Y-%m-%d")
+            .to_string();
+        let mut actions = Vec::new();
+        for chunk in symbols.chunks(CORPORATE_ACTION_SYMBOLS_PER_REQUEST) {
+            let joined = chunk.join(",");
+            let parameters = [
+                ("symbols", joined.as_str()),
+                ("types", "forward_split,reverse_split,cash_dividend"),
+                ("start", start.as_str()),
+                ("end", end.as_str()),
+                ("limit", "1000"),
+            ];
+            self.alpaca_pages(
+                &credentials,
+                "/v1/corporate-actions",
+                &parameters,
+                CORPORATE_ACTION_PAGES,
+                |payload| {
+                    actions.extend(corporate_actions::parse(payload));
+                    Ok(())
+                },
+            )
+            .await?;
+        }
+        Ok(corporate_actions::normalized(actions))
     }
 
     pub(super) async fn sync_security_history_from_alpaca(
@@ -519,6 +560,38 @@ impl Providers {
         Err(errors.join(" · "))
     }
 
+    /// Reads an Alpaca endpoint page by page, at most `max_pages`, handing each page to `page`.
+    /// `Ok(false)` when pages remained, or a token repeated, after the last one read.
+    pub(super) async fn alpaca_pages(
+        &self,
+        credentials: &AlpacaCredentials,
+        path: &str,
+        parameters: &[(&str, &str)],
+        max_pages: usize,
+        mut page: impl FnMut(&Value) -> Result<(), String>,
+    ) -> Result<bool, String> {
+        let mut token: Option<String> = None;
+        let mut seen = BTreeSet::new();
+        for _ in 0..max_pages {
+            let mut query = parameters.to_vec();
+            if let Some(token) = token.as_deref() {
+                query.push(("page_token", token));
+            }
+            let payload = self.alpaca_request(credentials, path, &query).await?;
+            page(&payload)?;
+            match payload
+                .get("next_page_token")
+                .and_then(Value::as_str)
+                .filter(|next| !next.is_empty())
+            {
+                None => return Ok(true),
+                Some(next) if !seen.insert(next.to_owned()) => return Ok(false),
+                Some(next) => token = Some(next.to_owned()),
+            }
+        }
+        Ok(false)
+    }
+
     pub(super) async fn alpaca_request(
         &self,
         credentials: &AlpacaCredentials,
@@ -532,27 +605,252 @@ impl Providers {
             .header("APCA-API-SECRET-KEY", &credentials.secret_key)
             .query(parameters);
         let retry = request.try_clone();
-        match request.send().await {
-            Ok(response) if retry.is_some() && retryable_status(response.status()) => {
-                retry_pause(&response).await;
-                let response = retry
-                    .ok_or("Alpaca request could not be retried")?
-                    .send()
-                    .await
-                    .map_err(|_| "Could not reach Alpaca".to_string())?;
-                provider_response("Alpaca", path, response).await
-            }
-            Ok(response) => provider_response("Alpaca", path, response).await,
-            Err(_) if retry.is_some() => {
-                tokio::time::sleep(StdDuration::from_millis(250)).await;
-                let response = retry
-                    .ok_or("Alpaca request could not be retried")?
-                    .send()
-                    .await
-                    .map_err(|_| "Could not reach Alpaca".to_string())?;
-                provider_response("Alpaca", path, response).await
-            }
-            Err(_) => Err("Could not reach Alpaca".into()),
-        }
+        let response = send_with_retry(request, retry)
+            .await
+            .map_err(|(_, attempts)| {
+                http::observe(&http::ProviderError::network("Alpaca", path, attempts));
+                "Could not reach Alpaca".to_string()
+            })?;
+        provider_response("Alpaca", path, response).await
     }
 }
+
+pub fn normalize_stock_symbols(symbols: Vec<String>) -> Vec<String> {
+    symbols
+        .into_iter()
+        .filter_map(|symbol| stock_symbol(&symbol).ok())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
+
+/// Dividends announced this far ahead are fetched with the history.
+const CORPORATE_ACTIONS_AHEAD_DAYS: i64 = 120;
+const CORPORATE_ACTION_SYMBOLS_PER_REQUEST: usize = 50;
+const CORPORATE_ACTION_PAGES: usize = 20;
+
+pub(crate) fn stock_symbol(value: &str) -> Result<String, String> {
+    let symbol = value.trim().to_ascii_uppercase();
+    if symbol.is_empty()
+        || symbol.len() > 24
+        || !symbol
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '.' | '-'))
+    {
+        return Err("Invalid stock symbol".into());
+    }
+    Ok(symbol)
+}
+
+pub(super) fn parse_alpaca_market_schedule(
+    payload: &Value,
+    now: DateTime<Utc>,
+) -> Result<AlpacaMarketSchedule, String> {
+    let clocks = payload
+        .get("clocks")
+        .and_then(Value::as_array)
+        .ok_or("Alpaca market clock did not include any markets")?;
+    let market = |clock: &Value, names: &[&str]| {
+        clock
+            .pointer("/market/acronym")
+            .or_else(|| clock.pointer("/market/mic"))
+            .and_then(Value::as_str)
+            .is_some_and(|market| names.contains(&market))
+    };
+    let nasdaq = clocks
+        .iter()
+        .find(|clock| market(clock, &["NASDAQ", "XNAS"]));
+    let boats = clocks
+        .iter()
+        .find(|clock| market(clock, &["BOATS", "OCEA"]));
+    let phase = |clock: Option<&Value>| {
+        clock
+            .and_then(|clock| clock.get("phase"))
+            .and_then(Value::as_str)
+            .unwrap_or("closed")
+            .to_owned()
+    };
+
+    let (session, active_clock) = match phase(nasdaq).as_str() {
+        "pre" => (AlpacaMarketSession::PreMarket, nasdaq),
+        "core" | "lunch" => (AlpacaMarketSession::Core, nasdaq),
+        "post" => (AlpacaMarketSession::AfterHours, nasdaq),
+        _ if phase(boats) != "closed" => (AlpacaMarketSession::Overnight, boats),
+        _ => (AlpacaMarketSession::Closed, None),
+    };
+    let parse_transition = |clock: &Value| {
+        clock
+            .get("phase_until")
+            .and_then(Value::as_str)
+            .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+            .map(|value| value.with_timezone(&Utc))
+            .filter(|value| *value > now)
+    };
+    let next_transition_at = active_clock
+        .and_then(parse_transition)
+        .or_else(|| clocks.iter().filter_map(parse_transition).min())
+        .ok_or("Alpaca market clock did not include its next transition")?;
+
+    Ok(AlpacaMarketSchedule {
+        session,
+        next_transition_at,
+    })
+}
+
+pub(super) fn quote_midpoint(value: &Value) -> Option<f64> {
+    let bid = value.get("bp").and_then(Value::as_f64)?;
+    let ask = value.get("ap").and_then(Value::as_f64)?;
+    (bid.is_finite() && ask.is_finite() && bid > 0.0 && ask > 0.0).then_some((bid + ask) / 2.0)
+}
+
+pub(super) fn weekly_reference_window(now: DateTime<Utc>) -> (String, String, String) {
+    let target = now.date_naive() - Duration::days(7);
+    (
+        target.to_string(),
+        (target - Duration::days(7)).to_string(),
+        (target + Duration::days(1)).to_string(),
+    )
+}
+
+pub(super) fn parse_weekly_reference_closes(
+    payload: &Value,
+    target_date: &str,
+) -> BTreeMap<String, WeeklyReference> {
+    payload
+        .get("bars")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+        .filter_map(|(symbol, bars)| {
+            bars.as_array()?
+                .iter()
+                .filter_map(|bar| {
+                    let timestamp = bar.get("t")?.as_str()?;
+                    let date = DateTime::parse_from_rfc3339(timestamp)
+                        .ok()?
+                        .date_naive()
+                        .to_string();
+                    let price = bar.get("c")?.as_f64()?;
+                    (date.as_str() <= target_date && price.is_finite() && price > 0.0)
+                        .then_some(WeeklyReference { price, date })
+                })
+                .max_by(|left, right| left.date.cmp(&right.date))
+                .map(|reference| (symbol.clone(), reference))
+        })
+        .collect()
+}
+
+pub(super) fn parse_market_snapshots(
+    payload: &Value,
+    prefer_quote: bool,
+) -> BTreeMap<String, MarketSnapshot> {
+    let snapshots = payload
+        .get("snapshots")
+        .unwrap_or(payload)
+        .as_object()
+        .into_iter()
+        .flatten();
+    snapshots
+        .filter_map(|(symbol, snapshot)| {
+            let quote_price = snapshot.pointer("/latestQuote").and_then(quote_midpoint);
+            let trade_price = snapshot.pointer("/latestTrade/p").and_then(Value::as_f64);
+            let price = if prefer_quote {
+                quote_price.or(trade_price)
+            } else {
+                trade_price.or(quote_price)
+            }
+            .or_else(|| snapshot.pointer("/minuteBar/c").and_then(Value::as_f64))
+            .or_else(|| snapshot.pointer("/dailyBar/c").and_then(Value::as_f64))?;
+            let previous_close = snapshot
+                .pointer("/prevDailyBar/c")
+                .and_then(Value::as_f64)
+                .unwrap_or(price);
+            let previous_close_as_of = snapshot
+                .pointer("/prevDailyBar/t")
+                .and_then(Value::as_str)
+                .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
+                .map(|value| (value.with_timezone(&Utc) + Duration::hours(16)).to_rfc3339());
+            let as_of = (if prefer_quote {
+                snapshot.pointer("/latestQuote/t")
+            } else {
+                snapshot.pointer("/latestTrade/t")
+            })
+            .or_else(|| snapshot.pointer("/latestTrade/t"))
+            .or_else(|| snapshot.pointer("/latestQuote/t"))
+            .or_else(|| snapshot.pointer("/minuteBar/t"))
+            .or_else(|| snapshot.pointer("/dailyBar/t"))
+            .and_then(Value::as_str)
+            .unwrap_or_default()
+            .to_string();
+            Some((
+                symbol.clone(),
+                MarketSnapshot {
+                    symbol: symbol.clone(),
+                    price,
+                    previous_close,
+                    previous_close_as_of,
+                    daily_change_pct: if previous_close == 0.0 {
+                        0.0
+                    } else {
+                        (price - previous_close) / previous_close * 100.0
+                    },
+                    weekly_change_pct: None,
+                    weekly_reference_price: None,
+                    weekly_reference_date: None,
+                    as_of,
+                },
+            ))
+        })
+        .collect()
+}
+
+pub(super) fn parse_market_bar_frames(
+    payload: &Value,
+    seed: &BTreeMap<String, MarketSnapshot>,
+) -> Vec<MarketFrame> {
+    let mut frames = BTreeMap::<String, BTreeMap<String, MarketSnapshot>>::new();
+    for (symbol, bars) in payload
+        .get("bars")
+        .and_then(Value::as_object)
+        .into_iter()
+        .flatten()
+    {
+        for bar in bars.as_array().into_iter().flatten() {
+            let Some(as_of) = bar.get("t").and_then(Value::as_str) else {
+                continue;
+            };
+            let Some(price) = bar.get("c").and_then(Value::as_f64) else {
+                continue;
+            };
+            let Some(snapshot) = stream_snapshot(seed.get(symbol), symbol, price, as_of) else {
+                continue;
+            };
+            frames
+                .entry(as_of.to_string())
+                .or_default()
+                .insert(symbol.clone(), snapshot);
+        }
+    }
+    frames
+        .into_iter()
+        .map(|(as_of, snapshots)| MarketFrame { as_of, snapshots })
+        .collect()
+}
+
+pub(super) fn parse_alpaca_history(payload: &Value) -> Vec<Value> {
+    payload
+        .get("bars")
+        .and_then(Value::as_array)
+        .into_iter()
+        .flatten()
+        .filter_map(|bar| {
+            let date = bar.get("t")?.as_str()?.get(..10)?;
+            let value = bar.get("c")?;
+            let numeric = value.as_f64()?;
+            (numeric.is_finite() && numeric > 0.0).then(|| json!({ "date": date, "value": value }))
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod tests;

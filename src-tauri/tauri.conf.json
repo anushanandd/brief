@@ -20,7 +20,7 @@
         "resizable": true,
         "maximized": true,
         "visible": false,
-        "backgroundColor": "#08090a",
+        "backgroundColor": "#000000",
         "theme": "Dark",
         "decorations": true,
         "titleBarStyle": "Overlay",

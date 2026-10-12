@@ -30,7 +30,7 @@ pub async fn response_bytes(
     Ok(body)
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProviderDiagnostic {
     pub provider: String,
@@ -48,6 +48,35 @@ pub struct ProviderDiagnostic {
     pub retryable: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub retry_at: Option<String>,
+}
+
+tokio::task_local! {
+    /// Failures seen by one traced operation (a summary run), so its log can say which
+    /// provider failed without every request returning its diagnostic.
+    static OBSERVED: std::cell::RefCell<Vec<ProviderDiagnostic>>;
+}
+
+/// Runs `work`, returning its output with the provider failures it saw.
+pub async fn observed<T>(
+    work: impl std::future::Future<Output = T>,
+) -> (T, Vec<ProviderDiagnostic>) {
+    OBSERVED
+        .scope(std::cell::RefCell::new(Vec::new()), async {
+            let output = work.await;
+            let seen = OBSERVED.try_with(|seen| seen.take()).unwrap_or_default();
+            (output, seen)
+        })
+        .await
+}
+
+/// Notes a failure for the traced operation running on this task, if any; bounded.
+pub fn observe(error: &ProviderError) {
+    let _ = OBSERVED.try_with(|seen| {
+        let mut seen = seen.borrow_mut();
+        if seen.len() < 24 {
+            seen.push(error.diagnostic());
+        }
+    });
 }
 
 #[derive(Clone, Debug)]
@@ -191,10 +220,10 @@ impl fmt::Display for ProviderError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         let message = match self.error_code.as_deref() {
             Some("INSTITUTION_RATE_LIMIT") => {
-                "Plaid temporarily limited this institution; saved data remains available and a later refresh can retry"
+                "Plaid rate-limited this institution; try again later"
             }
             Some("ITEM_LOGIN_REQUIRED" | "ACCESS_NOT_GRANTED") => {
-                "The Plaid connection needs attention in Settings"
+                "Plaid connection needs repair in Settings"
             }
             Some("TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION") => {
                 "Plaid transactions changed during pagination"
@@ -237,7 +266,7 @@ fn retry_after(response: &reqwest::Response) -> Option<DateTime<Utc>> {
         .map(|value| value.with_timezone(&Utc))
 }
 
-fn safe_metadata(value: Option<&Value>) -> Option<String> {
+pub(super) fn safe_metadata(value: Option<&Value>) -> Option<String> {
     value
         .and_then(Value::as_str)
         .filter(|value| {

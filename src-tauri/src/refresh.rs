@@ -1,4 +1,15 @@
-use super::*;
+use std::time::{Duration as StdDuration, Instant};
+
+use chrono::{DateTime, Duration, Utc};
+use serde_json::Value;
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::{
+    database::SyncDiagnostics,
+    financial_engine,
+    providers::{self, PlaidData, PlaidRefreshProgress, ProviderSync},
+    AppState,
+};
 
 const HISTORY_CACHE_HOURS: i64 = 12;
 
@@ -59,8 +70,21 @@ fn report_refresh_task(
     );
 }
 
-fn timed_status(status: &str, started: Instant) -> String {
-    format!("{status} · {:.1}s", started.elapsed().as_secs_f64())
+/// Reports how a provider's refresh ended: with its notices, or `None` when it failed.
+fn report_provider_outcome(
+    app: &AppHandle,
+    id: &str,
+    label: &str,
+    started: Instant,
+    notices: Option<&[String]>,
+) {
+    let (status, task_state) = match notices {
+        Some([]) => ("Complete", "complete"),
+        Some(_) => ("Completed with notices", "warning"),
+        None => ("Could not update", "warning"),
+    };
+    let status = format!("{status} · {:.1}s", started.elapsed().as_secs_f64());
+    report_refresh_task(app, id, label, status, task_state);
 }
 
 pub(super) fn update_or_warn<T>(
@@ -81,10 +105,36 @@ pub(super) fn update_or_warn<T>(
     }
 }
 
+const TIMED_OUT: &str = "Refresh timed out; saved data unchanged";
+
+/// A refresh that failed before its caches were staged, with what to record about it.
+struct PrepareFailure {
+    message: String,
+    diagnostics: SyncDiagnostics,
+}
+
+impl From<String> for PrepareFailure {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            diagnostics: SyncDiagnostics::new("provider", Vec::new(), 0),
+        }
+    }
+}
+
+/// Records a staged refresh as failed and returns its error.
+fn fail_staged(state: &AppState, sync_id: &str, code: &str, error: impl Into<String>) -> String {
+    if let Ok(mut storage) = state.storage() {
+        storage.fail_pending(sync_id, code);
+    }
+    error.into()
+}
+
 #[tauri::command]
 pub(crate) async fn refresh_finance_snapshot(
     app: AppHandle,
     state: State<'_, AppState>,
+    live_balances: Option<bool>,
 ) -> Result<Value, String> {
     let _refresh = state
         .refresh
@@ -93,46 +143,38 @@ pub(crate) async fn refresh_finance_snapshot(
     let run_id = uuid::Uuid::new_v4().to_string();
     let started_at = Utc::now().to_rfc3339();
     let deadline = tokio::time::Instant::now() + StdDuration::from_secs(120);
-    report_refresh(
-        &app,
-        "Preparing refresh…",
-        "Unlocking credentials and reading the last committed snapshot.",
-    );
-    let sync = match tokio::time::timeout_at(
+    report_refresh(&app, "Preparing refresh…", "Preparing refresh…");
+    let prepared = tokio::time::timeout_at(
         deadline,
-        prepare_refresh(&app, &state, &run_id, &started_at),
+        prepare_refresh(
+            &app,
+            &state,
+            &started_at,
+            &run_id,
+            live_balances.unwrap_or(false),
+        ),
     )
-    .await
-    {
+    .await;
+    let sync = match prepared {
         Ok(Ok(sync)) => sync,
-        result => {
-            let (error_code, phase) = if result.is_err() {
-                ("refresh_timeout", "timeout")
-            } else {
-                ("provider_refresh_failed", "provider")
+        failed => {
+            let (code, failure) = match failed {
+                Ok(Err(failure)) => ("provider_refresh_failed", failure),
+                _ => (
+                    "refresh_timeout",
+                    PrepareFailure {
+                        message: TIMED_OUT.into(),
+                        diagnostics: SyncDiagnostics::new("timeout", Vec::new(), 0),
+                    },
+                ),
             };
-            if let Ok(mut storage) = state.storage.lock() {
-                storage.record_failed_sync(
-                    &run_id,
-                    &started_at,
-                    error_code,
-                    SyncDiagnostics::new(phase, Vec::new(), 0),
-                );
+            if let Ok(mut storage) = state.storage() {
+                storage.record_failed_sync(&run_id, &started_at, code, failure.diagnostics);
             }
-            return match result {
-                Err(_) => Err("Account refresh timed out; your saved data is unchanged".into()),
-                Ok(Err(error)) => Err(error),
-                Ok(Ok(_)) => unreachable!(),
-            };
+            return Err(failure.message);
         }
     };
-    let account_links = state
-        .storage
-        .lock()
-        .map_err(|_| "The local data store is unavailable")?
-        .data
-        .account_links
-        .clone();
+    let account_links = state.storage()?.data.account_links.clone();
     let sync_id = sync.sync_id.clone();
     let projection_now = Utc::now();
     let calendar_date = projection_now.with_timezone(&chrono::Local).date_naive();
@@ -142,47 +184,29 @@ pub(crate) async fn refresh_finance_snapshot(
     let snapshot = match tokio::time::timeout_at(deadline, projection).await {
         Ok(Ok(Ok(snapshot))) => snapshot,
         Ok(Ok(Err(error))) => {
-            if let Ok(mut storage) = state.storage.lock() {
-                storage.fail_pending(&sync_id, "projection_failed");
-            }
-            return Err(error);
+            return Err(fail_staged(&state, &sync_id, "projection_failed", error))
         }
         Ok(Err(_)) => {
-            if let Ok(mut storage) = state.storage.lock() {
-                storage.fail_pending(&sync_id, "projection_failed");
-            }
-            return Err("Local refresh worker failed".into());
+            return Err(fail_staged(
+                &state,
+                &sync_id,
+                "projection_failed",
+                "Local refresh worker failed",
+            ))
         }
-        Err(_) => {
-            if let Ok(mut storage) = state.storage.lock() {
-                storage.fail_pending(&sync_id, "refresh_timeout");
-            }
-            return Err("Account refresh timed out; your saved data is unchanged".into());
-        }
+        Err(_) => return Err(fail_staged(&state, &sync_id, "refresh_timeout", TIMED_OUT)),
     };
-    if tokio::time::Instant::now() >= deadline {
-        if let Ok(mut storage) = state.storage.lock() {
-            storage.fail_pending(&sync_id, "refresh_timeout");
-        }
-        return Err("Account refresh timed out; your saved data is unchanged".into());
-    }
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<AppState>();
-        let mut storage = state
-            .storage
-            .lock()
-            .map_err(|_| "The local data store is unavailable")?;
+        let mut storage = state.storage()?;
         if tokio::time::Instant::now() >= deadline {
             storage.fail_pending(&sync_id, "refresh_timeout");
-            return Err("Account refresh timed out; your saved data is unchanged".into());
+            return Err(TIMED_OUT.into());
         }
-        match storage.commit(&sync_id, snapshot) {
-            Ok(snapshot) => Ok(snapshot),
-            Err(error) => {
-                storage.fail_pending(&sync_id, error.code());
-                Err(error.to_string())
-            }
-        }
+        storage.commit(&sync_id, snapshot).map_err(|error| {
+            storage.fail_pending(&sync_id, error.code());
+            error.to_string()
+        })
     })
     .await
     .map_err(|_| "Local refresh worker failed".to_string())?
@@ -195,93 +219,55 @@ pub(crate) fn save_account_link(
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     state
-        .storage
-        .lock()
-        .map_err(|_| "The local data store is unavailable")?
+        .storage()?
         .save_account_link(plaid_account_id, snaptrade_account_id)
 }
 
 async fn prepare_refresh(
     app: &AppHandle,
     state: &AppState,
-    run_id: &str,
     started_at: &str,
-) -> Result<ProviderSync, String> {
-    state
-        .storage
-        .lock()
-        .map_err(|_| "The local data store is unavailable")?
-        .ensure_writable()?;
+    run_id: &str,
+    live_balances: bool,
+) -> Result<ProviderSync, PrepareFailure> {
+    state.storage()?.ensure_writable()?;
     state.providers.unlock_credentials()?;
     let integrations = state.providers.integration_status()?;
 
-    let (
-        plaid_cache,
-        mut provider_data,
-        previous_benchmark,
-        had_plaid,
-        had_snaptrade,
-        revision,
-        previous_snapshot,
-        market_cache_compatible,
-    ) = {
-        let storage = state
-            .storage
-            .lock()
-            .map_err(|_| "The local data store is unavailable".to_string())?;
-        let snapshot = &storage.data.snapshot;
-        let benchmark_compatible = snapshot
-            .pointer("/provenance/benchmark/provider")
-            .and_then(Value::as_str)
-            == Some("Alpaca")
-            && snapshot
-                .pointer("/provenance/benchmark/adjustment")
-                .and_then(Value::as_str)
-                == Some("all");
-        let security_history_compatible = storage
-            .data
-            .provider_data
-            .security_history_adjustment
-            .as_deref()
-            == Some("split");
+    let (plaid_cache, mut provider_data, revision, previous, plaid_options) = {
+        let storage = state.storage()?;
+        let settings = &storage.data.settings;
         (
             storage.data.plaid_cache.clone(),
             storage.data.provider_data.clone(),
-            if benchmark_compatible {
-                snapshot
-                    .get("benchmarkHistory")
-                    .cloned()
-                    .unwrap_or_else(|| Value::Array(Vec::new()))
-            } else {
-                Value::Array(Vec::new())
-            },
-            snapshot
-                .get("accounts")
-                .and_then(Value::as_array)
-                .is_some_and(|accounts| {
-                    accounts.iter().any(|account| {
-                        account
-                            .get("id")
-                            .and_then(Value::as_str)
-                            .is_some_and(|id| id.starts_with("plaid:"))
-                    })
-                }),
-            snapshot
-                .get("accounts")
-                .and_then(Value::as_array)
-                .is_some_and(|accounts| {
-                    accounts.iter().any(|account| {
-                        account
-                            .get("id")
-                            .and_then(Value::as_str)
-                            .is_some_and(|id| id.starts_with("snaptrade:"))
-                    })
-                }),
             storage.data.revision,
-            snapshot.clone(),
-            benchmark_compatible && security_history_compatible,
+            storage.data.snapshot.clone(),
+            providers::PlaidSyncOptions {
+                live_balances,
+                liabilities: settings.plaid_liabilities,
+                investment_transactions: settings.plaid_investment_transactions,
+                recurring: settings.plaid_recurring,
+            },
         )
     };
+    let had_accounts = |prefix: &str| {
+        previous
+            .accounts
+            .iter()
+            .any(|account| account.id.starts_with(prefix))
+    };
+    let (had_plaid, had_snaptrade) = (had_accounts("plaid:"), had_accounts("snaptrade:"));
+    let benchmark_compatible = previous.provenance.as_ref().is_some_and(|provenance| {
+        provenance.benchmark.provider == "Alpaca" && provenance.benchmark.adjustment == "all"
+    });
+    let json = |value: Result<Value, serde_json::Error>| value.map_err(|error| error.to_string());
+    let previous_benchmark = if benchmark_compatible {
+        json(serde_json::to_value(&previous.benchmark_history))?
+    } else {
+        Value::Array(Vec::new())
+    };
+    let market_cache_compatible = benchmark_compatible
+        && provider_data.security_history_adjustment.as_deref() == Some("split");
 
     let now = Utc::now();
     let refresh_snaptrade_history =
@@ -320,37 +306,13 @@ async fn prepare_refresh(
             .sync_plaid(
                 &mut next_plaid_cache,
                 provider_data.plaid.as_ref(),
+                plaid_options,
                 &plaid_progress,
             )
             .await;
         if integrations.plaid {
-            match &result {
-                Ok(data) if data.warnings.is_empty() => {
-                    report_refresh_task(
-                        app,
-                        "plaid",
-                        "Plaid",
-                        timed_status("Complete", started),
-                        "complete",
-                    );
-                }
-                Ok(_) => report_refresh_task(
-                    app,
-                    "plaid",
-                    "Plaid",
-                    timed_status("Completed with notices", started),
-                    "warning",
-                ),
-                Err(_) => {
-                    report_refresh_task(
-                        app,
-                        "plaid",
-                        "Plaid",
-                        timed_status("Could not update", started),
-                        "warning",
-                    );
-                }
-            }
+            let notices = result.as_ref().ok().map(|data| data.warnings.as_slice());
+            report_provider_outcome(app, "plaid", "Plaid", started, notices);
         }
         result
     };
@@ -365,45 +327,16 @@ async fn prepare_refresh(
             )
             .await;
         if integrations.snaptrade {
-            match &result {
-                Ok(data) if data.warnings.is_empty() => report_refresh_task(
-                    app,
-                    "snaptrade",
-                    "SnapTrade",
-                    timed_status("Complete", started),
-                    "complete",
-                ),
-                Ok(_) => report_refresh_task(
-                    app,
-                    "snaptrade",
-                    "SnapTrade",
-                    timed_status("Completed with notices", started),
-                    "warning",
-                ),
-                Err(_) => report_refresh_task(
-                    app,
-                    "snaptrade",
-                    "SnapTrade",
-                    timed_status("Could not update", started),
-                    "warning",
-                ),
-            }
+            let notices = result.as_ref().ok().map(|data| data.warnings.as_slice());
+            report_provider_outcome(app, "snaptrade", "SnapTrade", started, notices);
         }
         result
     };
-    let benchmark_sync = async {
-        if refresh_market_history {
-            Some(
-                tokio::time::timeout(
-                    std::time::Duration::from_secs(12),
-                    state.providers.sync_benchmark(),
-                )
-                .await,
-            )
-        } else {
-            None
-        }
-    };
+    let benchmark_sync = bounded_fetch(
+        refresh_market_history,
+        "Benchmark history",
+        state.providers.sync_benchmark(),
+    );
     let (plaid, snaptrade, benchmark) = tokio::join!(plaid_sync, snaptrade_sync, benchmark_sync);
     let mut provider_diagnostics = plaid
         .as_ref()
@@ -423,8 +356,160 @@ async fn prepare_refresh(
             retry_at: None,
         });
     }
-    let plaid = plaid.map_err(|error| error.to_string());
     let mut warnings = Vec::new();
+    let ProviderResults {
+        plaid_updated,
+        plaid_complete,
+        snaptrade_updated,
+        refreshed_account_ids,
+    } = record_provider_results(
+        &mut provider_data,
+        plaid.map_err(|error| error.to_string()),
+        snaptrade,
+        HistoryDue {
+            snaptrade_history: refresh_snaptrade_history,
+            snaptrade_activity: backfill_snaptrade_activity,
+        },
+        now,
+        &mut warnings,
+    );
+    if !plaid_updated {
+        next_plaid_cache = plaid_cache;
+    }
+    if (!plaid_updated && provider_data.plaid.is_none() && had_plaid)
+        || (!snaptrade_updated && provider_data.snaptrade.is_none() && had_snaptrade)
+    {
+        return Err(PrepareFailure {
+            message: "Could not refresh safely without a provider cache; saved data is unchanged"
+                .into(),
+            diagnostics: SyncDiagnostics::new("provider", provider_diagnostics, warnings.len()),
+        });
+    }
+    let fresh_benchmark = fetched(benchmark, &mut warnings)
+        .filter(|history| history.as_array().is_some_and(|points| !points.is_empty()));
+    let benchmark_refreshed = fresh_benchmark.is_some();
+    let benchmark = fresh_benchmark.unwrap_or(previous_benchmark);
+
+    // Security history and corporate actions both follow the holdings just fetched, and
+    // neither waits on the other.
+    let empty_plaid = PlaidData::default();
+    let security_sync = bounded_fetch(
+        refresh_market_history,
+        "Market history",
+        state.providers.sync_security_history(
+            provider_data.plaid.as_ref().unwrap_or(&empty_plaid),
+            provider_data.snaptrade.as_ref(),
+        ),
+    );
+    // Splits correct saved trades and dividends price upcoming income. A failure keeps the
+    // saved records, which stay correct for everything before them.
+    let corporate_actions_due = integrations.alpaca
+        && !history_cache_is_fresh(provider_data.corporate_actions_refreshed_at.as_deref(), now);
+    let symbols = corporate_action_symbols(&provider_data);
+    let since = (now - chrono::Duration::days(CORPORATE_ACTION_YEARS * 365)).date_naive();
+    let corporate_sync = bounded_fetch(
+        corporate_actions_due,
+        "Splits and dividends",
+        state.providers.sync_corporate_actions(&symbols, since),
+    );
+    let (security_history, corporate_actions) = tokio::join!(security_sync, corporate_sync);
+    let security_history = fetched(security_history, &mut warnings);
+    let security_history_refreshed = security_history.is_some();
+    if let Some(history) = security_history {
+        provider_data.security_history = history;
+        provider_data.security_history_adjustment = Some("split".into());
+    }
+    if benchmark_refreshed && security_history_refreshed {
+        provider_data.market_history_refreshed_at = Some(now.to_rfc3339());
+    }
+    if let Some(actions) = fetched(corporate_actions, &mut warnings) {
+        provider_data.corporate_actions = actions;
+        provider_data.corporate_actions_refreshed_at = Some(now.to_rfc3339());
+    }
+
+    let mut storage = state.storage()?;
+    let sync_id = storage.stage_refresh(
+        run_id,
+        started_at,
+        revision,
+        crate::storage::Staged {
+            plaid_cache: next_plaid_cache,
+            provider_data: provider_data.clone(),
+            warnings: warnings.clone(),
+            diagnostics: SyncDiagnostics::new("provider", provider_diagnostics, warnings.len()),
+        },
+    )?;
+
+    // Statement imports wait for the refresh lock, so these can't change before the commit.
+    let statements = storage.data.statements.clone();
+    drop(storage);
+    Ok(ProviderSync {
+        sync_id,
+        balances_fresh: (!integrations.plaid || plaid_complete)
+            && (!integrations.snaptrade || snaptrade_updated),
+        refreshed_account_ids,
+        previous_snapshot: previous,
+        plaid: provider_data.plaid.unwrap_or_default(),
+        snaptrade: provider_data.snaptrade.unwrap_or_default(),
+        benchmark_history: benchmark,
+        security_history: provider_data.security_history,
+        statements,
+        corporate_actions: provider_data.corporate_actions,
+    })
+}
+
+/// How long one market source may hold a refresh.
+const MARKET_FETCH_TIMEOUT: StdDuration = StdDuration::from_secs(12);
+
+/// Market data fetched only when `due`, and bounded so a slow source can't hold the refresh. A
+/// failure or timeout becomes a warning naming `label`.
+async fn bounded_fetch<T>(
+    due: bool,
+    label: &str,
+    fetch: impl std::future::Future<Output = Result<T, String>>,
+) -> Option<Result<T, String>> {
+    if !due {
+        return None;
+    }
+    Some(
+        match tokio::time::timeout(MARKET_FETCH_TIMEOUT, fetch).await {
+            Ok(Ok(value)) => Ok(value),
+            Ok(Err(error)) => Err(format!("{label}: {error}")),
+            Err(_) => Err(format!("{label}: request timed out")),
+        },
+    )
+}
+
+/// What a bounded fetch returned, recording its warning when it failed.
+fn fetched<T>(result: Option<Result<T, String>>, warnings: &mut Vec<String>) -> Option<T> {
+    result?.map_err(|warning| warnings.push(warning)).ok()
+}
+
+/// Which SnapTrade histories this refresh asked for again.
+struct HistoryDue {
+    snaptrade_history: bool,
+    snaptrade_activity: bool,
+}
+
+/// What the provider syncs updated, and the accounts whose balances they refreshed.
+struct ProviderResults {
+    plaid_updated: bool,
+    /// Plaid updated without notices.
+    plaid_complete: bool,
+    snaptrade_updated: bool,
+    refreshed_account_ids: Vec<String>,
+}
+
+/// Saves each provider's result in its cache, or keeps the last good cache with a warning, and
+/// records each provider's status and when its histories were last complete.
+fn record_provider_results(
+    provider_data: &mut providers::ProviderDataCache,
+    plaid: Result<PlaidData, String>,
+    snaptrade: Result<providers::SnapTradeData, String>,
+    due: HistoryDue,
+    now: DateTime<Utc>,
+    warnings: &mut Vec<String>,
+) -> ProviderResults {
     for (name, error) in [
         ("plaid", plaid.as_ref().err()),
         ("snaptrade", snaptrade.as_ref().err()),
@@ -435,10 +520,7 @@ async fn prepare_refresh(
             status.updated_at = Some(now.to_rfc3339());
         }
     }
-    let plaid_updated = update_or_warn(&mut provider_data.plaid, plaid, "Plaid", &mut warnings);
-    if !plaid_updated {
-        next_plaid_cache = plaid_cache;
-    }
+    let plaid_updated = update_or_warn(&mut provider_data.plaid, plaid, "Plaid", warnings);
     let mut refreshed_account_ids = if plaid_updated {
         provider_data
             .plaid
@@ -467,7 +549,7 @@ async fn prepare_refresh(
         &mut provider_data.snaptrade,
         snaptrade,
         "SnapTrade",
-        &mut warnings,
+        warnings,
     );
     if let Some(data) = &provider_data.snaptrade {
         warnings.extend(data.warnings.clone());
@@ -480,7 +562,7 @@ async fn prepare_refresh(
             );
         }
     }
-    if refresh_snaptrade_history
+    if due.snaptrade_history
         && snaptrade_updated
         && provider_data
             .snaptrade
@@ -489,7 +571,7 @@ async fn prepare_refresh(
     {
         provider_data.snaptrade_history_refreshed_at = Some(now.to_rfc3339());
     }
-    if backfill_snaptrade_activity
+    if due.snaptrade_activity
         && snaptrade_updated
         && provider_data
             .snaptrade
@@ -498,82 +580,142 @@ async fn prepare_refresh(
     {
         provider_data.snaptrade_activity_backfilled_at = Some(now.to_rfc3339());
     }
-    if (!plaid_updated && provider_data.plaid.is_none() && had_plaid)
-        || (!snaptrade_updated && provider_data.snaptrade.is_none() && had_snaptrade)
-    {
-        if let Ok(mut storage) = state.storage.lock() {
-            storage.record_failed_sync(
-                run_id,
-                started_at,
-                "provider_refresh_failed",
-                SyncDiagnostics::new("provider", provider_diagnostics.clone(), warnings.len()),
-            );
-        }
-        return Err(
-            "Could not refresh safely without a provider cache; saved data is unchanged".into(),
-        );
-    }
-    let mut benchmark_refreshed = false;
-    if let Some(result) = &benchmark {
-        match result {
-            Ok(Err(error)) => warnings.push(format!("Benchmark history: {error}")),
-            Err(_) => warnings.push("Benchmark history: request timed out".into()),
-            _ => {}
-        }
-    }
-    let benchmark = benchmark
-        .and_then(Result::ok)
-        .and_then(Result::ok)
-        .filter(|history| history.as_array().is_some_and(|points| !points.is_empty()))
-        .inspect(|_| benchmark_refreshed = true)
-        .unwrap_or(previous_benchmark);
-    let mut security_history_refreshed = false;
-    if refresh_market_history {
-        let empty_plaid = PlaidData::default();
-        match tokio::time::timeout(
-            std::time::Duration::from_secs(12),
-            state
-                .providers
-                .sync_security_history(provider_data.plaid.as_ref().unwrap_or(&empty_plaid)),
-        )
-        .await
-        {
-            Ok(Ok(history)) => {
-                provider_data.security_history = history;
-                provider_data.security_history_adjustment = Some("split".into());
-                security_history_refreshed = true;
-            }
-            Ok(Err(error)) => warnings.push(format!("Market history: {error}")),
-            Err(_) => warnings.push("Market history: request timed out".into()),
-        }
-    }
-    if benchmark_refreshed && security_history_refreshed {
-        provider_data.market_history_refreshed_at = Some(now.to_rfc3339());
-    }
-
-    let mut storage = state
-        .storage
-        .lock()
-        .map_err(|_| "The local data store is unavailable".to_string())?;
-    let sync_id = storage.stage_with_diagnostics(
-        run_id,
-        started_at,
-        revision,
-        next_plaid_cache,
-        provider_data.clone(),
-        warnings.clone(),
-        SyncDiagnostics::new("provider", provider_diagnostics, warnings.len()),
-    )?;
-
-    Ok(ProviderSync {
-        sync_id,
-        balances_fresh: (!integrations.plaid || plaid_complete)
-            && (!integrations.snaptrade || snaptrade_updated),
+    ProviderResults {
+        plaid_updated,
+        plaid_complete,
+        snaptrade_updated,
         refreshed_account_ids,
-        previous_snapshot,
-        plaid: provider_data.plaid.unwrap_or_default(),
-        snaptrade: provider_data.snaptrade.unwrap_or_default(),
-        benchmark_history: benchmark,
-        security_history: provider_data.security_history,
-    })
+    }
+}
+
+/// How far back splits are fetched: far enough for any saved trade history.
+const CORPORATE_ACTION_YEARS: i64 = 10;
+
+/// Every symbol held or traded, for splits and dividends.
+fn corporate_action_symbols(data: &providers::ProviderDataCache) -> Vec<String> {
+    let mut symbols = std::collections::BTreeSet::new();
+    let mut add = |value: Option<&Value>| {
+        if let Some(symbol) = value
+            .and_then(Value::as_str)
+            .map(|symbol| symbol.trim().to_ascii_uppercase())
+            .filter(|symbol| {
+                !symbol.is_empty()
+                    && symbol.len() <= 24
+                    && symbol.chars().all(|character| {
+                        character.is_ascii_alphanumeric() || matches!(character, '.' | '-')
+                    })
+            })
+        {
+            symbols.insert(symbol);
+        }
+    };
+    if let Some(plaid) = &data.plaid {
+        for security in &plaid.securities {
+            add(security.get("ticker_symbol"));
+        }
+    }
+    if let Some(snaptrade) = &data.snaptrade {
+        for position in snaptrade.positions.values().flatten() {
+            add(position.pointer("/instrument/symbol"));
+            add(position.pointer("/instrument/raw_symbol"));
+        }
+        for activity in snaptrade.activities.values().flatten() {
+            add(activity.pointer("/symbol/symbol"));
+            add(activity.pointer("/symbol/raw_symbol"));
+        }
+    }
+    symbols.into_iter().collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn provider_failures_keep_last_good_data_and_add_a_warning() {
+        let mut cached = Some(vec!["saved"]);
+        let mut warnings = Vec::new();
+
+        assert!(!update_or_warn(
+            &mut cached,
+            Err("offline".into()),
+            "Plaid",
+            &mut warnings,
+        ));
+        assert_eq!(cached, Some(vec!["saved"]));
+        assert_eq!(warnings, vec!["Plaid: offline"]);
+
+        assert!(update_or_warn(
+            &mut cached,
+            Ok(vec!["fresh"]),
+            "Plaid",
+            &mut warnings,
+        ));
+        assert_eq!(cached, Some(vec!["fresh"]));
+    }
+
+    #[test]
+    fn a_failed_provider_keeps_its_cache_and_a_good_one_refreshes_its_accounts() {
+        let now = "2026-09-04T16:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        let mut data = providers::ProviderDataCache {
+            plaid: Some(PlaidData {
+                refreshed_account_ids: vec!["plaid:saved".into()],
+                ..PlaidData::default()
+            }),
+            ..Default::default()
+        };
+        let mut warnings = Vec::new();
+        let results = record_provider_results(
+            &mut data,
+            Err("offline".into()),
+            Ok(providers::SnapTradeData {
+                accounts: vec![serde_json::json!({ "id": "brokerage" })],
+                history_complete: true,
+                ..Default::default()
+            }),
+            HistoryDue {
+                snaptrade_history: true,
+                snaptrade_activity: true,
+            },
+            now,
+            &mut warnings,
+        );
+        assert!(!results.plaid_updated && !results.plaid_complete);
+        assert!(results.snaptrade_updated);
+        assert_eq!(results.refreshed_account_ids, ["snaptrade:brokerage"]);
+        assert_eq!(warnings, ["Plaid: offline"]);
+        assert_eq!(
+            data.plaid.unwrap().refreshed_account_ids,
+            ["plaid:saved"],
+            "the saved cache stays"
+        );
+        assert_eq!(data.sync_status["plaid"].error.as_deref(), Some("offline"));
+        assert!(data.sync_status["snaptrade"].updated_at.is_some());
+        // Only a complete history moves its timestamp.
+        assert!(data.snaptrade_history_refreshed_at.is_some());
+        assert!(data.snaptrade_activity_backfilled_at.is_none());
+    }
+
+    #[test]
+    fn historical_data_expires_after_twelve_hours() {
+        let now = "2026-09-04T16:00:00Z".parse::<DateTime<Utc>>().unwrap();
+        assert!(history_cache_is_fresh(Some("2026-09-04T05:00:01Z"), now));
+        assert!(!history_cache_is_fresh(Some("2026-09-04T04:00:00Z"), now));
+        assert!(!history_cache_is_fresh(Some("invalid"), now));
+    }
+
+    #[tokio::test]
+    async fn market_fetches_run_only_when_due_and_label_their_failures() {
+        let mut warnings = Vec::new();
+        let skipped = bounded_fetch(false, "Benchmark history", async { Ok::<_, String>(1) });
+        assert_eq!(fetched(skipped.await, &mut warnings), None);
+        let found = bounded_fetch(true, "Benchmark history", async { Ok::<_, String>(1) });
+        assert_eq!(fetched(found.await, &mut warnings), Some(1));
+        assert!(warnings.is_empty());
+        let failed = bounded_fetch(true, "Market history", async {
+            Err::<u8, _>("HTTP 503".to_string())
+        });
+        assert_eq!(fetched(failed.await, &mut warnings), None);
+        assert_eq!(warnings, ["Market history: HTTP 503"]);
+    }
 }

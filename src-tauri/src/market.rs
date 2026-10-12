@@ -1,4 +1,13 @@
-use super::*;
+use std::{collections::BTreeMap, time::Duration as StdDuration};
+
+use chrono::DateTime;
+use serde_json::Value;
+use tauri::{AppHandle, Emitter, Manager, State};
+
+use crate::{
+    finance_contract::{MarketProjection, Snapshot},
+    financial_engine, providers, AppState,
+};
 
 const DEFAULT_MARKET_UPDATE_INTERVAL_MS: u64 = 10_000;
 
@@ -12,75 +21,58 @@ pub(super) fn market_update_interval(milliseconds: Option<u64>) -> StdDuration {
 
 #[tauri::command]
 pub(crate) fn get_saved_market(state: State<'_, AppState>) -> Result<Option<Value>, String> {
-    let storage = state
-        .storage
-        .lock()
-        .map_err(|_| "Local store unavailable")?;
+    let storage = state.storage()?;
     if storage.ensure_writable().is_err() {
         return Ok(None);
     }
     let Some(market) = state.startup_market.load(&storage.data.snapshot) else {
         return Ok(None);
     };
-    let mut response = serde_json::to_value(&market).map_err(|error| error.to_string())?;
-    response["projection"] =
-        financial_engine::apply_market_snapshots(&storage.data.snapshot, &market.snapshots)?;
-    response["chartSeries"] =
-        serde_json::to_value(market_chart_series(&storage.data.snapshot, &market)?)
-            .map_err(|error| error.to_string())?;
+    let mut response = market_payload(&storage.data.snapshot, &market)?;
     response["cached"] = true.into();
     Ok(Some(response))
 }
 
-fn market_chart_values(projection: &Value, time: i64) -> BTreeMap<String, Value> {
+fn json(value: impl serde::Serialize) -> Result<Value, String> {
+    serde_json::to_value(value).map_err(|error| error.to_string())
+}
+
+/// Quotes with the committed snapshot repriced at them and the chart points they make.
+fn market_payload(
+    snapshot: &Snapshot,
+    market: &providers::MarketSnapshots,
+) -> Result<Value, String> {
+    let mut response = json(market)?;
+    response["projection"] = json(financial_engine::apply_market_snapshots(
+        snapshot,
+        &market.snapshots,
+    )?)?;
+    response["chartSeries"] = json(market_chart_series(snapshot, market)?)?;
+    Ok(response)
+}
+
+fn market_chart_values(projection: &MarketProjection, time: i64) -> BTreeMap<String, Value> {
+    let point = |value: f64| serde_json::json!({ "time": time, "value": value });
     let mut values = BTreeMap::new();
-    if projection["netWorthIncomplete"].as_bool() != Some(true) {
-        if let Some(value) = projection["netWorth"]
-            .as_f64()
-            .filter(|value| value.is_finite())
-        {
-            values.insert(
-                "net-worth".into(),
-                serde_json::json!({ "time": time, "value": value }),
-            );
-        }
+    if !projection.net_worth_incomplete && projection.net_worth.is_finite() {
+        values.insert("net-worth".into(), point(projection.net_worth));
     }
-    let investments_incomplete =
-        projection["accounts"]
-            .as_array()
-            .into_iter()
-            .flatten()
-            .any(|account| {
-                matches!(account["type"].as_str(), Some("brokerage" | "retirement"))
-                    && account["value"].is_null()
-            });
-    for account in projection["brokeragePerformance"]
-        .as_array()
-        .into_iter()
-        .flatten()
-    {
-        let Some(id) = account["accountId"].as_str() else {
-            continue;
-        };
-        if id == "total" && investments_incomplete {
+    let investments_incomplete = projection.accounts.iter().any(|account| {
+        matches!(account.r#type.as_str(), "brokerage" | "retirement") && account.value.is_none()
+    });
+    for account in &projection.brokerage_performance {
+        if (account.account_id == "total" && investments_incomplete)
+            || !account.current_value.is_finite()
+        {
             continue;
         }
-        let Some(value) = account["currentValue"]
-            .as_f64()
-            .filter(|value| value.is_finite())
-        else {
-            continue;
-        };
-        values.insert(
-            id.into(),
-            serde_json::json!({ "time": time, "value": value }),
-        );
+        values.insert(account.account_id.clone(), point(account.current_value));
     }
     values
 }
 
 fn market_chart_series(
-    snapshot: &Value,
+    snapshot: &Snapshot,
     market: &providers::MarketSnapshots,
 ) -> Result<BTreeMap<String, Vec<Value>>, String> {
     let close_time = market
@@ -167,19 +159,11 @@ pub(crate) async fn start_market_stream(
     if *receiver.borrow() {
         return Ok(());
     }
-    let mut response = serde_json::to_value(&market).map_err(|error| error.to_string())?;
-    {
-        let storage = state
-            .storage
-            .lock()
-            .map_err(|_| "The local data store is unavailable")?;
+    let response = {
+        let storage = state.storage()?;
         state.startup_market.save(&storage.data.snapshot, &market);
-        response["projection"] =
-            financial_engine::apply_market_snapshots(&storage.data.snapshot, &market.snapshots)?;
-        response["chartSeries"] =
-            serde_json::to_value(market_chart_series(&storage.data.snapshot, &market)?)
-                .map_err(|error| error.to_string())?;
-    }
+        market_payload(&storage.data.snapshot, &market)?
+    };
     updates
         .send(serde_json::json!({"kind": "update", "market": response}))
         .map_err(|error| error.to_string())?;
@@ -200,10 +184,7 @@ pub(crate) async fn start_market_stream(
                 if *receiver.borrow() {
                     return Ok(());
                 }
-                let storage = state
-                    .storage
-                    .lock()
-                    .map_err(|_| "The local data store is unavailable")?;
+                let storage = state.storage()?;
                 let committed = &storage.data.snapshot;
                 let projection =
                     financial_engine::apply_market_snapshots(committed, &tick.market.snapshots)?;
@@ -226,12 +207,10 @@ pub(crate) async fn start_market_stream(
                 };
                 state.startup_market.save(committed, &tick.market);
                 drop(storage);
-                let mut payload =
-                    serde_json::to_value(&tick.market).map_err(|error| error.to_string())?;
-                payload["projection"] = projection;
+                let mut payload = json(&tick.market)?;
+                payload["projection"] = json(projection)?;
                 if let Some(point) = chart_point {
-                    payload["chartPoint"] =
-                        serde_json::to_value(point).map_err(|error| error.to_string())?;
+                    payload["chartPoint"] = json(point)?;
                 }
                 updates
                     .send(serde_json::json!({"kind": "update", "market": payload}))
@@ -368,8 +347,12 @@ pub(crate) async fn start_holding_chart(
             if result.is_ok() {
                 break;
             }
-            publish(selection.borrow().tag(serde_json::json!({"kind":"error", "message":
-                "Market data unavailable; retrying. Check Alpaca access in Settings. Saved history is retained."})));
+            publish(
+                selection
+                    .borrow()
+                    .tag(serde_json::json!({"kind":"error", "message":
+                "Market data unavailable; retrying"})),
+            );
             tokio::select! {
                 _ = cancellation.changed() => break,
                 _ = tokio::time::sleep(StdDuration::from_secs(30)) => {},
@@ -394,4 +377,89 @@ pub(crate) fn stop_holding_chart(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn old_cleanup_cannot_cancel_a_new_market_request() {
+        let (sender, receiver) = tokio::sync::watch::channel(false);
+        let mut stream = Some(("new".into(), sender));
+        cancel_stream(&mut stream, Some("old"));
+        assert!(!*receiver.borrow());
+        assert!(stream.is_some());
+        cancel_stream(&mut stream, Some("new"));
+        assert!(*receiver.borrow());
+        assert!(stream.is_none());
+    }
+
+    #[test]
+    fn changing_chart_selection_retains_socket_owner_and_old_cleanup_cannot_stop_it() {
+        use providers::holding_market::ChartSelection;
+        let (cancel, cancelled) = tokio::sync::watch::channel(false);
+        let mut owner = Some(("first".into(), cancel));
+        let (chart, selection) = tokio::sync::watch::channel(ChartSelection {
+            symbol: "TEST".into(),
+            range: 86400,
+            request_id: "first".into(),
+            warm_symbols: Vec::new(),
+        });
+        let next = ChartSelection {
+            symbol: "OTHER".into(),
+            range: 604800,
+            request_id: "second".into(),
+            warm_symbols: Vec::new(),
+        };
+        assert!(reuse_holding_chart(&mut owner, Some(&chart), &next));
+        assert_eq!(selection.borrow().symbol, "OTHER");
+        assert_eq!(selection.borrow().range, 604800);
+        cancel_stream(&mut owner, Some("first"));
+        assert!(!*cancelled.borrow());
+        assert_eq!(owner.as_ref().unwrap().0, "second");
+        cancel_stream(&mut owner, Some("second"));
+        assert!(*cancelled.borrow());
+        assert!(!reuse_holding_chart(&mut owner, Some(&chart), &next));
+
+        let (cancel, _) = tokio::sync::watch::channel(false);
+        owner = Some(("portfolio".into(), cancel));
+        assert!(!reuse_holding_chart(&mut owner, Some(&chart), &next));
+        assert_eq!(owner.unwrap().0, "portfolio");
+    }
+
+    #[tokio::test]
+    async fn socket_handoff_waits_for_release_and_cancelled_waiters_never_acquire() {
+        let socket = tokio::sync::Mutex::new(());
+        let active = socket.lock().await;
+        let (cancel, receiver) = tokio::sync::watch::channel(false);
+        let next = providers::market_stream::socket_lease(&socket, receiver.clone());
+        tokio::pin!(next);
+        let mut context = std::task::Context::from_waker(std::task::Waker::noop());
+        assert!(std::future::Future::poll(next.as_mut(), &mut context).is_pending());
+        cancel.send(true).unwrap();
+        assert!(next.await.is_none());
+        assert!(providers::market_stream::socket_lease(&socket, receiver)
+            .await
+            .is_none());
+        drop(active);
+        let (_cancel, receiver) = tokio::sync::watch::channel(false);
+        assert!(providers::market_stream::socket_lease(&socket, receiver)
+            .await
+            .is_some());
+    }
+
+    #[test]
+    fn market_update_interval_defaults_and_stays_bounded() {
+        assert_eq!(market_update_interval(None), StdDuration::from_secs(10));
+        assert_eq!(market_update_interval(Some(500)), StdDuration::from_secs(1));
+        assert_eq!(
+            market_update_interval(Some(30_000)),
+            StdDuration::from_secs(30)
+        );
+        assert_eq!(
+            market_update_interval(Some(90_000)),
+            StdDuration::from_secs(60)
+        );
+    }
 }

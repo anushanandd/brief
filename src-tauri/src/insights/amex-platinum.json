@@ -1,0 +1,201 @@
+{
+  "product": "amex-platinum",
+  "name": "American Express Platinum",
+  "version": "2026-10-11",
+  "termsReviewed": "Sep 20, 2026",
+  "annualFee": 895,
+  "annualFeeMatches": "annual membership fee|annual fee",
+  "benefits": [
+    {
+      "id": "digital-entertainment",
+      "name": "Digital entertainment",
+      "limit": "$20 / month",
+      "cap": 20,
+      "cadence": "monthly",
+      "matches": "digital entertainment|disney|hulu|espn|new york times|paramount|peacock|wall street journal|youtube",
+      "creditMatches": "digital entertainment.*credit",
+      "instruction": "Enroll, then pay directly for Disney+, ESPN, Hulu, NYT, Paramount+, standalone Peacock, WSJ or YouTube (including Music). No third-party billing or Peacock bundles with other services.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://global.americanexpress.com/card-benefits/detail/digital-entertainment/platinum",
+      "allowanceChanges": [
+        { "from": "2025-09-18", "cap": 25, "limit": "$25 / month", "cadence": "monthly" }
+      ]
+    },
+    {
+      "id": "uber-cash",
+      "name": "Uber Cash",
+      "limit": "$15 monthly · +$20 Dec",
+      "cap": 15,
+      "cadence": "monthly",
+      "matches": "uber cash|^uber(?:\\s|$)",
+      "excludes": "uber one",
+      "excludeMerchantAmounts": [{ "merchant": "uber", "amount": -9.99 }],
+      "instruction": "Add Platinum to Uber. For U.S. rides and orders, pay with an Amex and turn Uber Cash on. Unused cash expires each month.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://www.uber.com/us/en/u/amex/",
+      "timeZone": "Pacific/Honolulu",
+      "deadlineNote": "11:59 p.m. Hawaii time",
+      "issuerCredits": false,
+      "trackRemaining": false,
+      "monthCaps": { "12": 35 },
+      "estimateFromPurchases": true
+    },
+    {
+      "id": "uber-one",
+      "name": "Uber One",
+      "limit": "$120 / year",
+      "cap": 120,
+      "cadence": "annual",
+      "matches": "uber one",
+      "merchantAmountMatches": [{ "merchant": "uber", "amount": -9.99 }],
+      "creditMatches": "uber one.*credit",
+      "instruction": "Pay directly with Platinum for a U.S. monthly or annual membership; turn Uber Cash off. Free trials, discounts and Uber Cash payments do not qualify.",
+      "effectiveFrom": "2025-09-18",
+      "url": "https://global.americanexpress.com/card-benefits/detail/uber-one-credit/platinum",
+      "minimumCharge": 9.99
+    },
+    {
+      "id": "walmart-plus",
+      "name": "Walmart+",
+      "limit": "$12.95 + tax / month",
+      "cap": 12.95,
+      "cadence": "monthly",
+      "matches": "walmart(?:\\+| plus|.*membership)|walmart.*credit",
+      "creditMatches": "(?:amex|platinum).*walmart.*credit|walmart(?:\\+| plus).*credit",
+      "instruction": "Pay with Platinum for one monthly membership, including tax. Excludes annual plans, Plus Ups and Walmart Business+.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://global.americanexpress.com/card-benefits/detail/walmart-platinum/platinum",
+      "trackRemaining": false
+    },
+    {
+      "id": "resy",
+      "name": "Resy",
+      "limit": "$100 / quarter",
+      "cap": 100,
+      "cadence": "quarterly",
+      "matches": "resy|\\btock\\b",
+      "matchRequiresBefore": { "pattern": "resy", "date": "2026-09-15" },
+      "creditMatches": "resy.*credit",
+      "instruction": "Enroll and use a U.S. venue marked Resy Credit eligible—not just any restaurant. Includes eligible Tock purchases from Sep 15, 2026.",
+      "effectiveFrom": "2025-09-18",
+      "url": "https://global.americanexpress.com/card-benefits/detail/400-resy-credit/platinum"
+    },
+    {
+      "id": "lululemon",
+      "name": "lululemon",
+      "limit": "$75 / quarter",
+      "cap": 75,
+      "cadence": "quarterly",
+      "matches": "lululemon",
+      "creditMatches": "lululemon.*credit",
+      "instruction": "Enroll and buy directly at eligible U.S. stores, website or app. Excludes gift cards, outlets, Like New, Studio, warehouses and events.",
+      "effectiveFrom": "2025-09-18",
+      "url": "https://global.americanexpress.com/card-benefits/terms/platinum"
+    },
+    {
+      "id": "hotel",
+      "name": "Hotel credit",
+      "limit": "$200 / year",
+      "cap": 200,
+      "cadence": "annual",
+      "matches": "hotel\\s?credit|fine hotels|\\bfhr\\b|the hotel collection|amex travel|american express travel",
+      "creditMatches": "hotel\\s?credit",
+      "instruction": "Prepay Fine Hotels + Resorts or The Hotel Collection through Amex Travel. The Hotel Collection requires two consecutive nights. Excludes pay-at-hotel bookings and property charges.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://global.americanexpress.com/card-benefits/detail/hotel-credit/platinum",
+      "timeZone": "America/Chicago",
+      "deadlineNote": "11:59 p.m. Central time · processing date",
+      "postingDelayDays": 90,
+      "allowanceChanges": [
+        { "from": "2025-09-18", "cap": 300, "limit": "$300 / half-year", "cadence": "semiannual" }
+      ]
+    },
+    {
+      "id": "airline-fee",
+      "name": "Airline fee",
+      "limit": "$200 / year",
+      "cap": 200,
+      "cadence": "annual",
+      "matches": "airline fee (?:credit|reimbursement)|checked bag|baggage fee|inflight|in-flight|seat fee|lounge fee",
+      "creditMatches": "airline fee (?:credit|reimbursement)",
+      "instruction": "Select an airline in Amex first; changes are allowed in January. Covers eligible incidental fees charged separately, not tickets, upgrades, gift cards or miles.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://global.americanexpress.com/card-benefits/detail/airline-fee-credit/platinum"
+    },
+    {
+      "id": "clear",
+      "name": "CLEAR+",
+      "limit": "$209 / year",
+      "cap": 209,
+      "cadence": "annual",
+      "matches": "\\bclear\\b",
+      "creditMatches": "(?:amex|platinum).*clear.*credit|clear\\+? plus.*credit",
+      "instruction": "Pay with Platinum for auto-renewing CLEAR+ and complete identity verification. Membership coverage excludes taxes and fees.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://global.americanexpress.com/card-benefits/detail/clear-credit/platinum",
+      "minimumCharge": 125,
+      "allowanceChanges": [
+        { "from": "2026-07-01", "cap": 219, "limit": "$219 / year", "cadence": "annual" }
+      ]
+    },
+    {
+      "id": "oura",
+      "name": "Oura Ring",
+      "limit": "$200 / year",
+      "cap": 200,
+      "cadence": "annual",
+      "matches": "\\boura\\b",
+      "creditMatches": "oura.*credit",
+      "instruction": "Enroll and buy a ring at U.S. Ouraring.com for U.S. delivery. Excludes memberships, chargers, warranties, gift cards and other retailers.",
+      "effectiveFrom": "2025-09-18",
+      "url": "https://global.americanexpress.com/card-benefits/detail/oura-credit/platinum"
+    },
+    {
+      "id": "equinox",
+      "name": "Equinox",
+      "limit": "$300 / year",
+      "cap": 300,
+      "cadence": "annual",
+      "matches": "equinox",
+      "creditMatches": "equinox.*credit",
+      "excludes": "soulcycle|bike",
+      "instruction": "Enroll and validate eligibility. Pay Equinox directly for an eligible club membership or Equinox+ subscription. Excludes app-store billing.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://global.americanexpress.com/card-benefits/detail/credit-equinox/platinum"
+    },
+    {
+      "id": "global-entry",
+      "name": "Global Entry / TSA PreCheck",
+      "limit": "$120 / up to $85",
+      "cap": 120,
+      "cadence": "renewal",
+      "matches": "global entry|tsa\\s?pre\\s?check",
+      "creditMatches": "(?:global entry|tsa\\s?pre\\s?check).*(?:credit|reimbursement)",
+      "instruction": "Pay the application fee: $120 Global Entry or up to $85 TSA PreCheck, once every four years. Additional cards have separate eligibility. Confirm your next eligible date in Amex.",
+      "url": "https://global.americanexpress.com/card-benefits/terms/platinum"
+    },
+    {
+      "id": "soulcycle",
+      "name": "SoulCycle bike",
+      "limit": "$300 / qualifying bike",
+      "cap": 300,
+      "cadence": "purchase",
+      "matches": "soulcycle|equinox.*bike",
+      "creditMatches": "(?:soulcycle|equinox.*bike).*(?:credit|reimbursement)",
+      "instruction": "Buy a full-price at-home bike at Equinox+ in one transaction with a 12-month Equinox+ membership. No financing. Up to 15 qualifying bikes per year.",
+      "url": "https://global.americanexpress.com/card-benefits/terms/platinum"
+    },
+    {
+      "id": "saks",
+      "name": "Saks Fifth Avenue",
+      "limit": "$50 / half-year",
+      "cap": 50,
+      "cadence": "semiannual",
+      "matches": "saks",
+      "creditMatches": "saks.*(?:credit|reimbursement|benefit)",
+      "instruction": "Retired July 1, 2026. Historical credits remain included by posting date.",
+      "effectiveUntil": "2026-06-30",
+      "url": "https://global.americanexpress.com/card-benefits/view-all/platinum"
+    }
+  ]
+}

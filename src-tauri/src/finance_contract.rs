@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 
-/// Narrow, typed live view. Deserializing from a committed snapshot skips its ledger/history.
+/// The part of a committed snapshot live prices revalue, without its ledger and history.
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketProjection {
@@ -24,6 +24,28 @@ pub struct MarketProjection {
 pub struct CurrentPerformance {
     pub account_id: String,
     pub current_value: f64,
+}
+
+impl From<&Snapshot> for MarketProjection {
+    fn from(snapshot: &Snapshot) -> Self {
+        Self {
+            revision: snapshot.revision.unwrap_or_default(),
+            updated_at: snapshot.updated_at.clone(),
+            net_worth: snapshot.net_worth,
+            net_worth_incomplete: snapshot.net_worth_incomplete,
+            net_worth_provisional: snapshot.net_worth_provisional,
+            accounts: snapshot.accounts.clone(),
+            holdings: snapshot.holdings.clone(),
+            brokerage_performance: snapshot
+                .brokerage_performance
+                .iter()
+                .map(|performance| CurrentPerformance {
+                    account_id: performance.account_id.clone(),
+                    current_value: performance.current_value,
+                })
+                .collect(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -72,10 +94,58 @@ pub struct Snapshot {
     pub observed_net_worth_history: Vec<Point>,
     #[serde(default)]
     pub possible_duplicate_accounts: Vec<PossibleDuplicate>,
+    /// Plaid's recurring streams, when the user enabled Recurring Transactions.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub recurring_streams: Vec<RecurringStream>,
+    /// Cash dividends per share for held symbols, from a year back through those announced.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dividend_history: Vec<DividendRecord>,
+    /// Reconstructed net worth against what was observed at each refresh.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub history_check: Option<HistoryCheck>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_change: Option<Change>,
 }
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct RecurringStream {
+    pub stream_id: String,
+    pub account_id: String,
+    /// `in` or `out`.
+    pub direction: String,
+    pub description: String,
+    pub merchant_name: Option<String>,
+    /// Plaid's cadence, such as `MONTHLY` or `BIWEEKLY`.
+    pub frequency: String,
+    /// `MATURE`, `EARLY_DETECTION`, `TOMBSTONED`, or `UNKNOWN`.
+    pub status: String,
+    pub is_active: bool,
+    pub last_date: Option<String>,
+    pub predicted_next_date: Option<String>,
+    /// Plaid's sign: positive leaves the account.
+    pub average_amount: Option<f64>,
+    pub transaction_ids: Vec<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct DividendRecord {
+    pub symbol: String,
+    pub ex_date: String,
+    pub payable_date: Option<String>,
+    /// Per share, in USD.
+    pub rate: Option<f64>,
+    pub special: bool,
+}
 #[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct HistoryCheck {
+    pub compared_days: u32,
+    pub divergent_days: u32,
+    /// Estimate minus observation on the day they differ most.
+    pub largest_gap: Option<f64>,
+    pub largest_gap_date: Option<String>,
+}
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Account {
     pub id: String,
@@ -119,8 +189,72 @@ pub struct Account {
     pub positions_as_of: Option<String>,
     #[serde(default)]
     pub activity_as_of: Option<String>,
+    /// `live` for a real-time Plaid Balance request, `cached` for Plaid's last bank sync.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balance_mode: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub liability: Option<CreditLiability>,
+    /// Spendable cash after pending activity (deposits) or remaining credit (cards), as the
+    /// institution reports it. Absent when the institution doesn't calculate it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub available_balance: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub credit_limit: Option<f64>,
+    /// The institution's full product name, such as "Platinum Card®".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub official_name: Option<String>,
+    /// The provider's account subtype, such as `checking`, `401k`, or `Roth IRA`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subtype: Option<String>,
+    /// `personal` or `business`, when the institution says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub holder_category: Option<String>,
+    /// How an investment account's income and gains are taxed: `taxable`, `taxDeferred`, or
+    /// `taxFree`. Derived from the subtype; a saved choice overrides it when insights are read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tax_treatment: Option<String>,
+    /// The institution's registered domain from its provider-reported website, for its logo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub domain: Option<String>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize)]
+impl Account {
+    /// Whether income and gains here are taxed as they happen. Snapshots saved before tax
+    /// treatment existed fall back to the account type.
+    pub fn taxable(&self) -> bool {
+        match self.tax_treatment.as_deref() {
+            Some(treatment) => treatment == "taxable",
+            None => self.r#type != "retirement",
+        }
+    }
+}
+
+/// Issuer-reported card statement details from Plaid Liabilities.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditLiability {
+    pub last_statement_date: Option<String>,
+    pub last_statement_balance: Option<f64>,
+    pub minimum_payment: Option<f64>,
+    pub next_payment_due_date: Option<String>,
+    pub last_payment_date: Option<String>,
+    pub last_payment_amount: Option<f64>,
+    pub purchase_apr: Option<f64>,
+    pub is_overdue: Option<bool>,
+    /// Every rate on the card with the balance it applies to and the interest it charged on
+    /// the last statement.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub aprs: Vec<CreditApr>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CreditApr {
+    /// Plaid's `apr_type`: `purchase_apr`, `balance_transfer_apr`, `cash_apr`, or `special`.
+    pub r#type: String,
+    pub percentage: Option<f64>,
+    pub balance_subject_to_apr: Option<f64>,
+    pub interest_charged: Option<f64>,
+}
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Holding {
     pub ticker: String,
@@ -151,8 +285,57 @@ pub struct Holding {
     pub quote_eligible: Option<bool>,
     #[serde(default)]
     pub valuation_note: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instrument_subtype: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sector: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub industry: Option<String>,
+    /// Shares already vested, for equity compensation.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vested_shares: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub vested_value: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub identifiers: Option<SecurityIdentifiers>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub option: Option<OptionContract>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub fixed_income: Option<FixedIncome>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SecurityIdentifiers {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isin: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cusip: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub figi: Option<String>,
+    /// The ISO 10383 market identifier code of the listing exchange.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exchange: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OptionContract {
+    /// `call` or `put`.
+    pub contract_type: Option<String>,
+    pub expiration_date: Option<String>,
+    pub strike_price: Option<f64>,
+    pub underlying_ticker: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct FixedIncome {
+    pub yield_percent: Option<f64>,
+    /// Plaid's yield kind, such as `coupon` or `yield_to_maturity`.
+    pub yield_type: Option<String>,
+    pub maturity_date: Option<String>,
+    pub issue_date: Option<String>,
+    pub face_value: Option<f64>,
+}
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Transaction {
     // Absent only in legacy storage; every native view is classified before IPC.
@@ -186,12 +369,108 @@ pub struct Transaction {
     pub logo_name: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category_detail: Option<String>,
+    /// A concise label from Plaid's detailed category, such as Coffee within Dining.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub subcategory: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub category_confidence: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub counterparty_type: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transaction_code: Option<String>,
+    /// The pending transaction this posted one replaced, so edits made while pending carry over.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pending_transaction_id: Option<String>,
+    /// View-time fields assigned by `transaction_policy::apply`; committed rows omit them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub category_source: Option<crate::transaction_policy::CategorySource>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_category: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reviewed: Option<bool>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub tags: Vec<String>,
+    /// Parts that divide the amount between categories; they sum to `amount`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub splits: Vec<crate::storage::Split>,
+    /// The recurring series this transaction belongs to, assigned when insights are read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub recurring_id: Option<String>,
+    /// The purchase this refund repays. Its category follows that purchase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub refund_of: Option<String>,
+    /// Someone else's money: a purchase made for them, or what they paid you back.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub other: bool,
+    /// Plaid's stable merchant identity, shared by every location and descriptor variant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub merchant_entity_id: Option<String>,
+    /// The institution's raw descriptor, before Plaid cleaned it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub original_description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub check_number: Option<String>,
+    /// The cardholder, on an account with several.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_owner: Option<String>,
+    /// Who was on the other side: the merchant, a payment app, a marketplace, or a bank.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub counterparties: Vec<Counterparty>,
+    /// `qualified` or `nonQualified`, for a dividend whose provider says which.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub dividend_type: Option<String>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Counterparty {
+    pub name: String,
+    /// Plaid's counterparty type, such as `merchant`, `payment_app`, or `marketplace`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub r#type: Option<String>,
+    /// How sure Plaid is of the match, from `VERY_HIGH` to `LOW`, or `UNKNOWN`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub confidence: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub website: Option<String>,
+}
+
+impl Transaction {
+    /// The posting date when known, otherwise the transaction date.
+    pub fn posted_date(&self) -> &str {
+        self.posted_on.as_deref().unwrap_or(&self.date)
+    }
+
+    pub fn kind(&self) -> Option<crate::transaction_policy::Kind> {
+        self.classification.as_ref().map(|value| value.kind.clone())
+    }
+
+    /// Every name the transaction carries: the merchant, Plaid's cleaned description, and the
+    /// bank's original descriptor, which keeps issuer wording Plaid's cleanup can drop.
+    pub fn descriptors(&self) -> String {
+        [
+            Some(self.merchant.as_str()),
+            self.description.as_deref(),
+            self.original_description.as_deref(),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ")
+    }
+
+    /// The category and amount of each part: the saved splits, or the whole transaction.
+    pub fn parts(&self) -> Vec<(&str, f64)> {
+        if self.splits.is_empty() {
+            vec![(self.category.as_str(), self.amount)]
+        } else {
+            self.splits
+                .iter()
+                .map(|split| (split.category.as_str(), split.amount))
+                .collect()
+        }
+    }
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -206,8 +485,14 @@ pub struct TransactionLocation {
     pub postal_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub country: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lat: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lon: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub store_number: Option<String>,
 }
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Trade {
     pub id: String,
@@ -228,6 +513,14 @@ pub struct Trade {
     pub estimated_realized_gain_pct: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub realized_gain_method: Option<String>,
+    /// The parts of the estimated gain from shares held a year or less, and longer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_short_term_gain: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub estimated_long_term_gain: Option<f64>,
+    /// Units and price were restated for later splits by this ratio.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub split_ratio: Option<f64>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -338,8 +631,16 @@ pub struct Recovery {
     pub can_restore: bool,
 }
 
-// Transitional conversion for existing decimal projection helpers. All new
-// output fields belong in the typed contract, not in an unvalidated JSON map.
+/// Edits a snapshot through its JSON form, as a test sets up saved data.
+#[cfg(test)]
+pub fn edit_json(snapshot: &mut Snapshot, edit: impl FnOnce(&mut serde_json::Value)) {
+    let mut value = serde_json::to_value(&*snapshot).unwrap();
+    edit(&mut value);
+    *snapshot = serde_json::from_value(value).unwrap();
+}
+
+/// A contract type from JSON, as a test writes it.
+#[cfg(test)]
 pub fn decode<T: serde::de::DeserializeOwned>(
     value: impl Into<serde_json::Value>,
 ) -> Result<T, String> {
