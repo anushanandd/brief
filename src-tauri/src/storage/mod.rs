@@ -18,6 +18,8 @@ use crate::{
 
 mod annotations;
 mod backup;
+mod bank_statements;
+pub mod documents;
 mod legacy;
 mod statements;
 mod validate;
@@ -41,11 +43,13 @@ pub struct FinanceState {
     pub account_links: BTreeMap<String, String>,
     #[serde(default)]
     pub settings: crate::settings::FinanceSettings,
-    #[serde(default)]
-    pub rules: Vec<crate::rules::CategoryRule>,
     /// Imported statement files. Unlike provider caches they can't be fetched again.
     #[serde(default)]
     pub statements: Vec<crate::statements::StatementFile>,
+    /// What Brief read from the user's documents. The encrypted originals are kept in
+    /// `documents.sqlite3` beside the finance database.
+    #[serde(default)]
+    pub documents: Vec<crate::documents::Document>,
 }
 
 /// What a refresh fetched and noticed, waiting for its projection to commit.
@@ -100,6 +104,8 @@ pub struct Storage {
     edit_backup: Option<(Instant, u64)>,
     /// The last derived view, reused while nothing it depends on has changed.
     view: std::cell::RefCell<Option<CachedView>>,
+    /// `places.sqlite3`, the disposable cache of Overture searches; see `places::cache`.
+    pub places_path: PathBuf,
 }
 
 /// Insights depend on the clock as well as saved data (benefit windows roll over in their own
@@ -122,12 +128,16 @@ struct RendererView<'a> {
     #[serde(flatten)]
     snapshot: &'a Snapshot,
     settings: &'a crate::settings::FinanceSettings,
-    rules: &'a [crate::rules::CategoryRule],
+    /// Accounts the user closed, which the snapshot above no longer lists.
+    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    closed_accounts: &'a [crate::financial_engine::manual::ClosedAccount],
     #[serde(skip_serializing_if = "Option::is_none")]
     insights: Option<&'a crate::insights::Insights>,
+    places: &'a crate::places::matching::Status,
+    documents: &'a [crate::documents::Document],
 }
 
-/// Small edits (review, categories, settings, rules, links) share one retained copy for this
+/// Small edits (review, categories, settings, links) share one retained copy for this
 /// long, so a review session does not rewrite the whole database for every keystroke.
 const EDIT_BACKUP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
@@ -140,6 +150,11 @@ pub struct BackupInfo {
     pub accounts: usize,
     pub transactions: usize,
     pub holdings: usize,
+    pub documents: usize,
+    /// Whether the documents' originals open here: `thisMac` (sealed with this Mac's key),
+    /// `passphrase` (their key is sealed under a passphrase), `otherMac` (they can't), or
+    /// `none` when the backup carries no originals.
+    pub document_key: &'static str,
 }
 
 pub(crate) fn empty_state() -> Result<FinanceState, String> {
@@ -153,8 +168,8 @@ pub(crate) fn empty_state() -> Result<FinanceState, String> {
         annotations: BTreeMap::new(),
         account_links: BTreeMap::new(),
         settings: Default::default(),
-        rules: Vec::new(),
         statements: Vec::new(),
+        documents: Vec::new(),
     })
 }
 
@@ -171,6 +186,9 @@ fn validate_state(data: FinanceState) -> Result<FinanceState, String> {
     }
     if data.schema_version != 1 {
         return Err("This financial data requires a newer version of Brief".into());
+    }
+    for document in &data.documents {
+        document.validate()?;
     }
     let mut linked_snaptrade_accounts = BTreeSet::new();
     if data.account_links.iter().any(|(plaid, snaptrade)| {
@@ -298,11 +316,16 @@ impl Storage {
         self.data.snapshot.transactions.len().hash(&mut hasher);
         self.recovery.is_some().hash(&mut hasher);
         chrono::Local::now().date_naive().hash(&mut hasher);
+        // Saved place searches change matches without changing saved data.
+        fs::metadata(&self.places_path)
+            .and_then(|metadata| metadata.modified())
+            .ok()
+            .hash(&mut hasher);
         serde_json::to_vec(&(
             &self.data.annotations,
-            &self.data.rules,
             &self.data.settings,
             &self.data.account_links,
+            &self.data.documents,
         ))
         .map_err(|error| error.to_string())?
         .hash(&mut hasher);
@@ -314,15 +337,18 @@ impl Storage {
     fn derive_snapshot(&self) -> Result<(crate::insights::View, Value), String> {
         let mut snapshot = self.data.snapshot.clone();
         snapshot.recovery = self.recovery.clone();
-        crate::financial_engine::apply_annotations(
-            &mut snapshot,
-            &self.data.annotations,
-            &self.data.rules,
-        )?;
+        let closed_accounts =
+            crate::financial_engine::manual::adjust_snapshot(&mut snapshot, &self.data.settings);
+        crate::financial_engine::apply_annotations(&mut snapshot, &self.data.annotations)?;
+        let searches = crate::places::cache::read(&self.places_path);
+        crate::places::matching::apply(&mut snapshot.transactions, &searches);
+        let places = crate::places::matching::status(&snapshot.transactions, &searches);
+        crate::quality::apply(&mut snapshot);
         // Insights are a view of saved data; failing to derive them never hides the snapshot.
-        let insights = crate::insights::derive(
+        let insights = crate::insights::derive_with_documents(
             &mut snapshot,
             &self.data.settings,
+            &self.data.documents,
             chrono::Utc::now(),
             &crate::insights::calendar::LocalZone,
         )
@@ -335,8 +361,10 @@ impl Storage {
         let view = serde_json::to_value(RendererView {
             snapshot: &snapshot,
             settings: &self.data.settings,
-            rules: &self.data.rules,
+            closed_accounts: &closed_accounts,
             insights: insights.as_ref(),
+            places: &places,
+            documents: &self.data.documents,
         })
         .map_err(|error| error.to_string())?;
         Ok((
@@ -369,18 +397,6 @@ impl Storage {
             self.backup_before_edit()?;
             self.database.replace_settings(&next)?;
             self.data.settings = next;
-        }
-        self.snapshot()
-    }
-
-    /// Replaces the ordered category rules; they apply when the snapshot is read.
-    pub fn save_rules(&mut self, rules: Vec<crate::rules::CategoryRule>) -> Result<Value, String> {
-        self.ensure_writable()?;
-        let rules = crate::rules::validate(rules)?;
-        if rules != self.data.rules {
-            self.backup_before_edit()?;
-            self.database.replace_rules(&rules)?;
-            self.data.rules = rules;
         }
         self.snapshot()
     }
@@ -470,8 +486,8 @@ impl Storage {
             annotations: self.data.annotations.clone(),
             account_links: self.data.account_links.clone(),
             settings: self.data.settings.clone(),
-            rules: self.data.rules.clone(),
             statements,
+            documents: self.data.documents.clone(),
         })?;
         self.database.backup(&self.backup_path())?;
         self.database.replace(&next)?;
@@ -569,6 +585,7 @@ impl Storage {
             recovery,
             edit_backup: None,
             view: std::cell::RefCell::new(None),
+            places_path: directory.join("places.sqlite3"),
         })
     }
 
@@ -662,9 +679,10 @@ impl Storage {
             annotations: self.data.annotations.clone(),
             account_links: self.data.account_links.clone(),
             settings: self.data.settings.clone(),
-            rules: self.data.rules.clone(),
             statements: self.data.statements.clone(),
+            documents: self.data.documents.clone(),
         };
+        let committing = Instant::now();
         let backup_path = self.backup_path();
         self.database
             .backup(&backup_path)
@@ -672,22 +690,55 @@ impl Storage {
         self.database
             .replace(&next)
             .map_err(CommitError::Persistence)?;
-        let details = SyncDiagnostics::new(
-            "committed",
-            pending.diagnostics.providers.clone(),
-            warnings.len(),
-        );
+        let mut details = SyncDiagnostics {
+            phase: "committed".into(),
+            warning_count: warnings.len().min(999),
+            changes: next
+                .snapshot
+                .last_change
+                .as_ref()
+                .map(crate::database::ChangeCounts::of),
+            ..pending.diagnostics.clone()
+        };
+        details.stages.commit_ms = Some(crate::database::millis(committing.elapsed()));
+        let (id, started_at) = (pending.id.clone(), pending.started_at.clone());
+        self.data = next;
+        self.pending = None;
+        let snapshot = self.snapshot();
+        details.snapshot_bytes = snapshot
+            .as_ref()
+            .ok()
+            .and_then(|value| serde_json::to_vec(value).ok())
+            .map(|bytes| bytes.len() as u64);
         let _ = self.database.record_sync_run(&SyncRun::ended(
-            &pending.id,
-            &pending.started_at,
+            &id,
+            &started_at,
             "committed",
             warnings.len(),
             None,
             details,
         ));
-        self.data = next;
-        self.pending = None;
-        self.snapshot().map_err(CommitError::Persistence)
+        snapshot.map_err(CommitError::Persistence)
+    }
+
+    /// Adds what each provider used, and the fetch time, to the staged refresh's record.
+    pub fn note_usage(
+        &mut self,
+        id: &str,
+        usage: std::collections::BTreeMap<String, crate::providers::http::Usage>,
+        fetch_ms: u64,
+    ) {
+        if let Some(pending) = self.pending.as_mut().filter(|pending| pending.id == id) {
+            pending.diagnostics =
+                std::mem::take(&mut pending.diagnostics).with_usage(usage, fetch_ms);
+        }
+    }
+
+    /// Adds the projection time to the staged refresh's record.
+    pub fn note_projection(&mut self, id: &str, elapsed: std::time::Duration) {
+        if let Some(pending) = self.pending.as_mut().filter(|pending| pending.id == id) {
+            pending.diagnostics.stages.project_ms = Some(crate::database::millis(elapsed));
+        }
     }
 
     /// Commits a snapshot given in any serializable form, as a test builds one.

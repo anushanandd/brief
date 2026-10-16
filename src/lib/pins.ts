@@ -3,7 +3,7 @@ import { z } from 'zod'
 import { preference } from './preference'
 
 /**
- * Ledger queries kept on Today. A pin stores the question and the query, never its figures:
+ * Ledger queries kept on Home. A pin stores the question and the query, never its figures:
  * native code recomputes them from saved data each time, without the language model.
  */
 const pinSchema = z.object({

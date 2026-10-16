@@ -1,6 +1,12 @@
 import { accountDisplayName } from './account-names'
 import { addDays } from './dates'
-import { formatActivityName, formatShortDay } from './format'
+import {
+  displayCase,
+  formatActivityName,
+  formatCurrency,
+  formatProsePercent,
+  formatShortDay,
+} from './format'
 import type { AttentionItem, FinanceSnapshot } from './schema'
 
 export type NeedView = {
@@ -16,6 +22,12 @@ export type NeedView = {
     | { to: '/activities'; search: { open: string } }
     | { to: '/taxes'; search: Record<string, never> }
     | { to: '/spending'; search: Record<string, never> }
+    | { to: '/holdings/retirement'; search: Record<string, never> }
+    | { to: '/documents'; search: { document: string } }
+    | {
+        to: '/analytics'
+        search: { chart: 'amex-credits'; benefit?: string; review?: true }
+      }
   urgent: boolean
 }
 
@@ -38,6 +50,14 @@ export function needView(need: AttentionItem, data: FinanceSnapshot): NeedView {
       names,
     )
   const urgent = need.severity === 'urgent'
+  // Benefits opens on the spending card; another tracked card's needs open its account.
+  const benefitsPage = (
+    accountId: string,
+    search: { benefit?: string; review?: true },
+  ): NeedView['link'] =>
+    accountId === data.insights?.benefits?.accountId
+      ? { to: '/analytics', search: { chart: 'amex-credits', ...search } }
+      : { to: '/accounts', search: { account: accountId } }
   switch (need.kind) {
     case 'payment-due':
       return {
@@ -70,6 +90,14 @@ export function needView(need: AttentionItem, data: FinanceSnapshot): NeedView {
         link: { to: '/spending', search: {} },
         urgent,
       }
+    case 'benefit-review':
+      return {
+        id: need.id,
+        title: `${need.count} benefit ${need.count === 1 ? 'match' : 'matches'} to review`,
+        detail: accountName(need.accountId),
+        link: benefitsPage(need.accountId, { review: true }),
+        urgent,
+      }
     case 'credit-expiring':
       return {
         id: need.id,
@@ -77,7 +105,7 @@ export function needView(need: AttentionItem, data: FinanceSnapshot): NeedView {
         title: `${need.name} credit ends ${inDays(need.days)}`,
         detail: `${accountName(need.accountId)} · unused`,
         amount: need.remainingHigh,
-        link: { to: '/accounts', search: { account: need.accountId } },
+        link: benefitsPage(need.accountId, { benefit: need.benefitId }),
         urgent,
       }
     case 'utilization-high':
@@ -108,6 +136,72 @@ export function needView(need: AttentionItem, data: FinanceSnapshot): NeedView {
         detail: `Keeps the ${formatShortDay(need.soldOn)} loss`,
         amount: need.loss,
         link: { to: '/taxes', search: {} },
+        urgent,
+      }
+    case 'missed-bill':
+      return {
+        id: need.id,
+        date: need.expected,
+        title:
+          need.event === 'income' || need.event === 'credit'
+            ? `${formatActivityName(need.title)} hasn’t arrived`
+            : `${formatActivityName(need.title)} hasn’t posted`,
+        detail: `Due ${inDays(-need.days)}${need.accountId ? ` · ${accountName(need.accountId)}` : ''} · mark its last charge reviewed to dismiss`,
+        amount: need.amount,
+        link: { to: '/activities', search: { open: need.sourceTransactionId } },
+        urgent,
+      }
+    case 'contributions-to-confirm':
+      return {
+        id: need.id,
+        title: `${need.count === 1 ? 'A deposit' : `${need.count} deposits`} into ${accountName(need.accountId)} to place`,
+        detail: 'Which year it counts for, or a rollover',
+        amount: need.amount,
+        link: { to: '/holdings/retirement', search: {} },
+        urgent,
+      }
+    case 'contribution-limit': {
+      const plan = need.plan === 'ira' ? 'IRA' : '401(k)'
+      return {
+        id: need.id,
+        title: need.onPace
+          ? `${plan} deferrals on pace to pass the ${need.taxYear} limit`
+          : `${need.taxYear} ${plan} contributions are over the limit`,
+        detail: need.onPace
+          ? `Limit ${formatCurrency(need.limit)} · lower the paycheck amount`
+          : `Limit ${formatCurrency(need.limit)} · withdraw the excess by the tax deadline`,
+        amount: need.amount,
+        link: { to: '/holdings/retirement', search: {} },
+        urgent,
+      }
+    }
+    case 'pay-missing':
+      return {
+        id: need.id,
+        date: need.date,
+        title: `Pay from ${displayCase(need.employer)} hasn’t arrived`,
+        detail: need.accountId
+          ? `Statement says ${accountName(need.accountId)}`
+          : 'The pay statement shows a deposit',
+        amount: need.amount,
+        link: { to: '/documents', search: { document: need.documentId } },
+        urgent,
+      }
+    case 'w2-differs':
+      return {
+        id: need.id,
+        title: `${displayCase(need.employer)}’s ${need.taxYear} W-2 differs from your pay`,
+        detail: `${need.boxes} ${need.boxes === 1 ? 'box' : 'boxes'} to check before you file`,
+        link: { to: '/documents', search: { document: need.documentId } },
+        urgent,
+      }
+    case 'idle-cash':
+      return {
+        id: need.id,
+        title: `${accountName(need.accountId)} earns ${need.annualRate == null ? 'little' : formatProsePercent(need.annualRate)}`,
+        detail: `${accountName(need.betterAccountId)} pays ${formatProsePercent(need.betterRate)} · balance below`,
+        amount: need.balance,
+        link: { to: '/accounts', search: { account: need.accountId } },
         urgent,
       }
     default: {

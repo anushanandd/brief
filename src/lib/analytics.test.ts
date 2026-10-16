@@ -139,7 +139,8 @@ it('scopes native Amex credit evidence to the saved card, account filter, and po
       productName: 'American Express Platinum',
       windows: [],
       useFirst: [],
-      outcomes: [],
+      history: [],
+      review: [],
       activity: [
         benefitActivity({ id: 'credit', amount: 25, accountId: 'card', date: '2026-08-01' }),
         benefitActivity({

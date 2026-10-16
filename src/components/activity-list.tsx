@@ -9,25 +9,22 @@ import {
   type ActivitySort,
   type ActivitySortColumn,
 } from '../lib/activity'
-import { safeExternalUrl } from '../lib/api'
 import { displayCase, formatCurrency, valueTone } from '../lib/format'
 import { formatActivityDate, formatListDate } from '../lib/spending'
 import { AccountMark } from './account-mark'
 import { PlaceMark } from './activity-method-mark'
 import { BrandMark } from './brand-mark'
 import { CategoryMark } from './category-mark'
-import { ExternalLink } from './external-link'
-import { AlertCircle, ArrowUpRight, Clock, Copy } from './icons'
 import { SortHeadings } from './sort-headings'
 import { EmptyState } from './ui'
 
 const activityColumns = [
+  { id: 'date', label: 'Date' },
   { id: 'description', label: 'Description' },
   { id: 'account', label: 'Account' },
   { id: 'category', label: 'Category' },
   { id: 'owner', label: 'For' },
   { id: 'location', label: 'Location' },
-  { id: 'date', label: 'Date' },
   { id: 'amount', label: 'Amount' },
 ] as const
 // Text widths repeat across rows and renders (account names, categories), so measure each once.
@@ -35,19 +32,29 @@ const measuredText = new Map<string, number>()
 // Column widths per sizing list. Activity sizes from every activity, which doesn't change while
 // filtering, so each keystroke reuses them instead of re-measuring thousands of rows.
 const gridWidths = new WeakMap<ActivityItem[], { key: string; widths: number[] }>()
+// The description gives way down to this before any column is hidden.
 const minimumDescriptionWidth = 180
+const descriptionIndex = 1
 // Columns that give way, in order, when the ledger is too narrow for all of them.
-const optionalColumns = [4, 3, 2, 1]
-type TextWeight = 'body' | 'header' | 'meta'
+const optionalColumns = [5, 4, 3, 2]
+// `strong` is the bold of descriptions and amounts.
+type TextWeight = 'body' | 'strong' | 'header' | 'meta'
 
 // Cell geometry, mirroring the CSS: 12px padding each side, a 24px mark plus an 8px gap, and the
 // filter button's 6px inset. Kept here so the measured widths match what is drawn.
 const cellPadding = 24
 const markWidth = 32
 const buttonInset = 6
-const widestTextColumn = 280
+const widestDescription = 280
 // Canvas text runs a few pixels narrower than laid-out text (hinting, tabular figures).
 const textSlack = 8
+
+/** A ledger row's width: its columns, the 32px mark, and 8px row padding each side. */
+function rowWidth(columns: number[], hidden: number[]) {
+  return (
+    32 + columns.reduce((sum, value, index) => sum + (hidden.includes(index) ? 0 : value), 0) + 16
+  )
+}
 
 /** The width that fits 95 of 100 rows; the rest ellipsize and keep their full text in a tooltip. */
 function typicalWidth(widths: number[]) {
@@ -57,79 +64,80 @@ function typicalWidth(widths: number[]) {
 }
 
 /**
- * Column widths for the ledger. Places size to the 95th percentile so one long address does not
- * widen every row; accounts and categories fit their longest name up to a cap; dates and amounts
- * always fit, since truncating them would hide evidence. Second lines use their smaller size.
+ * Column widths for the ledger. Every column but the description fits its widest value, both lines
+ * included, so no account, category, place, date, or amount is ever cut off. The description takes
+ * the remaining room; its width here, fitting 95 of 100 titles, is only how far it may narrow.
  */
 export function activityGridWidths(
   activities: ActivityItem[],
   referenceIso: string,
   measure: (text: string, weight: TextWeight) => number,
 ) {
-  const header = activityColumns.map(({ label }, index) =>
-    Math.max(0, measure(label, 'header') + cellPadding + (index ? 0 : -32)),
+  // The description heading also spans the mark's column.
+  const header = activityColumns.map(({ id, label }) =>
+    Math.max(0, measure(label, 'header') + cellPadding + (id === 'description' ? -32 : 0)),
   )
-  const columns: number[][] = activityColumns.map(() => [])
+  const columns = Object.fromEntries(activityColumns.map(({ id }) => [id, [] as number[]]))
   const twoLine = (main: string, sub: string | undefined) =>
     Math.max(measure(main, 'body'), sub ? measure(sub, 'meta') : 0) + textSlack
+  // A badge sits 4px after the title, with 6px padding each side.
+  const badge = (label: string | undefined) => (label ? measure(label, 'meta') + 16 : 0)
   for (const activity of activities) {
-    columns[1].push(
+    columns.description.push(
+      measure(displayCase(activity.title), 'strong') +
+        badge(activity.benefit?.label) +
+        badge(activityStatus(activity)?.badge) +
+        textSlack +
+        cellPadding,
+    )
+    columns.account.push(
       measure(activity.account ?? '—', 'body') +
         textSlack +
         (activity.account ? markWidth : 0) +
         cellPadding +
         buttonInset,
     )
-    columns[2].push(
+    columns.category.push(
       twoLine(activity.category, activity.subcategory) + markWidth + cellPadding + buttonInset,
     )
     if (activity.other != null)
-      columns[3].push(
+      columns.owner.push(
         Math.max(measure('Me', 'body'), measure('Other', 'body')) +
           textSlack +
           cellPadding +
           buttonInset,
       )
-    // Rows without a place would drag the percentile down to a dash; they always fit anyway.
     const place = activityPlace(activity)
     if (place.kind !== 'none')
-      columns[4].push(
+      columns.location.push(
         twoLine(place.primary, place.secondary) + markWidth + cellPadding + buttonInset,
       )
     const date = formatListDate(activity.date, referenceIso)
-    // The centered date, with room for its status icon (12px and a 6px gap) on each side so the
-    // icon can hang past the date without moving it.
-    columns[5].push(
-      measure(date, 'body') +
-        (activityStatus(activity) ? 36 : 0) +
-        textSlack +
-        cellPadding +
-        buttonInset * 2,
+    columns.date.push(measure(date, 'body') + textSlack + cellPadding + buttonInset * 2)
+    // The amount ends the row, so it pads only its left side.
+    columns.amount.push(
+      measure(formatCurrency(activity.amount), 'strong') + textSlack + cellPadding / 2,
     )
-    columns[6].push(measure(formatCurrency(activity.amount), 'body') + textSlack + cellPadding)
   }
   return activityColumns.map(({ id }, index) => {
-    if (index === 0) return minimumDescriptionWidth
-    const values = columns[index]
-    // Accounts and categories are a short, known list, so all of them fit. Places are open-ended,
-    // so the rare long one ellipsizes instead of widening every row.
+    const values = columns[id]
     const content =
-      id === 'location'
-        ? Math.min(typicalWidth(values), widestTextColumn)
-        : id === 'date' || id === 'amount'
-          ? Math.max(0, ...values)
-          : Math.min(Math.max(0, ...values), widestTextColumn)
+      id === 'description'
+        ? Math.min(typicalWidth(values), widestDescription)
+        : Math.max(0, ...values)
     return Math.ceil(Math.max(header[index], content))
   })
 }
 
-/** What a row's date carries beside it: still pending, or a second look Rust suggests. */
+/** What a row's merchant carries beside it: still pending, or a second look Rust suggests. */
 export function activityStatus(activity: Pick<ActivityItem, 'pending' | 'flag'>) {
-  if (activity.pending) return { icon: Clock, label: 'Pending', warning: false }
+  if (activity.pending) return { badge: 'Pending', label: 'Pending', warning: false }
   if (activity.flag === 'duplicate')
-    return { icon: Copy, label: 'Possible duplicate', warning: true }
+    return { badge: 'Duplicate?', label: 'Possible duplicate', warning: true }
   if (activity.flag === 'unusual')
-    return { icon: AlertCircle, label: 'Unusual amount', warning: true }
+    return { badge: 'Unusual', label: 'Unusual amount', warning: true }
+  if (activity.flag === 'conflict')
+    return { badge: 'Check', label: 'Sources disagree', warning: true }
   return undefined
 }
 
@@ -168,6 +176,7 @@ export const ActivityList = memo(function ActivityList({
   onToggleOther,
   onOpen,
   selectedId,
+  checkedIds,
   highlightedIds,
   onHighlight,
 }: {
@@ -186,6 +195,8 @@ export const ActivityList = memo(function ActivityList({
   /** Opens the activity's details; the description becomes the way in. */
   onOpen?: (activity: ActivityItem) => void
   selectedId?: string
+  /** Rows chosen for a bulk edit. */
+  checkedIds?: ReadonlySet<string>
   /** Rows to mark, such as the day under a linked chart's pointer. */
   highlightedIds?: ReadonlySet<string>
   /** The row under the pointer or keyboard focus; null when it leaves. */
@@ -200,12 +211,11 @@ export const ActivityList = memo(function ActivityList({
       tabIndex={0}
     >
       {activities.map((activity) => {
-        const date = formatActivityDate(activity.date, referenceIso)
+        const date = formatActivityDate(activity.date)
         const shortDate = formatListDate(activity.date, referenceIso)
         const place = activityPlace(activity)
         const amount = formatCurrency(activity.amount)
         const status = activityStatus(activity)
-        const website = activity.website ? safeExternalUrl(activity.website) : undefined
         const linked = onHighlight
           ? {
               onPointerEnter: () => onHighlight(activity),
@@ -214,9 +224,24 @@ export const ActivityList = memo(function ActivityList({
               onBlur: () => onHighlight(null),
             }
           : {}
+        const checked = checkedIds?.has(activity.id) || undefined
         const content = (
           <>
+            {showColumns ? (
+              <span className="financial-activity-column financial-activity-date">
+                <button
+                  type="button"
+                  className="financial-activity-cell-button"
+                  aria-label={`Filter by date: ${date}`}
+                  disabled={!onFilter}
+                  onClick={() => onFilter?.('date', activity)}
+                >
+                  <time dateTime={activity.date}>{shortDate}</time>
+                </button>
+              </span>
+            ) : null}
             <ActivityMark activity={activity} />
+            {checked ? <span className="sr-only">Selected. </span> : null}
             <span className="financial-activity-copy">
               <span className="financial-activity-title" title={activity.title}>
                 {showColumns ? (
@@ -244,19 +269,21 @@ export const ActivityList = memo(function ActivityList({
                 ) : (
                   <strong>{displayCase(activity.title)}</strong>
                 )}
-                {website && showColumns ? (
-                  <ExternalLink
-                    className="financial-activity-external"
-                    href={website}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    aria-label={`Open ${activity.title} website`}
+                {activity.benefit ? (
+                  <span
+                    className={`activity-badge financial-activity-benefit${activity.benefit.tone ? ` is-${activity.benefit.tone}` : ''}`}
+                    title={activity.benefit.text}
                   >
-                    <ArrowUpRight aria-hidden="true" size={12} />
-                  </ExternalLink>
-                ) : website ? (
-                  <span className="financial-activity-external">
-                    <ArrowUpRight aria-hidden="true" size={12} />
+                    {activity.benefit.label}
+                    <span className="sr-only">: {activity.benefit.text}</span>
+                  </span>
+                ) : null}
+                {status ? (
+                  <span
+                    className={`activity-badge${status.warning ? ' is-warning' : ''}`}
+                    title={status.label}
+                  >
+                    {status.badge}
                   </span>
                 ) : null}
               </span>
@@ -287,13 +314,6 @@ export const ActivityList = memo(function ActivityList({
               ) : null}
               {showDescriptions && activity.description ? (
                 <small className="transaction-description">{activity.description}</small>
-              ) : null}
-              {activity.benefit ? (
-                <small
-                  className={`financial-activity-benefit${activity.benefit.tone ? ` is-${activity.benefit.tone}` : ''}`}
-                >
-                  {activity.benefit.text}
-                </small>
               ) : null}
             </span>
             {showColumns ? (
@@ -378,41 +398,24 @@ export const ActivityList = memo(function ActivityList({
                     aria-label={
                       place.kind === 'place'
                         ? `Filter by location: ${place.primary}`
-                        : place.kind === 'none'
-                          ? 'Location unavailable'
-                          : `Filter by method: ${place.primary}`
+                        : place.kind === 'transfer'
+                          ? `Filter by account: ${activity.transfer?.account}`
+                          : place.kind === 'none'
+                            ? 'Location unavailable'
+                            : `Filter by method: ${place.primary}`
                     }
                     disabled={!onFilter || place.kind === 'none'}
                     onClick={() =>
-                      onFilter?.(place.kind === 'place' ? 'location' : 'method', activity)
+                      onFilter?.(
+                        place.kind === 'place' || place.kind === 'transfer' ? 'location' : 'method',
+                        activity,
+                      )
                     }
                   >
                     {place.kind === 'none' ? null : <PlaceMark kind={place.kind} />}
                     <span className="financial-activity-cell-text">
                       <span>{place.primary}</span>
                       {place.secondary ? <small>{place.secondary}</small> : null}
-                    </span>
-                  </button>
-                </span>
-                <span className="financial-activity-column financial-activity-date">
-                  <button
-                    type="button"
-                    className="financial-activity-cell-button"
-                    aria-label={`Filter by date: ${date}${status ? `, ${status.label.toLocaleLowerCase()}` : ''}`}
-                    disabled={!onFilter}
-                    onClick={() => onFilter?.('date', activity)}
-                  >
-                    <span className="financial-activity-date-line">
-                      <time dateTime={activity.date}>{shortDate}</time>
-                      {status ? (
-                        <span
-                          className={`financial-activity-status${status.warning ? ' activity-flag' : ''}`}
-                          title={status.label}
-                        >
-                          <status.icon size={12} aria-hidden="true" />
-                          <span className="sr-only">{status.label}</span>
-                        </span>
-                      ) : null}
                     </span>
                   </button>
                 </span>
@@ -426,15 +429,7 @@ export const ActivityList = memo(function ActivityList({
               </>
             ) : (
               <span className="financial-activity-meta">
-                <small>
-                  {shortDate}
-                  {activity.pending ? ' · Pending' : ''}
-                  {!activity.pending && activity.flag ? (
-                    <span className="activity-flag">
-                      {activity.flag === 'duplicate' ? ' · Duplicate?' : ' · Unusual'}
-                    </span>
-                  ) : null}
-                </small>
+                <small>{shortDate}</small>
                 <strong className={valueTone(activity.amount)} data-copy-amount>
                   {amount}
                 </strong>
@@ -442,21 +437,7 @@ export const ActivityList = memo(function ActivityList({
             )}
           </>
         )
-        return website && !showColumns ? (
-          <ExternalLink
-            className="financial-activity-row financial-activity-link"
-            data-keyboard-row
-            data-keyboard-open
-            data-highlighted={highlightedIds?.has(activity.id) || undefined}
-            {...linked}
-            href={website}
-            target="_blank"
-            rel="noopener noreferrer"
-            key={activity.id}
-          >
-            {content}
-          </ExternalLink>
-        ) : (
+        return (
           <div
             className={`financial-activity-row${showColumns ? ' financial-activity-row-columns' : ''}${onOpen ? ' is-openable' : ''}`}
             key={activity.id}
@@ -464,6 +445,7 @@ export const ActivityList = memo(function ActivityList({
             data-keyboard-row
             data-keyboard-open={onOpen ? true : undefined}
             data-selected={selectedId === activity.id || undefined}
+            data-checked={checked}
             data-highlighted={highlightedIds?.has(activity.id) || undefined}
             {...linked}
             tabIndex={-1}
@@ -505,6 +487,8 @@ type GroupedActivityListProps = {
   onToggleOther?: (activity: ActivityItem) => void
   onOpen?: (activity: ActivityItem) => void
   selectedId?: string
+  /** Rows chosen for a bulk edit. */
+  checkedIds?: ReadonlySet<string>
 }
 
 export function GroupedActivityList(props: GroupedActivityListProps) {
@@ -517,8 +501,10 @@ export function GroupedActivityList(props: GroupedActivityListProps) {
 const activityPageSize = 60
 
 /**
- * Renders a long list a page at a time, adding a page as the end nears its scroll container.
- * `minimum` keeps rows that must be shown, such as highlighted ones, within the rendered pages.
+ * Renders a long list a page at a time: the next page mounts once the end of the rendered rows comes
+ * within a viewport and a half of the scroll container, so scrolling and row motions stay ahead of
+ * it while rows nobody reaches are never built. `minimum` keeps rows that must be shown, such as
+ * highlighted ones, within the rendered pages.
  */
 function useActivityPages(total: number, minimum = 0) {
   const [pages, setPages] = useState(1)
@@ -528,14 +514,15 @@ function useActivityPages(total: number, minimum = 0) {
   useEffect(() => {
     const target = sentinel.current
     if (!target || !hasMore || typeof IntersectionObserver === 'undefined') return undefined
+    // The margin applies only to the root, so observe within the list's own scroll container.
     let root = target.parentElement
-    while (root && !/(auto|scroll)/.test(getComputedStyle(root).overflowY))
-      root = root.parentElement
+    while (root && !/auto|scroll/.test(getComputedStyle(root).overflowY)) root = root.parentElement
+    // A new observer per page reports at once, so pages keep coming while the end stays in range.
     const observer = new IntersectionObserver(
       ([entry]) => {
-        if (entry.isIntersecting) setPages(Math.ceil(count / activityPageSize) + 1)
+        if (entry?.isIntersecting) setPages(Math.ceil(count / activityPageSize) + 1)
       },
-      { root, rootMargin: '900px 0px' },
+      { root, rootMargin: '0px 0px 150% 0px' },
     )
     observer.observe(target)
     return () => observer.disconnect()
@@ -584,6 +571,7 @@ function ProgressiveActivityList({
   onToggleOther,
   onOpen,
   selectedId,
+  checkedIds,
 }: GroupedActivityListProps) {
   const { count, more } = useActivityPages(activities.length)
   const table = useRef<HTMLDivElement>(null)
@@ -595,7 +583,8 @@ function ProgressiveActivityList({
     const context = canvas.getContext('2d')
     const header = element.querySelector<HTMLElement>('.financial-activity-header')
     const row = element.querySelector<HTMLElement>('.financial-activity-row-columns')
-    if (!context || !header || !row) return undefined
+    const amount = row?.querySelector<HTMLElement>('.financial-activity-amount')
+    if (!context || !header || !row || !amount) return undefined
     // Built from parts: WebKit and Chromium leave the computed `font` shorthand empty, which
     // would silently measure everything in the canvas default of 10px.
     const fontOf = (style: CSSStyleDeclaration, size = style.fontSize) =>
@@ -604,6 +593,7 @@ function ProgressiveActivityList({
     const fonts: Record<TextWeight, string> = {
       header: fontOf(getComputedStyle(header)),
       body: fontOf(bodyStyle),
+      strong: fontOf(getComputedStyle(amount)),
       meta: fontOf(bodyStyle, bodyStyle.getPropertyValue('--type-meta').trim() || '12px'),
     }
     const measure = (value: string, weight: TextWeight) => {
@@ -617,34 +607,35 @@ function ProgressiveActivityList({
       return width
     }
     const sizing = sizingActivities ?? activities
-    const widthsKey = `${referenceIso}\0${fonts.header}\0${fonts.body}\0${fonts.meta}`
+    const widthsKey = Object.values(fonts).join('\0') + `\0${referenceIso}`
     const cachedWidths = gridWidths.get(sizing)
     const widths =
       cachedWidths?.key === widthsKey
         ? cachedWidths.widths
         : activityGridWidths(sizing, referenceIso, measure)
     gridWidths.set(sizing, { key: widthsKey, widths })
-    // Amounts and dates never clip: when the ledger is narrower than its columns, places go
-    // first, then who it's for, categories, and accounts; each stays in the transaction inspector.
+    // Amounts and dates never clip: when the ledger is narrower than its columns, the description
+    // narrows first, then places go, then who it's for, categories, and accounts; each stays in
+    // the transaction inspector. The description, the column people scan, takes any room to spare.
     const fit = () => {
-      const width = (hidden: number[]) =>
-        32 +
-        widths.reduce((sum, value, index) => sum + (hidden.includes(index) ? 0 : value), 0) +
-        16
+      const floors = widths.map((value, index) =>
+        index === descriptionIndex ? Math.min(value, minimumDescriptionWidth) : value,
+      )
       const hidden = optionalColumns.reduce<number[]>(
-        (dropped, index) => (width(dropped) > element.clientWidth ? [...dropped, index] : dropped),
+        (dropped, index) =>
+          rowWidth(floors, dropped) > element.clientWidth ? [...dropped, index] : dropped,
         [],
       )
-      const shown = widths.flatMap((value, index) => (hidden.includes(index) ? [] : [value]))
+      const shown = floors.flatMap((value, index) => (hidden.includes(index) ? [] : [value]))
       element.dataset.hiddenColumns = hidden.map((index) => activityColumns[index].id).join(' ')
       element.style.setProperty(
         '--activity-grid-columns',
-        `32px minmax(${shown[0]}px, 1fr) ${shown
-          .slice(1)
+        `${shown[0]}px 32px minmax(${shown[1]}px, 1fr) ${shown
+          .slice(2)
           .map((value) => `${value}px`)
           .join(' ')}`,
       )
-      element.style.setProperty('--activity-grid-width', `${width(hidden)}px`)
+      element.style.setProperty('--activity-grid-width', `${rowWidth(floors, hidden)}px`)
     }
     fit()
     if (typeof ResizeObserver === 'undefined') return undefined
@@ -690,6 +681,7 @@ function ProgressiveActivityList({
           onToggleOther={onToggleOther}
           onOpen={onOpen}
           selectedId={selectedId}
+          checkedIds={checkedIds}
         />
       ) : (
         groupActivitiesByDate(activities.slice(0, count), referenceIso).map((group, index) => {

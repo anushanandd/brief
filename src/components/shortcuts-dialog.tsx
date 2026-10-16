@@ -4,6 +4,7 @@ import { actionBindings, type AppAction } from '../lib/action-system'
 import { X } from './icons'
 import { Keys } from './keys'
 import { Button } from './ui'
+import { usePresence } from './ui/presence'
 
 export type ShortcutRow = { title: string; keys: readonly string[] }
 export type ShortcutSection = { title: string; rows: readonly ShortcutRow[] }
@@ -72,6 +73,7 @@ export function ShortcutsDialog({
 }) {
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
   const titleId = useId()
+  const present = usePresence(open, dialog)
 
   useEffect(() => {
     if (!dialog || typeof dialog.showModal !== 'function') return
@@ -92,7 +94,7 @@ export function ShortcutsDialog({
         if (event.target === event.currentTarget) onClose()
       }}
     >
-      {open ? (
+      {present ? (
         <div className="shortcuts-panel">
           <header className="shortcuts-header">
             <h2 id={titleId}>Keyboard shortcuts</h2>

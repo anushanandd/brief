@@ -211,3 +211,8 @@
   border-radius: var(--radius-control);
   background: var(--hover-wash);
 }
+/* Rows chosen for a bulk edit keep their mark while focus moves on. */
+.financial-activity-row[data-checked] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}

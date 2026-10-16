@@ -1,4 +1,5 @@
 import {
+  PlusSignIcon,
   Activity01Icon,
   AlertCircleIcon,
   ArrowDown01Icon,
@@ -31,6 +32,8 @@ import {
   EyeIcon,
   EyeOffIcon,
   FilePlusIcon,
+  File02Icon,
+  FolderAddIcon,
   FilterIcon,
   FingerPrintIcon,
   FuelIcon,
@@ -85,6 +88,7 @@ import {
   MoneySend01Icon,
   Sofa01Icon,
   Upload01Icon,
+  UsersRoundIcon,
   Moon02Icon,
   Bookmark01Icon,
   Sun03Icon,
@@ -146,6 +150,8 @@ export const Ellipsis = createIcon(EllipsisIcon)
 export const Eye = createIcon(EyeIcon)
 export const EyeOff = createIcon(EyeOffIcon)
 export const FilePlus = createIcon(FilePlusIcon)
+export const FileText = createIcon(File02Icon)
+export const FolderPlus = createIcon(FolderAddIcon)
 export const Filter = createIcon(FilterIcon)
 export const Fingerprint = createIcon(FingerPrintIcon)
 export const Fuel = createIcon(FuelIcon)
@@ -170,10 +176,12 @@ export const Package = createIcon(PackageIcon)
 export const Palette = createIcon(PaletteIcon)
 export const Percent = createIcon(PercentIcon)
 export const Plane = createIcon(PlaneIcon)
+export const Users = createIcon(UsersRoundIcon)
 export const Receipt = createIcon(ReceiptIcon)
 export const ReceiptText = createIcon(ReceiptTextIcon)
 export const RefreshCw = createIcon(RefreshCwIcon)
 export const Repeat2 = createIcon(RepeatIcon)
+export const Plus = createIcon(PlusSignIcon)
 export const RotateCcw = createIcon(RotateCcwIcon)
 export const Save = createIcon(SaveIcon)
 export const ScrollText = createIcon(ScrollTextIcon)

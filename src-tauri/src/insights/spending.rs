@@ -1,6 +1,6 @@
 //! Spending's periods and the judgments made about them. Spending covers the saved card, every
 //! USD account with spending, or one of them, over a statement, a rolling week, or a calendar
-//! month, quarter, or year. The renderer sums each period's activity; this module decides what a
+//! month, quarter, or year, counting your spending, someone else's, or both. The renderer sums each period's activity; this module decides what a
 //! statement opened at, where the current period is heading, and what is usual by this point.
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -67,11 +67,21 @@ pub struct SpendingPeriod {
     pub opening: Option<f64>,
 }
 
+/// Whose spending a scope counts: yours, purchases made for someone else, or both.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Owner {
+    Me,
+    Other,
+    All,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct SpendingScope {
     /// An account ID, or `all`.
     pub scope: String,
+    pub owner: Owner,
     /// Newest first within each kind.
     pub periods: Vec<SpendingPeriod>,
 }
@@ -80,21 +90,26 @@ pub struct SpendingScope {
 struct Activity<'a> {
     dated: Vec<(NaiveDate, &'a Transaction)>,
     first: Option<NaiveDate>,
+    owner: Owner,
 }
 
 impl<'a> Activity<'a> {
-    fn new(transactions: Vec<&'a Transaction>, updated_at: &str, zone: &dyn Zone) -> Self {
+    fn new(transactions: Vec<&'a Transaction>, owner: Owner) -> Self {
         let dated: Vec<_> = transactions
             .into_iter()
             .filter_map(|transaction| {
                 Some((
-                    calendar::transaction_date(transaction.posted_date(), updated_at, zone)?,
+                    calendar::transaction_date(transaction.posted_date())?,
                     transaction,
                 ))
             })
             .collect();
         let first = dated.iter().map(|(date, _)| *date).min();
-        Self { dated, first }
+        Self {
+            dated,
+            first,
+            owner,
+        }
     }
 
     fn spending_in(
@@ -105,7 +120,7 @@ impl<'a> Activity<'a> {
         self.dated
             .iter()
             .filter(move |(date, transaction)| {
-                *date >= from && *date <= through && spending(transaction)
+                *date >= from && *date <= through && spending_for(transaction, self.owner)
             })
             .map(|(_, transaction)| *transaction)
     }
@@ -125,10 +140,18 @@ impl<'a> Activity<'a> {
 }
 
 fn spending(transaction: &Transaction) -> bool {
+    spending_for(transaction, Owner::Me)
+}
+
+fn spending_for(transaction: &Transaction, owner: Owner) -> bool {
     transaction
         .classification
         .as_ref()
-        .is_some_and(|classification| classification.spending)
+        .is_some_and(|classification| match owner {
+            Owner::Me => classification.spending,
+            Owner::Other => classification.others_spending,
+            Owner::All => classification.spending || classification.others_spending,
+        })
 }
 
 /// The windows of one kind: how a period starts and ends, and the one before it.
@@ -311,7 +334,7 @@ fn opening(
             .iter()
             .filter(|(date, _)| *date >= start && *date <= end)
             .map(|(_, transaction)| {
-                if spending(transaction) {
+                if spending_for(transaction, activity.owner) {
                     minor_units(transaction.amount.abs())
                 } else if transaction.amount > 0.0 {
                     -minor_units(transaction.amount)
@@ -356,23 +379,32 @@ pub fn scopes(
         })
         .collect();
     let ids: BTreeSet<&str> = options.iter().map(|account| account.id.as_str()).collect();
+    // Someone else's spending and everyone's are offered only once a purchase is theirs.
+    let owners: &[Owner] = if transactions.iter().any(|transaction| {
+        transaction
+            .classification
+            .as_ref()
+            .is_some_and(|classification| classification.others_spending)
+    }) {
+        &[Owner::Me, Owner::Other, Owner::All]
+    } else {
+        &[Owner::Me]
+    };
     options
         .iter()
         .map(|account| account.id.as_str())
         .chain([ALL_ACCOUNTS])
-        .map(|scope| {
+        .flat_map(|scope| owners.iter().map(move |&owner| (scope, owner)))
+        .map(|(scope, owner)| {
             let in_scope = |transaction: &&Transaction| match transaction.account_id.as_deref() {
                 Some(id) if scope == ALL_ACCOUNTS => ids.contains(id),
                 id => id == Some(scope),
             };
-            let activity = Activity::new(
-                transactions.iter().filter(in_scope).collect(),
-                updated_at,
-                zone,
-            );
+            let activity = Activity::new(transactions.iter().filter(in_scope).collect(), owner);
             let on_card = card.filter(|card| card.id == scope);
             SpendingScope {
                 scope: scope.to_owned(),
+                owner,
                 periods: periods(
                     &activity,
                     on_card,
@@ -423,8 +455,9 @@ fn periods(
                 projected: current
                     .then(|| projected(&calendar, activity, start, end))
                     .flatten(),
+                // A statement balance is never only someone else's.
                 opening: statement
-                    .filter(|_| kind == PeriodKind::Statement)
+                    .filter(|_| kind == PeriodKind::Statement && activity.owner != Owner::Other)
                     .map(|statement| {
                         opening(activity, statement, balance.filter(|_| current), start, end)
                     }),
@@ -501,9 +534,19 @@ mod tests {
         kind: PeriodKind,
         start: &str,
     ) -> &'a SpendingPeriod {
+        owned_period(scopes, scope, Owner::Me, kind, start)
+    }
+
+    fn owned_period<'a>(
+        scopes: &'a [SpendingScope],
+        scope: &str,
+        owner: Owner,
+        kind: PeriodKind,
+        start: &str,
+    ) -> &'a SpendingPeriod {
         scopes
             .iter()
-            .find(|entry| entry.scope == scope)
+            .find(|entry| entry.scope == scope && entry.owner == owner)
             .unwrap()
             .periods
             .iter()
@@ -622,5 +665,39 @@ mod tests {
         // The quarter is well past a week in, with days left, so it is.
         let quarter = period(&scopes, "card", PeriodKind::Quarter, "2026-07-01");
         assert!(quarter.projected.is_some());
+    }
+
+    #[test]
+    fn purchases_for_someone_else_count_only_as_theirs_or_everyones() {
+        let mine = transaction("mine", "2026-09-02", -70.0, "Dining");
+        let mut theirs = transaction("theirs", "2026-09-03", -30.0, "Dining");
+        crate::transaction_policy::owe(theirs.classification.as_mut().unwrap(), theirs.amount);
+        let card = card(Some(-100.0));
+        let scopes = scopes(
+            &[mine, theirs],
+            std::slice::from_ref(&card),
+            Some(&card),
+            Some(&statement()),
+            "2026-09-10T12:00:00Z",
+            &NamedZone::Utc,
+        );
+        let total = |owner| {
+            owned_period(&scopes, "card", owner, PeriodKind::Month, "2026-09-01")
+                .projected
+                .as_ref()
+                .unwrap()
+                .total
+        };
+        // Ten days of a 30-day month, carried to its end.
+        assert_eq!(
+            (total(Owner::Me), total(Owner::Other), total(Owner::All)),
+            (210.0, 90.0, 300.0)
+        );
+        // The card's balance holds both purchases, so only everyone's spending opens at it.
+        let opening = |owner| {
+            owned_period(&scopes, "card", owner, PeriodKind::Statement, "2026-08-24").opening
+        };
+        assert_eq!(opening(Owner::All), Some(0.0));
+        assert_eq!(opening(Owner::Other), None);
     }
 }

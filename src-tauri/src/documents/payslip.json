@@ -1,0 +1,136 @@
+{
+  "titles": [
+    "earnings statement",
+    "pay statement",
+    "payslip",
+    "pay stub",
+    "paystub",
+    "statement of earnings",
+    "advice of deposit"
+  ],
+  "federalSections": ["federal"],
+  "stateSections": [
+    "state",
+    "california",
+    "new york",
+    "new jersey",
+    "massachusetts",
+    "illinois",
+    "colorado",
+    "washington",
+    "oregon",
+    "pennsylvania",
+    "virginia",
+    "georgia",
+    "north carolina",
+    "ohio",
+    "michigan",
+    "minnesota",
+    "maryland",
+    "arizona",
+    "connecticut",
+    "wisconsin"
+  ],
+  "deductionSections": ["deduction", "taxes", "tax deductions", "withholding"],
+  "earningsSections": ["earnings"],
+  "currentColumns": ["current", "this period", "amount"],
+  "ytdColumns": ["year-to-date", "year to date", "ytd"],
+  "lines": [
+    {
+      "key": "net",
+      "label": "Net pay",
+      "kind": "total",
+      "match": ["total net pay", "net pay", "net check", "take home", "net amount"]
+    },
+    {
+      "key": "gross",
+      "label": "Gross pay",
+      "kind": "total",
+      "match": ["gross pay", "gross earnings", "total gross", "total earnings"]
+    },
+    {
+      "key": "socialSecurityTax",
+      "label": "Social Security tax",
+      "kind": "tax",
+      "match": ["social security", "oasdi", "fica ss", "soc sec"]
+    },
+    { "key": "medicareTax", "label": "Medicare tax", "kind": "tax", "match": ["medicare"] },
+    {
+      "key": "stateDisability",
+      "label": "State disability insurance",
+      "kind": "tax",
+      "match": ["disabilit", "sdi", "vdi", "famli", "paid family", "pfml", "family leave"]
+    },
+    {
+      "key": "federalWithholding",
+      "label": "Federal income tax",
+      "kind": "tax",
+      "match": [
+        "federal income tax",
+        "fed income tax",
+        "federal withholding",
+        "fed withholding",
+        "fitw",
+        "fed w/h"
+      ]
+    },
+    {
+      "key": "stateWithholding",
+      "label": "State income tax",
+      "kind": "tax",
+      "match": ["state income tax", "state withholding", "sitw", "state w/h"]
+    },
+    {
+      "key": "localTax",
+      "label": "Local tax",
+      "kind": "tax",
+      "match": ["local tax", "city tax", "occupational privilege", "local income tax"]
+    },
+    {
+      "key": "withholding",
+      "label": "Income tax",
+      "kind": "tax",
+      "match": ["withholding tax", "income tax", "withholding"]
+    },
+    {
+      "key": "roth401k",
+      "label": "401(k) Roth",
+      "kind": "deduction",
+      "match": ["roth 401", "401k roth", "401(k) roth", "roth"]
+    },
+    {
+      "key": "afterTax401k",
+      "label": "401(k) after-tax",
+      "kind": "deduction",
+      "match": ["after-tax 401", "after tax 401", "401k after", "401k at"]
+    },
+    {
+      "key": "pretax401k",
+      "label": "401(k) pre-tax",
+      "kind": "deduction",
+      "match": ["401k", "401(k)", "403b", "403(b)", "457"]
+    },
+    {
+      "key": "espp",
+      "label": "Employee stock purchase",
+      "kind": "deduction",
+      "match": ["espp", "stock purchase", "esp contribution"]
+    },
+    { "key": "hsa", "label": "HSA", "kind": "deduction", "match": ["hsa", "health savings"] },
+    {
+      "key": "pretaxBenefits",
+      "label": "Pre-tax benefits",
+      "kind": "deduction",
+      "match": [
+        "medical",
+        "dental",
+        "vision",
+        "health ins",
+        "fsa",
+        "commuter",
+        "transit",
+        "parking"
+      ]
+    }
+  ]
+}

@@ -48,7 +48,7 @@ const contrast = (foreground: string, background: string) => {
 }
 
 const themes = [
-  { name: 'dark', text: block(":root[data-theme='dark']"), surfaces: ['#000000'] },
+  { name: 'dark', text: block(":root[data-theme='dark']"), surfaces: ['#10120f', '#20231e'] },
   { name: 'custom', text: root, surfaces: ['#08090a', '#1b1c1e'] },
 ]
 

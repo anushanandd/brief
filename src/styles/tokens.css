@@ -60,10 +60,6 @@
   --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
   --sidebar-border: var(--border-subtle);
   --surface: rgba(8, 9, 10, 0.2);
-  /* Cards fade in: clear at the top, settling to a light tint at the base. */
-  /* Grain dithers the fade, so the gradient can't show bands. Dark fills flat. */
-  --grain: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0 0.5 0 0 0 0.05 0'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
-  --card-fill: var(--grain), linear-gradient(180deg, rgba(8, 9, 10, 0) 15%, rgba(8, 9, 10, 0.1));
   --glass-edge: var(--border-subtle);
   --surface-raised: var(--control-background);
   --surface-hover: #232426;
@@ -75,7 +71,6 @@
   --popup-surface: #070b14;
   --popup-border: transparent;
   --popup-sheen: linear-gradient(180deg, rgba(125, 161, 191, 0.06), transparent 40%);
-  --popup-filter: blur(20px) saturate(130%);
   --text-primary: var(--ink);
   --text-secondary: var(--pencil);
   /* Three inks: primary, secondary, and tertiary for labels, captions, and unavailable values. */
@@ -161,49 +156,54 @@
   --row-height-compact: 40px;
 }
 
-/* Dark follows Robinhood Legend's dark theme: black canvas and panels set apart by hairlines,
-   #1e2124 controls with #30363a hover, white and blue-grey inks, Robinhood green for gains.
-   Legend's third ink (#545d61) is lifted to clear AA, and losses are red, not its #ff5000. */
+/* Dark follows Superlogical's dark theme: a green-black paper (#10120f) with panels set apart
+   by hairlines of its warm ink (#ececea at 14%), olive-grey controls, and its lilac, coral, and
+   amber gradient for accent, benchmark, and warning. Gains and losses use its emerald and red. */
 :root[data-theme='dark'] {
   color-scheme: dark;
-  --paper: #000000;
-  --paper-sheet: #000000;
-  --paper-inset: #1e2124;
-  --ink: #ffffff;
-  --pencil: #919fa6;
-  --ledger-green: #00c805;
+  --paper: #10120f;
+  --paper-sheet: #10120f;
+  --paper-inset: #20231e;
+  --ink: #ececea;
+  --pencil: #b3b3b3;
+  --ledger-green: #00d492;
   --background: var(--paper);
   --background-wash: transparent;
   --sidebar: var(--paper);
   --sidebar-background: transparent;
-  --hover-wash: rgba(255, 255, 255, 0.04);
-  --sidebar-accent: #1e2124;
-  --surface: #000000;
-  --card-fill: var(--surface);
-  --surface-hover: #30363a;
-  --popup-surface: #1e2124;
+  --hover-wash: rgba(236, 236, 234, 0.04);
+  --sidebar-accent: #20231e;
+  --surface: #10120f;
+  --surface-hover: #2c3029;
+  --popup-surface: #20231e;
   --popup-border: transparent;
   --popup-sheen: none;
-  --text-tertiary: #717c82;
-  --control-background: #1e2124;
+  --text-tertiary: #8c9388;
+  --control-background: #20231e;
   --control-border: transparent;
-  --rule-strength: 16%;
+  --rule-strength: 14%;
   --positive: var(--ledger-green);
-  --positive-soft: rgba(0, 200, 5, 0.2);
-  --negative: #ff453a;
-  --negative-soft: rgba(255, 69, 58, 0.2);
-  --accent: #ffffff;
-  --accent-soft: rgba(255, 255, 255, 0.1);
-  --button-text: #000000;
-  --chart-primary: #ffffff;
-  --chart-secondary: #919fa6;
-  --chart-benchmark: #89c6ff;
+  --positive-soft: rgba(0, 212, 146, 0.16);
+  --warning: #ecc273;
+  --warning-soft: rgba(236, 194, 115, 0.14);
+  --negative: #ffa2a2;
+  --negative-soft: rgba(255, 162, 162, 0.16);
+  --accent: #d1b6fe;
+  --accent-soft: rgba(209, 182, 254, 0.14);
+  /* Superlogical's headline ramp: lilac through coral to amber. Brand type and progress only,
+     never figures, where coral and amber would read as status. */
+  --brand-gradient: linear-gradient(180deg, #d1b6fe 30%, #fe9369 58%, #ecc273 78%);
+  --brand-gradient-across: linear-gradient(90deg, #d1b6fe, #fe9369 60%, #ecc273);
+  --button-text: #10120f;
+  --chart-primary: #ececea;
+  --chart-secondary: #b3b3b3;
+  --chart-benchmark: #fe9369;
   --shadow-card: none;
-  --shadow-popup: 0 12px 32px rgba(0, 0, 0, 0.8);
-  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.85);
-  --dialog-backdrop: rgba(0, 0, 0, 0.7);
-  --selection: rgba(255, 255, 255, 0.24);
-  --shimmer: rgba(255, 255, 255, 0.14);
+  --shadow-popup: 0 12px 32px rgba(0, 0, 0, 0.7);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.75);
+  --dialog-backdrop: rgba(16, 18, 15, 0.7);
+  --selection: rgba(209, 182, 254, 0.28);
+  --shimmer: rgba(236, 236, 234, 0.14);
 }
 
 :root[data-theme='dark'] .app-frame {

@@ -2,7 +2,6 @@ export type SettingsSectionId =
   | 'connections'
   | 'accounts'
   | 'taxes'
-  | 'rules'
   | 'appearance'
   | 'charts'
   | 'navigation'
@@ -104,8 +103,13 @@ export const settingsSections: readonly SettingsSection[] = [
         keywords: 'amex credits uber resy hotel airline clear visible hide',
       },
       {
+        id: 'manual-accounts',
+        title: 'Manual accounts',
+        keywords: 'add account by hand 401k property car loan balance net worth',
+      },
+      {
         id: 'account-details',
-        title: 'Names and start dates',
+        title: 'Names, start dates, and closed accounts',
         keywords: 'display name rename nickname start date history begin',
       },
       {
@@ -140,19 +144,22 @@ export const settingsSections: readonly SettingsSection[] = [
       {
         id: 'account-tax-treatment',
         title: 'Account tax treatment',
-        keywords: 'taxable tax-deferred tax-free roth ira hsa 529 retirement',
+        keywords: 'taxable tax-deferred tax-free roth ira hsa 529 retirement 401k pre-tax',
       },
-    ],
-  },
-  {
-    id: 'rules',
-    title: 'Rules',
-    keywords: 'categories rules',
-    entries: [
       {
-        id: 'category-rules',
-        title: 'Category rules',
-        keywords: 'recategorize merchant automatic always remove',
+        id: 'retirement-birth-year',
+        title: 'Birth year',
+        keywords: 'age catch-up retirement limit 50',
+      },
+      {
+        id: 'retirement-planned-costs',
+        title: 'Costs you’ll add',
+        keywords: 'rent housing health insurance move out budget fire retirement',
+      },
+      {
+        id: 'retirement-earlier-contributions',
+        title: 'Earlier Roth contributions',
+        keywords: 'roth ira basis contributions 5498 before history',
       },
     ],
   },
@@ -248,6 +255,11 @@ export const settingsSections: readonly SettingsSection[] = [
         keywords: 'export import settings briefsettings transfer',
       },
       {
+        id: 'exports',
+        title: 'Exports',
+        keywords: 'calendar ics bills dividends statement dates lots csv tax accountant',
+      },
+      {
         id: 'local-storage',
         title: 'Local storage',
         keywords: 'database keychain caches where stored disk',
@@ -275,9 +287,19 @@ export const settingsSections: readonly SettingsSection[] = [
         keywords: 'alerts payment due credit expiring cash shortfall menu bar',
       },
       {
+        id: 'brief-calendar',
+        title: 'Brief calendar',
+        keywords: 'calendar eventkit events sync icloud due dates trips',
+      },
+      {
         id: 'open-at-login',
         title: 'Open at login',
         keywords: 'login items startup launch restart',
+      },
+      {
+        id: 'global-shortcut',
+        title: 'System-wide shortcut',
+        keywords: 'hotkey palette anywhere summon command b',
       },
       {
         id: 'diagnostics',

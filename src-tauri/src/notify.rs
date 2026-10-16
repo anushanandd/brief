@@ -79,7 +79,40 @@ pub fn notices(needs: &[AttentionItem], account_name: impl Fn(&str) -> String) -
                     format!("{name} credit ends {}", in_days(*days)),
                     "Part of this window's allowance is unused.",
                 ),
-                Item::WashWindow { .. } => return None,
+                Item::MissedBill { title, days, .. } => (
+                    format!("{title} didn't post"),
+                    if *days == 1 {
+                        "It was due yesterday and nothing has posted."
+                    } else {
+                        "It was due and nothing has posted."
+                    },
+                ),
+                Item::ContributionLimit {
+                    plan,
+                    tax_year,
+                    on_pace: false,
+                    ..
+                } => (
+                    format!(
+                        "{tax_year} {} contributions are over the limit",
+                        if *plan == "ira" { "IRA" } else { "401(k)" }
+                    ),
+                    "An excess is taxed until it's taken out.",
+                ),
+                Item::PayMissing { employer, .. } => (
+                    format!("Pay from {employer} hasn't arrived"),
+                    "The pay statement shows a deposit Brief hasn't seen.",
+                ),
+                Item::W2Differs { employer, .. } => (
+                    format!("{employer}'s W-2 differs from your pay statements"),
+                    "Check it before you file.",
+                ),
+                // None is tied to a date, so none interrupts.
+                Item::WashWindow { .. }
+                | Item::BenefitReview { .. }
+                | Item::IdleCash { .. }
+                | Item::ContributionsToConfirm { .. }
+                | Item::ContributionLimit { .. } => return None,
             };
             Some(Notice {
                 id: need.id.clone(),

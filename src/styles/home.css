@@ -15,8 +15,7 @@
   gap: 12px;
 }
 /* Titles within a card read as section titles, like every card's own. */
-.coming-up-heading > h3,
-.period-totals > h3 {
+.coming-up-heading > h3 {
   margin: 0;
   font-size: var(--type-section);
   font-weight: 500;
@@ -226,15 +225,14 @@
   margin-top: 16px;
 }
 
-/* The main chart takes whatever height its row has, so the column beside it never leaves a
-   gap under it. */
+/* The chart sets the top row's height; the column beside it fills that and no more. */
 .overview-page .net-worth-card {
   display: flex;
   flex-direction: column;
 }
 .overview-page .brokerage-chart-viewport {
   display: flex;
-  min-height: 200px;
+  min-height: 275px;
   flex: 1 1 auto;
 }
 .overview-page .brokerage-chart-slide,
@@ -245,7 +243,7 @@
 }
 .overview-page .performance-chart {
   height: auto;
-  min-height: 200px;
+  min-height: 275px;
   flex: 1 1 auto;
 }
 .overview-page .brokerage-chart-content > .empty-state {
@@ -269,21 +267,45 @@
   font-size: var(--type-meta);
   font-weight: 400;
 }
-/* The right card is what's ahead: what needs action, then what's expected. */
+/* The right card is what's ahead: the period's totals, what needs action, then what's
+   expected. */
 .home-ahead-card {
   min-width: 0;
   padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 
-/* Spent and income for the chart's period, at the top of the right card. */
+/* Spent and income for the chart's period, in its own companion section. */
 .period-totals {
   padding-top: 0;
 }
 
-.period-totals > h3 > small {
+.period-totals-partial {
   color: var(--text-tertiary);
   font-size: var(--type-meta);
   font-weight: 400;
+}
+/* The section's rule and padding frame the figures; they need no margin or rule of their own. */
+.home-period-card .account-summary-metrics {
+  margin-top: 0;
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+/* Income, spent, and net share one row; a figure too wide for a third still wraps. */
+.home-period-card .account-summary-metrics > .metric {
+  flex-basis: calc(33.333% - 16px);
+}
+/* Coming up takes what the column has left above the rule and scrolls to the rest. */
+.home-expected-card {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 0;
+  flex-direction: column;
+}
+.home-expected-card .expected-activity-list {
+  min-height: 0;
+  flex: 1 1 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
 }
 .period-totals-value {
   display: grid;
@@ -294,11 +316,18 @@
   font-size: var(--type-meta);
   font-weight: 500;
 }
-.overview-page .net-worth-card {
+/* One rule runs the full width under the chart and is the only one between the rows, so the
+   sections that open the bottom row draw none of their own. */
+.overview-page .home-top {
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.overview-page .home-top > .net-worth-card {
   padding-bottom: var(--card-padding);
 }
-.overview-page .brokerage-chart-content > .empty-state {
-  min-height: 200px;
+.overview-page .home-previews > .surface-card,
+.overview-page .home-bottom > .home-companion > .surface-card:first-child {
+  padding-top: 0;
+  border-top: 0;
 }
 /* A need is a whole-row link, quiet until hovered; urgent needs mark their date. */
 .needs-row {
@@ -424,7 +453,8 @@
   white-space: normal;
 }
 
-/* Today's companion: what needs you, then what is coming, each its own card. */
+/* Today's companion: the period's spending, what needs you, what is coming, then recent
+   activity, each its own section. */
 .home-companion {
   display: grid;
   min-width: 0;
@@ -433,16 +463,6 @@
 }
 .home-companion .coming-up {
   padding-top: 0;
-}
-/* The chart's period in figures, at the foot of the hero it describes. */
-.home-period-totals {
-  margin-top: 16px;
-  padding-top: 16px;
-  border-top: var(--hairline) solid var(--border-subtle);
-}
-.home-period-totals .account-summary-metrics {
-  padding-bottom: 0;
-  border-bottom: 0;
 }
 .home-preview-more {
   margin-top: 8px;
@@ -489,22 +509,35 @@
   -webkit-line-clamp: 2;
 }
 
-/* Today: the hero with its holdings and activity previews beside a column of what needs you,
-   what is coming, and the accounts. Each column stacks on its own so neither leaves a gap. */
+/* Home: the chart beside what's ahead, then holdings and accounts beside what changed and
+   recent activity. */
 .home-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 16px;
+}
+.home-top,
+.home-bottom {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
   align-items: start;
   gap: 16px;
 }
-.home-main {
-  display: grid;
-  min-width: 0;
-  gap: 16px;
+.home-top {
+  align-items: stretch;
+}
+/* What's ahead adds nothing to the row's height: it fills what the chart sets and clips below,
+   where Coming up scrolls. */
+.home-ahead {
+  display: flex;
+  overflow: hidden;
+  flex-direction: column;
+  contain: size;
 }
 .home-previews {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* Holdings has more columns, so it takes the larger share. */
+  grid-template-columns: minmax(0, 3fr) minmax(0, 2fr);
   /* Each preview ends with its rows rather than stretching to the longer one. */
   align-items: start;
   gap: 16px;
@@ -519,7 +552,51 @@
   }
 }
 @media (max-width: 1050px) {
-  .home-layout {
+  .home-top,
+  .home-bottom {
     grid-template-columns: minmax(0, 1fr);
   }
+  /* Stacked, the column has no row to fill, so it sizes itself and Coming up shows three. */
+  .home-ahead {
+    overflow: visible;
+    contain: none;
+  }
+  .home-expected-card .expected-activity-list {
+    max-height: calc(var(--row-height) * 3.5);
+  }
+}
+
+/* A whole split into its largest parts, under the Holdings and Accounts previews. Each part
+   is taller than the line it draws so it is easy to hover. */
+.share-line {
+  margin: 12px 0 0;
+}
+.share-line-bar {
+  display: flex;
+  height: 20px;
+  gap: 2px;
+}
+.share-line-part {
+  display: flex;
+  min-width: 2px;
+  align-items: center;
+}
+.share-line-part::before {
+  width: 100%;
+  height: 8px;
+  background: currentColor;
+  content: '';
+  transition: opacity var(--duration-quick) var(--ease-out);
+}
+.share-line-part:first-child::before {
+  border-radius: 999px 0 0 999px;
+}
+.share-line-part:last-child::before {
+  border-radius: 0 999px 999px 0;
+}
+.share-line-part:only-child::before {
+  border-radius: 999px;
+}
+.share-line-bar:hover .share-line-part:not(:hover)::before {
+  opacity: 0.35;
 }

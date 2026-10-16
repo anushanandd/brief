@@ -20,6 +20,7 @@ impl Providers {
                     .items
                     .get(&item.item_id)
                     .and_then(|cached| cached.error.clone()),
+                statements: statements_state(&item, cache.items.get(&item.item_id)),
                 item_id: item.item_id,
                 name: item
                     .institution_name
@@ -52,6 +53,11 @@ impl Providers {
         let (url, pending) = match provider {
             "plaid" => self.begin_plaid_link(generation, false, item_id).await?,
             "plaid-investments" => self.begin_plaid_link(generation, true, item_id).await?,
+            "plaid-statements" => {
+                let item_id = item_id.ok_or("Choose a Plaid connection for statements")?;
+                self.begin_plaid_statements_link(generation, item_id)
+                    .await?
+            }
             "snaptrade" => self.begin_snaptrade_link(item_id).await?,
             _ => return Err("Unknown provider".into()),
         };
@@ -122,6 +128,42 @@ impl Providers {
                 exchanged_public_tokens: Vec::new(),
                 investments,
                 repairing: item_id.is_some(),
+                statements_item: None,
+            },
+        ))
+    }
+
+    /// A hosted Plaid Link that adds statements to the saved bank item `item_id`: two years of
+    /// them, through update mode, so the item and its accounts stay as they are.
+    async fn begin_plaid_statements_link(
+        &self,
+        generation: u64,
+        item_id: &str,
+    ) -> Result<(String, PendingLink), String> {
+        let credentials = self.plaid_credentials()?;
+        let user = self.ensure_plaid_user(&credentials, generation).await?;
+        let (user_field, user_identifier) = plaid_user_identifier(&user)?;
+        let item = self
+            .read_secret::<Vec<PlaidItem>>(PLAID_ITEMS_KEY)?
+            .unwrap_or_default()
+            .into_iter()
+            .find(|item| item.item_id == item_id && !item.investments)
+            .ok_or("Unknown Plaid bank connection")?;
+        let today = Utc::now().date_naive();
+        let mut request = plaid_statements_link_request(item.access_token, today);
+        request[user_field] = Value::String(user_identifier.into());
+        let response = self
+            .plaid_once(&credentials, "/link/token/create", request)
+            .await
+            .map_err(|error| error.to_string())?;
+        Ok((
+            string_field(&response, "hosted_link_url")?,
+            PendingLink::Plaid {
+                link_token: string_field(&response, "link_token")?,
+                exchanged_public_tokens: Vec::new(),
+                investments: false,
+                repairing: true,
+                statements_item: Some(item.item_id),
             },
         ))
     }
@@ -254,6 +296,7 @@ impl Providers {
             institution_id: None,
             institution_name: None,
             investments,
+            statements: false,
         };
         // Public tokens are one-time credentials. Persist each access token before
         // any optional metadata request or the next exchange can fail.
@@ -311,14 +354,17 @@ impl Providers {
     ) -> Result<LinkStatus, String> {
         match (provider, pending) {
             (
-                linked_provider @ ("plaid" | "plaid-investments"),
+                linked_provider @ ("plaid" | "plaid-investments" | "plaid-statements"),
                 PendingLink::Plaid {
                     link_token,
                     exchanged_public_tokens,
                     investments,
                     repairing,
+                    statements_item,
                 },
-            ) if investments == (linked_provider == "plaid-investments") => {
+            ) if investments == (linked_provider == "plaid-investments")
+                && statements_item.is_some() == (linked_provider == "plaid-statements") =>
+            {
                 let credentials = self.plaid_credentials()?;
                 let response = self
                     .plaid_read(
@@ -336,7 +382,19 @@ impl Providers {
                     }
                 }
                 if repairing {
-                    return Ok(LinkStatus::of(plaid_link_completed(&response)));
+                    let completed = plaid_link_completed(&response);
+                    if let Some(item_id) = statements_item.filter(|_| completed) {
+                        self.mutate_link_vault(session_id, |vault| {
+                            update_plaid_items(vault, |items| {
+                                if let Some(item) =
+                                    items.iter_mut().find(|item| item.item_id == item_id)
+                                {
+                                    item.statements = true;
+                                }
+                            })
+                        })?;
+                    }
+                    return Ok(LinkStatus::of(completed));
                 }
                 if public_tokens.is_empty() {
                     return Ok(LinkStatus::of(false));
@@ -469,6 +527,7 @@ impl Providers {
         const MAX_ATTEMPTS: usize = 3;
         let max_attempts = if safe_read { MAX_ATTEMPTS } else { 1 };
         for attempt in 1..=max_attempts {
+            crate::providers::http::count_request("Plaid", attempt > 1);
             let response = self
                 .http
                 .post(format!("https://production.plaid.com{path}"))
@@ -528,6 +587,45 @@ fn plaid_link_request(investments: bool, repair_token: Option<String>) -> Value 
         request["additional_consented_products"] = json!(["liabilities"]);
     }
     request
+}
+
+/// For a bank connection: `Some(true)` once statements were added, `Some(false)` when they
+/// can be, which needs the institution to support Statements and the item to hold a checking or
+/// savings account, and `None` otherwise, so Settings offers only what Plaid can deliver.
+fn statements_state(item: &PlaidItem, cached: Option<&PlaidItemCache>) -> Option<bool> {
+    if item.investments {
+        return None;
+    }
+    if item.statements {
+        return Some(true);
+    }
+    let cached = cached?;
+    let has_bank_account = cached.data.as_ref().is_some_and(|data| {
+        data.accounts
+            .iter()
+            .any(|account| account.get("type").and_then(Value::as_str) == Some("depository"))
+    });
+    (cached.statements_supported == Some(true) && has_bank_account).then_some(false)
+}
+
+/// The statements Plaid may extract: up to two years before `today`.
+pub(super) const STATEMENT_DAYS: i64 = 730;
+
+/// An update-mode Link for the item with `access_token` that adds statements from the last two
+/// years. Plaid asks only for consent when the item was linked within that time.
+pub(super) fn plaid_statements_link_request(access_token: String, today: NaiveDate) -> Value {
+    json!({
+        "client_name": "Brief",
+        "country_codes": ["US"],
+        "hosted_link": { "url_lifetime_seconds": 1800 },
+        "language": "en",
+        "access_token": access_token,
+        "products": ["statements"],
+        "statements": {
+            "start_date": (today - Duration::days(STATEMENT_DAYS)).to_string(),
+            "end_date": today.to_string(),
+        },
+    })
 }
 
 pub(super) fn plaid_user_identifier(user: &PlaidUser) -> Result<(&'static str, &str), String> {
@@ -614,6 +712,7 @@ pub(super) fn plaid_link_exit(value: &Value) -> Option<String> {
     )
 }
 
+mod statements;
 mod sync;
 #[cfg(test)]
 mod tests;

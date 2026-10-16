@@ -82,6 +82,19 @@ pub(super) fn describe_account(projected: &mut Account, account: &PlaidAccount) 
     projected.subtype = non_blank(account.subtype.as_deref());
     projected.holder_category = non_blank(account.holder_category.as_deref());
     projected.domain = domain(account.institution_url.as_deref());
+    projected.mask = account_mask(account.mask.as_deref());
+}
+
+/// The last four characters of an account number, as statements and payslips print them.
+pub(super) fn account_mask(number: Option<&str>) -> Option<String> {
+    let number = number?.trim();
+    let tail = number
+        .chars()
+        .rev()
+        .take_while(char::is_ascii_alphanumeric)
+        .take(4)
+        .collect::<Vec<_>>();
+    (tail.len() >= 2).then(|| tail.into_iter().rev().collect())
 }
 
 /// An institution's website reduced to its registered domain (`https://us.etrade.com/home`
@@ -240,130 +253,22 @@ pub(super) fn project_accounts(
     included: &[&PlaidAccount],
     committed_at: &str,
 ) -> AccountRows {
-    let mut accounts = Vec::new();
-    for account in &parsed.plaid_accounts {
-        let is_credit = account.kind == "credit";
-        let currency = account.balances.iso_currency_code.as_deref();
-        let value = usd_value(account.balances.current, currency).map(|value| {
-            if is_credit && !value.is_zero() {
-                -value
-            } else {
-                value
-            }
-        });
-        let mut projected = Account {
-            id: format!("plaid:{}", account.account_id),
-            name: text(account.name.as_deref(), "Account"),
-            institution: text(account.institution_name.as_deref(), "Unknown institution"),
-            r#type: if is_credit { "credit" } else { "cash" }.into(),
-            value: value.map(money),
-            currency: account.balances.iso_currency_code.clone(),
-            balance_as_of: account.balances.last_updated_datetime.clone(),
-            balance_fetched_at: account.balance_fetched_at.clone(),
-            balance_mode: account.balance_mode.clone(),
-            available_balance: usd_value(account.balances.available, currency).map(money),
-            credit_limit: usd_value(account.balances.limit, currency)
-                .filter(|limit| is_credit && limit.is_sign_positive() && !limit.is_zero())
-                .map(money),
-            liability: parsed
-                .liabilities
-                .get(&account.account_id)
-                .filter(|_| is_credit)
-                .map(PlaidCreditLiability::project),
-            ..Account::default()
-        };
-        describe_account(&mut projected, account);
-        accounts.push(projected);
-    }
-    for account in included {
-        let tax = TaxClass::of(account.subtype.as_deref().unwrap_or_default());
-        let mut projected = Account {
-            id: format!("plaid:{}", account.account_id),
-            name: text(account.name.as_deref(), "Investment account"),
-            institution: text(account.institution_name.as_deref(), "Unknown institution"),
-            r#type: if tax.retirement {
-                "retirement"
-            } else {
-                "brokerage"
-            }
-            .into(),
-            value: usd_value(
-                account.balances.current,
-                account.balances.iso_currency_code.as_deref(),
-            )
-            .map(money),
-            currency: account.balances.iso_currency_code.clone(),
-            balance_as_of: account.balances.last_updated_datetime.clone(),
-            balance_fetched_at: account.balance_fetched_at.clone(),
-            tax_treatment: Some(tax.treatment.into()),
-            ..Account::default()
-        };
-        describe_account(&mut projected, account);
-        accounts.push(projected);
-    }
-    for account in &parsed.snap_accounts {
-        let total = account.balance.total.as_ref();
-        let reported = usd_value(
-            total.and_then(|total| total.amount),
-            total.and_then(|total| total.currency.as_deref()),
-        );
-        let calculated = parsed.calculated_snap_values.get(&account.id).copied();
-        let descriptor = format!(
-            "{} {}",
-            account.name.as_deref().unwrap_or_default(),
-            account.raw_type.as_deref().unwrap_or_default()
+    let mut accounts: Vec<Account> = parsed
+        .plaid_accounts
+        .iter()
+        .map(|account| plaid_account(account, parsed))
+        .chain(
+            included
+                .iter()
+                .map(|account| plaid_investment_account(account)),
         )
-        .to_ascii_lowercase();
-        let tax = TaxClass::of(&descriptor);
-        let last_sync = |point: Option<&SnapSyncPoint>| {
-            point.and_then(|point| point.last_successful_sync.clone())
-        };
-        let status = account.sync_status.as_ref();
-        accounts.push(Account {
-            id: format!("snaptrade:{}", account.id),
-            name: text(
-                account.name.as_deref().or(account.raw_type.as_deref()),
-                "Investment account",
-            ),
-            institution: text(account.institution_name.as_deref(), "Unknown institution"),
-            r#type: if tax.retirement {
-                "retirement"
-            } else {
-                "brokerage"
-            }
-            .into(),
-            tax_treatment: Some(tax.treatment.into()),
-            subtype: non_blank(account.raw_type.as_deref()),
-            domain: domain(account.institution_url.as_deref()),
-            value: calculated.map(|value| money(value.total())),
-            cash_value: calculated.map(|value| money(value.cash)),
-            invested_value: calculated.map(|value| money(value.invested)),
-            balance_source: Some(
-                if calculated.is_some() {
-                    "cash-and-positions"
-                } else {
-                    "unavailable"
-                }
-                .into(),
-            ),
-            reported_balance: reported.map(money),
-            currency: if calculated.is_some() {
-                Some("USD".into())
-            } else {
-                total.and_then(|total| total.currency.clone())
-            },
-            balance_as_of: last_sync(status.and_then(|status| status.holdings.as_ref())),
-            balance_fetched_at: account.balance_fetched_at.clone(),
-            positions_as_of: sync
-                .snaptrade
-                .positions_as_of
-                .get(&account.id)
-                .cloned()
-                .flatten(),
-            activity_as_of: last_sync(status.and_then(|status| status.transactions.as_ref())),
-            ..Account::default()
-        });
-    }
+        .chain(
+            parsed
+                .snap_accounts
+                .iter()
+                .map(|account| snaptrade_account(account, sync, parsed)),
+        )
+        .collect();
     accounts.sort_by(|left, right| left.id.cmp(&right.id));
     let incomplete = accounts.iter().any(|account| account.value.is_none());
     let net_worth = accounts
@@ -386,6 +291,135 @@ pub(super) fn project_accounts(
         rows: accounts,
         net_worth,
         incomplete,
+    }
+}
+
+/// A Plaid cash or card account; a card's balance is owed, so it counts against net worth.
+fn plaid_account(account: &PlaidAccount, parsed: &Parsed) -> Account {
+    let is_credit = account.kind == "credit";
+    let currency = account.balances.iso_currency_code.as_deref();
+    let value = usd_value(account.balances.current, currency).map(|value| {
+        if is_credit && !value.is_zero() {
+            -value
+        } else {
+            value
+        }
+    });
+    let mut projected = Account {
+        id: format!("plaid:{}", account.account_id),
+        name: text(account.name.as_deref(), "Account"),
+        institution: text(account.institution_name.as_deref(), "Unknown institution"),
+        r#type: if is_credit { "credit" } else { "cash" }.into(),
+        value: value.map(money),
+        currency: account.balances.iso_currency_code.clone(),
+        balance_as_of: account.balances.last_updated_datetime.clone(),
+        balance_fetched_at: account.balance_fetched_at.clone(),
+        balance_mode: account.balance_mode.clone(),
+        available_balance: usd_value(account.balances.available, currency).map(money),
+        credit_limit: usd_value(account.balances.limit, currency)
+            .filter(|limit| is_credit && limit.is_sign_positive() && !limit.is_zero())
+            .map(money),
+        liability: parsed
+            .liabilities
+            .get(&account.account_id)
+            .filter(|_| is_credit)
+            .map(PlaidCreditLiability::project),
+        ..Account::default()
+    };
+    describe_account(&mut projected, account);
+    projected
+}
+
+/// A Plaid investment account not linked to a SnapTrade account.
+fn plaid_investment_account(account: &PlaidAccount) -> Account {
+    let tax = TaxClass::of(account.subtype.as_deref().unwrap_or_default());
+    let mut projected = Account {
+        id: format!("plaid:{}", account.account_id),
+        name: text(account.name.as_deref(), "Investment account"),
+        institution: text(account.institution_name.as_deref(), "Unknown institution"),
+        r#type: if tax.retirement {
+            "retirement"
+        } else {
+            "brokerage"
+        }
+        .into(),
+        value: usd_value(
+            account.balances.current,
+            account.balances.iso_currency_code.as_deref(),
+        )
+        .map(money),
+        currency: account.balances.iso_currency_code.clone(),
+        balance_as_of: account.balances.last_updated_datetime.clone(),
+        balance_fetched_at: account.balance_fetched_at.clone(),
+        tax_treatment: Some(tax.treatment.into()),
+        ..Account::default()
+    };
+    describe_account(&mut projected, account);
+    projected
+}
+
+/// A SnapTrade account, valued from its cash and positions rather than its reported total.
+fn snaptrade_account(account: &SnapAccount, sync: &ProviderSync, parsed: &Parsed) -> Account {
+    let total = account.balance.total.as_ref();
+    let reported = usd_value(
+        total.and_then(|total| total.amount),
+        total.and_then(|total| total.currency.as_deref()),
+    );
+    let calculated = parsed.calculated_snap_values.get(&account.id).copied();
+    let descriptor = format!(
+        "{} {}",
+        account.name.as_deref().unwrap_or_default(),
+        account.raw_type.as_deref().unwrap_or_default()
+    )
+    .to_ascii_lowercase();
+    let tax = TaxClass::of(&descriptor);
+    let last_sync =
+        |point: Option<&SnapSyncPoint>| point.and_then(|point| point.last_successful_sync.clone());
+    let status = account.sync_status.as_ref();
+    Account {
+        id: format!("snaptrade:{}", account.id),
+        name: text(
+            account.name.as_deref().or(account.raw_type.as_deref()),
+            "Investment account",
+        ),
+        institution: text(account.institution_name.as_deref(), "Unknown institution"),
+        r#type: if tax.retirement {
+            "retirement"
+        } else {
+            "brokerage"
+        }
+        .into(),
+        tax_treatment: Some(tax.treatment.into()),
+        subtype: non_blank(account.raw_type.as_deref()),
+        mask: account_mask(account.printed_number()),
+        domain: domain(account.institution_url.as_deref()),
+        value: calculated.map(|value| money(value.total())),
+        cash_value: calculated.map(|value| money(value.cash)),
+        invested_value: calculated.map(|value| money(value.invested)),
+        balance_source: Some(
+            if calculated.is_some() {
+                "cash-and-positions"
+            } else {
+                "unavailable"
+            }
+            .into(),
+        ),
+        reported_balance: reported.map(money),
+        currency: if calculated.is_some() {
+            Some("USD".into())
+        } else {
+            total.and_then(|total| total.currency.clone())
+        },
+        balance_as_of: last_sync(status.and_then(|status| status.holdings.as_ref())),
+        balance_fetched_at: account.balance_fetched_at.clone(),
+        positions_as_of: sync
+            .snaptrade
+            .positions_as_of
+            .get(&account.id)
+            .cloned()
+            .flatten(),
+        activity_as_of: last_sync(status.and_then(|status| status.transactions.as_ref())),
+        ..Account::default()
     }
 }
 

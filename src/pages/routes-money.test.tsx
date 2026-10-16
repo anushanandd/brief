@@ -10,10 +10,15 @@ it('keeps a short Platinum preview on Spending and links to Benefits', async () 
   const html = await renderRoute('/spending')
   expect(html).toContain('<h2>Categories</h2>')
   expect(html).toContain('a day</span>')
-  expect(html).toContain('<dt>Captured</dt>')
-  expect(html).toContain('<dt>Left</dt>')
-  // Coming up lives on Today; Money keeps its companion to two cards.
-  expect(html).not.toContain('expected-activity-card')
+  // A glance leads with the fee, then what to use soon; captured credits and exact ranges read
+  // on Benefits.
+  expect(html).not.toContain('<dt>Captured</dt>')
+  // Coming up lives on Home; Spending's companion ends with subscriptions instead.
+  expect(html).not.toContain('<h2>Coming up</h2>')
+  expect(html).toContain('<h2>Subscriptions</h2>')
+  expect(html.indexOf('spending-benefits-card')).toBeLessThan(
+    html.indexOf('<h2>Subscriptions</h2>'),
+  )
   expect(html).toContain('class="pace-chart"')
   expect(html).not.toContain('spending-bar-chart')
   expect(html).toContain('href="/analytics?chart=amex-credits"')
@@ -28,7 +33,7 @@ it('keeps a short Platinum preview on Spending and links to Benefits', async () 
   expect(html.indexOf('spending-ledger-card')).toBeGreaterThan(-1)
   expect(html.indexOf('spending-ledger-card')).toBeLessThan(html.indexOf('spending-companion'))
   expect(html.indexOf('spending-companion')).toBeLessThan(html.indexOf('spending-benefits-card'))
-  expect(html).toContain('Selected card · Credit')
+  expect(html).toContain('aria-label="Spending by merchant"')
   expect(html).not.toContain('Other account transaction')
 })
 
@@ -42,36 +47,125 @@ it('ranks spending categories below the pace chart', async () => {
   expect(html).not.toContain('aria-label="Chart legend"')
 })
 
-it('places current benefits below the Amex chart and credit activity below Overview', async () => {
-  const html = await renderRoute('/analytics?chart=amex-credits&range=year')
-  expect(html).toContain('Current benefit windows')
-  expect(html).toContain('Credit activity')
-  expect(html).toContain('>Overview</h2>')
-  expect(html).toContain('$30.00 left')
-  expect(html).toContain('$70.00 of $100.00 credited')
-  expect(html).toContain('aria-label="Resy credit progress"')
-  expect(html).toContain('aria-label="About benefit tracking"')
-  expect(html).toContain('aria-label="About Resy"')
-  expect(html).toContain('class="benefit-allowance">$25 / month</strong>')
-  expect(html).toContain('href="#settings/platinum-benefits"')
-  expect(html.indexOf('analytics-chart-card')).toBeLessThan(html.indexOf('platinum-current-card'))
-  expect(html.indexOf('>Overview</h2>')).toBeLessThan(html.indexOf('analytics-activities-card'))
-  expect(html).not.toContain('Credit history')
-  expect(html).not.toContain('Spending account</h2>')
-  expect(html).not.toContain('Posted credits net of reversals · Uber Cash estimates excluded.')
-  expect(html).not.toContain('aria-label="Chart accounts"')
+/** Which of the two synthetic categories Spending ranks at `path`. */
+async function rankedCategories(path: string) {
+  const html = await renderRoute(path)
+  const ranked = html.slice(html.indexOf('class="ranked-bars"'))
+  return ['Travel', 'Food and Drink'].filter((name) => ranked.includes(name))
+}
+
+it('counts your spending, someone else’s, or both once a purchase is theirs', async () => {
+  scenario.uberPurchase = true
+  const mine = await renderRoute('/spending?range=month')
+  expect(mine).not.toContain('data-command="spending.for."')
+
+  scenario.extraTransactions = [
+    {
+      id: 'their-purchase',
+      merchant: 'Example bistro',
+      category: 'Food and Drink',
+      date: '2026-09-02',
+      amount: -30,
+      account: 'Selected card',
+      accountId: 'selected',
+      other: true,
+      classification: classification('owed', { othersSpending: true }),
+      pending: false,
+    },
+  ]
+  const owned = await renderRoute('/spending?range=month')
+  expect(owned).toContain('data-command="spending.for."')
+  expect(owned).toContain('aria-label="Whose spending. Showing: For me"')
+  expect(await rankedCategories('/spending?range=month')).toEqual(['Travel'])
+  expect(await rankedCategories('/spending?range=month&for=other')).toEqual(['Food and Drink'])
+  expect(await rankedCategories('/spending?range=month&for=all')).toEqual([
+    'Travel',
+    'Food and Drink',
+  ])
+  // The lists hold only what the choice counts, and Activity opens on the same choice.
+  const theirRow = 'data-activity-id="spending:their-purchase"'
+  const mineRow = 'data-activity-id="spending:uber-purchase"'
+  expect(owned).toContain(mineRow)
+  expect(owned).not.toContain(theirRow)
+  expect(owned).toMatch(/href="\/activities\?[^"]*for=me/)
+  const theirs = await renderRoute('/spending?range=month&for=other')
+  expect(theirs).toContain(theirRow)
+  expect(theirs).not.toContain(mineRow)
+  expect(theirs).toMatch(/href="\/activities\?[^"]*for=other/)
+  const everyone = await renderRoute('/spending?range=month&for=all')
+  expect(everyone).toContain(theirRow)
+  expect(everyone).toContain(mineRow)
+  expect(everyone).not.toMatch(/href="\/activities\?[^"]*for=/)
+})
+
+it('compares spending categories with the last period or the average', async () => {
+  scenario.uberPurchase = true
+  const withoutAverage = await renderRoute('/spending')
+  // Without earlier periods to average, the comparison is fixed.
+  expect(withoutAverage).toContain('aria-hidden="true"></i>vs last month</span>')
+  // The track marks what the change compares with: here, last month by this point.
+  expect(withoutAverage).toContain('class="ranked-bars-mark"')
+  expect(withoutAverage).toMatch(/, by this point last month \$[\d,.]+/)
+  expect(withoutAverage).not.toContain('aria-label="Compare categories with"')
+
+  const periods = [{ kind: 'month' as const, start: '2026-09-01', typical: { Travel: 5 } }]
+  scenario.insights = {
+    spending: ['all', 'selected'].map((scope) => ({ scope, owner: 'me' as const, periods })),
+  }
+  const html = await renderRoute('/spending')
+  const tabs = html.slice(
+    html.indexOf('aria-label="Compare categories with"'),
+    html.indexOf('class="ranked-bars"'),
+  )
+  expect(tabs).toContain('aria-label="Compare categories with"')
+  expect(tabs).toMatch(/aria-selected="true"[^>]*data-command="spending.compare.previous"/)
+  expect(tabs).toMatch(/aria-selected="false"[^>]*data-command="spending.compare.typical"/)
+  expect(tabs).toContain('Last month')
+  expect(tabs).toContain('Average')
+})
+
+it('lays out Benefits as a year grid of periods with its totals and review link', async () => {
+  const html = await renderRoute('/analytics?chart=amex-credits')
+  const grid = html.slice(html.indexOf('aria-label="Benefits in 2026"'))
+  expect(grid).toContain('Use by deadline')
+  // Each row's estimate reads beside what it captured and missed.
+  expect(grid).toContain('<th scope="col" class="benefit-grid-figure">Estimated</th>')
+  // The page carries no footnote: the panel hides a perk and links its terms.
+  expect(html).not.toContain('Each cell is one period')
+  expect(grid).toContain('Recurring')
+  // Each period is one cell, named by its state and what it left.
+  expect(grid).toContain('aria-label="Q1: Missed. $100.00 missed"')
+  expect(grid).toContain('aria-label="Q2: Partly used. $40.00 of $100.00 · $60.00 missed"')
+  expect(grid).toContain('aria-label="Q3: Open. $70.00 credited · $30.00 left · ends Sep 30"')
+  expect(grid).toMatch(/colspan="3"/i)
+  // Totals sum the year to the cent: credits captured for you and settled allowance missed.
+  // What's open now reads in the grid's own cells. The page title already says Benefits.
+  expect(html).not.toContain('>Benefits</h2>')
+  const metric = (label: string) => html.slice(html.indexOf(`<span>${label}</span>`)).slice(0, 240)
+  expect(metric('For you in 2026')).toContain('$310.00<')
+  // No credit landed on someone else's purchase, so there is nothing to split out.
+  expect(html).not.toContain('<span>For others</span>')
+  expect(metric('Missed')).toContain('$160.00<')
+  expect(html).not.toContain('<span>Left now</span>')
+  // Three future months each expect a $13.99 streaming charge.
+  expect(metric('Estimated')).toContain('$41.97<')
+  expect(html).toContain('aria-label="Oct: Not started. Opens Oct 1 · $13.99 estimated"')
+  expect(html).toMatch(/data-command="benefits\.review"[^>]*>1 match/)
+  // Each benefit's panel hides it, so the page no longer sends you to Settings.
+  expect(html).not.toContain('href="#settings/platinum-benefits"')
+  expect(html).toMatch(/role="combobox"[^>]*aria-label="Benefits year/)
+  // The grid replaces the generic report: no chart, Overview, or credit list.
+  expect(html).not.toContain('>Overview</h2>')
+  expect(html).not.toContain('Credit activity')
   expect(html).not.toContain('Other account transaction')
 })
 
-it('keeps estimated Uber Cash separate from the posted credit total', async () => {
+it('keeps estimated Uber Cash out of the captured total', async () => {
   scenario.uberPurchase = true
-  const html = await renderRoute('/analytics?chart=amex-credits&range=year')
-  expect(html).toContain('$70.00')
-  expect(html).toContain('$15.00')
-  expect(html).toContain(
-    'aria-label="Uber Cash credit progress" aria-valuetext="Estimated $15.00 used"',
-  )
-  expect(html).toContain('aria-label="Purchase evidence for Uber Cash"')
+  const html = await renderRoute('/analytics?chart=amex-credits')
+  expect(html).toContain('aria-label="Sep: Likely used. An Uber charge suggests it ran out"')
+  const captured = html.slice(html.indexOf('<span>For you in 2026</span>')).slice(0, 240)
+  expect(captured).toContain('$310.00<')
 })
 
 it('requires the saved spending account in the combined view', async () => {
@@ -82,43 +176,56 @@ it('requires the saved spending account in the combined view', async () => {
   expect(html).toContain('Credit activity')
 })
 
-it('keeps current benefit windows independent of the chart period', async () => {
-  vi.setSystemTime(new Date('2026-10-02T12:00:00Z'))
-  const html = await renderRoute('/analytics?chart=amex-credits&from=2026-09-01&to=2026-09-03')
-  expect(html).toContain('Ending <!-- -->Oct 31')
-  expect(html).toContain('Ending <!-- -->Dec 31')
-  expect(html).not.toContain('Ending <!-- -->Sep 30')
-  expect(html).not.toContain('$30.00 remaining')
-  expect(html).toContain('aria-label="Last detected credit:')
+it('shows one calendar year, and the strip follows it', async () => {
+  // A window that isn't a whole year shows this year to date.
+  const custom = await renderRoute('/analytics?chart=amex-credits&from=2026-09-01&to=2026-09-03')
+  expect(custom).toContain('aria-label="Benefits in 2026"')
+  const earlier = await renderRoute('/analytics?chart=amex-credits&from=2025-01-01&to=2025-12-31')
+  expect(earlier).toMatch(/No benefits in (<!-- -->)?2025/)
+  expect(earlier).not.toContain('left now')
 })
 
-it('keeps hidden benefits in posted credit activity without showing current windows', async () => {
+it('leaves hidden benefits out of the grid and its review', async () => {
   scenario.hiddenBenefits = 'resy'
-  scenario.linkedPending = true
-  const html = await renderRoute('/analytics?chart=amex-credits&range=year')
-  const current = html.slice(
-    html.indexOf('class="surface-card platinum-current-card"'),
-    html.indexOf('analytics-companion'),
-  )
-  expect(current).not.toContain('id="benefit-resy"')
-  const activity = html.slice(html.indexOf('analytics-activities-card'))
-  expect(activity).toContain('Resy credit 1')
-  expect(activity).not.toContain('Resy credit 0')
+  const html = await renderRoute('/analytics?chart=amex-credits')
+  expect(html).not.toContain('aria-label="Resy"')
+  expect(html).not.toContain('to review')
+  expect(html).toContain('aria-label="Digital entertainment"')
 })
 
-it('keeps pending benefit evidence by its current benefit without counting it as posted', async () => {
+it('opens a benefit’s period with the transactions behind it', async () => {
   scenario.linkedPending = true
-  const html = await renderRoute('/analytics?chart=amex-credits&range=year')
-  const current = html.slice(
-    html.indexOf('class="surface-card platinum-current-card"'),
-    html.indexOf('analytics-companion'),
-  )
-  expect(current).toContain('Resy credit 0')
-  expect(current).toContain('Benefit credit · Pending')
-  expect(current).toContain('$60.00 of $100.00 credited')
-  const activity = html.slice(html.indexOf('analytics-activities-card'))
-  expect(activity).not.toContain('Resy credit 0')
-  expect(activity).toContain('Resy credit 1')
+  const html = await renderRoute('/analytics?chart=amex-credits&benefit=resy&period=2026-07-01')
+  const inspector = html.slice(html.indexOf('class="transaction-dialog" aria-label="Resy"'))
+  expect(inspector).toContain('aria-label="Resy periods"')
+  expect(inspector).toContain('Official benefit terms')
+  expect(inspector).toContain('Is this the Resy credit, or a return?')
+  // The focused period is open; the posted credits and the pending one are its evidence.
+  expect(inspector).toMatch(/aria-expanded="true"[^>]*>.*Q3/)
+  expect(inspector).toContain('Resy credit 1')
+  expect(inspector).toContain('Pending')
+  expect(inspector).toMatch(/aria-expanded="false"[^>]*>.*Q2/)
+  // A perk you don't use can leave Missed and reminders without a trip to Settings.
+  expect(inspector).toMatch(/data-command="benefits\.use\.toggle"[^>]*>Not using this</)
+})
+
+it('offers to track a hidden benefit again from its details', async () => {
+  scenario.hiddenBenefits = 'resy'
+  const html = await renderRoute('/analytics?chart=amex-credits&benefit=resy')
+  const inspector = html.slice(html.indexOf('class="transaction-dialog" aria-label="Resy"'))
+  expect(inspector).toMatch(/data-command="benefits\.use\.toggle"[^>]*>Track this again</)
+  expect(inspector).toContain('Hidden from Missed and reminders')
+})
+
+it('lists matches to review with the decisions each needs', async () => {
+  const html = await renderRoute('/analytics?chart=amex-credits&review=true')
+  const inspector = html.slice(html.indexOf('class="transaction-dialog" aria-label="To review"'))
+  expect(inspector).toContain('1 match')
+  expect(inspector).toContain('Is this the Resy credit, or a return?')
+  expect(inspector).toContain('It’s the credit')
+  expect(inspector).toContain('A return')
+  // The inspector moves through its own rows while app shortcuts pause.
+  expect(inspector).toContain('aria-label="Keyboard"')
 })
 
 it('shows every account without a saved card and never treats another card as the spending card', async () => {
@@ -132,11 +239,42 @@ it('shows every account without a saved card and never treats another card as th
   expect(html).not.toContain('id="benefit-')
 })
 
-it('preserves merchant links and pending status in the spending preview', async () => {
+it('shows where spending went beside the latest activity', async () => {
   scenario.linkedPending = true
+  scenario.extraTransactions = ['2026-09-01', '2026-09-02'].map((date, index) => ({
+    id: `bistro-${index}`,
+    merchant: 'Example bistro',
+    category: 'Food and Drink',
+    date,
+    amount: -12,
+    account: 'Selected card',
+    accountId: 'selected',
+    classification: classification('expense'),
+    pending: false,
+  }))
   const html = await renderRoute('/spending')
-  expect(html).toContain('href="https://example.com/"')
-  expect(html).toContain('Pending')
+  const columns = html.slice(html.indexOf('spending-activity-columns'))
+  expect(html).not.toContain('aria-label="Show activity"')
+  // Where it went comes first, then Activities, which links to the full ledger.
+  const activitiesHeading = columns.indexOf('class="section-heading-link">Activities ')
+  expect(columns.indexOf('<h2>Where it went</h2>')).toBeGreaterThan(-1)
+  expect(columns.indexOf('<h2>Where it went</h2>')).toBeLessThan(activitiesHeading)
+  const merchants = columns.slice(0, activitiesHeading)
+  // Merchants stay closed until opened, each with how many activities it holds.
+  expect(merchants).toMatch(
+    /class="financial-activity-row merchant-group-row tree-parent"[^>]*aria-expanded="false"/,
+  )
+  // The chevron follows the count, so the total lines up with its activities' amounts.
+  expect(merchants).toMatch(/<small class="merchant-group-count">2 purchases<svg/)
+  // A merchant with one activity reads as that activity, not a count of one.
+  expect(merchants).not.toMatch(/<small>1 (purchase|transaction)<\/small>/)
+  expect(merchants).toContain('data-activity-id="spending:transaction-0"')
+  // Activities in both lists open the details dialog Activity uses.
+  expect(merchants).toMatch(/data-activity-id="spending:transaction-0"[^>]*data-keyboard-open/)
+  const latest = columns.slice(columns.indexOf('aria-label="Spending activities"'))
+  expect(latest).toContain('financial-activity-row is-openable')
+  expect(latest).not.toContain('href="https://example.com/"')
+  expect(latest).toContain('Pending')
 })
 
 it('uses the shared Spending range control and keyboard period navigation', async () => {
@@ -161,17 +299,18 @@ it('uses the shared Spending range control and keyboard period navigation', asyn
 })
 
 it('opens the selected analytics chart with shared account and date scope', async () => {
-  const html = await renderRoute('/analytics?chart=amex-credits&from=2026-09-01&to=2026-09-03')
+  scenario.creditKind = 'income'
+  const html = await renderRoute('/analytics?chart=income&from=2026-09-01&to=2026-09-03')
   expect(html).toContain('class="account-switcher" aria-label="Money"')
   expect(html).toContain('aria-keyshortcuts="Meta+ArrowLeft Meta+ArrowRight"')
-  expect(html).toContain('aria-current="page">Benefits')
+  expect(html).toContain('aria-current="page">Income')
   expect(html).toContain('$70.00')
   expect(html).toMatch(/role="combobox"[^>]*aria-label="Analytics period"/)
   expect(html).toContain('Custom')
   expect(html).toContain('Sep 1, 2026')
   expect(html).toContain('chart=interest')
   expect(html).toContain('from=2026-09-01')
-  expect(html).toContain('analysis=amex-credits')
+  expect(html).toContain('analysis=income')
   const scoped = await renderRoute('/analytics?chart=amex-credits&account=other&range=year')
   expect(scoped).toContain('Amex credits use the saved spending account.')
 })
@@ -210,6 +349,19 @@ it('shows analytics-specific expected activity below Accounts', async () => {
   )
   expect(expected).toContain('Example payroll')
   expect(expected).not.toContain('Example streaming subscription')
+})
+
+it('keeps Spending’s benefits to the credits to use soonest', async () => {
+  const html = await renderRoute('/spending')
+  const card = html.slice(html.indexOf('class="surface-card spending-benefits-card"'))
+  expect(card).toMatch(/class="section-heading-link">Benefits(<!-- -->)? /)
+  // The fee and what was missed read on Benefits.
+  expect(card).not.toContain('benefit-fee-recovery')
+  expect(card).not.toContain('Missed this period')
+  // The companion ends with subscriptions; what's coming up lives on Home.
+  expect(html).not.toContain('Expected spending')
+  // The activity list is called Activities and links to the full ledger.
+  expect(html).toContain('class="section-heading-link">Activities ')
 })
 
 it('opens Cash flow by default and lists charts in one fixed order', async () => {
@@ -251,8 +403,7 @@ it('uses only the saved spending account for Amex credits', async () => {
   const multiple = await renderRoute(
     '/analytics?chart=amex-credits&account=selected,other&range=month',
   )
-  expect(multiple).toContain('$70.00')
-  expect(multiple).toContain('Selected card')
+  expect(multiple).toContain('aria-label="Benefits in 2026"')
   const activity = await renderRoute('/activities?analysis=amex-credits&account=selected,other')
   expect(activity).toContain('Resy credit 0')
   const empty = await renderRoute('/analytics?chart=amex-credits&account=__none__')
@@ -346,15 +497,15 @@ it('shows scoped interest activity beneath its chart and account type subtext', 
   expect(rows[0]).toContain('<strong>Other card</strong><small>credit</small>')
 })
 
-it('lists each matching Amex activity separately in Analytics', async () => {
-  const html = await renderRoute('/analytics?chart=amex-credits&from=2026-09-01&to=2026-09-03')
-  const activityCard = html.slice(html.indexOf('analytics-activities-card'))
-  for (let index = 0; index < 7; index++) {
-    expect(activityCard).toContain(`<strong>Resy credit ${index}</strong>`)
-  }
-  expect(activityCard).toContain('Selected card · Credit')
-  expect(activityCard).not.toContain('Other account transaction')
-  expect(activityCard.match(/class="financial-activity-row"/g)).toHaveLength(7)
+it('lists each matching activity separately in Analytics', async () => {
+  scenario.creditKind = 'income'
+  const html = await renderRoute(
+    '/analytics?chart=income&from=2026-09-01&to=2026-09-03&view=transactions',
+  )
+  const list = html.slice(html.indexOf('aria-label="Period totals"'))
+  expect(list.match(/class="financial-activity-row"/g)).toHaveLength(7)
+  expect(list).toContain('Selected card')
+  expect(list).not.toContain('Other account transaction')
 })
 
 it('groups Analytics activity by date and places cash-flow context in its columns', async () => {
@@ -375,29 +526,31 @@ it('groups Analytics activity by date and places cash-flow context in its column
 })
 
 it('attaches Analytics tooltip triggers to dated categories and provides a legend', async () => {
-  const html = await renderRoute('/analytics?chart=amex-credits&from=2026-09-01&to=2026-09-03')
+  scenario.creditKind = 'income'
+  const html = await renderRoute('/analytics?chart=income&from=2026-09-01&to=2026-09-03')
   const chart = html.slice(
     html.indexOf('aria-label="Period totals"'),
-    html.indexOf('analytics-activities-card'),
+    html.indexOf('analytics-companion'),
   )
   const triggers = chart.match(/<a\b[^>]*data-slot="tooltip-trigger"[^>]*>/g) ?? []
   expect(chart).toContain('aria-label="Chart legend"')
   expect(chart.indexOf('aria-label="Chart legend"')).toBeGreaterThan(
     chart.indexOf('aria-label="Period totals"'),
   )
-  expect(triggers).toHaveLength(3)
-  expect(triggers[0]).toContain('Sep 1, 2026 through Sep 1, 2026: $30.00')
-  expect(triggers[1]).toContain('Sep 2, 2026 through Sep 2, 2026: $20.00')
+  // One trigger per income source per day.
+  expect(triggers).toHaveLength(7)
+  expect(triggers[0]).toContain('Sep 1, 2026 through Sep 1, 2026: $10.00')
   expect(
     triggers.every(
       (trigger) =>
-        trigger.includes('analytics-bar-category') && trigger.includes('analysis=amex-credits'),
+        trigger.includes('analytics-bar-category') && trigger.includes('analysis=income'),
     ),
   ).toBe(true)
 })
 
 it('shows Analytics dollar and percentage changes versus the matching previous period', async () => {
-  const html = await renderRoute('/analytics?chart=amex-credits&from=2026-09-02&to=2026-09-02')
+  scenario.creditKind = 'income'
+  const html = await renderRoute('/analytics?chart=income&from=2026-09-02&to=2026-09-02')
   const comparison = html.slice(
     html.indexOf('aria-label="Change versus previous period"'),
     html.indexOf('</header>', html.indexOf('aria-label="Change versus previous period"')),
@@ -417,8 +570,8 @@ it('lists a report beside the others of its destination, after that destination�
   expect(selector.indexOf('>Spending<')).toBeGreaterThan(-1)
   expect(selector.indexOf('>Spending<')).toBeLessThan(selector.indexOf('>Cash flow<'))
   expect(selector.indexOf('>Cash flow<')).toBeLessThan(selector.indexOf('>Income<'))
-  expect(selector.indexOf('>Spending<')).toBeLessThan(selector.indexOf('>Recurring<'))
-  expect(selector.indexOf('>Recurring<')).toBeLessThan(selector.indexOf('>Cash flow<'))
+  // Subscriptions moved onto Spending, so Recurring is no longer a page of its own.
+  expect(selector).not.toContain('>Recurring<')
   expect(selector.indexOf('>Income<')).toBeLessThan(selector.indexOf('>Interest<'))
   expect(selector.indexOf('>Fees<')).toBeLessThan(selector.indexOf('>Benefits<'))
   // Interest is mostly cash and savings, so it is a Money report.
@@ -432,7 +585,7 @@ it('lists a report beside the others of its destination, after that destination�
   expect(heading).toContain('href="/holdings"')
 })
 
-it('shows days until the statement closes in the Spending chart and only rules in Settings', async () => {
+it('shows days until the statement closes in the Spending chart and manual accounts in Settings', async () => {
   scenario.insights = {
     today: '2026-09-20',
     statement: {
@@ -444,8 +597,11 @@ it('shows days until the statement closes in the Spending chart and only rules i
     },
   }
   const spending = await renderRoute('/spending')
-  expect(spending).toContain('Current statement (closes in 5 days)')
-  const settings = await renderSettings('/#settings/category-rules')
-  expect(settings).toContain('Category rules')
-  expect(settings).not.toContain('Monthly targets')
+  // The balance reads beside the statement's close; the headline stays what was spent.
+  expect(spending).toMatch(
+    /Statement balance <span class="sensitive-value">−?\$[\d,.]+<\/span> · closes in 5 days<\/h2>/,
+  )
+  const settings = await renderSettings('/#settings/manual-accounts')
+  expect(settings).toContain('Manual accounts')
+  expect(settings).not.toContain('Category rules')
 })

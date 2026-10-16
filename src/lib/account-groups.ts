@@ -1,4 +1,4 @@
-import { cents } from './money'
+import { cents, sumCents } from './money'
 import type { Account } from './schema'
 
 export type AccountGroup = {
@@ -9,6 +9,8 @@ export type AccountGroup = {
   value: number | null
   /** Null when any account in the group has no change for the period. */
   change: number | null
+  /** Listed for reference but left out of the accounts total (spending cards). */
+  outsideTotal?: boolean
 }
 
 const groupLabels: Record<string, string> = {
@@ -42,10 +44,28 @@ export function accountGroups(
       type,
       label: groupLabels[type] ?? type.charAt(0).toLocaleUpperCase() + type.slice(1),
       accounts: members.toSorted(byValue),
-      value: total(members.map(({ value }) => value)),
+      // A manual account awaiting its first balance has nothing to add yet.
+      value: total(
+        members
+          .filter(({ id, value }) => value != null || !id.startsWith('manual:'))
+          .map(({ value }) => value),
+      ),
       change: total(
         members.map(({ id }) => changes.find(({ accountId }) => accountId === id)?.change),
       ),
     }))
     .toSorted((left, right) => byValue(left, right) || left.label.localeCompare(right.label))
+}
+
+/**
+ * What the accounts own and owe, by each account's sign. Accounts without a value are left out
+ * and flagged, so the totals read as known amounts.
+ */
+export function balanceSheet(accounts: Account[]) {
+  const values = accounts.flatMap(({ value }) => (value == null ? [] : [value]))
+  return {
+    assets: sumCents(values.filter((value) => value > 0)),
+    liabilities: sumCents(values.filter((value) => value < 0)),
+    complete: values.length === accounts.length,
+  }
 }

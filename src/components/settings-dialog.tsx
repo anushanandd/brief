@@ -3,6 +3,7 @@ import type { ComponentProps, ReactNode } from 'react'
 
 import { useSettingsDialog } from '../lib/settings-dialog'
 import { PopupContainerContext } from './ui/popup-container'
+import { usePresence } from './ui/presence'
 
 type SettingsModule = typeof import('../pages/settings')
 type TrackedImport = Promise<SettingsModule> & {
@@ -73,6 +74,8 @@ export const SettingsDialog = memo(function SettingsDialog() {
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
   const titleId = useId()
   const pressTarget = useRef<EventTarget | null>(null)
+  // The panel stays while the dialog settles back down.
+  const present = usePresence(open, dialog)
 
   useEffect(() => {
     if (!dialog || typeof dialog.showModal !== 'function') return
@@ -106,7 +109,7 @@ export const SettingsDialog = memo(function SettingsDialog() {
         if (backdropClick(event.currentTarget, pressed, event.target)) close()
       }}
     >
-      {open ? (
+      {present ? (
         <PopupContainerContext.Provider value={dialog}>
           <Suspense fallback={<div className="settings-panel settings-panel-loading" />}>
             <SettingsPanel target={target} titleId={titleId} onShow={show} onClose={close} />

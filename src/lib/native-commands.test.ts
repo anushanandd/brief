@@ -30,7 +30,7 @@ it('gives menu key equivalents only to Command shortcuts that never edit text', 
 
 it('lists app and page commands once, by section, leaving focus-bound ones to the palette', () => {
   const sections = commandMenuSections([
-    action({ id: 'navigation.open./', title: 'Open Today', group: 'Navigate', scope: 'app' }),
+    action({ id: 'navigation.open./', title: 'Open Home', group: 'Navigate', scope: 'app' }),
     action({ id: 'theme', title: 'Use Dark', group: 'Appearance', scope: 'app' }),
     action({ id: 'export', title: 'Export', disabled: true }),
     action({ id: 'motion.next:list', title: 'Next item', group: 'Here', scope: 'region' }),

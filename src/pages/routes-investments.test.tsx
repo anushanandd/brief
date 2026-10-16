@@ -305,3 +305,86 @@ it('shows an estimate as a range while dividends are unclassified', async () => 
   expect(html).toContain('A range until dividends are classified.')
   expect(html).not.toContain('Add tax profile')
 })
+
+it('opens Retirement from the strip with each limit, what waits for a choice, and what is unavailable', async () => {
+  scenario.insights = {
+    retirement: {
+      year: 2026,
+      workplace: {
+        accountIds: ['selected'],
+        limit: 24_500,
+        deferred: 6_000,
+        unlabeled: 0,
+        employer: 1_200,
+        through: '2026-08-28',
+        paychecksLeft: 9,
+        projected: 10_500,
+        perPaycheckToMax: 2_055.55,
+      },
+      ira: [
+        { taxYear: 2025, contributed: 7_000, limit: 7_000, deadline: '2026-04-15' },
+        { taxYear: 2026, contributed: 3_500, deadline: '2027-04-15' },
+      ],
+      deposits: [
+        {
+          transactionId: 'roth-in',
+          accountId: 'other',
+          date: '2026-02-10',
+          amount: 1_000,
+          flow: 'contribution',
+          years: [2025, 2026],
+          chosen: false,
+          stated: false,
+          waiting: true,
+        },
+        {
+          transactionId: 'roth-may',
+          accountId: 'other',
+          date: '2026-05-12',
+          amount: 2_500,
+          flow: 'contribution',
+          years: [2026],
+          countsFor: 2026,
+          chosen: false,
+          stated: false,
+          waiting: false,
+        },
+      ],
+      buckets: { preTax: 6_000, taxFree: 9_000, taxable: 0, complete: false },
+      rothBasis: [
+        { accountId: 'other', since: '2025-06-01', contributed: 4_500, withdrawn: 0, basis: 4_500 },
+      ],
+      savings: [
+        {
+          year: 2026,
+          from: '2026-01-01',
+          through: '2026-09-03',
+          partial: false,
+          takeHome: 40_000,
+          spending: 20_000,
+          deferred: 6_000,
+          espp: 0,
+          rate: 56.52,
+        },
+      ],
+      uncounted: [],
+    },
+  }
+  const html = (await renderRoute('/holdings/retirement')).replaceAll('<!-- -->', '')
+  expect(html).toContain('href="/holdings/retirement"')
+  expect(html).toContain('Selected card · 2026')
+  expect(html).toContain('of $24,500.00')
+  expect(html).toContain('$2,055.55 a paycheck to max, 9 left')
+  expect(html).toContain('$1,200.00 from your employer, outside the limit')
+  expect(html).toContain('2026 limits aren’t published yet')
+  expect(html).toContain('Until Apr 15, 2027')
+  expect(html).toContain('Can count for 2025 or 2026')
+  expect(html).toContain('aria-label="Where the Feb 10 deposit counts"')
+  // A deposit Brief placed reads as where it counts, and can still be changed.
+  expect(html).toContain('aria-label="Where the May 12 deposit counts"')
+  expect(html).toContain('>Counts for 2026<')
+  expect(html).toContain('56.5%')
+  expect(html).toContain('href="#settings/retirement-earlier-contributions"')
+  expect(html).toContain('An account has no value, so these are incomplete.')
+  expect(html).toContain('Needs a full year of spending history.')
+})

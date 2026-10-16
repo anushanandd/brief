@@ -271,7 +271,7 @@
       ]
     }
   ],
-  "calculationVersion": 35,
+  "calculationVersion": 40,
   "calendarDate": "2026-09-09",
   "dividendHistory": [
     {
@@ -488,6 +488,7 @@
       "units": 2.0
     }
   ],
+  "transactionChanges": [],
   "transactions": [
     {
       "account": "Checking",
@@ -541,7 +542,17 @@
       "originalDescription": "SQ *COFFEE 0412 SAN FRANCISCO CA",
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7749,
+        "lon": -122.4194,
+        "precision": "exact",
+        "region": "CA",
+        "source": "descriptor"
+      },
       "postedOn": "2026-09-08",
+      "presence": "inPerson",
       "subcategory": "Coffee",
       "transactionCode": "digital_payment",
       "website": "https://coffee.example"

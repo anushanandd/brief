@@ -75,9 +75,12 @@ fn version_six_migration_adds_annotation_fields_and_keeps_existing_annotations()
 
     // The new fields round-trip beside the old ones, and reopening changes nothing.
     annotations.get_mut("kept").unwrap().tags = Some(vec!["trip".into()]);
+    annotations.get_mut("kept").unwrap().people = Some(vec!["person:a".into()]);
     annotations.insert(
         "refund".into(),
         Annotation {
+            // Nobody, chosen by hand, stays distinct from no choice.
+            people: Some(Vec::new()),
             refund_of: Some("kept".into()),
             splits: Some(vec![
                 crate::storage::Split {

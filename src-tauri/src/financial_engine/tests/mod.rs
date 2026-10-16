@@ -407,6 +407,16 @@ fn projects_activity_level_investment_fees_as_separate_transactions() {
     assert_eq!(fee["category"], "Fees");
     assert_eq!(fee["amount"], -1.25);
     assert_eq!(fee["description"], "provider-reference");
+    // The deposit itself keeps what the brokerage called it.
+    let deposit = snapshot["transactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|transaction| transaction["id"] == "snaptrade:brokerage:deposit")
+        .unwrap();
+    assert_eq!(deposit["category"], "Transfer");
+    assert_eq!(deposit["flow"], "contribution");
+    assert!(fee.get("flow").is_none());
 }
 
 #[test]
@@ -458,7 +468,7 @@ fn annotations_are_applied_by_the_native_view_projection() {
     )]);
     let view = |annotations: &BTreeMap<String, Annotation>| {
         let mut typed: Snapshot = serde_json::from_value(snapshot.clone()).unwrap();
-        apply_annotations(&mut typed, annotations, &[]).unwrap();
+        apply_annotations(&mut typed, annotations).unwrap();
         serde_json::to_value(typed).unwrap()
     };
     let projected = view(&annotations);
@@ -474,6 +484,25 @@ fn annotations_are_applied_by_the_native_view_projection() {
         "transfer"
     );
     assert_eq!(reclassified["spending"]["monthTotal"], 0.0);
+}
+
+#[test]
+fn a_brokerage_api_key_never_stands_in_for_the_account_number() {
+    // E*Trade's `number` is its opaque account key; the brokerage's own number is elsewhere.
+    let account: SnapAccount = serde_json::from_value(json!({
+        "id": "roth", "number": "1AbC2DEfgHIJ-KL3MN_OP", "institution_account_id": "123456789"
+    }))
+    .unwrap();
+    assert_eq!(
+        accounts::account_mask(account.printed_number()).as_deref(),
+        Some("6789")
+    );
+    let account: SnapAccount =
+        serde_json::from_value(json!({ "id": "plain", "number": "XXXX1234" })).unwrap();
+    assert_eq!(
+        accounts::account_mask(account.printed_number()).as_deref(),
+        Some("1234")
+    );
 }
 
 #[test]

@@ -92,6 +92,11 @@
     transform: translateX(8px);
   }
 }
+/* Closing, it slides back toward the edge it came from. */
+.activity-filter-card[data-leaving] {
+  opacity: 0;
+  transform: translateX(8px);
+}
 .activity-filter-card > .section-heading {
   margin-bottom: 12px;
   padding: 0 8px;
@@ -357,11 +362,6 @@
   .activity-filter-card {
     transition: opacity var(--duration-quick) linear;
   }
-  @starting-style {
-    .activity-filter-card {
-      transform: none;
-    }
-  }
 }
 .activity-page-list {
   margin-top: 16px;
@@ -382,13 +382,11 @@
 }
 .financial-activity-header,
 .financial-activity-row-columns {
-  /* Off-screen ledger rows skip layout and paint until scrolled near. */
-  content-visibility: auto;
-  contain-intrinsic-block-size: auto 44px;
+  /* Every row paints up front: skipping off-screen rows left blank gaps during fast scrolls. */
   min-width: max(100%, var(--activity-grid-width, 850px));
   grid-template-columns: var(
     --activity-grid-columns,
-    32px minmax(180px, 1fr) 125px 110px 100px 170px 100px 104px
+    100px 32px minmax(180px, 1fr) 125px 110px 100px 170px 104px
   );
   gap: 0;
 }
@@ -405,13 +403,12 @@
 .financial-activity-row-columns > .financial-activity-copy {
   padding: 0 12px;
 }
-.financial-activity-row-columns > :nth-child(n + 3) {
+.financial-activity-row-columns > :is(.financial-activity-column, .financial-activity-amount) {
   display: flex;
   min-width: 0;
   padding: 0 12px;
   align-self: stretch;
   align-items: center;
-  border-left: var(--hairline) solid var(--border-subtle);
 }
 .financial-activity-filter-button:disabled {
   cursor: default;
@@ -499,15 +496,18 @@
 .activity-page-list .financial-activity-description-button:not(:disabled):hover {
   color: var(--text-primary);
 }
-.financial-activity-row-columns > .financial-activity-date,
 .financial-activity-row-columns > [data-column='owner'] {
   align-items: center;
   justify-content: center;
   text-align: center;
 }
-.financial-activity-date .financial-activity-cell-button,
 [data-column='owner'] > .financial-activity-cell-button {
   margin-left: 0;
+}
+/* The date cell stacks vertically, so `justify-content` centers it in the row. */
+.financial-activity-row-columns > .financial-activity-date {
+  align-items: flex-start;
+  justify-content: center;
 }
 .financial-activity-row-columns > .financial-activity-location {
   gap: 4px;
@@ -515,10 +515,10 @@
 .financial-activity-row-columns > .financial-activity-amount {
   justify-content: flex-end;
   padding-right: 0;
-  font-weight: 400;
+  font-weight: 600;
 }
 .financial-activity-row-columns .financial-activity-copy strong {
-  font-weight: 400;
+  font-weight: 600;
 }
 .financial-activity-header {
   display: grid;
@@ -530,8 +530,8 @@
   font-weight: 600;
   text-align: left;
 }
-.financial-activity-header > button:first-child {
-  grid-column: 1 / 3;
+.financial-activity-header > button[data-column='description'] {
+  grid-column: span 2;
 }
 .financial-activity-header > button {
   display: flex;
@@ -546,11 +546,9 @@
   cursor: pointer;
   text-align: left;
 }
-.financial-activity-header > button:not(:first-child) {
+.financial-activity-header > button:not([data-column='description']) {
   padding-left: 12px;
-  border-left: var(--hairline) solid var(--border-subtle);
 }
-.financial-activity-header > button[data-column='date'],
 .financial-activity-header > button[data-column='owner'] {
   justify-content: center;
   padding-left: 0;
@@ -710,7 +708,6 @@
   outline: 0;
   background: var(--glass-raised);
   box-shadow: var(--shadow-popup);
-  backdrop-filter: var(--popup-filter);
   color: var(--text-primary);
   transform-origin: var(--transform-origin);
   transition:

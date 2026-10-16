@@ -3,16 +3,15 @@
 use super::*;
 
 impl RuleSet {
-    /// Credits against the annual fee since it last posted, or since January when the saved
-    /// history holds no fee charge from the past year.
+    /// Credits against the annual fee since it last posted, or since January (or the start of
+    /// the saved history, when later) when the history holds no fee charge from the past year,
+    /// and what the benefit periods plan to credit before the year ends.
     pub fn fee_recovery(
         &self,
         transactions: &[&Transaction],
         activity: &[BenefitActivity],
-        hidden_benefit_ids: &[String],
+        history: &[BenefitHistory],
         today: NaiveDate,
-        reference: &str,
-        zone: &dyn Zone,
     ) -> Option<FeeRecovery> {
         let annual_fee = self.annual_fee?;
         let charged = self.annual_fee_matches.as_ref().and_then(|matches| {
@@ -26,18 +25,19 @@ impl RuleSet {
                         transaction.description.as_deref().unwrap_or("")
                     ))
                 })
-                .filter_map(|transaction| {
-                    calendar::transaction_date(transaction.posted_date(), reference, zone)
-                })
+                .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
                 .filter(|date| *date <= today && (today - *date).num_days() <= 366)
                 .max()
         });
-        let (since, basis) = match charged {
-            Some(date) => (date, "fee-charge"),
-            None => (
-                NaiveDate::from_ymd_opt(today.year(), 1, 1)?,
-                "calendar-year",
-            ),
+        let history_start = transactions
+            .iter()
+            .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
+            .min();
+        let january = NaiveDate::from_ymd_opt(today.year(), 1, 1)?;
+        let (since, basis) = match (charged, history_start) {
+            (Some(date), _) => (date, "fee-charge"),
+            (None, Some(start)) if start > january => (start, "card-history"),
+            (None, _) => (january, "calendar-year"),
         };
         let others = transactions
             .iter()
@@ -45,41 +45,63 @@ impl RuleSet {
             .map(|transaction| transaction.id.as_str())
             .collect::<std::collections::HashSet<_>>();
         let (mut recovered, mut for_others) = (0, 0);
-        for item in activity.iter().filter(|item| {
-            item.is_posted_credit()
-                && item.date >= since
-                && item.date <= today
-                && !hidden_benefit_ids.contains(&item.benefit_id)
-        }) {
+        for item in activity
+            .iter()
+            .filter(|item| item.is_posted_credit() && item.date >= since && item.date <= today)
+        {
             if others.contains(item.id.as_str()) {
                 for_others += minor_units(item.amount);
             } else {
                 recovered += minor_units(item.amount);
             }
         }
+        // A year after the fee posted; without one, the anniversary is unknown, so the calendar
+        // year's end stands in for it.
+        let through = match basis {
+            "fee-charge" => since
+                .checked_add_months(chrono::Months::new(12))
+                .map(|renewal| renewal - Duration::days(1))?,
+            _ => NaiveDate::from_ymd_opt(today.year(), 12, 31)?,
+        };
+        // A purchase made for someone else earns them the credit, not you.
+        let expected = history
+            .iter()
+            .flat_map(|benefit| &benefit.periods)
+            .flat_map(|period| &period.planned)
+            .filter(|credit| credit.date <= through)
+            .filter(|credit| {
+                credit
+                    .transaction_id
+                    .as_deref()
+                    .is_none_or(|id| !others.contains(id))
+            })
+            .map(|credit| minor_units(credit.amount))
+            .sum::<i64>();
         Some(FeeRecovery {
             annual_fee,
             recovered: from_minor(recovered.max(0)),
             for_others: from_minor(for_others.max(0)),
             since,
             basis,
+            through,
+            expected: from_minor(expected.max(0)),
         })
     }
 }
 
 /// Credit totals for one window, in cents.
-struct WindowCredits<'a> {
+pub(super) struct WindowCredits<'a> {
     /// Credits and reversals that certainly count toward the window.
-    certain: i64,
+    pub(super) certain: i64,
     /// Credits and reversals posted in this window that may count toward the previous one.
-    provisional: i64,
+    pub(super) provisional: i64,
     /// Credits and reversals that count toward this window or an adjacent one.
-    uncertain_low: i64,
-    uncertain_high: i64,
+    pub(super) uncertain_low: i64,
+    pub(super) uncertain_high: i64,
     /// Credits that qualifying purchases in the window are still waiting for.
-    awaiting: i64,
+    pub(super) awaiting: i64,
     /// Everything shown as the window's evidence.
-    activity: Vec<&'a BenefitActivity>,
+    pub(super) activity: Vec<&'a BenefitActivity>,
 }
 
 impl WindowCredits<'_> {
@@ -88,7 +110,7 @@ impl WindowCredits<'_> {
     }
 
     /// The unused allowance, as a range, before applying the smallest qualifying charge.
-    fn unused(&self, cap: i64) -> (i64, i64) {
+    pub(super) fn unused(&self, cap: i64) -> (i64, i64) {
         let clamp = |value: i64| value.clamp(0, cap);
         (
             clamp(cap - self.certain - self.uncertain_high),
@@ -126,24 +148,20 @@ impl RuleSet {
 
     /// Classifies posted and pending card activity against the benefit rules, then pairs
     /// credits with purchases and places each credit in a window, as of `reference`.
-    pub fn activity(
-        &self,
-        transactions: &[&Transaction],
-        reference: &str,
-        zone: &dyn Zone,
-    ) -> Vec<BenefitActivity> {
-        let reference_day = calendar::transaction_date(reference, reference, zone);
+    pub fn activity(&self, transactions: &[&Transaction], reference: &str) -> Vec<BenefitActivity> {
+        let reference_day = calendar::transaction_date(reference);
         let mut activity = transactions
             .iter()
             .filter_map(|transaction| {
-                let date = calendar::transaction_date(transaction.posted_date(), reference, zone)?;
-                if reference_day.is_none_or(|day| date > day)
+                let posted = calendar::transaction_date(transaction.posted_date())?;
+                let date = calendar::transaction_date(transaction.occurred_date())?;
+                if reference_day.is_none_or(|day| posted > day)
                     || !transaction.amount.is_finite()
                     || transaction.amount == 0.0
                 {
                     return None;
                 }
-                self.classify(transaction, date)
+                self.classify(transaction, date, posted)
             })
             .collect::<Vec<_>>();
         activity.sort_by_key(|item| std::cmp::Reverse(item.date));
@@ -155,39 +173,47 @@ impl RuleSet {
         activity
     }
 
-    fn classify(&self, transaction: &Transaction, date: NaiveDate) -> Option<BenefitActivity> {
+    fn classify(
+        &self,
+        transaction: &Transaction,
+        date: NaiveDate,
+        posted: NaiveDate,
+    ) -> Option<BenefitActivity> {
+        // Rejected by hand: neither a credit nor a qualifying purchase for any benefit.
+        if transaction.benefit_confirmed == Some(false) {
+            return None;
+        }
         let text = transaction.descriptors();
-        let rule = self.rules.iter().find(|rule| {
-            let excluded = rule.excludes.as_ref().is_some_and(|re| re.is_match(&text))
-                || merchant_amount(&rule.data.exclude_merchant_amounts, transaction)
-                || rule
-                    .requires_before
-                    .as_ref()
-                    .is_some_and(|(re, before)| date < *before && !re.is_match(&text));
-            !excluded
-                && (rule.matches.is_match(&text)
-                    || rule
-                        .credit_matches
-                        .as_ref()
-                        .is_some_and(|re| re.is_match(&text))
-                    || merchant_amount(&rule.data.merchant_amount_matches, transaction))
-        })?;
+        // A benefit chosen by hand wins over the descriptor rules.
+        let assigned = transaction
+            .benefit_id
+            .as_deref()
+            .and_then(|id| self.rules.iter().find(|rule| rule.data.id == id));
+        let rule = assigned.or_else(|| self.matching_rule(transaction, &text, date))?;
+        let worded = rule
+            .credit_matches
+            .as_ref()
+            .is_some_and(|re| re.is_match(&text))
+            && !REFUND.is_match(&text);
+        // Confirming or assigning makes a positive amount a credit; only the issuer's wording
+        // makes a charge a reversal.
         let identified_credit = rule.data.issuer_credits
-            && transaction.benefit_confirmed != Some(false)
-            && (transaction.benefit_confirmed == Some(true)
-                || (rule
-                    .credit_matches
-                    .as_ref()
-                    .is_some_and(|re| re.is_match(&text))
-                    && !REFUND.is_match(&text)));
+            && if transaction.amount > 0.0 {
+                worded || assigned.is_some() || transaction.benefit_confirmed == Some(true)
+            } else {
+                worded
+            };
         let kind = match (identified_credit, transaction.amount > 0.0) {
             (true, true) => ActivityKind::Credit,
             (true, false) => ActivityKind::Reversal,
             (false, false) => ActivityKind::Purchase,
             (false, true) => ActivityKind::Unverified,
         };
+        // A hand assignment also counts a purchase that posted after the benefit retired.
         let in_effect = rule.data.effective_from.is_none_or(|from| date >= from)
-            && (rule.data.effective_until.is_none_or(|until| date <= until) || identified_credit);
+            && (rule.data.effective_until.is_none_or(|until| date <= until)
+                || identified_credit
+                || assigned.is_some());
         in_effect.then(|| BenefitActivity {
             id: transaction.id.clone(),
             merchant: transaction.merchant.clone(),
@@ -196,6 +222,8 @@ impl RuleSet {
             pending: transaction.pending,
             account_id: transaction.account_id.clone(),
             date,
+            posted,
+            dated: transaction.occurred_on.is_some(),
             benefit_id: rule.data.id.clone(),
             benefit_name: rule.data.name.clone(),
             kind,
@@ -206,13 +234,43 @@ impl RuleSet {
         })
     }
 
-    /// The benefit a positive transaction is an identified credit for, if any.
-    pub fn credit_identity(
+    /// The first rule whose descriptors match, unless the rule excludes this transaction.
+    fn matching_rule(
         &self,
         transaction: &Transaction,
-        zone: &dyn Zone,
-    ) -> Option<(String, String)> {
-        self.activity(&[transaction], transaction.posted_date(), zone)
+        text: &str,
+        date: NaiveDate,
+    ) -> Option<&Rule> {
+        self.rules.iter().find(|rule| {
+            let excluded = rule.excludes.as_ref().is_some_and(|re| re.is_match(text))
+                || merchant_amount(&rule.data.exclude_merchant_amounts, transaction)
+                || rule
+                    .requires_before
+                    .as_ref()
+                    .is_some_and(|(re, before)| date < *before && !re.is_match(text));
+            !excluded
+                && (rule.matches.is_match(text)
+                    || rule
+                        .credit_matches
+                        .as_ref()
+                        .is_some_and(|re| re.is_match(text))
+                    || merchant_amount(&rule.data.merchant_amount_matches, transaction))
+        })
+    }
+
+    /// The benefit a charge qualifies for as a purchase, if any: a recurring series of such
+    /// charges is expected to earn that benefit's credits.
+    pub fn purchase_benefit(&self, transaction: &Transaction) -> Option<String> {
+        let date = calendar::transaction_date(transaction.occurred_date())?;
+        let posted = calendar::transaction_date(transaction.posted_date())?;
+        self.classify(transaction, date, posted)
+            .filter(|activity| activity.kind == ActivityKind::Purchase)
+            .map(|activity| activity.benefit_id)
+    }
+
+    /// The benefit a positive transaction is an identified credit for, if any.
+    pub fn credit_identity(&self, transaction: &Transaction) -> Option<(String, String)> {
+        self.activity(&[transaction], transaction.posted_date())
             .into_iter()
             .next()
             .filter(|activity| activity.kind == ActivityKind::Credit)
@@ -228,16 +286,18 @@ impl RuleSet {
         snapshot: &str,
         zone: &dyn Zone,
     ) -> Vec<BenefitWindow> {
-        let matched = self.activity(transactions, snapshot, zone);
-        self.tracker_for(&matched, reference, snapshot, zone)
+        let matched = self.activity(transactions, snapshot);
+        self.tracker_for(&matched, reference, snapshot, None, zone)
     }
 
-    /// `tracker` over activity already classified as of `snapshot`.
+    /// `tracker` over activity already classified as of `snapshot`. `history_start` is the
+    /// first day of the saved card history, when a window may begin before it.
     pub fn tracker_for(
         &self,
         matched: &[BenefitActivity],
         reference: &str,
         snapshot: &str,
+        history_start: Option<NaiveDate>,
         zone: &dyn Zone,
     ) -> Vec<BenefitWindow> {
         let Some(reference_instant) = calendar::parse_instant(reference) else {
@@ -257,7 +317,16 @@ impl RuleSet {
                         .effective_until
                         .is_none_or(|until| until >= local_reference)
             })
-            .map(|rule| self.window(rule, matched, reference_instant, snapshot_instant, zone))
+            .map(|rule| {
+                self.window(
+                    rule,
+                    matched,
+                    reference_instant,
+                    snapshot_instant,
+                    history_start,
+                    zone,
+                )
+            })
             .collect::<Vec<_>>();
         windows.sort_by(|left, right| {
             (!left.cadence.is_calendar())
@@ -269,7 +338,7 @@ impl RuleSet {
     }
 
     /// Credit totals for one window of a rule. `through` excludes activity posted later.
-    fn window_credits<'a>(
+    pub(super) fn window_credits<'a>(
         rule: &Rule,
         period: &Period,
         matched: &'a [BenefitActivity],
@@ -335,6 +404,7 @@ impl RuleSet {
         matched: &[BenefitActivity],
         reference: DateTime<Utc>,
         snapshot: Option<DateTime<Utc>>,
+        history_start: Option<NaiveDate>,
         zone: &dyn Zone,
     ) -> BenefitWindow {
         let rule_zone = rule.zone(zone);
@@ -369,13 +439,18 @@ impl RuleSet {
             && definition.track_remaining
             && definition.issuer_credits
             && period.cadence.is_calendar();
+        // A window the history reaches partway is judged by the credits it shows; the date
+        // says where that history starts.
+        let history_from =
+            history_start.filter(|start| period.cadence.is_calendar() && *start > period.start);
         let (unused_low, unused_high) = credits.unused(cap);
+        // A remainder under the smallest charge, or only cents, can't be spent.
         let remaining_range = tracked.then(|| AmountRange {
-            low: from_minor(rule.usable(unused_low)),
-            high: from_minor(rule.usable(unused_high)),
+            low: from_minor(rule.spendable(unused_low)),
+            high: from_minor(rule.spendable(unused_high)),
         });
         let unusable_remainder = (tracked && !credits.uncertain())
-            .then(|| unused_low - rule.usable(unused_low))
+            .then(|| unused_low - rule.spendable(unused_low))
             .filter(|remainder| *remainder > 0)
             .map(from_minor);
         let remaining_amount = remaining_range
@@ -387,9 +462,12 @@ impl RuleSet {
                     item.kind == ActivityKind::Reversal && !item.pending && item.date >= last.date
                 })
         });
-        let renewal_check = renewal_credit.and_then(|credit| {
-            NaiveDate::from_ymd_opt(credit.date.year() + 4, credit.date.month(), 1)
-                .map(|month| month + Duration::days(credit.date.day() as i64 - 1))
+        // Global Entry's $120 credit renews after four years; TSA PreCheck's, up to $85, after
+        // four and a half.
+        let renewal_check = renewal_credit.map(|credit| {
+            let months = if credit.amount > 85.0 { 48 } else { 54 };
+            calendar::add_months_first(credit.date, months)
+                + Duration::days(credit.date.day() as i64 - 1)
         });
         let credited_amount = from_minor(credits.certain + credits.provisional);
         let status = if !definition.issuer_credits {
@@ -427,10 +505,8 @@ impl RuleSet {
             credit_lag_learned: lag.learned,
             renewal_check: renewal_check.map(calendar::long_label),
             status,
-            engaged: ours().any(|item| {
-                item.kind == ActivityKind::Purchase
-                    || (item.kind == ActivityKind::Credit && !item.pending)
-            }),
+            recurring: definition.recurring,
+            history_from,
             credited_amount,
             uncertain_credit_amount: from_minor(credits.uncertain_low + credits.uncertain_high),
             awaiting_credit_amount: from_minor(credits.awaiting.min(unused_high)),
@@ -450,115 +526,6 @@ impl RuleSet {
             days_remaining: (period.end - rule_reference).num_days().max(0),
             last_credit: last_credit_outside,
             reset: calendar::short_label(period.end),
-        }
-    }
-
-    /// What became of every calendar window that ended on a month end from `first` through
-    /// the day before `reference`, judged with all activity known as of `reference`.
-    pub fn window_outcomes(
-        &self,
-        transactions: &[&Transaction],
-        first: NaiveDate,
-        reference: &str,
-        zone: &dyn Zone,
-    ) -> Vec<WindowOutcome> {
-        let Some(reference_day) = calendar::transaction_date(reference, reference, zone) else {
-            return Vec::new();
-        };
-        // The feed can only speak for windows that its history fully covers.
-        let history_start = transactions
-            .iter()
-            .filter_map(|transaction| {
-                calendar::transaction_date(transaction.posted_date(), reference, zone)
-            })
-            .min();
-        let matched = self.activity(transactions, reference, zone);
-        let mut outcomes = Vec::new();
-        let mut month = calendar::add_months_first(first, 0);
-        while month <= reference_day {
-            let window_end = calendar::month_end(month.year(), month.month());
-            if window_end < reference_day {
-                for rule in &self.rules {
-                    let in_effect = rule
-                        .data
-                        .effective_from
-                        .is_none_or(|from| from <= window_end)
-                        && rule
-                            .data
-                            .effective_until
-                            .is_none_or(|until| until >= window_end);
-                    let period = rule.period(window_end);
-                    if in_effect && period.cadence.is_calendar() && period.end == window_end {
-                        outcomes.push(self.outcome(
-                            rule,
-                            &period,
-                            &matched,
-                            history_start,
-                            reference_day,
-                        ));
-                    }
-                }
-            }
-            month = calendar::add_months_first(month, 1);
-        }
-        outcomes.sort_by(|left, right| {
-            left.window_end
-                .cmp(&right.window_end)
-                .then_with(|| left.benefit_id.cmp(&right.benefit_id))
-        });
-        outcomes
-    }
-
-    fn outcome(
-        &self,
-        rule: &Rule,
-        period: &Period,
-        matched: &[BenefitActivity],
-        history_start: Option<NaiveDate>,
-        today: NaiveDate,
-    ) -> WindowOutcome {
-        let definition = &rule.data;
-        let credits = Self::window_credits(rule, period, matched, today);
-        let lag = CreditLag::observe(rule, matched);
-        let posted_purchase = credits
-            .activity
-            .iter()
-            .any(|item| item.kind == ActivityKind::Purchase && !item.pending);
-        let (state, unused) = if definition.estimate_from_purchases {
-            // Uber Cash is spent before the card is charged, so only a card charge is evidence.
-            if posted_purchase {
-                (OutcomeState::Settled, Some((0, 0)))
-            } else {
-                (OutcomeState::NotVisible, None)
-            }
-        } else if !definition.track_remaining || !definition.issuer_credits {
-            (OutcomeState::NotTracked, None)
-        } else if history_start.is_none_or(|start| start > period.start) {
-            (OutcomeState::PartialHistory, None)
-        } else if today <= period.end + Duration::days(lag.days)
-            || credits.activity.iter().any(|item| item.awaits_credit())
-        {
-            (OutcomeState::Settling, None)
-        } else {
-            let (low, high) = credits.unused(minor_units(period.cap));
-            (
-                OutcomeState::Settled,
-                Some((rule.usable(low), rule.usable(high))),
-            )
-        };
-        let engaged = matched.iter().any(|item| {
-            item.benefit_id == definition.id
-                && (item.kind == ActivityKind::Purchase
-                    || (item.kind == ActivityKind::Credit && !item.pending))
-        });
-        WindowOutcome {
-            window_end: period.end,
-            benefit_id: definition.id.clone(),
-            state,
-            unused: unused.map(|(low, _)| from_minor(low)),
-            unused_high: unused.map(|(_, high)| from_minor(high)),
-            engaged,
-            verdict: Verdict::of(state, engaged),
         }
     }
 }

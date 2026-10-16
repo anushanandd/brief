@@ -1,0 +1,467 @@
+/* People: avatars, the people picker, who's this, the roster, a person, and who went on a trip.
+ * Each person carries their own data color as `--person-color`; it marks who, never how much. */
+.person-avatar {
+  display: inline-grid;
+  overflow: hidden;
+  flex: none;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  background: color-mix(
+    in oklab,
+    var(--person-color, var(--text-tertiary)) 22%,
+    var(--control-background)
+  );
+  box-shadow: 0 0 0 1.5px var(--person-color, transparent);
+  color: var(--person-color, var(--text-secondary));
+  font-size: var(--type-micro);
+  font-weight: 600;
+  line-height: 1;
+}
+.person-avatar.is-medium {
+  width: 40px;
+  height: 40px;
+  font-size: var(--type-body);
+}
+.person-avatar.is-hero {
+  width: 72px;
+  height: 72px;
+  box-shadow:
+    0 0 0 3px var(--background),
+    0 0 0 5px var(--person-color, transparent),
+    0 16px 48px color-mix(in oklab, var(--person-color, transparent) 40%, transparent);
+  font-size: var(--type-page);
+}
+.person-avatar > img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.transaction-tag.person-chip {
+  padding-left: 2px;
+}
+
+/* The picker: chips for who's chosen and a field that finds or adds someone. */
+.people-picker {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.people-picker[aria-busy] {
+  opacity: 0.7;
+}
+.people-picker-field {
+  position: relative;
+}
+.people-picker-field > .transaction-tag-input {
+  width: 160px;
+}
+.people-picker-options {
+  position: absolute;
+  z-index: 20;
+  top: calc(100% + 4px);
+  left: 0;
+  min-width: 240px;
+  margin: 0;
+  padding: 4px;
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-control);
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-popup);
+  list-style: none;
+}
+.people-picker-options > li {
+  display: flex;
+  min-height: 32px;
+  padding: 0 8px;
+  align-items: center;
+  gap: 8px;
+  border-radius: calc(var(--radius-control) - 2px);
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  cursor: default;
+  user-select: none;
+}
+.people-picker-options > li[aria-selected='true'] {
+  background: var(--hover-wash);
+  color: var(--text-primary);
+}
+.people-picker-options small {
+  margin-left: auto;
+  color: var(--text-tertiary);
+}
+
+.people-card,
+.people-who-card,
+.people-hero-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+
+/* Who's this: a line per name in payments, then who it could be, each a chip. */
+.people-who {
+  display: grid;
+  max-height: 320px;
+  margin: 12px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  list-style: none;
+}
+.people-who > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  padding: 8px 0;
+  border-top: var(--hairline) solid var(--border-subtle);
+  outline: 0;
+}
+.people-who > li:first-child {
+  border-top: 0;
+}
+.people-who > li[aria-busy] {
+  opacity: 0.6;
+}
+.people-who-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.people-who-name > strong {
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.people-who-name > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.people-who-arrow {
+  color: var(--text-tertiary);
+}
+.person-avatar.is-unknown {
+  border: var(--hairline) dashed var(--border-strong);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-tertiary);
+}
+.people-who-options {
+  display: flex;
+  min-width: 0;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.people-who-option {
+  display: inline-flex;
+  min-height: 32px;
+  padding: 2px 12px 2px 4px;
+  align-items: center;
+  gap: 8px;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--person-color, var(--text-tertiary)) 8%, transparent);
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--duration-quick) var(--ease-out),
+    border-color var(--duration-quick) var(--ease-out);
+}
+.people-who-option:hover:not(:disabled) {
+  border-color: var(--person-color, var(--border-strong));
+  background: color-mix(in oklab, var(--person-color, var(--text-tertiary)) 16%, transparent);
+}
+.people-who-option.is-first {
+  border-color: var(--person-color);
+}
+.people-who-option:disabled {
+  cursor: default;
+}
+.people-who-option > span:last-child {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+.people-who-option strong {
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.people-who-option small {
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+}
+.people-who-option.is-new {
+  padding-left: 12px;
+  border-style: dashed;
+  background: transparent;
+  color: var(--text-secondary);
+}
+.people-who-card .keys {
+  margin-right: 4px;
+}
+
+/* The roster: everyone in one table. Sent and received meet at one centre line down it. */
+.people-roster {
+  width: 100%;
+  margin-top: 12px;
+  border-collapse: collapse;
+  font-size: var(--type-body);
+}
+.people-roster th {
+  padding: 8px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+  text-align: left;
+  white-space: nowrap;
+}
+.people-roster td {
+  padding: 6px 8px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  white-space: nowrap;
+}
+.people-roster tbody tr {
+  outline: 0;
+  cursor: pointer;
+  transition: background var(--duration-quick) var(--ease-out);
+}
+.people-roster tbody tr:hover,
+.people-roster tbody tr:focus {
+  background: var(--hover-wash);
+}
+.people-roster .is-number {
+  width: 64px;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.people-roster .is-muted {
+  color: var(--text-secondary);
+}
+.people-roster .is-sent,
+.people-roster .is-received {
+  width: 22%;
+}
+.people-roster th.is-sent {
+  text-align: right;
+}
+.people-roster td.is-sent {
+  border-right: var(--hairline) solid var(--border-strong);
+}
+.people-roster-person {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  color: inherit;
+  text-decoration: none;
+}
+.people-roster-person > strong {
+  font-weight: 500;
+}
+.people-roster-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.is-sent > .people-roster-bar {
+  justify-content: flex-end;
+}
+.people-roster-bar > span {
+  flex: none;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--person-color);
+}
+.is-sent > .people-roster-bar > span {
+  opacity: 0.55;
+}
+.people-roster-bar > small {
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+/* One person. */
+.people-hero {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 auto;
+  align-items: center;
+  gap: 20px;
+}
+.people-name {
+  margin: 0 0 4px;
+  font-family: var(--font-editorial);
+  font-size: var(--type-hero);
+  font-weight: 500;
+  letter-spacing: -0.01em;
+  line-height: 1.1;
+}
+.people-hero-stats {
+  display: flex;
+  flex-wrap: wrap;
+  margin-top: 20px;
+  gap: 8px 32px;
+}
+.people-hero-stats .metric > strong {
+  margin-top: 4px;
+  font-size: var(--type-metric);
+}
+.people-moments {
+  margin: 20px 0 0;
+}
+.people-moments > figcaption {
+  margin-bottom: 8px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.people-moments > ol {
+  display: grid;
+  grid-template-columns: repeat(12, minmax(0, 1fr));
+  margin: 0;
+  padding: 0;
+  gap: 4px;
+  list-style: none;
+}
+.people-moments li {
+  display: grid;
+  justify-items: center;
+  gap: 4px;
+}
+.people-moment-plot {
+  position: relative;
+  display: grid;
+  width: 100%;
+  height: 40px;
+  place-items: center;
+}
+.people-moment-plot > .brief-icon {
+  position: absolute;
+  top: -4px;
+  right: 2px;
+  color: var(--person-color);
+}
+.people-moment {
+  width: 28px;
+  height: 28px;
+  border-radius: 999px;
+  background: var(--person-color);
+  transform: scale(var(--moment-scale, 1));
+}
+.people-moment.is-empty {
+  background: var(--border-subtle);
+}
+.people-moments small {
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+}
+.people-details {
+  margin-top: 16px;
+  padding: 0;
+}
+.people-name-input.people-name-input {
+  width: 200px;
+}
+
+/* Trips together, as postcards. */
+.people-postcards {
+  display: grid;
+  margin: 16px 0 0;
+  padding: 4px 0;
+  gap: 12px;
+  list-style: none;
+}
+.people-postcards > li {
+  outline: 0;
+}
+.people-postcard {
+  position: relative;
+  display: grid;
+  padding: 12px 16px;
+  gap: 2px;
+  border-radius: var(--radius-inner);
+  background: var(--control-background);
+  color: inherit;
+  text-decoration: none;
+  transform: rotate(var(--postcard-tilt, 0deg));
+  transition: transform var(--duration-quick) var(--ease-out);
+}
+.people-postcard:hover,
+.people-postcards > li:focus-within .people-postcard {
+  transform: rotate(0deg) translateY(-2px);
+}
+.people-postcard > strong {
+  padding-right: 40px;
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.people-postcard > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.people-postcard-stamp {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  display: grid;
+  min-width: 32px;
+  height: 32px;
+  padding: 0 4px;
+  place-items: center;
+  border: var(--hairline) dashed var(--border-strong);
+  border-radius: var(--radius-small);
+  font-size: var(--type-section);
+}
+
+/* Who went on a trip. */
+.trips-companions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin: 12px 0 0;
+}
+.trips-companion-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.trips-companion-list > li {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+
+/* The moments grow in. Nothing moves with reduced motion. */
+@media (prefers-reduced-motion: no-preference) {
+  .people-moment {
+    animation: people-moment-grow var(--duration-reveal) var(--ease-out) both;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .people-roster tbody tr,
+  .people-postcard,
+  .people-who-option {
+    transition: none;
+  }
+  .people-postcard {
+    transform: none;
+  }
+}
+@keyframes people-moment-grow {
+  from {
+    transform: scale(0);
+  }
+}

@@ -149,3 +149,33 @@ pub(crate) fn cancel_provider_link(
 ) -> Result<(), String> {
     state.providers.finish_link(&session_id)
 }
+
+/// Saved bank statements, newest first, without their contents.
+#[tauri::command]
+pub(crate) fn get_bank_statements(
+    state: State<'_, AppState>,
+) -> Result<Vec<crate::database::BankStatement>, String> {
+    state.storage()?.bank_statements()
+}
+
+/// Checks every connection with statements now and saves new ones.
+#[tauri::command]
+pub(crate) async fn sync_bank_statements(
+    state: State<'_, AppState>,
+) -> Result<crate::bank_statements::StatementSync, String> {
+    crate::bank_statements::sync(&state, chrono::Utc::now(), true).await
+}
+
+/// Opens one saved statement in the Mac's PDF viewer, from a private copy.
+#[tauri::command]
+pub(crate) fn open_bank_statement(
+    id: String,
+    app: tauri::AppHandle,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    use tauri_plugin_opener::OpenerExt;
+    let path = state.storage()?.open_copy(&id)?;
+    app.opener()
+        .open_path(path.to_string_lossy(), None::<&str>)
+        .map_err(|_| "Could not open the statement".to_string())
+}

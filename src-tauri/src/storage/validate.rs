@@ -48,6 +48,9 @@ pub(super) fn validate_snapshot(snapshot: &Snapshot) -> Result<(), String> {
     if !valid_movements(&snapshot.account_movements) {
         return Err("Invalid account movement history".into());
     }
+    if !valid_transaction_changes(&snapshot.transaction_changes) {
+        return Err("Invalid transaction change history".into());
+    }
     if !valid_points(&snapshot.net_worth_history, true)
         || !valid_points(&snapshot.observed_net_worth_history, false)
         || !valid_points(&snapshot.benchmark_history, false)
@@ -127,7 +130,7 @@ fn valuation_reconciles(snapshot: &Snapshot, ids: &BTreeSet<&str>) -> bool {
             transaction
                 .account_id
                 .as_ref()
-                .is_none_or(|id| ids.contains(id.as_str()))
+                .is_none_or(|id| known_account(id, ids))
         })
         && snapshot
             .trades
@@ -166,8 +169,13 @@ fn valid_holding(holding: &Holding, ids: &BTreeSet<&str>) -> bool {
 }
 
 /// A trade's account and the gain estimated for it.
+/// An account the snapshot lists, or a manual one, which joins when the view is read.
+fn known_account(id: &str, ids: &BTreeSet<&str>) -> bool {
+    ids.contains(id) || id.starts_with("manual:")
+}
+
 fn valid_trade_result(trade: &Trade, ids: &BTreeSet<&str>) -> bool {
-    ids.contains(trade.account_id.as_str())
+    known_account(&trade.account_id, ids)
         && trade.amount.is_finite()
         && [
             trade.realized_cost_basis,
@@ -243,6 +251,23 @@ fn valid_movements(movements: &[AccountMovement]) -> bool {
             !movement.id.is_empty()
                 && !movement.account_id.is_empty()
                 && chrono::DateTime::parse_from_rfc3339(&movement.observed_at).is_ok()
+        })
+}
+
+/// At most 500 uniquely identified, timestamped changes with finite amounts.
+fn valid_transaction_changes(changes: &[crate::finance_contract::TransactionChange]) -> bool {
+    let ids = changes
+        .iter()
+        .map(|change| &change.id)
+        .collect::<BTreeSet<_>>();
+    changes.len() <= 500
+        && ids.len() == changes.len()
+        && changes.iter().all(|change| {
+            !change.id.is_empty()
+                && !change.transaction_id.is_empty()
+                && change.amount.is_finite()
+                && change.previous_amount.is_none_or(f64::is_finite)
+                && chrono::DateTime::parse_from_rfc3339(&change.observed_at).is_ok()
         })
 }
 

@@ -195,58 +195,46 @@ pub(super) fn reconstructed_net_worth_history(
 }
 
 /// Money moving between two tracked accounts often posts on different days, so for a while it
-/// appears in both accounts or in neither. Pairs equal, opposite transfer legs and returns, for
-/// each date before the second leg posts, the amount the first leg counted early.
+/// appears in both accounts or in neither. Returns, for each date before a transfer's second
+/// leg posts, the amount its first leg counted early, from the legs the policy paired.
 pub(super) fn in_transit_transfers(
     transactions: &[Transaction],
     accounts: &BTreeSet<String>,
 ) -> BTreeMap<String, Decimal> {
-    let mut legs = transactions
+    let by_id = transactions
         .iter()
-        .filter(|transaction| {
-            transaction.kind() == Some(crate::transaction_policy::Kind::Transfer)
-                && !transaction.pending
-        })
-        .filter_map(|transaction| {
-            let account = transaction.account_id.as_deref()?;
-            let date = NaiveDate::parse_from_str(transaction.posted_date(), "%Y-%m-%d").ok()?;
-            let amount = decimal_f64(transaction.amount).filter(|amount| !amount.is_zero())?;
-            accounts
-                .contains(account)
-                .then_some((date, account, amount))
-        })
-        .collect::<Vec<_>>();
-    legs.sort();
-    let mut paired = vec![false; legs.len()];
+        .map(|transaction| (transaction.id.as_str(), transaction))
+        .collect::<BTreeMap<_, _>>();
+    let leg = |transaction: &Transaction| {
+        let account = transaction.account_id.as_deref()?;
+        let date = NaiveDate::parse_from_str(transaction.posted_date(), "%Y-%m-%d").ok()?;
+        let amount = decimal_f64(transaction.amount)?;
+        accounts.contains(account).then_some((date, amount))
+    };
     let mut early = BTreeMap::new();
-    for out in 0..legs.len() {
-        let (out_date, out_account, out_amount) = legs[out];
-        if paired[out] || out_amount.is_sign_positive() {
-            continue;
-        }
-        let Some(into) = (0..legs.len())
-            .filter(|&index| {
-                let (date, account, amount) = legs[index];
-                !paired[index]
-                    && account != out_account
-                    && amount == -out_amount
-                    && (date - out_date).num_days().abs()
-                        <= crate::transaction_policy::TRANSFER_SETTLEMENT_DAYS
-            })
-            .min_by_key(|&index| ((legs[index].0 - out_date).num_days().abs(), legs[index].0))
+    // Each pair is read once, from its outgoing leg.
+    for sent in transactions
+        .iter()
+        .filter(|transaction| transaction.amount < 0.0)
+    {
+        let Some(arrived) = sent
+            .transfer_pair_id
+            .as_deref()
+            .and_then(|id| by_id.get(id))
         else {
             continue;
         };
-        paired[out] = true;
-        paired[into] = true;
-        let (first, last) = if legs[into].0 < out_date {
-            (legs[into], legs[out])
+        let (Some(sent), Some(arrived)) = (leg(sent), leg(arrived)) else {
+            continue;
+        };
+        let (first, last) = if arrived.0 < sent.0 {
+            (arrived, sent)
         } else {
-            (legs[out], legs[into])
+            (sent, arrived)
         };
         let mut date = first.0;
         while date < last.0 {
-            *early.entry(date.to_string()).or_default() += first.2;
+            *early.entry(date.to_string()).or_default() += first.1;
             date += Duration::days(1);
         }
     }
@@ -371,6 +359,25 @@ pub(super) fn snapshot_change(
     if previous_accounts.is_empty() || previous.updated_at == observed_at {
         return None;
     }
+    // Transactions are compared only on a refresh that read providers, in the Plaid cash and
+    // card accounts that refresh read; a re-projection of saved data changes nothing real.
+    let checked = current_accounts
+        .iter()
+        .filter(|account| {
+            account.id.starts_with("plaid:")
+                && matches!(account.r#type.as_str(), "cash" | "credit")
+                && refreshed.contains(&account.id)
+                && previous_accounts.contains_key(account.id.as_str())
+        })
+        .map(|account| account.id.clone())
+        .collect::<BTreeSet<_>>();
+    let diff = (!refreshed.is_empty())
+        .then(|| transaction_diff(previous, current_transactions, &checked, observed_at));
+    let explained = |account: &Account| {
+        diff.as_ref()
+            .and_then(|diff| diff.explained.get(&account.id))
+            .copied()
+    };
     let mut changes = current_accounts
         .iter()
         .filter(|account| account.id != "all")
@@ -384,10 +391,13 @@ pub(super) fn snapshot_change(
                 return None;
             }
             let change = rounded(current - prior);
-            (change.abs() >= Decimal::new(1, 2)).then_some((account, change))
+            let explained = explained(account).map(rounded);
+            (change.abs() >= Decimal::new(1, 2)
+                || explained.is_some_and(|explained| explained.abs() >= Decimal::new(1, 2)))
+            .then_some((account, change, explained))
         })
         .collect::<Vec<_>>();
-    changes.sort_by_key(|(_, change)| std::cmp::Reverse(change.abs()));
+    changes.sort_by_key(|(_, change, _)| std::cmp::Reverse(change.abs()));
     let previous_transaction_ids = previous
         .transactions
         .iter()
@@ -405,18 +415,22 @@ pub(super) fn snapshot_change(
             .iter()
             .all(|id| previous_accounts.contains_key(*id))
         && (refreshed.is_empty() || current_ids.iter().all(|id| refreshed.contains(*id)));
+    let (transaction_changes, backfilled) = diff
+        .map(|diff| (diff.changes, diff.backfilled))
+        .unwrap_or_default();
     Some(Change {
         observed_at: observed_at.into(),
         previous_updated_at: previous.updated_at.clone(),
         previous_net_worth: previous.net_worth,
-        net_worth_change: money(changes.iter().map(|(_, change)| *change).sum()),
+        net_worth_change: money(changes.iter().map(|(_, change, _)| *change).sum()),
         comparison_complete: Some(comparison_complete),
         account_changes: changes
             .into_iter()
-            .map(|(account, change)| AccountChange {
+            .map(|(account, change, explained)| AccountChange {
                 account_id: account.id.clone(),
                 name: account.name.clone(),
                 change: money(change),
+                explained: explained.map(money),
             })
             .collect(),
         new_transaction_ids: current_transactions
@@ -424,6 +438,8 @@ pub(super) fn snapshot_change(
             .filter(|transaction| !previous_transaction_ids.contains(transaction.id.as_str()))
             .map(|transaction| transaction.id.clone())
             .collect(),
+        transaction_changes,
+        backfilled,
     })
 }
 
@@ -448,6 +464,7 @@ pub(super) fn merge_movements(
                     account_id: account.account_id.clone(),
                     name: account.name.clone(),
                     change: account.change,
+                    explained: account.explained,
                 },
             );
         }

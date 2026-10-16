@@ -6,7 +6,6 @@ import { getFinanceSnapshot, isTauri } from './api'
 import {
   financeSettingsSchema,
   financeSnapshotSchema,
-  type CategoryRule,
   type FinanceSettings,
   type FinanceSnapshot,
 } from './schema'
@@ -26,6 +25,14 @@ export const defaultFinanceSettings: FinanceSettings = financeSettingsSchema.par
 
 export function financeSettings(data: Pick<FinanceSnapshot, 'settings'> | undefined) {
   return data?.settings ?? defaultFinanceSettings
+}
+
+/** Every card the user spends from: the saved spending card, then the others. */
+export function spendingAccountIds(settings: FinanceSettings) {
+  return [
+    ...(settings.spendingAccountId ? [settings.spendingAccountId] : []),
+    ...(settings.spendingCards ?? []),
+  ]
 }
 
 function readLegacySettings(): Partial<FinanceSettings> | undefined {
@@ -103,9 +110,4 @@ export async function saveFinanceSettings(settings: FinanceSettings): Promise<Fi
   return financeSnapshotSchema.parse(
     await invoke('save_finance_settings', { settings: parsed, importing: false }),
   )
-}
-
-export async function saveCategoryRules(rules: CategoryRule[]): Promise<FinanceSnapshot> {
-  if (!isTauri()) throw new Error('Category rules require the Brief desktop app')
-  return financeSnapshotSchema.parse(await invoke('save_category_rules', { rules }))
 }

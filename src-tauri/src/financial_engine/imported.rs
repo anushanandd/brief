@@ -3,9 +3,17 @@
 //! reconstructed balance history treat them like any other transaction.
 use super::*;
 use crate::{
+    finance_contract::{
+        AmountDifference, ContributionYear, MissingStatementRow, StatementReconciliation,
+    },
     providers::{PlaidData, SnapTradeData},
-    statements::{self, Activity, ProviderActivity, StatementFile, StatementRow},
+    statements::{self, Activity, IssuerDetail, ProviderActivity, StatementFile, StatementRow},
 };
+
+/// A Plaid cash or card account, whose statements are reconciled against Plaid.
+pub(crate) fn reconciles(account: &Account) -> bool {
+    account.id.starts_with("plaid:") && matches!(account.r#type.as_str(), "cash" | "credit")
+}
 
 pub(super) struct Imported {
     pub(super) plaid_transactions: Vec<PlaidTransaction>,
@@ -13,6 +21,12 @@ pub(super) struct Imported {
     pub(super) history_starts: BTreeMap<String, NaiveDate>,
     pub(super) transactions: Vec<Transaction>,
     pub(super) trades: Vec<Trade>,
+    /// Per Plaid cash or card account whose statements reach Plaid's days.
+    pub(super) reconciliation: Vec<StatementReconciliation>,
+    /// What the card issuer's export says about each transaction's merchant, by transaction id.
+    pub(super) issuers: BTreeMap<String, IssuerDetail>,
+    /// The tax years brokerages' statements say IRA contributions count toward.
+    pub(super) contribution_years: Vec<ContributionYear>,
 }
 
 /// Activity each provider already reports, by projected account id.
@@ -34,8 +48,14 @@ fn activity_from(
             .entry(format!("plaid:{}", transaction.account_id))
             .or_default()
             .push(ProviderActivity {
+                id: transaction.transaction_id.clone(),
                 date,
                 amount: -transaction.amount,
+                description: transaction
+                    .original_description
+                    .clone()
+                    .or_else(|| transaction.name.clone())
+                    .unwrap_or_default(),
             });
     }
     for (account, activities) in snap_activities {
@@ -50,8 +70,10 @@ fn activity_from(
                 .entry(format!("snaptrade:{account}"))
                 .or_default()
                 .push(ProviderActivity {
+                    id: item.id.clone().unwrap_or_default(),
                     date,
                     amount: item.amount,
+                    description: item.description.clone().unwrap_or_default(),
                 });
         }
     }
@@ -81,8 +103,8 @@ pub(crate) fn provider_activity(
 
 /// Plaid's category for an activity type that names its meaning outright. Other rows have
 /// none, and the transaction policy reads their description.
-fn plaid_category(row: &StatementRow) -> Option<PlaidCategory> {
-    let inflow = row.amount.is_sign_positive();
+fn plaid_category(row: &StatementRow, amount: Decimal) -> Option<PlaidCategory> {
+    let inflow = amount.is_sign_positive();
     let (primary, detailed) = match row.activity {
         Activity::Interest if inflow => ("INCOME", "INCOME_INTEREST_EARNED"),
         Activity::Interest => ("BANK_FEES", "BANK_FEES_INTEREST_CHARGE"),
@@ -113,11 +135,17 @@ fn description(row: &StatementRow) -> String {
     )
 }
 
-fn plaid_record(id: String, account_id: &str, row: &StatementRow) -> PlaidTransaction {
+/// `amount` is the row's, signed as the account sees it.
+fn plaid_record(
+    id: String,
+    account_id: &str,
+    row: &StatementRow,
+    amount: Decimal,
+) -> PlaidTransaction {
     PlaidTransaction {
         transaction_id: id,
         account_id: account_id.to_owned(),
-        amount: -row.amount,
+        amount: -amount,
         name: Some(description(row)),
         merchant_name: None,
         logo_url: None,
@@ -130,7 +158,7 @@ fn plaid_record(id: String, account_id: &str, row: &StatementRow) -> PlaidTransa
         location: None,
         payment_channel: None,
         category: None,
-        personal_finance_category: plaid_category(row),
+        personal_finance_category: plaid_category(row, amount),
         counterparties: None,
         transaction_code: None,
         pending_transaction_id: None,
@@ -139,6 +167,29 @@ fn plaid_record(id: String, account_id: &str, row: &StatementRow) -> PlaidTransa
         check_number: None,
         account_owner: None,
     }
+}
+
+/// What a statement says moved cash into or out of an investment account. A workplace plan
+/// names each contribution's source; an IRA's own contribution names the IRA.
+fn statement_flow(row: &StatementRow) -> Option<&'static str> {
+    let label = row.activity_label.to_ascii_lowercase();
+    let says = |words: &[&str]| words.iter().any(|word| label.contains(word));
+    Some(match row.activity {
+        Activity::Contribution if says(&["employer", "match", "safe harbor", "profit sharing"]) => {
+            "employer"
+        }
+        Activity::Contribution if says(&["after-tax", "after tax"]) => "afterTax",
+        Activity::Contribution
+            if says(&["before-tax", "pre-tax", "pretax", "roth", "deferral"])
+                && !says(&["ira"]) =>
+        {
+            "deferral"
+        }
+        Activity::Contribution => "contribution",
+        Activity::Transfer | Activity::PaymentApp => "transfer",
+        Activity::CashWithdrawal => "withdrawal",
+        _ => return None,
+    })
 }
 
 /// Investment account rows, labeled like SnapTrade activity in the same accounts.
@@ -223,7 +274,29 @@ fn investment_rows(
         ),
         _ => (description(row), "Other"),
     };
-    transactions.push(row_transaction(id.into(), merchant, category, row.amount));
+    transactions.push(Transaction {
+        flow: statement_flow(row).map(str::to_owned),
+        ..row_transaction(id.into(), merchant, category, row.amount)
+    });
+    // A plan contribution that names the fund units it bought is also that purchase, so the
+    // account holds the units and its cash is unchanged.
+    if let (Activity::Contribution, Some(symbol), Some(units), Some(price)) =
+        (row.activity, &row.symbol, row.quantity, row.price)
+    {
+        trades.push(Trade {
+            id: format!("{id}:buy"),
+            r#type: "BUY".into(),
+            date: date.clone(),
+            amount: money(-row.amount.abs()),
+            account: account.into(),
+            account_id: account_id.into(),
+            ticker: Some(symbol.clone()),
+            description: Some(description(row)),
+            units: Some(scaled(units.abs(), 8)),
+            price: Some(scaled(price.abs(), 8)),
+            ..Trade::default()
+        });
+    }
 }
 
 /// Plans every saved statement against what providers report and shapes the rows that fill
@@ -241,6 +314,9 @@ pub(super) fn project_imported(
         history_starts: BTreeMap::new(),
         transactions: Vec::new(),
         trades: Vec::new(),
+        reconciliation: Vec::new(),
+        issuers: BTreeMap::new(),
+        contribution_years: Vec::new(),
     };
     if files.is_empty() {
         return imported;
@@ -257,10 +333,19 @@ pub(super) fn project_imported(
         }
     }
     for (account_id, mut saved) in by_account {
-        let Some(account) = accounts
-            .iter()
-            .find(|account| account.id == account_id && account_id != "all")
-        else {
+        // A manual account joins when the view is read, which also names its rows; until then
+        // its statements are projected as an investment account's.
+        let manual = account_id.starts_with("manual:").then(|| Account {
+            id: account_id.to_owned(),
+            name: "Manual account".into(),
+            r#type: "retirement".into(),
+            ..Account::default()
+        });
+        let Some(account) = manual.as_ref().or_else(|| {
+            accounts
+                .iter()
+                .find(|account| account.id == account_id && account_id != "all")
+        }) else {
             warnings.push("Statement history for an unavailable account is hidden".into());
             continue;
         };
@@ -268,7 +353,7 @@ pub(super) fn project_imported(
         let investment = matches!(account.r#type.as_str(), "brokerage" | "retirement");
         let plaid_cash = account_id
             .strip_prefix("plaid:")
-            .filter(|_| matches!(account.r#type.as_str(), "cash" | "credit"));
+            .filter(|_| reconciles(account));
         if !investment && saved.iter().any(|(_, parsed)| parsed.has_trades()) {
             warnings.push(format!(
                 "Statement trades for {name} need an investment account"
@@ -283,6 +368,21 @@ pub(super) fn project_imported(
             .iter()
             .map(|(_, parsed)| parsed.rows.as_slice())
             .collect::<Vec<_>>();
+        for memo in saved.iter().flat_map(|(_, parsed)| &parsed.memos) {
+            let year = ContributionYear {
+                account_id: account_id.to_owned(),
+                date: memo.posted_on.to_string(),
+                tax_year: memo.tax_year,
+                amount: money(memo.amount),
+            };
+            if !imported.contribution_years.contains(&year) {
+                imported.contribution_years.push(year);
+            }
+        }
+        let confirmed = saved
+            .iter()
+            .flat_map(|(file, _)| file.confirmed_rows.iter().cloned())
+            .collect();
         let plan = statements::plan(
             account_id,
             &rows,
@@ -290,7 +390,49 @@ pub(super) fn project_imported(
                 .get(account_id)
                 .map(Vec::as_slice)
                 .unwrap_or_default(),
+            plaid_cash.map(|_| &confirmed),
         );
+        if let Some(checked) = plan.reconciliation {
+            imported.reconciliation.push(StatementReconciliation {
+                account_id: account_id.to_owned(),
+                from: checked.from.to_string(),
+                through: checked.through.to_string(),
+                matched: checked.matched,
+                amount_differs: checked
+                    .amount_differs
+                    .into_iter()
+                    .map(|(transaction_id, amount)| AmountDifference {
+                        transaction_id,
+                        statement_amount: money(amount),
+                    })
+                    .collect(),
+                missing: checked
+                    .missing
+                    .into_iter()
+                    .map(|missing| MissingStatementRow {
+                        file_id: saved[missing.statement].0.id.clone(),
+                        row_id: missing.planned.id,
+                        date: missing.planned.row.posted_on.to_string(),
+                        amount: money(missing.planned.amount),
+                        description: description(missing.planned.row),
+                        confirmed: missing.confirmed,
+                    })
+                    .collect(),
+                extra: checked.extra,
+            });
+        }
+        if plaid_cash.is_some() {
+            let described = plan.described.iter().map(|(id, row)| (id.as_str(), *row));
+            let added = plan
+                .rows
+                .iter()
+                .map(|planned| (planned.id.as_str(), planned.row));
+            for (id, row) in described.chain(added) {
+                if let Some(issuer) = &row.issuer {
+                    imported.issuers.insert(id.to_owned(), issuer.clone());
+                }
+            }
+        }
         for planned in plan.rows {
             match plaid_cash {
                 Some(raw) => {
@@ -299,9 +441,12 @@ pub(super) fn project_imported(
                         .entry(raw.to_owned())
                         .or_insert(planned.row.posted_on);
                     *start = (*start).min(planned.row.posted_on);
-                    imported
-                        .plaid_transactions
-                        .push(plaid_record(planned.id, raw, planned.row));
+                    imported.plaid_transactions.push(plaid_record(
+                        planned.id,
+                        raw,
+                        planned.row,
+                        planned.amount,
+                    ));
                 }
                 None => investment_rows(
                     &planned.id,

@@ -9,28 +9,32 @@ use serde_json::{Map, Value};
 
 use crate::{
     providers::http::ProviderDiagnostic,
-    rules::CategoryRule,
     settings::FinanceSettings,
     statements::StatementFile,
     storage::{Annotation, FinanceState},
     summary::{Closed, Event, SessionRecord},
 };
 
+mod bank_statements;
+mod journal;
 mod migrations;
 
-const COLLECTIONS: [&str; 10] = [
+pub use bank_statements::{BankStatement, StatementCheck};
+
+const COLLECTIONS: [&str; 11] = [
     "accounts",
     "holdings",
     "transactions",
     "trades",
     "accountMovements",
+    "transactionChanges",
     "observedNetWorthHistory",
     "netWorthHistory",
     "accountBalanceHistory",
     "brokeragePerformance",
     "possibleDuplicateAccounts",
 ];
-const DATABASE_SCHEMA_VERSION: u32 = 13;
+const DATABASE_SCHEMA_VERSION: u32 = 19;
 const DATABASE_APPLICATION_ID: u32 = 0x4252_4946; // BRIF
 
 pub struct Database {
@@ -45,6 +49,77 @@ pub struct SyncDiagnostics {
     pub(crate) providers: Vec<ProviderDiagnostic>,
     #[serde(default)]
     pub(crate) warning_count: usize,
+    /// What each provider used, failed or not: counts and timings, never names or amounts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) runs: Vec<ProviderRun>,
+    #[serde(default)]
+    pub(crate) stages: StageTimes,
+    /// The size of the snapshot the renderer received, in bytes of JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) snapshot_bytes: Option<u64>,
+    /// How many saved transactions the refresh added, settled, removed, or amended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) changes: Option<ChangeCounts>,
+}
+
+/// Counts of what a refresh changed in saved transactions.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ChangeCounts {
+    pub(crate) added: u32,
+    pub(crate) settled: u32,
+    pub(crate) removed: u32,
+    pub(crate) amended: u32,
+    pub(crate) backfilled: u32,
+}
+
+impl ChangeCounts {
+    pub(crate) fn of(change: &crate::finance_contract::Change) -> Self {
+        use crate::finance_contract::TransactionChangeKind as Kind;
+        let count = |kind: Kind| {
+            change
+                .transaction_changes
+                .iter()
+                .filter(|change| change.kind == kind)
+                .count() as u32
+        };
+        Self {
+            added: count(Kind::Added),
+            settled: count(Kind::Settled),
+            removed: count(Kind::Removed),
+            amended: count(Kind::Amended),
+            backfilled: u32::try_from(change.backfilled).unwrap_or(u32::MAX),
+        }
+    }
+}
+
+/// What one provider used during a refresh.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ProviderRun {
+    pub(crate) provider: String,
+    pub(crate) requests: u32,
+    pub(crate) retries: u32,
+    pub(crate) bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) duration_ms: Option<u64>,
+}
+
+/// How long each stage of a refresh took, in milliseconds.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct StageTimes {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fetch_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) project_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) commit_ms: Option<u64>,
+}
+
+/// Whole milliseconds, saturating.
+pub(crate) fn millis(elapsed: std::time::Duration) -> u64 {
+    u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
 }
 
 impl SyncDiagnostics {
@@ -57,7 +132,29 @@ impl SyncDiagnostics {
             phase: phase.chars().take(32).collect(),
             providers: providers.into_iter().take(24).collect(),
             warning_count: warning_count.min(999),
+            ..Self::default()
         }
+    }
+
+    /// These diagnostics with each provider's usage and the time spent fetching.
+    pub(crate) fn with_usage(
+        mut self,
+        usage: BTreeMap<String, crate::providers::http::Usage>,
+        fetch_ms: u64,
+    ) -> Self {
+        self.runs = usage
+            .into_iter()
+            .take(12)
+            .map(|(provider, usage)| ProviderRun {
+                provider: provider.chars().take(32).collect(),
+                requests: usage.requests,
+                retries: usage.retries,
+                bytes: usage.bytes,
+                duration_ms: usage.duration_ms,
+            })
+            .collect();
+        self.stages.fetch_ms = Some(fetch_ms);
+        self
     }
 }
 
@@ -99,7 +196,27 @@ impl SyncRun {
     }
 }
 
-const INSERT_ANNOTATION: &str = "INSERT OR REPLACE INTO annotations(transaction_id, category, reviewed, benefit_confirmed, tags_json, splits_json, refund_of, other) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)";
+const INSERT_ANNOTATION: &str = "INSERT OR REPLACE INTO annotations(transaction_id, category, reviewed, benefit_confirmed, tags_json, splits_json, refund_of, other, benefit_id, note, people_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)";
+
+fn write_documents(
+    transaction: &Transaction<'_>,
+    documents: &[crate::documents::Document],
+) -> Result<(), String> {
+    transaction
+        .execute("DELETE FROM documents", [])
+        .map_err(db_error)?;
+    for document in documents {
+        transaction
+            .prepare_cached("INSERT INTO documents(id, value_json) VALUES (?1, ?2)")
+            .map_err(db_error)?
+            .execute(params![
+                document.id,
+                serde_json::to_string(document).map_err(json_error)?
+            ])
+            .map_err(db_error)?;
+    }
+    Ok(())
+}
 
 fn write_annotation(
     transaction: &Transaction<'_>,
@@ -118,6 +235,12 @@ fn write_annotation(
         .map(serde_json::to_string)
         .transpose()
         .map_err(json_error)?;
+    let people = annotation
+        .people
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(json_error)?;
     transaction
         .prepare_cached(INSERT_ANNOTATION)
         .map_err(db_error)?
@@ -130,6 +253,9 @@ fn write_annotation(
             splits,
             annotation.refund_of,
             annotation.other,
+            annotation.benefit_id,
+            annotation.note,
+            people,
         ])
         .map_err(db_error)?;
     Ok(())
@@ -148,6 +274,12 @@ impl Database {
         migrations::migrate_schema(&connection, version)?;
         if version < 5 {
             migrations::scrub_legacy_diagnostics(&mut connection)?;
+        }
+        // Version 17 adds the change log, starting from what the database already holds.
+        if version < 17 {
+            let transaction = connection.transaction().map_err(db_error)?;
+            journal::baseline(&transaction)?;
+            transaction.commit().map_err(db_error)?;
         }
         if version < DATABASE_SCHEMA_VERSION {
             connection
@@ -229,14 +361,14 @@ impl Database {
             .map(|json| serde_json::from_str::<FinanceSettings>(&json).map_err(json_error))
             .transpose()?
             .unwrap_or_default();
-        let rules = self.load_rules()?;
         let statements = self.load_statements()?;
+        let documents = self.load_documents()?;
         Ok(Some(FinanceState {
             schema_version,
             revision,
             settings,
-            rules,
             statements,
+            documents,
             snapshot: serde_json::from_value(Value::Object(snapshot))
                 .map_err(|error| format!("Invalid financial snapshot: {error}"))?,
             plaid_cache: serde_json::from_str(&plaid_cache).map_err(json_error)?,
@@ -248,6 +380,7 @@ impl Database {
 
     pub fn replace(&mut self, state: &FinanceState) -> Result<(), String> {
         let transaction = self.connection.transaction().map_err(db_error)?;
+        journal::record_state(&transaction, state)?;
         write_state(&transaction, state)?;
         transaction.commit().map_err(db_error)
     }
@@ -267,6 +400,13 @@ impl Database {
         transaction
             .execute("DELETE FROM market_events", [])
             .map_err(db_error)?;
+        transaction
+            .execute("DELETE FROM bank_statements", [])
+            .map_err(db_error)?;
+        transaction
+            .execute("DELETE FROM bank_statement_checks", [])
+            .map_err(db_error)?;
+        journal::clear(&transaction)?;
         transaction.commit().map_err(db_error)?;
         self.connection
             .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA secure_delete = OFF;")
@@ -278,6 +418,7 @@ impl Database {
         annotations: &BTreeMap<String, Annotation>,
     ) -> Result<(), String> {
         let transaction = self.connection.transaction().map_err(db_error)?;
+        journal::record_annotations(&transaction, annotations)?;
         transaction
             .execute("DELETE FROM annotations", [])
             .map_err(db_error)?;
@@ -307,12 +448,6 @@ impl Database {
     pub fn replace_settings(&mut self, settings: &FinanceSettings) -> Result<(), String> {
         let transaction = self.connection.transaction().map_err(db_error)?;
         write_settings(&transaction, settings)?;
-        transaction.commit().map_err(db_error)
-    }
-
-    pub fn replace_rules(&mut self, rules: &[CategoryRule]) -> Result<(), String> {
-        let transaction = self.connection.transaction().map_err(db_error)?;
-        write_rules(&transaction, rules)?;
         transaction.commit().map_err(db_error)
     }
 
@@ -520,80 +655,63 @@ impl Database {
     }
 
     fn load_annotations(&self) -> Result<BTreeMap<String, Annotation>, String> {
-        let mut statement = self
-            .connection
-            .prepare(
-                "SELECT transaction_id, category, reviewed, benefit_confirmed, tags_json, splits_json, refund_of, other FROM annotations ORDER BY transaction_id",
-            )
-            .map_err(db_error)?;
-        let rows = statement
-            .query_map([], |row| {
-                Ok((
-                    row.get::<_, String>(0)?,
-                    Annotation {
-                        category: row.get(1)?,
-                        reviewed: row.get(2)?,
-                        benefit_confirmed: row.get(3)?,
-                        tags: None,
-                        splits: None,
-                        refund_of: row.get(6)?,
-                        other: row.get(7)?,
-                    },
-                    row.get::<_, Option<String>>(4)?,
-                    row.get::<_, Option<String>>(5)?,
-                ))
-            })
-            .map_err(db_error)?;
-        let mut values = BTreeMap::new();
-        for row in rows {
-            let (id, mut annotation, tags, splits) = row.map_err(db_error)?;
-            annotation.tags = tags
-                .map(|json| serde_json::from_str(&json))
-                .transpose()
-                .map_err(json_error)?;
-            annotation.splits = splits
-                .map(|json| serde_json::from_str(&json))
-                .transpose()
-                .map_err(json_error)?;
-            values.insert(id, annotation);
-        }
-        Ok(values)
+        read_annotations(&self.connection)
     }
 
-    fn load_rules(&self) -> Result<Vec<CategoryRule>, String> {
+    fn load_documents(&self) -> Result<Vec<crate::documents::Document>, String> {
         let mut statement = self
             .connection
-            .prepare("SELECT value_json FROM category_rules ORDER BY ordinal")
+            .prepare("SELECT value_json FROM documents ORDER BY id")
             .map_err(db_error)?;
         let rows = statement
             .query_map([], |row| row.get::<_, String>(0))
             .map_err(db_error)?;
-        let mut rules = Vec::new();
+        let mut documents = Vec::new();
         for row in rows {
-            rules.push(serde_json::from_str(&row.map_err(db_error)?).map_err(json_error)?);
+            documents.push(serde_json::from_str(&row.map_err(db_error)?).map_err(json_error)?);
         }
-        Ok(rules)
+        Ok(documents)
+    }
+
+    /// Saves what Brief read from documents; the originals live in their own database.
+    pub fn replace_documents(
+        &mut self,
+        documents: &[crate::documents::Document],
+    ) -> Result<(), String> {
+        let transaction = self.connection.transaction().map_err(db_error)?;
+        write_documents(&transaction, documents)?;
+        transaction.commit().map_err(db_error)
     }
 
     fn load_statements(&self) -> Result<Vec<StatementFile>, String> {
         let mut statement = self
             .connection
             .prepare(
-                "SELECT id, account_id, file_name, imported_at, contents FROM statement_files ORDER BY imported_at, id",
+                "SELECT id, account_id, file_name, imported_at, contents, confirmed_json FROM statement_files ORDER BY imported_at, id",
             )
             .map_err(db_error)?;
         let rows = statement
             .query_map([], |row| {
-                Ok(StatementFile {
-                    id: row.get(0)?,
-                    account_id: row.get(1)?,
-                    file_name: row.get(2)?,
-                    imported_at: row.get(3)?,
-                    contents: row.get(4)?,
-                })
+                Ok((
+                    StatementFile {
+                        id: row.get(0)?,
+                        account_id: row.get(1)?,
+                        file_name: row.get(2)?,
+                        imported_at: row.get(3)?,
+                        contents: row.get(4)?,
+                        confirmed_rows: Default::default(),
+                    },
+                    row.get::<_, String>(5)?,
+                ))
             })
             .map_err(db_error)?;
-        rows.collect::<Result<_, _>>().map_err(db_error)
+        let mut files = Vec::new();
+        for row in rows {
+            let (mut file, confirmed) = row.map_err(db_error)?;
+            file.confirmed_rows = serde_json::from_str(&confirmed).map_err(json_error)?;
+            files.push(file);
+        }
+        Ok(files)
     }
 
     fn load_account_links(&self) -> Result<BTreeMap<String, String>, String> {
@@ -613,6 +731,55 @@ impl Database {
         }
         Ok(values)
     }
+}
+
+fn read_annotations(connection: &Connection) -> Result<BTreeMap<String, Annotation>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT transaction_id, category, reviewed, benefit_confirmed, tags_json, splits_json, refund_of, other, benefit_id, note, people_json FROM annotations ORDER BY transaction_id",
+        )
+        .map_err(db_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                Annotation {
+                    category: row.get(1)?,
+                    reviewed: row.get(2)?,
+                    benefit_confirmed: row.get(3)?,
+                    tags: None,
+                    splits: None,
+                    refund_of: row.get(6)?,
+                    other: row.get(7)?,
+                    benefit_id: row.get(8)?,
+                    note: row.get(9)?,
+                    people: None,
+                    clear_benefit: false,
+                },
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(10)?,
+            ))
+        })
+        .map_err(db_error)?;
+    let mut values = BTreeMap::new();
+    for row in rows {
+        let (id, mut annotation, tags, splits, people) = row.map_err(db_error)?;
+        annotation.tags = tags
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(json_error)?;
+        annotation.splits = splits
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(json_error)?;
+        annotation.people = people
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(json_error)?;
+        values.insert(id, annotation);
+    }
+    Ok(values)
 }
 
 fn write_sync_run(transaction: &Transaction<'_>, run: &SyncRun) -> Result<(), String> {
@@ -643,29 +810,12 @@ fn write_settings(transaction: &Transaction<'_>, settings: &FinanceSettings) -> 
     Ok(())
 }
 
-fn write_rules(transaction: &Transaction<'_>, rules: &[CategoryRule]) -> Result<(), String> {
+fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<(), String> {
+    write_settings(transaction, &state.settings)?;
+    // Category rules were retired; a database that still has the table keeps it empty.
     transaction
         .execute("DELETE FROM category_rules", [])
         .map_err(db_error)?;
-    for (ordinal, rule) in rules.iter().enumerate() {
-        transaction
-            .prepare_cached(
-                "INSERT INTO category_rules(id, ordinal, value_json) VALUES (?1, ?2, ?3)",
-            )
-            .map_err(db_error)?
-            .execute(params![
-                rule.id,
-                ordinal,
-                serde_json::to_string(rule).map_err(json_error)?
-            ])
-            .map_err(db_error)?;
-    }
-    Ok(())
-}
-
-fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<(), String> {
-    write_settings(transaction, &state.settings)?;
-    write_rules(transaction, &state.rules)?;
     transaction
         .execute(
             "INSERT INTO state_meta(id, schema_version, revision, plaid_cache_json, provider_data_json)
@@ -727,7 +877,7 @@ fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<()
     for file in &state.statements {
         transaction
             .prepare_cached(
-                "INSERT INTO statement_files(id, account_id, file_name, imported_at, contents) VALUES (?1, ?2, ?3, ?4, ?5)",
+                "INSERT INTO statement_files(id, account_id, file_name, imported_at, contents, confirmed_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             )
             .map_err(db_error)?
             .execute(params![
@@ -735,10 +885,12 @@ fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<()
                 file.account_id,
                 file.file_name,
                 file.imported_at,
-                file.contents
+                file.contents,
+                serde_json::to_string(&file.confirmed_rows).map_err(json_error)?
             ])
             .map_err(db_error)?;
     }
+    write_documents(transaction, &state.documents)?;
     transaction
         .execute("DELETE FROM account_links", [])
         .map_err(db_error)?;
@@ -765,7 +917,7 @@ fn entity_id(section: &str, value: &Value, ordinal: usize) -> String {
         };
     }
     let field = match section {
-        "accounts" | "transactions" | "trades" | "accountMovements" => "id",
+        "accounts" | "transactions" | "trades" | "accountMovements" | "transactionChanges" => "id",
         "accountBalanceHistory" | "brokeragePerformance" => "accountId",
         "observedNetWorthHistory" | "netWorthHistory" => "date",
         _ => "",

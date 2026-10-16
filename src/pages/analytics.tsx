@@ -3,11 +3,11 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { AccountMark } from '../components/account-mark'
 import { GroupedActivityList } from '../components/activity-list'
+import { BenefitGrid, type BenefitInspection } from '../components/benefit-grid'
 import { CashFlowSankey } from '../components/cash-flow-sankey'
 import { PageError, PageLoading } from '../components/data-state'
 import { ExpectedActivity } from '../components/expected-activity'
 import { ChevronRight, X } from '../components/icons'
-import { PlatinumBenefits } from '../components/platinum-benefits'
 import { RankedBars } from '../components/ranked-bars'
 import { MoneyStrip } from '../components/report-links'
 import { SettingsLink } from '../components/settings-dialog'
@@ -49,6 +49,7 @@ import {
   withoutReportView,
   type AnalyticsChart,
 } from '../lib/analytics'
+import { benefitYear, benefitYearSearch } from '../lib/benefit-grid'
 import { localDateKey } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import {
@@ -146,7 +147,7 @@ function useAnalyticsSearch() {
 }
 
 function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
-  // Reports end on the day the insights were computed for, the same day Spending and Today
+  // Reports end on the day the insights were computed for, the same day Spending and Home
   // use, so one strip never shows two months. The clock takes over only without insights.
   const clock = useLocalDay()
   const today = data.insights?.today ?? clock
@@ -154,12 +155,21 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
   const { search, navigate, setRange } = useAnalyticsSearch()
   const selected = search.chart ?? orderedCharts[0]
   const definition = analyticsDefinition(selected)
+  // Benefits runs on one calendar year, and the strip above it follows that year.
+  const benefitsYear = definition.benefits ? benefitYear(search, today) : undefined
+  const pageSearch = useMemo(
+    () => (benefitsYear === undefined ? search : benefitYearSearch(search, benefitsYear, today)),
+    [benefitsYear, search, today],
+  )
   const settings = financeSettings(data)
   const spendingAccountId = settings.spendingAccountId ?? ''
   const spendingAccount = resolveSpendingAccount(data.accounts, spendingAccountId)
   const names = settings.accountNames
   const externalLogosEnabled = getExternalLogosEnabled()
-  const reportWindow = useMemo(() => analyticsWindow(data, search, today), [data, search, today])
+  const reportWindow = useMemo(
+    () => analyticsWindow(data, pageSearch, today),
+    [data, pageSearch, today],
+  )
   const reports = useMemo(
     () =>
       orderedCharts.map((id) => {
@@ -329,231 +339,263 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
       {/* Money's reports share its strip. Investments reports open from the portfolio's period
           card and lead back through the breadcrumb, since its page is headed by holdings. */}
       {group === 'money' ? (
-        <MoneyStrip data={data} current={selected} search={search} today={today} />
+        <MoneyStrip data={data} current={selected} search={pageSearch} today={today} />
       ) : (
         <ReportStepper reports={groupReports.map(({ id }) => id)} selected={selected} />
       )}
-      <div className="account-overview-dashboard">
-        <div
-          className={`account-overview-primary-grid${definition.benefits ? ' analytics-credits-grid' : ''}`}
-        >
-          <div className="analytics-primary">
-            <ScrollCueCard
-              className="account-overview-chart-card analytics-chart-card"
-              scrollSelector=".cash-flow-sankey-scroll"
-              role="region"
-              aria-label={`${report.label} chart`}
-              tabIndex={0}
-              data-range-focus-region
-            >
-              <header className="home-balance-header">
-                <div className="home-balance-main">
-                  <h2 className="balance-label">{definition.heading ?? report.label}</h2>
-                  <div className="home-balance-value">
-                    <AnimatedCurrency
-                      className="hero-number"
-                      value={unavailable ? null : report.total}
+      {definition.benefits &&
+      spendingAccount &&
+      !incompatibleBenefitAccount &&
+      benefitsYear !== undefined ? (
+        <BenefitGrid
+          data={data}
+          year={benefitsYear}
+          today={today}
+          inspection={{ benefit: search.benefit, period: search.period, review: search.review }}
+          activities={activities}
+          onYear={(year) =>
+            void navigate({
+              search: benefitYearSearch(
+                { ...search, benefit: undefined, period: undefined, review: undefined },
+                year,
+                today,
+              ),
+            })
+          }
+          onInspect={(next: BenefitInspection) =>
+            void navigate({
+              search: {
+                ...search,
+                benefit: next.benefit,
+                period: next.period,
+                review: next.review,
+              },
+              replace: true,
+            })
+          }
+        />
+      ) : (
+        <div className="account-overview-dashboard">
+          <div className="account-overview-primary-grid">
+            <div className="analytics-primary">
+              <ScrollCueCard
+                className="account-overview-chart-card analytics-chart-card"
+                scrollSelector=".cash-flow-sankey-scroll"
+                role="region"
+                aria-label={`${report.label} chart`}
+                tabIndex={0}
+                data-range-focus-region
+              >
+                <header className="home-balance-header">
+                  <div className="home-balance-main">
+                    <h2 className="balance-label">{definition.heading ?? report.label}</h2>
+                    <div className="home-balance-value">
+                      <AnimatedCurrency
+                        className="hero-number"
+                        value={unavailable ? null : report.total}
+                      />
+                    </div>
+                  </div>
+                  <ChartRangeSelect<string>
+                    label="Analytics period"
+                    command="graph.range."
+                    value={reportWindow.custom ? '' : reportWindow.range}
+                    options={
+                      reportWindow.custom
+                        ? [{ value: '', label: 'Custom', accessibleLabel: 'Custom' }, ...ranges]
+                        : ranges
+                    }
+                    onValueChange={(value) => {
+                      const range = ranges.find((option) => option.value === value)
+                      if (range) setRange(range.value)
+                    }}
+                  />
+                  <div className="chart-summary-row">
+                    <ChartChange
+                      amount={periodChange}
+                      percent={unavailable ? null : report.percent}
+                      favorable={definition.lowerIsBetter ? 'decrease' : 'increase'}
+                      ariaLabel="Change versus previous period"
                     />
                   </div>
-                </div>
-                <ChartRangeSelect<string>
-                  label="Analytics period"
-                  command="graph.range."
-                  value={reportWindow.custom ? '' : reportWindow.range}
-                  options={
-                    reportWindow.custom
-                      ? [{ value: '', label: 'Custom', accessibleLabel: 'Custom' }, ...ranges]
-                      : ranges
-                  }
-                  onValueChange={(value) => {
-                    const range = ranges.find((option) => option.value === value)
-                    if (range) setRange(range.value)
-                  }}
-                />
-                <div className="chart-summary-row">
-                  <ChartChange
-                    amount={periodChange}
-                    percent={unavailable ? null : report.percent}
-                    favorable={definition.lowerIsBetter ? 'decrease' : 'increase'}
-                    ariaLabel="Change versus previous period"
-                  />
-                </div>
-              </header>
-              {unavailable ? (
-                <EmptyState>
-                  {needsSpendingAccount ? (
-                    <>
-                      Choose a spending account in{' '}
-                      <SettingsLink target="spending-account">Settings</SettingsLink> to chart Amex
-                      credits.
-                    </>
-                  ) : incompatibleBenefitAccount ? (
-                    <>
-                      Amex credits use the saved spending account.{' '}
-                      <Button
-                        size="compact"
-                        variant="ghost"
-                        onClick={() => void navigate({ search: { ...search, account: undefined } })}
-                      >
-                        Clear account filter
-                      </Button>
-                    </>
-                  ) : missingAccount ? (
-                    'This account is unavailable. Select another account.'
-                  ) : (
-                    'The start date must be on or before the end date.'
-                  )}
-                </EmptyState>
-              ) : !report.entries.length ? (
-                <EmptyState>No posted activity in this period.</EmptyState>
-              ) : flow ? (
-                <CashFlowSankey values={flow} />
-              ) : (
-                <AnalyticsBars
-                  groupColors={groupColors}
-                  report={report}
-                  search={activitySearch}
-                  activities={activities}
-                />
-              )}
-            </ScrollCueCard>
-            {definition.benefits ? (
-              spendingAccount ? (
-                <PlatinumBenefits />
-              ) : null
-            ) : (
-              <ReportBreakdown
-                view={search.view ?? 'breakdown'}
-                group={search.view ? search.group : undefined}
-                onChange={(nextView, nextGroup) =>
-                  void navigate({
-                    search: (current) => ({
-                      ...current,
-                      view: nextView === 'transactions' ? nextView : undefined,
-                      group: nextView === 'transactions' ? nextGroup : undefined,
-                    }),
-                    replace: true,
-                  })
-                }
-                report={report}
-                colors={groupColors}
-                activities={activities}
-                unavailable={unavailable}
-                referenceIso={data.updatedAt}
-                activitySearch={activitySearch}
-                briefTitles={Boolean(definition.briefTitles)}
-              />
-            )}
-          </div>
-          <div className="analytics-companion">
-            <Card className="account-overview-summary-card">
-              <SectionHeading title="Overview" />
-              <div className="account-summary-metrics">
-                <Metric
-                  label={definition.records?.count ?? 'Posted records'}
-                  value={unavailable ? '—' : String(report.entries.length)}
-                />
-                <Metric
-                  label="Previous period"
-                  value={formatCurrency(unavailable ? null : report.previous)}
-                />
-                <Metric
-                  label={definition.records?.average ?? 'Average amount'}
-                  value={formatCurrency(unavailable ? null : report.average)}
-                />
-                <Metric
-                  label={definition.records?.largest ?? 'Largest amount'}
-                  value={formatCurrency(unavailable ? null : report.largest)}
-                />
-                <Metric label="Active days" value={unavailable ? '—' : String(report.activeDays)} />
-                <Metric
-                  label="Period change"
-                  value={formatPercent(unavailable ? null : report.percent)}
-                  tone={valueTone(
-                    unavailable || report.percent == null
-                      ? null
-                      : definition.lowerIsBetter
-                        ? -report.percent
-                        : report.percent,
-                  )}
-                />
-              </div>
-            </Card>
-            {definition.benefits ? (
-              <>
-                {activityCard}
-                {expectedActivityCard}
-              </>
-            ) : (
-              <>
-                <Card className="account-overview-summary-card analytics-accounts-card">
-                  <SectionHeading
-                    title="Accounts"
-                    action={
-                      search.account !== undefined ? (
+                </header>
+                {unavailable ? (
+                  <EmptyState>
+                    {needsSpendingAccount ? (
+                      <>
+                        Choose a spending account in{' '}
+                        <SettingsLink target="spending-account">Settings</SettingsLink> to chart
+                        Amex credits.
+                      </>
+                    ) : incompatibleBenefitAccount ? (
+                      <>
+                        Amex credits use the saved spending account.{' '}
                         <Button
-                          icon={X}
-                          aria-label="Clear account selection"
                           size="compact"
                           variant="ghost"
                           onClick={() =>
                             void navigate({ search: { ...search, account: undefined } })
                           }
                         >
-                          Clear
+                          Clear account filter
                         </Button>
-                      ) : undefined
-                    }
+                      </>
+                    ) : missingAccount ? (
+                      'This account is unavailable. Select another account.'
+                    ) : (
+                      'The start date must be on or before the end date.'
+                    )}
+                  </EmptyState>
+                ) : !report.entries.length ? (
+                  <EmptyState>No posted activity in this period.</EmptyState>
+                ) : flow ? (
+                  <CashFlowSankey values={flow} />
+                ) : (
+                  <AnalyticsBars
+                    groupColors={groupColors}
+                    report={report}
+                    search={activitySearch}
+                    activities={activities}
                   />
-                  <div className="analytics-breakdown" role="group" aria-label="Chart accounts">
-                    {accountRows.map((item) => (
-                      <label
-                        className="analytics-breakdown-row analytics-account-row"
-                        key={item.id}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={analyticsAccountMatches(search.account, item.id)}
-                          onChange={() =>
-                            void navigate({
-                              search: {
-                                ...search,
-                                account: toggleAnalyticsAccount(
-                                  search.account,
-                                  item.id,
-                                  accountRows.map(({ id }) => id),
-                                ),
-                              },
-                            })
-                          }
-                        />
-                        <AccountMark
-                          type={item.type}
-                          institution={item.institution}
-                          domain={item.domain}
-                        />
-                        <span className="account-row-name">
-                          <strong>{item.label}</strong>
-                          <small>{item.type}</small>
-                        </span>
-                        <strong>
-                          {formatCurrency(
-                            needsSpendingAccount || !reportWindow.valid ? null : item.value,
-                          )}
-                        </strong>
-                      </label>
-                    ))}
-                    {!accountRows.length ? (
-                      <EmptyState>No matching accounts in this period.</EmptyState>
-                    ) : null}
-                  </div>
-                </Card>
-                {expectedActivityCard}
-              </>
-            )}
+                )}
+              </ScrollCueCard>
+              {definition.benefits ? null : (
+                <ReportBreakdown
+                  view={search.view ?? 'breakdown'}
+                  group={search.view ? search.group : undefined}
+                  onChange={(nextView, nextGroup) =>
+                    void navigate({
+                      search: (current) => ({
+                        ...current,
+                        view: nextView === 'transactions' ? nextView : undefined,
+                        group: nextView === 'transactions' ? nextGroup : undefined,
+                      }),
+                      replace: true,
+                    })
+                  }
+                  report={report}
+                  colors={groupColors}
+                  activities={activities}
+                  unavailable={unavailable}
+                  referenceIso={data.updatedAt}
+                  activitySearch={activitySearch}
+                  briefTitles={Boolean(definition.briefTitles)}
+                />
+              )}
+            </div>
+            <div className="analytics-companion">
+              <Card className="account-overview-summary-card">
+                <SectionHeading title="Overview" />
+                <div className="account-summary-metrics">
+                  <Metric
+                    label={definition.records?.count ?? 'Posted records'}
+                    value={unavailable ? '—' : String(report.entries.length)}
+                  />
+                  <Metric
+                    label="Previous period"
+                    value={formatCurrency(unavailable ? null : report.previous)}
+                  />
+                  <Metric
+                    label={definition.records?.average ?? 'Average amount'}
+                    value={formatCurrency(unavailable ? null : report.average)}
+                  />
+                  <Metric
+                    label={definition.records?.largest ?? 'Largest amount'}
+                    value={formatCurrency(unavailable ? null : report.largest)}
+                  />
+                  <Metric
+                    label="Active days"
+                    value={unavailable ? '—' : String(report.activeDays)}
+                  />
+                  <Metric
+                    label="Period change"
+                    value={formatPercent(unavailable ? null : report.percent)}
+                    tone={valueTone(
+                      unavailable || report.percent == null
+                        ? null
+                        : definition.lowerIsBetter
+                          ? -report.percent
+                          : report.percent,
+                    )}
+                  />
+                </div>
+              </Card>
+              {definition.benefits ? (
+                <>
+                  {activityCard}
+                  {expectedActivityCard}
+                </>
+              ) : (
+                <>
+                  <Card className="account-overview-summary-card analytics-accounts-card">
+                    <SectionHeading
+                      title="Accounts"
+                      action={
+                        search.account !== undefined ? (
+                          <Button
+                            icon={X}
+                            aria-label="Clear account selection"
+                            size="compact"
+                            variant="ghost"
+                            onClick={() =>
+                              void navigate({ search: { ...search, account: undefined } })
+                            }
+                          >
+                            Clear
+                          </Button>
+                        ) : undefined
+                      }
+                    />
+                    <div className="analytics-breakdown" role="group" aria-label="Chart accounts">
+                      {accountRows.map((item) => (
+                        <label
+                          className="analytics-breakdown-row analytics-account-row"
+                          key={item.id}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={analyticsAccountMatches(search.account, item.id)}
+                            onChange={() =>
+                              void navigate({
+                                search: {
+                                  ...search,
+                                  account: toggleAnalyticsAccount(
+                                    search.account,
+                                    item.id,
+                                    accountRows.map(({ id }) => id),
+                                  ),
+                                },
+                              })
+                            }
+                          />
+                          <AccountMark
+                            type={item.type}
+                            institution={item.institution}
+                            domain={item.domain}
+                          />
+                          <span className="account-row-name">
+                            <strong>{item.label}</strong>
+                            <small>{item.type}</small>
+                          </span>
+                          <strong>
+                            {formatCurrency(
+                              needsSpendingAccount || !reportWindow.valid ? null : item.value,
+                            )}
+                          </strong>
+                        </label>
+                      ))}
+                      {!accountRows.length ? (
+                        <EmptyState>No matching accounts in this period.</EmptyState>
+                      ) : null}
+                    </div>
+                  </Card>
+                  {expectedActivityCard}
+                </>
+              )}
+            </div>
           </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

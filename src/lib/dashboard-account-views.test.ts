@@ -60,6 +60,14 @@ it('matches account selector changes to the selected chart range and available h
     accountValueChart({ ...data, accountBalanceHistory: [] }, account, [], now, 0, now)
       .historyIsAvailable,
   ).toBe(false)
+  // A manual retirement account has no performance history, only its balance history.
+  const manual = { ...account, id: 'manual:plan', type: 'retirement' }
+  const manualData = {
+    ...data,
+    accounts: [manual],
+    accountBalanceHistory: [{ ...data.accountBalanceHistory[0], accountId: 'manual:plan' }],
+  }
+  expect(accountValueChart(manualData, manual, [], now, 0, now).historyIsAvailable).toBe(true)
 })
 
 it('keeps a provisional combined balance out of the chart', () => {
@@ -231,7 +239,7 @@ it('leaves the spending card out of the All accounts total, history, and live po
     netWorthHistory: [{ date: '2026-09-01', value: 800 }],
     insights: insights({
       accountsTotal: {
-        excludedAccountId: 'card',
+        excludedAccountIds: ['card'],
         excludedValue: -300.2,
         value: 1200.3,
         history: [{ date: '2026-09-01', value: 950 }],

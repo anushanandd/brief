@@ -158,7 +158,7 @@ export function TaxesPage() {
           <p className="portfolio-note taxes-note">
             Estimates using FIFO lots. Your broker’s forms are the record. Not tax advice.{' '}
             <span title={taxes.sources.join('\n')}>
-              Tax tables from {formatActivityDate(taxes.tablesVersion, data.updatedAt)}.
+              Tax tables from {formatActivityDate(taxes.tablesVersion)}.
             </span>
           </p>
           {/* The estimate and forms describe the year; what can still change it comes first. */}

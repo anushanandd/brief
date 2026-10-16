@@ -7,6 +7,7 @@ import type { Account } from '../lib/schema'
 import { AccountMark } from './account-mark'
 import { AccountRow } from './account-row'
 import { ChevronDown } from './icons'
+import { DisclosedPanel } from './ui/presence'
 
 function PeriodChange({ change }: { change: number | null | undefined }) {
   return (
@@ -91,7 +92,7 @@ export function AccountGroups({
       <div key={group.type} className="account-group" data-open={open || undefined}>
         <button
           type="button"
-          className="account-row account-group-row"
+          className="account-row account-group-row tree-parent"
           data-keyboard-row
           data-keyboard-open
           aria-expanded={open}
@@ -109,23 +110,21 @@ export function AccountGroups({
           </span>
           <ChevronDown size={15} aria-hidden="true" />
         </button>
-        {open ? (
-          <div className="account-group-accounts" id={panel}>
-            {group.accounts.map((account) => (
-              <AccountRow
-                key={account.id}
-                account={account}
-                displayName={accountDisplayName(account.id, account.name, accountNames)}
-                valueDetail={
-                  <PeriodChange
-                    change={changes.find(({ accountId }) => accountId === account.id)?.change}
-                  />
-                }
-                nested
-              />
-            ))}
-          </div>
-        ) : null}
+        <DisclosedPanel open={open} className="account-group-accounts tree-children" id={panel}>
+          {group.accounts.map((account) => (
+            <AccountRow
+              key={account.id}
+              account={account}
+              displayName={accountDisplayName(account.id, account.name, accountNames)}
+              valueDetail={
+                <PeriodChange
+                  change={changes.find(({ accountId }) => accountId === account.id)?.change}
+                />
+              }
+              nested
+            />
+          ))}
+        </DisclosedPanel>
       </div>
     )
   })
@@ -154,7 +153,10 @@ export function AccountGroupList({
         aria-label={`${group.label}, ${countOf(group.accounts.length, 'account')}`}
       >
         <header className="account-group-section-heading">
-          <h3>{group.label}</h3>
+          <h3>
+            {group.label}
+            {group.outsideTotal ? <small> · Not in total</small> : null}
+          </h3>
           {single ? null : (
             <>
               {group.change == null ? null : <PeriodChange change={group.change} />}
@@ -172,9 +174,13 @@ export function AccountGroupList({
               account={account}
               displayName={accountDisplayName(account.id, account.name, accountNames)}
               detail={
-                account.balanceSource === 'unavailable' || account.value == null
-                  ? 'Value unavailable'
-                  : undefined
+                account.value == null && account.id.startsWith('manual:')
+                  ? 'No balance yet; import a statement or enter one'
+                  : account.balanceSource === 'unavailable' || account.value == null
+                    ? 'Value unavailable'
+                    : account.balanceSource === 'estimated'
+                      ? 'Estimated'
+                      : undefined
               }
               valueDetail={change == null ? undefined : <PeriodChange change={change} />}
               nested

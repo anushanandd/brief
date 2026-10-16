@@ -20,13 +20,19 @@ strip = true
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+aes-gcm = "0.11"
+argon2 = "0.6"
 base64 = "0.22"
+bytes = "1"
 calamine = { version = "0.36.1", default-features = false }
 chrono = { version = "0.4", default-features = false, features = ["clock", "serde", "std"] }
+chrono-tz = "0.10"
 csv = "1"
+flate2 = "1"
 futures-util = "0.3"
 hmac = "0.12"
 keyring = { version = "3", features = ["apple-native"] }
+parquet = { version = "60", default-features = false, features = ["zstd"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.34", features = ["backup", "bundled"] }
@@ -36,6 +42,7 @@ serde_json = "1"
 sha2 = "0.10"
 tauri = { version = "2", features = ["tray-icon"] }
 tauri-plugin-dialog = "~2.7"
+tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
 tokio = { version = "1", features = ["macros", "time"] }

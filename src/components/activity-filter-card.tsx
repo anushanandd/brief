@@ -1,5 +1,7 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode, type Ref } from 'react'
 
+import type { ActivityEvidence } from '../lib/activity'
+import { evidenceKinds, evidenceLabels } from '../lib/activity-ledger'
 import { ActivityDateSlider } from './activity-date-slider'
 import { CategoryMark } from './category-mark'
 import { Check, X } from './icons'
@@ -7,6 +9,12 @@ import { Button, Card, SectionHeading } from './ui'
 
 export type FilterOption = { value: string; label: string; count: number }
 type Owner = 'me' | 'other'
+const evidenceShort: Record<ActivityEvidence, string> = {
+  statement: 'Statement',
+  unlisted: 'Not listed',
+  conflict: 'Disagree',
+  unsure: 'Unsure',
+}
 /** A section's own reset and select-all, each a registered command. */
 type SectionActions = { clear?: () => void; all?: () => void; command: string }
 
@@ -23,6 +31,9 @@ export function ActivityFilterCard({
   owner,
   ownerCounts,
   onOwner,
+  evidence,
+  evidenceCounts,
+  onEvidence,
   datePresets,
   dateRange,
   from,
@@ -46,11 +57,16 @@ export function ActivityFilterCard({
   sections,
   onClear,
   onClose,
+  leaving,
+  ref,
 }: {
   active: number
   owner?: Owner
   ownerCounts: Record<'all' | Owner, number>
   onOwner: (owner?: Owner) => void
+  evidence?: ActivityEvidence
+  evidenceCounts?: Record<'all' | ActivityEvidence, number>
+  onEvidence?: (evidence?: ActivityEvidence) => void
   /** Short labels (W, M, …) with their full names. */
   datePresets: ReadonlyArray<{ value: string; short: string; label: string }>
   /** The preset in effect, or `custom`. */
@@ -77,6 +93,9 @@ export function ActivityFilterCard({
   sections: Record<'categories' | 'accounts' | 'methods' | 'amount', SectionActions>
   onClear: () => void
   onClose: () => void
+  /** Closed: the card slides back out and takes no keys while it goes. */
+  leaving?: boolean
+  ref?: Ref<HTMLDivElement>
 }) {
   const [custom, setCustom] = useState(dateRange === 'custom')
   const [allCategories, setAllCategories] = useState(false)
@@ -91,7 +110,12 @@ export function ActivityFilterCard({
   const moreCategories = categories.length - shownCategories.length
 
   return (
-    <Card className="activity-filter-card">
+    <Card
+      ref={ref}
+      className="activity-filter-card"
+      data-leaving={leaving ? '' : undefined}
+      inert={leaving || undefined}
+    >
       <SectionHeading
         title="Filters"
         action={
@@ -137,6 +161,28 @@ export function ActivityFilterCard({
             onSelect={onOwner}
           />
         </FilterSection>
+
+        {/* Only once Rust has graded something does the evidence filter have choices. */}
+        {evidenceCounts &&
+        onEvidence &&
+        (evidence || evidenceKinds.some((kind) => evidenceCounts[kind])) ? (
+          <FilterSection title="Evidence">
+            <Segments
+              label="Evidence"
+              options={[
+                { value: undefined, short: 'Any', label: 'Any', count: evidenceCounts.all },
+                ...evidenceKinds.map((kind) => ({
+                  value: kind,
+                  short: evidenceShort[kind],
+                  label: evidenceLabels[kind],
+                  count: evidenceCounts[kind],
+                })),
+              ]}
+              selected={(value) => evidence === value}
+              onSelect={onEvidence}
+            />
+          </FilterSection>
+        ) : null}
 
         <FilterSection title="Date">
           <Segments

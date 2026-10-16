@@ -50,6 +50,16 @@
   font-size: var(--type-body);
   line-height: 1.55;
 }
+/* An answer the saved data couldn't give reads as unavailable, not as an error. */
+.command-answer > p[data-outcome='unavailable'] {
+  color: var(--text-tertiary);
+}
+.command-unverified {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
 /* One key cap per key, shared by the palette, the key guide, and Keyboard shortcuts. */
 .keys {
   display: inline-flex;
@@ -90,8 +100,6 @@ kbd.keycap {
   border-radius: var(--radius-control);
   background: var(--popup-surface);
   box-shadow: var(--shadow-popup);
-  -webkit-backdrop-filter: var(--popup-filter);
-  backdrop-filter: var(--popup-filter);
 }
 .command-modes > button {
   padding: 4px 12px;
@@ -321,8 +329,6 @@ kbd.keycap {
   border-radius: calc(var(--radius-modal) - 8px);
   background: var(--popup-surface);
   box-shadow: var(--shadow-popup);
-  -webkit-backdrop-filter: var(--popup-filter);
-  backdrop-filter: var(--popup-filter);
 }
 .command-menu-header {
   display: grid;
@@ -404,17 +410,33 @@ kbd.keycap {
   color: var(--text-primary);
   transition:
     opacity var(--duration-modal) var(--ease-out),
-    transform var(--duration-modal-lift) var(--ease-lift);
+    transform var(--duration-modal-lift) var(--ease-lift),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
+}
+.shortcuts-dialog:not([open]) {
+  opacity: 0;
+  transform: var(--modal-enter-from);
 }
 .shortcuts-dialog::backdrop {
   background: var(--dialog-backdrop);
   -webkit-backdrop-filter: var(--dialog-backdrop-filter);
   backdrop-filter: var(--dialog-backdrop-filter);
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
+}
+.shortcuts-dialog:not([open])::backdrop {
+  opacity: 0;
 }
 @starting-style {
   .shortcuts-dialog[open] {
     opacity: 0;
     transform: var(--modal-enter-from);
+  }
+  .shortcuts-dialog[open]::backdrop {
+    opacity: 0;
   }
 }
 .shortcuts-panel {
@@ -495,8 +517,6 @@ kbd.keycap {
   background: var(--popup-surface);
   box-shadow: var(--shadow-popup);
   color: var(--text-primary);
-  -webkit-backdrop-filter: var(--popup-filter);
-  backdrop-filter: var(--popup-filter);
 }
 .key-guide-header {
   display: flex;

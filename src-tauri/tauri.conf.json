@@ -29,7 +29,7 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; img-src 'self' asset: data: https://img.logo.dev https://plaid-merchant-logos.plaid.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src ipc: http://ipc.localhost"
+      "csp": "default-src 'self'; img-src 'self' asset: data: blob: https://img.logo.dev https://plaid-merchant-logos.plaid.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-src blob:; connect-src ipc: http://ipc.localhost"
     }
   },
   "bundle": {
@@ -37,6 +37,9 @@
     "targets": ["app"],
     "icon": ["icons/icon.icns", "icons/128x128@2x.png"],
     "category": "Finance",
-    "shortDescription": "A calm personal finance workspace"
+    "shortDescription": "A calm personal finance workspace",
+    "macOS": {
+      "entitlements": "Entitlements.plist"
+    }
   }
 }

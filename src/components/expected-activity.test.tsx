@@ -62,6 +62,7 @@ it('shows a matched pending amount without treating it as posted evidence', asyn
     accountBalanceHistory: [],
     brokeragePerformance: [],
     accountMovements: [],
+    transactionChanges: [],
     possibleDuplicateAccounts: [],
     accountLinks: {},
     transactions: [
@@ -110,6 +111,7 @@ it('scopes recurring subscriptions to the selected account', async () => {
     accountBalanceHistory: [],
     brokeragePerformance: [],
     accountMovements: [],
+    transactionChanges: [],
     possibleDuplicateAccounts: [],
     accountLinks: {},
     transactions: ['selected', 'other'].flatMap((accountId) =>

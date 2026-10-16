@@ -8,12 +8,14 @@ import { useFinanceRefreshState } from '../hooks/use-refresh-finance'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { AnalyticsSearch, AnalyticsChart } from '../lib/analytics'
 import { formatUpdatedAt } from '../lib/format'
+import type { InsightsView } from '../lib/insights-views'
 import {
   marketUpdateIntervals,
   saveMarketUpdateInterval,
   useMarketUpdateInterval,
 } from '../lib/market-preferences'
 import { providerCatalog } from '../lib/providers'
+import type { ChangeWindow } from '../lib/schema'
 import type { IntegrationStatus } from '../lib/schema'
 import type { SpendingRange } from '../lib/spending'
 import { RefreshButton } from './data-state'
@@ -35,14 +37,20 @@ export type WorkspaceBreadcrumb = {
     | '/holdings'
     | '/analytics'
     | '/spending'
-    | '/recurring'
+    | '/trips'
+    | '/insights'
     | '/taxes'
-  search?: Omit<AnalyticsSearch, 'range'> & {
+  search?: Omit<AnalyticsSearch, 'range' | 'view'> & {
     range?: AnalyticsSearch['range'] | SpendingRange
+    view?: AnalyticsSearch['view'] | InsightsView
     category?: string
     method?: string
     ticker?: string
     analysis?: AnalyticsChart
+    year?: number
+    trip?: string
+    person?: string
+    window?: ChangeWindow
   }
 }
 

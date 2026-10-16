@@ -24,7 +24,6 @@ import {
   spendingRangeForPeriod,
   type SpendingPeriod,
 } from '../lib/spending'
-import { Repeat2 } from './icons'
 import { SelectorStrip, StripIconMark, type SelectorStripItem } from './selector-strip'
 
 // Reports have no statement period; a statement opens them on the month.
@@ -34,9 +33,8 @@ const reportRange = (period: SpendingPeriod): ChartPeriod => {
 }
 
 /**
- * Money's strip: Spending, Recurring, then its reports. Every period card reports the page's
- * period and opens on it, so moving between them keeps both the frame and the period. Recurring
- * reports its monthly cost, which no period changes.
+ * Money's strip: Spending, then its reports. Every card reports the page's period and opens on
+ * it, so moving between them keeps both the frame and the period.
  */
 export function MoneyStrip({
   data,
@@ -47,7 +45,7 @@ export function MoneyStrip({
   today,
 }: {
   data: FinanceSnapshot
-  current: '/spending' | '/recurring' | AnalyticsChart
+  current: '/spending' | AnalyticsChart
   /** Spending's period, on Spending. */
   period?: SpendingPeriod
   /** The report's search, on a report. */
@@ -77,7 +75,6 @@ export function MoneyStrip({
     )
     const spending = spendingHeadline(data, spendingAccountId, spendingPeriod, spendingAccount)
     const SpendingIcon = destinationPages.money[0].icon
-    const subscriptions = data.insights?.subscriptions
     return [
       {
         id: 'spending',
@@ -92,15 +89,6 @@ export function MoneyStrip({
         change: spending.change,
         favorable: 'decrease',
         unavailable: !spending.hasScope,
-      },
-      {
-        id: 'recurring',
-        label: 'Recurring',
-        mark: <StripIconMark icon={<Repeat2 size={15} />} color="var(--data-2)" />,
-        link: { to: '/recurring' },
-        current: current === '/recurring',
-        value: subscriptions ? Math.abs(subscriptions.monthly) : null,
-        unavailable: !subscriptions,
       },
       ...analyticsCharts
         .filter(({ id }) => analyticsGroup(id) === 'money')

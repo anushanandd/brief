@@ -4,7 +4,9 @@ import {
   BadgeDollarSign,
   ChartNoAxesCombined,
   BriefcaseBusiness,
+  CalendarDays,
   CreditCard,
+  FileText,
   House,
   Landmark,
   Palette,
@@ -13,17 +15,21 @@ import {
   ScrollText,
   Settings,
   ShieldCheck,
+  Sparkles,
   Sprout,
   WalletCards,
 } from '../components/icons'
 import { analyticsCharts } from './analytics'
 
 export const primaryNavigation = [
-  { to: '/', label: 'Today', icon: House, shortcut: '⌘1' },
+  { to: '/', label: 'Home', icon: House, shortcut: '⌘1' },
   { to: '/spending', label: 'Money', icon: WalletCards, shortcut: '⌘2' },
   { to: '/holdings', label: 'Investments', icon: BriefcaseBusiness, shortcut: '⌘3' },
   { to: '/accounts', label: 'Accounts', icon: Landmark, shortcut: '⌘4' },
   { to: '/activities', label: 'Activity', icon: Activity, shortcut: '⌘5' },
+  { to: '/insights', label: 'Insights', icon: Sparkles, shortcut: '⌘6' },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays, shortcut: '⌘7' },
+  { to: '/documents', label: 'Documents', icon: FileText, shortcut: '⌘8' },
 ] as const
 
 // Settings opens as a dialog over the current page rather than a sidebar page.

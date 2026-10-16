@@ -1,0 +1,441 @@
+/* Benefits: the year grid, its inspector, and the matches to review. */
+
+/* Spaced like the chart section it replaces: a gap above its rule, the section padding below. */
+.benefit-grid-card {
+  margin-top: 16px;
+  padding-top: var(--card-padding);
+}
+
+.benefit-grid-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 24px;
+  margin-bottom: 16px;
+}
+
+.benefit-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  row-gap: 12px;
+  min-width: 0;
+}
+
+.benefit-metrics .metric > strong {
+  margin-top: 4px;
+}
+
+.benefit-metrics .metric > strong.negative,
+.benefit-grid-figure.negative {
+  color: var(--negative);
+}
+
+.benefit-review-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--warning);
+  font: inherit;
+  cursor: pointer;
+}
+
+.benefit-review-link:hover {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.benefit-grid-card .benefit-fee-recovery {
+  margin: 0 0 16px;
+}
+
+.benefit-grid-scroll {
+  overflow-x: auto;
+}
+
+.benefit-grid {
+  width: 100%;
+  min-width: 760px;
+  border-collapse: separate;
+  border-spacing: 2px;
+  table-layout: fixed;
+}
+
+.benefit-grid thead th {
+  padding: 0 6px 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  font-weight: 500;
+  text-align: left;
+}
+
+.benefit-grid thead th:first-child {
+  width: 188px;
+}
+
+.benefit-grid thead th.benefit-grid-figure {
+  width: 80px;
+  text-align: right;
+}
+
+.benefit-grid thead th.is-now {
+  color: var(--text-primary);
+}
+
+.benefit-grid th[scope='row'] {
+  padding: 0;
+  font-weight: 400;
+  text-align: left;
+}
+
+.benefit-grid td {
+  padding: 0;
+}
+
+.benefit-grid-figure {
+  padding-left: 8px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  white-space: nowrap;
+}
+
+.benefit-grid-group th {
+  padding: 12px 6px 2px 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+  text-align: left;
+}
+
+.benefit-grid tbody > .benefit-grid-group:first-child th {
+  padding-top: 4px;
+}
+
+.benefit-grid tr[data-keyboard-row] {
+  outline: 0;
+}
+
+.benefit-row-name,
+.benefit-cell {
+  width: 100%;
+  height: var(--row-height-compact);
+  border: 0;
+  border-radius: var(--radius-inner);
+  background: none;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--duration-instant) var(--ease-out);
+}
+
+.benefit-row-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 0 6px 0 0;
+  color: var(--text-primary);
+}
+
+.benefit-row-name .transaction-mark {
+  width: 24px;
+  height: 24px;
+  flex: none;
+}
+
+.benefit-row-name > span:nth-child(2) {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.benefit-row-name:hover,
+.benefit-cell:hover,
+.benefit-grid tr:focus-within .benefit-row-name {
+  background: var(--hover-wash);
+}
+
+.benefit-cell {
+  display: grid;
+  align-content: center;
+  gap: 4px;
+  padding: 0 6px;
+  color: var(--text-secondary);
+}
+
+.benefit-cell-track {
+  position: relative;
+  height: 6px;
+  overflow: hidden;
+  border-radius: var(--radius-small);
+  background: var(--hover-wash);
+}
+
+.benefit-cell-track > span {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+}
+
+.benefit-cell-fill {
+  left: 0;
+  background: var(--positive);
+}
+
+/* Credits still to come: waiting purchases and expected charges. */
+.benefit-cell-planned {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--positive) 55%, transparent) 0 2px,
+    transparent 2px 4px
+  );
+}
+
+.benefit-cell-text {
+  overflow: hidden;
+  font-size: var(--type-micro);
+  font-variant-numeric: tabular-nums;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.benefit-cell.is-partial .benefit-cell-track,
+.benefit-cell.is-missed .benefit-cell-track {
+  background: color-mix(in srgb, var(--negative) 40%, transparent);
+}
+
+.benefit-cell.is-partial .benefit-cell-text,
+.benefit-cell.is-missed .benefit-cell-text {
+  color: var(--negative);
+}
+
+.benefit-cell.is-open .benefit-cell-track {
+  box-shadow: inset 0 0 0 var(--hairline) var(--text-tertiary);
+}
+
+.benefit-cell.is-open .benefit-cell-text {
+  color: var(--text-primary);
+}
+
+.benefit-cell.is-settling .benefit-cell-fill,
+.benefit-cell.is-likely-used .benefit-cell-fill {
+  background: color-mix(in srgb, var(--positive) 55%, transparent);
+}
+
+.benefit-cell.is-not-visible .benefit-cell-track,
+.benefit-cell.is-before-history .benefit-cell-track,
+.benefit-cell.is-not-tracked .benefit-cell-track {
+  background: repeating-linear-gradient(
+    -45deg,
+    color-mix(in srgb, var(--text-tertiary) 24%, transparent) 0 2px,
+    transparent 2px 5px
+  );
+}
+
+.benefit-cell.is-not-visible .benefit-cell-text,
+.benefit-cell.is-before-history .benefit-cell-text,
+.benefit-cell.is-not-tracked .benefit-cell-text,
+.benefit-cell.is-future .benefit-cell-text {
+  color: var(--text-tertiary);
+}
+
+.benefit-cell.is-future .benefit-cell-track {
+  background: color-mix(in srgb, var(--text-tertiary) 8%, transparent);
+}
+
+.benefit-cell-tip-empty {
+  margin: 6px 0 0;
+  color: var(--text-tertiary);
+}
+
+/* The inspector is the transaction inspector; these add its benefit parts. */
+.benefit-header-plain {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.benefit-flags {
+  display: grid;
+  gap: 8px;
+  padding-top: 12px;
+}
+
+.benefit-flag {
+  flex-direction: column;
+  align-items: stretch;
+  outline: 0;
+}
+
+.benefit-flag-text {
+  display: grid;
+  justify-items: start;
+  gap: 2px;
+}
+
+.benefit-flag-text > p {
+  margin-bottom: 2px;
+  color: var(--text-primary);
+}
+
+.benefit-flag-transaction {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+
+.benefit-flag-transaction:hover {
+  color: var(--text-primary);
+}
+
+.benefit-flag-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.benefit-periods li {
+  display: block;
+  min-height: 0;
+  outline: 0;
+}
+
+.benefit-period-row {
+  display: grid;
+  width: 100%;
+  min-height: 34px;
+  padding: 0;
+  grid-template-columns: 12px 72px minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 8px;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  font-variant-numeric: tabular-nums;
+  text-align: left;
+  cursor: pointer;
+}
+
+.benefit-period-row:hover,
+.benefit-periods li:focus > .benefit-period-row {
+  background: var(--hover-wash);
+}
+
+.benefit-period-row > small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.benefit-period-row > small.is-partial,
+.benefit-period-row > small.is-missed {
+  color: var(--negative);
+}
+
+.benefit-period-row > strong {
+  font-weight: 500;
+  text-align: right;
+}
+
+.benefit-chevron {
+  color: var(--text-tertiary);
+  transition: transform var(--duration-quick) var(--ease-out);
+}
+
+[aria-expanded='true'] > .benefit-chevron {
+  transform: rotate(90deg);
+}
+
+.benefit-period-activity {
+  padding: 0 0 8px 20px;
+}
+
+.benefit-period-empty {
+  margin: 0;
+  padding: 0 0 10px 20px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .benefit-chevron,
+  .benefit-row-name,
+  .benefit-cell {
+    transition: none;
+  }
+}
+
+.benefit-inspector-header h2 {
+  font-family: inherit;
+  font-size: var(--type-section);
+  font-weight: 600;
+}
+
+.benefit-detail-metrics {
+  padding: 12px 20px 16px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+
+.benefit-detail-note {
+  margin: 0;
+  padding: 12px 20px 16px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+
+/* Whether the benefit is used at all, under its review flags and above its facts. */
+.benefit-use {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-bottom: 12px;
+}
+.benefit-use > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.benefit-use > [role='alert'] {
+  flex-basis: 100%;
+}
+
+.benefit-planned {
+  display: grid;
+  margin: 0;
+  padding: 4px 0 0;
+  list-style: none;
+}
+
+.benefit-planned li {
+  display: flex;
+  min-height: 34px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-top: 0;
+}
+
+.benefit-planned li > span {
+  display: grid;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.benefit-planned small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+
+.benefit-planned strong {
+  color: var(--text-secondary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}

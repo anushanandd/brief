@@ -162,6 +162,24 @@ describe('native explanation cancellation', () => {
     finish({ text: 'Discard this result', evidence: [] })
     await rejected
   })
+  it('keeps an answer’s outcome and the figures its queries did not return', async () => {
+    mockedInvoke.mockResolvedValue({
+      text: 'You spent $900.',
+      outcome: 'answered',
+      evidence: [],
+      unverified: ['$900'],
+    })
+    await expect(generateFoundationExplanation('What did I spend?', undefined)).resolves.toEqual({
+      text: 'You spent $900.',
+      outcome: 'answered',
+      evidence: [],
+      unverified: ['$900'],
+    })
+    mockedInvoke.mockResolvedValue({ text: 'No saved data covers 2019.', evidence: [] })
+    await expect(
+      generateFoundationExplanation('What did I spend in 2019?', undefined),
+    ).resolves.toMatchObject({ outcome: 'answered', unverified: [] })
+  })
   it('never starts a job already cancelled while queued', async () => {
     const controller = new AbortController()
     controller.abort()

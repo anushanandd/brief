@@ -64,6 +64,8 @@ export function useNativeCommands(
     // The menu bar's own items: Settings… and Hide or Show Values.
     void listen('open-settings', () => run('settings.open')).then(keep)
     void listen('toggle-sensitive-values', () => run('privacy.toggle-values')).then(keep)
+    // The system-wide shortcut (⌘⇧B) brings the window forward with the palette open.
+    void listen('open-palette', () => run('palette.open')).then(keep)
     void listen<string>('open-view', ({ payload }) => open(payload)).then(keep)
     void invoke<string | null>('take_opened_view')
       .then((view) => view && open(view))

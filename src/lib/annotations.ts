@@ -15,11 +15,16 @@ const annotationsSchema = z.record(
     splits: z.array(splitSchema).optional(),
     refundOf: z.string().optional(),
     other: z.boolean().optional(),
+    benefitId: z.string().optional(),
+    note: z.string().optional(),
+    people: z.array(z.string()).optional(),
   }),
 )
 export type TransactionAnnotations = z.infer<typeof annotationsSchema>
 const annotationResultSchema = z.object({
   annotations: annotationsSchema,
+  /** The changed transactions' annotations as they were, for undo. */
+  previous: annotationsSchema.default({}),
   snapshot: financeSnapshotSchema,
 })
 
@@ -34,7 +39,9 @@ export async function saveTransactionAnnotation(
   return saveTransactionAnnotations({ [id]: annotation })
 }
 
-// An empty category, tag list, split list, or refund id clears that field; false clears other.
+// An empty category, tag list, split list, refund id, benefit id, or note clears that field;
+// false clears other; clearBenefit forgets both benefit decisions. People are a hand choice
+// either way: an empty list means nobody, and stops matching by name.
 const annotationChangesSchema = z.record(
   z.string(),
   z.object({
@@ -45,9 +52,21 @@ const annotationChangesSchema = z.record(
     splits: z.array(splitSchema).max(12).optional(),
     refundOf: z.string().max(200).optional(),
     other: z.boolean().optional(),
+    benefitId: z.string().max(64).optional(),
+    note: z.string().max(500).optional(),
+    people: z.array(z.string().startsWith('person:').max(64)).max(12).optional(),
+    clearBenefit: z.boolean().optional(),
   }),
 )
 export type TransactionAnnotationChanges = z.infer<typeof annotationChangesSchema>
+
+/** Puts back annotations a save returned as `previous`, undoing that save. */
+export async function restoreTransactionAnnotations(previous: TransactionAnnotations) {
+  if (!isTauri()) throw new Error('Transaction edits require the Brief desktop app')
+  return z
+    .object({ annotations: annotationsSchema, snapshot: financeSnapshotSchema })
+    .parse(await invoke('restore_transaction_annotations', { previous }))
+}
 
 export async function saveTransactionAnnotations(changes: TransactionAnnotationChanges) {
   const parsed = annotationChangesSchema.parse(changes)

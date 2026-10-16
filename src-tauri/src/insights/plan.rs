@@ -5,7 +5,7 @@ use std::collections::BTreeMap;
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::Serialize;
 
-use super::calendar::{self, Zone};
+use super::calendar;
 use super::forecast::{EventState, ExpectedEvent};
 use crate::finance_contract::Account;
 use crate::finance_contract::Transaction;
@@ -44,6 +44,8 @@ pub struct Plan {
     pub days_elapsed: i64,
     pub days_in_month: i64,
     pub spent: f64,
+    /// Month-end spending if the month continues at its current daily pace.
+    pub projected: f64,
     pub categories: Vec<CategoryPlan>,
     pub coverage: Coverage,
     /// Average monthly personal spending over the last three complete months.
@@ -55,18 +57,13 @@ pub struct Plan {
 }
 
 /// Expense and reimbursement amounts per category in each calendar month, in cents.
-fn monthly_spending(
-    transactions: &[Transaction],
-    reference: &str,
-    zone: &dyn Zone,
-) -> BTreeMap<NaiveDate, BTreeMap<String, i64>> {
+fn monthly_spending(transactions: &[Transaction]) -> BTreeMap<NaiveDate, BTreeMap<String, i64>> {
     let mut months = BTreeMap::<NaiveDate, BTreeMap<String, i64>>::new();
     for transaction in transactions
         .iter()
         .filter(|transaction| !transaction.pending)
     {
-        let Some(date) = calendar::transaction_date(transaction.posted_date(), reference, zone)
-        else {
+        let Some(date) = calendar::transaction_date(transaction.posted_date()) else {
             continue;
         };
         match transaction.kind() {
@@ -89,15 +86,13 @@ pub fn plan(
     transactions: &[Transaction],
     accounts: &[Account],
     expected: &[ExpectedEvent],
-    reference: &str,
     today: NaiveDate,
-    zone: &dyn Zone,
 ) -> Plan {
     let month_start = calendar::add_months_first(today, 0);
     let month_end = calendar::month_end(today.year(), today.month());
     let days_in_month = month_end.day() as i64;
     let days_elapsed = today.day() as i64;
-    let months = monthly_spending(transactions, reference, zone);
+    let months = monthly_spending(transactions);
     let current = months.get(&month_start).cloned().unwrap_or_default();
     let complete = (1..=3)
         .map(|offset| calendar::add_months_first(month_start, -offset))
@@ -187,6 +182,7 @@ pub fn plan(
         days_elapsed,
         days_in_month,
         spent: from_minor(spent),
+        projected: from_minor(spent * days_in_month / days_elapsed.max(1)),
         categories,
         coverage: Coverage {
             cash: from_minor(cash),

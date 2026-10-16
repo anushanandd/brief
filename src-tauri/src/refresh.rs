@@ -144,7 +144,8 @@ pub(crate) async fn refresh_finance_snapshot(
     let started_at = Utc::now().to_rfc3339();
     let deadline = tokio::time::Instant::now() + StdDuration::from_secs(120);
     report_refresh(&app, "Preparing refresh…", "Preparing refresh…");
-    let prepared = tokio::time::timeout_at(
+    let fetching = Instant::now();
+    let (prepared, usage) = providers::http::counted(tokio::time::timeout_at(
         deadline,
         prepare_refresh(
             &app,
@@ -153,8 +154,9 @@ pub(crate) async fn refresh_finance_snapshot(
             &run_id,
             live_balances.unwrap_or(false),
         ),
-    )
+    ))
     .await;
+    let fetch_ms = crate::database::millis(fetching.elapsed());
     let sync = match prepared {
         Ok(Ok(sync)) => sync,
         failed => {
@@ -169,19 +171,26 @@ pub(crate) async fn refresh_finance_snapshot(
                 ),
             };
             if let Ok(mut storage) = state.storage() {
-                storage.record_failed_sync(&run_id, &started_at, code, failure.diagnostics);
+                let diagnostics = failure.diagnostics.with_usage(usage, fetch_ms);
+                storage.record_failed_sync(&run_id, &started_at, code, diagnostics);
             }
             return Err(failure.message);
         }
     };
+    state.storage()?.note_usage(&sync.sync_id, usage, fetch_ms);
     let account_links = state.storage()?.data.account_links.clone();
     let sync_id = sync.sync_id.clone();
     let projection_now = Utc::now();
     let calendar_date = projection_now.with_timezone(&chrono::Local).date_naive();
+    let projecting = Instant::now();
     let projection = tauri::async_runtime::spawn_blocking(move || {
         financial_engine::project(&sync, &account_links, projection_now, calendar_date)
     });
-    let snapshot = match tokio::time::timeout_at(deadline, projection).await {
+    let projected = tokio::time::timeout_at(deadline, projection).await;
+    state
+        .storage()?
+        .note_projection(&sync_id, projecting.elapsed());
+    let snapshot = match projected {
         Ok(Ok(Ok(snapshot))) => snapshot,
         Ok(Ok(Err(error))) => {
             return Err(fail_staged(&state, &sync_id, "projection_failed", error))
@@ -196,8 +205,9 @@ pub(crate) async fn refresh_finance_snapshot(
         }
         Err(_) => return Err(fail_staged(&state, &sync_id, "refresh_timeout", TIMED_OUT)),
     };
-    tauri::async_runtime::spawn_blocking(move || {
-        let state = app.state::<AppState>();
+    let committer = app.clone();
+    let committed = tauri::async_runtime::spawn_blocking(move || {
+        let state = committer.state::<AppState>();
         let mut storage = state.storage()?;
         if tokio::time::Instant::now() >= deadline {
             storage.fail_pending(&sync_id, "refresh_timeout");
@@ -209,7 +219,12 @@ pub(crate) async fn refresh_finance_snapshot(
         })
     })
     .await
-    .map_err(|_| "Local refresh worker failed".to_string())?
+    .map_err(|_| "Local refresh worker failed".to_string())?;
+    if committed.is_ok() {
+        crate::calendar::sync_in_background(app.clone());
+        crate::bank_statements::sync_in_background(app);
+    }
+    committed
 }
 
 #[tauri::command]
@@ -311,6 +326,7 @@ async fn prepare_refresh(
             )
             .await;
         if integrations.plaid {
+            providers::http::count_duration("Plaid", started.elapsed());
             let notices = result.as_ref().ok().map(|data| data.warnings.as_slice());
             report_provider_outcome(app, "plaid", "Plaid", started, notices);
         }
@@ -327,6 +343,7 @@ async fn prepare_refresh(
             )
             .await;
         if integrations.snaptrade {
+            providers::http::count_duration("SnapTrade", started.elapsed());
             let notices = result.as_ref().ok().map(|data| data.warnings.as_slice());
             report_provider_outcome(app, "snaptrade", "SnapTrade", started, notices);
         }

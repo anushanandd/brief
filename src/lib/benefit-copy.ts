@@ -1,6 +1,5 @@
 import { formatActivityName, formatCurrency, formatCurrencyRange } from './format'
 import type { BenefitActivity, BenefitWindow } from './schema'
-import type { PlatinumCreditSummary } from './spending'
 
 const dayLabel = new Intl.DateTimeFormat('en-US', {
   month: 'short',
@@ -15,13 +14,13 @@ export function purchaseCreditLabel(credit: BenefitActivity['credit']) {
     case 'credited':
       return `Credited ${formatCurrency(credit.amount)}`
     case 'expected':
-      return `Credit expected by ${formatDay(credit.by)}`
+      return `Credit due by ${formatDay(credit.by)}`
     case 'late':
-      return `Credit late · allowed until ${formatDay(credit.by)}`
+      return `Late · allowed until ${formatDay(credit.by)}`
     case 'not-credited':
-      return 'No credit posted'
+      return 'No credit'
     case 'over-allowance':
-      return 'Over this period’s allowance'
+      return 'Over allowance'
     default:
       return null
   }
@@ -30,7 +29,26 @@ export function purchaseCreditLabel(credit: BenefitActivity['credit']) {
 const isPostedCredit = ({ kind, pending }: BenefitActivity) =>
   !pending && (kind === 'credit' || kind === 'reversal')
 
-export type ActivityBenefitNote = { text: string; tone?: 'positive' | 'warning' }
+/** `label` is the short form beside the merchant; `text` is the full note behind it. */
+export type ActivityBenefitNote = { text: string; label: string; tone?: 'positive' | 'warning' }
+
+/** The short form of a purchase's credit state, beside the merchant it describes. */
+function purchaseCreditBadge(credit: BenefitActivity['credit']) {
+  switch (credit?.state) {
+    case 'credited':
+      return 'Credited'
+    case 'expected':
+      return 'Credit due'
+    case 'late':
+      return 'Credit late'
+    case 'not-credited':
+      return 'No credit'
+    case 'over-allowance':
+      return 'Over allowance'
+    default:
+      return 'Benefit'
+  }
+}
 
 /**
  * What a ledger row means for a card benefit: whether a purchase was credited, or which
@@ -50,7 +68,7 @@ export function activityBenefitNote(
         : item.credit?.state === 'late' || item.credit?.state === 'not-credited'
           ? 'warning'
           : undefined
-    return { text: `${name} · ${label}`, tone }
+    return { text: `${name} · ${label}`, label: purchaseCreditBadge(item.credit), tone }
   }
   if (item.pending) return null
   if (item.kind === 'credit')
@@ -58,8 +76,10 @@ export function activityBenefitNote(
       text: paired
         ? `${name} credit for ${formatActivityName(paired.merchant)} on ${formatDay(paired.date)}`
         : `${name} credit`,
+      label: 'Benefit credit',
     }
-  if (item.kind === 'reversal') return { text: `${name} credit reversed`, tone: 'warning' }
+  if (item.kind === 'reversal')
+    return { text: `${name} credit reversed`, label: 'Credit reversed', tone: 'warning' }
   return null
 }
 
@@ -95,26 +115,26 @@ export function benefitStatus(benefit: BenefitWindow): {
 export function benefitNote(benefit: BenefitWindow) {
   if (benefit.status === 'external')
     return benefit.estimatedCreditAmount
-      ? 'A card charge at Uber means Uber Cash ran out first'
-      : 'Uber Cash spent in the app never reaches the card'
+      ? 'An Uber charge suggests it ran out'
+      : 'Spent in the Uber app'
   if (benefit.cadence === 'renewal')
-    return benefit.renewalCheck
-      ? `Approx. renewal check ${benefit.renewalCheck}`
-      : 'Renewal date unknown'
+    return benefit.renewalCheck ? `Renews ~${benefit.renewalCheck}` : 'Renewal date unknown'
   const range = benefit.remainingRange
+  if (range && range.high > 0 && benefit.historyFrom && !benefit.periodUncertain)
+    return `${formatCurrency(range.high)} left · history from ${formatDay(benefit.historyFrom)}`
   if (range && benefit.periodUncertain)
     return `${formatCurrencyRange(range)} left · ${formatCurrency(
       Math.abs(benefit.uncertainCreditAmount),
-    )} may belong to the previous period`
+    )} may be last period’s`
   if (benefit.unusableRemainder)
-    return `Used · ${formatCurrency(benefit.unusableRemainder)} is below the smallest qualifying charge`
-  if (range?.high === 0) return 'Full credit detected'
+    return `Used · ${formatCurrency(benefit.unusableRemainder)} left over`
+  if (range?.high === 0) return 'Fully credited'
   if (range)
     return benefit.awaitingCreditAmount > 0
       ? `${formatCurrency(range.low)} left · ${formatCurrency(benefit.awaitingCreditAmount)} expected`
       : `${formatCurrency(range.low)} left`
-  if (benefit.id === 'walmart-plus') return 'Monthly membership reimbursement'
-  if (benefit.cadence === 'purchase') return 'Credits posted this calendar year'
+  if (benefit.recurring) return 'Credited when billed'
+  if (benefit.cadence === 'purchase') return 'Credited this year'
   return benefit.windowLabel
 }
 
@@ -135,23 +155,6 @@ export function benefitWarning(benefit: BenefitWindow) {
 /** How long credits take, and where that number comes from. */
 export function creditLagNote(benefit: BenefitWindow) {
   return benefit.creditLagLearned
-    ? `Credits for this benefit have posted within ${benefit.creditLagDays} days on this card.`
-    : `Credits can take up to ${benefit.creditLagDays} days to post under the terms.`
-}
-
-/** Why the missed total leaves some windows out. */
-export function creditSummaryNote(summary: PlatinumCreditSummary) {
-  return [
-    summary.settling
-      ? `${summary.settling} ${summary.settling === 1 ? 'period' : 'periods'} still settling`
-      : null,
-    summary.unknown
-      ? `${summary.unknown} ${summary.unknown === 1 ? 'period' : 'periods'} not visible in the card history`
-      : null,
-    summary.unclaimed > 0
-      ? `${formatCurrency(summary.unclaimed)} unclaimed in benefits you haven’t used`
-      : null,
-  ]
-    .filter(Boolean)
-    .join(' · ')
+    ? `Within ${benefit.creditLagDays} days on this card`
+    : `Usually ${benefit.creditLagDays} days; up to ${benefit.postingDelayDays}`
 }

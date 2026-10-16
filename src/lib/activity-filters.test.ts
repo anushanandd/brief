@@ -20,22 +20,11 @@ const activity = (id: string, date: string): ActivityItem => ({
 })
 
 it('applies inclusive activity date filters', () => {
-  const reference = '2026-09-18T12:00:00Z'
   expect(
-    activityMatchesDateRange(
-      activity('included', '2026-09-12'),
-      reference,
-      '2026-09-12',
-      '2026-09-18',
-    ),
+    activityMatchesDateRange(activity('included', '2026-09-12'), '2026-09-12', '2026-09-18'),
   ).toBe(true)
   expect(
-    activityMatchesDateRange(
-      activity('excluded', '2026-09-11'),
-      reference,
-      '2026-09-12',
-      '2026-09-18',
-    ),
+    activityMatchesDateRange(activity('excluded', '2026-09-11'), '2026-09-12', '2026-09-18'),
   ).toBe(false)
 })
 
@@ -101,7 +90,6 @@ it('limits each filter choice to matching activity while leaving its own facet o
   ]
   const candidates = activityFilterCandidates(
     entries,
-    '2026-09-18T12:00:00Z',
     'chipotle',
     '2026-09-01',
     undefined,
@@ -116,7 +104,6 @@ it('limits each filter choice to matching activity while leaving its own facet o
 
   const wider = activityFilterCandidates(
     entries,
-    '2026-09-18T12:00:00Z',
     'chipotle',
     '2026-09-01',
     undefined,
@@ -141,7 +128,6 @@ it('finds a split under each of its categories and activity by tag', async () =>
   const results = (categories: string[]) =>
     activityFilterCandidates(
       [split, plain],
-      '2026-09-18T12:00:00Z',
       '',
       undefined,
       undefined,

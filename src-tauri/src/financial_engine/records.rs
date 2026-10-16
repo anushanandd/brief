@@ -401,6 +401,10 @@ pub(super) struct SnapAccount {
     pub(super) number: Option<String>,
     #[serde(default)]
     pub(super) account_number: Option<String>,
+    /// The number the brokerage itself uses. `number` can be the brokerage's API key instead
+    /// (E*Trade's `accountIdKey`), so this one names the account's last four.
+    #[serde(default)]
+    pub(super) institution_account_id: Option<String>,
     #[serde(default)]
     pub(super) balance: SnapBalance,
     #[serde(default)]
@@ -410,6 +414,17 @@ pub(super) struct SnapAccount {
     /// The brokerage's website, from SnapTrade.
     #[serde(default)]
     pub(super) institution_url: Option<String>,
+}
+
+impl SnapAccount {
+    /// The account number as the brokerage prints it, as far as SnapTrade says.
+    pub(super) fn printed_number(&self) -> Option<&str> {
+        self.institution_account_id
+            .as_deref()
+            .filter(|number| number.chars().filter(char::is_ascii_digit).count() >= 4)
+            .or(self.number.as_deref())
+            .or(self.account_number.as_deref())
+    }
 }
 
 #[derive(Debug, Default, Deserialize)]

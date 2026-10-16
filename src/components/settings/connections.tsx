@@ -18,12 +18,13 @@ import {
   isTauri,
   removeIntegrationCredentials,
   saveIntegrationCredentials,
+  syncBankStatements,
 } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
 import { financeSettings } from '../../lib/finance-settings'
 import { countOf, formatUpdatedAt } from '../../lib/format'
 import { providerCatalog, type ProviderId } from '../../lib/providers'
-import { Check, Fingerprint, Link2, RefreshCw, Save, Trash2, Wrench, X } from '../icons'
+import { Check, FilePlus, Fingerprint, Link2, RefreshCw, Save, Trash2, Wrench, X } from '../icons'
 import {
   SettingsBlock,
   SettingsCard,
@@ -97,7 +98,7 @@ const providers: ProviderDefinition[] = providerCatalog.map((provider) => ({
 
 const providerOf = (id: CredentialProvider) => providers.find((item) => item.id === id)!
 const providerName = (id: CredentialProvider) => providerOf(id).name
-const connectionKinds: Record<LinkProvider, string> = {
+const connectionKinds: Record<ProviderConnection['provider'], string> = {
   plaid: 'Banking',
   'plaid-investments': 'Investments',
   snaptrade: 'Brokerage',
@@ -128,6 +129,15 @@ export function ConnectionsSection() {
     onConnected: (provider) => {
       void connections.refetch()
       void queryClient.invalidateQueries({ queryKey: ['snaptrade-connections'] })
+      if (provider === 'plaid-statements') {
+        toast.success('Statements added. Saving them now.')
+        void syncBankStatements()
+          .then(() => queryClient.invalidateQueries({ queryKey: ['bank-statements'] }))
+          .catch((error) =>
+            toast.error('Could not save statements', { description: errorMessage(error) }),
+          )
+        return
+      }
       toast.success(`${linkProviderNames[provider]} connected`)
     },
   })
@@ -137,7 +147,8 @@ export function ConnectionsSection() {
     integrationStatus[providerOf(provider).status]
 
   const connectProvider = (provider: LinkProvider, itemId?: string) => {
-    const credentialProvider = provider === 'plaid-investments' ? 'plaid' : provider
+    const credentialProvider =
+      provider === 'plaid-investments' || provider === 'plaid-statements' ? 'plaid' : provider
     if (!configured(credentialProvider)) {
       toast.error(`Save your ${providerName(credentialProvider)} credentials first`)
       return
@@ -279,6 +290,9 @@ export function ConnectionsSection() {
                   failed={connections.isError}
                   linking={Boolean(linking)}
                   repair={(connection) => connectProvider(connection.provider, connection.itemId)}
+                  addStatements={(connection) =>
+                    connectProvider('plaid-statements', connection.itemId)
+                  }
                 />
               ) : null}
 
@@ -309,6 +323,7 @@ function ProviderConnections({
   failed,
   linking,
   repair,
+  addStatements,
 }: {
   connections: ProviderConnection[]
   pending: boolean
@@ -316,6 +331,8 @@ function ProviderConnections({
   /** A connection is in progress, so none can start. */
   linking: boolean
   repair: (connection: ProviderConnection) => void
+  /** Adds statements to a Plaid bank connection through Link. */
+  addStatements: (connection: ProviderConnection) => void
 }) {
   const queryClient = useQueryClient()
   const [forgettingItem, setForgettingItem] = useState<string | null>(null)
@@ -349,28 +366,41 @@ function ProviderConnections({
             <strong>{connection.name}</strong>
             <small>
               {connection.error ?? 'Connected'} · {connectionKinds[connection.provider]}
+              {connection.statements ? ' · Statements' : ''}
             </small>
           </span>
-          <Button
-            icon={Wrench}
-            size="compact"
-            variant="positive"
-            disabled={linking || forgetConnection.isPending}
-            onClick={() => repair(connection)}
-          >
-            Repair
-          </Button>
-          {connection.provider === 'snaptrade' ? null : (
+          <div className="provider-connection-actions">
+            {connection.statements === false ? (
+              <Button
+                icon={FilePlus}
+                size="compact"
+                disabled={linking || forgetConnection.isPending}
+                onClick={() => addStatements(connection)}
+              >
+                Add statements
+              </Button>
+            ) : null}
             <Button
-              icon={Trash2}
+              icon={Wrench}
               size="compact"
-              variant="destructive"
+              variant="positive"
               disabled={linking || forgetConnection.isPending}
-              onClick={() => setForgettingItem(connection.itemId)}
+              onClick={() => repair(connection)}
             >
-              Forget locally
+              Repair
             </Button>
-          )}
+            {connection.provider === 'snaptrade' ? null : (
+              <Button
+                icon={Trash2}
+                size="compact"
+                variant="destructive"
+                disabled={linking || forgetConnection.isPending}
+                onClick={() => setForgettingItem(connection.itemId)}
+              >
+                Forget locally
+              </Button>
+            )}
+          </div>
           {forgettingItem === connection.itemId ? (
             <div className="connection-confirmation" role="group">
               <p>
@@ -604,6 +634,7 @@ function PlaidOptions({ configured }: { configured: boolean }) {
           }
         />
       </SettingsRow>
+      <BankStatementsRow unavailable={unavailable} />
       <SettingsRow
         id="plaid-investment-activity"
         title="Investment activity"
@@ -631,5 +662,46 @@ function PlaidOptions({ configured }: { configured: boolean }) {
         />
       </SettingsRow>
     </SettingsCard>
+  )
+}
+
+/**
+ * Statement PDFs for the bank connections the user added them to. Brief checks for new ones
+ * after a refresh, at most daily; this checks now.
+ */
+function BankStatementsRow({ unavailable }: { unavailable: boolean }) {
+  const queryClient = useQueryClient()
+  const check = useMutation({
+    mutationFn: syncBankStatements,
+    onSuccess: (result) => {
+      void queryClient.invalidateQueries({ queryKey: ['bank-statements'] })
+      if (result.failures.length)
+        toast.error('Some statements could not be checked', {
+          description: result.failures.join(' '),
+        })
+      else
+        toast.success(
+          result.saved ? `${countOf(result.saved, 'statement')} saved` : 'No new statements',
+        )
+    },
+    onError: (error) =>
+      toast.error('Could not check statements', { description: errorMessage(error) }),
+  })
+  return (
+    <SettingsRow
+      id="plaid-bank-statements"
+      title="Bank statements"
+      description="Bank PDFs for checking and savings. Billed per statement off Plaid's Trial plan."
+    >
+      <Button
+        icon={RefreshCw}
+        size="compact"
+        disabled={unavailable || check.isPending}
+        aria-busy={check.isPending || undefined}
+        onClick={() => check.mutate()}
+      >
+        {check.isPending ? 'Checking…' : 'Check now'}
+      </Button>
+    </SettingsRow>
   )
 }

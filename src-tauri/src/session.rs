@@ -14,7 +14,7 @@ const NEW_YORK: NamedZone = NamedZone::NewYork;
 
 /// The wall-clock time in New York at `instant`.
 pub fn new_york(instant: DateTime<Utc>) -> NaiveDateTime {
-    instant.naive_utc() + Duration::hours(NEW_YORK.offset_hours(instant))
+    NEW_YORK.local(instant)
 }
 
 pub fn new_york_date(instant: DateTime<Utc>) -> NaiveDate {
@@ -23,10 +23,7 @@ pub fn new_york_date(instant: DateTime<Utc>) -> NaiveDate {
 
 /// The instant New York's clock reads `time` on `date`.
 pub fn at_new_york(date: NaiveDate, time: NaiveTime) -> DateTime<Utc> {
-    let local = date.and_time(time);
-    // Offsets differ only across the 2 a.m. changes, when no session is open.
-    let guess = local.and_utc() + Duration::hours(5);
-    (local - Duration::hours(NEW_YORK.offset_hours(guess))).and_utc()
+    NEW_YORK.instant(date.and_time(time))
 }
 
 /// An RFC 3339 instant, or `None`.

@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { financeQueryKey } from '../hooks/use-finance'
 import { accountDisplayName, type AccountDisplayNames } from '../lib/account-names'
 import {
+  confirmStatementRow,
   getStatementImports,
   importStatement,
   isTauri,
@@ -13,19 +14,25 @@ import {
   removeStatementImport,
 } from '../lib/api'
 import { errorMessage } from '../lib/errors'
-import { countOf, formatCurrency } from '../lib/format'
+import { financeSettings } from '../lib/finance-settings'
+import { countOf, formatCurrency, formatDay } from '../lib/format'
 import type { FinanceSnapshot, StatementPreview } from '../lib/schema'
 import {
+  reconciliationSummary,
   statementCheckLabel,
   statementCountsLabel,
   statementDateRange,
 } from '../lib/statement-import'
 import { FilterSelect } from './filter-select'
-import { Trash2, Upload, X } from './icons'
+import { Check, Trash2, Upload, X } from './icons'
 import { SettingsBlock } from './settings-ui'
 import { Button } from './ui'
 
 export const statementImportsQueryKey = ['statement-imports'] as const
+
+type MissingStatementRow = NonNullable<
+  FinanceSnapshot['statementReconciliation']
+>[number]['missing'][number]
 
 /** Imports statement files that fill account history from before a provider's first activity. */
 export function StatementImports({
@@ -49,9 +56,13 @@ export function StatementImports({
   const [confirmRemove, setConfirmRemove] = useState<string>()
   const [removing, setRemoving] = useState(false)
   const [removeError, setRemoveError] = useState<string>()
+  const [rowPending, setRowPending] = useState<string>()
+  const [rowError, setRowError] = useState<{ rowId: string; message: string }>()
 
   const nameFor = (id: string) => {
-    const account = data.accounts.find((candidate) => candidate.id === id)
+    const account =
+      data.accounts.find((candidate) => candidate.id === id) ??
+      financeSettings(data).manualAccounts.find((candidate) => candidate.id === id)
     return account
       ? accountDisplayName(account.id, account.name, accountNames)
       : 'Unavailable account'
@@ -110,6 +121,23 @@ export function StatementImports({
       setRemoving(false)
     }
   }
+
+  // A row Plaid never reported joins history only when the user adds it, and can be taken back.
+  const review = async (row: MissingStatementRow, confirmed: boolean) => {
+    setRowPending(row.rowId)
+    setRowError(undefined)
+    try {
+      await committed(await confirmStatementRow(row.fileId, row.rowId, confirmed))
+    } catch (error) {
+      setRowError({ rowId: row.rowId, message: errorMessage(error) })
+    } finally {
+      setRowPending(undefined)
+    }
+  }
+  const missingIn = (fileId: string) =>
+    (data.statementReconciliation ?? []).flatMap((account) =>
+      account.missing.filter((row) => row.fileId === fileId),
+    )
 
   const fit = preview?.accounts.find((candidate) => candidate.accountId === accountId)
   const blocked = preview?.check.status === 'failed'
@@ -209,6 +237,17 @@ export function StatementImports({
           </div>
         </div>
       ) : null}
+      {(data.statementReconciliation ?? []).map((reconciled) => {
+        const summary = reconciliationSummary(reconciled)
+        return (
+          <p
+            key={reconciled.accountId}
+            className={`statement-reconciliation${summary.review ? ' is-warning' : ''}`}
+          >
+            <strong>{nameFor(reconciled.accountId)}</strong> {summary.headline} · {summary.detail}
+          </p>
+        )
+      })}
       {saved.length ? (
         <ul className="settings-list">
           {saved.map((statement) => (
@@ -269,6 +308,35 @@ export function StatementImports({
                   Remove…
                 </Button>
               )}
+              {missingIn(statement.id).length ? (
+                <ul className="statement-review" aria-label="Rows Plaid never reported">
+                  {missingIn(statement.id).map((row) => (
+                    <li key={row.rowId}>
+                      <span>
+                        {row.description} · {formatDay(row.date)}
+                        {row.confirmed ? ' · In history' : ''}
+                      </span>
+                      <span className="sensitive-value">{formatCurrency(row.amount)}</span>
+                      <Button
+                        icon={row.confirmed ? X : Check}
+                        size="compact"
+                        disabled={Boolean(rowPending)}
+                        aria-busy={rowPending === row.rowId || undefined}
+                        onClick={() => void review(row, !row.confirmed)}
+                      >
+                        {rowPending === row.rowId
+                          ? 'Saving…'
+                          : row.confirmed
+                            ? 'Take out'
+                            : 'Add to history'}
+                      </Button>
+                      {rowError?.rowId === row.rowId ? (
+                        <p role="alert">{rowError.message}</p>
+                      ) : null}
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
             </li>
           ))}
         </ul>

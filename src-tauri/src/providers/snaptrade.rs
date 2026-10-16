@@ -358,7 +358,7 @@ impl Providers {
         let retry = (method == Method::GET)
             .then(|| request.try_clone())
             .flatten();
-        let response = send_with_retry(request, retry)
+        let response = send_with_retry("SnapTrade", request, retry)
             .await
             .map_err(|(error, _)| snaptrade_send_error(error))?;
         provider_response("SnapTrade", path, response).await

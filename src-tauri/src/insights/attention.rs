@@ -6,11 +6,12 @@ use chrono::NaiveDate;
 use serde::Serialize;
 
 use super::anomalies::Anomalies;
-use super::benefits::{BenefitWindow, Cadence};
+use super::benefits::{BenefitReview, BenefitWindow, Cadence};
 use super::cashline::CashTimeline;
 use super::credit::{Credit, CLOSING_NOTICE_DAYS, HIGH_UTILIZATION};
 use super::plan::Plan;
 use super::statement::StatementCycle;
+use crate::finance_contract::CreditLiability;
 
 const MAX_ITEMS: usize = 3;
 const PAYMENT_DUE_DAYS: i64 = 7;
@@ -42,7 +43,11 @@ pub enum Item {
         expected_outflows: f64,
         shortfall: f64,
     },
-    /// A card credit the card has used before, with allowance left in a window about to end.
+    /// Benefit matches on a card that need a decision.
+    #[serde(rename_all = "camelCase")]
+    BenefitReview { account_id: String, count: usize },
+    /// A card credit with allowance left in a window about to end. Subscription credits are
+    /// spent on their own, so they never ask.
     #[serde(rename_all = "camelCase")]
     CreditExpiring {
         account_id: String,
@@ -91,6 +96,67 @@ pub enum Item {
         date: NaiveDate,
         transaction_ids: [String; 2],
     },
+    /// A recurring charge or deposit that was due and never posted. Marking the series' last
+    /// transaction reviewed dismisses it.
+    #[serde(rename_all = "camelCase")]
+    MissedBill {
+        recurring_id: String,
+        title: String,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        account_id: Option<String>,
+        expected: NaiveDate,
+        days: i64,
+        amount: f64,
+        event: super::forecast::EventKind,
+        source_transaction_id: String,
+    },
+    /// IRA inflows that wait for the user to say which tax year they count toward, if any.
+    #[serde(rename_all = "camelCase")]
+    ContributionsToConfirm {
+        account_id: String,
+        count: usize,
+        amount: f64,
+    },
+    /// Contributions past a year's limit, or on pace to pass it. An excess costs a tax until
+    /// it's taken out.
+    #[serde(rename_all = "camelCase")]
+    ContributionLimit {
+        /// `workplace` or `ira`.
+        plan: &'static str,
+        tax_year: i32,
+        limit: f64,
+        amount: f64,
+        /// `amount` is where this year's deferrals are on pace to end, not where they are.
+        on_pace: bool,
+    },
+    /// A pay statement's deposit to an account Brief tracks never arrived there.
+    #[serde(rename_all = "camelCase")]
+    PayMissing {
+        document_id: String,
+        employer: String,
+        date: NaiveDate,
+        amount: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        account_id: Option<String>,
+    },
+    /// A W-2 states boxes the year's pay statements don't add up to.
+    #[serde(rename_all = "camelCase")]
+    W2Differs {
+        document_id: String,
+        employer: String,
+        tax_year: i32,
+        boxes: usize,
+    },
+    /// Cash earning next to nothing while another cash account the user holds pays more.
+    #[serde(rename_all = "camelCase")]
+    IdleCash {
+        account_id: String,
+        balance: f64,
+        #[serde(skip_serializing_if = "Option::is_none")]
+        annual_rate: Option<f64>,
+        better_account_id: String,
+        better_rate: f64,
+    },
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -110,18 +176,13 @@ pub struct Context<'a> {
     pub plan: &'a Plan,
 }
 
-/// What the Today page leads with: everything that needs action, most urgent first, and the
-/// expected activity of the next two weeks. Unlike `attention`, the list is not capped.
+/// What the Today page leads with: everything that needs action, most urgent first. Unlike
+/// `attention`, the list is not capped.
 #[derive(Clone, Debug, Default, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Brief {
     pub needs: Vec<AttentionItem>,
-    /// Ids of expected events dated within `coming_days` of today.
-    pub coming: Vec<String>,
-    pub coming_days: i64,
 }
-
-pub const COMING_DAYS: i64 = 14;
 
 /// Days before a window closes that an unused credit is worth raising: a week for monthly
 /// credits, three weeks for anything longer.
@@ -135,7 +196,7 @@ fn expiry_notice(cadence: Cadence) -> Option<i64> {
 
 pub fn needs(
     context: Context<'_>,
-    cards: &[(&str, &[BenefitWindow])],
+    cards: &[(&str, &[BenefitWindow], &[BenefitReview])],
     hidden_benefit_ids: &[String],
     cash: &CashTimeline,
     credit: &Credit,
@@ -161,10 +222,30 @@ pub fn needs(
             },
         });
     }
-    for (account_id, window) in cards
-        .iter()
-        .flat_map(|(account_id, windows)| windows.iter().map(move |window| (*account_id, window)))
-    {
+    for (account_id, _, review) in cards {
+        let open = review
+            .iter()
+            .filter(|item| {
+                item.benefit_id
+                    .as_ref()
+                    .is_none_or(|id| !hidden_benefit_ids.contains(id))
+            })
+            .collect::<Vec<_>>();
+        // Named by the newest item, so a new match raises it again.
+        if let Some(newest) = open.first() {
+            items.push(AttentionItem {
+                id: format!("benefit-review:{account_id}:{}", newest.transaction_id),
+                severity: Severity::Attention,
+                item: Item::BenefitReview {
+                    account_id: (*account_id).to_owned(),
+                    count: open.len(),
+                },
+            });
+        }
+    }
+    for (account_id, window) in cards.iter().flat_map(|(account_id, windows, _)| {
+        windows.iter().map(move |window| (*account_id, window))
+    }) {
         let days = (window.window_end - today).num_days();
         let range = window
             .remaining_range
@@ -174,7 +255,8 @@ pub fn needs(
         let (Some(notice), Some((low, high))) = (expiry_notice(window.cadence), range) else {
             continue;
         };
-        if window.engaged
+        // A subscription spends its credit on its own, so only deadlines that need action count.
+        if !window.recurring
             && high > 0.0
             && (0..=notice).contains(&days)
             && !hidden_benefit_ids.contains(&window.id)
@@ -234,6 +316,29 @@ pub fn needs(
     items
 }
 
+/// Whether the statement's payment is still owed. The issuer keeps reporting the statement's
+/// minimum after it is paid, so a payment on or after the statement date that covers the
+/// minimum settles it.
+pub fn payment_owed(liability: &CreditLiability) -> bool {
+    let paid = match (
+        liability.last_payment_date.as_deref(),
+        liability.last_statement_date.as_deref(),
+    ) {
+        (Some(paid_on), Some(statement)) => {
+            paid_on >= statement
+                && liability
+                    .last_payment_amount
+                    .zip(liability.minimum_payment)
+                    .is_some_and(|(paid, minimum)| paid >= minimum)
+        }
+        _ => false,
+    };
+    !paid
+        && liability
+            .minimum_payment
+            .is_none_or(|minimum| minimum > 0.0)
+}
+
 pub fn attention(context: Context<'_>) -> Vec<AttentionItem> {
     let today = context.today;
     let mut items = Vec::new();
@@ -249,26 +354,7 @@ pub fn attention(context: Context<'_>) -> Vec<AttentionItem> {
         {
             let days = (due - today).num_days();
             let overdue = liability.is_overdue == Some(true) || days < 0;
-            // The issuer keeps reporting the statement's minimum after it is paid, so a payment
-            // on or after the statement date that covers the minimum clears the reminder.
-            let paid = match (
-                liability.last_payment_date.as_deref(),
-                liability.last_statement_date.as_deref(),
-            ) {
-                (Some(paid_on), Some(statement)) => {
-                    paid_on >= statement
-                        && liability
-                            .last_payment_amount
-                            .zip(liability.minimum_payment)
-                            .is_some_and(|(paid, minimum)| paid >= minimum)
-                }
-                _ => false,
-            };
-            let owed = !paid
-                && liability
-                    .minimum_payment
-                    .is_none_or(|minimum| minimum > 0.0);
-            if owed && (overdue || days <= PAYMENT_DUE_DAYS) {
+            if payment_owed(liability) && (overdue || days <= PAYMENT_DUE_DAYS) {
                 items.push(AttentionItem {
                     id: format!("payment-due:{account_id}:{due}"),
                     severity: if overdue || days <= 3 {

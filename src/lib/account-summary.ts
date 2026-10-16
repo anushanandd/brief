@@ -36,10 +36,10 @@ export function accountTransactionSummary(
   referenceIso: string,
   windowSeconds: number,
 ) {
-  const end = transactionDateKey(referenceIso, referenceIso)
+  const end = transactionDateKey(referenceIso)
   const start = windowSeconds ? dayKey(dayStart(end) - windowSeconds * 1_000) : ''
   const posted = transactions.flatMap((transaction) => {
-    const date = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso)
+    const date = transactionDateKey(transaction.postedOn ?? transaction.date)
     return !transaction.pending && date && date <= end ? [{ transaction, date }] : []
   })
   return {

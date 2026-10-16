@@ -4,9 +4,9 @@ import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
 
 import type { ActivityItem } from '../lib/activity'
 import { type ChartEventGroup, chartEventGroupLabel } from '../lib/chart-events'
-import { formatActivityName, formatCompactCurrency, formatCurrency } from '../lib/format'
+import { formatActivityName, formatCompactCurrency, formatCurrency, formatDay } from '../lib/format'
 import { graphWindows } from '../lib/graph-preferences'
-import { chartPointAtOrAfter, chartPointsFromStartDate } from '../lib/live-chart'
+import { chartPointAtOrAfter, chartPointsFromStartDate, splitAtEstimate } from '../lib/live-chart'
 import type { SpendingBar } from '../lib/spending'
 import { ActivityMark } from './activity-list'
 import { ChartRangeSelect } from './ui'
@@ -288,6 +288,8 @@ export function PerformanceChart({
   startDate,
   selectedWindow,
   sessionBoundary,
+  observedOn = [],
+  estimatedAfter,
 }: {
   data: LivelinePoint[]
   netDeposits?: LivelinePoint[]
@@ -298,6 +300,10 @@ export function PerformanceChart({
   startDate?: string
   selectedWindow: number
   sessionBoundary?: LivelinePoint
+  /** Days the value was observed (a statement price or an entry), each marked with a dot. */
+  observedOn?: string[]
+  /** The last observed day of a value estimated since; the line after it is dashed. */
+  estimatedAfter?: string
 }) {
   const reduceMotion = useReducedMotion()
   const colors = useChartColors()
@@ -330,11 +336,33 @@ export function PerformanceChart({
         time: point.time,
         value: point.value,
         color: eventColors[group.events[0].direction],
-        label: chartEventGroupLabel(group, referenceIso),
+        label: chartEventGroupLabel(group),
       },
     ]
   })
+  // Observed values are dots on the line; between them the line may be an estimate.
+  const observationMarkers = observedOn.flatMap((date) => {
+    const target = Date.parse(`${date}T12:00:00Z`) / 1_000
+    const point = chartPointAtOrAfter(chartData, target - DAY_SECONDS / 2)
+    return point && Math.abs(point.time - target) < DAY_SECONDS
+      ? [
+          {
+            id: `observed:${date}`,
+            time: point.time,
+            value: point.value,
+            color: colors.value,
+            label: `Observed · ${formatDay(date)}`,
+          },
+        ]
+      : []
+  })
+  // After the last observation the value is an estimate, drawn as its own dashed line.
+  const { observed: observedData, estimated: estimatedData } = splitAtEstimate(
+    chartData,
+    estimatedAfter,
+  )
   const markers = [
+    ...observationMarkers,
     ...(sessionBoundary
       ? [
           {
@@ -352,10 +380,22 @@ export function PerformanceChart({
   const series: LivelineSeries[] = [
     {
       id: 'Value',
-      data: chartData,
-      value: plottedValue,
+      data: observedData,
+      value: observedData.at(-1)?.value ?? plottedValue,
       color: colors.value,
     },
+    ...(estimatedData.length >= 2
+      ? [
+          {
+            id: 'Estimated',
+            label: 'Estimated · S&P 500',
+            data: estimatedData,
+            value: plottedValue,
+            color: colors.value,
+            dash: [4, 4],
+          },
+        ]
+      : []),
     ...(netDeposits?.length
       ? [
           {

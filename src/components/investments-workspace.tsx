@@ -11,7 +11,7 @@ import { HoldingNews } from './holding-news'
 import { HoldingsTable } from './holdings-table'
 import { InvestmentSummaryCard, useInvestmentSummary } from './investment-summary-card'
 import { InvestmentsPortfolio } from './investment-value'
-import { InvestmentsRail } from './investments-rail'
+import { InvestmentsRail, RETIREMENT } from './investments-rail'
 import {
   InvestmentsAttention,
   InvestmentsComingUp,
@@ -22,6 +22,7 @@ import {
   usePortfolioToday,
 } from './investments-summary'
 import { PortfolioExposure } from './portfolio-exposure'
+import { RetirementView } from './retirement'
 import { Card, EmptyState } from './ui'
 import { MarketStatus, WorkspaceHeader } from './workspace-header'
 
@@ -132,7 +133,13 @@ function Holding({
  * the page. One period, chosen in the main chart card, decides every figure. Selection is the
  * URL, so each holding has its own address.
  */
-export function InvestmentsWorkspace({ ticker }: { ticker?: string }) {
+export function InvestmentsWorkspace({
+  ticker,
+  retirement = false,
+}: {
+  ticker?: string
+  retirement?: boolean
+}) {
   const query = useLiveFinance()
   const today = usePortfolioToday(query.data?.revision, query.integrationStatus.alpaca)
   const range = useInvestmentRange()
@@ -151,20 +158,27 @@ export function InvestmentsWorkspace({ ticker }: { ticker?: string }) {
         title="Investments"
         status={<MarketStatus />}
         breadcrumbs={
-          ticker
+          ticker || retirement
             ? [
                 { label: 'Investments', to: '/holdings', search: {} },
-                { label: ticker, to: '/holdings', search: {} },
+                { label: ticker ?? 'Retirement', to: '/holdings', search: {} },
               ]
             : undefined
         }
       />
-      <InvestmentsRail data={data} range={range} selected={ticker} value={value} />
+      <InvestmentsRail
+        data={data}
+        range={range}
+        selected={retirement ? RETIREMENT : ticker}
+        value={value}
+      />
       <div
         className="investments-pane"
-        aria-label={ticker ? `${ticker} detail` : 'All investments'}
+        aria-label={ticker ? `${ticker} detail` : retirement ? 'Retirement' : 'All investments'}
       >
-        {ticker ? (
+        {retirement ? (
+          <RetirementView data={data} />
+        ) : ticker ? (
           <Holding
             data={data}
             ticker={ticker}

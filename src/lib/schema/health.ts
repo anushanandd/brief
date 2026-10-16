@@ -25,6 +25,37 @@ export const syncRunSchema = z.object({
     phase: z.string().max(32),
     providers: z.array(providerDiagnosticSchema).max(24),
     warningCount: z.number().int().nonnegative().max(999),
+    /** What each provider used: counts and timings only. */
+    runs: z
+      .array(
+        z.object({
+          provider: z.string().max(32),
+          requests: z.number().int().nonnegative(),
+          retries: z.number().int().nonnegative(),
+          bytes: z.number().int().nonnegative(),
+          durationMs: z.number().int().nonnegative().optional(),
+        }),
+      )
+      .max(12)
+      .optional(),
+    stages: z
+      .object({
+        fetchMs: z.number().int().nonnegative().optional(),
+        projectMs: z.number().int().nonnegative().optional(),
+        commitMs: z.number().int().nonnegative().optional(),
+      })
+      .optional(),
+    snapshotBytes: z.number().int().nonnegative().optional(),
+    /** How many saved transactions the refresh added, settled, removed, or amended. */
+    changes: z
+      .object({
+        added: z.number().int().nonnegative(),
+        settled: z.number().int().nonnegative(),
+        removed: z.number().int().nonnegative(),
+        amended: z.number().int().nonnegative(),
+        backfilled: z.number().int().nonnegative(),
+      })
+      .optional(),
   }),
 })
 export type SyncRun = z.infer<typeof syncRunSchema>

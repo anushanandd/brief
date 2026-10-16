@@ -20,6 +20,22 @@ import { resetScenario, scenario } from './routes.scenario'
 // Rust derives them; these tests check only how routes present them.
 type ScenarioTransaction = import('../lib/schema').Transaction
 type ScenarioActivity = import('../lib/schema').BenefitActivity
+type ScenarioPeriod = import('../lib/schema').BenefitPeriod
+/** One synthetic benefit period over a scenario window. */
+const scenarioPeriod = (
+  range: { windowStart: string; windowEnd: string },
+  label: string,
+  cap: number,
+  rest: Partial<ScenarioPeriod> & Pick<ScenarioPeriod, 'state'>,
+): ScenarioPeriod => ({
+  start: range.windowStart,
+  end: range.windowEnd,
+  label,
+  cap,
+  credited: 0,
+  activityIds: [],
+  ...rest,
+})
 function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/schema').Insights {
   const now = new Date()
   const today = now.toISOString().slice(0, 10)
@@ -94,7 +110,7 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
     creditLagDays: 56,
     creditLagLearned: false,
     status: 'unused' as const,
-    engaged: false,
+    recurring: false,
     creditedAmount: 0,
     uncertainCreditAmount: 0,
     awaitingCreditAmount: 0,
@@ -169,6 +185,112 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
       left.windowEnd.localeCompare(right.windowEnd) ||
       left.name.localeCompare(right.name),
   )
+  // Each benefit's periods this year: earlier periods settled, the current one open.
+  const resyWindow = windows.find(({ id }) => id === 'resy')!
+  const monthNames = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ]
+  const history = [
+    {
+      id: 'resy',
+      name: 'Resy',
+      recurring: false,
+      external: false,
+      retired: false,
+      periods: [0, 1, 2, 3].map((quarterIndex) => {
+        const current = Math.floor(month / 3)
+        const range = window(quarterIndex * 3, 3)
+        const label = `Q${quarterIndex + 1}`
+        if (quarterIndex > current) return scenarioPeriod(range, label, 100, { state: 'future' })
+        if (quarterIndex === current)
+          return scenarioPeriod(range, label, 100, {
+            state: 'open',
+            credited,
+            left: resyWindow.remainingRange,
+            activityIds: resyActivity.map(({ id }) => id),
+          })
+        return quarterIndex === current - 1
+          ? scenarioPeriod(range, label, 100, {
+              state: 'partial',
+              credited: 40,
+              unused: { low: 60, high: 60 },
+            })
+          : scenarioPeriod(range, label, 100, { state: 'missed', unused: { low: 100, high: 100 } })
+      }),
+    },
+    {
+      id: 'uber-cash',
+      name: 'Uber Cash',
+      recurring: false,
+      external: true,
+      retired: false,
+      periods: monthNames.map((label, index) =>
+        scenarioPeriod(window(index, 1), label, 15, {
+          state:
+            index < month
+              ? 'not-visible'
+              : index > month
+                ? 'future'
+                : uberActivity.some(({ pending }) => !pending)
+                  ? 'likely-used'
+                  : 'open',
+          activityIds: index === month ? uberActivity.map(({ id }) => id) : [],
+        }),
+      ),
+    },
+    {
+      id: 'digital-entertainment',
+      name: 'Digital entertainment',
+      recurring: true,
+      external: false,
+      retired: false,
+      periods: monthNames.map((label, index) =>
+        scenarioPeriod(
+          window(index, 1),
+          label,
+          25,
+          index < month
+            ? { state: 'full', credited: 25, unused: { low: 0, high: 0 } }
+            : index === month
+              ? { state: 'open', left: { low: 25, high: 25 } }
+              : {
+                  state: 'future',
+                  // A streaming subscription the forecast expects each month.
+                  planned: [
+                    {
+                      title: 'Example streaming',
+                      date: window(index, 1).windowStart,
+                      amount: 13.99,
+                      source: 'recurring' as const,
+                    },
+                  ],
+                },
+        ),
+      ),
+    },
+  ]
+  // A positive Resy amount without the issuer's wording: a credit or a return.
+  const review = transactions.some(({ id }) => id === 'transaction-1')
+    ? [
+        {
+          kind: 'unverified-credit' as const,
+          transactionId: 'transaction-1',
+          benefitId: 'resy',
+          periodStart: window(Math.floor(month / 3) * 3, 3).windowStart,
+        },
+      ]
+    : []
   const series = new Map<string, ScenarioTransaction[]>()
   for (const transaction of transactions.filter(({ pending }) => !pending)) {
     const key = transaction.recurringId ?? ''
@@ -213,7 +335,8 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
           useFirst: windows
             .filter(({ remainingRange }) => (remainingRange?.high ?? 0) > 0)
             .map(({ id }) => id),
-          outcomes: [],
+          history,
+          review,
         }
       : undefined,
     benefitProducts: [{ id: 'amex-platinum', name: 'American Express Platinum' }],
@@ -227,6 +350,7 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
       daysElapsed: now.getUTCDate(),
       daysInMonth: new Date(Date.UTC(year, month + 1, 0)).getUTCDate(),
       spent: 0,
+      projected: 0,
       categories: [],
       coverage: {
         cash: 0,
@@ -238,7 +362,7 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
       },
     },
     attention: [],
-    brief: { needs: [], coming: expected.map(({ id }) => id), comingDays: 14 },
+    brief: { needs: [] },
     cash: {
       horizonDays: 90,
       cash: 0,
@@ -278,7 +402,10 @@ function scenarioTransactions(): ScenarioTransaction[] {
       amount: scenario.benefitAmount,
       account: 'Selected card',
       accountId: 'selected',
-      classification: classification('other', { credit: true }),
+      classification:
+        scenario.creditKind === 'income'
+          ? classification('income')
+          : classification('other', { credit: true }),
       pending: scenario.linkedPending && index === 0,
     })),
     ...(scenario.uberPurchase
@@ -362,6 +489,7 @@ vi.mock('../hooks/use-finance', () => ({
       transactions: scenarioTransactions(),
       trades: scenario.trades,
       accountMovements: [],
+      transactionChanges: [],
       accountBalanceHistory: [
         {
           accountId: 'other',
@@ -412,9 +540,13 @@ vi.mock('../hooks/use-finance', () => ({
         hiddenBenefitIds: scenario.hiddenBenefits.split(',').filter(Boolean),
         accountNames: {},
         accountStartDates: {},
+        accountClosedDates: {},
+        manualAccounts: [],
+        people: scenario.people,
+        tripCompanions: scenario.tripCompanions,
       },
-      rules: [],
       insights: scenarioInsights(scenarioTransactions()),
+      documents: scenario.documents,
     },
   }),
 }))

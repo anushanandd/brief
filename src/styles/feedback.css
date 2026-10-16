@@ -8,8 +8,6 @@
   box-shadow: var(--shadow-popup) !important;
   color: var(--text-primary) !important;
   font-family: inherit !important;
-  -webkit-backdrop-filter: var(--popup-filter) !important;
-  backdrop-filter: var(--popup-filter) !important;
 }
 .brief-toast [data-icon] {
   margin-top: 2px !important;
@@ -71,6 +69,9 @@
   background: var(--accent);
   transform: translateX(-100%);
   animation: refresh-progress 1.2s linear infinite;
+}
+:root[data-theme='dark'] .refresh-progress-track > span {
+  background: var(--brand-gradient-across);
 }
 .refresh-progress small {
   color: var(--text-tertiary);

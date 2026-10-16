@@ -9,6 +9,7 @@ import { previewFinanceSettings } from './finance-settings'
 import { ledgerCallSchema } from './ledger-view'
 import {
   backupInfoSchema,
+  bankStatementSchema,
   calibrationSchema,
   earningsEventSchema,
   foundationModelStatusSchema,
@@ -25,6 +26,7 @@ import {
   sectorExposureSchema,
   statementPreviewSchema,
   statementSummarySchema,
+  statementSyncSchema,
   marketNewsResultSchema,
   marketSnapshotsSchema,
   summaryRunSchema,
@@ -38,11 +40,15 @@ import {
   type SectorExposure,
   type StatementPreview,
   type StatementSummary,
+  type StatementSync,
+  type BankStatement,
   type MarketNewsResult,
   type MarketSnapshots,
   type SummaryRun,
   type SyncRun,
   type BackupInfo,
+  type BriefDocument,
+  type DocumentField,
   type FoundationModelStatus,
   type IntegrationStatus,
   type LoginItemState,
@@ -51,7 +57,7 @@ import {
   type ProviderLinkStatus,
 } from './schema'
 
-export const isTauri = () => '__TAURI_INTERNALS__' in window
+export const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
 export function safeExternalUrl(url: string): string | undefined {
   try {
@@ -120,9 +126,10 @@ export async function recoverFinanceState(restore: boolean): Promise<FinanceSnap
   return financeSnapshotSchema.parse(await invoke('recover_finance_state', { restore }))
 }
 
-export async function exportFinanceBackup(path: string): Promise<void> {
+/** A passphrase seals the documents' key into the backup, so another Mac can open them. */
+export async function exportFinanceBackup(path: string, passphrase?: string): Promise<void> {
   if (!isTauri()) throw new Error('Desktop app only')
-  await invoke('export_finance_backup', { path })
+  await invoke('export_finance_backup', { path, passphrase: passphrase || null })
 }
 
 export async function inspectFinanceBackup(path: string): Promise<BackupInfo> {
@@ -130,9 +137,85 @@ export async function inspectFinanceBackup(path: string): Promise<BackupInfo> {
   return backupInfoSchema.parse(await invoke('inspect_finance_backup', { path }))
 }
 
-export async function restoreFinanceBackup(path: string): Promise<FinanceSnapshot> {
+export async function restoreFinanceBackup(
+  path: string,
+  passphrase?: string,
+): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(await invoke('restore_finance_backup', { path }))
+  return financeSnapshotSchema.parse(
+    await invoke('restore_finance_backup', { path, passphrase: passphrase || null }),
+  )
+}
+
+const documentImportSchema = z.object({
+  added: z.array(z.string()),
+  already: z.array(z.string()),
+  failed: z.array(z.object({ name: z.string(), reason: z.string() })),
+  snapshot: financeSnapshotSchema,
+})
+export type DocumentImport = z.infer<typeof documentImportSchema>
+
+/** Reads files and folders into documents on this Mac, reporting `documents-progress`. */
+export async function importDocuments(paths: string[]): Promise<DocumentImport> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return documentImportSchema.parse(await invoke('import_documents', { paths }))
+}
+
+export type DocumentChange = {
+  kind?: BriefDocument['kind']
+  form?: string
+  issuer?: string
+  taxYear?: number
+  /** An empty string clears it. */
+  accountId?: string
+  person?: string
+  corrected?: boolean
+  reviewed?: boolean
+  fields?: DocumentField[]
+}
+
+export async function updateDocument(id: string, change: DocumentChange): Promise<FinanceSnapshot> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return financeSnapshotSchema.parse(await invoke('update_document', { id, change }))
+}
+
+export async function deleteDocuments(ids: string[]): Promise<FinanceSnapshot> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return financeSnapshotSchema.parse(await invoke('delete_documents', { ids }))
+}
+
+/** Opens the original in the Mac's own viewer, from a private decrypted copy. */
+export async function openDocument(id: string): Promise<void> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  await invoke('open_document', { id })
+}
+
+/** A document's original, decrypted in memory for Brief's viewer. */
+export async function documentFile(id: string): Promise<ArrayBuffer> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return await invoke<ArrayBuffer>('document_file', { id })
+}
+
+export async function rereadDocument(id: string): Promise<FinanceSnapshot> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return financeSnapshotSchema.parse(await invoke('reread_document', { id }))
+}
+
+export async function addDocumentHistory(
+  ids: string[],
+  accountId: string,
+): Promise<FinanceSnapshot> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return financeSnapshotSchema.parse(await invoke('add_document_history', { ids, accountId }))
+}
+
+/**
+ * Finds the businesses in-person purchases were made at: Rust downloads Overture's places for
+ * the cities not searched yet, reporting `places-progress`, and the snapshot updates per city.
+ */
+export async function findPlaces(): Promise<void> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  await invoke('find_places')
 }
 
 /** Reads and checks a statement file. Rust keeps the bytes until `importStatement`. */
@@ -157,6 +240,18 @@ export async function getStatementImports(): Promise<StatementSummary[]> {
 export async function removeStatementImport(id: string): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
   return financeSnapshotSchema.parse(await invoke('remove_statement_import', { id }))
+}
+
+/** Confirms, or withdraws, a statement row Plaid never reported; a confirmed row fills history. */
+export async function confirmStatementRow(
+  fileId: string,
+  rowId: string,
+  confirmed: boolean,
+): Promise<FinanceSnapshot> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return financeSnapshotSchema.parse(
+    await invoke('confirm_statement_row', { fileId, rowId, confirmed }),
+  )
 }
 
 export async function eraseFinanceState(): Promise<FinanceSnapshot> {
@@ -234,7 +329,7 @@ export async function saveAccountLink(
 }
 
 export async function beginProviderLink(
-  provider: 'plaid' | 'plaid-investments' | 'snaptrade',
+  provider: ProviderLinkSession['provider'],
   itemId?: string,
 ): Promise<ProviderLinkSession> {
   if (!isTauri()) throw new Error('Desktop app only')
@@ -248,6 +343,23 @@ export async function beginProviderLink(
     throw error
   }
   return session
+}
+
+/** Saved bank statements, newest first. The browser preview has none. */
+export async function getBankStatements(): Promise<BankStatement[]> {
+  return isTauri() ? bankStatementSchema.array().parse(await invoke('get_bank_statements')) : []
+}
+
+/** Checks every connection with statements now and saves new ones. */
+export async function syncBankStatements(): Promise<StatementSync> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return statementSyncSchema.parse(await invoke('sync_bank_statements'))
+}
+
+/** Opens a saved statement in the Mac's PDF viewer. */
+export async function openBankStatement(id: string): Promise<void> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  await invoke('open_bank_statement', { id })
 }
 
 export async function cancelProviderLink(session: ProviderLinkSession): Promise<void> {
@@ -434,9 +546,13 @@ export async function getFoundationModelStatus(): Promise<FoundationModelStatus>
 
 const foundationAnswerSchema = z.object({
   text: z.string(),
+  /** `unavailable` when the queries didn't return what the question needed. */
+  outcome: z.enum(['answered', 'unavailable']).default('answered'),
   evidence: z.array(ledgerCallSchema),
+  /** Figures the answer states that none of its queries returned, as written. */
+  unverified: z.array(z.string()).default([]),
 })
-/** An answer and the native ledger queries whose figures it may cite. */
+/** An answer, the native ledger queries whose figures it may cite, and any it couldn't. */
 export type FoundationAnswer = z.infer<typeof foundationAnswerSchema>
 
 /** Reruns one read-only ledger query over the saved snapshot, without the language model. */

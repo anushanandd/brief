@@ -138,76 +138,25 @@
 .subscription-price-change {
   color: var(--warning);
 }
-.spending-trips-card {
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
-}
-.trips-list {
-  margin: 4px 0 0;
-  padding: 0;
-  list-style: none;
-}
-.trips-list > li + li {
-  border-top: var(--hairline) solid var(--border-subtle);
-}
-.trips-row {
-  display: grid;
-  min-height: var(--row-height);
-  padding: 8px 0;
-  margin-inline: -8px;
-  padding-inline: 8px;
-  width: calc(100% + 16px);
-  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
+/* The selection's shared controls, above the list while anything is selected. */
+.activity-selection-bar {
+  display: flex;
+  flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  border: 0;
-  border-radius: var(--radius-inner);
-  background: none;
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  font-variant-numeric: tabular-nums;
-}
-.trips-row:hover {
-  background: var(--hover-wash);
-}
-.trips-row[aria-pressed='true'] {
-  background: var(--sidebar-accent);
-}
-.trips-copy {
-  display: grid;
-  min-width: 0;
-  gap: 2px;
-}
-.trips-copy > strong {
-  overflow: hidden;
-  font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.trips-copy small,
-.trips-copy > strong > small {
-  color: var(--text-tertiary);
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
   font-size: var(--type-meta);
-  font-weight: 400;
 }
-.activity-flag {
-  color: var(--warning);
-}
-/* The date on one line, its status as an icon beside it. */
-/* The date stays centered in its column whether or not it has a status; the icon hangs past
-   its right edge, in room the column keeps on both sides. */
-.financial-activity-date-line {
-  position: relative;
+.activity-selection-bar > strong {
   display: inline-flex;
-  min-width: 0;
   align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  font-weight: 500;
 }
-.financial-activity-status {
-  position: absolute;
-  left: calc(100% + 6px);
-  display: inline-flex;
-  color: var(--text-tertiary);
-}
-.financial-activity-status.activity-flag {
-  color: var(--warning);
+.activity-selection-bar form {
+  display: contents;
 }

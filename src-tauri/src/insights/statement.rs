@@ -6,7 +6,7 @@ use chrono::{Datelike, Duration, NaiveDate};
 use regex::Regex;
 use serde::Serialize;
 
-use super::calendar::{self, Zone};
+use super::calendar;
 use crate::finance_contract::CreditLiability;
 use crate::finance_contract::Transaction;
 
@@ -48,8 +48,8 @@ pub struct StatementCycle {
 }
 
 /// Posted autopay receipts on or before the reference day, one per date.
-pub fn autopays(transactions: &[&Transaction], reference: &str, zone: &dyn Zone) -> Vec<Autopay> {
-    let reference_day = calendar::transaction_date(reference, reference, zone);
+pub fn autopays(transactions: &[&Transaction], reference: &str) -> Vec<Autopay> {
+    let reference_day = calendar::transaction_date(reference);
     let mut payments = transactions
         .iter()
         .filter_map(|transaction| {
@@ -58,7 +58,7 @@ pub fn autopays(transactions: &[&Transaction], reference: &str, zone: &dyn Zone)
                 transaction.merchant,
                 transaction.description.as_deref().unwrap_or("")
             );
-            let date = calendar::transaction_date(transaction.posted_date(), reference, zone)?;
+            let date = calendar::transaction_date(transaction.posted_date())?;
             (transaction.amount > 0.0 && !transaction.pending && AUTOPAY.is_match(&text)).then_some(
                 Autopay {
                     date,
@@ -81,17 +81,13 @@ fn months_between(earlier: NaiveDate, later: NaiveDate) -> i64 {
 fn monthly_boundaries(
     transactions: &[&Transaction],
     reference_day: NaiveDate,
-    reference: &str,
     typical_day: u32,
     observed: &BTreeMap<(i32, u32), NaiveDate>,
     fallback_first: NaiveDate,
-    zone: &dyn Zone,
 ) -> Vec<NaiveDate> {
     let first = transactions
         .iter()
-        .filter_map(|transaction| {
-            calendar::transaction_date(transaction.posted_date(), reference, zone)
-        })
+        .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
         .min()
         .unwrap_or(fallback_first);
     let coverage = calendar::add_months_first(reference_day, -25);
@@ -118,12 +114,8 @@ struct AutopayEvidence {
 }
 
 /// Closing days observed from a stable autopay cadence, or `None` without consistent evidence.
-fn autopay_evidence(
-    transactions: &[&Transaction],
-    reference: &str,
-    zone: &dyn Zone,
-) -> Option<AutopayEvidence> {
-    let dates = autopays(transactions, reference, zone)
+fn autopay_evidence(transactions: &[&Transaction], reference: &str) -> Option<AutopayEvidence> {
+    let dates = autopays(transactions, reference)
         .into_iter()
         .map(|payment| payment.date)
         .collect::<Vec<_>>();
@@ -165,25 +157,19 @@ fn autopay_evidence(
 }
 
 /// Closing dates inferred from a stable autopay cadence; empty without consistent evidence.
-pub fn autopay_boundaries(
-    transactions: &[&Transaction],
-    reference: &str,
-    zone: &dyn Zone,
-) -> Vec<NaiveDate> {
+pub fn autopay_boundaries(transactions: &[&Transaction], reference: &str) -> Vec<NaiveDate> {
     let (Some(reference_day), Some(evidence)) = (
-        calendar::transaction_date(reference, reference, zone),
-        autopay_evidence(transactions, reference, zone),
+        calendar::transaction_date(reference),
+        autopay_evidence(transactions, reference),
     ) else {
         return Vec::new();
     };
     monthly_boundaries(
         transactions,
         reference_day,
-        reference,
         evidence.typical_day,
         &evidence.observed,
         evidence.first_close,
-        zone,
     )
 }
 
@@ -192,9 +178,8 @@ pub fn cycle(
     transactions: &[&Transaction],
     reference: &str,
     liability: Option<&CreditLiability>,
-    zone: &dyn Zone,
 ) -> Option<StatementCycle> {
-    let reference_day = calendar::transaction_date(reference, reference, zone)?;
+    let reference_day = calendar::transaction_date(reference)?;
     let issuer_close = liability
         .and_then(|liability| liability.last_statement_date.as_deref())
         .and_then(|date| NaiveDate::parse_from_str(date, "%Y-%m-%d").ok())
@@ -203,26 +188,18 @@ pub fn cycle(
         Some(close) => {
             // The issuer's latest closing date is exact and sets the usual day; older months
             // keep any closings observed from autopay evidence.
-            let mut observed = autopay_evidence(transactions, reference, zone)
+            let mut observed = autopay_evidence(transactions, reference)
                 .map(|evidence| evidence.observed)
                 .unwrap_or_default();
             observed.insert((close.year(), close.month()), close);
             (
                 StatementSource::Issuer,
-                monthly_boundaries(
-                    transactions,
-                    reference_day,
-                    reference,
-                    close.day(),
-                    &observed,
-                    close,
-                    zone,
-                ),
+                monthly_boundaries(transactions, reference_day, close.day(), &observed, close),
             )
         }
         None => (
             StatementSource::Autopay,
-            autopay_boundaries(transactions, reference, zone),
+            autopay_boundaries(transactions, reference),
         ),
     };
     if boundaries.is_empty() {
@@ -240,7 +217,7 @@ pub fn cycle(
             .find(|date| **date > reference_day)
             .copied(),
         boundaries,
-        autopays: autopays(transactions, reference, zone),
+        autopays: autopays(transactions, reference),
         liability: liability.cloned(),
     })
 }

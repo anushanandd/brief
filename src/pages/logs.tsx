@@ -35,8 +35,47 @@ const syncRunSummary = (run: SyncRun) => {
     const retry = failure.retryAt ? ` · retry after ${formatTime(failure.retryAt)}` : ''
     return `${failure.provider} · ${reason}${attempts}${retry}`
   }
-  if (run.details.warningCount) return `${run.details.warningCount} warning(s)`
+  if (run.details.warningCount) return countOf(run.details.warningCount, 'warning')
   return run.errorCode ? run.details.phase.replaceAll('_', ' ') : 'No warnings'
+}
+
+const seconds = (millis: number) => `${(millis / 1_000).toFixed(1)} s`
+const size = (bytes: number) =>
+  bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.ceil(bytes / 1_000)} KB`
+
+// Each provider's time, requests, retries, and download size, then the stages and the snapshot
+// the app received. Counts and timings only.
+const syncRunDetail = (run: SyncRun) => {
+  const { runs = [], stages = {}, snapshotBytes, changes } = run.details
+  const changed = changes
+    ? [
+        changes.added ? `${changes.added} new` : null,
+        changes.settled ? `${changes.settled} settled` : null,
+        changes.removed ? `${changes.removed} removed` : null,
+        changes.amended ? `${changes.amended} amended` : null,
+        changes.backfilled ? `${changes.backfilled} older` : null,
+      ].filter(Boolean)
+    : []
+  return [
+    changed.length ? changed.join(', ') : null,
+    ...runs.map((provider) =>
+      [
+        provider.provider,
+        provider.durationMs === undefined ? null : seconds(provider.durationMs),
+        countOf(provider.requests, 'request'),
+        provider.retries ? countOf(provider.retries, 'retry', 'retries') : null,
+        provider.bytes ? size(provider.bytes) : null,
+      ]
+        .filter(Boolean)
+        .join(' '),
+    ),
+    stages.fetchMs === undefined ? null : `fetch ${seconds(stages.fetchMs)}`,
+    stages.projectMs === undefined ? null : `project ${seconds(stages.projectMs)}`,
+    stages.commitMs === undefined ? null : `save ${seconds(stages.commitMs)}`,
+    snapshotBytes === undefined ? null : `snapshot ${size(snapshotBytes)}`,
+  ]
+    .filter(Boolean)
+    .join(' · ')
 }
 
 const summaryRunTitle = (run: SummaryRun) =>
@@ -234,7 +273,7 @@ export function LogsPage() {
         <Card className="logs-card">
           <SectionHeading
             title="Quote timestamps"
-            action={<span className="logs-count">{quoteUpdates.length} symbols</span>}
+            action={<span className="logs-count">{countOf(quoteUpdates.length, 'symbol')}</span>}
           />
           <div className="market-data-list">
             {quoteUpdates.map(({ ticker, updatedAt }) => (
@@ -257,6 +296,7 @@ export function LogsPage() {
                 <div>
                   <strong>{run.outcome === 'committed' ? 'Committed' : 'Failed safely'}</strong>
                   <small>{syncRunSummary(run)}</small>
+                  {syncRunDetail(run) ? <small>{syncRunDetail(run)}</small> : null}
                 </div>
                 <time dateTime={run.finishedAt}>{formatTime(run.finishedAt)}</time>
               </div>
@@ -278,7 +318,7 @@ export function LogsPage() {
                     run.outcome === 'ok'
                       ? 'positive'
                       : run.outcome === 'partial'
-                        ? 'neutral'
+                        ? 'warning'
                         : 'negative'
                   }
                 />

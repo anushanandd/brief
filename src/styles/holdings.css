@@ -788,3 +788,58 @@ div.investments-attention-row:hover {
 .investments-performance-row[aria-pressed='true'] > span:first-child {
   font-weight: 500;
 }
+
+/* Retirement: each limit as its figure over a thin track, then what's next for it. */
+.retirement-limits {
+  display: grid;
+  gap: 16px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.retirement-limit {
+  display: grid;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.retirement-limit-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: var(--type-body);
+}
+.retirement-limit-heading > strong {
+  font-weight: 500;
+}
+.retirement-limit-heading small,
+.retirement-limit > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.retirement-limit-heading > span {
+  white-space: nowrap;
+}
+.retirement-limit-track {
+  display: flex;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-small);
+  background: var(--hover-wash);
+}
+.retirement-limit-track > span {
+  border-radius: var(--radius-small);
+  background: var(--accent);
+}
+.retirement-subheading {
+  margin: 20px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.retirement-inflow {
+  grid-template-columns: 44px var(--mark-size) minmax(0, 1fr) auto auto;
+}
+.retirement-metrics > .metric {
+  flex-basis: calc(33.333% - 16px);
+}

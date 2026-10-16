@@ -15,6 +15,7 @@ import {
 } from '../../lib/market-preferences'
 import { advancedPreferenceKeys } from '../../lib/settings-preferences'
 import { ChevronRight, Palette, ScrollText, ShieldCheck } from '../icons'
+import { Keys } from '../keys'
 import {
   SettingsBlock,
   SettingsCard,
@@ -24,6 +25,7 @@ import {
   SettingsSwitch,
 } from '../settings-ui'
 import { ChartRangeSelect } from '../ui'
+import { CalendarSyncCard } from './calendar'
 
 export function MarketSection() {
   const [marketUpdateInterval, setMarketUpdateInterval] = useState(getMarketUpdateInterval)
@@ -117,6 +119,13 @@ function BackgroundRefreshCard() {
         />
       </SettingsRow>
       <SettingsRow
+        id="global-shortcut"
+        title="System-wide shortcut"
+        description="Brings Brief forward with the command palette open, from any app."
+      >
+        <Keys label="⇧⌘B" />
+      </SettingsRow>
+      <SettingsRow
         id="open-at-login"
         title="Open at login"
         description={
@@ -143,6 +152,7 @@ export function AdvancedSection() {
   return (
     <SettingsSection id="advanced" title="Advanced">
       <BackgroundRefreshCard />
+      <CalendarSyncCard />
       <SettingsCard>
         <SettingsBlock id="diagnostics" title="Diagnostics">
           <div className="settings-destination-list">
@@ -183,6 +193,16 @@ export function AdvancedSection() {
             <div>
               <span>Hosted backend</span>
               <strong>None</strong>
+            </div>
+            {/* Places read from bank descriptors use this bundled city list. */}
+            <div>
+              <span>City data</span>
+              <strong>GeoNames · CC BY 4.0</strong>
+            </div>
+            {/* Businesses matched to purchases come from Overture's places release. */}
+            <div>
+              <span>Place data</span>
+              <strong>Overture Maps · CDLA-Permissive-2.0, Apache-2.0, CC0</strong>
             </div>
           </div>
         </SettingsBlock>

@@ -9,7 +9,9 @@ import {
 import { AppShell } from './components/app-shell'
 import type { LedgerSearch } from './lib/activity-ledger'
 import { analyticsChart, analyticsSearch } from './lib/analytics'
+import { calendarSearch } from './lib/calendar'
 import { validDate } from './lib/dates'
+import { insightsSearch } from './lib/insights-views'
 import { settingsHash } from './lib/settings-dialog'
 import { settingsHashForPath } from './lib/settings-search'
 import { spendingRanges, type SpendingRange } from './lib/spending'
@@ -42,11 +44,13 @@ const amountBound = (value: unknown) => {
   const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
   return Number.isFinite(amount) && amount >= 0 ? amount : undefined
 }
+const evidenceValues = ['statement', 'unlisted', 'conflict', 'unsure'] as const
 const ledgerSearch = (search: Record<string, unknown>): LedgerSearch => {
   const from = validDate(search.from)
   const to = validDate(search.to)
   const min = amountBound(search.min)
   const max = amountBound(search.max)
+  const evidence = evidenceValues.find((value) => value === search.evidence)
   return {
     ...(analyticsChart(search.analysis) ? { analysis: analyticsChart(search.analysis) } : {}),
     ...(typeof search.account === 'string' && search.account ? { account: search.account } : {}),
@@ -56,6 +60,7 @@ const ledgerSearch = (search: Record<string, unknown>): LedgerSearch => {
     ...(typeof search.exclude === 'string' && search.exclude ? { exclude: search.exclude } : {}),
     ...(typeof search.method === 'string' && search.method ? { method: search.method } : {}),
     ...(search.for === 'me' || search.for === 'other' ? { for: search.for } : {}),
+    ...(evidence ? { evidence } : {}),
     ...(typeof search.q === 'string' && search.q.trim() ? { q: search.q } : {}),
     ...(from ? { from } : {}),
     ...(to ? { to } : {}),
@@ -89,6 +94,8 @@ const performanceRoute = createRoute({
     throw redirect({ to: '/holdings', replace: true })
   },
 })
+// A fixed segment outranks `$ticker`, so no holding can take this address.
+const retirementRoute = createRoute({ getParentRoute: () => holdingsRoute, path: 'retirement' })
 const securityRoute = createRoute({ getParentRoute: () => holdingsRoute, path: '$ticker' })
 const activitiesRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -101,16 +108,60 @@ const spendingRoute = createRoute({
   path: '/spending',
   validateSearch: (
     search: Record<string, unknown>,
-  ): { account?: string; range?: SpendingRange } => {
+  ): { account?: string; range?: SpendingRange; for?: 'other' | 'all' } => {
     const range = spendingRanges.find((item) => item === search.range)
-    return { ...accountSearch(search), ...(range ? { range } : {}) }
+    // Your own spending is the default, so it never appears in the URL.
+    const owner = search.for === 'other' || search.for === 'all' ? search.for : undefined
+    return {
+      ...accountSearch(search),
+      ...(range ? { range } : {}),
+      ...(owner ? { for: owner } : {}),
+    }
   },
   component: lazyRouteComponent(() => import('./pages/spending'), 'SpendingPage'),
 })
+const insightsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/insights',
+  validateSearch: insightsSearch,
+  component: lazyRouteComponent(() => import('./pages/insights'), 'InsightsPage'),
+})
+const calendarRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/calendar',
+  validateSearch: calendarSearch,
+  component: lazyRouteComponent(() => import('./pages/calendar'), 'CalendarPage'),
+})
+const documentsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/documents',
+  validateSearch: (search: Record<string, unknown>): { year?: number; document?: string } => {
+    const year = Number(search.year)
+    return {
+      ...(Number.isInteger(year) && year > 1990 && year < 2200 ? { year } : {}),
+      ...(typeof search.document === 'string' && /^[0-9a-f]{64}$/.test(search.document)
+        ? { document: search.document }
+        : {}),
+    }
+  },
+  component: lazyRouteComponent(() => import('./pages/documents'), 'DocumentsPage'),
+})
+// Trips moved under Insights; keep old links working.
+const tripsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/trips',
+  validateSearch: insightsSearch,
+  beforeLoad: ({ search }) => {
+    throw redirect({ to: '/insights', search })
+  },
+})
+// Subscriptions moved onto Spending; keep old links working.
 const recurringRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/recurring',
-  component: lazyRouteComponent(() => import('./pages/recurring'), 'RecurringPage'),
+  beforeLoad: () => {
+    throw redirect({ to: '/spending', replace: true })
+  },
 })
 const platinumBenefitsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -193,12 +244,16 @@ const routeTree = rootRoute.addChildren([
   homeRoute,
   overviewRoute,
   accountsRoute,
-  holdingsRoute.addChildren([holdingsIndexRoute, performanceRoute, securityRoute]),
+  holdingsRoute.addChildren([holdingsIndexRoute, performanceRoute, retirementRoute, securityRoute]),
   taxesRoute,
   activitiesRoute,
   spendingRoute,
   recurringRoute,
   platinumBenefitsRoute,
+  insightsRoute,
+  calendarRoute,
+  documentsRoute,
+  tripsRoute,
   moneyRoute,
   analyticsRoute,
   spendingActivityRoute,

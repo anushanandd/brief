@@ -34,11 +34,16 @@ it('imports legacy renderer settings once and removes them only after the native
       hiddenBenefitIds: ['resy', 'oura'],
       accountNames: { 'plaid:card': 'Card' },
       accountStartDates: { 'plaid:card': '2026-01-01' },
+      accountClosedDates: {},
+      manualAccounts: [],
       plaidLiabilities: false,
       plaidInvestmentTransactions: false,
       plaidRecurring: false,
       backgroundRefresh: false,
       notifications: false,
+      calendarSync: false,
+      people: [],
+      tripCompanions: [],
     },
   })
   expect(localStorage.getItem('brief:spending-account-id')).toBeNull()
@@ -57,11 +62,16 @@ it('uses empty defaults when a snapshot has no saved settings', () => {
   expect(financeSettings(undefined)).toEqual({
     accountNames: {},
     accountStartDates: {},
+    accountClosedDates: {},
+    manualAccounts: [],
     hiddenBenefitIds: [],
     plaidLiabilities: false,
     plaidInvestmentTransactions: false,
     plaidRecurring: false,
     backgroundRefresh: false,
     notifications: false,
+    calendarSync: false,
+    people: [],
+    tripCompanions: [],
   })
 })

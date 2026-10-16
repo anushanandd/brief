@@ -112,19 +112,17 @@ const categoryPatterns: { test: RegExp; icon: IconComponent; color?: string }[] 
   { test: /service|repair/, icon: Wrench, color: 'var(--data-2)' },
 ]
 
-export function CategoryMark({
-  category,
-  kind,
-  mark,
-  amount,
-  className,
-}: {
+type MarkInput = {
   category: string
   kind?: ActivityItem['kind']
   mark?: ActivityItem['mark']
   amount?: number
-  className?: string
-}) {
+}
+
+/** The color an activity's category mark wears, for anything that labels it elsewhere. */
+export const categoryColor = (input: MarkInput) => categoryMark(input).color
+
+function categoryMark({ category, kind, mark, amount }: MarkInput) {
   const name = category.trim().toLocaleLowerCase()
   const selected =
     kind === 'transfer' || mark === 'transfer'
@@ -145,8 +143,11 @@ export function CategoryMark({
           ? 'var(--positive)'
           : 'var(--negative)'
       : (selected?.color ?? inferred?.color ?? spendingCategoryColor(category))
-  const Icon = selected?.icon ?? inferred?.icon ?? Tag
+  return { color, icon: selected?.icon ?? inferred?.icon ?? Tag }
+}
 
+export function CategoryMark({ className, ...input }: MarkInput & { className?: string }) {
+  const { color, icon: Icon } = categoryMark(input)
   return (
     <span
       className={`transaction-mark category-mark${className ? ` ${className}` : ''}`}

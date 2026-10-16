@@ -3,9 +3,10 @@ import { Link } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
+import { usePortfolioSectors } from '../hooks/use-portfolio-sectors'
 import { accountDisplayName } from '../lib/account-names'
 import { analyticsEntries, analyticsTotal } from '../lib/analytics'
-import { getEarningsCalendar, getPortfolioSectors, getPortfolioToday, isTauri } from '../lib/api'
+import { getEarningsCalendar, getPortfolioToday, isTauri } from '../lib/api'
 import { addDays, localDateKey } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import {
@@ -56,7 +57,7 @@ export function usePortfolioToday(revision: number | undefined, connected: boole
 
 /**
  * The page's one period, chosen from the main chart card with the app's chart range control.
- * It is the period Today and Accounts share, and every card here follows it.
+ * It is the period Home and Accounts share, and every card here follows it.
  */
 export function InvestmentRangeSelect() {
   const [graphWindow, setGraphWindow] = useGraphWindow()
@@ -241,16 +242,9 @@ export function PeriodCard({
 
 /** Only what calls for a decision, and only when something does. */
 export function InvestmentsAttention({ data }: { data: FinanceSnapshot }) {
-  const native = typeof window !== 'undefined' && isTauri()
   const attention = data.insights?.investmentAttention
   // Exposure shares this request; a sector at a third or more of stocks is a decision too.
-  const sectors = useQuery({
-    queryKey: ['portfolio-sectors', data.revision],
-    queryFn: getPortfolioSectors,
-    enabled: native && Boolean(data.insights?.allocation),
-    staleTime: 60 * 60_000,
-    retry: false,
-  })
+  const sectors = usePortfolioSectors(data, Boolean(data.insights?.allocation))
   const concentrated = sectors.data?.concentrated
   const names = financeSettings(data).accountNames
   const accountName = (id: string) =>

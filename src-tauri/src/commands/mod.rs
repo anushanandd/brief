@@ -2,9 +2,11 @@
 //! it needs; storage, providers, and insights do the work.
 pub(crate) mod assistant;
 pub(crate) mod backups;
+pub(crate) mod documents;
 pub(crate) mod finance;
 pub(crate) mod integrations;
 pub(crate) mod investments;
+pub(crate) mod places;
 
 use tauri::State;
 

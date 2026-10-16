@@ -605,12 +605,13 @@ impl Providers {
             .header("APCA-API-SECRET-KEY", &credentials.secret_key)
             .query(parameters);
         let retry = request.try_clone();
-        let response = send_with_retry(request, retry)
-            .await
-            .map_err(|(_, attempts)| {
-                http::observe(&http::ProviderError::network("Alpaca", path, attempts));
-                "Could not reach Alpaca".to_string()
-            })?;
+        let response =
+            send_with_retry("Alpaca", request, retry)
+                .await
+                .map_err(|(_, attempts)| {
+                    http::observe(&http::ProviderError::network("Alpaca", path, attempts));
+                    "Could not reach Alpaca".to_string()
+                })?;
         provider_response("Alpaca", path, response).await
     }
 }

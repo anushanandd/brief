@@ -59,11 +59,7 @@
 .account-switcher {
   min-width: 0;
   max-width: 100%;
-  padding: 4px;
-  border: var(--hairline) solid var(--glass-edge);
-  border-radius: var(--radius-card);
-  background: var(--card-fill);
-  backdrop-filter: var(--glass-filter);
+  padding: 4px 0;
 }
 /* One rail for every selector: it scrolls instead of wrapping into orphan rows. */
 .account-switcher-grid {
@@ -147,6 +143,7 @@
 }
 .account-switcher-button:active {
   transform: scale(0.985);
+  transition-duration: 0s;
 }
 .account-switcher-button[aria-current='page'] {
   background: var(--sidebar-accent);
@@ -218,7 +215,6 @@
 .account-overview-chart-card {
   position: relative;
   padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
-  background: var(--card-fill);
 }
 .account-overview-chart-card .monthly-bar-chart {
   height: 330px;
@@ -374,58 +370,6 @@
   align-items: start;
   gap: 16px;
 }
-.accounts-composition-card {
-  padding-bottom: var(--card-padding-end);
-}
-.accounts-composition-bar {
-  display: flex;
-  height: 8px;
-  margin: 12px 0 4px;
-  overflow: hidden;
-  gap: 2px;
-  border-radius: 999px;
-}
-.accounts-composition-bar > i {
-  display: block;
-  min-width: 2px;
-  height: 100%;
-}
-.accounts-composition {
-  margin: 8px 0 0;
-}
-.accounts-composition > div {
-  display: flex;
-  font-size: var(--type-body);
-  min-height: 36px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  border-bottom: var(--hairline) solid var(--border-subtle);
-  font-variant-numeric: tabular-nums;
-}
-.accounts-composition > div:last-child {
-  border-bottom: 0;
-}
-.accounts-composition dt {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-secondary);
-}
-.accounts-composition dd {
-  display: flex;
-  margin: 0;
-  align-items: baseline;
-  gap: 8px;
-  white-space: nowrap;
-}
-.accounts-composition dd > small {
-  min-width: 44px;
-  color: var(--text-tertiary);
-  font-size: var(--type-meta);
-  text-align: right;
-}
 .accounts-connection-notice {
   display: flex;
   padding: 12px 16px;
@@ -467,6 +411,11 @@
 }
 .account-group-section-heading > small {
   font-size: var(--type-meta);
+}
+.account-group-section-heading > h3 > small {
+  color: var(--text-tertiary);
+  font-size: inherit;
+  font-weight: 400;
 }
 .account-group-section-heading > strong {
   /* Lines up with the row values above the chevron column. */
@@ -527,5 +476,63 @@
 }
 .account-details-more > summary > small {
   color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+/* Each bank statement is one row that opens its PDF. */
+.account-statement-list {
+  display: grid;
+  padding-bottom: 4px;
+}
+.account-statement-row {
+  display: flex;
+  min-height: var(--row-height-compact);
+  padding: 6px 0;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--type-body);
+  text-align: left;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.account-statement-row:last-child {
+  border-bottom: 0;
+}
+a.account-statement-row {
+  text-decoration: none;
+}
+.account-statements > .button-base,
+.account-statement-import {
+  margin-top: 8px;
+}
+.account-statement-import {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 8px;
+}
+.account-statement-import > p {
+  display: grid;
+  min-width: 0;
+  margin: 0;
+  gap: 2px;
+}
+.account-statement-import small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.account-statement-row:hover {
+  background: var(--hover-wash);
+}
+.account-statement-row > strong {
+  font-weight: 500;
+}
+.account-statement-row > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
   font-variant-numeric: tabular-nums;
 }

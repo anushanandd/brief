@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use chrono::NaiveDate;
 use serde::Serialize;
 
-use super::calendar::{self, Zone};
+use super::calendar;
 use super::forecast::{recurring_key, EventKind, EventState, ExpectedEvent};
 use crate::finance_contract::Transaction;
 use crate::numeric::minor_units;
@@ -63,19 +63,15 @@ fn changed(previous: i64, latest: i64) -> bool {
 /// Price changes per series, from posted charges: the latest differs from the one before,
 /// which itself matched the charge before it when there was one, so a series whose amount
 /// always varies never reads as repriced.
-fn price_changes(
-    transactions: &[Transaction],
-    reference: &str,
-    zone: &dyn Zone,
-) -> BTreeMap<String, PriceChange> {
+fn price_changes(transactions: &[Transaction]) -> BTreeMap<String, PriceChange> {
     let mut series = BTreeMap::<String, Vec<(NaiveDate, &Transaction)>>::new();
     for transaction in transactions
         .iter()
         .filter(|transaction| !transaction.pending && transaction.amount < 0.0)
     {
-        if let Some(date) = calendar::transaction_date(transaction.posted_date(), reference, zone) {
+        if let Some(date) = calendar::transaction_date(transaction.posted_date()) {
             series
-                .entry(recurring_key(transaction, zone))
+                .entry(recurring_key(transaction))
                 .or_default()
                 .push((date, transaction));
         }
@@ -107,13 +103,8 @@ fn price_changes(
         .collect()
 }
 
-pub fn subscriptions(
-    events: &[ExpectedEvent],
-    transactions: &[Transaction],
-    reference: &str,
-    zone: &dyn Zone,
-) -> Subscriptions {
-    let changes = price_changes(transactions, reference, zone);
+pub fn subscriptions(events: &[ExpectedEvent], transactions: &[Transaction]) -> Subscriptions {
+    let changes = price_changes(transactions);
     let mut items = events
         .iter()
         .filter(|event| event.kind == EventKind::Subscription && event.amount < 0.0)
@@ -187,8 +178,6 @@ mod tests {
                 event("pay", EventKind::Income, 2_000.0, 24),
             ],
             &[],
-            "2026-09-16T12:00:00Z",
-            &calendar::NamedZone::Utc,
         );
         let monthly = result
             .items
@@ -214,14 +203,12 @@ mod tests {
 
     #[test]
     fn reports_a_new_price_only_after_a_steady_one() {
-        let zone = calendar::NamedZone::Utc;
-        let reference = "2026-09-16T12:00:00Z";
         let raised = [
             charge("june", "2026-06-05", -11.99),
             charge("july", "2026-07-05", -11.99),
             charge("august", "2026-08-05", -13.99),
         ];
-        let changes = price_changes(&raised, reference, &zone);
+        let changes = price_changes(&raised);
         let change = changes.values().next().unwrap();
         assert_eq!((change.previous, change.latest), (-11.99, -13.99));
         assert_eq!(change.changed_on, day("2026-08-05"));
@@ -233,11 +220,11 @@ mod tests {
             charge("july", "2026-07-05", -95.40),
             charge("august", "2026-08-05", -70.25),
         ];
-        assert!(price_changes(&variable, reference, &zone).is_empty());
+        assert!(price_changes(&variable).is_empty());
         let drift = [
             charge("july", "2026-07-05", -11.99),
             charge("august", "2026-08-05", -12.04),
         ];
-        assert!(price_changes(&drift, reference, &zone).is_empty());
+        assert!(price_changes(&drift).is_empty());
     }
 }

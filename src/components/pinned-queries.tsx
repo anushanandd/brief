@@ -28,7 +28,7 @@ function PinnedCard({ pin, onRemove }: { pin: Pin; onRemove: () => void }) {
             icon={X}
             size="icon-compact"
             variant="ghost"
-            aria-label={`Remove ${view.title} from Today`}
+            aria-label={`Remove ${view.title} from Home`}
             onClick={onRemove}
           />
         }

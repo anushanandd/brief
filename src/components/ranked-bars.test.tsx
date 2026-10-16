@@ -4,8 +4,8 @@ import { expect, it } from 'vitest'
 import { RankedBars } from './ranked-bars'
 
 const items = [
-  { name: 'Dining', value: 40, color: 'red', typical: 25, details: <p>Dining merchants</p> },
-  { name: 'Travel', value: 10, color: 'blue', typical: null, details: <p>Travel merchants</p> },
+  { name: 'Dining', value: 40, color: 'red', mark: 25, details: <p>Dining merchants</p> },
+  { name: 'Travel', value: 10, color: 'blue', mark: null, details: <p>Travel merchants</p> },
 ]
 
 it('selects one row for the page and shows only its details', () => {
@@ -25,12 +25,12 @@ it('selects one row for the page and shows only its details', () => {
   expect(html).toContain('data-dimmed="true"')
 })
 
-it('marks the usual amount on the track and names it for assistive technology', () => {
+it('marks the compared amount on the track and names it for assistive technology', () => {
   const html = renderToStaticMarkup(
     <RankedBars items={items} label="Spending by category" emptyMessage="None." />,
   )
-  expect(html.match(/class="ranked-bars-typical"/g)).toHaveLength(1)
-  expect(html).toContain('usually $25.00 by this point')
+  expect(html.match(/class="ranked-bars-mark"/g)).toHaveLength(1)
+  expect(html).toContain(', usually by this point $25.00')
   expect(html).not.toContain('aria-pressed')
 })
 

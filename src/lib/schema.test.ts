@@ -43,6 +43,38 @@ it('accepts the native serialized contract without losing fields or changing val
   expect(financeSnapshotSchema.parse(nativeFinance)).toEqual(nativeFinance)
 })
 
+it('accepts a manual account valued by hand or by its statements', () => {
+  const parsed = financeSnapshotSchema.parse({
+    ...empty,
+    accounts: [
+      ...empty.accounts,
+      { id: 'manual:plan', name: 'Plan', institution: 'Manual', type: 'retirement', value: null },
+    ],
+    accountBalanceHistory: [
+      {
+        accountId: 'manual:plan',
+        name: 'Plan',
+        institution: 'Manual',
+        currentValue: 180,
+        historySource: 'manual',
+        historyStart: '2026-08-01',
+        // As Rust serializes a manual point: no deposits, benchmark, or market change.
+        points: [
+          {
+            date: '2026-08-01',
+            value: 100,
+            netDeposits: null,
+            sp500: null,
+            marketChange: null,
+            marketChangePct: null,
+          },
+        ],
+      },
+    ],
+  })
+  expect(parsed.accountBalanceHistory[0].historySource).toBe('manual')
+})
+
 it('preserves news tags and rejects unknown tags and unsafe links', () => {
   const article = {
     headline: 'Synthetic news',

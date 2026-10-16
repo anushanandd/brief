@@ -16,7 +16,6 @@ import {
   Palette,
   ReceiptText,
   Search,
-  WandSparkles,
   Wrench,
   X,
 } from '../components/icons'
@@ -31,7 +30,6 @@ import {
 } from '../components/settings/appearance'
 import { ConnectionsSection } from '../components/settings/connections'
 import { DataSection, PrivacySection } from '../components/settings/data'
-import { RulesSection } from '../components/settings/rules'
 import { TaxesSection } from '../components/settings/taxes'
 import { Button, EmptyState, StatusDot } from '../components/ui'
 import { useFinance } from '../hooks/use-finance'
@@ -50,7 +48,6 @@ function reducedMotion() {
 
 const sectionIcons: Record<SettingsSectionId, IconComponent> = {
   connections: Link2,
-  rules: WandSparkles,
   accounts: Landmark,
   taxes: ReceiptText,
   appearance: Palette,
@@ -328,7 +325,6 @@ export function SettingsPanel({
           <ConnectionsSection />
           <AccountsSection />
           <TaxesSection />
-          <RulesSection />
           <AppearanceSection />
           <ChartsSection />
           <NavigationSection />

@@ -40,6 +40,7 @@ pub(super) fn snap_transactions(
                 });
             }
         }
+        let mut flow = None;
         let (label, category, amount) = if kind.contains("DIVIDEND") {
             ("Dividend", "Dividend", activity.amount)
         } else if kind.contains("INTEREST") {
@@ -49,6 +50,15 @@ pub(super) fn snap_transactions(
         } else if kind.contains("TAX") {
             ("Investment tax", "Taxes", activity.amount)
         } else if let Some(amount) = external_flow(activity) {
+            flow = Some(if kind.contains("CONTRIBUTION") {
+                "contribution"
+            } else if kind == "DEPOSIT" {
+                "deposit"
+            } else if kind.contains("WITHDRAWAL") {
+                "withdrawal"
+            } else {
+                "transfer"
+            });
             (
                 if amount.is_sign_negative() {
                     "Transfer out"
@@ -79,6 +89,7 @@ pub(super) fn snap_transactions(
             description: activity.description.clone(),
             occurred_on: iso_date(activity.trade_date.as_deref()),
             posted_on,
+            flow: flow.map(str::to_owned),
             ..cash_row(
                 format!("snaptrade:{}:{id}", account.id),
                 merchant,

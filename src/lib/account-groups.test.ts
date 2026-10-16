@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { accountGroups } from './account-groups'
+import { accountGroups, balanceSheet } from './account-groups'
 import type { Account } from './schema'
 
 const account = (id: string, type: string, value: number | null): Account => ({
@@ -43,4 +43,17 @@ it('leaves a total unavailable when any account in the group is unknown', () => 
   expect(group.label).toBe('Loan')
   expect(group.value).toBeNull()
   expect(group.change).toBeNull()
+})
+
+it('splits assets from liabilities in minor units and flags accounts without a value', () => {
+  expect(
+    balanceSheet([
+      account('checking', 'cash', 0.1),
+      account('savings', 'cash', 0.2),
+      account('card', 'credit', -20.1),
+    ]),
+  ).toEqual({ assets: 0.3, liabilities: -20.1, complete: true })
+  expect(
+    balanceSheet([account('checking', 'cash', 0.1), account('broker', 'brokerage', null)]),
+  ).toEqual({ assets: 0.1, liabilities: 0, complete: false })
 })

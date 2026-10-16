@@ -33,6 +33,21 @@
 .benefit-visibility-options label:hover {
   color: var(--text-primary);
 }
+.settings-inline-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.settings-inline-check > input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  accent-color: var(--accent);
+}
 .benefit-visibility-options input {
   width: 16px;
   height: 16px;
@@ -84,30 +99,38 @@
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: start;
-  gap: 16px;
-  margin-top: 16px;
+  margin-top: var(--card-padding);
 }
+/* The status strip reads like every page's metrics: dividers between, flush at the edges. */
 .diagnostics-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: 20px 0;
+  padding: var(--card-padding) 0 0;
 }
 .diagnostics-stat {
   display: grid;
   min-width: 0;
-  padding: 0 var(--card-padding);
+  padding: 0 16px;
   align-content: start;
-  gap: 6px;
+  gap: 4px;
+}
+.diagnostics-stat:first-child {
+  padding-left: 0;
+}
+.diagnostics-stat:last-child {
+  padding-right: 0;
 }
 .diagnostics-stat + .diagnostics-stat {
   border-left: var(--hairline) solid var(--border-subtle);
 }
 .diagnostics-stat-label {
   display: inline-flex;
+  margin-bottom: 4px;
   align-items: center;
   gap: 6px;
   color: var(--text-tertiary);
   font-size: var(--type-meta);
+  line-height: 1.4;
 }
 .diagnostics-stat-value {
   display: inline-flex;
@@ -337,7 +360,7 @@
   font-variant-numeric: tabular-nums;
 }
 .market-data-card {
-  margin-top: 16px;
+  margin-top: var(--card-padding);
 }
 .market-data-list {
   display: grid;
@@ -362,21 +385,28 @@
   font-weight: 600;
 }
 .market-data-row time {
-  font-family: var(--font-mono);
   color: var(--text-tertiary);
   font-size: var(--type-meta);
   white-space: nowrap;
   font-variant-numeric: tabular-nums;
 }
+/* Dot, title, and time share the first line; detail wraps beneath the title. */
 .activity-log-row {
   display: grid;
   grid-template-columns: 8px minmax(0, 1fr) auto;
-  align-items: center;
+  align-items: start;
   gap: 12px;
   min-height: 52px;
   border-bottom: var(--hairline) solid var(--border-subtle);
 }
-.activity-log-row > time {
+.activity-log-row > .status-dot {
+  margin-top: 6px;
+}
+.activity-log-row strong,
+.activity-log-row > :nth-child(3) {
+  line-height: var(--heading-line);
+}
+.activity-log-row > :nth-child(3) {
   white-space: nowrap;
   color: var(--text-tertiary);
   font-size: var(--type-meta);
@@ -404,6 +434,16 @@
   border: 0;
   background: transparent;
   color: var(--text-primary);
+  /* Rises in like Settings and settles back the same way. */
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    transform var(--duration-modal-lift) var(--ease-lift),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
+}
+.command-dialog:not([open]) {
+  opacity: 0;
+  transform: var(--modal-enter-from);
 }
 .command-palette-dialog {
   margin-top: min(32vh, 260px); /* scale-exempt: viewport offset */
@@ -412,15 +452,21 @@
   background: var(--dialog-backdrop);
   -webkit-backdrop-filter: var(--dialog-backdrop-filter);
   backdrop-filter: var(--dialog-backdrop-filter);
-  transition: opacity var(--duration-modal) var(--ease-out);
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
+}
+.command-dialog:not([open])::backdrop {
+  opacity: 0;
 }
 @starting-style {
-  .command-dialog[open]::backdrop {
-    opacity: 0;
-  }
-  .command-dialog[open] .command-popup {
+  .command-dialog[open] {
     opacity: 0;
     transform: var(--modal-enter-from);
+  }
+  .command-dialog[open]::backdrop {
+    opacity: 0;
   }
 }
 .command-popup {
@@ -430,10 +476,6 @@
   border-radius: var(--radius-card);
   background: var(--popup-sheen), var(--popup-surface);
   box-shadow: var(--shadow-modal);
-  transform-origin: top center;
-  transition:
-    opacity var(--duration-modal) var(--ease-out),
-    transform var(--duration-modal-lift) var(--ease-lift);
 }
 .command-input-wrap {
   display: flex;

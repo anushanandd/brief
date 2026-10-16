@@ -92,3 +92,32 @@ it('shows a compact provider failure without exposing raw provider payloads', ()
   expect(html).toContain('retry after')
   expect(html).not.toContain('/accounts/balance/get')
 })
+
+it('shows what each provider used and how long each stage took', () => {
+  const html = renderLogs([
+    {
+      id: 'run',
+      startedAt: '2026-09-18T20:00:00Z',
+      finishedAt: '2026-09-18T20:00:08Z',
+      outcome: 'committed',
+      warnings: [],
+      details: {
+        phase: 'committed',
+        warningCount: 0,
+        providers: [],
+        runs: [
+          { provider: 'Plaid', requests: 7, retries: 1, bytes: 312_000, durationMs: 4_200 },
+          { provider: 'Alpaca', requests: 2, retries: 0, bytes: 800 },
+        ],
+        stages: { fetchMs: 6_400, projectMs: 800, commitMs: 150 },
+        snapshotBytes: 2_400_000,
+        changes: { added: 12, settled: 1, removed: 0, amended: 0, backfilled: 40 },
+      },
+    },
+  ])
+
+  expect(html).toContain('12 new, 1 settled, 40 older')
+  expect(html).toContain('Plaid 4.2 s 7 requests 1 retry 312 KB')
+  expect(html).toContain('Alpaca 2 requests 1 KB')
+  expect(html).toContain('fetch 6.4 s · project 0.8 s · save 0.1 s · snapshot 2.4 MB')
+})

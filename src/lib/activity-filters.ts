@@ -9,20 +9,14 @@ import { graphWindows } from './graph-preferences'
 import { preference } from './preference'
 import { transactionDateKey } from './spending'
 
-export function activityMatchesDateRange(
-  activity: ActivityItem,
-  referenceIso: string,
-  from?: string,
-  to?: string,
-) {
+export function activityMatchesDateRange(activity: ActivityItem, from?: string, to?: string) {
   if (!from && !to) return true
-  const date = transactionDateKey(activity.date, referenceIso)
+  const date = transactionDateKey(activity.date)
   return Boolean(date) && (!from || date >= from) && (!to || date <= to)
 }
 
 export function activityFilterCandidates(
   activities: ActivityItem[],
-  referenceIso: string,
   search: string,
   from: string | undefined,
   to: string | undefined,
@@ -32,8 +26,7 @@ export function activityFilterCandidates(
 ) {
   const searched = activities.filter(
     (activity) =>
-      activityMatchesSearch(activity, search) &&
-      activityMatchesDateRange(activity, referenceIso, from, to),
+      activityMatchesSearch(activity, search) && activityMatchesDateRange(activity, from, to),
   )
   const inAccount = (activity: ActivityItem) =>
     !accountIds || (activity.accountId != null && accountIds.has(activity.accountId))

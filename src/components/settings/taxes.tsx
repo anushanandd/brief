@@ -6,7 +6,7 @@ import { useFinanceEdits } from '../../hooks/use-finance-edits'
 import { accountDisplayName } from '../../lib/account-names'
 import { errorMessage } from '../../lib/errors'
 import { financeSettings } from '../../lib/finance-settings'
-import { formatProseCurrency } from '../../lib/format'
+import { formatProseCurrency, formatShortDay } from '../../lib/format'
 import type { FinanceSettings } from '../../lib/schema'
 import { parseAmount, taxTreatmentLabels } from '../../lib/taxes'
 import { AccountMark } from '../account-mark'
@@ -83,6 +83,11 @@ export function TaxesSection() {
   const investmentAccounts = (query.data?.accounts ?? []).filter(
     ({ type }) => type === 'brokerage' || type === 'retirement',
   )
+  const retirement = settings.retirement ?? {}
+  const updateRetirement = (
+    change: (current: NonNullable<FinanceSettings['retirement']>) => FinanceSettings['retirement'],
+  ) => save((current) => ({ ...current, retirement: change(current.retirement ?? {}) }))
+  const rothAccounts = query.data?.insights?.retirement.rothBasis ?? []
 
   return (
     <SettingsSection
@@ -93,10 +98,15 @@ export function TaxesSection() {
           section="tax"
           onReset={() =>
             updateSettings(
-              ({ taxProfile: _profile, accountTaxTreatments: _treatments, ...rest }) => rest,
+              ({
+                taxProfile: _profile,
+                accountTaxTreatments: _treatments,
+                retirement: _retirement,
+                ...rest
+              }) => rest,
             )
           }
-          detail="Clear tax profile and treatments?"
+          detail="Clear tax profile, treatments, and retirement details?"
         />
       }
     >
@@ -228,6 +238,95 @@ export function TaxesSection() {
             </ul>
           ) : (
             <EmptyState>No investment accounts.</EmptyState>
+          )}
+        </SettingsBlock>
+      </SettingsCard>
+      <SettingsCard>
+        <SettingsRow
+          id="retirement-birth-year"
+          title="Birth year"
+          description="Raises contribution limits from 50."
+        >
+          <CommittedNumberInput
+            className="settings-number-input"
+            value={retirement.birthYear?.toString() ?? ''}
+            placeholder="Not set"
+            aria-label="Birth year"
+            onCommit={(text) => {
+              const year = Number(text)
+              if (text && !(Number.isInteger(year) && year >= 1900 && year <= 2200))
+                toast.error('Enter a year, such as 2004')
+              else
+                updateRetirement((current) => ({ ...current, birthYear: text ? year : undefined }))
+            }}
+          />
+        </SettingsRow>
+        <SettingsRow
+          id="retirement-planned-costs"
+          title="Costs you’ll add"
+          description="Monthly, on top of today’s spending: rent once you move out, health coverage."
+        >
+          <CommittedNumberInput
+            className="settings-number-input"
+            value={
+              retirement.plannedMonthly != null
+                ? formatProseCurrency(retirement.plannedMonthly)
+                : ''
+            }
+            placeholder="$0"
+            aria-label="Monthly costs you’ll add"
+            onCommit={(text) => {
+              const amount = parseAmount(text)
+              if (text && amount === undefined) toast.error('Enter an amount in dollars')
+              else updateRetirement((current) => ({ ...current, plannedMonthly: amount }))
+            }}
+          />
+        </SettingsRow>
+        <SettingsBlock
+          id="retirement-earlier-contributions"
+          title="Earlier Roth contributions"
+          description="Contributions made before Brief’s history of the account. Your custodian’s Form 5498s list them by year."
+        >
+          {rothAccounts.length ? (
+            <ul className="settings-list">
+              {rothAccounts.map(({ accountId, since, earlier }) => {
+                const account = query.data?.accounts.find(({ id }) => id === accountId)
+                const name = accountDisplayName(
+                  accountId,
+                  account?.name ?? 'Roth IRA',
+                  settings.accountNames,
+                )
+                return (
+                  <li className="settings-list-row" key={accountId}>
+                    <span className="settings-list-copy">
+                      <strong>{name}</strong>
+                      <small>{since ? `Before ${formatShortDay(since)}` : 'No activity yet'}</small>
+                    </span>
+                    <CommittedNumberInput
+                      className="settings-number-input"
+                      value={earlier != null ? formatProseCurrency(earlier) : ''}
+                      placeholder="Not set"
+                      aria-label={`Contributions to ${name} before its history`}
+                      onCommit={(text) => {
+                        const amount = parseAmount(text)
+                        if (text && amount === undefined) toast.error('Enter an amount in dollars')
+                        else
+                          updateRetirement(({ earlierContributions = {}, ...current }) => {
+                            const { [accountId]: _removed, ...rest } = earlierContributions
+                            return {
+                              ...current,
+                              earlierContributions:
+                                amount === undefined ? rest : { ...rest, [accountId]: amount },
+                            }
+                          })
+                      }}
+                    />
+                  </li>
+                )
+              })}
+            </ul>
+          ) : (
+            <EmptyState>No Roth IRA.</EmptyState>
           )}
         </SettingsBlock>
       </SettingsCard>

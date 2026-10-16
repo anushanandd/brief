@@ -1,6 +1,7 @@
 //! Native financial insights derived from the annotation-aware committed snapshot: expected
 //! activity, statement cycles, card benefits, and plan. Rust is the only policy;
 //! the renderer formats these results and never recomputes them.
+pub mod agenda;
 pub mod allocation;
 pub mod anomalies;
 pub mod attention;
@@ -10,16 +11,19 @@ pub mod cashline;
 pub mod changes;
 pub mod credit;
 pub mod dividends;
+pub mod documents;
 pub mod forecast;
 pub mod interest;
 pub mod investing;
 pub mod ledger;
 pub mod lots;
+pub mod people;
 pub mod plan;
 pub mod recap;
 pub mod reconcile;
 pub mod recurring;
 pub mod refunds;
+pub mod retirement;
 pub mod returns;
 pub mod spending;
 pub mod statement;
@@ -33,13 +37,15 @@ mod golden;
 
 use std::collections::BTreeMap;
 
-use chrono::{DateTime, NaiveDate, Utc};
+use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::finance_contract::{Account, Snapshot, Transaction};
 use crate::numeric::{from_minor, minor_units};
 use crate::settings::FinanceSettings;
-use benefits::{BenefitActivity, BenefitOption, BenefitWindow, WindowOutcome, PLATINUM};
+use benefits::{
+    BenefitActivity, BenefitHistory, BenefitOption, BenefitReview, BenefitWindow, PLATINUM,
+};
 use calendar::Zone;
 
 /// A snapshot as it is read: every saved edit applied, its insights when they could be derived,
@@ -98,7 +104,11 @@ pub struct CardBenefits {
     pub windows: Vec<BenefitWindow>,
     /// The windows with allowance left, by ID, in the order to use them.
     pub use_first: Vec<String>,
-    pub outcomes: Vec<WindowOutcome>,
+    /// Each calendar benefit's periods from the history's first year through this one,
+    /// including hidden benefits; the renderer filters them.
+    pub history: Vec<BenefitHistory>,
+    /// Matches that need a decision, including hidden benefits'.
+    pub review: Vec<BenefitReview>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -131,6 +141,8 @@ pub struct Insights {
     /// Possible duplicate charges and unusual amounts, not yet reviewed.
     pub anomalies: anomalies::Anomalies,
     pub trips: trips::Trips,
+    /// Who transactions and trips were with.
+    pub people: people::People,
     /// Plaid's recurring streams against Brief's forecast, when Recurring Transactions is on.
     pub recurring_check: recurring::RecurringCheck,
     /// Spending's scopes and their periods.
@@ -150,6 +162,11 @@ pub struct Insights {
     pub securities: Vec<allocation::SecurityHolding>,
     /// What happened over each chart period.
     pub recap: Vec<recap::PeriodRecap>,
+    /// Contributions against this year's limits, tax buckets, savings rate, and coverage.
+    pub retirement: retirement::Retirement,
+    /// Pay statements matched to deposits, each tax year's expected forms, W-2 predictions,
+    /// and how long to keep each document.
+    pub documents: documents::Documents,
     pub lots: Vec<lots::PositionLots>,
     /// Lots turning long-term soon, so a sale can wait for the lower rate.
     pub long_term_soon: Vec<lots::LongTermSoon>,
@@ -165,14 +182,28 @@ pub struct Insights {
     pub dividends: dividends::DividendOutlook,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub movers: Option<lots::Movers>,
+    /// Dated items, for the Calendar page and the Brief calendar.
+    pub agenda: Vec<agenda::AgendaItem>,
 }
 
 /// Derives insights for an annotation-aware snapshot. The snapshot takes the saved tax
 /// treatments, the card credits that follow a purchase made for someone else, and each
 /// transaction's recurring series identity. `now` and `zone` define the user's calendar day.
+#[cfg(test)]
 pub fn derive(
     snapshot: &mut Snapshot,
     settings: &FinanceSettings,
+    now: DateTime<Utc>,
+    zone: &dyn Zone,
+) -> Result<Insights, String> {
+    derive_with_documents(snapshot, settings, &[], now, zone)
+}
+
+/// `derive`, with what Brief read from the user's documents.
+pub fn derive_with_documents(
+    snapshot: &mut Snapshot,
+    settings: &FinanceSettings,
+    documents: &[crate::documents::Document],
     now: DateTime<Utc>,
     zone: &dyn Zone,
 ) -> Result<Insights, String> {
@@ -186,18 +217,18 @@ pub fn derive(
         &snapshot.accounts,
         settings,
         &snapshot.updated_at,
-        zone,
     )?;
     for transaction in &mut snapshot.transactions {
-        transaction.recurring_id = Some(forecast::recurring_key(transaction, zone));
+        transaction.recurring_id = Some(forecast::recurring_key(transaction));
     }
+    people::assign(&mut snapshot.transactions, &settings.people);
     let snapshot = &*snapshot;
     let (transactions, accounts, updated_at) = (
         &snapshot.transactions,
         &snapshot.accounts,
         &snapshot.updated_at,
     );
-    let ended = recurring::ended(&snapshot.recurring_streams, transactions, zone);
+    let ended = recurring::ended(&snapshot.recurring_streams, transactions);
     let Cashflow {
         today,
         expected,
@@ -212,7 +243,8 @@ pub fn derive(
         subscriptions,
         credit,
         anomalies,
-        trips,
+        mut trips,
+        horizon,
     } = cashflow(
         transactions,
         accounts,
@@ -222,8 +254,13 @@ pub fn derive(
         zone,
         &ended,
     );
-    let recurring_check =
-        recurring::check(&snapshot.recurring_streams, &expected, transactions, zone);
+    people::trip_companions(
+        &mut trips.trips,
+        &settings.trip_companions,
+        &settings.people,
+    );
+    let people = people::people(transactions, &settings.people, &trips.trips);
+    let recurring_check = recurring::check(&snapshot.recurring_streams, &expected, transactions);
     // Statements belong to the saved card, and only once its benefits say it is that card.
     let card = spending_card(accounts, settings);
     let card_statement = statement.as_ref().filter(|_| {
@@ -281,9 +318,7 @@ pub fn derive(
             harvestable: &harvestable,
             profile: settings.tax_profile.as_ref(),
         },
-        updated_at,
         today,
-        zone,
     );
     if let Some(rates) = tax::rates(&taxes) {
         for position in lots.iter_mut().filter(|position| !position.tax_deferred) {
@@ -315,8 +350,91 @@ pub fn derive(
                 },
             }),
     );
+    // A due bill or deposit that never came, unless its series is ended or its last
+    // transaction was marked reviewed, which is how the reminder is dismissed. A subscription
+    // that stops charging was most likely cancelled, so it asks for nothing.
+    let views = accounts
+        .iter()
+        .map(|account| AccountView {
+            id: account.id.clone(),
+            activity_as_of: account.activity_as_of.clone(),
+            balance_fetched_at: account.balance_fetched_at.clone(),
+        })
+        .collect::<Vec<_>>();
+    let reviewed = |id: &str| {
+        transactions
+            .iter()
+            .any(|transaction| transaction.id == id && transaction.reviewed == Some(true))
+    };
+    brief.needs.extend(
+        forecast::missed_events(transactions, &views, updated_at, today)
+            .into_iter()
+            .filter(|event| {
+                event.kind != forecast::EventKind::Subscription
+                    && !ended.contains(&event.recurring_id)
+                    && !reviewed(&event.source_transaction_id)
+            })
+            .map(|event| attention::AttentionItem {
+                id: format!("missed:{}:{}", event.recurring_id, event.date),
+                severity: attention::Severity::Attention,
+                item: attention::Item::MissedBill {
+                    recurring_id: event.recurring_id,
+                    title: event.title,
+                    account_id: event.account_id,
+                    expected: event.date,
+                    days: (today - event.date).num_days(),
+                    amount: event.amount,
+                    event: event.kind,
+                    source_transaction_id: event.source_transaction_id,
+                },
+            }),
+    );
+    let interest = interest::interest(accounts, transactions, today);
+    brief.needs.extend(
+        interest::idle_cash(accounts, &interest)
+            .into_iter()
+            .map(|idle| attention::AttentionItem {
+                id: format!("idle-cash:{}", idle.account_id),
+                severity: attention::Severity::Attention,
+                item: attention::Item::IdleCash {
+                    account_id: idle.account_id,
+                    balance: idle.balance,
+                    annual_rate: idle.annual_rate,
+                    better_account_id: idle.better_account_id,
+                    better_rate: idle.better_rate,
+                },
+            }),
+    );
+    let recap = recap::recap(transactions, today);
+    let retirement = retirement::retirement(
+        retirement::Inputs {
+            transactions,
+            accounts,
+            settings,
+            recap: &recap,
+            stated: &snapshot.contribution_years,
+            documents,
+        },
+        today,
+    );
+    brief.needs.extend(retirement::needs(&retirement));
+    let document_insights = documents::documents(
+        documents::Inputs {
+            documents,
+            transactions,
+            accounts,
+            filing_status: settings
+                .tax_profile
+                .as_ref()
+                .map(|profile| profile.filing_status.as_str()),
+        },
+        today,
+    );
+    brief
+        .needs
+        .extend(documents::needs(&document_insights, documents, today));
     brief.needs.sort_by_key(|item| item.severity);
-    Ok(Insights {
+    let mut insights = Insights {
         today,
         computed_at: now.to_rfc3339(),
         expected,
@@ -342,15 +460,29 @@ pub fn derive(
         credit,
         anomalies,
         trips,
+        people,
         recurring_check,
         spending,
-        accounts_total: card.and_then(|card| totals::accounts_total(snapshot, card)),
+        accounts_total: {
+            let cards = accounts
+                .iter()
+                .filter(|account| {
+                    account.r#type == "credit"
+                        && settings.spending_account_ids().any(|id| id == account.id)
+                })
+                .collect::<Vec<_>>();
+            (!cards.is_empty())
+                .then(|| totals::accounts_total(snapshot, &cards))
+                .flatten()
+        },
         returns: returns::returns(performance),
         periods: reconcile::statements(performance, trades, transactions),
         exposure: reconcile::exposure(performance, holdings),
         allocation,
         securities,
-        recap: recap::recap(transactions, updated_at, today, zone),
+        recap,
+        retirement,
+        documents: document_insights,
         lots,
         long_term_soon,
         investment_attention,
@@ -358,11 +490,9 @@ pub fn derive(
             &snapshot.account_balance_history,
             performance,
             transactions,
-            updated_at,
             today,
-            zone,
         ),
-        interest: interest::interest(accounts, transactions, updated_at, today, zone),
+        interest,
         taxes,
         // A snapshot saved without dividend history has no outlook, not an empty one.
         dividends: if snapshot.dividend_history.is_empty() {
@@ -371,7 +501,26 @@ pub fn derive(
             dividends::outlook(&snapshot.dividend_history, holdings, today)
         },
         movers: lots::movers(holdings),
-    })
+        agenda: Vec::new(),
+    };
+    insights.agenda = agenda::agenda(agenda::Inputs {
+        today,
+        accounts,
+        forecast: &horizon,
+        credit: &insights.credit,
+        benefits: insights
+            .benefits
+            .iter()
+            .chain(&insights.other_card_benefits)
+            .map(|card| (card.account_id.as_str(), card.windows.as_slice()))
+            .collect(),
+        hidden_benefit_ids: &settings.hidden_benefit_ids,
+        dividends: &insights.dividends.upcoming,
+        long_term_soon: &insights.long_term_soon,
+        wash_windows: &insights.taxes.wash_windows,
+        trips: &insights.trips.trips,
+    });
+    Ok(insights)
 }
 
 /// `derive` over a JSON snapshot, which takes the derived fields and its insights, for tests
@@ -408,6 +557,8 @@ struct Cashflow {
     credit: credit::Credit,
     anomalies: anomalies::Anomalies,
     trips: trips::Trips,
+    /// The forecast over the cash horizon, with each series' later occurrences.
+    horizon: Vec<forecast::ExpectedEvent>,
 }
 
 #[cfg(test)]
@@ -458,7 +609,6 @@ fn cashflow(
         &views,
         updated_at,
         today,
-        zone,
     ));
     let card = spending_card(accounts, settings);
     let card_transactions = card
@@ -469,45 +619,62 @@ fn cashflow(
                 .collect::<Vec<_>>()
         })
         .unwrap_or_default();
-    let statement = card.and_then(|card| {
-        statement::cycle(
-            &card_transactions,
-            updated_at,
-            card.liability.as_ref(),
-            zone,
-        )
-    });
+    let statement = card
+        .and_then(|card| statement::cycle(&card_transactions, updated_at, card.liability.as_ref()));
     let now_iso = now.to_rfc3339();
+    // Charges recurring series should make through December, for planning benefit credits.
+    let year_end = NaiveDate::from_ymd_opt(today.year(), 12, 31).unwrap_or(today);
+    let upcoming = live(forecast::forecast_within(
+        transactions,
+        &views,
+        updated_at,
+        today,
+        (year_end - today).num_days().max(0),
+    ));
     // Benefits for one card under one product's rules.
     let card_benefits = |card: &Account, rules: &'static benefits::RuleSet| {
         let own = transactions
             .iter()
             .filter(|transaction| transaction.account_id.as_deref() == Some(card.id.as_str()))
             .collect::<Vec<_>>();
-        let activity = rules.activity(&own, updated_at, zone);
-        let first = own
+        let activity = rules.activity(&own, updated_at);
+        let history_start = own
             .iter()
-            .filter_map(|transaction| {
-                calendar::transaction_date(transaction.posted_date(), updated_at, zone)
+            .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
+            .min();
+        let windows = rules.tracker_for(&activity, &now_iso, updated_at, history_start, zone);
+        // A series counts toward the benefit its latest charge qualifies for.
+        let charges = upcoming
+            .iter()
+            .filter(|event| event.amount < 0.0)
+            .filter_map(|event| {
+                let source = own
+                    .iter()
+                    .find(|transaction| transaction.id == event.source_transaction_id)?;
+                let benefit_id = rules.purchase_benefit(source)?;
+                Some(
+                    std::iter::once(event.date)
+                        .chain(event.later.iter().copied())
+                        .map(move |date| benefits::PlannedCharge {
+                            benefit_id: benefit_id.clone(),
+                            date,
+                            amount: event.amount,
+                            title: event.title.clone(),
+                        }),
+                )
             })
-            .min()
-            .unwrap_or(today);
-        let windows = rules.tracker_for(&activity, &now_iso, updated_at, zone);
+            .flatten()
+            .collect::<Vec<_>>();
+        let history = rules.history(&activity, history_start, today, &charges);
         CardBenefits {
             use_first: benefits::use_first(&windows),
             account_id: card.id.clone(),
             product: rules.product.clone(),
             product_name: rules.name.clone(),
-            fee: rules.fee_recovery(
-                &own,
-                &activity,
-                &settings.hidden_benefit_ids,
-                today,
-                updated_at,
-                zone,
-            ),
+            fee: rules.fee_recovery(&own, &activity, &history, today),
             windows,
-            outcomes: rules.window_outcomes(&own, first, updated_at, zone),
+            history,
+            review: rules.review(&own, &activity),
             activity,
         }
     };
@@ -522,7 +689,7 @@ fn cashflow(
         .filter(|(account, _)| !is_spending_card(account))
         .map(|(account, rules)| card_benefits(account, rules))
         .collect::<Vec<_>>();
-    let plan = plan::plan(transactions, accounts, &expected, updated_at, today, zone);
+    let plan = plan::plan(transactions, accounts, &expected, today);
     let context = attention::Context {
         today,
         spending_account_id: card.map(|card| card.id.as_str()),
@@ -530,30 +697,23 @@ fn cashflow(
         plan: &plan,
     };
     let attention = attention::attention(context);
-    let cash = cashline::timeline(
-        accounts,
-        &live(forecast::forecast_within(
-            transactions,
-            &views,
-            updated_at,
-            today,
-            zone,
-            cashline::HORIZON_DAYS,
-        )),
+    let horizon = live(forecast::forecast_within(
+        transactions,
+        &views,
+        updated_at,
         today,
-    );
+        cashline::HORIZON_DAYS,
+    ));
+    let cash = cashline::timeline(accounts, &horizon, today);
     let subscriptions = subscriptions::subscriptions(
         &live(forecast::forecast_within(
             transactions,
             &views,
             updated_at,
             today,
-            zone,
             subscriptions::HORIZON_DAYS,
         )),
         transactions,
-        updated_at,
-        zone,
     );
     let credit = credit::credit(
         accounts,
@@ -561,27 +721,26 @@ fn cashflow(
             .map(|(card, cycle)| (card.id.as_str(), cycle)),
         today,
     );
-    let anomalies = anomalies::anomalies(transactions, updated_at, today, zone);
-    let coming_until = today + chrono::Duration::days(attention::COMING_DAYS);
+    let anomalies = anomalies::anomalies(transactions, today);
     let brief = attention::Brief {
         needs: attention::needs(
             context,
             &benefits
                 .iter()
                 .chain(&other_card_benefits)
-                .map(|card| (card.account_id.as_str(), card.windows.as_slice()))
+                .map(|card| {
+                    (
+                        card.account_id.as_str(),
+                        card.windows.as_slice(),
+                        card.review.as_slice(),
+                    )
+                })
                 .collect::<Vec<_>>(),
             &settings.hidden_benefit_ids,
             &cash,
             &credit,
             &anomalies,
         ),
-        coming: expected
-            .iter()
-            .filter(|event| event.date <= coming_until)
-            .map(|event| event.id.clone())
-            .collect(),
-        coming_days: attention::COMING_DAYS,
     };
     Cashflow {
         today,
@@ -589,7 +748,7 @@ fn cashflow(
         statement,
         benefits,
         other_card_benefits,
-        refund_suggestions: refunds::suggestions(transactions, updated_at, today, zone),
+        refund_suggestions: refunds::suggestions(transactions, today),
         plan,
         attention,
         brief,
@@ -597,7 +756,8 @@ fn cashflow(
         subscriptions,
         credit,
         anomalies,
-        trips: trips::trips(transactions, updated_at, today, zone),
+        trips: trips::trips(transactions, today),
+        horizon,
     }
 }
 
@@ -634,7 +794,6 @@ fn credits_follow_purchases(
     accounts: &[Account],
     settings: &FinanceSettings,
     updated_at: &str,
-    zone: &dyn Zone,
 ) -> Result<(), String> {
     let mut others = transactions
         .iter()
@@ -647,7 +806,7 @@ fn credits_follow_purchases(
             .iter()
             .filter(|transaction| transaction.account_id.as_deref() == Some(card.id.as_str()))
             .collect::<Vec<_>>();
-        let activity = rules.activity(&own, updated_at, zone);
+        let activity = rules.activity(&own, updated_at);
         // Credits first, so a reversal can follow the credit it undoes.
         for kind in [
             benefits::ActivityKind::Credit,

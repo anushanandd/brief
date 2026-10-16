@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
 
-use super::calendar::{self, Zone};
+use super::calendar;
 use crate::finance_contract::Performance;
 use crate::finance_contract::Transaction;
 use crate::numeric::{from_minor, minor_units};
@@ -86,17 +86,13 @@ pub fn changes(
     balances: &[Performance],
     brokerages: &[Performance],
     transactions: &[Transaction],
-    reference: &str,
     today: NaiveDate,
-    zone: &dyn Zone,
 ) -> Vec<PeriodChange> {
     let histories = histories(balances, brokerages);
     let posted = transactions
         .iter()
         .filter(|transaction| !transaction.pending)
-        .filter_map(|transaction| {
-            calendar::transaction_date(transaction.posted_date(), reference, zone)
-        })
+        .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
         .filter(|date| *date <= today)
         .collect::<Vec<_>>();
     let earliest = histories
@@ -157,7 +153,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::insights::calendar::NamedZone;
 
     fn history(account: &str, points: &[(&str, f64)]) -> Performance {
         serde_json::from_value(json!({
@@ -209,14 +204,7 @@ mod tests {
             txn("c", "2026-09-16", true),
             txn("d", "2026-05-20", false),
         ];
-        let result = changes(
-            &balances,
-            &brokerage,
-            &transactions,
-            "2026-09-16T12:00:00Z",
-            day("2026-09-16"),
-            &NamedZone::Utc,
-        );
+        let result = changes(&balances, &brokerage, &transactions, day("2026-09-16"));
         let window = |window: Window| result.iter().find(|item| item.window == window).unwrap();
         let summary = |window: Window| {
             result
@@ -269,14 +257,7 @@ mod tests {
 
     #[test]
     fn without_history_or_activity_there_is_no_all_time_period() {
-        let result = changes(
-            &[],
-            &[],
-            &[],
-            "2026-09-16T12:00:00Z",
-            day("2026-09-16"),
-            &NamedZone::Utc,
-        );
+        let result = changes(&[], &[], &[], day("2026-09-16"));
         assert_eq!(result.len(), 4);
         assert!(result
             .iter()

@@ -6,6 +6,14 @@ import type { FinanceSnapshot } from '../lib/schema'
 import { expectedActivityDateLabel, RecurringMark, recurringActivities } from './expected-activity'
 import { Card, EmptyState, SectionHeading } from './ui'
 
+const changedOn = (date: string) =>
+  new Date(`${date}T12:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    day: 'numeric',
+    timeZone: 'UTC',
+  })
+
+/** Every active subscription: what it costs, how often, when it charges next, and price changes. */
 export function SubscriptionsCard({
   data,
   className,
@@ -70,6 +78,7 @@ export function SubscriptionsCard({
                           <span className="sensitive-value">
                             {formatCurrency(Math.abs(item.priceChange.previous))}
                           </span>
+                          {` on ${changedOn(item.priceChange.changedOn)}`}
                         </span>
                       ) : null}
                     </small>

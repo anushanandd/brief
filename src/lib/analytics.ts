@@ -58,11 +58,22 @@ export type AnalyticsSearch = {
   view?: 'transactions'
   /** One breakdown group the transactions are narrowed to. */
   group?: string
+  /** On Benefits: the benefit open in the inspector, and the first day of its period. */
+  benefit?: string
+  period?: string
+  /** On Benefits: the matches waiting for a decision, open in the inspector. */
+  review?: true
 }
 
-/** A report's search without its lower card's view, for a link to another report. */
-export const withoutReportView = ({ view: _view, group: _group, ...search }: AnalyticsSearch) =>
-  search
+/** A report's search without its lower card's view or inspector, for a link to another report. */
+export const withoutReportView = ({
+  view: _view,
+  group: _group,
+  benefit: _benefit,
+  period: _period,
+  review: _review,
+  ...search
+}: AnalyticsSearch) => search
 export const analyticsChart = (value: unknown) => analyticsCharts.find(({ id }) => id === value)?.id
 
 export function analyticsSearch(search: Record<string, unknown>): AnalyticsSearch {
@@ -76,6 +87,13 @@ export function analyticsSearch(search: Record<string, unknown>): AnalyticsSearc
     ...(search.view === 'transactions' && typeof search.group === 'string' && search.group
       ? { group: search.group }
       : {}),
+    ...(typeof search.benefit === 'string' && /^[a-z0-9-]{1,64}$/.test(search.benefit)
+      ? {
+          benefit: search.benefit,
+          ...(validDate(search.period) ? { period: validDate(search.period) } : {}),
+        }
+      : {}),
+    ...(search.review === true || search.review === 'true' ? { review: true as const } : {}),
   }
 }
 
@@ -117,13 +135,13 @@ export function analyticsEntries(
   const eligible = (id?: string) =>
     analyticsAccountMatches(accountId, id) &&
     (!accounts.get(id ?? '')?.currency || accounts.get(id ?? '')?.currency === 'USD')
-  const end = transactionDateKey(data.updatedAt, data.updatedAt)
+  const end = transactionDateKey(data.updatedAt)
   if (chart === 'realized')
     return data.trades
       .filter((trade) => trade.type.toUpperCase().includes('SELL') && eligible(trade.accountId))
       .map((trade) => ({
         id: `trade:${trade.id}`,
-        date: transactionDateKey(trade.date, data.updatedAt),
+        date: transactionDateKey(trade.date),
         value: trade.estimatedRealizedGain ?? null,
         accountId: trade.accountId,
         group: trade.ticker ?? 'Other sales',
@@ -155,7 +173,7 @@ export function analyticsEntries(
   }
 
   return transactions.flatMap((transaction) => {
-    const date = transactionDateKey(transaction.postedOn ?? transaction.date, data.updatedAt)
+    const date = transactionDateKey(transaction.postedOn ?? transaction.date)
     if (!validDate(date) || date > end) return []
     const mark = transactionMarkKind(transaction)
     const kind = moneyKind(transaction)
@@ -208,8 +226,8 @@ export function analyticsWindow(data: FinanceSnapshot, search: AnalyticsSearch, 
   const current = today ?? saved
   const end = search.to && search.to < current ? search.to : current
   const dates = [
-    ...data.transactions.map((t) => transactionDateKey(t.postedOn ?? t.date, data.updatedAt)),
-    ...data.trades.map((t) => transactionDateKey(t.date, data.updatedAt)),
+    ...data.transactions.map((t) => transactionDateKey(t.postedOn ?? t.date)),
+    ...data.trades.map((t) => transactionDateKey(t.date)),
   ]
     .filter((date) => Boolean(validDate(date)) && date <= end)
     .toSorted()

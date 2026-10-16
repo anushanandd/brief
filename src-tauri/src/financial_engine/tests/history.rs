@@ -361,35 +361,28 @@ fn flow_points_fill_only_bounded_gaps() {
 
 #[test]
 fn transfers_posting_on_different_days_count_once_in_net_worth() {
-    let leg = |id: &str, account: &str, posted: &str, amount: f64, kind: &str| Transaction {
-        id: id.into(),
-        account_id: Some(account.into()),
-        date: "2026-09-01".into(),
-        posted_on: Some(posted.into()),
-        amount,
-        classification: Some(crate::transaction_policy::Classification {
-            mark: Mark::Transfer,
-            kind: serde_json::from_value(json!(kind)).unwrap(),
-            spending: false,
-            credit: false,
-            zelle: false,
-        }),
-        ..Transaction::default()
-    };
+    // The policy pairs the legs (`transaction_policy` tests which); history reads its pairs.
+    let leg =
+        |id: &str, pair: Option<&str>, account: &str, posted: &str, amount: f64| Transaction {
+            id: id.into(),
+            account_id: Some(account.into()),
+            date: "2026-09-01".into(),
+            posted_on: Some(posted.into()),
+            amount,
+            transfer_pair_id: pair.map(Into::into),
+            ..Transaction::default()
+        };
     let transactions = vec![
         // A card payment credits the card two days before the bank debit posts.
-        leg("card", "plaid:card", "2026-09-02", 100.0, "transfer"),
-        leg("bank", "plaid:bank", "2026-09-04", -100.0, "transfer"),
-        // Same-day legs need nothing; spending and untracked accounts never pair.
-        leg("out", "plaid:bank", "2026-09-05", -40.0, "transfer"),
-        leg("in", "snaptrade:brokerage", "2026-09-05", 40.0, "transfer"),
-        leg("refund", "plaid:card", "2026-09-06", 25.0, "income"),
-        leg("purchase", "plaid:bank", "2026-09-07", -25.0, "expense"),
-        leg("external", "plaid:other", "2026-09-08", 60.0, "transfer"),
-        leg("sweep", "plaid:bank", "2026-09-09", -60.0, "transfer"),
-        // Legs further apart than settlement allows are separate movements.
-        leg("early", "plaid:card", "2026-09-10", 70.0, "transfer"),
-        leg("late", "plaid:bank", "2026-09-20", -70.0, "transfer"),
+        leg("card", Some("bank"), "plaid:card", "2026-09-02", 100.0),
+        leg("bank", Some("card"), "plaid:bank", "2026-09-04", -100.0),
+        // Same-day legs need nothing, a pair with an untracked account counts nothing early,
+        // and an unpaired leg is a movement of its own.
+        leg("out", Some("in"), "plaid:bank", "2026-09-05", -40.0),
+        leg("in", Some("out"), "snaptrade:brokerage", "2026-09-05", 40.0),
+        leg("external", Some("sweep"), "plaid:other", "2026-09-08", 60.0),
+        leg("sweep", Some("external"), "plaid:bank", "2026-09-09", -60.0),
+        leg("alone", None, "plaid:bank", "2026-09-10", -70.0),
     ];
     let tracked = ["plaid:card", "plaid:bank", "snaptrade:brokerage"]
         .into_iter()
@@ -421,6 +414,7 @@ fn statement_file(account_id: &str, csv: &str) -> crate::statements::StatementFi
         file_name: "statement.csv".into(),
         imported_at: "2026-09-09T11:00:00Z".into(),
         contents: csv.as_bytes().to_vec(),
+        confirmed_rows: Default::default(),
     }
 }
 
@@ -538,4 +532,38 @@ fn history_check_counts_only_material_gaps_between_estimates_and_observations() 
         })
     );
     assert!(history_check(&estimated, &[]).is_none());
+}
+
+#[test]
+fn an_issuers_merchant_details_reach_the_transactions_its_rows_describe() {
+    let mut input = sync();
+    input.statements = vec![statement_file(
+        "plaid:cash",
+        "Date,Description,Type,Amount,Address,City/State,Zip Code,Category\n\
+         09/08/2026,COFFEE,Debit Card,-5.13,1 EXAMPLE ST,\"SAN JOSE\nCA\",95110,Restaurant-Bar & Café\n\
+         09/01/2026,PAYROLL EXAMPLE,Direct Deposit,100.00,,,,\n\
+         08/30/2026,EXAMPLE BOOKS,Debit Card,-12.00,2 SAMPLE AVE,\"DENVER\nCO\",80202,Merchandise & Supplies-Book Stores\n",
+    )];
+    let value = project_json(&input, &BTreeMap::new(), projection_time()).unwrap();
+    let transactions = value["transactions"].as_array().unwrap();
+    // Plaid's own purchase, which the statement row describes.
+    let coffee = transactions
+        .iter()
+        .find(|row| {
+            row["amount"] == json!(-5.13) && !row["id"].as_str().unwrap().starts_with("statement:")
+        })
+        .unwrap();
+    assert_eq!(coffee["issuer"]["address"], "1 EXAMPLE ST");
+    assert_eq!(coffee["issuer"]["category"], "Restaurant-Bar & Café");
+    // A row Plaid never reported carries its own.
+    let books = transactions
+        .iter()
+        .find(|row| row["amount"] == json!(-12.0))
+        .unwrap();
+    assert_eq!(books["issuer"]["city"], "DENVER");
+    let payroll = transactions
+        .iter()
+        .find(|row| row["amount"] == json!(100.0))
+        .unwrap();
+    assert!(payroll.get("issuer").is_none());
 }

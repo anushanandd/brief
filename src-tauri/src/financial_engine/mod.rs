@@ -15,7 +15,7 @@ use crate::{
         CreditLiability, DividendRecord, FixedIncome, HistoryCheck, Holding, MarketProjection,
         OptionContract, Performance, PerformancePoint, Point, PossibleDuplicate, Provenance,
         RecurringStream, SecurityIdentifiers, Snapshot, Source, Spending, Trade, Transaction,
-        TransactionLocation,
+        TransactionChange, TransactionChangeKind, TransactionLocation,
     },
     providers::{CorporateAction, MarketSnapshot, ProviderSync},
     storage::Annotation,
@@ -25,13 +25,16 @@ use crate::{
 mod accounts;
 mod activities;
 pub(crate) mod categories;
+mod descriptor;
 mod gains;
 mod history;
 mod holdings;
 mod imported;
 mod investments;
+pub mod manual;
 mod performance;
 mod records;
+mod refresh_changes;
 mod transactions;
 mod values;
 
@@ -44,6 +47,7 @@ use imported::*;
 use investments::*;
 use performance::*;
 use records::*;
+use refresh_changes::*;
 use transactions::*;
 use values::*;
 
@@ -53,8 +57,8 @@ const COLORS: [&str; 6] = [
 const SPENDING_COLORS: [&str; 6] = [
     "#477d75", "#4f78a8", "#b58a3f", "#7d6da5", "#a45f79", "#79924b",
 ];
-pub(crate) use imported::provider_activity;
-pub(crate) const CALCULATION_VERSION: u32 = 35;
+pub(crate) use imported::{provider_activity, reconciles};
+pub(crate) const CALCULATION_VERSION: u32 = 40;
 
 pub fn project(
     sync: &ProviderSync,
@@ -86,6 +90,9 @@ pub fn project(
         history_starts: imported_starts,
         transactions: imported_transactions,
         trades: imported_trades,
+        reconciliation: statement_reconciliation,
+        mut issuers,
+        contribution_years,
     } = project_imported(
         &sync.statements,
         &accounts,
@@ -114,6 +121,10 @@ pub fn project(
     let mut transactions = plaid_transactions
         .into_iter()
         .filter_map(|transaction| plaid_transaction(transaction, &account_names))
+        .map(|transaction| Transaction {
+            issuer: issuers.remove(&transaction.id),
+            ..transaction
+        })
         .collect::<Vec<_>>();
     let mut trades = Vec::new();
     for account in &parsed.snap_accounts {
@@ -210,7 +221,6 @@ pub fn project(
             .iter()
             .map(|account| (account.id.as_str(), account.name.as_str())),
         &BTreeMap::new(),
-        &[],
     );
     let tracked_accounts = plaid_histories
         .keys()
@@ -249,6 +259,7 @@ pub fn project(
         incomplete,
     );
     let movements = merge_movements(&sync.previous_snapshot, change.as_ref());
+    let transaction_changes = merge_transaction_changes(&sync.previous_snapshot, change.as_ref());
     let observations = observed_history(
         &sync.previous_snapshot,
         net_worth,
@@ -282,6 +293,7 @@ pub fn project(
         transactions,
         trades,
         account_movements: movements,
+        transaction_changes,
         observed_net_worth_history: observations,
         net_worth_history,
         net_worth_history_estimated,
@@ -290,6 +302,8 @@ pub fn project(
         account_balance_history,
         possible_duplicate_accounts: possible_duplicates,
         history_check,
+        statement_reconciliation,
+        contribution_years,
         dividend_history,
         recurring_streams: recurring_streams(&sync.plaid.recurring_streams),
         account_links: account_links.clone(),
@@ -311,12 +325,11 @@ pub fn project(
     })
 }
 
-/// A committed snapshot as it is read: saved edits and rules applied to its transactions,
-/// then this month's spending and each investment account's income this year again.
+/// A committed snapshot as it is read: saved edits applied to its transactions, then this
+/// month's spending and each investment account's income this year again.
 pub fn apply_annotations(
     snapshot: &mut Snapshot,
     annotations: &BTreeMap<String, Annotation>,
-    rules: &[crate::rules::CategoryRule],
 ) -> Result<(), String> {
     let updated_at = DateTime::parse_from_rfc3339(&snapshot.updated_at)
         .map_err(|_| "Committed snapshot timestamp is invalid")?;
@@ -335,7 +348,6 @@ pub fn apply_annotations(
             .iter()
             .map(|account| (account.id.as_str(), account.name.as_str())),
         annotations,
-        rules,
     );
     snapshot.spending = spending(&snapshot.transactions, month_start);
     let year = calendar_date.format("%Y").to_string();

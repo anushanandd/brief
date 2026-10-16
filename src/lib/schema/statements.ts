@@ -13,6 +13,8 @@ const statementCountsSchema = z.object({
   covered: z.number().int().nonnegative(),
   repeated: z.number().int().nonnegative(),
   pending: z.number().int().nonnegative(),
+  /** Rows in the provider's days that it never reported, awaiting confirmation. */
+  missing: z.number().int().nonnegative(),
 })
 
 export const statementPreviewSchema = z.object({

@@ -84,26 +84,33 @@ it('ranks exposure by holding and notes what the total leaves out', async () => 
   )
 })
 
-it('shows spent and income for the chart period with maskable figures and links', async () => {
+it('shows income, spent, and net for the chart period with changes and links', async () => {
   const period = { start: '2026-09-10', end: '2026-09-16' }
   const recap = {
     window: 'week' as const,
     ...period,
     partial: false,
     spending: 300,
-    previousSpending: 200,
     income: 1000,
     net: 700,
+    spendingChangePct: 50,
+    incomeChangePct: -10,
+    netChangePct: 25,
     categories: [],
   }
   const html = await render((data) => <PeriodTotals data={data} window="week" />, {
     recap: [recap],
   })
   expect(html).toContain('Past week')
+  expect(html.indexOf('Income')).toBeLessThan(html.indexOf('Spent'))
+  expect(html.indexOf('Spent')).toBeLessThan(html.indexOf('Net'))
   expect(html).toContain('$300.00')
-  // Spending rose 50%, which is unfavorable.
+  // Rising spending and falling income are unfavorable; rising net is favorable.
   expect(html).toContain('<small class="negative" aria-label="+50.00% versus the period before">')
+  expect(html).toContain('<small class="negative" aria-label="−10.00% versus the period before">')
+  expect(html).toContain('<small class="positive" aria-label="+25.00% versus the period before">')
   expect(html).toContain('href="/analytics?chart=income&amp;from=2026-09-10&amp;to=2026-09-16"')
+  expect(html).toContain('href="/analytics?chart=cash-flow&amp;from=2026-09-10&amp;to=2026-09-16"')
   expect(html).not.toContain('transaction')
   // Without a recap for the window, the figures are unavailable rather than zero.
   const empty = await render((data) => <PeriodTotals data={data} window="month" />, {})

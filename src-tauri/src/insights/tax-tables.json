@@ -4,7 +4,9 @@
     "Rev. Proc. 2024-40, sections 3.01 and 3.03 (taxable years beginning in 2025)",
     "Rev. Proc. 2025-32, sections 4.01 and 4.03 (taxable years beginning in 2026)",
     "26 U.S.C. 1411 (net investment income tax thresholds, not indexed)",
-    "26 U.S.C. 1211(b) (capital loss limit)"
+    "26 U.S.C. 1211(b) (capital loss limit)",
+    "P.L. 119-21, section 70102 (2025 standard deduction); Rev. Proc. 2025-32, section 4.14 (2026)",
+    "SSA, contribution and benefit base for 2025 and 2026"
   ],
   "niitRate": 3.8,
   "niitThresholds": {
@@ -64,7 +66,14 @@
         "marriedJoint": [96700, 600050],
         "marriedSeparate": [48350, 300000],
         "headOfHousehold": [64750, 566700]
-      }
+      },
+      "standardDeduction": {
+        "single": 15750,
+        "marriedJoint": 31500,
+        "marriedSeparate": 15750,
+        "headOfHousehold": 23625
+      },
+      "socialSecurityWageBase": 176100
     },
     "2026": {
       "ordinary": {
@@ -110,7 +119,14 @@
         "marriedJoint": [98900, 613700],
         "marriedSeparate": [49450, 306850],
         "headOfHousehold": [66200, 579600]
-      }
+      },
+      "standardDeduction": {
+        "single": 16100,
+        "marriedJoint": 32200,
+        "marriedSeparate": 16100,
+        "headOfHousehold": 24150
+      },
+      "socialSecurityWageBase": 184500
     }
   }
 }

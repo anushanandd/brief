@@ -36,8 +36,16 @@
   display: grid;
   min-height: 48px;
   padding: 6px 0;
-  grid-template-columns: minmax(0, 1fr) auto auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
+  gap: 4px;
+}
+/* A row's buttons sit together at its right edge, however many it has. */
+.provider-connection-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
   gap: 4px;
 }
 .provider-connection-row + .provider-connection-row {
@@ -112,6 +120,20 @@
   border: var(--hairline) solid color-mix(in srgb, var(--negative) 30%, var(--border-subtle));
   border-radius: var(--radius-control);
   background: var(--negative-soft);
+}
+/* A confirmation unfolds from the action that raised it; its answer replaces it at once. */
+.connection-confirmation,
+.backup-confirmation {
+  transition:
+    opacity var(--duration-quick) var(--ease-out),
+    transform var(--duration-quick) var(--ease-out);
+}
+@starting-style {
+  .connection-confirmation,
+  .backup-confirmation {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
 }
 .connection-confirmation p {
   margin: 0;
@@ -275,9 +297,13 @@
   }
   .diagnostics-summary {
     grid-template-columns: repeat(2, minmax(0, 1fr));
-    row-gap: 20px;
+    row-gap: var(--card-padding);
+  }
+  .diagnostics-stat:nth-child(2) {
+    padding-right: 0;
   }
   .diagnostics-stat:nth-child(3) {
+    padding-left: 0;
     border-left: 0;
   }
 }
@@ -305,26 +331,6 @@
 
   .home-primary-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-  .refresh-progress-track > span {
-    width: 100%;
-    transform: none;
-    animation: none !important;
-  }
-  /* Scroll-linked edge fades are not motion; keep them tied to scroll position. */
-  .account-switcher-grid {
-    animation-duration: auto !important;
   }
 }
 
@@ -378,7 +384,58 @@
 .statement-preview > .settings-button-group {
   justify-content: flex-end;
 }
+.statement-reconciliation {
+  margin: 0 0 8px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.statement-reconciliation > strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.statement-reconciliation.is-warning {
+  color: var(--warning);
+}
+.statement-review {
+  display: grid;
+  margin: 0 0 8px;
+  padding: 0;
+  gap: 4px;
+  grid-column: 1 / -1;
+  list-style: none;
+}
+.statement-review > li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: 12px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.statement-review > li > p {
+  margin: 0;
+  color: var(--negative);
+  grid-column: 1 / -1;
+}
 .statement-row .connection-confirmation {
   margin-bottom: 8px;
   grid-column: 1 / -1;
+}
+/* A labeled field under a block's text, such as a backup's passphrase. */
+.settings-inline-field {
+  display: grid;
+  gap: 6px;
+  margin-top: 12px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.settings-inline-field > input {
+  max-width: 320px;
+  height: var(--control-height);
+  padding: 0 12px;
+  border: var(--hairline) solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-background);
+  box-shadow: var(--shadow-input);
+  color: var(--text-primary);
 }

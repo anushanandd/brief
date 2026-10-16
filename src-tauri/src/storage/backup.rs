@@ -13,6 +13,7 @@ use super::{
     EDIT_BACKUP_INTERVAL,
 };
 use crate::database::Database;
+use crate::documents::{crypto::DocumentKey, files::DocumentFiles};
 
 /// A file that is removed when dropped unless kept, so a failed step leaves nothing behind.
 struct Scratch {
@@ -89,7 +90,9 @@ impl Storage {
             .path
             .parent()
             .ok_or("Local data directory unavailable")?;
-        let mut removable = vec![self.backup_path()];
+        // Documents' originals go too; this Mac's document key stays in Keychain, so backups
+        // saved earlier still open.
+        let mut removable = vec![self.backup_path(), self.documents_path()?];
         removable.extend(LEGACY_FINANCE_FILES.map(|name| directory.join(name)));
         if let Ok(entries) = fs::read_dir(directory) {
             removable.extend(entries.flatten().filter_map(|entry| {
@@ -103,6 +106,10 @@ impl Storage {
             if path.exists() {
                 fs::remove_file(path).map_err(|_| "Could not remove retained financial data")?;
             }
+        }
+        let opened = self.opened_directory()?;
+        if opened.exists() {
+            fs::remove_dir_all(opened).map_err(|_| "Could not remove opened statements")?;
         }
 
         let mut next = empty_state()?;
@@ -135,19 +142,47 @@ impl Storage {
         Ok(())
     }
 
-    pub fn export_backup(&self, destination: &Path) -> Result<(), String> {
+    /// Writes a backup. Documents' originals go in still sealed, with this Mac's key named
+    /// and, when the user gives a passphrase, sealed under it so another Mac can open them.
+    pub fn export_backup(
+        &self,
+        destination: &Path,
+        key: Option<&DocumentKey>,
+        passphrase: Option<&str>,
+    ) -> Result<(), String> {
         // A new file only: a mistaken selection cannot overwrite a database or any user file.
         drop(crate::files::create_private(destination)?);
         let written = Scratch::new(destination.to_owned());
         self.database.backup(destination)?;
+        if let Some(key) = key.filter(|_| !self.data.documents.is_empty()) {
+            if self.documents_path()?.exists() {
+                DocumentFiles::open(&self.documents_path()?)?.copy_into(destination)?;
+            }
+            let wrapped = passphrase
+                .map(|passphrase| key.wrap(passphrase))
+                .transpose()?;
+            DocumentFiles::write_backup_key(destination, &key.fingerprint(), wrapped.as_deref())?;
+        }
         Database::validate_backup(destination)?;
         written.keep();
         Ok(())
     }
 
-    pub fn inspect_backup(&self, source: &Path) -> Result<BackupInfo, String> {
-        let (_temporary, database, state) = self.validated_backup_copy(source)?;
+    pub fn inspect_backup(
+        &self,
+        source: &Path,
+        key: Option<&DocumentKey>,
+    ) -> Result<BackupInfo, String> {
+        let (temporary, database, state) = self.validated_backup_copy(source)?;
         drop(database);
+        let document_key = match DocumentFiles::read_backup_key(temporary.path())? {
+            None => "none",
+            Some((fingerprint, _)) if key.is_some_and(|key| key.fingerprint() == fingerprint) => {
+                "thisMac"
+            }
+            Some((_, Some(_))) => "passphrase",
+            Some((_, None)) => "otherMac",
+        };
         Ok(BackupInfo {
             updated_at: state.snapshot.updated_at,
             revision: state.revision,
@@ -155,10 +190,63 @@ impl Storage {
             accounts: state.snapshot.accounts.len(),
             transactions: state.snapshot.transactions.len(),
             holdings: state.snapshot.holdings.len(),
+            documents: state.documents.len(),
+            document_key,
         })
     }
 
-    pub fn import_backup(&mut self, source: &Path) -> Result<(), String> {
+    /// Puts a backup's document originals in place: as they are when this Mac sealed them,
+    /// otherwise opened with the backup's key under `passphrase` and sealed again with this
+    /// Mac's. Returns how many couldn't be opened.
+    fn restore_document_files(
+        &self,
+        source: &Path,
+        key: Option<&DocumentKey>,
+        passphrase: Option<&str>,
+    ) -> Result<usize, String> {
+        let files = DocumentFiles::read_backup(source)?;
+        if files.is_empty() {
+            return Ok(0);
+        }
+        let Some(key) = key else {
+            return Ok(files.len());
+        };
+        let theirs = match (DocumentFiles::read_backup_key(source)?, passphrase) {
+            (Some((_, Some(wrapped))), Some(passphrase)) => {
+                Some(DocumentKey::unwrap(&wrapped, passphrase)?)
+            }
+            _ => None,
+        };
+        let store = DocumentFiles::open(&self.documents_path()?)?;
+        let mut locked = 0;
+        for (id, fingerprint, sealed) in files {
+            if fingerprint == key.fingerprint() {
+                store.put(&id, &fingerprint, &sealed)?;
+            } else if let Some(contents) = theirs
+                .as_ref()
+                .filter(|theirs| theirs.fingerprint() == fingerprint)
+                .and_then(|theirs| theirs.open(&id, &sealed).ok())
+            {
+                store.put(&id, &key.fingerprint(), &key.seal(&id, &contents)?)?;
+            } else {
+                locked += 1;
+            }
+        }
+        Ok(locked)
+    }
+
+    pub fn import_backup(
+        &mut self,
+        source: &Path,
+        key: Option<&DocumentKey>,
+        passphrase: Option<&str>,
+    ) -> Result<(), String> {
+        // A wrong passphrase stops the restore before anything changes.
+        if let (Some((_, Some(wrapped))), Some(passphrase)) =
+            (DocumentFiles::read_backup_key(source)?, passphrase)
+        {
+            DocumentKey::unwrap(&wrapped, passphrase)?;
+        }
         let (temporary, mut database, mut next) = self.validated_backup_copy(source)?;
         next.revision = self
             .data
@@ -189,6 +277,8 @@ impl Storage {
         self.data = next;
         self.pending = None;
         self.recovery = None;
+        self.restore_document_files(source, key, passphrase)?;
+        self.prune_document_files()?;
         Ok(())
     }
 

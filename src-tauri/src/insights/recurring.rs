@@ -6,7 +6,6 @@ use std::collections::BTreeSet;
 
 use serde::Serialize;
 
-use super::calendar::Zone;
 use super::forecast::{recurring_key, ExpectedEvent};
 use crate::finance_contract::RecurringStream;
 use crate::finance_contract::Transaction;
@@ -39,7 +38,6 @@ pub struct RecurringCheck {
 fn series<'a>(
     streams: &'a [RecurringStream],
     transactions: &[Transaction],
-    zone: &dyn Zone,
     keep: impl Fn(&RecurringStream) -> bool,
 ) -> Vec<(&'a RecurringStream, BTreeSet<String>)> {
     streams
@@ -49,7 +47,7 @@ fn series<'a>(
             let keys = transactions
                 .iter()
                 .filter(|transaction| stream.transaction_ids.contains(&transaction.id))
-                .map(|transaction| recurring_key(transaction, zone))
+                .map(recurring_key)
                 .collect();
             (stream, keys)
         })
@@ -57,16 +55,12 @@ fn series<'a>(
 }
 
 /// Series Plaid reports ended: every stream covering them is inactive and tombstoned.
-pub fn ended(
-    streams: &[RecurringStream],
-    transactions: &[Transaction],
-    zone: &dyn Zone,
-) -> BTreeSet<String> {
-    let live = series(streams, transactions, zone, |stream| stream.is_active)
+pub fn ended(streams: &[RecurringStream], transactions: &[Transaction]) -> BTreeSet<String> {
+    let live = series(streams, transactions, |stream| stream.is_active)
         .into_iter()
         .flat_map(|(_, keys)| keys)
         .collect::<BTreeSet<_>>();
-    series(streams, transactions, zone, |stream| {
+    series(streams, transactions, |stream| {
         !stream.is_active && stream.status == "TOMBSTONED"
     })
     .into_iter()
@@ -79,13 +73,12 @@ pub fn check(
     streams: &[RecurringStream],
     expected: &[ExpectedEvent],
     transactions: &[Transaction],
-    zone: &dyn Zone,
 ) -> RecurringCheck {
     let forecast = expected
         .iter()
         .map(|event| event.recurring_id.clone())
         .collect::<BTreeSet<_>>();
-    let mut unforecast = series(streams, transactions, zone, |stream| {
+    let mut unforecast = series(streams, transactions, |stream| {
         stream.is_active && stream.status == "MATURE"
     })
     .into_iter()
@@ -106,7 +99,7 @@ pub fn check(
     unforecast.sort_by(|left, right| left.name.cmp(&right.name));
     RecurringCheck {
         available: !streams.is_empty(),
-        ended: ended(streams, transactions, zone).into_iter().collect(),
+        ended: ended(streams, transactions).into_iter().collect(),
         unforecast,
     }
 }
@@ -116,7 +109,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::insights::calendar::NamedZone;
 
     fn charge(id: &str, merchant: &str) -> Transaction {
         serde_json::from_value(json!({
@@ -152,7 +144,6 @@ mod tests {
             charge("b", "Gym"),
             charge("c", "Music"),
         ];
-        let zone = NamedZone::Utc;
         let streams = [
             stream("old", "TOMBSTONED", false, &["a"]),
             stream("gym", "MATURE", true, &["b"]),
@@ -160,13 +151,13 @@ mod tests {
             stream("music-old", "TOMBSTONED", false, &["c"]),
             stream("music", "MATURE", true, &["c"]),
         ];
-        let ended = ended(&streams, &transactions, &zone);
+        let ended = ended(&streams, &transactions);
         assert_eq!(
             ended.into_iter().collect::<Vec<_>>(),
-            [recurring_key(&transactions[0], &zone)]
+            [recurring_key(&transactions[0])]
         );
 
-        let result = check(&streams, &[], &transactions, &zone);
+        let result = check(&streams, &[], &transactions);
         assert!(result.available);
         let names = result
             .unforecast

@@ -18,6 +18,10 @@ vi.mock('next-themes', () => {
 vi.mock('./use-finance', () => ({
   useFinance: () => ({ data: undefined, integrationStatus: { plaid: false } }),
 }))
+vi.mock('./use-finance-edits', () => {
+  const undo = vi.fn()
+  return { useFinanceEdits: () => ({ undo, undoLabel: undefined }) }
+})
 vi.mock('./use-refresh-finance', () => {
   const refresh = vi.fn()
   return { useRefreshFinance: () => refresh, useFinanceRefreshState: () => false }

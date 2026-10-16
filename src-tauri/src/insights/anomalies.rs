@@ -8,7 +8,7 @@ use std::collections::BTreeMap;
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
 
-use super::calendar::{self, Zone};
+use super::calendar;
 use crate::finance_contract::Transaction;
 use crate::numeric::{median_i64, minor_units};
 use crate::transaction_policy::Kind;
@@ -69,12 +69,7 @@ fn merchant_key(transaction: &Transaction) -> String {
     })
 }
 
-pub fn anomalies(
-    transactions: &[Transaction],
-    reference: &str,
-    today: NaiveDate,
-    zone: &dyn Zone,
-) -> Anomalies {
+pub fn anomalies(transactions: &[Transaction], today: NaiveDate) -> Anomalies {
     let recent_from = today - Duration::days(RECENT_DAYS);
     // Posted charges, with their day.
     let charges = transactions
@@ -86,10 +81,7 @@ pub fn anomalies(
                 && matches!(transaction.kind(), Some(Kind::Expense | Kind::Owed))
         })
         .filter_map(|transaction| {
-            Some((
-                calendar::transaction_date(&transaction.date, reference, zone)?,
-                transaction,
-            ))
+            Some((calendar::transaction_date(&transaction.date)?, transaction))
         })
         .collect::<Vec<_>>();
     let unreviewed = |transaction: &Transaction| transaction.reviewed != Some(true);
@@ -189,9 +181,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::insights::calendar::NamedZone;
-
-    const REFERENCE: &str = "2026-09-20T12:00:00Z";
 
     fn day(value: &str) -> NaiveDate {
         NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
@@ -208,7 +197,7 @@ mod tests {
     }
 
     fn run(transactions: &[Transaction]) -> Anomalies {
-        anomalies(transactions, REFERENCE, day("2026-09-20"), &NamedZone::Utc)
+        anomalies(transactions, day("2026-09-20"))
     }
 
     #[test]

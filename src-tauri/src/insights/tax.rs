@@ -14,7 +14,7 @@ use std::sync::LazyLock;
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
 
-use super::calendar::{self, Zone};
+use super::calendar;
 use super::lots::PositionLots;
 use crate::finance_contract::Transaction;
 use crate::finance_contract::{Account, Trade};
@@ -44,6 +44,26 @@ struct YearTables {
     ordinary: BTreeMap<String, Vec<(Option<f64>, f64)>>,
     /// Per filing status: the top of the 0% band and of the 15% band.
     capital_gains: BTreeMap<String, (f64, f64)>,
+    #[serde(default)]
+    standard_deduction: BTreeMap<String, f64>,
+    /// Earnings above this owe no Social Security tax.
+    #[serde(default)]
+    social_security_wage_base: Option<f64>,
+}
+
+/// The standard deduction for `year` and a filing status, when the tables have the year.
+pub fn standard_deduction(year: i32, filing_status: &str) -> Option<f64> {
+    TABLES
+        .years
+        .get(&year)?
+        .standard_deduction
+        .get(filing_status)
+        .copied()
+}
+
+/// The year's Social Security wage base, when the tables have the year.
+pub fn social_security_wage_base(year: i32) -> Option<f64> {
+    TABLES.years.get(&year)?.social_security_wage_base
 }
 
 static TABLES: LazyLock<Tables> = LazyLock::new(|| {
@@ -421,7 +441,7 @@ pub struct TaxInputs<'a> {
 }
 
 /// Each year's 1099 amounts and estimate, harvest values, and open wash-sale windows.
-pub fn taxes(inputs: TaxInputs, reference: &str, today: NaiveDate, zone: &dyn Zone) -> Taxes {
+pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
     let TaxInputs {
         transactions,
         trades,
@@ -439,14 +459,14 @@ pub fn taxes(inputs: TaxInputs, reference: &str, today: NaiveDate, zone: &dyn Zo
     let (washes, wash_windows) = wash_sales(trades, &taxable, today);
     let first_activity = transactions
         .iter()
-        .filter_map(|transaction| calendar::transaction_date(&transaction.date, reference, zone))
+        .filter_map(|transaction| calendar::transaction_date(&transaction.date))
         .chain(trades.iter().filter_map(trade_date))
         .min();
 
     let mut years = BTreeSet::from([today.year()]);
     for transaction in transactions {
         if matches!(transaction.kind(), Some(Kind::Interest | Kind::Dividend)) {
-            if let Some(date) = calendar::transaction_date(&transaction.date, reference, zone) {
+            if let Some(date) = calendar::transaction_date(&transaction.date) {
                 years.insert(date.year());
             }
         }
@@ -468,7 +488,7 @@ pub fn taxes(inputs: TaxInputs, reference: &str, today: NaiveDate, zone: &dyn Zo
     let mut results = Vec::new();
     for year in years {
         let in_year = |date: NaiveDate| date.year() == year && date <= today;
-        let earned = Earned::in_year(transactions, &taxable, &in_year, reference, zone);
+        let earned = Earned::in_year(transactions, &taxable, &in_year);
         let (realized, short, long) = realized(trades, &washes, &taxable, &in_year);
         let tables = TABLES.years.get(&year);
         let estimate = profile
@@ -524,8 +544,6 @@ impl Earned {
         transactions: &[Transaction],
         taxable: &dyn Fn(&str) -> bool,
         in_year: &dyn Fn(NaiveDate) -> bool,
-        reference: &str,
-        zone: &dyn Zone,
     ) -> Self {
         let mut earned = Earned::default();
         for transaction in transactions.iter().filter(|transaction| {
@@ -533,8 +551,7 @@ impl Earned {
                 && transaction.amount > 0.0
                 && taxable(transaction.account_id.as_deref().unwrap_or_default())
         }) {
-            if !calendar::transaction_date(&transaction.date, reference, zone).is_some_and(in_year)
-            {
+            if !calendar::transaction_date(&transaction.date).is_some_and(in_year) {
                 continue;
             }
             let amount = minor_units(transaction.amount);
@@ -715,9 +732,6 @@ mod tests {
     use serde_json::json;
 
     use super::*;
-    use crate::insights::calendar::NamedZone;
-
-    const REFERENCE: &str = "2026-09-20T12:00:00Z";
 
     fn day(value: &str) -> NaiveDate {
         NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
@@ -915,9 +929,7 @@ mod tests {
                 harvestable: &[],
                 profile: Some(&profile(80_000.0, Some(5.0))),
             },
-            REFERENCE,
             day("2026-09-20"),
-            &NamedZone::Utc,
         );
         let year = &result.years[0];
         assert_eq!(year.year, 2026);
@@ -965,9 +977,7 @@ mod tests {
                 harvestable: &[],
                 profile: Some(&profile(80_000.0, None)),
             },
-            REFERENCE,
             day("2026-09-20"),
-            &NamedZone::Utc,
         );
         let estimate = result.years[0].estimate.as_ref().unwrap();
         assert_eq!(
@@ -985,9 +995,7 @@ mod tests {
                 harvestable: &[],
                 profile: None,
             },
-            REFERENCE,
             day("2026-09-20"),
-            &NamedZone::Utc,
         );
         assert!(unprofiled.years[0].estimate.is_none() && !unprofiled.has_profile);
         assert!(unprofiled.years[0].tables_available);

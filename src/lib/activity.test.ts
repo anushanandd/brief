@@ -64,7 +64,7 @@ describe('financial activities', () => {
         category: 'Dining',
         location: { city: 'Seattle', region: 'WA' },
         paymentChannel: 'in store',
-        date: 'Sep 2',
+        date: '2026-09-02',
         amount: -20,
         detail: '',
       },
@@ -91,7 +91,7 @@ describe('financial activities', () => {
         detail: '',
       },
     ]
-    const ids = (sort: ActivitySort) => sortActivities(rows, '2026-09-20', sort).map(({ id }) => id)
+    const ids = (sort: ActivitySort) => sortActivities(rows, sort).map(({ id }) => id)
 
     expect(ids({ column: 'description', direction: 'asc' })).toEqual(['a', 'b', 'c'])
     expect(ids({ column: 'account', direction: 'asc' })).toEqual(['a', 'c', 'b'])
@@ -323,6 +323,48 @@ const item = (kind: ActivityItem['kind'], amount: number): ActivityItem => ({
   detail: '',
   date: '2026-09-16',
   amount,
+})
+
+const leg = (id: string, accountId: string, account: string, date: string, amount: number) => ({
+  id,
+  accountId,
+  account,
+  merchant: 'Synthetic transfer',
+  category: 'Transfers',
+  date,
+  amount,
+  pending: false,
+  classification: classification('transfer'),
+})
+
+it('links each leg of a paired transfer to the account on its other side', () => {
+  const [sent, arrived, alone] = buildActivities(
+    {
+      transactions: [
+        {
+          ...leg('sent', 'plaid:checking', 'Checking', '2026-09-03', -50),
+          transferPairId: 'arrived',
+        },
+        { ...leg('arrived', 'plaid:savings', 'Savings', '2026-09-02', 50), transferPairId: 'sent' },
+        leg('alone', 'plaid:checking', 'Checking', '2026-09-01', -20),
+      ],
+      trades: [],
+      updatedAt: '2026-09-16T12:00:00Z',
+    },
+    { 'plaid:savings': 'Rainy day' },
+  )
+  expect(sent.transfer).toEqual({
+    id: 'spending:arrived',
+    direction: 'to',
+    account: 'Rainy day',
+    accountId: 'plaid:savings',
+    date: '2026-09-02',
+  })
+  expect(arrived.transfer).toMatchObject({ id: 'spending:sent', direction: 'from' })
+  expect(activityPlace(sent)).toEqual({ kind: 'transfer', primary: 'To Rainy day', secondary: '' })
+  expect(activityPlace(arrived).primary).toBe('From Checking')
+  expect(alone.transfer).toBeUndefined()
+  expect(activityPlace(alone).kind).not.toBe('transfer')
 })
 
 it('totals spending and income for a filtered list in cents, ignoring transfers and trades', () => {

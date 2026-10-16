@@ -6,7 +6,6 @@ fn apply(
     rows: &mut [Value],
     accounts: &[Value],
     annotations: &BTreeMap<String, Annotation>,
-    rules: &[CategoryRule],
 ) -> Result<(), String> {
     let mut transactions = rows
         .iter()
@@ -16,7 +15,7 @@ fn apply(
     let names = accounts
         .iter()
         .filter_map(|account| Some((account["id"].as_str()?, account["name"].as_str()?)));
-    super::apply(&mut transactions, names, annotations, rules);
+    super::apply(&mut transactions, names, annotations);
     for (row, transaction) in rows.iter_mut().zip(&transactions) {
         *row = serde_json::to_value(transaction).map_err(|error| error.to_string())?;
     }
@@ -38,8 +37,8 @@ fn financial_policy_handles_overrides_signs_and_reimbursements() {
             "Zelle receipt",
             "Transfer",
             100.0,
-            Mark::Income,
-            Kind::Income,
+            Mark::Transfer,
+            Kind::Transfer,
             false,
         ),
         (
@@ -54,8 +53,8 @@ fn financial_policy_handles_overrides_signs_and_reimbursements() {
             "Zelle receipt",
             "Reimbursement",
             100.0,
-            Mark::Income,
-            Kind::Income,
+            Mark::Refund,
+            Kind::Reimbursement,
             false,
         ),
         (
@@ -151,7 +150,9 @@ fn financial_policy_handles_overrides_signs_and_reimbursements() {
     }
     let mut t = transaction("Example", "Other", 10.0);
     t.description = Some("ZELLE receipt".into());
-    assert_eq!(classify(&t).kind, Kind::Income);
+    // Money received through Zelle is not income on its own.
+    assert_eq!(classify(&t).kind, Kind::Other);
+    assert!(classify(&t).zelle);
     t.description = Some("NotZelle receipt".into());
     assert!(!classify(&t).zelle);
 }
@@ -174,7 +175,7 @@ fn payment_app_outflows_are_spending_unless_recategorized() {
         value["id"] = format!("t{index}").into();
     }
     let mut manual = values.clone();
-    apply(&mut values, &[], &BTreeMap::new(), &[]).unwrap();
+    apply(&mut values, &[], &BTreeMap::new()).unwrap();
     for value in &values[..2] {
         assert_eq!(value["category"], PEOPLE_CATEGORY);
         assert_eq!(value["classification"]["kind"], "expense");
@@ -191,7 +192,7 @@ fn payment_app_outflows_are_spending_unless_recategorized() {
             ..Default::default()
         },
     )]);
-    apply(&mut manual, &[], &annotations, &[]).unwrap();
+    apply(&mut manual, &[], &annotations).unwrap();
     assert_eq!(manual[0]["classification"]["kind"], "transfer");
 }
 
@@ -261,7 +262,7 @@ fn an_own_transfer_filed_as_income_or_spending_is_a_transfer() {
         ),
     ];
     let mut ruled = values.clone();
-    apply(&mut values, &[], &BTreeMap::new(), &[]).unwrap();
+    apply(&mut values, &[], &BTreeMap::new()).unwrap();
     assert_eq!(values[1]["classification"]["kind"], "transfer");
     assert_eq!(values[1]["category"], "Transfers");
     assert_eq!(values[1]["providerCategory"], "Income");
@@ -270,6 +271,12 @@ fn an_own_transfer_filed_as_income_or_spending_is_a_transfer() {
     assert_eq!(values[4]["classification"]["kind"], "transfer");
     assert_eq!(values[4]["classification"]["spending"], false);
     assert_eq!(values[4]["providerCategory"], "Other");
+    // Both legs of each pair name each other.
+    assert_eq!(values[0]["transferPairId"], "arrived");
+    assert_eq!(values[1]["transferPairId"], "sent");
+    assert!(values[2].get("transferPairId").is_none());
+    assert_eq!(values[4]["transferPairId"], "received");
+    assert_eq!(values[5]["transferPairId"], "moved");
 
     // A category chosen by hand keeps its meaning.
     let annotations = BTreeMap::from([(
@@ -279,8 +286,146 @@ fn an_own_transfer_filed_as_income_or_spending_is_a_transfer() {
             ..Default::default()
         },
     )]);
-    apply(&mut ruled, &[], &annotations, &[]).unwrap();
+    apply(&mut ruled, &[], &annotations).unwrap();
     assert_eq!(ruled[1]["classification"]["kind"], "income");
+    assert!(ruled[1].get("transferPairId").is_none());
+}
+
+#[test]
+fn transfers_pair_once_each_and_only_between_your_accounts() {
+    let leg = |id: &str, account: &str, date: &str, amount: f64, category: &str, code: &str| {
+        let mut t = transaction("Synthetic transfer", category, amount);
+        t.category_detail = (!code.is_empty()).then(|| code.into());
+        let mut value = serde_json::to_value(t).unwrap();
+        value["id"] = id.into();
+        value["accountId"] = account.into();
+        value["date"] = date.into();
+        value
+    };
+    let card = "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT";
+    let out = "TRANSFER_OUT_ACCOUNT_TRANSFER";
+    let mut values = vec![
+        // The card credits a payment a day before the bank sends it; one credit receives one
+        // payment, so a second payment of the same amount stays unpaired.
+        leg(
+            "credited",
+            "plaid:card",
+            "2026-10-07",
+            85.0,
+            "Loan Payments",
+            card,
+        ),
+        leg(
+            "paid",
+            "plaid:savings",
+            "2026-10-08",
+            -85.0,
+            "Loan Payments",
+            card,
+        ),
+        leg(
+            "paid-again",
+            "plaid:savings",
+            "2026-10-09",
+            -85.0,
+            "Loan Payments",
+            card,
+        ),
+        // Two equal instant payments to yourself, filed as income, pair one each.
+        leg(
+            "arrived-1",
+            "plaid:checking",
+            "2026-05-02",
+            250.0,
+            "Income",
+            "INCOME_OTHER_INCOME",
+        ),
+        leg(
+            "arrived-2",
+            "plaid:checking",
+            "2026-05-02",
+            250.0,
+            "Income",
+            "INCOME_OTHER_INCOME",
+        ),
+        leg(
+            "sent-1",
+            "plaid:bank",
+            "2026-05-04",
+            -250.0,
+            "Transfers",
+            out,
+        ),
+        leg(
+            "sent-2",
+            "plaid:bank",
+            "2026-05-04",
+            -250.0,
+            "Transfers",
+            out,
+        ),
+        // A leg the provider left uncategorized is the other half of a transfer too.
+        leg(
+            "moved",
+            "plaid:savings",
+            "2026-08-13",
+            -15.0,
+            "Transfers",
+            out,
+        ),
+        leg("received", "plaid:cash", "2026-08-13", 15.0, "Other", ""),
+        // Cash withdrawn and money from a person through a payment app never pair.
+        leg(
+            "atm",
+            "plaid:checking",
+            "2026-10-01",
+            -20.0,
+            "Transfers",
+            "TRANSFER_OUT_WITHDRAWAL",
+        ),
+        leg(
+            "deposit",
+            "plaid:savings",
+            "2026-10-01",
+            20.0,
+            "Transfers",
+            "TRANSFER_IN_ACCOUNT_TRANSFER",
+        ),
+        leg(
+            "friend",
+            "plaid:cash",
+            "2026-06-05",
+            30.0,
+            "Transfers",
+            "TRANSFER_IN_TRANSFER_IN_FROM_APPS",
+        ),
+        leg(
+            "sweep",
+            "plaid:checking",
+            "2026-06-05",
+            -30.0,
+            "Transfers",
+            out,
+        ),
+    ];
+    apply(&mut values, &[], &BTreeMap::new()).unwrap();
+    let pair = |index: usize| values[index].get("transferPairId").and_then(Value::as_str);
+    assert_eq!(
+        (pair(0), pair(1), pair(2)),
+        (Some("paid"), Some("credited"), None)
+    );
+    assert_eq!(
+        (pair(3), pair(4), pair(5), pair(6)),
+        (
+            Some("sent-1"),
+            Some("sent-2"),
+            Some("arrived-1"),
+            Some("arrived-2")
+        )
+    );
+    assert_eq!((pair(7), pair(8)), (Some("received"), Some("moved")));
+    assert_eq!(values[8]["classification"]["kind"], "transfer");
+    assert!((9..values.len()).all(|index| pair(index).is_none()));
 }
 
 #[test]
@@ -312,7 +457,7 @@ fn someone_elses_money_is_neither_spending_nor_income() {
         ),
         ("repayment".into(), other),
     ]);
-    apply(&mut values, &[], &annotations, &[]).unwrap();
+    apply(&mut values, &[], &annotations).unwrap();
     let [purchase, refund, repayment, mine] = values.as_slice() else {
         unreachable!()
     };
@@ -368,7 +513,7 @@ fn plaid_codes_decide_meaning_and_labels_follow_the_category() {
             ..Default::default()
         },
     )]);
-    apply(&mut values, &[], &annotations, &[]).unwrap();
+    apply(&mut values, &[], &annotations).unwrap();
     assert!(values[0].get("subcategory").is_none());
     assert_eq!(values[0]["classification"]["kind"], "expense");
 }
@@ -427,7 +572,7 @@ fn posted_transactions_keep_annotations_made_while_pending() {
             ..Default::default()
         },
     )]);
-    apply(&mut values, &[], &annotations, &[]).unwrap();
+    apply(&mut values, &[], &annotations).unwrap();
     assert_eq!(values[0]["category"], "Travel");
     assert_eq!(values[0]["reviewed"], true);
 }
@@ -444,7 +589,7 @@ fn annotations_reclassify_and_legacy_identity_requires_unique_name() {
             ..Default::default()
         },
     )]);
-    apply(&mut values, &accounts, &annotations, &[]).unwrap();
+    apply(&mut values, &accounts, &annotations).unwrap();
     assert_eq!(values[0]["classification"]["kind"], "transfer");
     assert_eq!(values[0]["classification"]["spending"], false);
     assert_eq!(values[0]["accountId"], "one");
@@ -453,7 +598,6 @@ fn annotations_reclassify_and_legacy_identity_requires_unique_name() {
         &mut values,
         &[accounts[0].clone(), json!({"id":"two", "name":"Example"})],
         &BTreeMap::new(),
-        &[],
     )
     .unwrap();
     assert!(values[0].get("accountId").is_none());
@@ -469,7 +613,6 @@ fn browser_seed_contains_native_transaction_policy() {
         projected["transactions"].as_array_mut().unwrap(),
         accounts,
         &BTreeMap::new(),
-        &[],
     )
     .unwrap();
     if std::env::var_os("BRIEF_UPDATE_CONTRACT_FIXTURE").is_some() {
@@ -540,7 +683,7 @@ fn tags_splits_and_refund_links_apply_at_read_time_without_changing_saved_rows()
     ]);
     // Each read applies annotations to a copy of the committed rows.
     let committed = values.clone();
-    apply(&mut values, &[], &annotations, &[]).unwrap();
+    apply(&mut values, &[], &annotations).unwrap();
     assert_eq!(values[0]["tags"], json!(["party"]));
     assert_eq!(
         values[0]["splits"][1],
@@ -558,7 +701,7 @@ fn tags_splits_and_refund_links_apply_at_read_time_without_changing_saved_rows()
 
     // Without the annotations the same committed rows read as the provider reported them.
     let mut values = committed;
-    apply(&mut values, &[], &BTreeMap::new(), &[]).unwrap();
+    apply(&mut values, &[], &BTreeMap::new()).unwrap();
     assert!(values[0].get("tags").is_none() && values[0].get("splits").is_none());
     assert!(values[2].get("refundOf").is_none());
     assert_eq!(values[2]["category"], "Transfer In");

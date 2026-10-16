@@ -22,13 +22,17 @@ export function accountValueChart(
 ) {
   const combined = account.id === 'all' || account.type === 'combined'
   const investment = account.type === 'brokerage' || account.type === 'retirement'
+  // An investment account's history is its performance; a manual one, valued by hand or by
+  // its statements, has only a balance history.
+  const ofAccount = ({ accountId }: { accountId: string }) => accountId === account.id
   const history =
     account.value == null
       ? []
       : combined
         ? data.netWorthHistory
-        : ((investment ? data.brokeragePerformance : data.accountBalanceHistory).find(
-            ({ accountId }) => accountId === account.id,
+        : ((
+            (investment ? data.brokeragePerformance.find(ofAccount) : undefined) ??
+            data.accountBalanceHistory.find(ofAccount)
           )?.points ?? [])
   const chartValue =
     combined && data.netWorthProvisional ? (history.at(-1)?.value ?? account.value) : account.value

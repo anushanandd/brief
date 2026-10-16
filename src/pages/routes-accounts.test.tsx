@@ -13,13 +13,12 @@ it('links account selections and defaults the workspace to all accounts', async 
   expect(allHtml).toContain('href="/accounts?account=selected"')
   // Every account sits under its group; the list, not a strip, is the way into each one.
   expect(allHtml).toContain('<h2>Balances</h2>')
-  expect(allHtml).toContain('<h2>Made of</h2>')
+  expect(allHtml).not.toContain('<h2>Made of</h2>')
   expect(allHtml).toContain('class="account-group-section"')
   expect(allHtml).not.toContain('class="account-switcher"')
   expect(allHtml.indexOf('<h2>Account details</h2>')).toBeLessThan(
-    allHtml.indexOf('<h2>Made of</h2>'),
+    allHtml.indexOf('<h2>Coming up</h2>'),
   )
-  expect(allHtml).toContain('<h2>Coming up</h2>')
 
   const html = await renderRoute('/accounts?account=other', '')
   expect(html).toContain('Other card')
@@ -33,7 +32,7 @@ it('links account selections and defaults the workspace to all accounts', async 
   expect(html).toContain('aria-current="page">Other card')
 })
 
-it('shows all-account investment figures in their own card before the composition', async () => {
+it('shows all-account investment figures in their own card before Coming up', async () => {
   scenario.accountType = 'brokerage'
   scenario.partialBasis = true
   scenario.trades = [
@@ -48,13 +47,16 @@ it('shows all-account investment figures in their own card before the compositio
     },
   ]
   const html = await renderRoute('/accounts')
-  // Gains, income, and contributions across accounts sit in Account details, above "Made of".
+  // Gains, income, and contributions across accounts sit in Account details, above "Coming up".
   expect(html).toContain('<h2>Balances</h2>')
   expect(html).not.toContain('account-details-more')
   const details = html.slice(
     html.indexOf('<h2>Account details</h2>'),
-    html.indexOf('<h2>Made of</h2>'),
+    html.indexOf('<h2>Coming up</h2>'),
   )
+  // The scenario's accounts are all owed balances.
+  expect(details).toContain('<span>Assets</span>')
+  expect(details).toContain('<span>Liabilities</span>')
   expect(details).toContain('<span>Known unrealized P/L</span>')
   expect(details).toContain('<span>Estimated realized P/L</span>')
   expect(details).toContain('<span>Net contributions</span>')
@@ -64,14 +66,16 @@ it('shows all-account investment figures in their own card before the compositio
   expect(html).not.toContain('Estimated FIFO P/L $5.00')
 })
 
-it('keeps the saved spending account out of the Accounts workspace', async () => {
-  const html = await renderRoute('/accounts?account=selected')
-  const page = html.slice(html.indexOf('class="page accounts-workspace-page"'))
-  // The saved card can't be opened here; the page falls back to every other account.
-  expect(page).toContain('href="/accounts?account=other"')
-  expect(page).not.toContain('href="/accounts?account=selected"')
-  expect(page).not.toContain('aria-current="page">Selected card')
-  expect(page).not.toContain('Resy credit')
+it('lists the spending card on Accounts apart from the totals, and opens it', async () => {
+  const all = await renderRoute('/accounts')
+  const list = all.slice(all.indexOf('aria-label="Balances by account"'))
+  expect(list).toContain('Spending cards<small> · Not in total</small>')
+  expect(list).toContain('href="/accounts?account=selected"')
+  const card = await renderRoute('/accounts?account=selected')
+  const page = card.slice(card.indexOf('class="page accounts-workspace-page"'))
+  expect(page).toContain('Spending card, not in totals')
+  // Its own page shows its activity, which All accounts leaves to Money.
+  expect(page).toContain('Resy credit')
 })
 
 it('offers CSV for matching Activity results and disables it for an empty date filter', async () => {
@@ -122,7 +126,7 @@ it('opens the complete activity ledger with the originating account selected', a
   expect(html).toContain('data-command="activity.filters.toggle"')
   expect(html).not.toContain('activity-filter-card')
   expect(html).not.toContain('role="combobox"')
-  // Coming up lives on Today; Activity is the ledger alone.
+  // Coming up lives on Home; Activity is the ledger alone.
   expect(html).not.toContain('<h2>Coming up</h2>')
   expect(html).not.toContain('Latest day')
   expect(html).not.toContain('>↵</kbd>')
@@ -277,7 +281,7 @@ it('shows the dated SnapTrade total on individual brokerage graphs only', async 
   expect(accountText).not.toContain('cash + positions')
   expect(accountText).not.toContain('Correct history')
 
-  // Today's hero is net worth, which no single provider reports.
+  // Home's hero is net worth, which no single provider reports.
   const home = await renderRoute('/')
   const homeText = home.replace(/<[^>]*>/g, '').replace(/\s+/g, ' ')
   expect(homeText).not.toContain('SnapTrade:')

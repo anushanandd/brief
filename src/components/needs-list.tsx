@@ -47,6 +47,14 @@ export function NeedsList({ data }: { data: FinanceSnapshot }) {
       case 'coverage-short':
       case 'cash-low':
         return <AccountMark type="cash" />
+      case 'contribution-limit':
+        return <AccountMark type="retirement" />
+      case 'pay-missing':
+        return need.accountId ? accountMark(need.accountId) : <AccountMark type="cash" />
+      case 'w2-differs':
+        return <AccountMark type="cash" />
+      case 'missed-bill':
+        return need.accountId ? accountMark(need.accountId) : <AccountMark type="cash" />
       default:
         return accountMark(need.accountId)
     }

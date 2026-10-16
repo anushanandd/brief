@@ -23,7 +23,7 @@ it('gathers merchant history, the expected schedule, benefit evidence, and the c
   const data = {
     ...financeSnapshotSchema.parse(empty),
     transactions: [
-      transaction('sep', { recurringId: 'series:stream', categorySource: 'rule', ruleId: 'r1' }),
+      transaction('sep', { recurringId: 'series:stream', categorySource: 'manual' }),
       transaction('aug', { recurringId: 'series:stream', date: '2026-08-12' }),
       transaction('jul', {
         recurringId: 'series:stream',
@@ -31,15 +31,6 @@ it('gathers merchant history, the expected schedule, benefit evidence, and the c
         merchant: 'EXAMPLE STREAMING ',
       }),
       transaction('other', { merchant: 'Other', recurringId: 'series:other' }),
-    ],
-    rules: [
-      {
-        id: 'r1',
-        pattern: 'streaming',
-        match: 'contains' as const,
-        category: 'Entertainment',
-        createdAt: '2026-01-01T00:00:00Z',
-      },
     ],
     insights: insights({
       expected: [
@@ -67,7 +58,8 @@ it('gathers merchant history, the expected schedule, benefit evidence, and the c
         activity: [benefitActivity({ id: 'sep', benefitName: 'Digital entertainment' })],
         windows: [],
         useFirst: [],
-        outcomes: [],
+        history: [],
+        review: [],
       },
     }),
   }
@@ -75,17 +67,16 @@ it('gathers merchant history, the expected schedule, benefit evidence, and the c
   expect(detail.history.map(({ id }) => id)).toEqual(['aug', 'jul'])
   expect(detail.expected?.frequency).toBe('Monthly')
   expect(detail.benefits.map(({ benefitName }) => benefitName)).toEqual(['Digital entertainment'])
-  expect(detail.categoryOrigin).toBe('rule')
-  expect(detail.rule?.pattern).toBe('streaming')
+  expect(detail.categoryOrigin).toBe('manual')
   // A grouping key alone does not make a transaction recurring.
   expect(transactionDetail(data, 'spending:other')?.expected).toBeUndefined()
   expect(transactionDetail(data, 'trade:sep')).toBeUndefined()
   expect(transactionDetail(data, 'spending:missing')).toBeUndefined()
 })
 
-it('builds an Apple Maps link only from the address it is given', () => {
+it('builds a Google Maps link only from the address it is given', () => {
   expect(mapsUrl('1 Market St · San Francisco, CA')).toBe(
-    'https://maps.apple.com/?q=1%20Market%20St%20%C2%B7%20San%20Francisco%2C%20CA',
+    'https://www.google.com/maps/search/?api=1&query=1%20Market%20St%20%C2%B7%20San%20Francisco%2C%20CA',
   )
 })
 
@@ -113,12 +104,16 @@ it('finds what Rust flagged about a transaction and opens Maps at its coordinate
             id: 'trip:1',
             start: '2026-09-01',
             end: '2026-09-03',
+            days: [],
+            perDay: 0,
             destination: 'Austin, TX',
             abroad: false,
             total: -300,
             categories: [],
             transactionIds: ['trip-dinner'],
             ongoing: false,
+            flew: false,
+            stops: [],
           },
         ],
         home: ['CA, US'],
@@ -129,6 +124,6 @@ it('finds what Rust flagged about a transaction and opens Maps at its coordinate
   expect(transactionDetail(data, 'spending:trip-dinner')?.trip?.destination).toBe('Austin, TX')
   expect(transactionDetail(data, 'spending:a')?.unusual).toBeUndefined()
   expect(mapsUrl('Cafe', { lat: 37.77, lon: -122.42 })).toBe(
-    'https://maps.apple.com/?ll=37.77,-122.42&q=Cafe',
+    'https://www.google.com/maps/search/?api=1&query=37.77%2C-122.42',
   )
 })

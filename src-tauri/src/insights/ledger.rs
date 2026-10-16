@@ -6,7 +6,7 @@ use chrono::{Datelike, Duration, NaiveDate};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use super::calendar::{self, Zone};
+use super::calendar;
 use super::{Insights, View};
 use crate::finance_contract::Transaction;
 use crate::numeric::{from_minor, minor_units};
@@ -21,7 +21,6 @@ fn to_json(value: &impl serde::Serialize) -> Result<Value, String> {
 pub struct Ledger<'a> {
     view: &'a View,
     pub today: NaiveDate,
-    zone: &'a dyn Zone,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -36,8 +35,8 @@ fn parse_date(value: Option<&str>) -> Option<NaiveDate> {
 }
 
 impl<'a> Ledger<'a> {
-    pub fn new(view: &'a View, today: NaiveDate, zone: &'a dyn Zone) -> Self {
-        Self { view, today, zone }
+    pub fn new(view: &'a View, today: NaiveDate) -> Self {
+        Self { view, today }
     }
 
     fn reference(&self) -> &str {
@@ -45,7 +44,7 @@ impl<'a> Ledger<'a> {
     }
 
     fn date(&self, transaction: &Transaction) -> Option<NaiveDate> {
-        calendar::transaction_date(transaction.posted_date(), self.reference(), self.zone)
+        calendar::transaction_date(transaction.posted_date())
     }
 
     fn account_name(&self, id: Option<&str>) -> String {
@@ -360,6 +359,7 @@ impl<'a> Ledger<'a> {
                 "start": trip.start,
                 "end": trip.end,
                 "total": trip.total,
+                "perDay": trip.per_day,
                 "transactions": trip.transaction_ids.len(),
             })).collect::<Vec<_>>(),
         }))
@@ -449,7 +449,7 @@ mod tests {
     fn queries_sum_classified_activity_in_cents_and_reject_bad_input() {
         let view = view(false);
         let today = NaiveDate::from_ymd_opt(2026, 8, 31).unwrap();
-        let ledger = Ledger::new(&view, today, &NamedZone::Utc);
+        let ledger = Ledger::new(&view, today);
         // Without insights, the tools that quote them say so.
         assert!(ledger.call("creditCards", &json!({}))["error"].is_string());
         let spending = ledger.call(
@@ -500,7 +500,7 @@ mod tests {
     fn insight_tools_quote_native_results() {
         let view = view(true);
         let today = NaiveDate::from_ymd_opt(2026, 8, 31).unwrap();
-        let ledger = Ledger::new(&view, today, &NamedZone::Utc);
+        let ledger = Ledger::new(&view, today);
         let cards = ledger.call("creditCards", &json!({}));
         assert_eq!(cards["cards"][1]["card"], "Freedom Unlimited");
         assert_eq!(cards["cards"][1]["utilizationPercent"], 30.67);

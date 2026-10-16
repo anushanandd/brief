@@ -1,7 +1,7 @@
 //! Imported statement files.
 use super::*;
 
-fn storage_with_plaid_cash(directory: &Path) -> Storage {
+pub(super) fn storage_with_plaid_cash(directory: &Path) -> Storage {
     let mut storage = Storage::new(directory.to_path_buf()).unwrap();
     storage.data.snapshot.updated_at = "2026-09-10T07:30:00Z".into();
     storage.data.snapshot.calculation_version = Some(1);
@@ -112,6 +112,66 @@ fn statements_that_fail_their_total_or_hold_trades_for_a_cash_account_are_refuse
         "Statements with trades belong to an investment account"
     );
     assert!(storage.data.statements.is_empty());
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_plan_export_values_a_manual_account_entered_without_a_balance() {
+    let directory = directory();
+    let mut storage = storage_with_plaid_cash(&directory);
+    let mut settings = storage.data.settings.clone();
+    settings
+        .manual_accounts
+        .push(crate::settings::ManualAccount {
+            id: "manual:plan".into(),
+            name: "Workplace plan".into(),
+            kind: "retirement".into(),
+            entries: Vec::new(),
+            tracks_sp500: false,
+        });
+    storage.save_settings(settings, false).unwrap();
+    let plan = "\"POSTING DATE\",\"ACTIVITY TYPE\",\"PLAN\",\"FUND\",\"AMOUNT\",\"FUND NAV/PRICE\",\"FUND UNITS\"\n\
+        \"08-01-2026\",\"Before-Tax\",\"Sample Plan\",\"Sample Index Fund\",\"100.00\",\"50.00\",\"2.00\"\n\
+        \"08-15-2026\",\"Before-Tax\",\"Sample Plan\",\"Sample Index Fund\",\"60.00\",\"60.00\",\"1.00\"\n";
+    let (preview, draft) = storage
+        .preview_statement("plan.csv".into(), plan.as_bytes().to_vec())
+        .unwrap();
+    let fit = preview
+        .accounts
+        .iter()
+        .find(|fit| fit.account_id == "manual:plan")
+        .expect("a manual account can take a statement");
+    assert_eq!(fit.counts.added, 2);
+    storage.import_statement(draft, "manual:plan").unwrap();
+
+    let snapshot = storage.snapshot().unwrap();
+    let account = snapshot["accounts"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|account| account["id"] == "manual:plan")
+        .unwrap();
+    // Three units at the latest price, 60.
+    assert_eq!(account["value"], 180.0);
+    assert_eq!(account["name"], "Workplace plan");
+    // A fund without a market price is listed on its account, not among holdings.
+    assert!(snapshot["holdings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .all(|holding| holding["accountId"] != "manual:plan"));
+    assert_eq!(
+        account["statementPositions"][0]["name"],
+        "Sample Index Fund"
+    );
+    assert_eq!(account["statementPositions"][0]["units"], 3.0);
+    // The plan's own label names the source: the employee's deferral.
+    assert!(snapshot["transactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter(|row| row["accountId"] == "manual:plan")
+        .all(|row| row["account"] == "Workplace plan" && row["flow"] == "deferral"));
     fs::remove_dir_all(directory).unwrap();
 }
 

@@ -231,11 +231,14 @@ export function cashMetrics({
   summary,
   range,
   interest,
+  apy,
 }: {
   account: Account
   summary: TransactionSummary
   range: ChartPeriod
   interest: Insights['interest'][number] | undefined
+  /** The APY the user recorded for the account, in percent. */
+  apy?: number
 }): ReactElement[] {
   const interestRate = interest?.periods.find(({ window }) => window === range)?.annualRate ?? null
   const averageMonthlyFlow = interest?.monthlyNetFlow ?? null
@@ -264,7 +267,23 @@ export function cashMetrics({
       range={range}
       accountId={account.id}
     />,
-    <Metric key="rate" label="Est. interest rate" value={formatShare(interestRate, 2)} />,
+    apy == null ? (
+      <Metric key="rate" label="Est. interest rate" value={formatShare(interestRate, 2)} />
+    ) : (
+      // The stated rate beside what posted interest shows the account earning.
+      <Metric
+        key="rate"
+        label="APY"
+        value={
+          <>
+            {formatShare(apy, 2)}
+            <small className="metric-detail">
+              {interestRate == null ? 'stated' : `earning ${formatShare(interestRate, 2)}`}
+            </small>
+          </>
+        }
+      />
+    ),
     <Metric
       key="net"
       label="Net flow"

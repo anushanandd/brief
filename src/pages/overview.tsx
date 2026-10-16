@@ -4,13 +4,15 @@ import { useMemo, useState } from 'react'
 import { AccountGroups, AccountRows } from '../components/account-groups'
 import { ActivityList } from '../components/activity-list'
 import { ChartRangeSelector, PerformanceChart } from '../components/charts'
-import { ComingUp } from '../components/coming-up'
 import { PageError, HomeLoading, ValueHistoryEmptyState } from '../components/data-state'
+import { ExpectedActivity } from '../components/expected-activity'
 import { ChevronRight } from '../components/icons'
 import { NeedsList } from '../components/needs-list'
 import { PeriodTotals } from '../components/period-totals'
 import { PinnedQueries } from '../components/pinned-queries'
 import { PositionTable } from '../components/position-table'
+import { ShareLine, type ShareSegment } from '../components/share-line'
+import { SinceLastRefresh, hasRefreshChanges } from '../components/since-last-refresh'
 import { SnapTradeReference } from '../components/snaptrade-reference'
 import { AnimatedCurrency, Card, ChartChange, EmptyState, SectionHeading } from '../components/ui'
 import { MarketStatus, WorkspaceHeader } from '../components/workspace-header'
@@ -18,6 +20,7 @@ import { useFinance } from '../hooks/use-finance'
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { accountGroups } from '../lib/account-groups'
+import type { AccountDisplayNames } from '../lib/account-names'
 import { accountStartDate } from '../lib/account-start-dates'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { buildActivities } from '../lib/activity'
@@ -44,11 +47,10 @@ import {
   marketClosePoint,
 } from '../lib/live-chart'
 import { getExternalLogosEnabled } from '../lib/logos'
+import type { FinanceSnapshot } from '../lib/schema'
 
-// Enough recent rows to read as a feed; the card scrolls past them inside its own height.
-const recentActivityRows = 8
-// Today previews the largest holdings; Investments lists them all.
-const holdingsPreviewRows = recentActivityRows
+// Home previews the largest holdings; Investments lists them all.
+const holdingsPreviewRows = 8
 
 export function OverviewPage() {
   const live = useLiveFinance()
@@ -92,7 +94,7 @@ export function OverviewPage() {
     [accountGroupsMode],
   )
   useRegisterActions(accountGroupsActions)
-  // Today is about everything you have: its hero is net worth, never one brokerage. The
+  // Home is about everything you have: its hero is net worth, never one brokerage. The
   // brokerages have their own chart on Investments.
   const netWorthView = useMemo(() => {
     if (!query.data) return undefined
@@ -183,15 +185,24 @@ export function OverviewPage() {
     )
     .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
   const { latestActivities } = details
+  // Recent activity runs as long as the longer of the two previews beside it.
+  const recentActivityRows = Math.max(
+    Math.min(holdings.length, holdingsPreviewRows),
+    accountGroupsMode === 'expanded' ? accounts.length : groups.length,
+  )
+  const allocation = committed.insights?.allocation
+  const holdingShares = allocation ? securityShares(allocation) : undefined
+  const accountShares = assetShares(accounts)
 
   return (
     <div className="page overview-page">
-      <WorkspaceHeader title="Today" status={<MarketStatus />} />
+      <WorkspaceHeader title="Home" status={<MarketStatus />} />
 
-      {/* Two columns that stack on their own: the hero and the previews it summarizes, beside
-          what needs you, what is coming, and the accounts behind the total. */}
+      {/* Two rows split by one rule. Above it, the chart sets the height and what's ahead fills
+          the column beside it, Coming up scrolling to the rule. Below it, holdings and accounts
+          beside what changed and recent activity. */}
       <div className="home-layout">
-        <div className="home-main">
+        <div className="home-top">
           <Card className="net-worth-card brokerage-performance-card">
             <header className="home-balance-header">
               <div className="home-balance-main">
@@ -247,10 +258,20 @@ export function OverviewPage() {
                 </div>
               </div>
             </div>
-            <div className="home-period-totals">
-              <PeriodTotals data={committed} window={changeWindow} />
-            </div>
           </Card>
+          <div className="home-companion home-ahead">
+            <Card className="home-overview-summary home-ahead-card home-period-card">
+              <PeriodTotals data={committed} window={changeWindow} />
+            </Card>
+            {committed.insights?.brief.needs.length ? (
+              <Card className="home-overview-summary home-ahead-card home-needs-card">
+                <NeedsList data={committed} />
+              </Card>
+            ) : null}
+            <ExpectedActivity data={data} className="home-expected-card" />
+          </div>
+        </div>
+        <div className="home-bottom">
           <div className="home-previews">
             <Card className="brokerage-holdings-card">
               <PositionTable
@@ -278,7 +299,47 @@ export function OverviewPage() {
                   <ChevronRight size={14} aria-hidden="true" />
                 </Link>
               ) : null}
+              {holdingShares ? <ShareLine label="Holdings by ticker" {...holdingShares} /> : null}
             </Card>
+            <Card className="accounts-overview-card home-overview-card">
+              <SectionHeading
+                title={
+                  <Link
+                    to="/accounts"
+                    className="section-heading-link"
+                    data-command="navigation.open./accounts"
+                  >
+                    Accounts <ChevronRight size={14} aria-hidden="true" />
+                  </Link>
+                }
+              />
+              <div
+                className="overview-list"
+                role="region"
+                aria-label="Accounts"
+                tabIndex={0}
+                data-keyboard-region
+              >
+                {accountGroupsMode === 'expanded' ? (
+                  <AccountRows
+                    accounts={accounts}
+                    changes={periodChanges?.accounts}
+                    accountNames={accountDisplayNames}
+                  />
+                ) : (
+                  <AccountGroups
+                    groups={groups}
+                    changes={periodChanges?.accounts}
+                    accountNames={accountDisplayNames}
+                  />
+                )}
+                {!accounts.length ? <EmptyState>No accounts yet.</EmptyState> : null}
+              </div>
+              <ShareLine label="Assets by type" segments={accountShares} />
+            </Card>
+          </div>
+          <div className="home-companion">
+            <SinceLastRefreshCard data={committed} accountNames={accountDisplayNames} />
             <Card className="home-overview-card home-activity-card">
               <SectionHeading
                 title={
@@ -298,53 +359,59 @@ export function OverviewPage() {
             </Card>
           </div>
         </div>
-        <div className="home-companion">
-          {committed.insights?.brief.needs.length ? (
-            <Card className="home-overview-summary home-ahead-card home-needs-card">
-              <NeedsList data={committed} />
-            </Card>
-          ) : null}
-          <Card className="home-overview-summary home-ahead-card">
-            <ComingUp data={data} />
-          </Card>
-          <Card className="accounts-overview-card home-overview-card">
-            <SectionHeading
-              title={
-                <Link
-                  to="/accounts"
-                  className="section-heading-link"
-                  data-command="navigation.open./accounts"
-                >
-                  Accounts <ChevronRight size={14} aria-hidden="true" />
-                </Link>
-              }
-            />
-            <div
-              className="overview-list"
-              role="region"
-              aria-label="Accounts"
-              tabIndex={0}
-              data-keyboard-region
-            >
-              {accountGroupsMode === 'expanded' ? (
-                <AccountRows
-                  accounts={accounts}
-                  changes={periodChanges?.accounts}
-                  accountNames={accountDisplayNames}
-                />
-              ) : (
-                <AccountGroups
-                  groups={groups}
-                  changes={periodChanges?.accounts}
-                  accountNames={accountDisplayNames}
-                />
-              )}
-              {!accounts.length ? <EmptyState>No accounts yet.</EmptyState> : null}
-            </div>
-          </Card>
-        </div>
       </div>
       <PinnedQueries />
     </div>
   )
+}
+
+/** The card for what the last refresh changed, left out when it changed nothing. */
+function SinceLastRefreshCard({
+  data,
+  accountNames,
+}: {
+  data: FinanceSnapshot
+  accountNames: AccountDisplayNames
+}) {
+  return hasRefreshChanges(data) ? (
+    <Card className="home-overview-summary home-ahead-card">
+      <SinceLastRefresh data={data} accountNames={accountNames} />
+    </Card>
+  ) : null
+}
+
+type Allocation = NonNullable<NonNullable<FinanceSnapshot['insights']>['allocation']>
+
+/** Positions by ticker from the native allocation, with uninvested cash closing the line. */
+function securityShares(allocation: Allocation) {
+  const segments = allocation.securities.map(({ key, value, percent }) => ({
+    key,
+    label: key,
+    value,
+    percent,
+  }))
+  const invested = segments.reduce((sum, { value }) => sum + value, 0)
+  const cash = Math.round((allocation.total - invested) * 100) / 100
+  const rest =
+    cash > 0
+      ? {
+          key: 'cash',
+          label: 'Cash',
+          value: cash,
+          percent: Math.max(0, 100 - segments.reduce((sum, { percent }) => sum + percent, 0)),
+        }
+      : undefined
+  return { segments, rest }
+}
+
+/** What accounts with a positive balance hold, by type (cash, brokerage, retirement…). */
+function assetShares(accounts: FinanceSnapshot['accounts']): ShareSegment[] {
+  const groups = accountGroups(accounts.filter(({ value }) => value != null && value > 0))
+  const total = groups.reduce((sum, { value }) => sum + value!, 0)
+  return groups.map(({ type, label, value }) => ({
+    key: type,
+    label,
+    value: value!,
+    percent: (value! / total) * 100,
+  }))
 }

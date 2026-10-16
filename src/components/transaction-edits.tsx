@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react'
 
+import { useContactPhotos } from '../hooks/use-contact-photos'
 import { useFinanceEdits } from '../hooks/use-finance-edits'
 import type { TransactionAnnotationChanges } from '../lib/annotations'
 import { formatActivityName, formatCurrency } from '../lib/format'
@@ -9,11 +10,16 @@ import { evenSplit, splitDraftState, type SplitDraft } from '../lib/splits'
 import { categoryChoices } from '../lib/transaction-detail'
 import { FilterSelect } from './filter-select'
 import { X } from './icons'
+import { PeoplePicker } from './people-picker'
 import { Button } from './ui'
 
+/** A purchase as a refund names it. */
+const purchaseLabel = (item: Transaction) =>
+  `${formatActivityName(item.merchant)} on ${formatActivityDate(item.postedOn ?? item.date)}`
+
 /**
- * Edits to one transaction: its category, whether it's someone else's money, tags, a split
- * between categories, and the purchase a refund repays. Each saves through the native annotation
+ * Edits to one transaction: its category, whether it's someone else's money, tags, people, a
+ * split between categories, and the purchase a refund repays. Each saves through the native annotation
  * command and reports its own pending and error state; Rust validates and applies them.
  */
 export function TransactionEdits({
@@ -30,8 +36,20 @@ export function TransactionEdits({
   const [pending, setPending] = useState(false)
   const [error, setError] = useState<string>()
   const [tag, setTag] = useState('')
+  const [note, setNote] = useState<string>()
   const [draft, setDraft] = useState<SplitDraft[]>()
   const tagInput = useRef<HTMLInputElement>(null)
+  const peopleInput = useRef<HTMLInputElement>(null)
+  const noteInput = useRef<HTMLTextAreaElement>(null)
+  const people = data.settings?.people ?? []
+  const photos = useContactPhotos(people)
+  const savedNote = transaction.note ?? ''
+  const commitNote = () => {
+    if (note === undefined) return
+    const next = note.trim()
+    setNote(undefined)
+    if (next !== savedNote) void save({ note: next })
+  }
   const run = async (action: () => Promise<unknown>) => {
     if (pending) return false
     setPending(true)
@@ -65,12 +83,9 @@ export function TransactionEdits({
           data.insights?.refundSuggestions.find(({ refundId }) => refundId === transaction.id)
             ?.purchaseId,
       )
-  const purchaseLabel = (item: Transaction) =>
-    `${formatActivityName(item.merchant)} on ${formatActivityDate(item.postedOn ?? item.date, data.updatedAt)}`
-
   return (
     <section className="transaction-edits" aria-label="Edit" aria-busy={pending || undefined}>
-      {/* Targets for the inspector's C and T keys; S presses the split button itself. */}
+      {/* Targets for the inspector's C, T, P, and N keys; S presses the split button itself. */}
       <button
         type="button"
         hidden
@@ -86,6 +101,18 @@ export function TransactionEdits({
         hidden
         data-inspector-key="tag"
         onClick={() => tagInput.current?.focus()}
+      />
+      <button
+        type="button"
+        hidden
+        data-inspector-key="people"
+        onClick={() => peopleInput.current?.focus()}
+      />
+      <button
+        type="button"
+        hidden
+        data-inspector-key="note"
+        onClick={() => noteInput.current?.focus()}
       />
       <div className="transaction-edit-row">
         <span>Category</span>
@@ -181,6 +208,54 @@ export function TransactionEdits({
               onChange={(event) => setTag(event.target.value)}
             />
           </form>
+        </div>
+      </div>
+
+      <div className="transaction-edit-row">
+        <span>People</span>
+        <div>
+          <PeoplePicker
+            label="Add a person"
+            chosen={transaction.people ?? []}
+            people={people}
+            photos={photos}
+            pending={pending}
+            inputRef={peopleInput}
+            onChange={(next) => annotate({ [transaction.id]: { people: next } })}
+          />
+          {transaction.peopleSource === 'matched' ? (
+            <span className="transaction-edit-note">Matched by name</span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="transaction-edit-row">
+        <span>Note</span>
+        <div>
+          <textarea
+            ref={noteInput}
+            className="transaction-tag-input transaction-note-input"
+            aria-label="Note"
+            aria-keyshortcuts="N"
+            placeholder="Add a note"
+            rows={note?.includes('\n') || savedNote.includes('\n') ? 3 : 1}
+            maxLength={500}
+            value={note ?? savedNote}
+            disabled={pending}
+            onChange={(event) => setNote(event.target.value)}
+            onBlur={commitNote}
+            onKeyDown={(event) => {
+              // Return saves; Shift+Return starts a new line; Escape drops the draft.
+              if (event.key === 'Enter' && !event.shiftKey) {
+                event.preventDefault()
+                commitNote()
+              }
+              if (event.key === 'Escape' && note !== undefined) {
+                event.stopPropagation()
+                setNote(undefined)
+              }
+            }}
+          />
         </div>
       </div>
 

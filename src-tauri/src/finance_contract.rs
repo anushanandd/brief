@@ -80,6 +80,10 @@ pub struct Snapshot {
     pub transactions: Vec<Transaction>,
     #[serde(default)]
     pub account_movements: Vec<AccountMovement>,
+    /// What refreshes changed in saved transactions, newest last: charges that settled for a
+    /// different amount, ones that vanished, ones the bank amended, and new ones.
+    #[serde(default)]
+    pub transaction_changes: Vec<TransactionChange>,
     pub spending: Spending,
     pub net_worth_history: Vec<Point>,
     #[serde(default)]
@@ -103,6 +107,12 @@ pub struct Snapshot {
     /// Reconstructed net worth against what was observed at each refresh.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub history_check: Option<HistoryCheck>,
+    /// Imported statements checked against Plaid, per account.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub statement_reconciliation: Vec<StatementReconciliation>,
+    /// The tax years imported brokerage statements say IRA contributions count toward.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contribution_years: Vec<ContributionYear>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub last_change: Option<Change>,
 }
@@ -153,6 +163,14 @@ pub struct Account {
     pub institution: String,
     pub r#type: String,
     pub value: Option<f64>,
+    /// Days a manual account's value was observed (an entry or a statement's price), oldest
+    /// first. Its history on other days, when it tracks the S&P 500, is estimated.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub observed_on: Vec<String>,
+    /// Fund units an imported statement shows a manual account holding, at the statement's
+    /// latest price. Without a market price they stay off the holdings list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub statement_positions: Vec<StatementPosition>,
     #[serde(default)]
     pub cash_value: Option<f64>,
     #[serde(default)]
@@ -213,6 +231,9 @@ pub struct Account {
     /// `taxFree`. Derived from the subtype; a saved choice overrides it when insights are read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tax_treatment: Option<String>,
+    /// The account number's last four characters, as the institution's own documents print it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub mask: Option<String>,
     /// The institution's registered domain from its provider-reported website, for its logo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub domain: Option<String>,
@@ -351,6 +372,22 @@ pub struct Transaction {
     pub posted_on: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub location: Option<TransactionLocation>,
+    /// What the card issuer's imported export says about the merchant.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub issuer: Option<crate::statements::IssuerDetail>,
+    /// Where it was made, as best known: the issuer's address, then the bank's descriptor, then
+    /// `location`, which stays the provider's own report. Absent for a purchase made remotely.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub place: Option<crate::places::Place>,
+    /// Whether the cardholder was there, from the evidence `merchants` weighs.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub presence: Option<crate::merchants::Presence>,
+    /// Plaid's merchant name, when the bank's own records contradict it and Brief shows another.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub provider_merchant: Option<String>,
+    /// The business Brief matched in its place data, when exactly one fits.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub business: Option<crate::places::Business>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub payment_channel: Option<String>,
     pub amount: f64,
@@ -360,6 +397,9 @@ pub struct Transaction {
     pub pending: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub benefit_confirmed: Option<bool>,
+    /// The card benefit this transaction was assigned to by hand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub benefit_id: Option<String>,
     pub description: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub logo_url: Option<String>,
@@ -387,8 +427,6 @@ pub struct Transaction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub provider_category: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub rule_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub reviewed: Option<bool>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub tags: Vec<String>,
@@ -401,9 +439,22 @@ pub struct Transaction {
     /// The purchase this refund repays. Its category follows that purchase.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub refund_of: Option<String>,
+    /// The other leg of a move between two of your accounts, by id, as
+    /// `transaction_policy` paired them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transfer_pair_id: Option<String>,
     /// Someone else's money: a purchase made for them, or what they paid you back.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub other: bool,
+    /// A note in the user's own hand.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub note: Option<String>,
+    /// The people this transaction is with, by id: chosen by hand, or matched by name.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub people: Vec<String>,
+    /// Where `people` came from; absent when nobody was chosen and no name matched.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub people_source: Option<crate::transaction_policy::PeopleSource>,
     /// Plaid's stable merchant identity, shared by every location and descriptor variant.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merchant_entity_id: Option<String>,
@@ -421,6 +472,66 @@ pub struct Transaction {
     /// `qualified` or `nonQualified`, for a dividend whose provider says which.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dividend_type: Option<String>,
+    /// What the institution called cash moving into or out of an investment account:
+    /// `contribution`, `deposit`, `transfer`, or `withdrawal`; and from a workplace plan's
+    /// export, `deferral` (the employee's own, pre-tax or Roth), `employer`, or `afterTax`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub flow: Option<String>,
+    /// How well each detail is supported, graded by `quality` when the view is read.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality: Option<crate::quality::Quality>,
+}
+
+/// A brokerage's own note of the tax year an IRA contribution counts toward.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct ContributionYear {
+    pub account_id: String,
+    pub date: String,
+    pub tax_year: i32,
+    pub amount: f64,
+}
+
+/// How an account's statements compare with what Plaid reported over the days both cover.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatementReconciliation {
+    pub account_id: String,
+    pub from: String,
+    pub through: String,
+    /// Plaid transactions a statement row confirms.
+    #[serde(default)]
+    pub matched: Vec<String>,
+    /// Plaid transactions a statement row describes with a different amount.
+    #[serde(default)]
+    pub amount_differs: Vec<AmountDifference>,
+    /// Statement rows Plaid never reported.
+    #[serde(default)]
+    pub missing: Vec<MissingStatementRow>,
+    /// Posted Plaid transactions well inside a statement's days that it doesn't list.
+    #[serde(default)]
+    pub extra: Vec<String>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct AmountDifference {
+    pub transaction_id: String,
+    /// What the statement says, signed as transactions are.
+    pub statement_amount: f64,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MissingStatementRow {
+    pub file_id: String,
+    pub row_id: String,
+    pub date: String,
+    /// Signed as transactions are: positive moves money into the account.
+    pub amount: f64,
+    pub description: String,
+    /// The user confirmed it, so it is in history until Plaid reports it.
+    pub confirmed: bool,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -440,6 +551,14 @@ impl Transaction {
     /// The posting date when known, otherwise the transaction date.
     pub fn posted_date(&self) -> &str {
         self.posted_on.as_deref().unwrap_or(&self.date)
+    }
+
+    /// When the merchant processed it, which is what card issuers count benefits by; the
+    /// posting date when the feed reports no separate transaction date.
+    pub fn occurred_date(&self) -> &str {
+        self.occurred_on
+            .as_deref()
+            .unwrap_or_else(|| self.posted_date())
     }
 
     pub fn kind(&self) -> Option<crate::transaction_policy::Kind> {
@@ -530,6 +649,41 @@ pub struct AccountMovement {
     pub account_id: String,
     pub name: String,
     pub change: f64,
+    /// How much of the change the refresh's transaction changes account for, for Plaid cash
+    /// and card accounts; what's left over persistently points to missing activity.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explained: Option<f64>,
+}
+
+/// One change a refresh found in a saved transaction.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TransactionChange {
+    pub id: String,
+    pub observed_at: String,
+    pub kind: TransactionChangeKind,
+    pub transaction_id: String,
+    pub account_id: String,
+    pub merchant: String,
+    pub date: String,
+    pub amount: f64,
+    /// The amount before: the pending charge's, or the posted one the bank amended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub previous_amount: Option<f64>,
+    pub pending: bool,
+}
+
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum TransactionChangeKind {
+    /// New since the last refresh.
+    Added,
+    /// Posted for a different amount than its pending charge, such as a tip.
+    Settled,
+    /// Gone without a posted replacement: a dropped hold or a reversal.
+    Removed,
+    /// The bank changed the amount of a saved transaction.
+    Amended,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Point {
@@ -564,6 +718,15 @@ pub struct Performance {
     pub history_source: Option<String>,
     pub points: Vec<PerformancePoint>,
 }
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct StatementPosition {
+    pub name: String,
+    pub units: f64,
+    pub price: f64,
+    pub value: f64,
+    pub priced_on: String,
+}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PerformancePoint {
@@ -587,6 +750,15 @@ pub struct Change {
     pub net_worth_change: f64,
     pub account_changes: Vec<AccountChange>,
     pub new_transaction_ids: Vec<String>,
+    /// What this refresh changed in saved transactions; old activity arriving late is counted
+    /// in `backfilled` instead.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub transaction_changes: Vec<TransactionChange>,
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub backfilled: usize,
+}
+fn is_zero(value: &usize) -> bool {
+    *value == 0
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -594,6 +766,8 @@ pub struct AccountChange {
     pub account_id: String,
     pub name: String,
     pub change: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub explained: Option<f64>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]

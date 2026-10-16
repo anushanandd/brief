@@ -19,8 +19,10 @@
     opacity var(--duration-quick) var(--ease-out),
     transform var(--duration-quick) var(--ease-out);
 }
+/* The press lands the instant the pointer goes down; only the release eases. */
 .button-base:active {
   transform: scale(0.97);
+  transition-duration: 0s;
 }
 .button-compact {
   min-height: var(--button-height-compact);
@@ -98,12 +100,22 @@
 
 .surface-card {
   position: relative;
-  border: var(--hairline) solid var(--border-subtle);
-  border-radius: var(--radius-card);
-  background: var(--card-fill);
-  box-shadow: var(--shadow-card);
-  backdrop-filter: var(--glass-filter);
+  border-top: var(--hairline) solid var(--border-subtle);
   min-width: 0;
+}
+/* Sections sit straight on the page with only a rule above each one. This outranks each
+   section's own padding: text lines up with the page title, and the gap below sets the space
+   above the next rule. */
+:root .surface-card {
+  padding-inline: 0;
+  padding-bottom: 0;
+}
+/* The section's own top padding sits below each rule; the gap matches it above. Columns need
+   wide gutters with no outline to separate them. A page sets its own header spacing, so it's
+   left out. */
+:root :not(.page):has(> .surface-card, > * > .surface-card) {
+  row-gap: var(--card-padding);
+  column-gap: 48px;
 }
 .card-scroll-cue {
   position: absolute;
@@ -118,7 +130,6 @@
   border-radius: 50%;
   background: var(--popup-surface);
   color: var(--text-secondary);
-  backdrop-filter: var(--glass-filter);
   opacity: 0;
   pointer-events: none;
   transition: opacity var(--duration-quick) var(--ease-out);
@@ -317,8 +328,6 @@
   line-height: 1.4;
   overflow-wrap: anywhere;
   pointer-events: none;
-  -webkit-backdrop-filter: var(--popup-filter);
-  backdrop-filter: var(--popup-filter);
   transform-origin: var(--transform-origin);
   transition:
     opacity var(--duration-instant) var(--ease-out),
@@ -464,6 +473,7 @@
 .financial-table-scroll:has(> .position-table) {
   container: position-table / inline-size;
 }
+/* The market view keeps Price longest: Week %, then Total %, gives way first. */
 @container position-table (max-width: 640px) {
   .position-table-market :is(th, td):nth-child(4),
   .position-table-positions :is(th, td):nth-child(4) {
@@ -471,7 +481,6 @@
   }
 }
 @container position-table (max-width: 540px) {
-  .position-table-market :is(th, td):nth-child(2),
   .position-table-positions :is(th, td):nth-child(2) {
     display: none;
   }
@@ -483,6 +492,11 @@
 }
 @container position-table (max-width: 440px) {
   .position-table-market :is(th, td):nth-child(5) {
+    display: none;
+  }
+}
+@container position-table (max-width: 380px) {
+  .position-table-market :is(th, td):nth-child(2) {
     display: none;
   }
 }
@@ -527,34 +541,88 @@
   color: var(--text-secondary);
   transform: rotate(180deg);
 }
-.account-group .account-row-nested {
-  padding-left: 12px;
-  border-top: var(--hairline) solid var(--border-subtle);
-}
 .account-row-nested .account-row-name > small {
   text-transform: none;
 }
-.account-group-accounts {
-  animation: account-group-enter var(--duration-quick) var(--ease-out);
+/* Disclosed rows fade in where they open and leave at once; merchant groups and ranked-bar
+   details share this. */
+.account-group-accounts,
+.merchant-group-activities {
+  transition: opacity var(--duration-quick) var(--ease-out);
 }
-@keyframes account-group-enter {
-  from {
+@starting-style {
+  .account-group-accounts,
+  .merchant-group-activities {
     opacity: 0;
   }
 }
+/* An opened group's children hang from it on connector lines, as in a threaded outline: a
+   spine drops from the parent's mark, and each child turns off it on a rounded elbow into its
+   own mark; the last child's elbow ends the spine. The lines replace the dividers between
+   children, and the children sit a step in from the parent row. Parent and
+   child rows center a mark of --mark-size, so the geometry holds for every row kind. */
+.tree-parent,
+.tree-children {
+  --tree-spine: calc(var(--mark-size) / 2 - 0.5px);
+  --tree-indent: calc(var(--mark-size) / 2 + 20px);
+  --tree-line: 1px solid var(--border-strong);
+  /* Children tuck up under the parent, into the space its row keeps below its mark. */
+  --tree-pull: 10px;
+}
+.tree-parent {
+  position: relative;
+}
+.tree-parent[aria-expanded='true']::after {
+  position: absolute;
+  top: calc(50% + var(--mark-size) / 2 + 4px);
+  /* Ends where the first child's elbow begins, so the two never overlap. */
+  bottom: var(--tree-pull);
+  left: var(--tree-spine);
+  border-left: var(--tree-line);
+  content: '';
+}
+.tree-children {
+  margin-top: calc(-1 * var(--tree-pull));
+  padding: 0 0 6px var(--tree-indent);
+}
+.tree-children > .account-row,
+.tree-children > .financial-activity-list > .financial-activity-row {
+  position: relative;
+  border-bottom: 0;
+}
+/* Accounts sit a little tighter under their total; activities keep a list's own spacing. */
+.tree-children > .account-row {
+  min-height: 52px;
+  padding-block: 6px;
+}
+.tree-children > .account-row::before,
+.tree-children > .financial-activity-list > .financial-activity-row::before {
+  position: absolute;
+  top: 0;
+  left: calc(var(--tree-spine) - var(--tree-indent));
+  width: calc(var(--tree-indent) - var(--tree-spine) - 6px);
+  height: 50%;
+  border-bottom: var(--tree-line);
+  border-left: var(--tree-line);
+  border-bottom-left-radius: var(--radius-control);
+  content: '';
+}
+.tree-children > .account-row:not(:last-child)::after,
+.tree-children > .financial-activity-list > .financial-activity-row:not(:last-child)::after {
+  position: absolute;
+  top: 50%;
+  bottom: 0;
+  left: calc(var(--tree-spine) - var(--tree-indent));
+  border-left: var(--tree-line);
+  content: '';
+}
 @media (prefers-reduced-motion: reduce) {
-  .account-group-accounts {
-    animation: none;
-  }
   .account-group-row > svg {
     transition: none;
   }
 }
 .overview-list {
   margin-top: 12px;
-}
-.financial-activity-link:hover .financial-activity-copy strong {
-  color: var(--accent);
 }
 .metric {
   min-width: 0;
@@ -585,6 +653,13 @@
   font-weight: 500;
   white-space: normal;
   overflow-wrap: normal;
+}
+.metric > strong > a {
+  color: inherit;
+  text-decoration: none;
+}
+.metric > strong > a.warning {
+  color: var(--warning);
 }
 .position-security {
   display: flex;
@@ -638,10 +713,6 @@
 .financial-activity-row:last-child {
   border-bottom: 0;
 }
-.financial-activity-link {
-  cursor: pointer;
-}
-
 .financial-activity-copy,
 .financial-activity-meta {
   display: flex;
@@ -675,10 +746,22 @@
 .financial-activity-title strong {
   min-width: 0;
 }
-.financial-activity-external {
+/* Pending, or a second look Rust suggests, beside the merchant it describes. */
+.activity-badge {
   display: inline-flex;
   flex: none;
-  color: var(--ink);
+  height: 16px;
+  padding: 0 6px;
+  align-items: center;
+  border-radius: 999px; /* scale-exempt: a pill */
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--type-micro);
+  font-weight: 600;
+}
+.activity-badge.is-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
 }
 .financial-activity-meta {
   align-items: flex-end;
@@ -740,11 +823,9 @@
   white-space: normal;
   overflow-wrap: anywhere;
 }
-.financial-activity-copy .financial-activity-benefit.is-positive {
+.activity-badge.financial-activity-benefit.is-positive {
+  background: var(--positive-soft);
   color: var(--positive);
-}
-.financial-activity-copy .financial-activity-benefit.is-warning {
-  color: var(--warning);
 }
 .chart-container {
   width: 100%;

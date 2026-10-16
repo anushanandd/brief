@@ -6,24 +6,22 @@ import { accountGroups } from '../lib/account-groups'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { getDataHealth } from '../lib/api'
 import { financeSettings } from '../lib/finance-settings'
-import { countOf, formatCurrency, formatShare } from '../lib/format'
+import { countOf } from '../lib/format'
 import { chartPeriod } from '../lib/graph-preferences'
-import { sumCents } from '../lib/money'
 import type { Account, FinanceSnapshot } from '../lib/schema'
 import { AccountGroupList } from './account-groups'
 import { ExpectedActivity } from './expected-activity'
 import { Button, Card, EmptyState, SectionHeading, StatusDot } from './ui'
 
-const groupColors = ['var(--data-1)', 'var(--data-4)', 'var(--data-3)', 'var(--data-2)']
-
 /**
  * Every account at once: the combined chart, any connection that needs attention, each account
- * under its group beside recent activity, and a side column with the combined figures, what the
- * total is made of, and what's coming up.
+ * under its group beside recent activity, and a side column with the combined figures and what's
+ * coming up.
  */
 export function AllAccountsOverview({
   data,
   accounts,
+  spendingCards = [],
   graphWindow,
   chartCard,
   activityPreview,
@@ -31,6 +29,8 @@ export function AllAccountsOverview({
 }: {
   data: FinanceSnapshot
   accounts: Account[]
+  /** Cards Money presents, listed after the rest and left out of the totals. */
+  spendingCards?: Account[]
   graphWindow: number
   chartCard: ReactNode
   activityPreview: ReactNode
@@ -40,11 +40,15 @@ export function AllAccountsOverview({
   const names = financeSettings(data).accountNames
   const changeWindow = chartPeriod(graphWindow)
   const periodChanges = data.insights?.changes.find(({ window }) => window === changeWindow)
-  const groups = accountGroups(accounts, periodChanges?.accounts)
-  const assets = groups.filter(({ value }) => value != null && value > 0)
-  const assetTotal = sumCents(assets.map(({ value }) => value!)) || null
-  const liabilities = groups.filter(({ value }) => value != null && value < 0)
-  const unknown = groups.filter(({ value }) => value == null)
+  const groups = [
+    ...accountGroups(accounts, periodChanges?.accounts),
+    ...accountGroups(spendingCards, periodChanges?.accounts).map((group) => ({
+      ...group,
+      type: 'spending',
+      label: 'Spending cards',
+      outsideTotal: true,
+    })),
+  ]
 
   return (
     <div className="account-overview-dashboard all-accounts-overview">
@@ -72,59 +76,6 @@ export function AllAccountsOverview({
       </div>
       <div className="all-accounts-side">
         {details}
-        <Card className="account-overview-summary-card accounts-composition-card">
-          <SectionHeading title="Made of" />
-          {assetTotal ? (
-            <div className="accounts-composition-bar" aria-hidden="true">
-              {assets.map((group, index) => (
-                <i
-                  key={group.type}
-                  style={{
-                    flexGrow: group.value!,
-                    background: groupColors[index % groupColors.length],
-                  }}
-                />
-              ))}
-            </div>
-          ) : null}
-          <dl className="accounts-composition">
-            {assets.map((group, index) => (
-              <div key={group.type}>
-                <dt>
-                  <i
-                    className="analytics-category-dot"
-                    style={{ background: groupColors[index % groupColors.length] }}
-                    aria-hidden="true"
-                  />
-                  {group.label}
-                </dt>
-                <dd>
-                  <span className="sensitive-value">{formatCurrency(group.value)}</span>
-                  {assetTotal ? (
-                    <small>{formatShare((group.value! / assetTotal) * 100)}</small>
-                  ) : null}
-                </dd>
-              </div>
-            ))}
-            {liabilities.map((group) => (
-              <div key={group.type}>
-                <dt>{group.label}</dt>
-                <dd>
-                  <span className="sensitive-value negative">{formatCurrency(group.value)}</span>
-                </dd>
-              </div>
-            ))}
-            {unknown.map((group) => (
-              <div key={group.type}>
-                <dt>{group.label}</dt>
-                <dd>
-                  <span className="muted">Unavailable</span>
-                </dd>
-              </div>
-            ))}
-          </dl>
-          {!groups.length ? <EmptyState>No accounts yet.</EmptyState> : null}
-        </Card>
         <ExpectedActivity data={data} className="account-preview-card account-expected-preview" />
       </div>
     </div>

@@ -741,7 +741,7 @@
           "website": "www.united.com"
         }
       ],
-      "date": "Aug 31",
+      "date": "2026-08-31",
       "description": null,
       "id": "tx-1",
       "logoName": "United Airlines",
@@ -772,7 +772,7 @@
           "website": "www.wholefoodsmarket.com"
         }
       ],
-      "date": "Aug 30",
+      "date": "2026-08-30",
       "description": null,
       "id": "tx-2",
       "location": {
@@ -790,7 +790,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://www.wholefoodsmarket.com"
     },
     {
@@ -806,7 +816,7 @@
         "spending": false,
         "zelle": false
       },
-      "date": "Aug 29",
+      "date": "2026-08-29",
       "description": null,
       "id": "tx-3",
       "merchant": "Salary",
@@ -835,7 +845,7 @@
           "website": "www.uber.com"
         }
       ],
-      "date": "Aug 28",
+      "date": "2026-08-28",
       "description": null,
       "id": "tx-4",
       "logoName": "Uber",
@@ -871,7 +881,7 @@
           "type": "payment_processor"
         }
       ],
-      "date": "Aug 28",
+      "date": "2026-08-28",
       "description": null,
       "id": "tx-5",
       "location": {
@@ -890,7 +900,17 @@
       "originalDescription": "SQ *BLUE BOTTLE COFFE San Francisco CA",
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "precision": "exact",
+        "region": "CA",
+        "source": "descriptor"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://bluebottlecoffee.com"
     },
     {
@@ -914,7 +934,7 @@
           "website": "www.apple.com"
         }
       ],
-      "date": "Aug 27",
+      "date": "2026-08-27",
       "description": null,
       "id": "tx-6",
       "logoName": "Apple",
@@ -945,7 +965,7 @@
           "website": "www.pge.com"
         }
       ],
-      "date": "Aug 26",
+      "date": "2026-08-26",
       "description": null,
       "id": "tx-7",
       "logoName": "PG&E",
@@ -976,7 +996,7 @@
           "website": "www.airbnb.com"
         }
       ],
-      "date": "Aug 24",
+      "date": "2026-08-24",
       "description": null,
       "id": "tx-8",
       "logoName": "Airbnb",
@@ -1007,7 +1027,7 @@
           "website": "www.traderjoes.com"
         }
       ],
-      "date": "Aug 23",
+      "date": "2026-08-23",
       "description": null,
       "id": "tx-9",
       "location": {
@@ -1024,7 +1044,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.8053,
+        "lon": -122.4128,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://www.traderjoes.com"
     },
     {
@@ -1048,7 +1078,7 @@
           "website": "www.spotify.com"
         }
       ],
-      "date": "Aug 22",
+      "date": "2026-08-22",
       "description": null,
       "id": "tx-10",
       "logoName": "Spotify",
@@ -1057,7 +1087,52 @@
       "paymentChannel": "online",
       "pending": false,
       "postedOn": null,
+      "presence": "remote",
       "website": "https://www.spotify.com"
+    },
+    {
+      "account": "Roth IRA",
+      "accountId": "schwab",
+      "amount": 1500.0,
+      "category": "Transfer",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "transfer",
+        "mark": "transfer",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-06-15",
+      "description": null,
+      "flow": "contribution",
+      "id": "tx-roth-contribution",
+      "merchant": "Transfer in",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
+    },
+    {
+      "account": "Roth IRA",
+      "accountId": "schwab",
+      "amount": 2000.0,
+      "category": "Transfer",
+      "categorySource": "provider",
+      "classification": {
+        "credit": false,
+        "kind": "transfer",
+        "mark": "transfer",
+        "spending": false,
+        "zelle": false
+      },
+      "date": "2026-08-05",
+      "description": null,
+      "flow": "deposit",
+      "id": "tx-roth-deposit",
+      "merchant": "Transfer in",
+      "occurredOn": null,
+      "pending": false,
+      "postedOn": null
     },
     {
       "account": "Fidelity",
@@ -1072,7 +1147,7 @@
         "spending": false,
         "zelle": false
       },
-      "date": "Aug 21",
+      "date": "2026-08-21",
       "description": null,
       "id": "tx-11",
       "merchant": "Dividend · VTI",
@@ -1101,7 +1176,7 @@
           "website": "www.sweetgreen.com"
         }
       ],
-      "date": "Aug 20",
+      "date": "2026-08-20",
       "description": null,
       "id": "tx-12",
       "logoName": "Sweetgreen",
@@ -1379,7 +1454,8 @@
       "merchant": "American Express",
       "occurredOn": null,
       "pending": false,
-      "postedOn": null
+      "postedOn": null,
+      "transferPairId": "tx-113"
     },
     {
       "account": "Platinum Card",
@@ -1400,7 +1476,8 @@
       "merchant": "AUTOPAY PAYMENT - THANK YOU",
       "occurredOn": null,
       "pending": false,
-      "postedOn": null
+      "postedOn": null,
+      "transferPairId": "tx-112"
     },
     {
       "account": "Chase Checking",
@@ -1421,7 +1498,8 @@
       "merchant": "American Express",
       "occurredOn": null,
       "pending": false,
-      "postedOn": null
+      "postedOn": null,
+      "transferPairId": "tx-115"
     },
     {
       "account": "Platinum Card",
@@ -1442,7 +1520,8 @@
       "merchant": "AUTOPAY PAYMENT - THANK YOU",
       "occurredOn": null,
       "pending": false,
-      "postedOn": null
+      "postedOn": null,
+      "transferPairId": "tx-114"
     },
     {
       "account": "Chase Checking",
@@ -1463,7 +1542,8 @@
       "merchant": "American Express",
       "occurredOn": null,
       "pending": false,
-      "postedOn": null
+      "postedOn": null,
+      "transferPairId": "tx-117"
     },
     {
       "account": "Platinum Card",
@@ -1484,7 +1564,8 @@
       "merchant": "AUTOPAY PAYMENT - THANK YOU",
       "occurredOn": null,
       "pending": false,
-      "postedOn": null
+      "postedOn": null,
+      "transferPairId": "tx-116"
     },
     {
       "account": "Platinum Card",
@@ -1515,6 +1596,7 @@
       "paymentChannel": "online",
       "pending": false,
       "postedOn": null,
+      "presence": "remote",
       "website": "https://www.spotify.com"
     },
     {
@@ -1546,6 +1628,7 @@
       "paymentChannel": "online",
       "pending": false,
       "postedOn": null,
+      "presence": "remote",
       "website": "https://www.spotify.com"
     },
     {
@@ -1577,6 +1660,7 @@
       "paymentChannel": "online",
       "pending": false,
       "postedOn": null,
+      "presence": "remote",
       "website": "https://www.netflix.com"
     },
     {
@@ -1608,6 +1692,7 @@
       "paymentChannel": "online",
       "pending": false,
       "postedOn": null,
+      "presence": "remote",
       "website": "https://www.netflix.com"
     },
     {
@@ -1639,6 +1724,7 @@
       "paymentChannel": "online",
       "pending": false,
       "postedOn": null,
+      "presence": "remote",
       "website": "https://www.netflix.com"
     },
     {
@@ -2114,7 +2200,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://www.wholefoodsmarket.com"
     },
     {
@@ -2155,7 +2251,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://www.wholefoodsmarket.com"
     },
     {
@@ -2196,7 +2302,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://www.wholefoodsmarket.com"
     },
     {
@@ -2237,7 +2353,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://www.wholefoodsmarket.com"
     },
     {
@@ -2278,7 +2404,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://www.wholefoodsmarket.com"
     },
     {
@@ -2319,7 +2455,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7907,
+        "lon": -122.422,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://www.wholefoodsmarket.com"
     },
     {
@@ -2359,7 +2505,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://bluebottlecoffee.com"
     },
     {
@@ -2399,7 +2555,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://bluebottlecoffee.com"
     },
     {
@@ -2439,7 +2605,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://bluebottlecoffee.com"
     },
     {
@@ -2479,7 +2655,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://bluebottlecoffee.com"
     },
     {
@@ -2519,7 +2705,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://bluebottlecoffee.com"
     },
     {
@@ -2559,7 +2755,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7825,
+        "lon": -122.4056,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://bluebottlecoffee.com"
     },
     {
@@ -2642,7 +2848,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "Austin",
+        "country": "US",
+        "lat": 30.2701,
+        "lon": -97.7313,
+        "precision": "exact",
+        "region": "TX",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://franklinbbq.com"
     },
     {
@@ -2675,7 +2891,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
-      "postedOn": null
+      "place": {
+        "city": "Austin",
+        "country": "US",
+        "lat": 30.2503,
+        "lon": -97.7493,
+        "precision": "exact",
+        "region": "TX",
+        "source": "bank"
+      },
+      "postedOn": null,
+      "presence": "inPerson"
     },
     {
       "account": "Platinum Card",
@@ -2715,7 +2941,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
+      "place": {
+        "city": "Austin",
+        "country": "US",
+        "lat": 30.2573,
+        "lon": -97.7604,
+        "precision": "exact",
+        "region": "TX",
+        "source": "bank"
+      },
       "postedOn": null,
+      "presence": "inPerson",
       "website": "https://uchi.uchirestaurants.com"
     },
     {
@@ -2739,7 +2975,8 @@
       "occurredOn": null,
       "paymentChannel": "online",
       "pending": false,
-      "postedOn": null
+      "postedOn": null,
+      "presence": "remote"
     },
     {
       "account": "Platinum Card",
@@ -2771,6 +3008,7 @@
       "paymentChannel": "online",
       "pending": false,
       "postedOn": null,
+      "presence": "remote",
       "website": "https://www.uber.com"
     },
     {
@@ -2843,7 +3081,17 @@
       "occurredOn": null,
       "paymentChannel": "in store",
       "pending": false,
-      "postedOn": null
+      "place": {
+        "city": "San Francisco",
+        "country": "US",
+        "lat": 37.7692,
+        "lon": -122.4153,
+        "precision": "exact",
+        "region": "CA",
+        "source": "bank"
+      },
+      "postedOn": null,
+      "presence": "inPerson"
     },
     {
       "account": "Freedom Unlimited",

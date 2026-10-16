@@ -34,7 +34,7 @@ function inferredStartDate(data: StartDateData, accountId: string) {
   // One pass keeping the earliest valid date; only a new earliest date is validated.
   let earliest: string | undefined
   const consider = (value: string) => {
-    const date = transactionDateKey(value, data.updatedAt)
+    const date = transactionDateKey(value)
     if ((earliest === undefined || date < earliest) && validDate(date)) earliest = date
   }
   for (const transaction of data.transactions)

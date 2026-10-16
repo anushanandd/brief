@@ -308,6 +308,52 @@ fn failed_validation_retains_original_run_identity_and_committed_state() {
 }
 
 #[test]
+fn a_committed_refresh_keeps_what_each_provider_used_and_each_stage_took() {
+    let directory = directory();
+    let mut storage = Storage::new(directory.clone()).unwrap();
+    let snapshot: Snapshot = crate::finance_contract::decode(json(&storage.data.snapshot)).unwrap();
+    storage
+        .stage(
+            "measured-run",
+            "2026-09-18T12:00:00Z",
+            0,
+            PlaidCache::default(),
+            ProviderDataCache::default(),
+            vec![],
+        )
+        .unwrap();
+    let usage = std::collections::BTreeMap::from([(
+        "Plaid".to_string(),
+        crate::providers::http::Usage {
+            requests: 7,
+            retries: 1,
+            bytes: 4_096,
+            duration_ms: Some(1_250),
+        },
+    )]);
+    storage.note_usage("measured-run", usage, 1_400);
+    storage.note_usage("another-run", Default::default(), 1);
+    storage.note_projection("measured-run", std::time::Duration::from_millis(80));
+    assert!(storage.commit("measured-run", snapshot).is_ok());
+
+    let runs = serde_json::to_value(storage.sync_runs().unwrap()).unwrap();
+    let details = &runs[0]["details"];
+    assert_eq!(runs[0]["outcome"], "committed");
+    assert_eq!(
+        details["runs"],
+        serde_json::json!([
+            { "provider": "Plaid", "requests": 7, "retries": 1, "bytes": 4096, "durationMs": 1250 }
+        ])
+    );
+    assert_eq!(details["stages"]["fetchMs"], 1_400);
+    assert_eq!(details["stages"]["projectMs"], 80);
+    assert!(details["stages"]["commitMs"].is_u64());
+    assert!(details["snapshotBytes"].as_u64().unwrap() > 0);
+    drop(storage);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn explicit_erasure_replaces_finance_state_and_removes_retained_copies() {
     let directory = directory();
     let mut storage = Storage::new(directory.clone()).unwrap();
@@ -378,8 +424,7 @@ fn consecutive_small_edits_share_one_retained_copy_until_the_revision_changes() 
 }
 
 #[test]
-fn settings_and_rules_persist_apply_at_read_time_and_are_erased() {
-    use crate::rules::{CategoryRule, RuleMatch};
+fn settings_and_annotations_persist_apply_at_read_time_and_are_erased() {
     use crate::settings::FinanceSettings;
 
     let directory = directory();
@@ -388,7 +433,6 @@ fn settings_and_rules_persist_apply_at_read_time_and_are_erased() {
         serde_json::from_str(include_str!("../../../../src/data/seed.json")).unwrap();
     let transaction = storage.data.snapshot.transactions[0].clone();
     let id = transaction.id.clone();
-    let merchant = transaction.merchant.clone();
 
     let saved = storage
         .save_settings(
@@ -415,15 +459,6 @@ fn settings_and_rules_persist_apply_at_read_time_and_are_erased() {
     assert_eq!(imported["settings"]["spendingAccountId"], "plaid:card");
     assert_eq!(imported["settings"]["hiddenBenefitIds"][0], "resy");
 
-    let rule = CategoryRule {
-        id: "rule".into(),
-        pattern: merchant,
-        match_kind: RuleMatch::Exact,
-        account_id: None,
-        category: "Synthetic rule".into(),
-        created_at: "2026-09-01T00:00:00Z".into(),
-    };
-    let ruled = storage.save_rules(vec![rule]).unwrap();
     let view = |snapshot: &Value| {
         snapshot["transactions"]
             .as_array()
@@ -433,11 +468,6 @@ fn settings_and_rules_persist_apply_at_read_time_and_are_erased() {
             .cloned()
             .unwrap()
     };
-    assert_eq!(view(&ruled)["category"], "Synthetic rule");
-    assert_eq!(view(&ruled)["categorySource"], "rule");
-    assert_eq!(view(&ruled)["ruleId"], "rule");
-    assert_eq!(view(&ruled)["providerCategory"], transaction.category);
-
     storage
         .save_annotations(
             BTreeMap::from([(
@@ -454,8 +484,8 @@ fn settings_and_rules_persist_apply_at_read_time_and_are_erased() {
     let manual = storage.snapshot().unwrap();
     assert_eq!(view(&manual)["category"], "Manual");
     assert_eq!(view(&manual)["categorySource"], "manual");
+    assert_eq!(view(&manual)["providerCategory"], transaction.category);
     assert_eq!(view(&manual)["reviewed"], true);
-    assert!(view(&manual).get("ruleId").is_none());
 
     drop(storage);
     let mut reopened = Storage::new(directory.clone()).unwrap();
@@ -463,15 +493,11 @@ fn settings_and_rules_persist_apply_at_read_time_and_are_erased() {
         reopened.data.settings.spending_account_id.as_deref(),
         Some("plaid:card")
     );
-    assert_eq!(reopened.data.rules.len(), 1);
-    assert!(reopened.save_rules(vec![]).unwrap()["rules"]
-        .as_array()
-        .unwrap()
-        .is_empty());
     let erased = reopened.erase().unwrap();
     assert!(erased["settings"]["spendingAccountId"].is_null());
     fs::remove_dir_all(directory).unwrap();
 }
+
 #[test]
 fn refresh_is_atomic_validated_and_single_use() {
     let directory = directory();
@@ -611,7 +637,7 @@ fn migrates_legacy_data_then_removes_plaintext_sources() {
 fn inspecting_an_open_primary_uses_a_consistent_sqlite_backup() {
     let directory = directory();
     let storage = Storage::new(directory.clone()).unwrap();
-    let info = storage.inspect_backup(&storage.path).unwrap();
+    let info = storage.inspect_backup(&storage.path, None).unwrap();
     assert_eq!(info.revision, storage.data.revision);
     drop(storage);
     fs::remove_dir_all(directory).unwrap();
@@ -774,21 +800,17 @@ fn a_repeated_read_reuses_the_derived_view_and_every_edit_is_visible_at_once() {
 
 #[test]
 fn portable_backup_round_trips_edits_and_invalid_restore_preserves_state() {
-    use crate::rules::{CategoryRule, RuleMatch};
+    use crate::settings::FinanceSettings;
 
     let root = directory();
     let directory = root.join("store");
     let backup = root.join("portable.sqlite3");
     let mut storage = Storage::new(directory.clone()).unwrap();
-    let rule = |category: &str| CategoryRule {
-        id: "synthetic-rule".into(),
-        pattern: "example".into(),
-        match_kind: RuleMatch::Exact,
-        account_id: None,
-        category: category.into(),
-        created_at: "2026-09-01T00:00:00Z".into(),
+    let named = |name: &str| FinanceSettings {
+        account_names: BTreeMap::from([("plaid:one".to_owned(), name.to_owned())]),
+        ..Default::default()
     };
-    storage.save_rules(vec![rule("Dining")]).unwrap();
+    storage.save_settings(named("Everyday"), false).unwrap();
     storage
         .save_annotations(
             BTreeMap::from([(
@@ -801,25 +823,27 @@ fn portable_backup_round_trips_edits_and_invalid_restore_preserves_state() {
             false,
         )
         .unwrap();
-    storage.export_backup(&backup).unwrap();
-    assert!(storage.export_backup(&backup).is_err());
+    storage.export_backup(&backup, None, None).unwrap();
+    assert!(storage.export_backup(&backup, None, None).is_err());
     let original_backup = fs::read(&backup).unwrap();
-    storage.save_rules(Vec::new()).unwrap();
-    storage.import_backup(&backup).unwrap();
-    assert_eq!(storage.data.rules, vec![rule("Dining")]);
+    storage
+        .save_settings(FinanceSettings::default(), false)
+        .unwrap();
+    storage.import_backup(&backup, None, None).unwrap();
+    assert_eq!(storage.data.settings, named("Everyday"));
     assert_eq!(storage.data.annotations["synthetic"].reviewed, Some(true));
     assert_eq!(fs::read(&backup).unwrap(), original_backup);
     let invalid = root.join("invalid.sqlite3");
     fs::write(&invalid, b"not a database").unwrap();
     let revision = storage.data.revision;
-    assert!(storage.import_backup(&invalid).is_err());
+    assert!(storage.import_backup(&invalid, None, None).is_err());
     assert_eq!(storage.data.revision, revision);
-    assert_eq!(storage.data.rules, vec![rule("Dining")]);
+    assert_eq!(storage.data.settings, named("Everyday"));
     // Writes after restore must target the installed database, not the staging filename.
-    storage.save_rules(vec![rule("Travel")]).unwrap();
+    storage.save_settings(named("Travel"), false).unwrap();
     drop(storage);
     let reopened = Storage::new(directory).unwrap();
-    assert_eq!(reopened.data.rules, vec![rule("Travel")]);
+    assert_eq!(reopened.data.settings, named("Travel"));
     assert!(fs::read_dir(root.join("store")).unwrap().any(|entry| entry
         .unwrap()
         .file_name()
@@ -830,5 +854,6 @@ fn portable_backup_round_trips_edits_and_invalid_restore_preserves_state() {
 }
 
 mod annotations;
+mod documents;
 mod sessions;
 mod statements;

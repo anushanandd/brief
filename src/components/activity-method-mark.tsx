@@ -1,5 +1,12 @@
 import type { activityPlace } from '../lib/activity'
-import { BriefcaseBusiness, CircleEllipsis, Globe2, MapPinned, Store } from './icons'
+import {
+  ArrowLeftRight,
+  BriefcaseBusiness,
+  CircleEllipsis,
+  Globe2,
+  MapPinned,
+  Store,
+} from './icons'
 
 type PlaceKind = ReturnType<typeof activityPlace>['kind']
 
@@ -8,6 +15,7 @@ const placeStyles = {
   online: { Icon: Globe2, color: 'var(--data-1)' },
   store: { Icon: Store, color: 'var(--data-4)' },
   brokerage: { Icon: BriefcaseBusiness, color: 'var(--data-3)' },
+  transfer: { Icon: ArrowLeftRight, color: 'var(--chart-secondary)' },
   none: { Icon: CircleEllipsis, color: 'var(--data-2)' },
 } as const
 

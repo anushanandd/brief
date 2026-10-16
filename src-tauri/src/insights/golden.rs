@@ -54,26 +54,22 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
     let mismatch = |actual: Value| Err(format!("expected {expected}\n  actual {actual}"));
     match record["name"].as_str().unwrap() {
         "transactionDateKey" => {
-            let actual = calendar::transaction_date(
-                args[0].as_str().unwrap(),
-                args[1].as_str().unwrap(),
-                zone,
-            )
-            .map(calendar::iso)
-            .unwrap_or_default();
+            let actual = calendar::transaction_date(args[0].as_str().unwrap())
+                .map(calendar::iso)
+                .unwrap_or_default();
             if expected != &json!(actual) {
                 return mismatch(json!(actual));
             }
         }
         "recurringMoneyKey" => {
-            let actual = forecast::recurring_key(&transaction(&args[0]), zone);
+            let actual = forecast::recurring_key(&transaction(&args[0]));
             if expected != &json!(actual) {
                 return mismatch(json!(actual));
             }
         }
         "platinumBenefitCreditIdentity" => {
             let actual = PLATINUM
-                .credit_identity(&transaction(&args[0]), zone)
+                .credit_identity(&transaction(&args[0]))
                 .map(|(id, name)| json!({ "id": id, "name": name }))
                 .unwrap_or(Value::Null);
             if expected != &actual {
@@ -83,7 +79,7 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
         "getPlatinumBenefitActivity" => {
             let items = transactions(&args[0]);
             let refs = items.iter().collect::<Vec<_>>();
-            let actual = PLATINUM.activity(&refs, args[1].as_str().unwrap(), zone);
+            let actual = PLATINUM.activity(&refs, args[1].as_str().unwrap());
             let shape = |id: &Value, date: &Value, benefit: &Value, kind: &Value| {
                 json!([id, date, benefit, kind])
             };
@@ -133,7 +129,6 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
                 &accounts,
                 data["updatedAt"].as_str().unwrap(),
                 reference_today(record),
-                zone,
             );
             let actual = actual.into_iter().take(16).collect::<Vec<_>>();
             let expected = expected.as_array().unwrap();
@@ -239,7 +234,7 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
         "recognizedAmexAutopays" => {
             let items = transactions(&args[0]);
             let refs = items.iter().collect::<Vec<_>>();
-            let actual = statement::autopays(&refs, args[1].as_str().unwrap(), zone);
+            let actual = statement::autopays(&refs, args[1].as_str().unwrap());
             let expected_items = expected.as_array().unwrap();
             let same = expected_items.len() == actual.len()
                 && expected_items
@@ -259,7 +254,6 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
             let actual = serde_json::to_value(statement::autopay_boundaries(
                 &refs,
                 args[1].as_str().unwrap(),
-                zone,
             ))
             .unwrap();
             if expected != &actual {
@@ -271,9 +265,18 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
             let refs = items.iter().collect::<Vec<_>>();
             let reference = args[1].as_str().unwrap();
             let (start, end) = (date(&args[2]), date(&args[3]));
-            let activity = PLATINUM.activity(&refs, reference, zone);
-            let outcomes = PLATINUM.window_outcomes(&refs, start, reference, zone);
-            let (earned, missed) = credit_summary(&activity, &outcomes, start, end);
+            let activity = PLATINUM.activity(&refs, reference);
+            let history_start = refs
+                .iter()
+                .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
+                .min();
+            let history = PLATINUM.history(
+                &activity,
+                history_start,
+                calendar::transaction_date(reference).unwrap(),
+                &[],
+            );
+            let (earned, missed) = credit_summary(&activity, &history, start, end);
             if !close(&expected["earned"], earned) || !close(&expected["missed"], missed) {
                 return mismatch(json!({ "earned": earned, "missed": missed }));
             }

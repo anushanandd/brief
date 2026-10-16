@@ -1,16 +1,18 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { type RefObject, useCallback, useEffect, useMemo, useState } from 'react'
+import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PagedActivityList } from '../components/activity-list'
 import { SpendingBarChart } from '../components/charts'
 import { PageError, PageLoading } from '../components/data-state'
 import { ChevronRight, X } from '../components/icons'
+import { groupByMerchant, MerchantGroups } from '../components/merchant-groups'
 import { PlatinumBenefits } from '../components/platinum-benefits'
 import { RankedBars } from '../components/ranked-bars'
 import { MoneyStrip } from '../components/report-links'
 import { SpendingAccountEmptyState } from '../components/spending-account-empty-state'
 import { SpendingPaceChart } from '../components/spending-pace-chart'
-import { TripsCard } from '../components/trips-card'
+import { SubscriptionsCard } from '../components/subscriptions-card'
+import { TransactionDialog } from '../components/transaction-dialog'
 import {
   AnimatedCurrency,
   Card,
@@ -21,20 +23,22 @@ import {
 } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
-import { useSpendingActions } from '../hooks/use-spending-actions'
+import { type SpendingComparison, useSpendingActions } from '../hooks/use-spending-actions'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { accountDisplayName } from '../lib/account-names'
-import { buildActivities } from '../lib/activity'
+import { buildActivities, type ActivityItem } from '../lib/activity'
 import { daysBetween } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
-import { countOf, formatProseCurrency, pluralize, formatDay } from '../lib/format'
+import { formatProseCurrency, pluralize, formatDay } from '../lib/format'
 import { getExternalLogosEnabled } from '../lib/logos'
+import type { SpendingOwner } from '../lib/schema'
 import {
   buildSpendingBars,
   allSpendingAccounts,
   buildSpendingView,
-  platinumCreditSummary,
+  spendingFor,
   spendingJudgments,
+  spendingOwnerOptions,
   spendingScope,
   spendingCategoryColor,
   type SpendingPeriod,
@@ -60,11 +64,17 @@ const spendingPeriodIndicators = spendingPeriodOptions.map(
   }),
 )
 
-function useActivityData(requested: string | undefined) {
+function useActivityData(requested: string | undefined, requestedOwner: SpendingOwner) {
   const query = useFinance()
   const data = query.data
   const settings = financeSettings(data)
   const names = settings.accountNames
+  // Whose spending to count is a choice only once a purchase is someone else's.
+  const hasOthers = useMemo(
+    () => Boolean(data?.transactions.some(({ classification }) => classification.othersSpending)),
+    [data],
+  )
+  const owner = hasOthers ? requestedOwner : 'me'
   const scope = useMemo(
     () =>
       data
@@ -77,6 +87,10 @@ function useActivityData(requested: string | undefined) {
         : undefined,
     [data, requested, settings.spendingAccountId],
   )
+  const transactions = useMemo(
+    () => spendingFor(scope?.transactions ?? [], owner),
+    [owner, scope?.transactions],
+  )
   return {
     query,
     data,
@@ -85,7 +99,9 @@ function useActivityData(requested: string | undefined) {
     account: scope?.selected,
     card: scope?.card,
     options: scope?.options ?? [],
-    transactions: scope?.transactions ?? [],
+    hasOthers,
+    owner,
+    transactions,
   }
 }
 
@@ -112,8 +128,15 @@ function useLinkedRowInView(scroll: RefObject<HTMLElement | null>, linked: objec
 export function SpendingPage() {
   const search = useSearch({ from: '/spending' })
   const navigate = useNavigate({ from: '/spending' })
-  const { query, data, names, account, card, options, transactions } = useActivityData(
-    search.account,
+  const { query, data, names, account, card, options, hasOthers, owner, transactions } =
+    useActivityData(search.account, search.for ?? 'me')
+  const setOwner = useCallback(
+    (next: SpendingOwner) =>
+      void navigate({
+        search: (current) => ({ ...current, for: next === 'me' ? undefined : next }),
+        replace: true,
+      }),
+    [navigate],
   )
   // The period lives in the URL so Money's strip opens every card on it.
   // Statements belong to the spending card; without one the page opens on the month.
@@ -140,12 +163,30 @@ export function SpendingPage() {
   const clearFocus = useCallback(() => setFocus(null), [])
   // Activity shared between the chart and the list: the day under the chart's pointer, or the
   // row under the list's.
-  const [selectedTrip, setSelectedTrip] = useState<string>()
   const [linked, setLinked] = useState<{
     ids: ReadonlySet<string>
     from: 'chart' | 'list'
   } | null>(null)
+  // The activity in the details dialog, and the list it opened from, which ↑ and ↓ step through.
+  const [opened, setOpened] = useState<{ id: string; list: readonly string[] } | null>(null)
+  const opener = useRef<HTMLElement | null>(null)
+  const closeDetails = useCallback(() => {
+    const row = opener.current
+    setOpened(null)
+    // The row that opened the dialog takes focus back, so keyboard review continues in place.
+    requestAnimationFrame(() => row?.focus({ preventScroll: true }))
+  }, [])
+  const stepDetails = useCallback(
+    (direction: 1 | -1) =>
+      setOpened((current) => {
+        const next = current?.list[current.list.indexOf(current.id) + direction]
+        return current && next ? { ...current, id: next } : current
+      }),
+    [],
+  )
+  // Both lists reach the foot of the window, so neither card ends in a blank band.
   const activityScrollRef = useViewportScroll()
+  const merchantScrollRef = useViewportScroll()
   const referenceIso = data?.updatedAt ?? new Date().toISOString()
   // Statement boundaries come from the issuer or native autopay evidence for this card.
   const statement =
@@ -154,8 +195,8 @@ export function SpendingPage() {
       : undefined
   const periodReference = spendingPeriodReference(statement, referenceIso, periodOffset, period)
   const judgments = useMemo(
-    () => spendingJudgments(data?.insights, account?.id ?? allSpendingAccounts),
-    [account?.id, data?.insights],
+    () => spendingJudgments(data?.insights, account?.id ?? allSpendingAccounts, owner),
+    [account?.id, data?.insights, owner],
   )
   const view = useMemo(
     () =>
@@ -186,14 +227,25 @@ export function SpendingPage() {
 
   useLinkedRowInView(activityScrollRef, linked?.from === 'chart' ? linked : null)
 
+  // Categories compare with the last period or with the average of earlier ones.
+  const [chosenComparison, setComparison] = useState<SpendingComparison>('previous')
+  const canCompareTypical = period !== 0 && view.categories.some(({ typical }) => typical != null)
+  const comparison = canCompareTypical ? chosenComparison : 'previous'
+
   useSpendingActions({
     hasStatements,
+    hasOthers,
+    owner,
+    setOwner,
     focus,
     period,
     periodOffset,
     choosePeriod,
     setPeriodOffset,
     clearFocus,
+    comparison,
+    canCompareTypical,
+    setComparison,
   })
 
   if (query.isLoading) return <PageLoading />
@@ -205,11 +257,12 @@ export function SpendingPage() {
       : monthYearFormatter.format(new Date(`${view.end}T00:00:00Z`))
   const periodLabel = spendingPeriodLabel(period, periodOffset, selectedPeriod, view.periodBasis)
   const shown = focusView ?? view
-  const headlineValue = focusView
-    ? focusView.total
-    : view.periodBasis === 'statement' && period === 'statement'
+  // The headline is always what was spent; a statement's balance reads beside its name, and is
+  // never only someone else's.
+  const statementBalance =
+    view.periodBasis === 'statement' && period === 'statement' && owner !== 'other'
       ? view.statementBalance
-      : view.total
+      : null
   const spendingChange = period ? shown.total - shown.previousTotal : null
   const closingDate =
     period === 'statement' && periodOffset === 0 ? statement?.nextClose : undefined
@@ -220,9 +273,9 @@ export function SpendingPage() {
     closingDays == null || closingDays < 0
       ? ''
       : closingDays === 0
-        ? ' (closes today)'
-        : ` (closes in ${closingDays} ${pluralize(closingDays, 'day')})`
-  const bars = buildSpendingBars(shown.transactions, referenceIso, view.start, view.end, period)
+        ? ' · closes today'
+        : ` · closes in ${closingDays} ${pluralize(closingDays, 'day')}`
+  const bars = buildSpendingBars(shown.transactions, view.start, view.end, period)
   const segments = view.categories.map(({ name, value }) => ({
     name,
     value,
@@ -233,12 +286,6 @@ export function SpendingPage() {
   )
     ? [...segments, { name: 'Credits', value: 0, color: 'var(--positive)' }]
     : segments
-  const credits = platinumCreditSummary(
-    data.insights?.benefits,
-    view.start,
-    view.end,
-    financeSettings(data).hiddenBenefitIds,
-  )
   // A statement period without statements is the calendar month.
   const unit =
     period === 'statement' && view.periodBasis !== 'statement'
@@ -253,19 +300,47 @@ export function SpendingPage() {
   const focusIds = focusView
     ? new Set(focusView.transactions.map(({ id }) => `spending:${id}`))
     : null
-  const visibleActivities = focusIds ? activities.filter(({ id }) => focusIds.has(id)) : activities
+  // Your own spending still sums everything on the card, so its statement balance stays whole,
+  // but lists only what is yours.
+  const visibleActivities = activities.filter(
+    ({ id, other }) => (!focusIds || focusIds.has(id)) && (owner !== 'me' || !other),
+  )
+  const merchantOrder = groupByMerchant(visibleActivities).flatMap((group) => group.activities)
+  const openFrom = (list: ActivityItem[]) => (activity: ActivityItem) => {
+    if (document.activeElement instanceof HTMLElement) opener.current = document.activeElement
+    setOpened({ id: activity.id, list: list.map(({ id }) => id) })
+  }
+  // Built from the snapshot's own transaction, so the dialog reads as it does on Activity
+  // whichever spending this page counts.
+  const openedActivity = opened
+    ? buildActivities(
+        {
+          ...data,
+          transactions: data.transactions.filter(({ id }) => `spending:${id}` === opened.id),
+          trades: [],
+        },
+        names,
+        getExternalLogosEnabled(),
+      )[0]
+    : undefined
   // Rows the chart highlights stay rendered so the list can show them.
   const highlightedThrough =
     linked?.from === 'chart'
       ? visibleActivities.findLastIndex(({ id }) => linked.ids.has(id)) + 1
       : 0
-  const hasTypical = period !== 0 && view.categories.some(({ typical }) => typical != null)
-  const categoryBars = view.categories.map(({ name, value, change, typical }) => ({
+  const categoryBars = view.categories.map(({ name, value, change, previousValue, typical }) => ({
     name,
     value,
     color: spendingCategoryColor(name),
-    change: period === 0 ? null : change,
-    typical: period === 0 ? null : typical,
+    change:
+      period === 0
+        ? null
+        : comparison === 'typical'
+          ? typical == null
+            ? null
+            : Math.round((value - typical) * 100) / 100
+          : change,
+    mark: period === 0 ? null : comparison === 'typical' ? typical : previousValue,
   }))
   const focusColor = focus ? spendingCategoryColor(focus) : undefined
 
@@ -303,7 +378,7 @@ export function SpendingPage() {
             <Card className="workspace-brief-card spending-brief-card spending-hero-card">
               <section
                 className="spending-total-panel"
-                aria-keyshortcuts={`${hasStatements ? 'S ' : ''}W M Q Y A ArrowLeft ArrowRight`}
+                aria-keyshortcuts={`${hasStatements ? 'S ' : ''}W M Q Y A ${hasOthers ? 'F ' : ''}ArrowLeft ArrowRight`}
               >
                 <header className="workspace-brief-heading">
                   <div>
@@ -318,9 +393,23 @@ export function SpendingPage() {
                             : undefined
                         }
                       >
-                        {focus ? `${periodLabel} · ${focus}` : `${periodLabel}${closingLabel}`}
+                        {focus ? (
+                          `${periodLabel} · ${focus}`
+                        ) : statementBalance != null ? (
+                          <>
+                            {periodOffset === 0
+                              ? 'Statement balance '
+                              : `${periodLabel} · balance `}
+                            <span className="sensitive-value">
+                              {formatProseCurrency(statementBalance)}
+                            </span>
+                            {closingLabel}
+                          </>
+                        ) : (
+                          `${periodLabel}${closingLabel}`
+                        )}
                       </h2>
-                      <AnimatedCurrency className="hero-number" value={headlineValue} />
+                      <AnimatedCurrency className="hero-number" value={shown.total} />
                     </div>
                     <div className="chart-summary-row">
                       {spendingChange != null ? (
@@ -349,17 +438,32 @@ export function SpendingPage() {
                       ) : null}
                     </div>
                   </div>
-                  <ChartRangeSelect
-                    command="spending.period."
-                    label={`Spending range. Active period: ${periodLabel}`}
-                    options={
-                      hasStatements
-                        ? spendingPeriodIndicators
-                        : spendingPeriodIndicators.filter(({ value }) => value !== 'statement')
-                    }
-                    value={period}
-                    onValueChange={choosePeriod}
-                  />
+                  <span className="spending-heading-controls">
+                    {hasOthers ? (
+                      <ChartRangeSelect
+                        command="spending.for."
+                        label={`Whose spending. Showing: ${spendingOwnerOptions.find(({ value }) => value === owner)!.label}`}
+                        options={spendingOwnerOptions.map(({ value, label }) => ({
+                          label,
+                          accessibleLabel: label,
+                          value,
+                        }))}
+                        value={owner}
+                        onValueChange={setOwner}
+                      />
+                    ) : null}
+                    <ChartRangeSelect
+                      command="spending.period."
+                      label={`Spending range. Active period: ${periodLabel}`}
+                      options={
+                        hasStatements
+                          ? spendingPeriodIndicators
+                          : spendingPeriodIndicators.filter(({ value }) => value !== 'statement')
+                      }
+                      value={period}
+                      onValueChange={choosePeriod}
+                    />
+                  </span>
                 </header>
                 <div
                   className="spending-chart-region"
@@ -390,6 +494,7 @@ export function SpendingPage() {
                           search: {
                             account: account?.id,
                             category: focus ?? undefined,
+                            for: hasOthers && owner !== 'all' ? owner : undefined,
                             from,
                             to,
                           },
@@ -425,57 +530,83 @@ export function SpendingPage() {
               </section>
             </Card>
 
-            <ScrollCueCard
-              className="spending-transactions-preview spending-ledger-card"
-              scrollSelector=".spending-activity-scroll"
-            >
-              <SectionHeading
-                title={
-                  <Link
-                    to="/activities"
-                    search={{
-                      account: account?.id,
-                      category: focus ?? undefined,
-                      from: view.start,
-                      to: view.end,
-                    }}
-                    className="section-heading-link"
-                    data-command="navigation.open./activities"
-                  >
-                    Activity <ChevronRight size={14} aria-hidden="true" />
-                  </Link>
-                }
-                action={
-                  <span className="spending-ledger-count">
-                    {countOf(visibleActivities.length, 'transaction')}
-                  </span>
-                }
-              />
-              <div
-                ref={activityScrollRef}
-                className="spending-activity-scroll"
-                role="region"
-                aria-label="Spending activity"
-                tabIndex={0}
-                data-keyboard-region
+            {/* Where the money went beside the latest of it, each scrolling in its own card. */}
+            <div className="spending-activity-columns">
+              <ScrollCueCard
+                className="spending-transactions-preview spending-ledger-card"
+                scrollSelector=".spending-activity-scroll"
               >
-                <PagedActivityList
-                  minimumCount={highlightedThrough}
-                  activities={visibleActivities}
-                  referenceIso={data.updatedAt}
-                  emptyMessage={
-                    focus ? `No ${focus} activity in this range.` : 'No activity in this range.'
-                  }
-                  highlightedIds={linked?.from === 'chart' ? linked.ids : undefined}
-                  onHighlight={
-                    period === 0
-                      ? undefined
-                      : (activity) =>
-                          setLinked(activity ? { ids: new Set([activity.id]), from: 'list' } : null)
+                <SectionHeading title="Where it went" />
+                <div
+                  ref={merchantScrollRef}
+                  className="spending-activity-scroll"
+                  role="region"
+                  aria-label="Where it went"
+                  tabIndex={0}
+                  data-keyboard-region
+                >
+                  <MerchantGroups
+                    activities={visibleActivities}
+                    referenceIso={data.updatedAt}
+                    emptyMessage={
+                      focus ? `No ${focus} activity in this range.` : 'No activity in this range.'
+                    }
+                    onOpen={openFrom(merchantOrder)}
+                  />
+                </div>
+              </ScrollCueCard>
+              <ScrollCueCard
+                className="spending-transactions-preview spending-ledger-card"
+                scrollSelector=".spending-activity-scroll"
+              >
+                <SectionHeading
+                  title={
+                    <Link
+                      to="/activities"
+                      search={{
+                        account: account?.id,
+                        category: focus ?? undefined,
+                        for: hasOthers && owner !== 'all' ? owner : undefined,
+                        from: view.start,
+                        to: view.end,
+                      }}
+                      className="section-heading-link"
+                      data-command="navigation.open./activities"
+                    >
+                      Activities <ChevronRight size={14} aria-hidden="true" />
+                    </Link>
                   }
                 />
-              </div>
-            </ScrollCueCard>
+                <div
+                  ref={activityScrollRef}
+                  className="spending-activity-scroll"
+                  role="region"
+                  aria-label="Spending activities"
+                  tabIndex={0}
+                  data-keyboard-region
+                >
+                  <PagedActivityList
+                    minimumCount={highlightedThrough}
+                    activities={visibleActivities}
+                    onOpen={openFrom(visibleActivities)}
+                    selectedId={opened?.id}
+                    referenceIso={data.updatedAt}
+                    emptyMessage={
+                      focus ? `No ${focus} activity in this range.` : 'No activity in this range.'
+                    }
+                    highlightedIds={linked?.from === 'chart' ? linked.ids : undefined}
+                    onHighlight={
+                      period === 0
+                        ? undefined
+                        : (activity) =>
+                            setLinked(
+                              activity ? { ids: new Set([activity.id]), from: 'list' } : null,
+                            )
+                    }
+                  />
+                </div>
+              </ScrollCueCard>
+            </div>
           </div>
 
           <div className="spending-companion">
@@ -483,20 +614,46 @@ export function SpendingPage() {
               <SectionHeading
                 title="Categories"
                 action={
-                  period === 0 ? undefined : (
+                  period === 0 ? undefined : canCompareTypical ? (
+                    <div
+                      className="spending-tabs"
+                      role="tablist"
+                      aria-label="Compare categories with"
+                    >
+                      {(
+                        [
+                          ['previous', `Last ${unit}`],
+                          ['typical', 'Average'],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          type="button"
+                          role="tab"
+                          key={value}
+                          aria-selected={comparison === value}
+                          tabIndex={-1}
+                          data-command={`spending.compare.${value}`}
+                          onClick={() => setComparison(value)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </div>
+                  ) : (
                     <span className="spending-category-scope">
-                      {hasTypical ? (
-                        <>
-                          <i className="ranked-bars-typical-key" aria-hidden="true" />
-                          Usual ·{' '}
-                        </>
-                      ) : null}
-                      vs last {unit}
+                      <i className="ranked-bars-mark-key" aria-hidden="true" />
+                      {`vs last ${unit}`}
                     </span>
                   )
                 }
               />
               <RankedBars
+                comparison={comparison === 'typical' ? 'the average' : `the last ${unit}`}
+                markLabel={
+                  comparison === 'typical'
+                    ? 'on average by this point'
+                    : `by this point last ${unit}`
+                }
                 items={categoryBars}
                 label={`${periodLabel} spending by category`}
                 emptyMessage="No spending in this range."
@@ -510,35 +667,23 @@ export function SpendingPage() {
             {account && account.id !== card?.id ? (
               // Another card shows its own benefits only when a product is assigned to it.
               data.insights?.otherCardBenefits?.some((other) => other.accountId === account.id) ? (
-                <PlatinumBenefits preview accountId={account.id} />
+                <PlatinumBenefits accountId={account.id} />
               ) : null
             ) : card ? (
-              <PlatinumBenefits preview credits={credits} />
+              <PlatinumBenefits />
             ) : (
               <SpendingAccountEmptyState />
             )}
-            <TripsCard
-              trips={(data.insights?.trips.trips ?? []).filter(
-                (trip) => trip.end >= view.start && trip.start <= view.end,
-              )}
-              referenceIso={data.updatedAt}
-              selectedId={selectedTrip}
-              onSelect={(trip) => {
-                setSelectedTrip(trip?.id)
-                setFocus(null)
-                setLinked(
-                  trip
-                    ? {
-                        ids: new Set(trip.transactionIds.map((id) => `spending:${id}`)),
-                        from: 'chart',
-                      }
-                    : null,
-                )
-              }}
-            />
+            <SubscriptionsCard data={data} className="spending-subscriptions-card" />
           </div>
         </div>
       )}
+      <TransactionDialog
+        activity={openedActivity}
+        data={data}
+        onClose={closeDetails}
+        onStep={stepDetails}
+      />
     </div>
   )
 }

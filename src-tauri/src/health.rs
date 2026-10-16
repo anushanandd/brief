@@ -8,6 +8,8 @@ use crate::{
     transaction_policy::Kind,
 };
 
+mod ledger_checks;
+
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthReport {
@@ -232,6 +234,7 @@ pub fn report_with(
     issues.extend(valuation_issues(snapshot));
     issues.extend(freshness_issues(snapshot, now));
     issues.extend(coverage_issues(snapshot));
+    issues.extend(ledger_checks::ledger_issues(snapshot, now));
     issues.extend(sync_issues(sync_runs));
     issues.sort_by_key(|item| item.severity);
     let mut counts = HealthCounts::default();

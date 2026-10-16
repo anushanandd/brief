@@ -214,3 +214,60 @@ fn extracts_multi_item_hosted_link_tokens() {
     }));
     assert_eq!(tokens, vec!["public-a", "public-b"]);
 }
+
+#[test]
+fn statements_are_offered_only_for_bank_accounts_at_institutions_that_support_them() {
+    use super::sync::institution_supports;
+    let institution = |products: Value| json!({ "institution": { "products": products } });
+    assert!(institution_supports(
+        &institution(json!(["transactions", "statements"])),
+        "statements"
+    ));
+    assert!(!institution_supports(
+        &institution(json!(["transactions", "liabilities"])),
+        "statements"
+    ));
+    assert!(!institution_supports(&json!({}), "statements"));
+
+    let item = |investments: bool, statements: bool| PlaidItem {
+        item_id: "item".into(),
+        access_token: "access-synthetic".into(),
+        institution_id: None,
+        institution_name: None,
+        investments,
+        statements,
+    };
+    let cache = |supported: Option<bool>, account_type: &str| PlaidItemCache {
+        statements_supported: supported,
+        data: Some(PlaidData {
+            accounts: vec![json!({ "account_id": "a", "type": account_type })],
+            ..PlaidData::default()
+        }),
+        ..PlaidItemCache::default()
+    };
+    // A checking account at a bank that supports Statements can add them.
+    assert_eq!(
+        statements_state(&item(false, false), Some(&cache(Some(true), "depository"))),
+        Some(false)
+    );
+    // A card-only connection, or a bank without Statements, is offered nothing.
+    assert_eq!(
+        statements_state(&item(false, false), Some(&cache(Some(true), "credit"))),
+        None
+    );
+    assert_eq!(
+        statements_state(&item(false, false), Some(&cache(Some(false), "depository"))),
+        None
+    );
+    assert_eq!(
+        statements_state(&item(false, false), Some(&cache(None, "depository"))),
+        None
+    );
+    assert_eq!(statements_state(&item(false, false), None), None);
+    // Investments never are; added statements stay shown.
+    assert_eq!(
+        statements_state(&item(true, false), Some(&cache(Some(true), "depository"))),
+        None
+    );
+    assert_eq!(statements_state(&item(false, true), None), Some(true));
+}

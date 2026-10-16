@@ -6,11 +6,13 @@ import { ActivityFacets } from '../components/activity-facets'
 import { ActivityFilterCard } from '../components/activity-filter-card'
 import { GroupedActivityList } from '../components/activity-list'
 import { ActivityQueryBar } from '../components/activity-query-bar'
+import { ActivitySelectionBar, type SelectionEdit } from '../components/activity-selection-bar'
 import { PageError, PageLoading } from '../components/data-state'
 import { DateRangePicker } from '../components/date-range-picker'
 import { Download, Filter } from '../components/icons'
 import { TransactionDialog } from '../components/transaction-dialog'
 import { Button, ScrollCueCard } from '../components/ui'
+import { usePresence } from '../components/ui/presence'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
@@ -98,6 +100,8 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
     [navigate],
   )
   const filtersOpen = activityFiltersOpen.use()
+  const [filterCard, setFilterCard] = useState<HTMLDivElement | null>(null)
+  const filtersPresent = usePresence(filtersOpen, filterCard)
   const focusedRow = useFocusedActivity()
   const [draft, setDraft] = useState('')
   const inputRef = useSearchShortcuts(draft, setDraft)
@@ -110,6 +114,9 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
     search.open ? `spending:${search.open}` : undefined,
   )
   const openerRef = useRef<HTMLElement | null>(null)
+  // Rows chosen for a bulk edit, by activity ID; only ledger transactions can be edited.
+  const [checked, setChecked] = useState<ReadonlySet<string>>(() => new Set())
+  const [bulkPending, setBulkPending] = useState(false)
 
   const rows = useMemo(
     () => activityRows(data, { analysis: search.analysis, review: search.review }),
@@ -122,6 +129,53 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
         activity.id in flipped ? { ...activity, other: flipped[activity.id] } : activity,
       )
     : ledger.sorted
+  const selected = useMemo(
+    () => (checked.size ? shown.filter(({ id }) => checked.has(id)) : []),
+    [checked, shown],
+  )
+  // A row filtered away leaves the selection, so a bulk edit only touches what is shown.
+  useEffect(() => {
+    if (selected.length !== checked.size) setChecked(new Set(selected.map(({ id }) => id)))
+  }, [checked.size, selected])
+  const toggleChecked = useCallback((id: string) => {
+    if (!id.startsWith('spending:')) return
+    setChecked((current) => {
+      const next = new Set(current)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+  }, [])
+  const toggleAllChecked = useCallback(() => {
+    const editable = shown.filter(({ id }) => id.startsWith('spending:')).map(({ id }) => id)
+    setChecked((current) =>
+      editable.length && editable.every((id) => current.has(id)) ? new Set() : new Set(editable),
+    )
+  }, [shown])
+  const clearChecked = useCallback(() => setChecked(new Set()), [])
+  const editSelection = (edit: SelectionEdit) => {
+    if (!selected.length || bulkPending) return
+    const changes = Object.fromEntries(
+      selected.map((activity) => {
+        const id = activity.id.slice('spending:'.length)
+        if ('tag' in edit) {
+          const tags = data.transactions.find((candidate) => candidate.id === id)?.tags ?? []
+          return [id, { tags: tags.includes(edit.tag) ? tags : [...tags, edit.tag] }]
+        }
+        if ('person' in edit) {
+          const people = data.transactions.find((candidate) => candidate.id === id)?.people ?? []
+          return [id, { people: people.includes(edit.person) ? people : [...people, edit.person] }]
+        }
+        return [id, edit]
+      }),
+    )
+    setBulkPending(true)
+    void annotate(changes)
+      .then(() => toast.success(`Updated ${selected.length} transactions`))
+      .catch((error: unknown) =>
+        toast.error('Could not edit the selection', { description: errorMessage(error) }),
+      )
+      .finally(() => setBulkPending(false))
+  }
 
   // Opening moves focus to the first filter, so the arrows and Enter continue there.
   const toggleFilters = useCallback(() => {
@@ -202,6 +256,8 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
     shown,
     filtersOpen,
     focusedRow,
+    hasSelection: selected.length > 0,
+    selected,
     focusSearch: () => inputRef.current?.focus(),
     update,
     toggleFilters,
@@ -211,6 +267,10 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
     exportCsv: () => void exportCsv(),
     saveView,
     toggleOther,
+    toggleChecked,
+    toggleAllChecked,
+    clearChecked,
+    editSelection,
   })
 
   const sectionControls = (name: 'categories' | 'accounts' | 'methods' | 'amount') => {
@@ -324,6 +384,15 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
           {csv.failed ? (
             <p role="alert">CSV could not be saved. Try again with a new filename.</p>
           ) : null}
+          {selected.length ? (
+            <ActivitySelectionBar
+              data={data}
+              selected={selected}
+              pending={bulkPending}
+              onEdit={editSelection}
+              onClear={clearChecked}
+            />
+          ) : null}
           <div
             className="activity-page-list"
             role="region"
@@ -348,6 +417,7 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
               onSort={toggleSort}
               onOpen={openDetails}
               selectedId={openId}
+              checkedIds={checked}
               onFilter={(column, activity) => {
                 const patch = ledger.cellFilter(column, activity)
                 if (patch) update(patch)
@@ -356,12 +426,17 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
             />
           </div>
         </ScrollCueCard>
-        {filtersOpen ? (
+        {filtersPresent ? (
           <ActivityFilterCard
+            ref={setFilterCard}
+            leaving={!filtersOpen}
             active={ledger.cardFilterCount}
             owner={search.for}
             ownerCounts={ledger.options.owners}
             onOwner={(owner) => update({ for: owner })}
+            evidence={search.evidence}
+            evidenceCounts={ledger.options.evidence}
+            onEvidence={(evidence) => update({ evidence })}
             datePresets={ledger.datePresets}
             dateRange={ledger.selectedDateRange}
             from={search.from}
@@ -429,6 +504,14 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
                 }
               : undefined
           }
+          onOpenActivity={(id) => {
+            // A transfer's other side may sit outside a report or the review queue.
+            if (!rows.activities.some((activity) => activity.id === id))
+              void navigate({
+                search: (previous) => ({ ...previous, analysis: undefined, review: undefined }),
+              })
+            setOpenId(id)
+          }}
         />
       </div>
     </div>
@@ -444,6 +527,8 @@ function useActivityCommands(handlers: {
   shown: ActivityItem[]
   filtersOpen: boolean
   focusedRow: string | undefined
+  hasSelection: boolean
+  selected: readonly ActivityItem[]
   focusSearch: () => void
   update: (patch: LedgerPatch) => void
   toggleFilters: () => void
@@ -453,10 +538,24 @@ function useActivityCommands(handlers: {
   exportCsv: () => void
   saveView: () => void
   toggleOther: (activity: ActivityItem) => void
+  toggleChecked: (id: string) => void
+  toggleAllChecked: () => void
+  clearChecked: () => void
+  editSelection: (edit: SelectionEdit) => void
 }) {
   const latest = useLatest(handlers)
-  const { filtersOpen, focusedRow, update, toggleFilters, toggleSort, toggleReview, clearAll } =
-    handlers
+  const {
+    filtersOpen,
+    focusedRow,
+    hasSelection,
+    update,
+    toggleFilters,
+    toggleSort,
+    toggleReview,
+    clearAll,
+    toggleAllChecked,
+    clearChecked,
+  } = handlers
   const actions = useMemo<AppAction[]>(
     () => [
       {
@@ -476,7 +575,7 @@ function useActivityCommands(handlers: {
         bindings: [{ sequence: ['f'], label: 'F' }],
         run: toggleFilters,
       },
-      ...(filtersOpen
+      ...(filtersOpen && !hasSelection
         ? [
             {
               id: 'activity.filters.close',
@@ -577,8 +676,30 @@ function useActivityCommands(handlers: {
           row?.scrollIntoView({ block: 'nearest' })
         },
       },
+      {
+        id: 'activity.selection.all',
+        title: 'Select every shown transaction',
+        search: 'select all bulk edit batch check',
+        group: 'Here',
+        scope: 'page',
+        bindings: [{ sequence: ['X'], label: '⇧X' }],
+        run: toggleAllChecked,
+      },
       // Only while a row has focus, so F otherwise still toggles filters.
       ...(focusedRow
+        ? [
+            {
+              id: 'activity.row.select',
+              title: 'Select or deselect this transaction',
+              search: 'select check mark bulk edit batch',
+              group: 'Here',
+              scope: 'selection' as const,
+              bindings: [{ sequence: ['x'], label: 'X' }],
+              run: () => latest.current.toggleChecked(focusedRow),
+            },
+          ]
+        : []),
+      ...(focusedRow && !hasSelection
         ? [
             {
               id: 'activity.row.for',
@@ -594,8 +715,89 @@ function useActivityCommands(handlers: {
             },
           ]
         : []),
+      // The selection's edits, mirrored by the bar above the list.
+      ...(hasSelection
+        ? [
+            {
+              id: 'activity.selection.category',
+              title: 'Set a category for the selection',
+              search: 'bulk category recategorize selected',
+              group: 'Here',
+              scope: 'selection' as const,
+              bindings: [{ sequence: ['e'], label: 'E' }],
+              run: () =>
+                document
+                  .querySelector<HTMLElement>('[data-selection-key="category"] button')
+                  ?.click(),
+            },
+            {
+              id: 'activity.selection.tag',
+              title: 'Tag the selection',
+              search: 'bulk tag label selected',
+              group: 'Here',
+              scope: 'selection' as const,
+              bindings: [{ sequence: ['t'], label: 'T' }],
+              run: () => document.querySelector<HTMLElement>('[data-selection-key="tag"]')?.focus(),
+            },
+            {
+              id: 'activity.selection.person',
+              title: 'Tag the selection with a person',
+              search: 'bulk people person with selected zelle venmo',
+              group: 'Here',
+              scope: 'selection' as const,
+              bindings: [{ sequence: ['p'], label: 'P' }],
+              run: () =>
+                document
+                  .querySelector<HTMLElement>('[data-selection-key="person"] button')
+                  ?.click(),
+            },
+            {
+              id: 'activity.selection.reviewed',
+              title: 'Mark the selection reviewed',
+              search: 'bulk reviewed dismiss selected',
+              group: 'Here',
+              scope: 'selection' as const,
+              bindings: [{ sequence: ['r'], label: 'R' }],
+              run: () => latest.current.editSelection({ reviewed: true }),
+            },
+            {
+              id: 'activity.selection.other',
+              title: 'Switch the selection between Me and Other',
+              search: 'bulk for someone else other me selected',
+              group: 'Here',
+              scope: 'selection' as const,
+              bindings: [{ sequence: ['f'], label: 'F' }],
+              run: () => {
+                const chosen = latest.current.selected
+                const all = chosen.length > 0 && chosen.every((activity) => activity.other)
+                latest.current.editSelection({ other: !all })
+              },
+            },
+            {
+              id: 'activity.selection.clear',
+              title: 'Clear the selection',
+              search: 'deselect none bulk',
+              group: 'Here',
+              scope: 'selection' as const,
+              bindings: [{ sequence: ['Escape'], label: 'Esc' }],
+              run: clearChecked,
+            },
+          ]
+        : []),
     ],
-    [clearAll, filtersOpen, focusedRow, latest, toggleFilters, toggleReview, toggleSort, update],
+    [
+      clearAll,
+      clearChecked,
+      filtersOpen,
+      focusedRow,
+      hasSelection,
+      latest,
+      toggleAllChecked,
+      toggleFilters,
+      toggleReview,
+      toggleSort,
+      update,
+    ],
   )
   useRegisterActions(actions)
 }

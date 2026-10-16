@@ -63,7 +63,6 @@
   font: inherit;
 }
 .logs-count,
-.activity-log-row > time,
 .source-time-table time {
   color: var(--text-tertiary);
   font-size: var(--type-meta);
@@ -76,6 +75,9 @@
 .source-time-table tbody th {
   min-width: 160px;
   font-weight: 600;
+}
+.logs-card .settings-table-scroll {
+  margin-top: 8px;
 }
 .activity-log {
   max-height: 360px;
@@ -141,9 +143,10 @@
 /* Settings: one scrolling page. A sticky search filters rows; the rail tracks sections. */
 /* Settings dialog: opens over the current page, addressed by #settings/<section>. */
 .settings-dialog {
-  width: min(1000px, calc(100vw - 96px));
+  /* Wide enough for the account details table without scrolling sideways. */
+  width: min(1240px, calc(100vw - 96px));
   max-width: none;
-  height: min(740px, calc(100dvh - 96px));
+  height: min(900px, calc(100dvh - 96px));
   max-height: none;
   margin: auto;
   padding: 0;
@@ -157,16 +160,29 @@
   color: var(--text-primary);
   opacity: 1;
   transform: none;
+  /* The display and top-layer transitions hold the frame while it settles back down. */
   transition:
     opacity var(--duration-modal) var(--ease-out),
-    transform var(--duration-modal-lift) var(--ease-lift);
+    transform var(--duration-modal-lift) var(--ease-lift),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
+}
+.settings-dialog:not([open]) {
+  opacity: 0;
+  transform: var(--modal-enter-from);
 }
 .settings-dialog::backdrop {
   background: var(--dialog-backdrop);
   -webkit-backdrop-filter: var(--dialog-backdrop-filter);
   backdrop-filter: var(--dialog-backdrop-filter);
   opacity: 1;
-  transition: opacity var(--duration-modal) var(--ease-out);
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
+}
+.settings-dialog:not([open])::backdrop {
+  opacity: 0;
 }
 @starting-style {
   .settings-dialog[open] {
@@ -574,6 +590,7 @@
 }
 .settings-switch:active::before {
   transform: scale(0.92);
+  transition-duration: 0s;
 }
 .settings-switch:checked:active::before {
   transform: translateX(14px) scale(0.92);
@@ -670,4 +687,35 @@
 .settings-block .empty-state {
   min-height: 96px;
   padding: 16px 0;
+}
+/* Manual accounts: a short form for a name, kind, balance, and date. */
+.manual-account-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 12px;
+}
+.manual-account-row .manual-account-form {
+  margin-top: 0;
+}
+.manual-account-form label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.manual-account-form input {
+  width: 148px;
+  height: var(--control-height);
+  padding: 0 10px;
+  border: var(--hairline) solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-background);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--type-body);
+}
+.settings-account-table tr[data-closed] > th {
+  opacity: 0.6;
 }

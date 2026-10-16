@@ -4,6 +4,10 @@ import { z } from 'zod'
 import { isoDate } from './common'
 import { exposureSchema, statementSchema } from './report'
 
+/** Whose spending Spending counts: yours, purchases made for someone else, or both. */
+export const spendingOwners = ['me', 'other', 'all'] as const
+export type SpendingOwner = (typeof spendingOwners)[number]
+
 const benefitActivitySchema = z.object({
   id: z.string(),
   merchant: z.string(),
@@ -45,7 +49,10 @@ const benefitWindowSchema = z.object({
   creditLagLearned: z.boolean(),
   renewalCheck: z.string().optional(),
   status: z.enum(['external', 'credited', 'matched', 'unused']),
-  engaged: z.boolean(),
+  /** A subscription spends it on its own; the only thing to check is that it posted. */
+  recurring: z.boolean(),
+  /** The saved card history starts after the window began, on this day. */
+  historyFrom: isoDate.optional(),
   creditedAmount: z.number(),
   uncertainCreditAmount: z.number(),
   awaitingCreditAmount: z.number(),
@@ -61,6 +68,59 @@ const benefitWindowSchema = z.object({
   lastCredit: z.object({ amount: z.number(), date: z.string() }).optional(),
   reset: z.string(),
 })
+const benefitPeriodSchema = z.object({
+  start: isoDate,
+  end: isoDate,
+  label: z.string(),
+  cap: z.number(),
+  credited: z.number(),
+  state: z.enum([
+    'full',
+    'partial',
+    'missed',
+    'open',
+    'settling',
+    'future',
+    'not-visible',
+    'likely-used',
+    'before-history',
+    'not-tracked',
+  ]),
+  /** A settled period's usable allowance left unused, a range when credits can't be placed. */
+  unused: amountRangeSchema.optional(),
+  /** What an open period still has. */
+  left: amountRangeSchema.optional(),
+  activityIds: z.array(z.string()),
+  /** Credits still to come: waiting purchases, then charges the forecast expects. */
+  planned: z
+    .array(
+      z.object({
+        title: z.string(),
+        date: isoDate,
+        amount: z.number(),
+        source: z.enum(['purchase', 'recurring']),
+        transactionId: z.string().optional(),
+      }),
+    )
+    .optional(),
+})
+const benefitHistorySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  recurring: z.boolean(),
+  /** Its use doesn't show on the card, so periods are estimated from charges. */
+  external: z.boolean(),
+  retired: z.boolean(),
+  periods: z.array(benefitPeriodSchema),
+})
+const benefitReviewSchema = z.object({
+  kind: z.enum(['unverified-credit', 'unassigned-credit', 'no-purchase', 'not-eligible']),
+  transactionId: z.string(),
+  benefitId: z.string().optional(),
+  periodStart: isoDate.optional(),
+  /** For a credit without a purchase: the charge that most likely earned it. */
+  suggestionId: z.string().optional(),
+})
 const expectedEventSchema = z.object({
   id: z.string(),
   recurringId: z.string(),
@@ -73,7 +133,7 @@ const expectedEventSchema = z.object({
   frequency: z.string(),
   observations: z.number().int().positive(),
   lastSeen: isoDate,
-  state: z.enum(['expected', 'pending', 'awaiting-post']),
+  state: z.enum(['expected', 'pending', 'awaiting-post', 'missed']),
   accountId: z.string().optional(),
   matchedTransactionId: z.string().optional(),
   sourceTransactionId: z.string(),
@@ -95,6 +155,11 @@ const attentionItemSchema = z.intersection(
       cash: z.number(),
       expectedOutflows: z.number(),
       shortfall: z.number(),
+    }),
+    z.object({
+      kind: z.literal('benefit-review'),
+      accountId: z.string(),
+      count: z.number().int(),
     }),
     z.object({
       kind: z.literal('credit-expiring'),
@@ -137,8 +202,213 @@ const attentionItemSchema = z.intersection(
       until: isoDate,
       loss: z.number(),
     }),
+    z.object({
+      kind: z.literal('missed-bill'),
+      recurringId: z.string(),
+      title: z.string(),
+      accountId: z.string().optional(),
+      expected: isoDate,
+      days: z.number().int(),
+      amount: z.number(),
+      event: z.enum(['credit', 'income', 'payment', 'subscription']),
+      sourceTransactionId: z.string(),
+    }),
+    z.object({
+      kind: z.literal('contributions-to-confirm'),
+      accountId: z.string(),
+      count: z.number().int(),
+      amount: z.number(),
+    }),
+    z.object({
+      kind: z.literal('contribution-limit'),
+      plan: z.enum(['workplace', 'ira']),
+      taxYear: z.number().int(),
+      limit: z.number(),
+      amount: z.number(),
+      onPace: z.boolean(),
+    }),
+    z.object({
+      kind: z.literal('pay-missing'),
+      documentId: z.string(),
+      employer: z.string(),
+      date: isoDate,
+      amount: z.number(),
+      accountId: z.string().optional(),
+    }),
+    z.object({
+      kind: z.literal('w2-differs'),
+      documentId: z.string(),
+      employer: z.string(),
+      taxYear: z.number().int(),
+      boxes: z.number().int(),
+    }),
+    z.object({
+      kind: z.literal('idle-cash'),
+      accountId: z.string(),
+      balance: z.number(),
+      annualRate: z.number().optional(),
+      betterAccountId: z.string(),
+      betterRate: z.number(),
+    }),
   ]),
 )
+/** Contributions against this year's limits, tax buckets, savings rate, and coverage. */
+const retirementSchema = z
+  .object({
+    year: z.number().int(),
+    workplace: z
+      .object({
+        accountIds: z.array(z.string()),
+        limit: z.number().optional(),
+        deferred: z.number(),
+        /** The pay statements' year-to-date figure, ahead of the plan's export. */
+        fromPayStatements: z.boolean().optional(),
+        unlabeled: z.number(),
+        employer: z.number(),
+        through: isoDate.optional(),
+        paychecksLeft: z.number().int().optional(),
+        projected: z.number().optional(),
+        perPaycheckToMax: z.number().optional(),
+      })
+      .optional(),
+    ira: z.array(
+      z.object({
+        taxYear: z.number().int(),
+        limit: z.number().optional(),
+        contributed: z.number(),
+        deadline: isoDate,
+      }),
+    ),
+    deposits: z.array(
+      z.object({
+        transactionId: z.string(),
+        accountId: z.string(),
+        date: isoDate,
+        amount: z.number(),
+        flow: z.enum(['contribution', 'deposit', 'transfer']),
+        years: z.array(z.number().int()),
+        countsFor: z.number().int().optional(),
+        chosen: z.boolean(),
+        /** The brokerage's own statement names the year. */
+        stated: z.boolean().default(false),
+        waiting: z.boolean(),
+      }),
+    ),
+    buckets: z.object({
+      preTax: z.number(),
+      taxFree: z.number(),
+      taxable: z.number(),
+      complete: z.boolean(),
+    }),
+    rothBasis: z.array(
+      z.object({
+        accountId: z.string(),
+        since: isoDate.optional(),
+        earlier: z.number().optional(),
+        contributed: z.number(),
+        withdrawn: z.number(),
+        basis: z.number(),
+      }),
+    ),
+    savings: z.array(
+      z.object({
+        year: z.number().int(),
+        from: isoDate,
+        through: isoDate,
+        partial: z.boolean(),
+        takeHome: z.number(),
+        spending: z.number(),
+        deferred: z.number(),
+        /** Employee stock purchases taken from pay. */
+        espp: z.number().default(0),
+        rate: z.number().optional(),
+      }),
+    ),
+    coverage: z
+      .object({
+        invested: z.number(),
+        complete: z.boolean(),
+        spending: z.number(),
+        planned: z.number(),
+        years: z.number(),
+      })
+      .optional(),
+    uncounted: z.array(z.string()),
+  })
+  .default({
+    year: 0,
+    ira: [],
+    deposits: [],
+    buckets: { preTax: 0, taxFree: 0, taxable: 0, complete: false },
+    rothBasis: [],
+    savings: [],
+    uncounted: [],
+  })
+export type Retirement = z.infer<typeof retirementSchema>
+
+/** Pay statements matched to deposits, expected forms, W-2 predictions, and keep dates. */
+const documentInsightsSchema = z
+  .object({
+    years: z.array(
+      z.object({
+        year: z.number().int(),
+        predictions: z.array(
+          z.object({
+            employer: z.string(),
+            fromDocument: z.string(),
+            fromDate: isoDate,
+            boxes: z.array(
+              z.object({
+                key: z.string(),
+                label: z.string(),
+                predicted: z.number(),
+                actual: z.number().optional(),
+              }),
+            ),
+            w2: z.string().optional(),
+          }),
+        ),
+        income: z
+          .object({
+            wages: z.number(),
+            wagesFrom: z.enum(['w2', 'payStatements']),
+            selfEmployment: z.number(),
+            selfEmploymentTax: z.number(),
+            taxableIncome: z.number().optional(),
+          })
+          .optional(),
+      }),
+    ),
+    pay: z.array(
+      z.object({
+        documentId: z.string(),
+        date: isoDate,
+        amount: z.number(),
+        mask: z.string().optional(),
+        transactionId: z.string().optional(),
+        accountId: z.string().optional(),
+      }),
+    ),
+    keep: z.array(
+      z.object({ documentId: z.string(), until: isoDate.optional(), reason: z.string() }),
+    ),
+    toReview: z.number().int(),
+    /** Documents a newer reader would read better. */
+    outdated: z.array(z.string()).default([]),
+    /** Transactions a document confirms: a pay statement's deposit, or a statement's row. */
+    evidence: z
+      .array(
+        z.object({
+          transactionId: z.string(),
+          documentId: z.string(),
+          kind: z.enum(['pay', 'statement']),
+        }),
+      )
+      .default([]),
+  })
+  .default({ years: [], pay: [], keep: [], toReview: 0, outdated: [], evidence: [] })
+export type DocumentInsights = z.infer<typeof documentInsightsSchema>
+
 const nextDividendSchema = z.object({
   exDate: isoDate,
   payableDate: isoDate.optional(),
@@ -211,9 +481,11 @@ const periodRecapSchema = z.object({
   end: isoDate,
   partial: z.boolean(),
   spending: z.number(),
-  previousSpending: z.number().optional(),
   income: z.number(),
   net: z.number(),
+  spendingChangePct: z.number().optional(),
+  incomeChangePct: z.number().optional(),
+  netChangePct: z.number().optional(),
   categories: z.array(z.object({ category: z.string(), spent: z.number(), previous: z.number() })),
 })
 const cardBenefitsSchema = z.object({
@@ -227,25 +499,21 @@ const cardBenefitsSchema = z.object({
       /** Credits on purchases made for someone else: used, but not your saving. */
       forOthers: z.number(),
       since: isoDate,
-      basis: z.enum(['fee-charge', 'calendar-year']),
+      basis: z.enum(['fee-charge', 'calendar-year', 'card-history']),
+      /** The fee year's last day: a year after the fee charge, or December 31 without one. */
+      through: isoDate,
+      /** Credits the benefit periods still plan on your purchases by `through`. */
+      expected: z.number(),
     })
     .optional(),
   activity: z.array(benefitActivitySchema),
   windows: z.array(benefitWindowSchema),
   /** Windows with allowance left, by ID, in the order to use them. */
   useFirst: z.array(z.string()),
-  outcomes: z.array(
-    z.object({
-      windowEnd: isoDate,
-      benefitId: z.string(),
-      state: z.enum(['settled', 'settling', 'partial-history', 'not-visible', 'not-tracked']),
-      unused: z.number().nullable(),
-      unusedHigh: z.number().nullable(),
-      engaged: z.boolean(),
-      /** What the unused allowance counts as; absent when it counts as nothing. */
-      verdict: z.enum(['missed', 'unclaimed', 'settling', 'unknown']).optional(),
-    }),
-  ),
+  /** Each calendar benefit's periods from the history's first year through this one. */
+  history: z.array(benefitHistorySchema),
+  /** Matches that need a decision, newest first. */
+  review: z.array(benefitReviewSchema),
 })
 
 const spendingPeriodSchema = z.object({
@@ -285,6 +553,8 @@ export const insightsSchema = z.object({
     daysElapsed: z.number().int(),
     daysInMonth: z.number().int(),
     spent: z.number(),
+    /** Month-end spending at the month's daily pace so far. */
+    projected: z.number().default(0),
     categories: z.array(
       z.object({
         category: z.string(),
@@ -307,8 +577,6 @@ export const insightsSchema = z.object({
   attention: z.array(attentionItemSchema),
   brief: z.object({
     needs: z.array(attentionItemSchema),
-    coming: z.array(z.string()),
-    comingDays: z.number().int().positive(),
   }),
   cash: z.object({
     horizonDays: z.number().int().positive(),
@@ -403,20 +671,82 @@ export const insightsSchema = z.object({
           id: z.string(),
           start: isoDate,
           end: isoDate,
+          /** Every day from start to end, with that day's spending and purchases. */
+          days: z
+            .array(z.object({ date: isoDate, spent: z.number(), purchases: z.number().int() }))
+            .default([]),
+          /** The total over the trip's days, negative. */
+          perDay: z.number().default(0),
           destination: z.string(),
           abroad: z.boolean(),
           total: z.number(),
           categories: z.array(z.object({ name: z.string(), amount: z.number() })),
           transactionIds: z.array(z.string()),
           ongoing: z.boolean(),
+          /** Most likely flown: abroad, far from home, or with an airline or airport charge. */
+          flew: z.boolean(),
+          /** Each city its purchases were made in, most purchases first. */
+          stops: z
+            .array(
+              z.object({
+                city: z.string().optional(),
+                region: z.string().optional(),
+                country: z.string(),
+                lat: z.number().optional(),
+                lon: z.number().optional(),
+                purchases: z.number().int(),
+                first: isoDate,
+              }),
+            )
+            .default([]),
+          /** Who went, by person id. */
+          companions: z.array(z.string()).optional(),
         }),
       ),
       home: z.array(z.string()),
     })
     .default({ trips: [], home: [] }),
-  /** Spending's scopes (an account ID, or `all`) and Rust's judgments about their periods. */
+  people: z
+    .object({
+      /** Most recent activity first; people with nothing tagged follow by name. */
+      people: z.array(
+        z.object({
+          id: z.string(),
+          transactionCount: z.number().int(),
+          /** Sent through a payment app, negative. */
+          sent: z.number(),
+          /** Received through a payment app. */
+          received: z.number(),
+          first: isoDate.optional(),
+          last: isoDate.optional(),
+          tripIds: z.array(z.string()),
+        }),
+      ),
+      /** Names Zelle descriptors carry that match nobody, and who saved they could be. */
+      suggestions: z.array(
+        z.object({
+          name: z.string(),
+          matchName: z.string(),
+          transactionIds: z.array(z.string()),
+          matches: z
+            .array(z.object({ id: z.string(), fit: z.enum(['likely', 'possible']) }))
+            .default([]),
+        }),
+      ),
+    })
+    .default({ people: [], suggestions: [] }),
+  /**
+   * Spending's scopes (an account ID, or `all`), whose spending each counts, and Rust's judgments
+   * about their periods. Someone else's spending and everyone's appear once a purchase is theirs.
+   */
   spending: z
-    .array(z.object({ scope: z.string(), periods: z.array(spendingPeriodSchema) }))
+    .array(
+      z.object({
+        scope: z.string(),
+        owner: z.enum(spendingOwners),
+        periods: z.array(spendingPeriodSchema),
+      }),
+    )
     .default([]),
   recurringCheck: z
     .object({
@@ -488,7 +818,7 @@ export const insightsSchema = z.object({
     .default({ securities: [], annualIncome: 0, upcoming: [] }),
   accountsTotal: z
     .object({
-      excludedAccountId: z.string(),
+      excludedAccountIds: z.array(z.string()),
       excludedValue: z.number(),
       value: z.number(),
       history: z.array(z.object({ date: z.string(), value: z.number() })),
@@ -540,6 +870,8 @@ export const insightsSchema = z.object({
     }),
   ),
   recap: z.array(periodRecapSchema),
+  retirement: retirementSchema,
+  documents: documentInsightsSchema,
   changes: z.array(
     z.object({
       window: changeWindowSchema,
@@ -554,6 +886,7 @@ export const insightsSchema = z.object({
     z.object({
       accountId: z.string(),
       monthlyNetFlow: z.number().nullable(),
+      historyDays: z.number().int().optional(),
       periods: z.array(
         z.object({
           window: changeWindowSchema,
@@ -635,12 +968,51 @@ export const insightsSchema = z.object({
       ),
     })
     .optional(),
+  /** Dated items for the Calendar page and the Brief calendar, by date. */
+  agenda: z
+    .array(
+      z.object({
+        id: z.string(),
+        kind: z.enum([
+          'paymentDue',
+          'statementCloses',
+          'creditExpiring',
+          'bill',
+          'subscription',
+          'income',
+          'dividend',
+          'longTerm',
+          'washSaleEnds',
+          'trip',
+        ]),
+        date: isoDate,
+        /** The last day of a trip. */
+        end: isoDate.optional(),
+        title: z.string().optional(),
+        accountId: z.string().optional(),
+        ticker: z.string().optional(),
+        /** As cash moves; absent when unknown. */
+        amount: z.number().optional(),
+        estimated: z.boolean(),
+        /** How often a forecast series recurs, as a phrase. */
+        frequency: z.string().optional(),
+        /** The range a forecast amount has posted in, when it isn't one amount. */
+        amountLow: z.number().optional(),
+        amountHigh: z.number().optional(),
+        /** A payment due's minimum, as the issuer reported it. */
+        minimumPayment: z.number().optional(),
+      }),
+    )
+    .default([]),
 })
 export type Insights = z.infer<typeof insightsSchema>
+export type AgendaItem = Insights['agenda'][number]
 export type ExpectedEvent = Insights['expected'][number]
 export type BenefitWindow = NonNullable<Insights['benefits']>['windows'][number]
 export type BenefitActivity = BenefitWindow['activity'][number]
-export type BenefitOutcome = NonNullable<Insights['benefits']>['outcomes'][number]
+export type BenefitHistory = NonNullable<Insights['benefits']>['history'][number]
+export type BenefitPeriod = BenefitHistory['periods'][number]
+export type BenefitReview = NonNullable<Insights['benefits']>['review'][number]
 export type AttentionItem = Insights['attention'][number]
 export type CardBenefits = z.infer<typeof cardBenefitsSchema>
 export type SpendingPeriodJudgment = z.infer<typeof spendingPeriodSchema>

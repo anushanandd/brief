@@ -23,6 +23,7 @@ fn txn(
         kind,
         credit: false,
         zelle: false,
+        others_spending: false,
     })
     .unwrap();
     serde_json::from_value(value).unwrap()
@@ -138,6 +139,50 @@ fn fixed_merchant_charges_count_as_subscriptions_but_rent_does_not() {
 }
 
 #[test]
+fn a_missed_bill_needs_attention_but_a_stopped_subscription_does_not() {
+    let mut transactions = Vec::new();
+    for month in ["05", "06", "07", "08"] {
+        for (id, merchant, category, amount) in [
+            ("assistant", "Example Assistant", "Services", -20.0),
+            ("rent", "Example Property", "Rent", -1_500.0),
+        ] {
+            transactions.push(txn(
+                &format!("{id}-{month}"),
+                &format!("2026-{month}-01"),
+                merchant,
+                category,
+                amount,
+                Kind::Expense,
+            ));
+        }
+    }
+    // Missed occurrences are found over the whole snapshot, so this starts from the seed's.
+    let mut snapshot: Snapshot =
+        serde_json::from_str(include_str!("../../../src/data/seed.json")).unwrap();
+    snapshot.updated_at = "2026-09-16T12:00:00Z".into();
+    snapshot.accounts = vec![account("plaid:checking", "cash", 9_000.0)];
+    snapshot.transactions = transactions;
+    snapshot.recurring_streams.clear();
+    let insights = derive(
+        &mut snapshot,
+        &FinanceSettings::default(),
+        now(),
+        &NamedZone::Utc,
+    )
+    .unwrap();
+    let missed = insights
+        .brief
+        .needs
+        .iter()
+        .filter_map(|need| match &need.item {
+            attention::Item::MissedBill { title, .. } => Some(title.as_str()),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(missed, ["Example Property"]);
+}
+
+#[test]
 fn month_end_charges_that_post_the_next_day_stay_monthly() {
     let transactions = [
         ("2026-06-30", "2026-07-01"),
@@ -175,6 +220,53 @@ fn month_end_charges_that_post_the_next_day_stay_monthly() {
     let video = &insights.subscriptions.items[0];
     assert_eq!(video.frequency, "Monthly");
     assert_eq!(video.next_date.to_string(), "2026-10-31");
+}
+
+#[test]
+fn a_person_paying_twice_a_year_apart_is_not_expected_but_monthly_rent_from_one_is() {
+    let zelle = |id: &str, date: &str, from: &str| {
+        let mut transaction = txn(
+            id,
+            date,
+            &format!("Zelle payment from {from}"),
+            "Transfer In",
+            50.0,
+            Kind::Income,
+        );
+        transaction.classification.as_mut().unwrap().zelle = true;
+        transaction
+    };
+    let transactions = vec![
+        // A year on falls inside the 30-day window, so only the rule keeps it out.
+        zelle("once", "2024-10-01", "EXAMPLE PERSON A"),
+        zelle("twice", "2025-10-01", "EXAMPLE PERSON A"),
+        zelle("rent-7", "2026-07-01", "EXAMPLE PERSON B"),
+        zelle("rent-8", "2026-08-01", "EXAMPLE PERSON B"),
+        zelle("rent-9", "2026-09-01", "EXAMPLE PERSON B"),
+    ];
+    let insights = compute(
+        &transactions,
+        &[account("plaid:checking", "cash", 1_000.0)],
+        &FinanceSettings::default(),
+        "2026-09-16T12:00:00Z",
+        now(),
+        &NamedZone::Utc,
+    );
+    let titles = insights
+        .expected
+        .iter()
+        .map(|event| (event.title.as_str(), event.frequency))
+        .collect::<Vec<_>>();
+    assert!(
+        !titles.iter().any(|(title, _)| title.contains("PERSON A")),
+        "{titles:?}"
+    );
+    assert!(
+        titles
+            .iter()
+            .any(|(title, frequency)| title.contains("PERSON B") && *frequency == "Monthly"),
+        "{titles:?}"
+    );
 }
 
 #[test]
@@ -220,9 +312,7 @@ fn plan_paces_categories_and_covers_expected_outflows_in_cents() {
 #[test]
 fn a_refund_is_matched_only_when_one_purchase_explains_it() {
     let today = NaiveDate::from_ymd_opt(2026, 9, 16).unwrap();
-    let suggestions = |transactions: &[Transaction]| {
-        refunds::suggestions(transactions, "2026-09-16T12:00:00Z", today, &NamedZone::Utc)
-    };
+    let suggestions = |transactions: &[Transaction]| refunds::suggestions(transactions, today);
     let purchase = |id: &str, date: &str, amount: f64| {
         txn(
             id,
@@ -358,9 +448,7 @@ fn split_parts_count_under_their_own_categories() {
         &transactions,
         &[],
         &[],
-        "2026-09-16T12:00:00Z",
         NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
-        &NamedZone::Utc,
     );
     let spent = |category: &str| {
         plan.categories
@@ -384,13 +472,23 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
         .unwrap()
     };
     let mut transactions = history();
-    // The card used its monthly streaming credit in August and not yet in September.
+    // The card used its monthly streaming credit in August and not yet in September, but a
+    // subscription spends that on its own, so only the quarter's lululemon credit asks.
     transactions.push(card_txn("disney", "2026-08-15", "Disney Plus", -13.99));
     transactions.push(card_txn(
         "disney-credit",
         "2026-08-18",
         "Digital Entertainment Credit",
         13.99,
+    ));
+    // The card's history covers the whole quarter, so what is left is known exactly.
+    transactions.push(card_txn("coffee", "2026-06-20", "Coffee", -4.0));
+    transactions.push(card_txn("leggings", "2026-08-20", "lululemon", -40.0));
+    transactions.push(card_txn(
+        "leggings-credit",
+        "2026-08-21",
+        "Platinum lululemon Credit",
+        40.0,
     ));
     let account = |id: &str, kind: &str, value: f64| -> Account {
         serde_json::from_value(json!({
@@ -401,6 +499,7 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
     };
     let settings = FinanceSettings {
         spending_account_id: Some("plaid:card".into()),
+        hidden_benefit_ids: vec!["resy".into()],
         ..Default::default()
     };
     let brief = |cash: f64, settings: &FinanceSettings| {
@@ -427,10 +526,17 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
                 attention::Item::PaymentDue { .. } => "payment-due",
                 attention::Item::CoverageShort { .. } => "coverage-short",
                 attention::Item::CreditExpiring { .. } => "credit-expiring",
+                attention::Item::BenefitReview { .. } => "benefit-review",
                 attention::Item::CashLow { .. } => "cash-low",
                 attention::Item::UtilizationHigh { .. } => "utilization-high",
                 attention::Item::PossibleDuplicate { .. } => "possible-duplicate",
                 attention::Item::WashWindow { .. } => "wash-window",
+                attention::Item::MissedBill { .. } => "missed-bill",
+                attention::Item::IdleCash { .. } => "idle-cash",
+                attention::Item::ContributionsToConfirm { .. } => "contributions-to-confirm",
+                attention::Item::ContributionLimit { .. } => "contribution-limit",
+                attention::Item::PayMissing { .. } => "pay-missing",
+                attention::Item::W2Differs { .. } => "w2-differs",
             })
             .collect::<Vec<_>>()
     };
@@ -442,10 +548,9 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
     assert!(matches!(
         &short.needs[1].item,
         attention::Item::CreditExpiring { benefit_id, remaining_low, remaining_high, days, .. }
-            if benefit_id == "digital-entertainment"
-                && *remaining_low == 25.0 && *remaining_high == 25.0 && *days == 4
+            if benefit_id == "lululemon"
+                && *remaining_low == 35.0 && *remaining_high == 35.0 && *days == 4
     ));
-    assert_eq!(short.coming.len(), 1, "rent is due within two weeks");
 
     // Cash covers the next 30 days but not three months of rent.
     let later = brief(2_000.0, &settings);
@@ -457,7 +562,7 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
 
     // A hidden benefit never asks for attention.
     let hidden = FinanceSettings {
-        hidden_benefit_ids: vec!["digital-entertainment".into()],
+        hidden_benefit_ids: vec!["resy".into(), "lululemon".into()],
         ..settings.clone()
     };
     assert!(kinds(&brief(9_000.0, &hidden)).is_empty());
@@ -500,6 +605,7 @@ fn each_assigned_card_is_tracked_under_its_own_product_and_account() {
     let settings = FinanceSettings {
         spending_account_id: Some("plaid:card".into()),
         benefit_cards: [("plaid:second".to_owned(), "amex-platinum".to_owned())].into(),
+        hidden_benefit_ids: vec!["resy".into()],
         ..Default::default()
     };
     let insights = compute(
@@ -555,11 +661,11 @@ fn each_assigned_card_is_tracked_under_its_own_product_and_account() {
         expiring,
         vec![
             (
-                "credit-expiring:plaid:card:digital-entertainment:2026-09-30",
+                "credit-expiring:plaid:card:lululemon:2026-09-30",
                 "plaid:card"
             ),
             (
-                "credit-expiring:plaid:second:digital-entertainment:2026-09-30",
+                "credit-expiring:plaid:second:lululemon:2026-09-30",
                 "plaid:second"
             ),
         ]

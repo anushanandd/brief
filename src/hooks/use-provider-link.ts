@@ -11,6 +11,7 @@ export type LinkPhase = 'browser' | 'checking' | 'refreshing'
 export const linkProviderNames: Record<LinkProvider, string> = {
   plaid: 'Plaid',
   'plaid-investments': 'Plaid Investments',
+  'plaid-statements': 'Plaid Statements',
   snaptrade: 'SnapTrade',
 }
 

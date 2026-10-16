@@ -20,10 +20,6 @@
   min-width: 0;
   gap: 16px;
 }
-.analytics-credits-grid .platinum-current-card .benefit-deadline-group {
-  grid-template-columns: minmax(0, 1fr);
-}
-
 .analytics-breakdown {
   margin-top: 12px;
   max-height: 320px;

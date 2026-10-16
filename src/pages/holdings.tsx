@@ -1,9 +1,10 @@
-import { useParams } from '@tanstack/react-router'
+import { useLocation, useParams } from '@tanstack/react-router'
 
 import { InvestmentsWorkspace } from '../components/investments-workspace'
 
-/** Investments: the whole portfolio, or the holding the URL selects. */
+/** Investments: the whole portfolio, retirement, or the holding the URL selects. */
 export function HoldingsPage() {
   const { ticker } = useParams({ strict: false })
-  return <InvestmentsWorkspace ticker={ticker} />
+  const retirement = useLocation({ select: ({ pathname }) => pathname === '/holdings/retirement' })
+  return <InvestmentsWorkspace ticker={ticker} retirement={retirement} />
 }

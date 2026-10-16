@@ -38,6 +38,48 @@ mod macos {
             completion: *mut c_void,
             callback: extern "C" fn(*mut c_void, *const c_char, *const c_char),
         );
+        fn brief_foundation_model_summarize(
+            request: *const c_char,
+            text: *const c_char,
+            completion: *mut c_void,
+            callback: extern "C" fn(*mut c_void, *const c_char, *const c_char),
+        );
+    }
+
+    /// Summarizes a document's text, one document at a time, behind any question in progress.
+    pub async fn summarize(text: String) -> Result<String, String> {
+        static SUMMARIES: LazyLock<Arc<tokio::sync::Mutex<()>>> =
+            LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(())));
+        let generation = SUMMARIES.clone().lock_owned().await;
+        if status().state != "available" {
+            return Err(status().message.into());
+        }
+        let text = CString::new(text.replace('\0', " "))
+            .map_err(|_| "The document text is invalid".to_string())?;
+        let request = CancelOnDrop(
+            CString::new(format!("summary-{}", uuid::Uuid::new_v4()))
+                .map_err(|_| "Invalid summary request")?,
+        );
+        let (sender, receiver) = oneshot::channel::<Result<String, String>>();
+        let completion = Box::into_raw(Box::new(ResponseContext {
+            sender,
+            _generation: generation,
+            tools: None,
+        }))
+        .cast::<c_void>();
+        unsafe {
+            brief_foundation_model_summarize(
+                request.0.as_ptr(),
+                text.as_ptr(),
+                completion,
+                complete,
+            )
+        };
+        let text = tokio::time::timeout(Duration::from_secs(90), receiver)
+            .await
+            .map_err(|_| "Apple Intelligence took too long to respond".to_string())?
+            .map_err(|_| "Apple Intelligence stopped before responding".to_string())??;
+        Ok(text.trim().to_owned())
     }
 
     /// Runs one ledger query for Swift. Panics never cross the C boundary.
@@ -178,10 +220,10 @@ mod macos {
             .await
             .map_err(|_| "Apple Intelligence took too long to respond".to_string())?
             .map_err(|_| "Apple Intelligence stopped before responding".to_string())??;
-        Ok(super::Answer {
-            text,
-            evidence: super::take_evidence(&evidence),
-        })
+        Ok(super::Answer::checked(
+            &text,
+            super::take_evidence(&evidence),
+        ))
     }
 
     #[cfg(test)]
@@ -227,6 +269,10 @@ mod fallback {
 
     pub fn cancel(_request_id: String) {}
 
+    pub async fn summarize(_text: String) -> Result<String, String> {
+        Err(status().message.into())
+    }
+
     pub async fn generate(
         _question: String,
         _context: String,
@@ -259,16 +305,70 @@ pub struct ToolCall {
     pub result: serde_json::Value,
 }
 
-/// An answer with the queries behind it, so every figure can be checked and kept.
+mod figures;
+
+/// The figures `text` states that `source` doesn't print.
+pub fn figures_not_in(text: &str, source: &str) -> Vec<String> {
+    figures::unverified(
+        text,
+        &[ToolCall {
+            name: "document".into(),
+            arguments: serde_json::Value::Null,
+            result: serde_json::Value::String(source.into()),
+        }],
+    )
+}
+
+/// Whether the queries returned what the question needed. Not having the figures is an answer,
+/// shown as such, not an error.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum Outcome {
+    Answered,
+    Unavailable,
+}
+
+/// An answer with the queries behind it, so every figure can be checked and kept, and the
+/// figures it states that none of those queries returned.
 #[derive(Clone, Debug, serde::Serialize)]
 pub struct Answer {
     pub text: String,
+    pub outcome: Outcome,
     pub evidence: Vec<ToolCall>,
+    pub unverified: Vec<String>,
+}
+
+impl Answer {
+    /// The model's reply, `{"outcome", "text"}` as JSON or plain text, checked against the
+    /// queries that ran.
+    #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+    fn checked(reply: &str, evidence: Vec<ToolCall>) -> Self {
+        #[derive(serde::Deserialize)]
+        struct Reply {
+            outcome: String,
+            text: String,
+        }
+        let (text, outcome) = match serde_json::from_str::<Reply>(reply) {
+            Ok(reply) if reply.outcome == "unavailable" => (reply.text, Outcome::Unavailable),
+            Ok(reply) => (reply.text, Outcome::Answered),
+            Err(_) => (reply.to_owned(), Outcome::Answered),
+        };
+        let text = text.trim().to_owned();
+        Self {
+            unverified: figures::unverified(&text, &evidence),
+            text,
+            outcome,
+            evidence,
+        }
+    }
 }
 
 type Evidence = std::sync::Arc<std::sync::Mutex<Vec<ToolCall>>>;
 
-const MAX_TOOL_RESULT: usize = 6_000;
+/// The on-device model reads about 4,096 tokens per question on macOS 26, shared by the
+/// instructions, every tool's description, the question, and each result, so one result stays
+/// near 2,000 characters and a long one gives up its last rows rather than failing.
+const MAX_TOOL_RESULT: usize = 2_000;
 const MAX_EVIDENCE: usize = 6;
 
 /// The successful queries of one request, in order, without repeats.
@@ -291,6 +391,35 @@ fn take_evidence(evidence: &Evidence) -> Vec<ToolCall> {
     calls
 }
 
+/// A result within `max` characters: the result itself, or the result with its longest list
+/// cut from the end and the number of rows left out, so the model knows it saw only part.
+fn fit_result(mut result: serde_json::Value, max: usize) -> Option<(serde_json::Value, String)> {
+    let text = result.to_string();
+    if text.len() <= max {
+        return Some((result, text));
+    }
+    let longest = result.as_object().and_then(|fields| {
+        fields
+            .iter()
+            .filter_map(|(key, value)| Some((key.clone(), value.as_array()?.len())))
+            .max_by_key(|(_, rows)| *rows)
+            .map(|(key, _)| key)
+    })?;
+    let mut omitted = 0usize;
+    loop {
+        let rows = result.get_mut(&longest)?.as_array_mut()?;
+        if rows.pop().is_none() {
+            return None;
+        }
+        omitted += 1;
+        result["omittedRows"] = serde_json::json!(omitted);
+        let text = result.to_string();
+        if text.len() <= max {
+            return Some((result, text));
+        }
+    }
+}
+
 impl ToolHost {
     pub fn new(view: std::sync::Arc<crate::insights::View>, today: chrono::NaiveDate) -> Self {
         Self {
@@ -311,9 +440,8 @@ impl ToolHost {
         name: &str,
         arguments: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        let zone = crate::insights::calendar::LocalZone;
-        let result = crate::insights::ledger::Ledger::new(&self.view, self.today, &zone)
-            .call(name, arguments);
+        let result =
+            crate::insights::ledger::Ledger::new(&self.view, self.today).call(name, arguments);
         match result.get("error").and_then(serde_json::Value::as_str) {
             Some(error) => Err(error.to_owned()),
             None => Ok(result),
@@ -335,13 +463,12 @@ impl ToolHost {
             Ok(result) => result,
             Err(error) => return serde_json::json!({ "error": error }).to_string(),
         };
-        let text = result.to_string();
-        if text.len() > MAX_TOOL_RESULT {
+        let Some((result, text)) = fit_result(result, MAX_TOOL_RESULT) else {
             return serde_json::json!({
                 "error": "That result is too large. Ask about a shorter period or fewer rows."
             })
             .to_string();
-        }
+        };
         // Only figures the model actually received count as evidence.
         if let Ok(mut evidence) = self.evidence.lock() {
             evidence.push(ToolCall {
@@ -393,5 +520,49 @@ mod tool_tests {
         assert_eq!(evidence[1].arguments["limit"], 1000);
         assert!(host.query("noSuchTool", &serde_json::json!({})).is_err());
         assert!(host.query("cashFlow", &serde_json::json!({})).is_ok());
+    }
+
+    #[test]
+    fn replies_carry_their_outcome_and_unverified_figures() {
+        let evidence = vec![ToolCall {
+            name: "cashFlow".into(),
+            arguments: serde_json::json!({}),
+            result: serde_json::json!({ "spending": -812.4 }),
+        }];
+        let answer = Answer::checked(
+            r#"{"outcome":"answered","text":" You spent $812.40, not $900. "}"#,
+            evidence.clone(),
+        );
+        assert_eq!(answer.outcome, Outcome::Answered);
+        assert_eq!(answer.text, "You spent $812.40, not $900.");
+        assert_eq!(answer.unverified, vec!["$900"]);
+
+        let missing = Answer::checked(
+            r#"{"outcome":"unavailable","text":"No saved data covers 2019."}"#,
+            Vec::new(),
+        );
+        assert_eq!(missing.outcome, Outcome::Unavailable);
+        assert!(missing.unverified.is_empty());
+
+        let plain = Answer::checked("You spent $812.40.", evidence);
+        assert_eq!(plain.outcome, Outcome::Answered);
+        assert!(plain.unverified.is_empty());
+    }
+
+    #[test]
+    fn long_results_drop_their_last_rows_and_say_how_many() {
+        let rows = (0..200)
+            .map(|index| serde_json::json!({ "name": format!("Row {index}"), "amount": index }))
+            .collect::<Vec<_>>();
+        let (fitted, text) =
+            fit_result(serde_json::json!({ "shown": 200, "rows": rows }), 500).unwrap();
+        assert!(text.len() <= 500);
+        let kept = fitted["rows"].as_array().unwrap().len();
+        assert_eq!(fitted["omittedRows"], 200 - kept);
+        assert_eq!(fitted["rows"][0]["name"], "Row 0");
+
+        let small = serde_json::json!({ "total": 12.5 });
+        assert_eq!(fit_result(small.clone(), 500).unwrap().0, small);
+        assert!(fit_result(serde_json::json!({ "text": "x".repeat(600) }), 500).is_none());
     }
 }

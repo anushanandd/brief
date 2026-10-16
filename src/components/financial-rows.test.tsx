@@ -118,18 +118,14 @@ it('preserves pending status, merchant links, categories and descriptions across
   const html = renderToStaticMarkup(
     <ActivityList activities={activities} referenceIso={referenceIso} showDescriptions />,
   )
-  expect(html).toContain('Dec 31, 2025 · Pending')
+  // Pending is a badge beside the merchant, not a suffix on the date.
+  expect(html).toContain('<span class="activity-badge" title="Pending">Pending</span>')
+  expect(html).toContain('<small>Dec 31, 2025</small>')
   expect(html).toContain('Synthetic card · Dining')
   expect(html).toContain('Original provider description')
-  expect(html).toContain('href="https://example.com/"')
+  // A merchant's website is never a link out of the row.
+  expect(html).not.toContain('href=')
   expect(html).not.toContain('Verified')
-  const unsafe = renderToStaticMarkup(
-    <ActivityList
-      activities={[{ ...activities[0], website: 'javascript:alert(1)' }]}
-      referenceIso={referenceIso}
-    />,
-  )
-  expect(unsafe).not.toContain('href=')
 })
 
 it('shows the whole activity name and leaves cutting it to the column width', () => {
@@ -188,7 +184,8 @@ it('notes native benefit credits on purchase and credit rows and marks linked ro
         productName: 'American Express Platinum',
         windows: [],
         useFirst: [],
-        outcomes: [],
+        history: [],
+        review: [],
         activity: [
           benefitActivity({
             id: 'purchase',
@@ -218,7 +215,12 @@ it('notes native benefit credits on purchase and credit rows and marks linked ro
       highlightedIds={new Set(['spending:credit'])}
     />,
   )
-  expect(html).toContain('Digital entertainment · Credited $13.99')
-  expect(html).toContain('Digital entertainment credit for Synthetic stream on Aug 15')
+  // A short badge beside the merchant, the full note behind it.
+  expect(html).toContain(
+    'title="Digital entertainment · Credited $13.99">Credited<span class="sr-only">',
+  )
+  expect(html).toContain(
+    'title="Digital entertainment credit for Synthetic stream on Aug 15">Benefit credit',
+  )
   expect(html.match(/data-highlighted="true"/g)).toHaveLength(1)
 })

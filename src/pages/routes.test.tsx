@@ -1,4 +1,4 @@
-// The app shell, Today, Settings, recovery, and the command map every control must name.
+// The app shell, Home, Settings, recovery, and the command map every control must name.
 
 import { expect, it } from 'vitest'
 
@@ -10,6 +10,10 @@ import { scenario } from './routes.scenario'
 it('registers data health without the removed Performance workspace', () => {
   expect(hasRoute('/health')).toBe(true)
   expect(hasRoute('/performance')).toBe(false)
+})
+
+it('redirects the former Recurring page to Spending, where subscriptions live', () => {
+  expect(redirectOf('/recurring', {})).toMatchObject({ options: { to: '/spending' } })
 })
 
 it('redirects the former Platinum page to Amex credits', () => {
@@ -60,11 +64,11 @@ it('links each Home ledger preview to its primary page', async () => {
   expect(main).toContain('href="/holdings"')
   expect(main).toContain('href="/activities"')
   expect(main).not.toContain('<h2>Overview</h2>')
-  expect(main.match(/class="financial-activity-row/g)).toHaveLength(8)
+  expect(main.match(/class="financial-activity-row/g)).toHaveLength(1)
   expect(main).not.toContain('home-finance-grid')
 })
 
-it('heads Today with net worth alone, never a carousel of brokerages', async () => {
+it('heads Home with net worth alone, never a carousel of brokerages', async () => {
   scenario.accountType = 'brokerage'
   const html = await renderRoute('/')
   const start = html.indexOf('home-balance-header')
@@ -109,15 +113,72 @@ it('places graph ranges at the top right, above the change row', async () => {
   }
 })
 
-it('shows a fixed feed of recent activity on Home beside grouped accounts', async () => {
+it('shows as much recent activity on Home as the longer preview beside it', async () => {
   const html = await renderRoute('/')
-  // Activity previews beside Holdings under the hero; Accounts sits in the companion column.
-  const activity = html.slice(html.indexOf('home-activity-card'), html.indexOf('home-companion'))
-  const accounts = html.slice(html.indexOf('accounts-overview-card'))
-  expect(accounts.match(/class="account-row account-group-row"/g)).toHaveLength(1)
+  // Accounts preview beside Holdings under the chart; recent activity follows in the column beside.
+  const accounts = html.slice(
+    html.indexOf('accounts-overview-card'),
+    html.indexOf('home-activity-card'),
+  )
+  const activity = html.slice(html.indexOf('home-activity-card'))
+  expect(accounts.match(/class="account-row account-group-row tree-parent"/g)).toHaveLength(1)
   expect(accounts).toContain('2 accounts')
   expect(accounts).not.toContain('href="/accounts?account=')
-  expect(activity.match(/class="financial-activity-row"/g)).toHaveLength(8)
+  // No holdings and one account category, so one activity.
+  expect(activity.match(/class="financial-activity-row"/g)).toHaveLength(1)
+  // Without holdings or a positive balance there is no line to split.
+  expect(html).not.toContain('class="share-line"')
+})
+
+it('splits holdings by ticker and assets by type under their previews', async () => {
+  scenario.snaptradeReference = true
+  scenario.accountType = 'brokerage'
+  scenario.holdings = [
+    {
+      ticker: 'AAA',
+      name: 'Alpha fund',
+      accountId: 'snaptrade:selected',
+      shares: 2,
+      price: 500,
+      value: 1_000,
+      costBasis: 800,
+      unrealizedGain: 200,
+      dailyChangePct: 1,
+      weeklyChangePct: null,
+      weeklyReferencePrice: null,
+      weeklyReferenceDate: null,
+      totalChangePct: 25,
+      instrumentKind: 'etf',
+      color: '#fff',
+    },
+  ]
+  scenario.insights = {
+    allocation: {
+      total: 1_200,
+      incomplete: false,
+      cashUnknown: false,
+      kinds: [],
+      securities: [{ key: 'AAA', label: 'Alpha fund', value: 1_000, percent: 83.33 }],
+      accounts: [],
+    },
+  }
+  const html = await renderRoute('/')
+  const holdings = html.slice(
+    html.indexOf('brokerage-holdings-card'),
+    html.indexOf('accounts-overview-card'),
+  )
+  const accounts = html.slice(
+    html.indexOf('accounts-overview-card'),
+    html.indexOf('home-companion', html.indexOf('accounts-overview-card')),
+  )
+  expect(holdings).toContain('aria-label="Holdings by ticker"')
+  // Tickers come from the native allocation; uninvested cash closes the line.
+  expect(holdings).toContain('aria-label="AAA: $1,000.00, 83.3%"')
+  expect(holdings).toContain('aria-label="Cash: $200.00, 16.7%"')
+  expect(accounts).toContain('aria-label="Assets by type"')
+  // Grouped by account type; the credit card owes, so it has no share of what you hold.
+  expect(accounts).toContain('aria-label="Brokerage: $1,200.00, 100.0%"')
+  expect(accounts.match(/class="share-line-part"/g)).toHaveLength(1)
 })
 
 it('keeps account details and utilities out of the organized sidebar', async () => {
@@ -155,7 +216,7 @@ it('keeps account details and utilities out of the organized sidebar', async () 
   expect(appearance).toMatch(/role="combobox"[^>]*aria-label="Live price updates"/)
   expect(appearance).toContain('Live price updates')
   expect(appearance).toContain('Financial backup')
-  expect(appearance).toContain('Backups are unencrypted')
+  expect(appearance).toContain('Figures in a backup are unencrypted')
 })
 
 it('renders every selector rail as one shared scrollable row', async () => {
@@ -186,7 +247,7 @@ it('opens the design reference from Advanced Settings with isolated sample contr
   expect(html).toContain('Example reimbursement')
 })
 
-it('shows the coming activity native insights chose and no needs list on Today', async () => {
+it('shows the coming activity native insights chose and no needs list on Home', async () => {
   scenario.insights = {
     today: '2026-09-16',
     expected: [
@@ -198,7 +259,7 @@ it('shows the coming activity native insights chose and no needs list on Today',
       }),
       expectedEvent({ id: 'series:later', title: 'Example later bill', date: '2026-10-08' }),
     ],
-    // Rust decides what needs action and which expected events are coming.
+    // Rust decides what needs action and which events are expected.
     brief: {
       needs: [
         {
@@ -210,19 +271,18 @@ it('shows the coming activity native insights chose and no needs list on Today',
           low: -440,
         },
       ],
-      coming: ['series:rent'],
-      comingDays: 14,
     },
   }
   const html = await renderRoute('/')
-  expect(html).toContain('<h1>Today</h1>')
-  // Needs are for notifications; Today shows the period's totals and what's coming.
+  expect(html).toContain('<h1>Home</h1>')
+  // Needs are for notifications; Home shows the period's totals and what's coming.
   expect(html).not.toContain('needs-you')
-  expect(html).toContain('period-totals-title')
-  const comingUp = html.slice(html.indexOf('coming-up-title'))
+  expect(html).toContain('class="period-totals"')
+  // Coming up is the same list Accounts shows: every event in Rust's 30-day forecast.
+  const comingUp = html.slice(html.indexOf('expected-activity-card'))
   expect(comingUp).toContain('Example rent')
   expect(comingUp).toContain('−$1,200.00')
-  expect(comingUp).not.toContain('Example later bill')
+  expect(comingUp).toContain('Example later bill')
   expect(html).not.toContain('home-summary')
   expect(html).not.toContain('Heads up')
 })
@@ -234,6 +294,8 @@ it('shows the coming activity native insights chose and no needs list on Today',
 // covered by the list commands (move, open, copy).
 
 it('maps every control to a registered command', async () => {
+  // A person's page has controls of its own.
+  scenario.people = [{ id: 'person:a', name: 'Example Person A' }]
   // A holding's page has controls of its own.
   scenario.holdings = [
     {
@@ -292,9 +354,13 @@ it('maps every control to a registered command', async () => {
     '/holdings/NVDA',
     '/activities',
     '/activities?review=true',
-    '/recurring',
+    '/insights',
+    '/insights?view=people',
+    '/insights?view=people&person=person:a',
     '/analytics?chart=amex-credits',
     '/taxes',
+    '/calendar',
+    '/documents',
   ]) {
     const html = await renderRoute(route)
     const open: Array<{ tag: string; row: boolean }> = []
@@ -324,7 +390,7 @@ it('maps every control to a registered command', async () => {
   expect(missing).toEqual([])
 })
 
-it('lists what needs action on Today, each opening where to act', async () => {
+it('lists what needs action on Home, each opening where to act', async () => {
   scenario.insights = {
     brief: {
       needs: [
@@ -349,8 +415,6 @@ it('lists what needs action on Today, each opening where to act', async () => {
           loss: -50,
         },
       ],
-      coming: [],
-      comingDays: 14,
     },
   }
   const html = (await renderRoute('/')).replaceAll('<!-- -->', '')

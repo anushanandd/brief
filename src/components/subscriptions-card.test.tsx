@@ -35,6 +35,7 @@ const snapshot = (subscriptions?: FinanceSnapshot['insights']): FinanceSnapshot 
   accountBalanceHistory: [],
   brokeragePerformance: [],
   accountMovements: [],
+  transactionChanges: [],
   possibleDuplicateAccounts: [],
   accountLinks: {},
   transactions: [],
@@ -58,6 +59,12 @@ it('lists native subscriptions with the native monthly total', async () => {
                 nextDate: '2027-03-02',
                 pending: false,
                 sourceTransactionId: 'storage-1',
+                priceChange: {
+                  previous: -100,
+                  latest: -120,
+                  changedOn: '2026-03-02',
+                  transactionId: 'storage-1',
+                },
               },
             ],
           },
@@ -69,6 +76,8 @@ it('lists native subscriptions with the native monthly total', async () => {
   expect(html).toContain('Yearly')
   expect(html).toContain('$20.00')
   expect(html).toContain('aria-label="Example Storage charge: −$120.00"')
+  // A price change says what it was and when it changed.
+  expect(html).toMatch(/ · up from <span class="sensitive-value">\$100\.00<\/span> on Mar 2/)
 })
 
 it('asks for a refresh when native insights are unavailable', async () => {

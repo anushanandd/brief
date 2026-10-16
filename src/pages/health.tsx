@@ -2,9 +2,9 @@ import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 
 import { PageError, PageLoading } from '../components/data-state'
-import { AlertCircle, Info, ShieldCheck } from '../components/icons'
+import { AlertCircle, ChevronRight, Info, ShieldCheck } from '../components/icons'
 import { SettingsLink } from '../components/settings-dialog'
-import { Card, EmptyState, StatusDot } from '../components/ui'
+import { Card, SectionHeading, StatusDot } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import { getDataHealth } from '../lib/api'
@@ -30,16 +30,19 @@ function IssueLink({ issue }: { issue: HealthReport['issues'][number] }) {
         {issue.action.label}
       </SettingsLink>
     )
-  if (route.startsWith('/activities'))
+  if (route.startsWith('/activities')) {
+    // The route carries the filter Rust chose, such as `?evidence=conflict`.
+    const query = new URLSearchParams(route.split('?')[1] ?? '')
     return (
       <Link
         className="button-base button-secondary button-compact"
         to="/activities"
-        search={{ category: 'Other' }}
+        search={Object.fromEntries(query)}
       >
         {issue.action.label}
       </Link>
     )
+  }
   if (route === '/accounts' || route === '/holdings' || route === '/logs')
     return (
       <Link className="button-base button-secondary button-compact" to={route}>
@@ -109,25 +112,19 @@ export function HealthPage() {
         </dl>
       </Card>
 
-      {!sections.length ? (
-        <Card className="health-empty">
-          <EmptyState title="No data issues found">Every check passed.</EmptyState>
-        </Card>
-      ) : null}
-
       {sections.map(({ severity, issues }) => {
         const Icon = severity === 'info' ? Info : AlertCircle
         return (
-          <section className="health-section" key={severity}>
-            <h2>
-              {labels[severity]}
-              <span>{issues.length}</span>
-            </h2>
-            <Card className="health-issue-list">
+          <Card className="health-section" key={severity}>
+            <SectionHeading
+              title={labels[severity]}
+              action={<span className="health-section-count">{issues.length}</span>}
+            />
+            <div className="health-issue-list">
               {issues.map((issue) => (
                 <article className={`health-issue health-issue-${severity}`} key={issue.id}>
                   <span className="health-issue-mark" aria-hidden="true">
-                    <Icon size={16} />
+                    <Icon size={14} />
                   </span>
                   <div className="health-issue-body">
                     <h3>{issue.title}</h3>
@@ -141,7 +138,10 @@ export function HealthPage() {
                     ) : null}
                     {issue.affectedItems.length ? (
                       <details className="health-affected">
-                        <summary>{issue.affectedItems.length} affected records</summary>
+                        <summary>
+                          <ChevronRight size={12} aria-hidden="true" />
+                          {countOf(issue.affectedItems.length, 'affected record')}
+                        </summary>
                         <ul>
                           {issue.affectedItems.map((item) => (
                             <li key={item.id}>{item.name}</li>
@@ -155,8 +155,8 @@ export function HealthPage() {
                   </div>
                 </article>
               ))}
-            </Card>
-          </section>
+            </div>
+          </Card>
         )
       })}
     </div>

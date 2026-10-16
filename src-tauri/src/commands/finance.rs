@@ -1,4 +1,4 @@
-//! The committed finance view and the edits made to it: annotations, settings, rules, imported
+//! The committed finance view and the edits made to it: annotations, settings, imported
 //! statements, and the activity export.
 use std::{collections::BTreeMap, path::PathBuf};
 
@@ -7,7 +7,7 @@ use serde_json::Value;
 use tauri::{AppHandle, State};
 
 use crate::{
-    background, database, files, health, notify, rules, settings, statements, storage,
+    background, database, files, health, notify, settings, statements, storage,
     storage::Annotation, AppState,
 };
 
@@ -64,7 +64,22 @@ pub(crate) async fn transaction_annotations(
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let mut storage = state.storage()?;
-    let annotations = storage.save_annotations(changes, importing)?;
+    let saved = storage.save_annotations(changes, importing)?;
+    Ok(serde_json::json!({
+        "annotations": saved.annotations,
+        "previous": saved.previous,
+        "snapshot": storage.snapshot()?,
+    }))
+}
+
+/// Undoes an annotation save by putting back the annotations it returned as `previous`.
+#[tauri::command]
+pub(crate) async fn restore_transaction_annotations(
+    previous: BTreeMap<String, Annotation>,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let mut storage = state.storage()?;
+    let annotations = storage.restore_annotations(previous)?;
     Ok(serde_json::json!({ "annotations": annotations, "snapshot": storage.snapshot()? }))
 }
 
@@ -78,15 +93,9 @@ pub(crate) fn save_finance_settings(
     let saved = state.storage()?.save_settings(settings, importing)?;
     // The menu bar item follows background refresh, which this save may have changed.
     notify::sync_tray(&app, background::enabled(&app));
+    // Sync, account names, and benefit visibility all change the Brief calendar.
+    crate::calendar::sync_in_background(app);
     Ok(saved)
-}
-
-#[tauri::command]
-pub(crate) async fn save_category_rules(
-    rules: Vec<rules::CategoryRule>,
-    state: State<'_, AppState>,
-) -> Result<Value, String> {
-    state.storage()?.save_rules(rules)
 }
 
 /// Async so reading and parsing the file never runs on the main thread.
@@ -150,8 +159,21 @@ pub(crate) async fn remove_statement_import(
     state.storage()?.remove_statement(&id)
 }
 
-/// Asks where to save the filtered activity, then writes it as a new private file. `false`
-/// when the picker was cancelled.
+#[tauri::command]
+pub(crate) async fn confirm_statement_row(
+    file_id: String,
+    row_id: String,
+    confirmed: bool,
+    state: State<'_, AppState>,
+) -> Result<Value, String> {
+    let _refresh = state.refresh.lock().await;
+    state
+        .storage()?
+        .confirm_statement_row(&file_id, &row_id, confirmed)
+}
+
+/// Asks where to save an export the renderer wrote (activity or lots as CSV, upcoming dates
+/// as a calendar), then writes it as a new private file. `false` when the picker was cancelled.
 #[tauri::command]
 pub(crate) async fn export_finance_csv(
     app: AppHandle,
@@ -161,14 +183,18 @@ pub(crate) async fn export_finance_csv(
     if contents.len() > 50 * 1024 * 1024 {
         return Err("Export exceeds 50 MB".into());
     }
-    validate_csv_filename(&filename)?;
+    let extension = validate_export_filename(&filename)?;
     let path = tauri::async_runtime::spawn_blocking(move || {
         use tauri_plugin_dialog::DialogExt;
+        let (title, label) = match extension {
+            "ics" => ("Export calendar", "Calendar"),
+            _ => ("Export CSV", "CSV"),
+        };
         app.dialog()
             .file()
-            .set_title("Export account activity CSV")
+            .set_title(title)
             .set_file_name(filename)
-            .add_filter("CSV", &["csv"])
+            .add_filter(label, &[extension])
             .blocking_save_file()
     })
     .await
@@ -181,17 +207,23 @@ pub(crate) async fn export_finance_csv(
     Ok(true)
 }
 
-fn validate_csv_filename(filename: &str) -> Result<(), String> {
-    if filename.len() > 240
-        || !filename.ends_with(".csv")
-        || filename.starts_with('.')
-        || filename
-            .chars()
-            .any(|c| c.is_control() || matches!(c, '/' | '\\' | ':'))
-    {
-        return Err("Invalid CSV filename".into());
+/// The extension of a safe export name: a plain `.csv` or `.ics` file name with no path.
+fn validate_export_filename(filename: &str) -> Result<&'static str, String> {
+    let extension = ["csv", "ics"]
+        .into_iter()
+        .find(|extension| filename.ends_with(&format!(".{extension}")));
+    match extension {
+        Some(extension)
+            if filename.len() <= 240
+                && !filename.starts_with('.')
+                && !filename
+                    .chars()
+                    .any(|c| c.is_control() || matches!(c, '/' | '\\' | ':')) =>
+        {
+            Ok(extension)
+        }
+        _ => Err("Invalid export filename".into()),
     }
-    Ok(())
 }
 
 #[cfg(test)]
@@ -206,8 +238,9 @@ mod tests {
             "bad\nname.csv",
             "not-a-csv.txt",
         ] {
-            assert!(validate_csv_filename(name).is_err());
+            assert!(validate_export_filename(name).is_err());
         }
-        assert!(validate_csv_filename("activity.csv").is_ok());
+        assert_eq!(validate_export_filename("activity.csv"), Ok("csv"));
+        assert_eq!(validate_export_filename("upcoming.ics"), Ok("ics"));
     }
 }

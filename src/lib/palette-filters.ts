@@ -28,16 +28,12 @@ export function datePresets(today: string) {
 }
 
 /** Whether an activity passes every filter chip. */
-export function activityMatchesChips(
-  activity: ActivityItem,
-  chips: readonly FilterChip[],
-  referenceIso: string,
-) {
+export function activityMatchesChips(activity: ActivityItem, chips: readonly FilterChip[]) {
   return chips.every((chip) => {
     if (chip.field === 'account') return activity.accountId === chip.value
     if (chip.field === 'category') return (activity.category || 'Other') === chip.value
     if (chip.field === 'method') return activityMethod(activity) === chip.value
-    const date = transactionDateKey(activity.date, referenceIso)
+    const date = transactionDateKey(activity.date)
     return date >= chip.value && date <= (chip.to ?? chip.value)
   })
 }

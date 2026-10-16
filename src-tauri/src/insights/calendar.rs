@@ -21,67 +21,48 @@ impl Zone for LocalZone {
     }
 }
 
-/// The few named zones that benefit terms use, with U.S. daylight-saving rules since 2007.
+/// A named IANA time zone, with its daylight-saving rules from the time zone database. Benefit
+/// terms name the zone a credit resets in; the market's day is New York's.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum NamedZone {
-    Utc,
-    Honolulu,
-    Chicago,
-    LosAngeles,
-    NewYork,
-}
+pub struct NamedZone(chrono_tz::Tz);
 
+#[allow(non_upper_case_globals)]
 impl NamedZone {
+    pub const NewYork: Self = Self(chrono_tz::America::New_York);
+    #[cfg(test)]
+    pub const Utc: Self = Self(chrono_tz::UTC);
+    #[cfg(test)]
+    pub const Honolulu: Self = Self(chrono_tz::Pacific::Honolulu);
+    #[cfg(test)]
+    pub const Chicago: Self = Self(chrono_tz::America::Chicago);
+    #[cfg(test)]
+    pub const LosAngeles: Self = Self(chrono_tz::America::Los_Angeles);
+
+    /// Any IANA zone name, such as `America/Phoenix`.
     pub fn parse(name: &str) -> Option<Self> {
-        match name {
-            "UTC" | "Etc/UTC" => Some(Self::Utc),
-            "Pacific/Honolulu" => Some(Self::Honolulu),
-            "America/Chicago" => Some(Self::Chicago),
-            "America/Los_Angeles" => Some(Self::LosAngeles),
-            "America/New_York" => Some(Self::NewYork),
-            _ => None,
-        }
+        name.parse::<chrono_tz::Tz>().ok().map(Self)
     }
 
-    fn standard_offset_hours(self) -> i64 {
-        match self {
-            Self::Utc => 0,
-            Self::Honolulu => -10,
-            Self::Chicago => -6,
-            Self::LosAngeles => -8,
-            Self::NewYork => -5,
-        }
+    /// The wall-clock time in this zone at `instant`.
+    pub fn local(self, instant: DateTime<Utc>) -> chrono::NaiveDateTime {
+        instant.with_timezone(&self.0).naive_local()
     }
 
-    /// Hours from UTC at `instant`, daylight time included.
-    pub fn offset_hours(self, instant: DateTime<Utc>) -> i64 {
-        let standard = self.standard_offset_hours();
-        let observes_dst = matches!(self, Self::Chicago | Self::LosAngeles | Self::NewYork);
-        if observes_dst && in_us_daylight_time(instant, standard) {
-            standard + 1
-        } else {
-            standard
+    /// The instant this zone's clock reads `local`. A time skipped when clocks spring forward
+    /// reads as the hour after; a repeated one, as its first occurrence.
+    pub fn instant(self, local: chrono::NaiveDateTime) -> DateTime<Utc> {
+        use chrono::{LocalResult, TimeZone};
+        match self.0.from_local_datetime(&local) {
+            LocalResult::Single(at) | LocalResult::Ambiguous(at, _) => at.to_utc(),
+            LocalResult::None => self.instant(local + Duration::hours(1)),
         }
     }
 }
 
 impl Zone for NamedZone {
     fn date(&self, instant: DateTime<Utc>) -> NaiveDate {
-        (instant + Duration::hours(self.offset_hours(instant))).date_naive()
+        self.local(instant).date()
     }
-}
-
-/// Daylight time runs from 2:00 standard time on the second Sunday of March until 2:00
-/// daylight time (1:00 standard) on the first Sunday of November.
-fn in_us_daylight_time(instant: DateTime<Utc>, standard_offset: i64) -> bool {
-    let year = (instant + Duration::hours(standard_offset)).year();
-    let at = |date: NaiveDate, hour: u32| {
-        date.and_hms_opt(hour, 0, 0).expect("valid hour").and_utc()
-            - Duration::hours(standard_offset)
-    };
-    let start = at(nth_weekday(year, 3, Weekday::Sun, 2), 2);
-    let end = at(nth_weekday(year, 11, Weekday::Sun, 1), 1);
-    instant >= start && instant < end
 }
 
 pub fn nth_weekday(year: i32, month: u32, weekday: Weekday, occurrence: u32) -> NaiveDate {
@@ -205,26 +186,8 @@ pub fn long_label(date: NaiveDate) -> String {
 
 static ISO_PREFIX: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").expect("valid pattern"));
-static SHORT_DATE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)^([a-z]{3,9})\s+(\d{1,2})$").expect("valid pattern"));
 
-fn month_number(name: &str) -> Option<u32> {
-    let prefix = name.get(..3)?.to_ascii_lowercase();
-    [
-        "jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec",
-    ]
-    .iter()
-    .position(|month| *month == prefix)
-    .map(|index| index as u32 + 1)
-}
-
-/// A month and day with JavaScript `Date.UTC` overflow, so `Feb 30` becomes `Mar 2`.
-fn overflowing_date(year: i32, month: u32, day: u32) -> NaiveDate {
-    first_of_month(year, month as i64) + Duration::days(day as i64 - 1)
-}
-
-/// An ISO instant or date. A bare month and day is accepted only for compatibility with
-/// legacy saved values and, like the original renderer, resolves to the year 2001.
+/// An ISO instant or date; a date alone is its UTC midnight.
 pub fn parse_instant(value: &str) -> Option<DateTime<Utc>> {
     if let Ok(instant) = DateTime::parse_from_rfc3339(value) {
         return Some(instant.with_timezone(&Utc));
@@ -234,10 +197,7 @@ pub fn parse_instant(value: &str) -> Option<DateTime<Utc>> {
             return Some(date.and_hms_opt(0, 0, 0)?.and_utc());
         }
     }
-    let captures = SHORT_DATE.captures(value.trim())?;
-    let date = overflowing_date(2001, month_number(&captures[1])?, captures[2].parse().ok()?);
-    // Noon UTC is that calendar day in every zone Brief uses.
-    Some(date.and_hms_opt(12, 0, 0)?.and_utc())
+    None
 }
 
 /// The calendar day of an ISO reference in a zone.
@@ -245,19 +205,10 @@ pub fn calendar_date(reference: &str, zone: &dyn Zone) -> Option<NaiveDate> {
     parse_instant(reference).map(|instant| zone.date(instant))
 }
 
-/// A transaction date key: ISO dates are kept as written; a legacy `Mon D` value resolves to
-/// the most recent such day on or before the reference's month.
-pub fn transaction_date(value: &str, reference: &str, zone: &dyn Zone) -> Option<NaiveDate> {
+/// A transaction's calendar day: an ISO date as written, or an RFC 2822 instant's UTC day.
+pub fn transaction_date(value: &str) -> Option<NaiveDate> {
     if ISO_PREFIX.is_match(value) {
         return NaiveDate::parse_from_str(&value[..10], "%Y-%m-%d").ok();
-    }
-    if let Some(captures) = SHORT_DATE.captures(value.trim()) {
-        if let (Some(month), Some(reference)) =
-            (month_number(&captures[1]), calendar_date(reference, zone))
-        {
-            let year = reference.year() - i32::from(month > reference.month());
-            return Some(overflowing_date(year, month, captures[2].parse().ok()?));
-        }
     }
     DateTime::parse_from_rfc2822(value)
         .ok()
@@ -265,17 +216,15 @@ pub fn transaction_date(value: &str, reference: &str, zone: &dyn Zone) -> Option
 }
 
 /// Posted transactions dated through `today`, oldest first, and by id within a day.
-pub fn posted_through<'a>(
-    transactions: &'a [Transaction],
-    reference: &str,
+pub fn posted_through(
+    transactions: &[Transaction],
     today: NaiveDate,
-    zone: &dyn Zone,
-) -> Vec<(NaiveDate, &'a Transaction)> {
+) -> Vec<(NaiveDate, &Transaction)> {
     let mut posted = transactions
         .iter()
         .filter(|transaction| !transaction.pending)
         .filter_map(|transaction| {
-            let date = transaction_date(transaction.posted_date(), reference, zone)?;
+            let date = transaction_date(transaction.posted_date())?;
             (date <= today).then_some((date, transaction))
         })
         .collect::<Vec<_>>();
@@ -321,6 +270,36 @@ mod tests {
             NamedZone::LosAngeles.date(instant("2026-11-01T07:30:00Z")),
             date("2026-11-01")
         );
+        // Any IANA zone parses, including Arizona's, which keeps standard time all year.
+        let phoenix = NamedZone::parse("America/Phoenix").unwrap();
+        assert_eq!(
+            phoenix.date(instant("2026-07-02T06:30:00Z")),
+            date("2026-07-01")
+        );
+        assert!(NamedZone::parse("Etc/UTC").is_some());
+        assert!(NamedZone::parse("Mars/Olympus_Mons").is_none());
+    }
+
+    #[test]
+    fn local_times_skipped_or_repeated_by_daylight_saving_still_name_an_instant() {
+        let new_york = NamedZone::NewYork;
+        let local =
+            |value: &str| chrono::NaiveDateTime::parse_from_str(value, "%Y-%m-%d %H:%M").unwrap();
+        let instant = |value: &str| DateTime::parse_from_rfc3339(value).unwrap().to_utc();
+        // 2:30 a.m. on 2026-03-08 never happens in New York; it reads as 3:30 a.m. EDT.
+        assert_eq!(
+            new_york.instant(local("2026-03-08 02:30")),
+            instant("2026-03-08T07:30:00Z")
+        );
+        // 1:30 a.m. on 2026-11-01 happens twice; the first is still daylight time.
+        assert_eq!(
+            new_york.instant(local("2026-11-01 01:30")),
+            instant("2026-11-01T05:30:00Z")
+        );
+        assert_eq!(
+            new_york.local(instant("2026-11-01T06:30:00Z")),
+            local("2026-11-01 01:30")
+        );
     }
 
     #[test]
@@ -344,23 +323,18 @@ mod tests {
     }
 
     #[test]
-    fn resolves_legacy_short_dates_against_the_reference() {
-        let zone = NamedZone::Utc;
+    fn transaction_dates_are_iso_or_rfc_2822_days_only() {
         assert_eq!(
-            transaction_date("Dec 31", "2026-01-03T12:00:00Z", &zone),
-            Some(date("2025-12-31"))
-        );
-        assert_eq!(
-            transaction_date("2026-09-01T10:00:00Z", "", &zone),
+            transaction_date("2026-09-01T10:00:00Z"),
             Some(date("2026-09-01"))
         );
         assert_eq!(
-            transaction_date("unknown", "2026-01-03T12:00:00Z", &zone),
-            None
+            transaction_date("Tue, 1 Sep 2026 23:30:00 -0700"),
+            Some(date("2026-09-02"))
         );
-        assert_eq!(
-            transaction_date("Aug 21", "Aug 21", &zone),
-            Some(date("2001-08-21"))
-        );
+        // A month and day without a year names no particular day.
+        assert_eq!(transaction_date("Dec 31"), None);
+        assert_eq!(parse_instant("Aug 21"), None);
+        assert_eq!(transaction_date("unknown"), None);
     }
 }

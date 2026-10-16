@@ -109,7 +109,7 @@ export type RowContext = {
 
 /** One activity as a row: shows the entry, searches all of its title, or copies it. */
 export function activityRow(activity: ActivityItem, context: RowContext): MenuAction {
-  const date = transactionDateKey(activity.date, context.referenceIso)
+  const date = transactionDateKey(activity.date)
   return {
     id: `activity:${activity.id}`,
     label: activity.title,

@@ -5,6 +5,11 @@ use serde_json::Value;
 
 use super::*;
 
+const DOCUMENTS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS documents (
+    id TEXT PRIMARY KEY CHECK (length(id) = 64),
+    value_json TEXT NOT NULL CHECK (json_valid(value_json))
+) STRICT;";
+
 pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<(), String> {
     connection
         .execute_batch(
@@ -42,7 +47,9 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
                    benefit_confirmed INTEGER CHECK (benefit_confirmed IN (0, 1)),
                    tags_json TEXT CHECK (tags_json IS NULL OR json_valid(tags_json)),
                    splits_json TEXT CHECK (splits_json IS NULL OR json_valid(splits_json)),
-                   refund_of TEXT, other INTEGER CHECK (other IN (0, 1))
+                   refund_of TEXT, other INTEGER CHECK (other IN (0, 1)), benefit_id TEXT,
+                   note TEXT,
+                   people_json TEXT CHECK (people_json IS NULL OR json_valid(people_json))
                  ) STRICT;
                  CREATE TABLE account_links (
                    plaid_account_id TEXT PRIMARY KEY CHECK (plaid_account_id LIKE 'plaid:%'),
@@ -72,7 +79,8 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
                    account_id TEXT NOT NULL CHECK (length(account_id) BETWEEN 1 AND 220),
                    file_name TEXT NOT NULL CHECK (length(file_name) BETWEEN 1 AND 255),
                    imported_at TEXT NOT NULL,
-                   contents BLOB NOT NULL CHECK (length(contents) BETWEEN 1 AND 5242880)
+                   contents BLOB NOT NULL CHECK (length(contents) BETWEEN 1 AND 5242880),
+                   confirmed_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(confirmed_json))
                  ) STRICT;
                  CREATE TABLE IF NOT EXISTS market_sessions (
                    session TEXT PRIMARY KEY CHECK (length(session) = 10),
@@ -89,9 +97,12 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
                  ) STRICT;
                  CREATE INDEX IF NOT EXISTS market_events_session ON market_events(session);
                  PRAGMA application_id = 1112688966;
-                 PRAGMA user_version = 13;
+                 PRAGMA user_version = 15;
                  COMMIT;",
             )
+            .and_then(|()| connection.execute_batch(super::bank_statements::SCHEMA))
+            .and_then(|()| connection.execute_batch(super::journal::SCHEMA))
+            .and_then(|()| connection.execute_batch(DOCUMENTS_SCHEMA))
             .map_err(db_error);
     }
 
@@ -172,6 +183,39 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
             )
             .map_err(db_error)?;
     }
+    // Version 15 assigns a transaction to a card benefit by hand.
+    let has_benefit_id = connection
+        .prepare("SELECT 1 FROM pragma_table_info('annotations') WHERE name = 'benefit_id'")
+        .and_then(|mut statement| statement.exists([]))
+        .map_err(db_error)?;
+    if !has_benefit_id {
+        connection
+            .execute("ALTER TABLE annotations ADD COLUMN benefit_id TEXT", [])
+            .map_err(db_error)?;
+    }
+    // Version 16 keeps a note on a transaction.
+    let has_note = connection
+        .prepare("SELECT 1 FROM pragma_table_info('annotations') WHERE name = 'note'")
+        .and_then(|mut statement| statement.exists([]))
+        .map_err(db_error)?;
+    if !has_note {
+        connection
+            .execute("ALTER TABLE annotations ADD COLUMN note TEXT", [])
+            .map_err(db_error)?;
+    }
+    // Version 18 keeps the people chosen for a transaction.
+    let has_people = connection
+        .prepare("SELECT 1 FROM pragma_table_info('annotations') WHERE name = 'people_json'")
+        .and_then(|mut statement| statement.exists([]))
+        .map_err(db_error)?;
+    if !has_people {
+        connection
+            .execute(
+                "ALTER TABLE annotations ADD COLUMN people_json TEXT CHECK (people_json IS NULL OR json_valid(people_json))",
+                [],
+            )
+            .map_err(db_error)?;
+    }
     // Version 8 saves imported statement files; version 9, each market session's layers;
     // version 10, each session's events; version 12 drops version 11's told ledger and kept
     // narratives, retired with the generated narrative.
@@ -201,6 +245,32 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
                  DROP TABLE IF EXISTS told;
                  DROP TABLE IF EXISTS narratives;",
         )
+        .map_err(db_error)?;
+    // Version 17 keeps the statement rows the user confirmed Plaid never reported.
+    let has_confirmed = connection
+        .prepare("SELECT 1 FROM pragma_table_info('statement_files') WHERE name = 'confirmed_json'")
+        .and_then(|mut statement| statement.exists([]))
+        .map_err(db_error)?;
+    if !has_confirmed {
+        connection
+            .execute(
+                "ALTER TABLE statement_files ADD COLUMN confirmed_json TEXT NOT NULL DEFAULT '[]' CHECK (json_valid(confirmed_json))",
+                [],
+            )
+            .map_err(db_error)?;
+    }
+    // Version 14 saves bank statement PDFs and when each connection was last checked.
+    connection
+        .execute_batch(super::bank_statements::SCHEMA)
+        .map_err(db_error)?;
+    // Version 17 keeps the change log.
+    connection
+        .execute_batch(super::journal::SCHEMA)
+        .map_err(db_error)?;
+    // Version 19 keeps what Brief read from the user's documents; the originals live
+    // encrypted beside this database.
+    connection
+        .execute_batch(DOCUMENTS_SCHEMA)
         .map_err(db_error)?;
     connection
         .execute_batch(&format!(

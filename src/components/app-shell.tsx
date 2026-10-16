@@ -42,9 +42,7 @@ export function AppShell() {
         : '/holdings'
       : pathname === '/taxes'
         ? '/holdings'
-        : pathname === '/recurring'
-          ? '/spending'
-          : undefined
+        : undefined
   const mainContentRef = useRef<HTMLElement>(null)
   const settings = useSettingsDialog()
   const finance = useFinance()

@@ -192,6 +192,9 @@ pub struct ProviderConnection {
     name: String,
     provider: String,
     error: Option<String>,
+    /// For a Plaid bank connection, whether its statements were added.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    statements: Option<bool>,
 }
 
 impl From<&SnapTradeConnection> for ProviderConnection {
@@ -201,6 +204,7 @@ impl From<&SnapTradeConnection> for ProviderConnection {
             name: connection.name.clone(),
             provider: "snaptrade".into(),
             error: connection.disabled.then(|| "Needs repair".into()),
+            statements: None,
         }
     }
 }
@@ -443,6 +447,9 @@ struct PlaidItem {
     institution_name: Option<String>,
     #[serde(default)]
     investments: bool,
+    /// The user consented to bank statements for this item through Link.
+    #[serde(default)]
+    statements: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -472,6 +479,9 @@ struct PlaidItemCache {
     institution_url: Option<String>,
     #[serde(default)]
     institution_url_checked: bool,
+    /// Whether Plaid lists Statements among the institution's products, read with its website.
+    #[serde(default)]
+    statements_supported: Option<bool>,
     cursor: Option<String>,
     transactions: Vec<Value>,
     #[serde(default)]
@@ -490,6 +500,19 @@ struct PlaidItemCache {
 }
 
 impl PlaidCache {
+    /// Every saved Plaid transaction, as Plaid last reported it.
+    pub(crate) fn transactions(&self) -> impl Iterator<Item = &Value> {
+        self.items.values().flat_map(|item| &item.transactions)
+    }
+
+    /// Every saved Plaid account, as Plaid last reported it.
+    pub(crate) fn accounts(&self) -> impl Iterator<Item = &Value> {
+        self.items
+            .values()
+            .filter_map(|item| item.data.as_ref())
+            .flat_map(|data| data.accounts.iter().chain(&data.investment_accounts))
+    }
+
     pub(crate) fn clear_legacy_diagnostics(&mut self) {
         for item in self.items.values_mut() {
             item.error = None;
@@ -521,6 +544,8 @@ enum PendingLink {
         exchanged_public_tokens: Vec<String>,
         investments: bool,
         repairing: bool,
+        /// The item this link adds statements to, once the user consents.
+        statements_item: Option<String>,
     },
     SnapTrade {
         existing_connection_ids: BTreeSet<String>,
@@ -586,11 +611,17 @@ impl Providers {
         self
     }
 
+    /// The shared HTTP client, for public data sources that need no credentials.
+    pub(crate) fn http(&self) -> &reqwest::Client {
+        &self.http
+    }
+
     pub async fn clear_disposable_data(&self, directory: &std::path::Path) -> Result<(), String> {
         if self.news_cache_path.is_some() {
             self.news_cache().await?.clear()?;
         }
         holding_market::clear_cache(&directory.join("market-prices.sqlite3"))?;
+        crate::places::cache::clear(&directory.join("places.sqlite3"))?;
         self.chart_previews
             .lock()
             .map_err(|_| "Market preview state is unavailable")?
@@ -615,9 +646,11 @@ fn retryable_status(status: reqwest::StatusCode) -> bool {
 /// or the provider asked for a retry. `retry` is the request's clone, absent when it can't be
 /// sent again. A failure to connect comes with how many attempts were made.
 async fn send_with_retry(
+    provider: &str,
     request: reqwest::RequestBuilder,
     retry: Option<reqwest::RequestBuilder>,
 ) -> Result<reqwest::Response, (reqwest::Error, usize)> {
+    http::count_request(provider, false);
     let first = request.send().await;
     let Some(retry) = retry else {
         return first.map_err(|error| (error, 1));
@@ -627,6 +660,7 @@ async fn send_with_retry(
         Ok(_) => return first.map_err(|error| (error, 1)),
         Err(_) => tokio::time::sleep(StdDuration::from_millis(250)).await,
     }
+    http::count_request(provider, true);
     retry.send().await.map_err(|error| (error, 2))
 }
 
@@ -816,7 +850,7 @@ mod tests {
         });
         let request = reqwest::Client::new().get(format!("http://{address}/page"));
         let retry = request.try_clone();
-        let response = send_with_retry(request, retry).await.unwrap();
+        let response = send_with_retry("Test", request, retry).await.unwrap();
         assert_eq!(response.status(), reqwest::StatusCode::OK);
         server.join().unwrap();
     }

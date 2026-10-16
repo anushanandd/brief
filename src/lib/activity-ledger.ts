@@ -6,6 +6,7 @@ import {
   buildActivities,
   linkedAccountIds,
   sortActivities,
+  type ActivityEvidence,
   type ActivityFilterColumn,
   type ActivityItem,
   type ActivitySort,
@@ -30,6 +31,7 @@ import { analyticsCharts, analyticsEntries, type AnalyticsChart } from './analyt
 import { financeSettings } from './finance-settings'
 import { formatCurrency, formatDay } from './format'
 import { getExternalLogosEnabled } from './logos'
+import { placeLabel } from './places'
 import type { FinanceSnapshot } from './schema'
 import { transactionDateKey } from './spending'
 
@@ -52,6 +54,22 @@ export type LedgerSearch = {
   review?: true
   /** Only your money, or only someone else's. */
   for?: 'me' | 'other'
+  /** Only transactions with this standing against their evidence. */
+  evidence?: ActivityEvidence
+}
+
+export const evidenceKinds: readonly ActivityEvidence[] = [
+  'statement',
+  'unlisted',
+  'conflict',
+  'unsure',
+]
+
+export const evidenceLabels: Record<ActivityEvidence, string> = {
+  statement: 'On statement',
+  unlisted: 'Not on statement',
+  conflict: 'Sources disagree',
+  unsure: 'Plaid unsure',
 }
 
 /** A change to the address; `undefined` clears a filter. */
@@ -88,7 +106,7 @@ export function activityRows(data: FinanceSnapshot, search: LedgerSearch) {
       const scoped = analyticEntries
         ? { ...activity, date: analyticEntries.get(activity.id)!.date }
         : activity
-      return { activity: scoped, date: transactionDateKey(scoped.date, data.updatedAt) }
+      return { activity: scoped, date: transactionDateKey(scoped.date) }
     })
     .toSorted((a, b) => b.date.localeCompare(a.date))
     .map(({ activity }) => activity)
@@ -132,6 +150,8 @@ const categoryOf = ({ category }: ActivityItem) => category || 'Other'
 // Trades are never anyone else's, so a For filter leaves them out.
 const ownedBy = (activity: ActivityItem, owner: LedgerSearch['for']) =>
   !owner || (activity.other != null && activity.other === (owner === 'other'))
+const backedBy = (activity: ActivityItem, evidence: LedgerSearch['evidence']) =>
+  !evidence || Boolean(activity.evidence?.includes(evidence))
 
 /**
  * Everything Activity shows for an address, a draft query, and a sort: its accounts and
@@ -226,11 +246,9 @@ export function activityLedger({
     : linkedAccountIds(effective.accounts, data.accountLinks)
   const candidates = activityFilterCandidates(
     activities,
-    data.updatedAt,
     effective.q,
     effective.from,
-    effective.to,
-    // An account filter that matches nothing stays empty rather than showing everything.
+    effective.to, // An account filter that matches nothing stays empty rather than showing everything.
     search.account || effective.accounts.length ? effectiveAccountIds : undefined,
     effective.categories,
     effective.methods,
@@ -239,32 +257,46 @@ export function activityLedger({
   // A hidden category hides a split that has a part in it.
   const shownCategory = (activity: ActivityItem) =>
     !excludedCategories.some((category) => activityInCategory(activity, category))
+  const backed = (activity: ActivityItem) => backedBy(activity, search.evidence)
   const filtered = candidates.results.filter(
     (activity) =>
-      inAmount(activity) && ownedBy(activity, effective.owner) && shownCategory(activity),
+      inAmount(activity) &&
+      ownedBy(activity, effective.owner) &&
+      backed(activity) &&
+      shownCategory(activity),
   )
 
   // Each filter's counts leave out its own choice, so a count is what choosing it would show.
   const ownerBase = candidates.results.filter(
-    (activity) => inAmount(activity) && shownCategory(activity),
+    (activity) => inAmount(activity) && backed(activity) && shownCategory(activity),
+  )
+  const evidenceBase = candidates.results.filter(
+    (activity) =>
+      inAmount(activity) && ownedBy(activity, effective.owner) && shownCategory(activity),
   )
   const categoryCounts = tally(
     candidates.categories.filter(
-      (activity) => inAmount(activity) && ownedBy(activity, effective.owner),
+      (activity) => inAmount(activity) && ownedBy(activity, effective.owner) && backed(activity),
     ),
     categoryOf,
   )
   const accountCounts = tally(
     candidates.accounts.filter(
       (activity) =>
-        inAmount(activity) && ownedBy(activity, effective.owner) && shownCategory(activity),
+        inAmount(activity) &&
+        ownedBy(activity, effective.owner) &&
+        backed(activity) &&
+        shownCategory(activity),
     ),
     ({ accountId }) => accountId ?? '',
   )
   const methodCounts = tally(
     candidates.methods.filter(
       (activity) =>
-        inAmount(activity) && ownedBy(activity, effective.owner) && shownCategory(activity),
+        inAmount(activity) &&
+        ownedBy(activity, effective.owner) &&
+        backed(activity) &&
+        shownCategory(activity),
     ),
     activityMethod,
   )
@@ -295,6 +327,13 @@ export function activityLedger({
       all: ownerBase.length,
       me: ownerBase.filter((activity) => ownedBy(activity, 'me')).length,
       other: ownerBase.filter((activity) => ownedBy(activity, 'other')).length,
+    },
+    evidence: {
+      all: evidenceBase.length,
+      statement: evidenceBase.filter((activity) => backedBy(activity, 'statement')).length,
+      unlisted: evidenceBase.filter((activity) => backedBy(activity, 'unlisted')).length,
+      conflict: evidenceBase.filter((activity) => backedBy(activity, 'conflict')).length,
+      unsure: evidenceBase.filter((activity) => backedBy(activity, 'unsure')).length,
     },
   }
 
@@ -330,7 +369,8 @@ export function activityLedger({
     Number(Boolean(text)) +
     Number(Boolean(search.analysis)) +
     Number(Boolean(search.review)) +
-    Number(Boolean(search.for))
+    Number(Boolean(search.for)) +
+    Number(Boolean(search.evidence))
   // The filters the card sets; search, a report, and the review view have their own controls.
   const cardFilterCount =
     activeFilterCount -
@@ -384,6 +424,16 @@ export function activityLedger({
             label: 'For',
             value: search.for === 'other' ? 'Other' : 'Me',
             patch: { for: undefined },
+          },
+        ]
+      : []),
+    ...(search.evidence
+      ? [
+          {
+            id: 'evidence',
+            label: 'Evidence',
+            value: evidenceLabels[search.evidence],
+            patch: { evidence: undefined },
           },
         ]
       : []),
@@ -459,35 +509,42 @@ export function activityLedger({
     },
   } satisfies Record<string, SectionPatches>
 
-  /** The address a cell narrows to: its text, account, category, method, or day. */
+  /** An account filter, through the Plaid account a SnapTrade account is linked to. */
+  const accountFilter = (accountId: string | undefined): LedgerPatch | undefined => {
+    if (!accountId) return undefined
+    const account =
+      accounts.find(({ id }) => id === accountId)?.id ??
+      Object.entries(data.accountLinks ?? {}).find(
+        ([plaidId, snaptradeId]) => plaidId === accountId || snaptradeId === accountId,
+      )?.[0]
+    return account ? { account } : undefined
+  }
+
+  /**
+   * The address a cell narrows to: its text, account, category, method, or day. A transfer's
+   * location is the account on its other side.
+   */
   const cellFilter = (
     column: ActivityFilterColumn,
     activity: ActivityItem,
   ): LedgerPatch | undefined => {
     if (column === 'description') return { q: activity.title || undefined }
     if (column === 'location') {
+      if (activity.transfer) return accountFilter(activity.transfer.accountId)
+      if (activity.place) return { q: placeLabel(activity.place) || undefined }
       const label = activityLocationLabel(activity.location)
       return { q: (label === 'Address' ? activity.location?.address : label) || undefined }
     }
-    if (column === 'account') {
-      if (!activity.accountId) return undefined
-      const account =
-        accounts.find(({ id }) => id === activity.accountId)?.id ??
-        Object.entries(data.accountLinks ?? {}).find(
-          ([plaidId, snaptradeId]) =>
-            plaidId === activity.accountId || snaptradeId === activity.accountId,
-        )?.[0]
-      return account ? { account } : undefined
-    }
+    if (column === 'account') return accountFilter(activity.accountId)
     if (column === 'category') return { category: categoryOf(activity) }
     if (column === 'method') return { method: activityMethod(activity) }
-    const day = transactionDateKey(activity.date, data.updatedAt)
+    const day = transactionDateKey(activity.date)
     return day ? { from: day, to: day } : undefined
   }
 
   // The date slider spans the saved activity, first day to last.
   const days = activities
-    .map(({ date }) => transactionDateKey(date, data.updatedAt))
+    .map(({ date }) => transactionDateKey(date))
     .filter(Boolean)
     .toSorted()
   const dateBounds = days.length ? { min: days[0], max: days[days.length - 1] } : undefined
@@ -522,7 +579,7 @@ export function activityLedger({
     preview,
     committed,
     filtered,
-    sorted: sortActivities(filtered, data.updatedAt, sort),
+    sorted: sortActivities(filtered, sort),
     options,
     facets,
     chips,

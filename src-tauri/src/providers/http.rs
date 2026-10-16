@@ -69,6 +69,62 @@ pub async fn observed<T>(
         .await
 }
 
+/// Requests, retries, and response bytes one provider used during a counted operation.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct Usage {
+    pub requests: u32,
+    pub retries: u32,
+    pub bytes: u64,
+    /// How long the provider's part of the operation took, where it runs as one step.
+    pub duration_ms: Option<u64>,
+}
+
+tokio::task_local! {
+    /// What each provider used during one counted operation (a refresh), by provider label.
+    static USAGE: std::cell::RefCell<std::collections::BTreeMap<String, Usage>>;
+}
+
+/// Runs `work`, returning its output with what each provider used while it ran on this task.
+pub async fn counted<T>(
+    work: impl std::future::Future<Output = T>,
+) -> (T, std::collections::BTreeMap<String, Usage>) {
+    USAGE
+        .scope(std::cell::RefCell::default(), async {
+            let output = work.await;
+            let usage = USAGE.try_with(|usage| usage.take()).unwrap_or_default();
+            (output, usage)
+        })
+        .await
+}
+
+/// Counts one request sent to `provider`, a retry when `retry`, for the counted operation.
+pub fn count_request(provider: &str, retry: bool) {
+    let _ = USAGE.try_with(|usage| {
+        let mut usage = usage.borrow_mut();
+        let entry = usage.entry(provider.to_owned()).or_default();
+        entry.requests = entry.requests.saturating_add(1);
+        entry.retries = entry.retries.saturating_add(u32::from(retry));
+    });
+}
+
+/// Notes how long `provider`'s part of the counted operation took.
+pub fn count_duration(provider: &str, elapsed: std::time::Duration) {
+    let _ = USAGE.try_with(|usage| {
+        let mut usage = usage.borrow_mut();
+        usage.entry(provider.to_owned()).or_default().duration_ms =
+            Some(u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX));
+    });
+}
+
+/// Counts `bytes` received from `provider` for the counted operation.
+pub fn count_bytes(provider: &str, bytes: usize) {
+    let _ = USAGE.try_with(|usage| {
+        let mut usage = usage.borrow_mut();
+        let entry = usage.entry(provider.to_owned()).or_default();
+        entry.bytes = entry.bytes.saturating_add(bytes as u64);
+    });
+}
+
 /// Notes a failure for the traced operation running on this task, if any; bounded.
 pub fn observe(error: &ProviderError) {
     let _ = OBSERVED.try_with(|seen| {
@@ -132,12 +188,12 @@ impl ProviderError {
     ) -> Result<Value, Self> {
         let status = response.status();
         let retry_after = retry_after(&response);
-        let payload = serde_json::from_slice::<Value>(
-            &response_bytes(response, MAX_PROVIDER_RESPONSE_BYTES)
-                .await
-                .map_err(|_| Self::invalid_response(provider, endpoint, attempts))?,
-        )
-        .map_err(|_| Self::invalid_response(provider, endpoint, attempts))?;
+        let body = response_bytes(response, MAX_PROVIDER_RESPONSE_BYTES)
+            .await
+            .map_err(|_| Self::invalid_response(provider, endpoint, attempts))?;
+        count_bytes(provider, body.len());
+        let payload = serde_json::from_slice::<Value>(&body)
+            .map_err(|_| Self::invalid_response(provider, endpoint, attempts))?;
         if status.is_success() {
             return Ok(payload);
         }
@@ -322,6 +378,30 @@ mod tests {
         let reference = request_reference("sensitive-request-id");
         assert_eq!(reference.len(), 12);
         assert!(!reference.contains("sensitive"));
+    }
+
+    #[tokio::test]
+    async fn counted_operations_total_each_providers_requests_and_time() {
+        let ((), usage) = counted(async {
+            count_request("Plaid", false);
+            count_request("Plaid", true);
+            count_bytes("Plaid", 120);
+            count_request("Alpaca", false);
+            count_duration("Plaid", Duration::from_millis(42));
+        })
+        .await;
+        assert_eq!(
+            usage["Plaid"],
+            Usage {
+                requests: 2,
+                retries: 1,
+                bytes: 120,
+                duration_ms: Some(42)
+            }
+        );
+        assert_eq!(usage["Alpaca"].requests, 1);
+        // Outside a counted operation nothing is kept and nothing fails.
+        count_request("Plaid", false);
     }
 
     #[tokio::test]

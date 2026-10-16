@@ -5,6 +5,7 @@ export const emptyInsightDetails = {
   credit: { cards: [], balance: 0, limit: 0, cardsWithoutLimit: 0 },
   anomalies: { duplicates: [], unusual: [] },
   trips: { trips: [], home: [] },
+  people: { people: [], suggestions: [] },
   recurringCheck: { available: false, ended: [], unforecast: [] },
   taxes: {
     years: [],
@@ -15,6 +16,17 @@ export const emptyInsightDetails = {
     sources: [],
   },
   dividends: { securities: [], annualIncome: 0, upcoming: [] },
+  retirement: {
+    year: 2026,
+    ira: [],
+    deposits: [],
+    buckets: { preTax: 0, taxFree: 0, taxable: 0, complete: true },
+    rothBasis: [],
+    savings: [],
+    uncounted: [],
+  },
+  documents: { years: [], pay: [], keep: [], toReview: 0, outdated: [], evidence: [] },
+  agenda: [],
 } satisfies Partial<Insights>
 
 /** A native insights payload for renderer tests. Rust computes these in the app. */
@@ -38,6 +50,7 @@ export function insights(overrides: Partial<Insights> = {}): Insights {
       daysElapsed: 18,
       daysInMonth: 30,
       spent: 0,
+      projected: 0,
       categories: [],
       coverage: {
         cash: 0,
@@ -49,7 +62,7 @@ export function insights(overrides: Partial<Insights> = {}): Insights {
       },
     },
     attention: [],
-    brief: { needs: [], coming: [], comingDays: 14 },
+    brief: { needs: [] },
     cash: {
       horizonDays: 90,
       cash: 0,
@@ -118,10 +131,10 @@ export function benefitWindow(overrides: Partial<BenefitWindow> = {}): BenefitWi
     periodUncertain: false,
     snapshotBeforeWindow: false,
     postingDelayDays: 56,
-    creditLagDays: 56,
+    creditLagDays: 7,
     creditLagLearned: false,
     status: 'unused',
-    engaged: false,
+    recurring: false,
     creditedAmount: 0,
     uncertainCreditAmount: 0,
     awaitingCreditAmount: 0,

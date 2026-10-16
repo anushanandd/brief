@@ -115,6 +115,20 @@ html.activity-viewport .main-content {
 .sidebar-menu[hidden] {
   display: none;
 }
+/* The Reports group fades with its chevron instead of snapping while the chevron turns. */
+.sidebar-group-label:has(> .sidebar-group-toggle) + .sidebar-menu {
+  transition:
+    opacity var(--duration-quick) var(--ease-out),
+    display var(--duration-quick) allow-discrete;
+}
+.sidebar-group-label:has(> .sidebar-group-toggle) + .sidebar-menu[hidden] {
+  opacity: 0;
+}
+@starting-style {
+  .sidebar-group-label:has(> .sidebar-group-toggle) + .sidebar-menu:not([hidden]) {
+    opacity: 0;
+  }
+}
 .sidebar-menu-item {
   min-width: 0;
 }
@@ -151,6 +165,7 @@ html.activity-viewport .main-content {
 }
 .sidebar-menu-button:active {
   transform: scale(0.985);
+  transition-duration: 0s;
 }
 .sidebar-menu-button.active {
   background: var(--sidebar-accent);
@@ -210,6 +225,13 @@ kbd {
   font-size: var(--type-page);
   font-weight: 400;
   line-height: 1.5;
+}
+:root[data-theme='dark'] .brand-name,
+:root[data-theme='dark'] .page-header h1 {
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
 }
 .page-route {
   display: flex;
@@ -289,8 +311,6 @@ kbd {
   transition:
     opacity var(--duration-instant) var(--ease-out),
     scale var(--duration-instant) var(--ease-out);
-  -webkit-backdrop-filter: var(--popup-filter);
-  backdrop-filter: var(--popup-filter);
 }
 .data-status-popup[data-starting-style],
 .data-status-popup[data-ending-style] {

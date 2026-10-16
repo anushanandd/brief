@@ -8,7 +8,7 @@ use regex::Regex;
 use serde::Serialize;
 
 use super::benefits::PLATINUM;
-use super::calendar::{self, Zone};
+use super::calendar;
 use super::AccountView;
 use crate::finance_contract::Transaction;
 use crate::numeric::js_round;
@@ -81,7 +81,14 @@ pub enum EventState {
     Expected,
     Pending,
     AwaitingPost,
+    /// Due more than a week of business days ago with nothing posted or pending.
+    Missed,
 }
+
+/// How long a missed occurrence is worth raising before the series is taken as ended.
+pub const MISSED_DAYS: i64 = 45;
+/// Business days a bill may post late before it is missed rather than awaiting its post.
+const LATE_BUSINESS_DAYS: u32 = 5;
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -183,9 +190,9 @@ fn recurring_merchant(transaction: &Transaction) -> String {
 }
 
 /// A stable series identity: account, direction, and merchant (or recognized benefit).
-pub fn recurring_key(transaction: &Transaction, zone: &dyn Zone) -> String {
+pub fn recurring_key(transaction: &Transaction) -> String {
     let benefit = (transaction.amount > 0.0)
-        .then(|| PLATINUM.credit_identity(transaction, zone))
+        .then(|| PLATINUM.credit_identity(transaction))
         .flatten();
     let string = |value: &str| serde_json::to_string(value).expect("strings serialize");
     format!(
@@ -368,11 +375,11 @@ struct Traits {
     habitual: bool,
 }
 
-fn traits(transaction: &Transaction, zone: &dyn Zone) -> Traits {
+fn traits(transaction: &Transaction) -> Traits {
     let evidence = evidence(transaction, false);
     let kind = transaction.kind();
     let benefit_credit = (transaction.amount > 0.0)
-        .then(|| PLATINUM.credit_identity(transaction, zone))
+        .then(|| PLATINUM.credit_identity(transaction))
         .flatten();
     let debt_payment = transaction.amount < 0.0
         && kind == Some(Kind::Transfer)
@@ -454,22 +461,12 @@ struct Run<'a> {
     dates: Vec<NaiveDate>,
 }
 
-fn cadence_for<'a>(
-    values: &[&'a Transaction],
-    updated_at: &str,
-    strong_annual_evidence: bool,
-    zone: &dyn Zone,
-) -> Option<Run<'a>> {
+fn cadence_for<'a>(values: &[&'a Transaction], strong_annual_evidence: bool) -> Option<Run<'a>> {
     // Cadence follows the charge date: a bank posts a month-end charge on the 30th one
     // month and the 1st the next, which would break the run or skip a cycle.
     let mut ordered = values
         .iter()
-        .map(|transaction| {
-            (
-                calendar::transaction_date(&transaction.date, updated_at, zone),
-                *transaction,
-            )
-        })
+        .map(|transaction| (calendar::transaction_date(&transaction.date), *transaction))
         .collect::<Vec<_>>();
     ordered.sort_by_key(|(date, _)| *date);
     let dates = ordered
@@ -509,8 +506,8 @@ fn cadence_for<'a>(
     })
 }
 
-fn date_of(transaction: &Transaction, updated_at: &str, zone: &dyn Zone) -> Option<NaiveDate> {
-    calendar::transaction_date(transaction.posted_date(), updated_at, zone)
+fn date_of(transaction: &Transaction) -> Option<NaiveDate> {
+    calendar::transaction_date(transaction.posted_date())
 }
 
 /// Forecasts the next occurrence of each recurring series within 30 days of `today`.
@@ -519,9 +516,8 @@ pub fn expected_events(
     accounts: &[AccountView],
     updated_at: &str,
     today: NaiveDate,
-    zone: &dyn Zone,
 ) -> Vec<ExpectedEvent> {
-    forecast_within(transactions, accounts, updated_at, today, zone, 30)
+    forecast_within(transactions, accounts, updated_at, today, 30)
 }
 
 /// Forecasts each recurring series whose next occurrence falls within `horizon_days`, with
@@ -531,9 +527,51 @@ pub fn forecast_within(
     accounts: &[AccountView],
     updated_at: &str,
     today: NaiveDate,
-    zone: &dyn Zone,
     horizon_days: i64,
 ) -> Vec<ExpectedEvent> {
+    forecast(
+        transactions,
+        accounts,
+        updated_at,
+        Horizon {
+            today,
+            horizon_days,
+            missed: false,
+        },
+    )
+}
+
+/// Recurring series whose occurrence was due more than a week of business days ago, within
+/// the last `MISSED_DAYS`, with nothing posted or pending for it: a bill that didn't arrive,
+/// or income that didn't. Each is the series' forecast, in the `Missed` state.
+pub fn missed_events(
+    transactions: &[Transaction],
+    accounts: &[AccountView],
+    updated_at: &str,
+    today: NaiveDate,
+) -> Vec<ExpectedEvent> {
+    let mut events = forecast(
+        transactions,
+        accounts,
+        updated_at,
+        Horizon {
+            today,
+            horizon_days: 0,
+            missed: true,
+        },
+    );
+    // A pending charge that matches the forecast is arriving, not missed.
+    events.retain(|event| event.state == EventState::Missed);
+    events
+}
+
+fn forecast(
+    transactions: &[Transaction],
+    accounts: &[AccountView],
+    updated_at: &str,
+    horizon: Horizon,
+) -> Vec<ExpectedEvent> {
+    let today = horizon.today;
     // An old saved snapshot cannot establish that a missing payment has stopped.
     if updated_at
         .get(..10)
@@ -542,18 +580,12 @@ pub fn forecast_within(
     {
         return Vec::new();
     }
-    let horizon = Horizon {
-        updated_at,
-        today,
-        zone,
-        horizon_days,
-    };
     let mut events = Vec::new();
-    for (key, values) in recurring_groups(transactions, zone) {
+    for (key, values) in recurring_groups(transactions) {
         let mut ordered = values
             .iter()
             .filter(|transaction| !transaction.pending)
-            .map(|transaction| (date_of(transaction, updated_at, zone), *transaction))
+            .map(|transaction| (date_of(transaction), *transaction))
             .collect::<Vec<_>>();
         ordered.sort_by_key(|(date, _)| *date);
         let ordered = ordered[ordered.len().saturating_sub(12)..]
@@ -566,7 +598,7 @@ pub fn forecast_within(
         if !source_current(latest, accounts, today) {
             continue;
         }
-        let mut candidates = amount_series(&ordered, &horizon)
+        let mut candidates = amount_series(&ordered)
             .iter()
             .filter_map(|(series, amount_basis)| candidate(&key, series, amount_basis, &horizon))
             .collect::<Vec<_>>();
@@ -606,36 +638,34 @@ pub fn forecast_within(
             .filter(|transaction| transaction.pending)
             .copied()
             .collect::<Vec<_>>();
-        events.extend(match_pending(group_events, &pending, &horizon));
+        events.extend(match_pending(group_events, &pending));
     }
     events.sort_by_key(|event| event.date);
     events
 }
 
-/// What a forecast is made against: the snapshot's save time, today, and how far ahead to look.
-struct Horizon<'a> {
-    updated_at: &'a str,
+/// What a forecast is made against: today, how far ahead to look, and whether it looks instead
+/// for occurrences that were due and never came.
+#[derive(Clone, Copy)]
+struct Horizon {
     today: NaiveDate,
-    zone: &'a dyn Zone,
     horizon_days: i64,
+    missed: bool,
 }
 
 /// Transactions grouped by recurring series, in the order each series first appears. Transfers
 /// are left out unless they pay down debt.
-fn recurring_groups<'a>(
-    transactions: &'a [Transaction],
-    zone: &dyn Zone,
-) -> Vec<(String, Vec<&'a Transaction>)> {
+fn recurring_groups(transactions: &[Transaction]) -> Vec<(String, Vec<&Transaction>)> {
     let mut order = Vec::<String>::new();
     let mut groups = HashMap::<String, Vec<&Transaction>>::new();
     for transaction in transactions {
-        let traits = traits(transaction, zone);
+        let traits = traits(transaction);
         if (transaction.kind() == Some(Kind::Transfer) && !traits.debt_payment)
             || transaction.merchant.trim().is_empty()
         {
             continue;
         }
-        let key = recurring_key(transaction, zone);
+        let key = recurring_key(transaction);
         groups
             .entry(key.clone())
             .or_insert_with(|| {
@@ -687,15 +717,13 @@ fn source_current(latest: &Transaction, accounts: &[AccountView], today: NaiveDa
 /// changed. Each comes with the transactions its amount is judged from.
 fn amount_series<'a>(
     ordered: &[&'a Transaction],
-    horizon: &Horizon,
 ) -> Vec<(Vec<&'a Transaction>, Vec<&'a Transaction>)> {
-    let (updated_at, zone) = (horizon.updated_at, horizon.zone);
     let flexible_amounts = ordered.iter().all(|transaction| {
-        let traits = traits(transaction, zone);
+        let traits = traits(transaction);
         traits.income || traits.credit
     }) || ordered
         .iter()
-        .any(|transaction| traits(transaction, zone).variable_bill);
+        .any(|transaction| traits(transaction).variable_bill);
     let clusters = if flexible_amounts {
         vec![ordered.to_vec()]
     } else {
@@ -710,8 +738,7 @@ fn amount_series<'a>(
             if older_index == newer_index
                 || older.len() < 2
                 || newer.len() < 2
-                || date_of(older[older.len() - 1], updated_at, zone)
-                    >= date_of(newer[0], updated_at, zone)
+                || date_of(older[older.len() - 1]) >= date_of(newer[0])
             {
                 continue;
             }
@@ -729,28 +756,29 @@ fn candidate(
     amount_basis: &[&Transaction],
     horizon: &Horizon,
 ) -> Option<(Vec<String>, ExpectedEvent)> {
-    let (updated_at, today, zone, horizon_days) = (
-        horizon.updated_at,
-        horizon.today,
-        horizon.zone,
-        horizon.horizon_days,
-    );
-    let traits = traits(transactions[transactions.len() - 1], zone);
+    let (today, horizon_days) = (horizon.today, horizon.horizon_days);
+    let latest = transactions[transactions.len() - 1];
+    let traits = traits(latest);
     if !traits.income && !traits.credit && traits.habitual && !traits.subscription {
         return None;
     }
+    // Two payments to or from a person a year apart are a coincidence, not a yearly series;
+    // a person's payments forecast only from a run of three or more, like monthly rent.
     let run = cadence_for(
         transactions,
-        updated_at,
-        traits.income || traits.credit || traits.subscription || traits.variable_bill,
-        zone,
+        !super::people::person_to_person(latest)
+            && (traits.income || traits.credit || traits.subscription || traits.variable_bill),
     )?;
     let last = run.transactions[run.transactions.len() - 1];
     let expected = next_occurrence(&run.dates, run.cadence, last);
     // A late posting can be pending, but a missed occurrence never advances a cycle.
-    if calendar::days_between(today, expected) > horizon_days
-        || (expected < today && calendar::business_days_after(expected, today) > 5)
-    {
+    let missed =
+        expected < today && calendar::business_days_after(expected, today) > LATE_BUSINESS_DAYS;
+    if horizon.missed {
+        if !missed || calendar::days_between(expected, today) > MISSED_DAYS {
+            return None;
+        }
+    } else if calendar::days_between(today, expected) > horizon_days || missed {
         return None;
     }
     let mut later = Vec::new();
@@ -817,7 +845,9 @@ fn candidate(
             frequency: run.cadence.label(),
             observations: run.transactions.len(),
             last_seen: run.dates[run.dates.len() - 1],
-            state: if expected < today {
+            state: if missed {
+                EventState::Missed
+            } else if expected < today {
                 EventState::AwaitingPost
             } else {
                 EventState::Expected
@@ -833,19 +863,14 @@ fn candidate(
 
 /// Forecasts with the pending transaction each awaits, when exactly one matches it and no other
 /// forecast in the group claims it.
-fn match_pending(
-    events: Vec<ExpectedEvent>,
-    pending: &[&Transaction],
-    horizon: &Horizon,
-) -> Vec<ExpectedEvent> {
-    let (updated_at, zone) = (horizon.updated_at, horizon.zone);
+fn match_pending(events: Vec<ExpectedEvent>, pending: &[&Transaction]) -> Vec<ExpectedEvent> {
     let matches = events
         .iter()
         .map(|event| {
             pending
                 .iter()
                 .filter(|transaction| {
-                    let Some(date) = date_of(transaction, updated_at, zone) else {
+                    let Some(date) = date_of(transaction) else {
                         return false;
                     };
                     let amount = transaction.amount.abs();

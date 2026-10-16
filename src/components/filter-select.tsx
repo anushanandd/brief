@@ -15,8 +15,11 @@ export function FilterSelect({
   command,
   focusRegionOnPointerSelection = false,
   disabled = false,
+  keyboardOpen = false,
 }: {
   label: string
+  /** Inside a list row, Return on the row opens this choice. */
+  keyboardOpen?: boolean
   focusRegionOnPointerSelection?: boolean
   className?: string
   /** The registered command (or command family) that makes this choice too. */
@@ -48,6 +51,7 @@ export function FilterSelect({
         className={`ledger-select-trigger${className ? ` ${className}` : ''}`}
         aria-label={label}
         data-command={command}
+        data-keyboard-open={keyboardOpen || undefined}
       >
         <Select.Value className="ledger-select-value">
           {options.find((option) => option.value === value)?.label}

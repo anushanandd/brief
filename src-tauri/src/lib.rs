@@ -1,8 +1,13 @@
 mod authentication;
 mod background;
+mod bank_statements;
+mod calendar;
 mod close;
 mod commands;
+mod contacts;
 mod database;
+mod document_summaries;
+mod documents;
 mod files;
 mod finance_contract;
 mod financial_engine;
@@ -10,12 +15,14 @@ mod foundation_model;
 mod health;
 mod insights;
 mod market;
+mod merchants;
 mod native_menu;
 mod notify;
 mod numeric;
+mod places;
 mod providers;
+mod quality;
 mod refresh;
-mod rules;
 mod session;
 mod settings;
 mod startup_market;
@@ -27,10 +34,13 @@ mod window;
 
 use std::{sync::Mutex, time::Duration as StdDuration};
 
-use commands::{assistant, backups, finance, integrations, investments};
+use commands::{
+    assistant, backups, documents as document_commands, finance, integrations, investments,
+    places as place_commands,
+};
 use providers::Providers;
 use storage::Storage;
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 /// A market socket's owner: the request that started it, and how to cancel it.
 type StreamOwner = Mutex<Option<(String, tokio::sync::watch::Sender<bool>)>>;
@@ -48,6 +58,8 @@ struct AppState {
         Mutex<Option<tokio::sync::watch::Sender<providers::holding_market::ChartSelection>>>,
     /// The statement file chosen for import, awaiting its account.
     statement_draft: Mutex<Option<storage::StatementDraft>>,
+    /// Held while Brief finds places, so only one search runs.
+    places: tokio::sync::Mutex<()>,
 }
 
 impl AppState {
@@ -92,11 +104,29 @@ impl AppState {
     }
 }
 
+/// The system-wide key that summons the command palette: ⌘⇧B.
+fn palette_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
+    use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
+    Shortcut::new(Some(Modifiers::SUPER | Modifiers::SHIFT), Code::KeyB)
+}
+
 pub fn run() {
     let builder = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
-        .plugin(tauri_plugin_dialog::init());
+        .plugin(tauri_plugin_dialog::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, shortcut, event| {
+                    use tauri_plugin_global_shortcut::ShortcutState;
+                    // ⌘⇧B from any app brings Brief forward with the command palette open.
+                    if event.state() == ShortcutState::Pressed && *shortcut == palette_shortcut() {
+                        window::bring_forward(app);
+                        let _ = app.emit("open-palette", ());
+                    }
+                })
+                .build(),
+        );
 
     #[cfg(target_os = "macos")]
     let builder = builder
@@ -125,13 +155,21 @@ pub fn run() {
                 holding_owner: Mutex::new(None),
                 holding_selection: Mutex::new(None),
                 statement_draft: Mutex::new(None),
+                places: tokio::sync::Mutex::new(()),
             });
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
                 tokio::time::sleep(StdDuration::from_secs(3)).await;
                 let _ = window::reveal_main_window(handle);
             });
+            {
+                use tauri_plugin_global_shortcut::GlobalShortcutExt;
+                // Another app may hold the key; Brief still runs without it.
+                let _ = app.global_shortcut().register(palette_shortcut());
+            }
             background::start(app.handle().clone());
+            document_summaries::start(app.handle().clone());
+            calendar::start(app.handle().clone());
             close::start(app.handle().clone());
             notify::sync_tray(app.handle(), background::enabled(app.handle()));
             Ok(())
@@ -158,13 +196,22 @@ pub fn run() {
             finance::get_sync_runs,
             finance::get_data_health,
             finance::transaction_annotations,
+            finance::restore_transaction_annotations,
             finance::save_finance_settings,
-            finance::save_category_rules,
             finance::preview_statement_import,
             finance::import_statement,
             finance::get_statement_imports,
             finance::remove_statement_import,
+            finance::confirm_statement_row,
+            document_commands::import_documents,
+            document_commands::update_document,
+            document_commands::delete_documents,
+            document_commands::open_document,
+            document_commands::reread_document,
+            document_commands::document_file,
+            document_commands::add_document_history,
             finance::export_finance_csv,
+            place_commands::find_places,
             refresh::refresh_finance_snapshot,
             refresh::save_account_link,
             backups::recover_finance_state,
@@ -184,6 +231,9 @@ pub fn run() {
             integrations::begin_provider_link,
             integrations::poll_provider_link,
             integrations::cancel_provider_link,
+            integrations::get_bank_statements,
+            integrations::sync_bank_statements,
+            integrations::open_bank_statement,
             assistant::get_foundation_model_status,
             assistant::generate_foundation_explanation,
             assistant::cancel_foundation_explanation,
@@ -200,6 +250,18 @@ pub fn run() {
             background::set_login_item,
             native_menu::set_command_menu,
             native_menu::copy_text,
+            contacts::contacts_access,
+            contacts::request_contacts_access,
+            contacts::search_contacts,
+            contacts::contact_photos,
+            contacts::match_contacts,
+            calendar::calendar_status,
+            calendar::request_calendar_access,
+            calendar::calendar_sources,
+            calendar::create_brief_calendar,
+            calendar::remove_brief_events,
+            calendar::calendar_events,
+            calendar::calendar_list,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Brief")

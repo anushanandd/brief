@@ -1,14 +1,15 @@
 import { dayKey, dayMs, daysBetween } from './dates'
 import { formatDay } from './format'
-import { cents, sumCents } from './money'
+import { cents } from './money'
 import type {
   Account,
   FinanceSnapshot,
   Insights,
+  SpendingOwner,
   SpendingPeriodJudgment,
   Transaction,
 } from './schema'
-import { isSpendingTransaction, splitParts } from './transaction-kind'
+import { isSpendingFor, isSpendingTransaction, splitParts } from './transaction-kind'
 
 export type SpendingPeriod = 'statement' | 'week' | 0 | 1 | 3 | 12
 
@@ -57,21 +58,6 @@ type RankedSpend = {
   percent: number
 }
 
-const monthIndexes: Record<string, number> = {
-  jan: 0,
-  feb: 1,
-  mar: 2,
-  apr: 3,
-  may: 4,
-  jun: 5,
-  jul: 6,
-  aug: 7,
-  sep: 8,
-  oct: 9,
-  nov: 10,
-  dec: 11,
-}
-
 const isoDate = /^\d{4}-\d{2}-\d{2}/
 const shiftDate = (date: Date, days: number) => new Date(date.getTime() + days * dayMs)
 const monthStart = (date: Date, offset = 0) =>
@@ -94,30 +80,22 @@ function calendarDate(referenceIso: string, timeZone?: string) {
   return new Date(Date.UTC(parts.year, (parts.month ?? 1) - 1, parts.day ?? 1))
 }
 
-export function transactionDateKey(value: string, referenceIso: string) {
+/** A transaction's calendar day: an ISO date as written, or an instant's UTC day. */
+export function transactionDateKey(value: string) {
   if (isoDate.test(value)) return value.slice(0, 10)
-
-  const shortDate = /^([a-z]{3,9})\s+(\d{1,2})$/i.exec(value.trim())
-  const reference = calendarDate(referenceIso)
-  const month = shortDate ? monthIndexes[shortDate[1].slice(0, 3).toLocaleLowerCase()] : undefined
-  if (shortDate && month !== undefined && !Number.isNaN(reference.getTime())) {
-    const year = reference.getUTCFullYear() - (month > reference.getUTCMonth() ? 1 : 0)
-    return dayKey(new Date(Date.UTC(year, month, Number(shortDate[2]))))
-  }
-
   const parsed = new Date(value)
   return Number.isNaN(parsed.getTime()) ? '' : dayKey(parsed)
 }
 
-export function formatActivityDate(value: string, referenceIso: string) {
-  const transactionDate = transactionDateKey(value, referenceIso)
+export function formatActivityDate(value: string) {
+  const transactionDate = transactionDateKey(value)
   return transactionDate ? formatDay(transactionDate) : value
 }
 
 /** Lists name the year only when it isn't the snapshot's year. */
 export function formatListDate(value: string, referenceIso: string) {
-  const date = formatActivityDate(value, referenceIso)
-  const year = transactionDateKey(referenceIso, referenceIso)?.slice(0, 4)
+  const date = formatActivityDate(value)
+  const year = transactionDateKey(referenceIso)?.slice(0, 4)
   return year && date.endsWith(`, ${year}`) ? date.slice(0, -`, ${year}`.length) : date
 }
 
@@ -192,7 +170,7 @@ export function weeklySpendingCategoryPerformance(
   const totals = (start: Date, through: Date) => {
     const values = new Map<string, number>()
     for (const transaction of transactions.flatMap(splitParts)) {
-      const day = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso)
+      const day = transactionDateKey(transaction.postedOn ?? transaction.date)
       if (
         transaction.pending ||
         !isSpend(transaction) ||
@@ -231,10 +209,7 @@ export function buildMonthlySpendingHistory(
   const reference = calendarDate(referenceIso)
   const totals = new Map<string, number>()
   for (const transaction of transactions.filter(isSpend)) {
-    const month = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso).slice(
-      0,
-      7,
-    )
+    const month = transactionDateKey(transaction.postedOn ?? transaction.date).slice(0, 7)
     if (month) totals.set(month, (totals.get(month) ?? 0) + cents(Math.abs(transaction.amount)))
   }
   return Array.from({ length: count }, (_, index) => {
@@ -366,7 +341,7 @@ export function spendingPeriodReference(
     )
     return `${dayKey(end)}T12:00:00Z`
   }
-  const referenceDay = transactionDateKey(referenceIso, referenceIso)
+  const referenceDay = transactionDateKey(referenceIso)
   const boundaries = (statement?.boundaries ?? []).filter((date) => date <= referenceDay)
   if (!boundaries.length) return spendingMonthReference(referenceIso, periodOffset)
   const endsOnBoundary = boundaries.at(-1) === referenceDay
@@ -388,8 +363,36 @@ function statementPeriodStart(boundaries: string[], end: Date) {
 export function spendingJudgments(
   insights: Pick<Insights, 'spending'> | undefined,
   scope: string,
+  owner: SpendingOwner = 'me',
 ): SpendingPeriodJudgment[] {
-  return insights?.spending.find((entry) => entry.scope === scope)?.periods ?? []
+  return (
+    insights?.spending.find((entry) => entry.scope === scope && entry.owner === owner)?.periods ??
+    []
+  )
+}
+
+/** Whose spending the page counts, in the order F cycles through them. */
+export const spendingOwnerOptions = [
+  { value: 'me', label: 'For me' },
+  { value: 'other', label: 'For other' },
+  { value: 'all', label: 'All spending' },
+] as const satisfies ReadonlyArray<{ value: SpendingOwner; label: string }>
+
+/**
+ * Transactions as `owner`'s spending sees them: what native policy counts as theirs is marked
+ * spending. Someone else's spending keeps only the transactions that are theirs.
+ */
+export function spendingFor(transactions: Transaction[], owner: SpendingOwner) {
+  if (owner === 'me') return transactions
+  return transactions
+    .filter((transaction) => owner === 'all' || transaction.other)
+    .map((transaction) => ({
+      ...transaction,
+      classification: {
+        ...transaction.classification,
+        spending: isSpendingFor(transaction, owner),
+      },
+    }))
 }
 
 /** Whether a day key falls on or between two dates' days. */
@@ -413,7 +416,7 @@ export function buildSpendingView(
 ) {
   const end = calendarDate(periodReferenceIso)
   const parsed = transactions.flatMap((transaction) => {
-    const date = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso)
+    const date = transactionDateKey(transaction.postedOn ?? transaction.date)
     return date ? [{ transaction, date }] : []
   })
   const statementBoundaries = period === 'statement' ? (statement?.boundaries ?? []) : []
@@ -570,7 +573,7 @@ export function buildSpendingView(
     periodBasis: basis,
     startingBalance,
     statementBalance: currentCumulative / 100,
-    transactions: sortTransactionsByRecency(current, referenceIso),
+    transactions: sortTransactionsByRecency(current),
     total,
     previousTotal,
     pendingTotal,
@@ -606,7 +609,6 @@ export function buildSpendingView(
 
 export function buildSpendingBars(
   transactions: Transaction[],
-  referenceIso: string,
   start: string,
   end: string,
   period: SpendingPeriod,
@@ -619,7 +621,7 @@ export function buildSpendingBars(
     .filter((transaction) => isSpend(transaction) || transaction.classification.credit)
     .flatMap(splitParts)
     .forEach((transaction) => {
-      const date = transactionDateKey(transaction.postedOn ?? transaction.date, referenceIso)
+      const date = transactionDateKey(transaction.postedOn ?? transaction.date)
       const name = transaction.classification.credit ? 'Credits' : transaction.category
       const categories = totals.get(date) ?? new Map()
       const category = categories.get(name) ?? { value: 0, activities: [] }
@@ -670,81 +672,25 @@ export function buildSpendingBars(
   return bars
 }
 
-export function sortTransactionsByRecency(transactions: Transaction[], referenceIso: string) {
+export function sortTransactionsByRecency(transactions: Transaction[]) {
   return transactions.toSorted(
     (left, right) =>
-      transactionDateKey(right.date, referenceIso).localeCompare(
-        transactionDateKey(left.date, referenceIso),
-      ) || Math.abs(right.amount) - Math.abs(left.amount),
+      transactionDateKey(right.date).localeCompare(transactionDateKey(left.date)) ||
+      Math.abs(right.amount) - Math.abs(left.amount),
   )
 }
 
 type CardBenefits = NonNullable<Insights['benefits']>
 type BenefitWindow = CardBenefits['windows'][number]
-type BenefitOutcome = CardBenefits['outcomes'][number]
-type AmountRange = { low: number; high: number }
 
-/**
- * Posted credits net of reversals in a range, and the allowance left unused in windows that
- * ended in it. Rust classifies the activity and gives each window its verdict; this only sums
- * cents.
- */
-export function platinumCreditSummary(
+/** Benefit matches waiting for a decision, leaving out hidden benefits'. */
+export function benefitReviewItems(
   benefits: CardBenefits | undefined,
-  start: string,
-  end: string,
   hiddenBenefitIds: readonly string[] = [],
 ) {
-  const visible = ({ benefitId }: { benefitId: string }) => !hiddenBenefitIds.includes(benefitId)
-  const earned = sumCents(
-    (benefits?.activity ?? [])
-      .filter(
-        (item) =>
-          visible(item) &&
-          item.date >= start &&
-          item.date <= end &&
-          !item.pending &&
-          (item.kind === 'credit' || item.kind === 'reversal'),
-      )
-      .map(({ amount }) => amount),
+  return (benefits?.review ?? []).filter(
+    ({ benefitId }) => !benefitId || !hiddenBenefitIds.includes(benefitId),
   )
-  const ended = (benefits?.outcomes ?? []).filter(
-    (outcome) => visible(outcome) && outcome.windowEnd >= start && outcome.windowEnd <= end,
-  )
-  const judged = (verdict: BenefitOutcome['verdict']) =>
-    ended.filter((outcome) => outcome.verdict === verdict)
-  return {
-    earned,
-    missed: {
-      low: sumCents(judged('missed').map(({ unused }) => unused ?? 0)),
-      high: sumCents(judged('missed').map(({ unusedHigh }) => unusedHigh ?? 0)),
-    } satisfies AmountRange,
-    unclaimed: sumCents(judged('unclaimed').map(({ unused }) => unused ?? 0)),
-    /** Windows whose credits may still post. */
-    settling: judged('settling').length,
-    /** Windows the card history can't judge. */
-    unknown: judged('unknown').length,
-  }
-}
-
-export type PlatinumCreditSummary = ReturnType<typeof platinumCreditSummary>
-
-/** Totals across the current calendar benefit windows, as computed natively per window. */
-export function benefitWindowSummary(windows: BenefitWindow[]) {
-  const current = windows.filter(({ cadence }) => cadence !== 'renewal' && cadence !== 'purchase')
-  const tracked = current.flatMap(({ remainingRange }) => (remainingRange ? [remainingRange] : []))
-  const next = current
-    .filter(({ remainingRange }) => (remainingRange?.high ?? 0) > 0)
-    .toSorted((a, b) => a.windowEnd.localeCompare(b.windowEnd))[0]
-  return {
-    captured: sumCents(current.map(({ creditedAmount }) => creditedAmount)),
-    remaining: {
-      low: sumCents(tracked.map(({ low }) => low)),
-      high: sumCents(tracked.map(({ high }) => high)),
-    } satisfies AmountRange,
-    awaiting: sumCents(current.map(({ awaitingCreditAmount }) => awaitingCreditAmount)),
-    nextReset: next ? { label: next.reset, daysRemaining: next.daysRemaining } : null,
-  }
 }
 
 /** The windows to act on, in the order Rust gives: see `CardBenefits.useFirst`. */

@@ -1,33 +1,20 @@
 import { Popover } from '@base-ui/react/popover'
 import { Link } from '@tanstack/react-router'
-import { useMemo, type ReactNode } from 'react'
+import type { ReactNode } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
-import { useRegisterActions, type AppAction } from '../lib/action-system'
 import {
   benefitNote,
   benefitStatus,
   benefitWarning,
   creditLagNote,
-  creditSummaryNote,
   purchaseCreditLabel,
 } from '../lib/benefit-copy'
 import { financeSettings } from '../lib/finance-settings'
-import {
-  formatActivityName,
-  formatCurrency,
-  formatCurrencyRange,
-  formatUpdatedAt,
-  formatDay,
-} from '../lib/format'
+import { formatActivityName, formatCurrency, formatDay, formatProseCurrency } from '../lib/format'
 import { brandLogoUrl, brandMarkLabel, getExternalLogosEnabled } from '../lib/logos'
 import type { BenefitActivity, BenefitWindow, Insights } from '../lib/schema'
-import {
-  benefitsToUseFirst,
-  benefitWindowSummary,
-  formatActivityDate,
-  type PlatinumCreditSummary,
-} from '../lib/spending'
+import { benefitReviewItems, benefitsToUseFirst, formatActivityDate } from '../lib/spending'
 import { BrandMark } from './brand-mark'
 import { ExternalLink } from './external-link'
 import {
@@ -38,11 +25,9 @@ import {
   MonitorPlay,
   Plane,
   ReceiptText,
-  Settings,
   X,
   type IconComponent,
 } from './icons'
-import { SettingsLink } from './settings-dialog'
 import { Button, Card, EmptyState, SectionHeading } from './ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
@@ -196,7 +181,7 @@ function BenefitEvidence({
           )}
           <span>
             <span>{formatActivityName(item.merchant)}</span>
-            <time dateTime={item.date}>{formatActivityDate(item.date, item.date)}</time>
+            <time dateTime={item.date}>{formatActivityDate(item.date)}</time>
             {labels[item.kind] || item.pending || item.credit ? (
               <small>
                 {[
@@ -239,7 +224,7 @@ function BenefitRow({
   const qualifyingPurchases = supportingActivity.filter(({ kind }) => kind === 'purchase')
   const visibleSupportingActivity = supportingActivity.filter(({ kind }) => kind !== 'purchase')
   const lastCreditLabel = benefit.lastCredit
-    ? `Last detected credit: ${formatCurrency(benefit.lastCredit.amount)} on ${formatActivityDate(benefit.lastCredit.date, benefit.lastCredit.date)}.`
+    ? `Last detected credit: ${formatCurrency(benefit.lastCredit.amount)} on ${formatActivityDate(benefit.lastCredit.date)}.`
     : null
   const status = benefitStatus(benefit)
   const warning = benefitWarning(benefit)
@@ -265,7 +250,7 @@ function BenefitRow({
             {benefit.deadlineNote ? <p>Cutoff: {benefit.deadlineNote}.</p> : null}
             {benefit.cadence === 'renewal' ? <p>Based on the last posted credit.</p> : null}
             {hasPostedCredits || qualifyingPurchases.length ? (
-              <p>{creditLagNote(benefit)}</p>
+              <p>Credits post: {creditLagNote(benefit)}</p>
             ) : null}
             <ExternalLink className="benefit-terms-link" href={benefit.url}>
               Official benefit terms
@@ -335,6 +320,9 @@ function BenefitRow({
   )
 }
 
+/** Renewal and per-purchase benefits have no calendar deadline. */
+const special = ({ cadence }: Benefit) => cadence === 'renewal' || cadence === 'purchase'
+
 function BenefitGroups({
   benefits,
   externalLogosEnabled,
@@ -344,21 +332,17 @@ function BenefitGroups({
   externalLogosEnabled: boolean
   compact?: boolean
 }) {
-  const calendarBenefits = benefits.filter(
-    ({ cadence }) => cadence !== 'renewal' && cadence !== 'purchase',
-  )
-  const specialBenefits = benefits.filter(
-    ({ cadence }) => cadence === 'renewal' || cadence === 'purchase',
-  )
-  const deadlines = [...new Set(calendarBenefits.map(({ windowEnd }) => windowEnd))]
+  const calendarBenefits = benefits.filter((benefit) => !special(benefit) && !benefit.recurring)
+  // Subscriptions spend these on their own: there is no deadline to act on, only a credit to check.
+  const recurringBenefits = benefits.filter((benefit) => !special(benefit) && benefit.recurring)
+  const specialBenefits = benefits.filter(special)
+  const deadlines = [...new Set(calendarBenefits.map(({ windowEnd }) => windowEnd))].toSorted()
 
   return (
     <>
       {deadlines.map((deadline) => {
-        // Within a deadline, the most allowance left comes first: it is the most to lose.
-        const group = calendarBenefits
-          .filter(({ windowEnd }) => windowEnd === deadline)
-          .toSorted((a, b) => (b.remainingRange?.high ?? 0) - (a.remainingRange?.high ?? 0))
+        // Rows keep the order they arrive in: Rust's use-first order, then the rest.
+        const group = calendarBenefits.filter(({ windowEnd }) => windowEnd === deadline)
         const first = group[0]
         return (
           <section
@@ -384,6 +368,23 @@ function BenefitGroups({
           </section>
         )
       })}
+      {recurringBenefits.length ? (
+        <section
+          className="benefit-deadline-group"
+          aria-label="Recurring credits"
+          data-keyboard-region
+        >
+          <h3>Recurring</h3>
+          {recurringBenefits.map((benefit) => (
+            <BenefitRow
+              key={benefit.id}
+              benefit={benefit}
+              externalLogosEnabled={externalLogosEnabled}
+              compact={compact}
+            />
+          ))}
+        </section>
+      ) : null}
       {specialBenefits.length ? (
         <section
           className="benefit-deadline-group"
@@ -406,82 +407,31 @@ function BenefitGroups({
   )
 }
 
-function CreditSummary({
-  benefits,
-  credits,
-  fee,
-}: {
-  benefits: Benefit[]
-  credits?: PlatinumCreditSummary
-  fee?: NonNullable<Insights['benefits']>['fee']
-}) {
-  const summary = benefitWindowSummary(benefits)
-  if (!benefits.length) return null
-  const missed = credits && credits.missed.high > 0 ? credits.missed : null
-  const note = credits ? creditSummaryNote(credits) : ''
-  return (
-    <>
-      <dl className="credit-summary">
-        <div>
-          <dt>Captured</dt>
-          <dd className="sensitive-value">{formatCurrency(summary.captured)}</dd>
-        </div>
-        <div>
-          <dt>Left</dt>
-          <dd className="sensitive-value">{formatCurrencyRange(summary.remaining)}</dd>
-        </div>
-        <div>
-          <dt>{missed ? 'Missed' : 'Next reset'}</dt>
-          <dd className={missed ? 'sensitive-value negative' : undefined}>
-            {missed
-              ? formatCurrencyRange(missed)
-              : summary.nextReset
-                ? summary.nextReset.label
-                : '—'}
-          </dd>
-        </div>
-      </dl>
-      {note ? <p className="credit-summary-note sensitive-value">{note}</p> : null}
-      {fee ? (
-        <p className="credit-summary-note">
-          <span className="sensitive-value">
-            {formatCurrency(fee.recovered)} of {formatCurrency(fee.annualFee)}
-          </span>{' '}
-          annual fee recovered in posted credits since {formatDay(fee.since)}
-          {fee.basis === 'calendar-year' ? ' (calendar year; no fee charge in saved activity)' : ''}
-          {fee.forOthers ? (
-            <>
-              {' · '}
-              <span className="sensitive-value">{formatCurrency(fee.forOthers)}</span> more used for
-              others
-            </>
-          ) : null}
-        </p>
-      ) : null}
-    </>
-  )
-}
-
 /**
  * The card's year in one line: your posted credits set against the annual fee, which Rust counts
  * from the last fee charge. Past break-even, the meter is full and the line says by how much.
  * Credits on purchases for someone else used the allowance but saved them, so they're named apart.
  */
-function FeeRecovery({ fee }: { fee: NonNullable<NonNullable<Insights['benefits']>['fee']> }) {
+export function FeeRecovery({
+  fee,
+}: {
+  fee: NonNullable<NonNullable<Insights['benefits']>['fee']>
+}) {
   const past = fee.recovered >= fee.annualFee
   const gap = Math.abs(Math.round((fee.recovered - fee.annualFee) * 100)) / 100
+  const money = formatProseCurrency
   return (
     <section className="benefit-fee-recovery" aria-label="Annual fee recovered">
       <p>
-        <strong className="sensitive-value">{formatCurrency(fee.recovered)}</strong> of the{' '}
-        <span className="sensitive-value">{formatCurrency(fee.annualFee)}</span> fee back in credits
+        <strong className="sensitive-value">{money(fee.recovered)}</strong> of the{' '}
+        <span className="sensitive-value">{money(fee.annualFee)}</span> fee back
         <small className="sensitive-value">
           {past
             ? gap
-              ? ` · ${formatCurrency(gap)} past break-even`
-              : ' · at break-even'
-            : ` · ${formatCurrency(gap)} to break even`}
-          {fee.forOthers ? ` · ${formatCurrency(fee.forOthers)} more used for others` : ''}
+              ? ` · ${money(gap)} past break-even`
+              : ' · break-even'
+            : ` · ${money(gap)} to go`}
+          {fee.forOthers ? ` · ${money(fee.forOthers)} for others` : ''}
         </small>
       </p>
       <progress
@@ -490,115 +440,79 @@ function FeeRecovery({ fee }: { fee: NonNullable<NonNullable<Insights['benefits'
         value={Math.min(fee.annualFee, Math.max(0, fee.recovered))}
         aria-label="Annual fee recovered in credits"
       />
+      {/* The feed doesn't report the card's anniversary, so a year without a fee charge says so. */}
+      <small className="benefit-fee-since">
+        {formatDay(fee.since)} – {formatDay(fee.through)}
+        {fee.basis === 'fee-charge' ? '' : ' · no fee charge saved'}
+        {/* Only credits the periods already plan: waiting purchases and expected charges. */}
+        {fee.expected > 0 ? (
+          <>
+            {' · '}
+            <span className="sensitive-value">{money(fee.expected)}</span> more estimated
+          </>
+        ) : null}
+      </small>
     </section>
   )
 }
 
-/** Current windows for the saved spending card, as derived by the native benefit rules. */
+/**
+ * A card's benefits at a glance on Spending: the credits to use soonest, as derived by the native
+ * benefit rules. The fee, what was missed, and the full year read on Benefits.
+ */
 export function PlatinumBenefits({
-  preview = false,
-  credits,
   accountId,
 }: {
-  preview?: boolean
-  /** Credits and unused allowance for windows that ended in the selected spending period. */
-  credits?: PlatinumCreditSummary
   /** Another tracked card; omitted for the saved spending card. */
   accountId?: string
 }) {
   const data = useFinance().data
   const settings = financeSettings(data)
   const insights = data?.insights
-  const snapshotIso = data?.updatedAt ?? ''
   const externalLogosEnabled = getExternalLogosEnabled()
   const card = accountId
     ? insights?.otherCardBenefits?.find((other) => other.accountId === accountId)
     : insights?.benefits
   const benefits = (card?.windows ?? []).filter(({ id }) => !settings.hiddenBenefitIds.includes(id))
-  // The preview leads with what would be lost soonest, not with the rule file's order.
+  // It leads with what would be lost soonest, not with the rule file's order.
   const useFirst = benefitsToUseFirst(benefits, card?.useFirst ?? [])
-  useRegisterActions(
-    useMemo<AppAction[]>(
-      () =>
-        preview
-          ? []
-          : [
-              {
-                id: 'benefits.about',
-                title: 'About benefit tracking',
-                search: 'benefits credits how tracked posted reversal terms',
-                group: 'Here',
-                scope: 'page',
-                run: () =>
-                  document.querySelector<HTMLElement>('[data-command="benefits.about"]')?.click(),
-              },
-            ],
-      [preview],
-    ),
-  )
-
-  if (preview)
-    return (
-      <Card className="spending-benefits-card">
-        <SectionHeading
-          title={
-            <Link
-              to="/analytics"
-              search={{ chart: 'amex-credits' }}
-              className="section-heading-link"
-              data-command="navigation.report.amex-credits"
-            >
-              {accountId ? `${card?.productName ?? 'Card'} benefits` : 'Platinum benefits'}{' '}
-              <ChevronRight size={14} aria-hidden="true" />
-            </Link>
-          }
-        />
-        <CreditSummary benefits={benefits} credits={credits} fee={card?.fee} />
-        {useFirst.length || !benefits.length ? (
-          <BenefitGroups
-            benefits={useFirst.slice(0, 3)}
-            externalLogosEnabled={externalLogosEnabled}
-            compact
-          />
-        ) : (
-          <EmptyState>Every credit in its current window is used.</EmptyState>
-        )}
-      </Card>
-    )
-
+  const review = accountId ? [] : benefitReviewItems(card, settings.hiddenBenefitIds)
   return (
-    <Card className="platinum-current-card">
+    <Card className="spending-benefits-card">
       <SectionHeading
-        title="Current benefit windows"
-        action={
-          <div className="benefit-heading-actions">
-            <BenefitInfo title="benefit tracking" command="benefits.about">
-              <p>
-                Estimated from posted credits, net of reversals. A credit counts in its purchase’s
-                period; an unmatched one shows as a range.
-              </p>
-              <p>
-                Credits post within 8 weeks (hotels 90 days). Uber Cash spent in the app never
-                shows.
-              </p>
-              <p>
-                Saved {formatUpdatedAt(snapshotIso)} · Terms reviewed{' '}
-                {insights?.benefitTermsReviewed ?? 'unavailable'}.
-              </p>
-            </BenefitInfo>
-            <SettingsLink
-              className="button-base button-ghost button-compact"
-              target="platinum-benefits"
-            >
-              <Settings size={16} aria-hidden="true" />
-              Manage benefits
-            </SettingsLink>
-          </div>
+        title={
+          <Link
+            to="/analytics"
+            search={{ chart: 'amex-credits' }}
+            className="section-heading-link"
+            data-command="navigation.report.amex-credits"
+          >
+            {accountId ? `${card?.productName ?? 'Card'} benefits` : 'Benefits'}{' '}
+            <ChevronRight size={14} aria-hidden="true" />
+          </Link>
         }
       />
-      <p className="benefit-current-scope">As of today · Saved {formatUpdatedAt(snapshotIso)}</p>
-      {card?.fee ? <FeeRecovery fee={card.fee} /> : null}
-      <BenefitGroups benefits={benefits} externalLogosEnabled={externalLogosEnabled} />
+      {review.length ? (
+        <p className="credit-summary-note">
+          <Link
+            to="/analytics"
+            search={{ chart: 'amex-credits', review: true }}
+            data-command="navigation.report.amex-credits"
+          >
+            {review.length} {review.length === 1 ? 'match' : 'matches'} to review
+          </Link>
+        </p>
+      ) : null}
+      {useFirst.length || !benefits.length ? (
+        // The most urgent first: grouped by when each resets, soonest deadline leading.
+        <BenefitGroups
+          benefits={useFirst.slice(0, 3)}
+          externalLogosEnabled={externalLogosEnabled}
+          compact
+        />
+      ) : (
+        <EmptyState>Every credit in its current window is used.</EmptyState>
+      )}
     </Card>
   )
 }

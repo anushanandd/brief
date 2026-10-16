@@ -48,10 +48,10 @@ it('sizes ledger columns using every filtered row, including later batches', () 
   }))
   const firstBatch = activityGridWidths(activities.slice(0, 50), '2026-09-20', measureText)
   const allRows = activityGridWidths(activities, '2026-09-20', measureText)
-  expect(allRows[1]).toBeGreaterThan(firstBatch[1])
+  expect(allRows[2]).toBeGreaterThan(firstBatch[2])
 })
 
-it('lets one unusually long place ellipsize while every account name and amount fits', () => {
+it('fits every rare long value in full except the flexible description', () => {
   const activities: ActivityItem[] = Array.from({ length: 40 }, (_, index) => ({
     id: `synthetic-${index}`,
     kind: 'spending',
@@ -63,58 +63,82 @@ it('lets one unusually long place ellipsize while every account name and amount 
     account: index === 0 ? 'Individual brokerage' : 'Card',
     location: { city: index === 0 ? 'An Unusually Long Synthetic Town' : 'Oakland', region: 'CA' },
   }))
-  const [, account, , owner, location, , amount] = activityGridWidths(
+  const [, , account, , owner, location, amount] = activityGridWidths(
     activities,
     '2026-09-20',
     measureText,
   )
   const typical = activityGridWidths(activities.slice(1), '2026-09-20', measureText)
-  expect(location).toBe(typical[4])
-  // A rare account and a rare large amount still fit.
-  expect(account).toBeGreaterThan(typical[1])
+  // A rare long place, account, and amount still show in full.
+  expect(location).toBeGreaterThan(typical[5])
+  expect(account).toBeGreaterThan(typical[2])
   expect(amount).toBeGreaterThan(typical[6])
+  // So do a rare long subcategory and street address; only the description gives way.
+  const named = activities.map((activity, index) =>
+    index
+      ? activity
+      : {
+          ...activity,
+          title: 'An unusually long synthetic merchant name',
+          subcategory: 'An unusually long synthetic subcategory',
+          location: {
+            city: 'Oakland',
+            region: 'CA',
+            address: '1234 An Unusually Long Synthetic Street',
+          },
+        },
+  )
+  const [, description, , category, , address] = activityGridWidths(
+    named,
+    '2026-09-20',
+    measureText,
+  )
+  expect(description).toBe(typical[1])
+  expect(category).toBeGreaterThan(typical[3])
+  expect(address).toBeGreaterThan(typical[5])
   // Me or Other: the same width on every ledger.
-  expect(owner).toBe(typical[3])
+  expect(owner).toBe(typical[4])
 })
 
-it('leaves description flexible while sizing the other columns to their contents', () => {
+it('sizes every column to its contents, capping only the description', () => {
   const activity: ActivityItem = {
     id: 'long-description',
     kind: 'spending',
-    category: 'A very long synthetic spending category',
+    category: 'Dining',
+    subcategory: 'A very long synthetic spending subcategory',
     title: 'A considerably longer synthetic merchant description',
     location: {
-      city: 'An Exceptionally Long Synthetic City Name',
+      city: 'Palo Alto',
       region: 'CA',
-      address: '123 Example Street',
+      address: '123 An Exceptionally Long Synthetic Street Name',
     },
     paymentChannel: 'in store',
     detail: '',
     date: '2026-09-20',
     amount: -10,
   }
-  const [descriptionWidth, , categoryWidth, , locationWidth] = activityGridWidths(
+  const [, descriptionWidth, , categoryWidth, , locationWidth] = activityGridWidths(
     [activity],
     '2026-09-20',
     measureText,
   )
-  expect(descriptionWidth).toBe(180)
-  // Long text is capped so a single column cannot crowd out the description.
-  expect(categoryWidth).toBe(280)
-  expect(locationWidth).toBe(280)
-  const [shortDescriptionWidth, , shortCategoryWidth, , shortLocationWidth] = activityGridWidths(
+  // The description is capped; everything else shows in full, however long.
+  expect(descriptionWidth).toBe(280)
+  expect(categoryWidth).toBeGreaterThan(280)
+  expect(locationWidth).toBeGreaterThan(280)
+  const [, shortDescriptionWidth, , shortCategoryWidth, , shortLocationWidth] = activityGridWidths(
     [
       {
         ...activity,
         title: 'Coffee',
-        category: 'Dining',
+        subcategory: undefined,
         location: { city: 'Palo Alto', region: 'CA' },
       },
     ],
     '2026-09-20',
     measureText,
   )
-  expect(shortDescriptionWidth).toBe(descriptionWidth)
+  expect(shortDescriptionWidth).toBeLessThan(descriptionWidth)
   expect(shortCategoryWidth).toBeLessThan(categoryWidth)
   expect(shortLocationWidth).toBeLessThan(locationWidth)
 })
@@ -209,7 +233,8 @@ it('shows a supplied location and leaves unknown locations unavailable', () => {
       showColumns
     />,
   )
-  expect(linked).toContain('aria-label="Open Synthetic purchase website"')
+  // The website only names the host; nothing links to it.
+  expect(linked).not.toContain('href=')
   expect(linked).toContain('aria-label="Filter by method: Online"')
   expect(linked).toContain('<span>Online</span><small>example.com</small>')
 
@@ -354,13 +379,14 @@ const row = (patch: Partial<ActivityItem>): ActivityItem => ({
   ...patch,
 })
 
-it('marks a pending or flagged row with an icon beside its date', () => {
+it('marks a pending or flagged row with a badge beside its merchant', () => {
   expect(activityStatus({ pending: true, flag: 'duplicate' })?.label).toBe('Pending')
   expect(activityStatus({ flag: 'duplicate' })).toMatchObject({
     label: 'Possible duplicate',
     warning: true,
   })
   expect(activityStatus({ flag: 'unusual' })?.label).toBe('Unusual amount')
+  expect(activityStatus({ flag: 'conflict' })).toMatchObject({ badge: 'Check', warning: true })
   expect(activityStatus({})).toBeUndefined()
   const html = renderToStaticMarkup(
     <ActivityList
@@ -369,18 +395,10 @@ it('marks a pending or flagged row with an icon beside its date', () => {
       showColumns
     />,
   )
-  // One line: the date, then the icon, named for screen readers and on hover.
-  expect(html).toMatch(
-    /<time[^>]*>Sep 18<\/time><span class="financial-activity-status activity-flag" title="Unusual amount">/,
+  // The badge follows the merchant, named in full on hover; the date stands alone.
+  expect(html).toContain(
+    'Synthetic cafe</strong></button><span class="activity-badge is-warning" title="Unusual amount">Unusual</span>',
   )
-  expect(html).toContain('aria-label="Filter by date: Sep 18, 2026, unusual amount"')
-  expect(html.match(/financial-activity-status/g)).toHaveLength(1)
-  // A row with a status keeps room for its icon on both sides of the centered date.
-  const [, , , , , flagged] = activityGridWidths(
-    [row({ flag: 'unusual' })],
-    '2026-09-20',
-    measureText,
-  )
-  const [, , , , , plain] = activityGridWidths([row({})], '2026-09-20', measureText)
-  expect(flagged - plain).toBe(36)
+  expect(html).toContain('aria-label="Filter by date: Sep 18, 2026" disabled=""><time')
+  expect(html.match(/activity-badge/g)).toHaveLength(1)
 })

@@ -19,6 +19,76 @@ pub(super) struct FifoState {
     pub(super) invalid: bool,
 }
 
+impl FifoState {
+    /// Sells `units` for `amount` from the oldest lots. Selling more than the lots hold leaves
+    /// the history unexplained, so no sale in it is estimated.
+    fn sell(&mut self, index: usize, units: Decimal, amount: Decimal, date: NaiveDate) {
+        let mut remaining = units;
+        let mut basis = Decimal::ZERO;
+        let mut long_term_gain = Decimal::ZERO;
+        while remaining > Decimal::ZERO {
+            let Some((available, unit_cost, acquired)) = self.lots.pop_front() else {
+                self.invalid = true;
+                self.sales.clear();
+                return;
+            };
+            let used = available.min(remaining);
+            basis += used * unit_cost;
+            if held_long_term(acquired, date) {
+                long_term_gain += amount * used / units - used * unit_cost;
+            }
+            remaining -= used;
+            if available > used {
+                self.lots
+                    .push_front((available - used, unit_cost, acquired));
+            }
+        }
+        self.sales.push(FifoSale {
+            index,
+            basis,
+            gain: amount - basis,
+            long_term_gain,
+        });
+    }
+
+    /// Whether the open lots match today's position in units and cost basis, within rounding.
+    fn reconciles(&self, holdings: &[Holding], account_id: &str, ticker: &str) -> bool {
+        let imported_units = self
+            .lots
+            .iter()
+            .map(|(units, _, _)| *units)
+            .sum::<Decimal>();
+        let imported_basis = self
+            .lots
+            .iter()
+            .map(|(units, unit_cost, _)| *units * *unit_cost)
+            .sum::<Decimal>();
+        let positions = positions(holdings, account_id, ticker).collect::<Vec<_>>();
+        let current_units = positions
+            .iter()
+            .filter_map(|holding| holding.shares.and_then(decimal_f64))
+            .sum::<Decimal>();
+        let costs = positions
+            .iter()
+            .map(|holding| holding.cost_basis.and_then(decimal_f64))
+            .collect::<Vec<_>>();
+        let current_basis = costs.iter().flatten().sum::<Decimal>();
+        let basis_complete = costs.iter().all(Option::is_some);
+        let unit_difference = (imported_units - current_units).abs();
+        let average_unit_cost = if imported_units.is_zero() {
+            Decimal::ZERO
+        } else {
+            imported_basis.abs() / imported_units.abs()
+        };
+        // SnapTrade activity units can be rounded to 3 decimals while positions retain 4.
+        let basis_tolerance = Decimal::new(11, 3) + unit_difference * average_unit_cost;
+        !self.invalid
+            && basis_complete
+            && unit_difference <= Decimal::new(5, 4)
+            && (imported_basis - current_basis).abs() <= basis_tolerance
+    }
+}
+
 /// Shares sold on `sold` were held long-term when sold after the first anniversary of
 /// `acquired`, matching the lots insight.
 fn held_long_term(acquired: NaiveDate, sold: NaiveDate) -> bool {
@@ -209,75 +279,14 @@ pub(super) fn add_estimated_realized_gains(
             continue;
         }
 
-        let mut remaining = units;
-        let mut basis = Decimal::ZERO;
-        let mut long_term_gain = Decimal::ZERO;
-        while remaining > Decimal::ZERO {
-            let Some((available, unit_cost, acquired)) = state.lots.pop_front() else {
-                state.invalid = true;
-                state.sales.clear();
-                break;
-            };
-            let used = available.min(remaining);
-            basis += used * unit_cost;
-            if held_long_term(acquired, date) {
-                long_term_gain += amount * used / units - used * unit_cost;
-            }
-            remaining -= used;
-            if available > used {
-                state
-                    .lots
-                    .push_front((available - used, unit_cost, acquired));
-            }
-        }
-        if !state.invalid {
-            state.sales.push(FifoSale {
-                index,
-                basis,
-                gain: amount - basis,
-                long_term_gain,
-            });
-        }
+        state.sell(index, units, amount, date);
     }
 
     for ((account_id, ticker), state) in states {
         if !complete(&account_id) {
             continue;
         }
-        let imported_units = state
-            .lots
-            .iter()
-            .map(|(units, _, _)| *units)
-            .sum::<Decimal>();
-        let imported_basis = state
-            .lots
-            .iter()
-            .map(|(units, unit_cost, _)| *units * *unit_cost)
-            .sum::<Decimal>();
-        let positions = positions(holdings, &account_id, &ticker).collect::<Vec<_>>();
-        let current_units = positions
-            .iter()
-            .filter_map(|holding| holding.shares.and_then(decimal_f64))
-            .sum::<Decimal>();
-        let costs = positions
-            .iter()
-            .map(|holding| holding.cost_basis.and_then(decimal_f64))
-            .collect::<Vec<_>>();
-        let current_basis = costs.iter().flatten().sum::<Decimal>();
-        let basis_complete = costs.iter().all(Option::is_some);
-        let unit_difference = (imported_units - current_units).abs();
-        let average_unit_cost = if imported_units.is_zero() {
-            Decimal::ZERO
-        } else {
-            imported_basis.abs() / imported_units.abs()
-        };
-        // SnapTrade activity units can be rounded to 3 decimals while positions retain 4.
-        let basis_tolerance = Decimal::new(11, 3) + unit_difference * average_unit_cost;
-        if state.invalid
-            || !basis_complete
-            || unit_difference > Decimal::new(5, 4)
-            || (imported_basis - current_basis).abs() > basis_tolerance
-        {
+        if !state.reconciles(holdings, &account_id, &ticker) {
             continue;
         }
         for FifoSale {

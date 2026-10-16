@@ -19,12 +19,25 @@
   color: var(--text-primary);
   transition:
     opacity var(--duration-modal) var(--ease-out),
-    transform var(--duration-modal-lift) var(--ease-lift);
+    transform var(--duration-modal-lift) var(--ease-lift),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
+}
+/* Closed, it slides back to the edge it came from. */
+.transaction-dialog:not([open]) {
+  opacity: 0;
+  transform: translateX(16px);
 }
 .transaction-dialog::backdrop {
   /* Lighter than a modal's: the page behind stays readable. */
   background: color-mix(in srgb, var(--dialog-backdrop) 45%, transparent);
-  transition: opacity var(--duration-modal) var(--ease-out);
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
+}
+.transaction-dialog:not([open])::backdrop {
+  opacity: 0;
 }
 @starting-style {
   .transaction-dialog[open] {
@@ -104,6 +117,9 @@
   background: var(--positive-soft);
   color: var(--positive);
 }
+a.transaction-details-tag {
+  text-decoration: none;
+}
 .transaction-details-body {
   display: grid;
   min-height: 0;
@@ -168,6 +184,20 @@
   gap: 4px;
   color: var(--accent);
   font-size: var(--type-meta);
+}
+/* Each document that states the transaction, on its own line, with how it states it. */
+.transaction-details-documents {
+  display: grid;
+  gap: 6px;
+}
+.transaction-details-documents > .transaction-details-link {
+  flex-wrap: wrap;
+}
+.transaction-details-documents small {
+  color: var(--text-tertiary);
+}
+.transaction-details-facts dd.is-warning {
+  color: var(--warning);
 }
 .transaction-details-facts dd.transaction-details-raw {
   display: block;

@@ -159,19 +159,21 @@ impl Providers {
         Err(invalid())
     }
 
-    /// The institution's website, asked of Plaid once per connection, so its logo can be looked
-    /// up by exact domain. A failed lookup is retried on the next refresh.
+    /// The institution's website, so its logo can be looked up by exact domain, and whether it
+    /// supports Statements, asked of Plaid once per connection. A failed lookup is retried on the
+    /// next refresh.
     async fn ensure_institution_url(
         &self,
         credentials: &PlaidCredentials,
         item: &PlaidItem,
         cache: &mut PlaidItemCache,
     ) {
-        if cache.institution_url_checked {
+        if cache.institution_url_checked && cache.statements_supported.is_some() {
             return;
         }
         let Some(id) = item.institution_id.as_deref() else {
             cache.institution_url_checked = true;
+            cache.statements_supported = Some(false);
             return;
         };
         if let Ok((value, _)) = self
@@ -191,6 +193,7 @@ impl Providers {
                 .and_then(Value::as_str)
                 .map(str::to_owned);
             cache.institution_url_checked = true;
+            cache.statements_supported = Some(institution_supports(&value, "statements"));
         }
     }
 }
@@ -775,4 +778,12 @@ pub(super) fn allowed_plaid_account(account: &Value) -> bool {
         account.get("type").and_then(Value::as_str),
         Some("depository" | "credit")
     )
+}
+
+/// Whether an `/institutions/get_by_id` response lists `product` among the institution's.
+pub(super) fn institution_supports(response: &Value, product: &str) -> bool {
+    response
+        .pointer("/institution/products")
+        .and_then(Value::as_array)
+        .is_some_and(|products| products.iter().any(|value| value.as_str() == Some(product)))
 }

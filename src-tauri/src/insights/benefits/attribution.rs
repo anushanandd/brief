@@ -1,10 +1,13 @@
 //! Links credits to the purchases that earned them and places each credit in a window.
 //!
-//! The issuer applies a credit to the window of the purchase, which may close before the
-//! credit posts. A credit pairs with the closest earlier unpaired purchase it fits, within
-//! the terms' posting limit, preferring an exact amount. A reversal pairs with the latest
-//! earlier credit of the same amount. An unpaired credit posted soon after a window opens
-//! may belong to either window, unless one of them can't hold it under its allowance.
+//! The issuer applies a credit to the window of the purchase's transaction date, which may
+//! close before either posts, and dates the credit the same. A credit pairs with the closest
+//! earlier unpaired purchase it fits, within the terms' posting limit, preferring an exact
+//! amount, or with one dated just after it when no earlier one fits. A reversal pairs with the
+//! latest earlier credit of the same amount. An unpaired credit counts toward the window of its
+//! own transaction date; only one the feed dates by posting, soon after a window opens, may
+//! belong to either window, unless one of them can't hold it under its allowance. Delays are
+//! measured between posting dates, since that is when a credit arrives.
 use std::collections::{HashMap, HashSet};
 
 use chrono::{Duration, NaiveDate};
@@ -17,12 +20,15 @@ use crate::numeric::minor_units;
 const LEARNING_PAIRS: usize = 3;
 /// Slack added to the longest observed delay.
 const LAG_MARGIN_DAYS: i64 = 3;
+/// How long before its purchase's date a credit may be dated: the issuer can credit the
+/// authorization before the charge settles.
+pub(super) const EARLY_CREDIT_DAYS: i64 = 3;
 
 /// How long a benefit's credits take to post after the purchase.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) struct CreditLag {
     pub days: i64,
-    /// Observed from this card's paired credits rather than taken from the terms.
+    /// Observed from this card's paired credits rather than taken from the rule data.
     pub learned: bool,
 }
 
@@ -31,8 +37,9 @@ impl CreditLag {
         let purchases = activity
             .iter()
             .filter(|item| item.benefit_id == rule.data.id && item.kind == ActivityKind::Purchase)
-            .map(|item| (item.id.as_str(), item.date))
+            .map(|item| (item.id.as_str(), item.posted))
             .collect::<HashMap<_, _>>();
+        // A credit carries its purchase's transaction date, so only posting shows the delay.
         let delays = activity
             .iter()
             .filter(|item| {
@@ -41,21 +48,27 @@ impl CreditLag {
                     && !item.pending
             })
             .filter_map(|credit| {
-                let purchased = purchases.get(credit.paired_id.as_deref()?)?;
-                Some((credit.date - *purchased).num_days())
+                let posted = purchases.get(credit.paired_id.as_deref()?)?;
+                Some((credit.posted - *posted).num_days())
             })
             .collect::<Vec<_>>();
-        Self::from_delays(rule.data.posting_delay_days, &delays)
+        Self::from_delays(
+            rule.data.posting_delay_days,
+            rule.data.typical_delay_days,
+            &delays,
+        )
     }
 
-    fn from_delays(limit: i64, delays: &[i64]) -> Self {
+    /// The terms' limit bounds pairing and decides when a credit is no longer coming; the
+    /// usual delay, until learned, decides what is expected, late, or still settling.
+    fn from_delays(limit: i64, typical: i64, delays: &[i64]) -> Self {
         match delays.iter().max() {
             Some(longest) if delays.len() >= LEARNING_PAIRS => Self {
                 days: (longest + LAG_MARGIN_DAYS).min(limit),
                 learned: true,
             },
             _ => Self {
-                days: limit,
+                days: typical.min(limit),
                 learned: false,
             },
         }
@@ -99,16 +112,18 @@ fn pair_credits(rule: &Rule, activity: &mut [BenefitActivity], ours: &[usize]) {
             .copied()
             .filter(|&index| {
                 let item = &activity[index];
+                let days = (date - item.date).num_days();
                 posted(item, ActivityKind::Purchase)
                     && item.paired_id.is_none()
-                    && item.date <= date
-                    && (date - item.date).num_days() <= limit
+                    && (-EARLY_CREDIT_DAYS..=limit).contains(&days)
                     && -minor_units(item.amount) >= amount
             })
             .min_by_key(|&index| {
+                let days = (date - activity[index].date).num_days();
                 (
+                    days < 0,
                     -minor_units(activity[index].amount) != amount,
-                    (date - activity[index].date).num_days(),
+                    days.abs(),
                 )
             });
         if let Some(purchase) = purchase {
@@ -167,7 +182,9 @@ fn place_credits(
             .and_then(|id| dates.get(id))
             .copied();
         let period = rule.period(purchased.unwrap_or(item.date));
+        // Only a credit dated by its posting may belong to the window before.
         let earlier = (purchased.is_none()
+            && !item.dated
             && period.cadence.is_calendar()
             && (item.date - period.start).num_days() < lag.days)
             .then(|| rule.previous_period(&period))
@@ -262,18 +279,19 @@ fn settle_purchases(
                     minor_units(period.cap)
                 };
                 let amount = from_minor((-minor_units(item.amount)).min(capacity));
-                let age = (today - item.date).num_days();
+                // The credit's delay runs from when the purchase posted.
+                let age = (today - item.posted).num_days();
                 if capacity <= 0 {
                     PurchaseCredit::OverAllowance
                 } else if age <= lag.days {
                     PurchaseCredit::Expected {
                         amount,
-                        by: item.date + Duration::days(lag.days),
+                        by: item.posted + Duration::days(lag.days),
                     }
                 } else if age <= limit {
                     PurchaseCredit::Late {
                         amount,
-                        by: item.date + Duration::days(limit),
+                        by: item.posted + Duration::days(limit),
                     }
                 } else {
                     PurchaseCredit::NotCredited
@@ -291,19 +309,20 @@ mod tests {
     #[test]
     fn credit_lag_is_learned_only_from_enough_pairs_and_never_exceeds_the_terms() {
         assert_eq!(
-            CreditLag::from_delays(56, &[2, 3]),
+            CreditLag::from_delays(56, 7, &[2, 3]),
             CreditLag {
-                days: 56,
+                days: 7,
                 learned: false
             }
         );
         assert_eq!(
-            CreditLag::from_delays(56, &[2, 3, 1]),
+            CreditLag::from_delays(56, 7, &[20, 30, 10]),
             CreditLag {
-                days: 6,
+                days: 33,
                 learned: true
             }
         );
-        assert_eq!(CreditLag::from_delays(10, &[9, 9, 9]).days, 10);
+        assert_eq!(CreditLag::from_delays(10, 7, &[9, 9, 9]).days, 10);
+        assert_eq!(CreditLag::from_delays(5, 7, &[]).days, 5);
     }
 }

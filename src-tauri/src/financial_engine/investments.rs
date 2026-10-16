@@ -369,10 +369,15 @@ pub(super) fn performance_record(
     }
 }
 
-pub(super) fn combined_performance(accounts: &[Performance]) -> Vec<Performance> {
-    if accounts.is_empty() {
-        return Vec::new();
-    }
+/// An account whose provider reported no balance history.
+fn unavailable_history(account: &Performance) -> bool {
+    account.history_source.as_deref() == Some("unavailable")
+}
+
+/// The combined history's dates: from the earliest date any account starts, each counting from
+/// its first point. An account with no history would enter the total as a jump on its only day,
+/// so then only the dates every account reports are summed.
+fn combined_dates(accounts: &[Performance]) -> BTreeSet<String> {
     let date_sets = accounts
         .iter()
         .map(|account| {
@@ -383,23 +388,23 @@ pub(super) fn combined_performance(accounts: &[Performance]) -> Vec<Performance>
                 .collect::<BTreeSet<_>>()
         })
         .collect::<Vec<_>>();
-    let unavailable =
-        |account: &Performance| account.history_source.as_deref() == Some("unavailable");
-    // From the earliest date any account starts, each counting from its first point. An account
-    // with no history would enter the total as a jump on its only day, so then only the dates
-    // every account reports are summed.
     let histories_known = accounts
         .iter()
         .zip(&date_sets)
-        .all(|(account, dates)| !unavailable(account) && dates.len() > 1);
-    let dates = if histories_known {
+        .all(|(account, dates)| !unavailable_history(account) && dates.len() > 1);
+    if histories_known {
         date_sets.iter().flatten().cloned().collect::<BTreeSet<_>>()
     } else {
         date_sets.iter().skip(1).fold(
             date_sets.first().cloned().unwrap_or_default(),
             |dates, next| dates.intersection(next).cloned().collect(),
         )
-    };
+    }
+}
+
+/// How the combined history measures performance: time-weighted only when every account is,
+/// value-only when any account can't be compared with a benchmark.
+fn combined_method(accounts: &[Performance]) -> &'static str {
     let methods = accounts
         .iter()
         .map(|account| account.performance_method.as_deref())
@@ -407,7 +412,7 @@ pub(super) fn combined_performance(accounts: &[Performance]) -> Vec<Performance>
     let comparisons_available = methods
         .iter()
         .all(|method| matches!(method, Some("time-weighted" | "modified-dietz")));
-    let performance_method = if !comparisons_available {
+    if !comparisons_available {
         "value-only"
     } else if methods
         .iter()
@@ -416,7 +421,16 @@ pub(super) fn combined_performance(accounts: &[Performance]) -> Vec<Performance>
         "time-weighted"
     } else {
         "modified-dietz"
-    };
+    }
+}
+
+pub(super) fn combined_performance(accounts: &[Performance]) -> Vec<Performance> {
+    if accounts.is_empty() {
+        return Vec::new();
+    }
+    let dates = combined_dates(accounts);
+    let performance_method = combined_method(accounts);
+    let comparisons_available = performance_method != "value-only";
     let sum = |values: Vec<Option<Decimal>>| {
         values
             .into_iter()
@@ -493,7 +507,7 @@ pub(super) fn combined_performance(accounts: &[Performance]) -> Vec<Performance>
         .iter()
         .filter_map(|account| decimal_f64(account.current_value))
         .sum::<Decimal>();
-    let source = if accounts.iter().any(unavailable) {
+    let source = if accounts.iter().any(unavailable_history) {
         "unavailable"
     } else {
         "estimated"
@@ -537,6 +551,46 @@ pub(super) fn brokerage_balances_current(accounts: &[Account], now: DateTime<Utc
 pub(super) struct InvestmentActivity {
     pub(super) trades: Vec<Trade>,
     pub(super) transactions: Vec<Transaction>,
+}
+
+/// The row a Plaid cash investment record becomes: its label, category, and dividend type.
+/// `leaves` says the cash left the account. Records with no cash row return `None`.
+fn cash_activity(
+    kind: &str,
+    subtype: &str,
+    has_security: bool,
+    leaves: bool,
+) -> Option<(&'static str, &'static str, Option<&'static str>)> {
+    Some(match (kind, subtype) {
+        ("cash", "qualified dividend") => ("Dividend", "Dividend", Some("qualified")),
+        ("cash", "non-qualified dividend") => ("Dividend", "Dividend", Some("nonQualified")),
+        ("cash", "dividend") => ("Dividend", "Dividend", None),
+        // Fund distributions: long-term ones are taxed like qualified dividends.
+        ("cash", "long-term capital gain") => {
+            ("Capital gain distribution", "Dividend", Some("qualified"))
+        }
+        ("cash", "short-term capital gain") => (
+            "Capital gain distribution",
+            "Dividend",
+            Some("nonQualified"),
+        ),
+        ("cash", "interest" | "interest receivable") => ("Interest", "Interest", None),
+        ("cash", "tax" | "tax withheld" | "non-resident tax") => ("Investment tax", "Taxes", None),
+        ("fee", _) => ("Investment fee", "Fees", None),
+        ("cash", subtype) if subtype.contains("fee") => ("Investment fee", "Fees", None),
+        ("cash", "contribution" | "deposit") => ("Transfer in", "Transfer", None),
+        ("cash", "withdrawal" | "distribution") => ("Transfer out", "Transfer", None),
+        ("transfer", _) if !has_security => (
+            if leaves {
+                "Transfer out"
+            } else {
+                "Transfer in"
+            },
+            "Transfer",
+            None,
+        ),
+        _ => return None,
+    })
 }
 
 /// Maps Plaid's investment transaction types to trades and to the dividend, interest, fee,
@@ -648,45 +702,28 @@ pub(super) fn plaid_investment_activity(
             });
             continue;
         }
-        let (label, category, dividend_type) = match (kind.as_str(), subtype.as_str()) {
-            ("cash", "qualified dividend") => ("Dividend", "Dividend", Some("qualified")),
-            ("cash", "non-qualified dividend") => ("Dividend", "Dividend", Some("nonQualified")),
-            ("cash", "dividend") => ("Dividend", "Dividend", None),
-            // Fund distributions: long-term ones are taxed like qualified dividends.
-            ("cash", "long-term capital gain") => {
-                ("Capital gain distribution", "Dividend", Some("qualified"))
-            }
-            ("cash", "short-term capital gain") => (
-                "Capital gain distribution",
-                "Dividend",
-                Some("nonQualified"),
-            ),
-            ("cash", "interest" | "interest receivable") => ("Interest", "Interest", None),
-            ("cash", "tax" | "tax withheld" | "non-resident tax") => {
-                ("Investment tax", "Taxes", None)
-            }
-            ("fee", _) => ("Investment fee", "Fees", None),
-            ("cash", subtype) if subtype.contains("fee") => ("Investment fee", "Fees", None),
-            ("cash", "contribution" | "deposit") => ("Transfer in", "Transfer", None),
-            ("cash", "withdrawal" | "distribution") => ("Transfer out", "Transfer", None),
-            ("transfer", _) if record.security_id.is_none() => (
-                if amount.is_sign_positive() {
-                    "Transfer out"
-                } else {
-                    "Transfer in"
-                },
-                "Transfer",
-                None,
-            ),
-            _ => continue,
+        let Some((label, category, dividend_type)) = cash_activity(
+            &kind,
+            &subtype,
+            record.security_id.is_some(),
+            amount.is_sign_positive(),
+        ) else {
+            continue;
         };
         let merchant = match &ticker {
             Some(ticker) if category == "Dividend" => format!("{label} · {ticker}"),
             _ => label.to_owned(),
         };
+        let flow = (category == "Transfer").then_some(match subtype.as_str() {
+            "contribution" => "contribution",
+            "deposit" => "deposit",
+            "withdrawal" | "distribution" => "withdrawal",
+            _ => "transfer",
+        });
         activity.transactions.push(Transaction {
             description: record.name.clone(),
             dividend_type: dividend_type.map(str::to_owned),
+            flow: flow.map(str::to_owned),
             ..cash_row(
                 id,
                 merchant,

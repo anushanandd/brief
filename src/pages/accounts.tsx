@@ -10,7 +10,7 @@ import {
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { accountDisplayName } from '../lib/account-names'
 import { withoutSpendingCard } from '../lib/dashboard-account-views'
-import { financeSettings } from '../lib/finance-settings'
+import { financeSettings, spendingAccountIds } from '../lib/finance-settings'
 import { useGraphWindow } from '../lib/graph-preferences'
 import type { Account, FinanceSnapshot } from '../lib/schema'
 import { AccountOverview } from './account-overview'
@@ -42,7 +42,8 @@ function AccountsWorkspace({
   names: Record<string, string>
 }) {
   const routeSearch = useSearch({ from: '/accounts' })
-  const spendingAccountId = financeSettings(data).spendingAccountId ?? ''
+  const spendingIds = spendingAccountIds(financeSettings(data))
+  // Spending cards are listed with every other account; only the totals leave them out.
   const accounts = useMemo(() => {
     const allAccount: Account = data.accounts.find(({ id }) => id === 'all') ?? {
       id: 'all',
@@ -54,14 +55,14 @@ function AccountsWorkspace({
     return [
       allAccount,
       ...data.accounts
-        .filter(({ id }) => id !== 'all' && id !== spendingAccountId)
+        .filter(({ id }) => id !== 'all')
         .toSorted((left, right) => {
           if (left.value == null) return right.value == null ? 0 : 1
           if (right.value == null) return -1
           return right.value - left.value
         }),
     ]
-  }, [data.accounts, data.netWorth, spendingAccountId])
+  }, [data.accounts, data.netWorth])
   const [graphWindow, setGraphWindow] = useGraphWindow()
   useGraphWindowShortcuts(setGraphWindow)
   const selectedAccount =
@@ -121,7 +122,7 @@ function AccountsWorkspace({
           data={data}
           graphWindow={graphWindow}
           onGraphWindowChange={setGraphWindow}
-          excludedActivityAccountId={spendingAccountId}
+          spendingAccountIds={spendingIds}
         />
       ) : null}
     </div>

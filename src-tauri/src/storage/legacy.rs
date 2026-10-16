@@ -75,8 +75,8 @@ pub(super) fn legacy_state(directory: &Path) -> Result<FinanceState, String> {
         annotations: BTreeMap::new(),
         account_links: BTreeMap::new(),
         settings: Default::default(),
-        rules: Vec::new(),
         statements: Vec::new(),
+        documents: Vec::new(),
     };
     clear_legacy_diagnostics(&mut data);
     Ok(data)

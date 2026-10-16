@@ -46,7 +46,6 @@ const detailTokens = [
   'control-border',
   'surface-hover',
   'accent-soft',
-  'popup-filter',
   'shadow-popup',
 ]
 

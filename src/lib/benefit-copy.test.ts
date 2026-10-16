@@ -6,7 +6,6 @@ import {
   benefitStatus,
   benefitWarning,
   creditLagNote,
-  creditSummaryNote,
   purchaseCreditLabel,
 } from './benefit-copy'
 
@@ -17,13 +16,13 @@ describe('benefit copy', () => {
   it('labels each native purchase credit state', () => {
     expect(purchaseCreditLabel({ state: 'credited', amount: 13.99 })).toBe('Credited $13.99')
     expect(purchaseCreditLabel({ state: 'expected', amount: 9.99, by: '2026-09-13' })).toBe(
-      'Credit expected by Sep 13',
+      'Credit due by Sep 13',
     )
     expect(purchaseCreditLabel({ state: 'late', amount: 9.99, by: '2026-10-27' })).toBe(
-      'Credit late · allowed until Oct 27',
+      'Late · allowed until Oct 27',
     )
-    expect(purchaseCreditLabel({ state: 'not-credited' })).toBe('No credit posted')
-    expect(purchaseCreditLabel({ state: 'over-allowance' })).toBe('Over this period’s allowance')
+    expect(purchaseCreditLabel({ state: 'not-credited' })).toBe('No credit')
+    expect(purchaseCreditLabel({ state: 'over-allowance' })).toBe('Over allowance')
     expect(purchaseCreditLabel(undefined)).toBeNull()
   })
 
@@ -47,9 +46,7 @@ describe('benefit copy', () => {
       remainingAmount: null,
       remainingRange: { low: 50, high: 100 },
     })
-    expect(benefitNote(benefit)).toBe(
-      '$50.00–$100.00 left · $50.00 may belong to the previous period',
-    )
+    expect(benefitNote(benefit)).toBe('$50.00–$100.00 left · $50.00 may be last period’s')
   })
 
   it('treats a remainder below the smallest qualifying charge as used', () => {
@@ -65,7 +62,18 @@ describe('benefit copy', () => {
       text: '$119.88 of $120.00 credited',
       tone: 'positive',
     })
-    expect(benefitNote(benefit)).toBe('Used · $0.12 is below the smallest qualifying charge')
+    expect(benefitNote(benefit)).toBe('Used · $0.12 left over')
+  })
+
+  it('says where the history starts when it starts inside the window', () => {
+    const benefit = benefitWindow({
+      status: 'credited',
+      creditedAmount: 50,
+      historyFrom: '2026-05-09',
+      remainingAmount: 50,
+      remainingRange: { low: 50, high: 50 },
+    })
+    expect(benefitNote(benefit)).toBe('$50.00 left · history from May 9')
   })
 
   it('reports an expected credit before any credit posts', () => {
@@ -113,33 +121,8 @@ describe('benefit copy', () => {
 
   it('says where the posting delay comes from', () => {
     expect(creditLagNote(benefitWindow({ creditLagDays: 5, creditLagLearned: true }))).toBe(
-      'Credits for this benefit have posted within 5 days on this card.',
+      'Within 5 days on this card',
     )
-    expect(creditLagNote(benefitWindow())).toBe(
-      'Credits can take up to 56 days to post under the terms.',
-    )
-  })
-
-  it('explains what the missed total leaves out', () => {
-    expect(
-      creditSummaryNote({
-        earned: 0,
-        missed: { low: 0, high: 0 },
-        unclaimed: 75,
-        settling: 1,
-        unknown: 2,
-      }),
-    ).toBe(
-      '1 period still settling · 2 periods not visible in the card history · $75.00 unclaimed in benefits you haven’t used',
-    )
-    expect(
-      creditSummaryNote({
-        earned: 0,
-        missed: { low: 0, high: 0 },
-        unclaimed: 0,
-        settling: 0,
-        unknown: 0,
-      }),
-    ).toBe('')
+    expect(creditLagNote(benefitWindow())).toBe('Usually 7 days; up to 56')
   })
 })

@@ -13,5 +13,9 @@
       </array>
     </dict>
   </array>
+  <key>NSCalendarsFullAccessUsageDescription</key>
+  <string>Brief keeps its own Brief calendar of payment dates and trips, and shows your events beside your spending.</string>
+  <key>NSContactsUsageDescription</key>
+  <string>Brief reads names and photos from Contacts so you can tag the people you pay and travel with.</string>
 </dict>
 </plist>

@@ -1,5 +1,5 @@
-//! Edits to transactions, saved apart from provider data: category, review, tags, splits,
-//! refund links, and whether the money is someone else's.
+//! Edits to transactions, saved apart from provider data: category, review, tags, a note,
+//! splits, refund links, and whether the money is someone else's.
 use super::*;
 
 #[derive(Clone, Default, Deserialize, Serialize, PartialEq)]
@@ -24,6 +24,31 @@ pub struct Annotation {
     /// change, false clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub(crate) other: Option<bool>,
+    /// The card benefit this transaction counts toward, chosen by hand. In a change, an empty
+    /// id clears it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) benefit_id: Option<String>,
+    /// A few words in the user's own hand. In a change, an empty note clears it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) note: Option<String>,
+    /// The people chosen by hand, by id. Unlike tags, an empty list is a choice too: nobody,
+    /// so matching by name no longer applies. Absent, matching decides.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) people: Option<Vec<String>>,
+    /// In a change only: forgets both benefit decisions, the confirmation and the assignment.
+    #[serde(default, skip_serializing)]
+    pub(crate) clear_benefit: bool,
+}
+
+const MAX_NOTE_CHARS: usize = 500;
+
+/// What a save returns: every annotation as saved, and the changed transactions' annotations
+/// as they were, so the edit can be undone.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Saved {
+    pub annotations: BTreeMap<String, Annotation>,
+    pub previous: BTreeMap<String, Annotation>,
 }
 
 /// One part of a split transaction. Parts carry the transaction's sign and sum to its amount.
@@ -37,6 +62,26 @@ pub struct Split {
 const MAX_TAGS: usize = 12;
 
 const MAX_SPLITS: usize = 12;
+
+const MAX_PEOPLE: usize = 12;
+
+/// Drops repeats and checks each id's form; whether the person still exists is decided when
+/// the view is read, so deleting a person never rewrites annotations.
+fn normalize_people(people: Vec<String>) -> Result<Vec<String>, String> {
+    let mut normalized = Vec::<String>::new();
+    for id in people {
+        if !id.starts_with("person:") || id.len() > 64 || id.chars().any(char::is_control) {
+            return Err("Invalid person".into());
+        }
+        if !normalized.contains(&id) {
+            normalized.push(id);
+        }
+    }
+    if normalized.len() > MAX_PEOPLE {
+        return Err("Too many people".into());
+    }
+    Ok(normalized)
+}
 
 /// Trims, drops blanks and repeats, and bounds a transaction's tags.
 fn normalize_tags(tags: Vec<String>) -> Result<Vec<String>, String> {
@@ -81,12 +126,19 @@ impl Storage {
         &mut self,
         changes: BTreeMap<String, Annotation>,
         importing: bool,
-    ) -> Result<BTreeMap<String, Annotation>, String> {
+    ) -> Result<Saved, String> {
         if self.recovery.is_some() && importing {
-            return Ok(self.data.annotations.clone());
+            return Ok(Saved {
+                annotations: self.data.annotations.clone(),
+                previous: BTreeMap::new(),
+            });
         }
         self.ensure_writable()?;
         let mut next = self.data.annotations.clone();
+        let previous = changes
+            .keys()
+            .map(|id| (id.clone(), next.get(id).cloned().unwrap_or_default()))
+            .collect::<BTreeMap<_, _>>();
         for (id, change) in changes {
             if id.is_empty()
                 || id.len() > 200
@@ -113,13 +165,17 @@ impl Storage {
             {
                 entry.benefit_confirmed = change.benefit_confirmed;
             }
-            // Tags, splits, refund links, and whose money it is are set in the app, never imported.
+            // Tags, people, splits, refund links, whose money it is, and benefit assignments
+            // are set in the app, never imported.
             if importing {
                 continue;
             }
             if let Some(tags) = change.tags {
                 let tags = normalize_tags(tags)?;
                 entry.tags = (!tags.is_empty()).then_some(tags);
+            }
+            if let Some(people) = change.people {
+                entry.people = Some(normalize_people(people)?);
             }
             if let Some(splits) = change.splits {
                 if splits.is_empty() {
@@ -162,14 +218,89 @@ impl Storage {
             if let Some(other) = change.other {
                 entry.other = other.then_some(true);
             }
+            if let Some(note) = change.note {
+                let note = note.trim();
+                if note.chars().count() > MAX_NOTE_CHARS
+                    || note.chars().any(|c| c.is_control() && c != '\n')
+                {
+                    return Err("A note is too long".into());
+                }
+                entry.note = (!note.is_empty()).then(|| note.to_owned());
+            }
+            if change.clear_benefit {
+                entry.benefit_confirmed = None;
+                entry.benefit_id = None;
+            }
+            if let Some(benefit) = change.benefit_id {
+                if benefit.len() > 64
+                    || !benefit
+                        .chars()
+                        .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
+                {
+                    return Err("Invalid benefit".into());
+                }
+                entry.benefit_id = (!benefit.is_empty()).then_some(benefit);
+            }
         }
+        self.replace_annotations(next)?;
+        Ok(Saved {
+            annotations: self.data.annotations.clone(),
+            previous,
+        })
+    }
+
+    /// Puts back the annotations a save returned as `previous`, undoing that edit. Each entry
+    /// replaces the transaction's annotation whole; an empty one removes it.
+    pub fn restore_annotations(
+        &mut self,
+        previous: BTreeMap<String, Annotation>,
+    ) -> Result<BTreeMap<String, Annotation>, String> {
+        self.ensure_writable()?;
+        let mut next = self.data.annotations.clone();
+        for (id, annotation) in previous {
+            if id.is_empty() || id.len() > 200 {
+                return Err("Invalid transaction annotation".into());
+            }
+            let annotation = Annotation {
+                clear_benefit: false,
+                ..annotation
+            };
+            if annotation.splits.as_ref().is_some_and(|splits| {
+                !self
+                    .transaction_amount(&id)
+                    .is_some_and(|amount| splits_divide(splits, amount))
+            }) || annotation
+                .note
+                .as_ref()
+                .is_some_and(|note| note.chars().count() > MAX_NOTE_CHARS)
+                || annotation
+                    .tags
+                    .as_ref()
+                    .is_some_and(|tags| normalize_tags(tags.clone()).is_err())
+                || annotation
+                    .people
+                    .as_ref()
+                    .is_some_and(|people| normalize_people(people.clone()).is_err())
+            {
+                return Err("Invalid transaction annotation".into());
+            }
+            next.insert(id, annotation);
+        }
+        self.replace_annotations(next)?;
+        Ok(self.data.annotations.clone())
+    }
+
+    fn replace_annotations(
+        &mut self,
+        mut next: BTreeMap<String, Annotation>,
+    ) -> Result<(), String> {
         next.retain(|_, annotation| annotation != &Annotation::default());
         if next != self.data.annotations {
             self.backup_before_edit()?;
             self.database.replace_annotations(&next)?;
             self.data.annotations = next;
         }
-        Ok(self.data.annotations.clone())
+        Ok(())
     }
 
     fn transaction_amount(&self, id: &str) -> Option<f64> {

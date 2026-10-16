@@ -7,14 +7,17 @@ import {
   investmentMetrics,
   ReportMetric,
 } from '../components/account-metrics'
+import { AccountStatements } from '../components/account-statements'
 import { ActivityList } from '../components/activity-list'
 import { AllAccountsOverview } from '../components/all-accounts-overview'
 import { ChartRangeSelector, MonthlyBarChart, PerformanceChart } from '../components/charts'
 import { ValueHistoryEmptyState } from '../components/data-state'
 import { ExpectedActivity } from '../components/expected-activity'
-import { ChevronRight, Download } from '../components/icons'
+import { ExternalLink } from '../components/external-link'
+import { ArrowUpRight, ChevronRight, Download } from '../components/icons'
 import { PositionTable } from '../components/position-table'
 import { SalesTable } from '../components/sales-table'
+import { SettingsLink } from '../components/settings-dialog'
 import { SnapTradeReference } from '../components/snaptrade-reference'
 import {
   AnimatedCurrency,
@@ -29,15 +32,17 @@ import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
+import { balanceSheet } from '../lib/account-groups'
 import { accountDisplayName } from '../lib/account-names'
 import { accountStartDate } from '../lib/account-start-dates'
 import { accountTransactionSummary, rangeInvestmentFlows, sumKnown } from '../lib/account-summary'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { buildActivities } from '../lib/activity'
+import { openExternalUrl } from '../lib/api'
 import { buildChartEventGroups } from '../lib/chart-events'
 import { accountValueChart, withoutSpendingCardPoints } from '../lib/dashboard-account-views'
 import { financeSettings } from '../lib/finance-settings'
-import { formatCurrency, valueTone } from '../lib/format'
+import { formatCurrency, formatShares, formatShortDay, valueTone } from '../lib/format'
 import { chartPeriod } from '../lib/graph-preferences'
 import { buildLiveChartData } from '../lib/live-chart'
 import { getExternalLogosEnabled } from '../lib/logos'
@@ -48,6 +53,7 @@ import {
   buildSpendingView,
   sortTransactionsByRecency,
 } from '../lib/spending'
+import { reconciliationSummary, reviewCount } from '../lib/statement-import'
 
 // The figures an account shows before its Details disclosure.
 const primaryMetricCount = 4
@@ -59,13 +65,14 @@ export function AccountOverview({
   data,
   graphWindow,
   onGraphWindowChange,
-  excludedActivityAccountId,
+  spendingAccountIds = [],
 }: {
   account: Account
   data: FinanceSnapshot
   graphWindow: number
   onGraphWindowChange: (seconds: number) => void
-  excludedActivityAccountId?: string
+  /** Cards Money presents; All accounts lists them apart and leaves them out of its totals. */
+  spendingAccountIds?: string[]
 }) {
   const finance = useFinance()
   const committed = finance.data ?? data
@@ -74,6 +81,8 @@ export function AccountOverview({
   const expectedScrollRef = useViewportScroll<HTMLUListElement>(32)
   const live = useLiveFinance()
   const settings = financeSettings(committed)
+  const accountDetails = settings.accountDetails?.[account.id]
+  const website = accountDetails?.website
   const accountDisplayNames = settings.accountNames
   const accountStartDates = settings.accountStartDates
   const isCombined = account.id === 'all' || account.type === 'combined'
@@ -101,7 +110,6 @@ export function AccountOverview({
         committed.transactions.filter(
           ({ accountId }) => accountId && relatedAccountIds.has(accountId),
         ),
-        data.updatedAt,
       ),
     [committed.transactions, data.updatedAt, relatedAccountIds],
   )
@@ -131,11 +139,14 @@ export function AccountOverview({
         { updatedAt: committed.updatedAt, transactions, trades },
         accountDisplayNames,
         externalLogosEnabled,
-      ).filter(({ accountId }) => accountId !== excludedActivityAccountId),
+      ).filter(
+        ({ accountId }) => !isCombined || !accountId || !spendingAccountIds.includes(accountId),
+      ),
     [
       accountDisplayNames,
       committed.updatedAt,
-      excludedActivityAccountId,
+      spendingAccountIds,
+      isCombined,
       externalLogosEnabled,
       trades,
       transactions,
@@ -296,8 +307,20 @@ export function AccountOverview({
                 },
               },
             ] satisfies AppAction[])),
+        ...(website
+          ? ([
+              {
+                id: 'account.website.open',
+                title: `Open ${displayName}'s website`,
+                search: 'account website bank login manage online',
+                group: 'Actions',
+                scope: 'page',
+                run: () => void openExternalUrl(website).catch(() => undefined),
+              },
+            ] satisfies AppAction[])
+          : []),
       ],
-      [displayName, isCombined],
+      [displayName, isCombined, website],
     ),
   )
   const activityPreview = (
@@ -342,6 +365,9 @@ export function AccountOverview({
             {displayName}
             {incomplete ? ' · known USD balances only' : ''}
             {account.balanceSource === 'unavailable' ? ' · value unavailable' : ''}
+            {account.balanceSource === 'estimated' && account.balanceAsOf
+              ? ` · Est. since ${formatShortDay(account.balanceAsOf)}`
+              : ''}
           </h2>
           <div className="home-balance-value">
             <AnimatedCurrency className="hero-number" value={account.value} />
@@ -389,6 +415,12 @@ export function AccountOverview({
                 referenceIso={data.updatedAt}
                 startDate={startDate}
                 selectedWindow={graphWindow}
+                observedOn={account.observedOn}
+                estimatedAfter={
+                  account.balanceSource === 'estimated'
+                    ? (account.balanceAsOf ?? undefined)
+                    : undefined
+                }
               />
             ) : (
               <ValueHistoryEmptyState
@@ -432,15 +464,82 @@ export function AccountOverview({
           summary: transactionSummary,
           range: period,
           interest: data.insights?.interest.find(({ accountId }) => accountId === account.id),
+          apy: accountDetails?.apy,
         })
-  const primaryMetrics = metrics.slice(0, primaryMetricCount)
-  const moreMetrics = metrics.slice(primaryMetricCount)
+  // Statement reconciliation leads when something needs a look, and otherwise waits in Details.
+  const reconciled = committed.statementReconciliation?.find(
+    ({ accountId }) => accountId === account.id,
+  )
+  const statementMetric = reconciled ? (
+    <StatementMetric key="statements" reconciled={reconciled} />
+  ) : null
+  const toReview = reconciled ? reviewCount(reconciled) : 0
+  // A manual account's statement funds have no market price, so they lead its details rather
+  // than appear among holdings; how the value is reached follows them.
+  const positionMetrics = (account.statementPositions ?? []).map((position) => (
+    <Metric
+      key={`position:${position.name}`}
+      label={position.name}
+      value={
+        <>
+          {formatCurrency(position.value)}
+          <small className="metric-detail">
+            {formatShares(position.units)} units at {formatCurrency(position.price)} ·{' '}
+            {formatShortDay(position.pricedOn)}
+          </small>
+        </>
+      }
+    />
+  ))
+  const valuationMetric =
+    account.balanceSource === 'estimated' && account.balanceAsOf ? (
+      <Metric
+        key="valuation"
+        label="Valuation"
+        value={
+          <>
+            Est. since {formatShortDay(account.balanceAsOf)}
+            <small className="metric-detail">moved with the S&amp;P 500</small>
+          </>
+        }
+      />
+    ) : null
+  const withPositions = [
+    ...positionMetrics,
+    ...(valuationMetric ? [valuationMetric] : []),
+    ...metrics,
+  ]
+  const ordered = statementMetric
+    ? toReview
+      ? [statementMetric, ...withPositions]
+      : [...withPositions, statementMetric]
+    : withPositions
+  const primaryMetrics = ordered.slice(0, primaryMetricCount)
+  const moreMetrics = ordered.slice(primaryMetricCount)
 
-  // Investment and income figures across every account. Cash and stock totals are in "Made of".
+  // Spending cards belong to Money: All accounts lists them apart, outside its totals.
+  const listedAccounts = isCombined
+    ? data.accounts.filter(({ id }) => id !== 'all' && !spendingAccountIds.includes(id))
+    : []
+  const spendingCards = isCombined
+    ? data.accounts.filter(({ id }) => spendingAccountIds.includes(id))
+    : []
+  const sheet = balanceSheet(listedAccounts)
+  // What the accounts own and owe, then investment and income figures across every account.
+  // Group totals are in "Balances".
   const combinedDetails = isCombined ? (
     <Card className="account-overview-summary-card">
       <SectionHeading title="Account details" />
       <div className="account-summary-metrics">
+        <Metric
+          label={sheet.complete ? 'Assets' : 'Known assets'}
+          value={formatCurrency(sheet.assets)}
+        />
+        <Metric
+          label={sheet.complete ? 'Liabilities' : 'Known liabilities'}
+          value={formatCurrency(sheet.liabilities)}
+          tone={sheet.liabilities < 0 ? 'negative' : undefined}
+        />
         <ReportMetric
           chart="interest"
           label="Interest"
@@ -473,10 +572,8 @@ export function AccountOverview({
     return (
       <AllAccountsOverview
         data={committed}
-        // The saved spending card belongs to Money; Accounts lists everything else.
-        accounts={data.accounts.filter(
-          ({ id }) => id !== 'all' && id !== excludedActivityAccountId,
-        )}
+        accounts={listedAccounts}
+        spendingCards={spendingCards}
         graphWindow={graphWindow}
         chartCard={chartCard}
         activityPreview={activityPreview}
@@ -493,9 +590,25 @@ export function AccountOverview({
           <SectionHeading
             title="Account details"
             detail={
-              [account.officialName, account.holderCategory === 'business' ? 'Business' : '']
+              [
+                account.officialName,
+                account.holderCategory === 'business' ? 'Business' : '',
+                spendingAccountIds.includes(account.id) ? 'Spending card, not in totals' : '',
+              ]
                 .filter(Boolean)
                 .join(' · ') || undefined
+            }
+            action={
+              accountDetails?.website ? (
+                <ExternalLink
+                  className="section-heading-link"
+                  href={accountDetails.website}
+                  data-command="account.website.open"
+                >
+                  Website
+                  <ArrowUpRight size={12} aria-hidden="true" />
+                </ExternalLink>
+              ) : undefined
             }
           />
           <div className="account-summary-metrics">{primaryMetrics}</div>
@@ -507,6 +620,7 @@ export function AccountOverview({
               <div className="account-summary-metrics">{moreMetrics}</div>
             </details>
           ) : null}
+          <AccountStatements accountId={account.id} />
         </Card>
       </div>
 
@@ -549,5 +663,25 @@ export function AccountOverview({
         ) : null}
       </div>
     </div>
+  )
+}
+
+/** How the account's imported statements compare with Plaid; opens Statement history. */
+function StatementMetric({
+  reconciled,
+}: {
+  reconciled: NonNullable<FinanceSnapshot['statementReconciliation']>[number]
+}) {
+  const { headline, detail, review } = reconciliationSummary(reconciled)
+  return (
+    <Metric
+      label="Statements"
+      value={
+        <SettingsLink target="statement-history" className={review ? 'warning' : undefined}>
+          {headline}
+          <small className="metric-detail">{detail}</small>
+        </SettingsLink>
+      }
+    />
   )
 }

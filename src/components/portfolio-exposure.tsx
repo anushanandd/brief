@@ -1,9 +1,9 @@
-import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
+import { usePortfolioSectors } from '../hooks/use-portfolio-sectors'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { getPortfolioSectors, isTauri } from '../lib/api'
+import { isTauri } from '../lib/api'
 import { formatCurrency, formatShare } from '../lib/format'
 import type { FinanceSnapshot } from '../lib/schema'
 import { RankedBars } from './ranked-bars'
@@ -38,13 +38,7 @@ export function PortfolioExposure({ data }: { data: FinanceSnapshot }) {
   const [view, setView] = useState<View>('holding')
   useRegisterActions(useMemo(() => exposureActions(setView), []))
   const allocation = data.insights?.allocation
-  const sectors = useQuery({
-    queryKey: ['portfolio-sectors', data.revision],
-    queryFn: getPortfolioSectors,
-    enabled: native && Boolean(allocation),
-    staleTime: 60 * 60_000,
-    retry: false,
-  })
+  const sectors = usePortfolioSectors(data, Boolean(allocation))
   if (!allocation)
     return (
       <Card className="portfolio-card">

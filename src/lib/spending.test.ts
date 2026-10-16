@@ -2,16 +2,14 @@ import { describe, expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
 import { benefitWindow } from '../data/fixtures/insights'
-import type { Account, BenefitActivity, BenefitOutcome, BenefitWindow, Transaction } from './schema'
+import type { Account, BenefitWindow, Transaction } from './schema'
 import {
   allSpendingAccounts,
   buildMonthlySpendingHistory,
   buildSpendingBars,
-  benefitWindowSummary,
   benefitsToUseFirst,
   buildSpendingView,
   formatActivityDate,
-  platinumCreditSummary,
   resolveSpendingAccount,
   sortTransactionsByRecency,
   spendingCategoryColor,
@@ -32,38 +30,6 @@ const transaction = (overrides: Partial<Transaction>): Transaction => ({
   account: 'Platinum Card',
   classification: classification('expense'),
   pending: false,
-  ...overrides,
-})
-
-const benefitActivity = (
-  id: string,
-  date: string,
-  amount: number,
-  kind: BenefitActivity['kind'],
-  pending = false,
-): BenefitActivity => ({
-  id,
-  merchant: 'Synthetic credit',
-  amount,
-  pending,
-  date,
-  benefitId: 'resy',
-  benefitName: 'Resy',
-  kind,
-})
-
-const outcome = (
-  benefitId: string,
-  windowEnd: string,
-  overrides: Partial<BenefitOutcome> = {},
-): BenefitOutcome => ({
-  windowEnd,
-  benefitId,
-  state: 'settled',
-  unused: 0,
-  unusedHigh: 0,
-  engaged: true,
-  verdict: 'missed',
   ...overrides,
 })
 
@@ -401,12 +367,7 @@ describe('spending view', () => {
     expect(view.previousTotal).toBe(50)
     expect(view.percentChange).toBe(150)
     expect(view.trend.map(({ current }) => current)).toEqual([100, 125, 85])
-    expect(
-      buildSpendingBars(view.transactions, '2026-09-03T12:00:00Z', view.start, view.end, 1).slice(
-        0,
-        3,
-      ),
-    ).toEqual([
+    expect(buildSpendingBars(view.transactions, view.start, view.end, 1).slice(0, 3)).toEqual([
       {
         from: '2026-09-01',
         to: '2026-09-01',
@@ -454,78 +415,12 @@ describe('spending view', () => {
     )
 
     expect(view.total).toBe(30)
-    expect(
-      buildSpendingBars(view.transactions, '2026-09-03T12:00:00Z', view.start, view.end, 1)[0],
-    ).toMatchObject({
+    expect(buildSpendingBars(view.transactions, view.start, view.end, 1)[0]).toMatchObject({
       value: 20,
       categories: [
         { name: 'Credits', value: -10, activities: [{ id: 'spending:credit', value: 10 }] },
         { name: 'Shopping', value: 30, activities: [{ id: 'spending:spend', value: 30 }] },
       ],
-    })
-  })
-
-  it('sums native credit evidence and expired allowances in cents within a range', () => {
-    const benefits = {
-      accountId: 'card',
-      product: 'amex-platinum',
-      productName: 'American Express Platinum',
-      windows: [],
-      useFirst: [],
-      activity: [
-        benefitActivity('credit', '2026-08-02', 10.1, 'credit'),
-        benefitActivity('reversal', '2026-08-03', -0.2, 'reversal'),
-        benefitActivity('pending', '2026-08-04', 50, 'credit', true),
-        benefitActivity('purchase', '2026-08-05', -80, 'purchase'),
-        benefitActivity('outside', '2026-09-02', 70, 'credit'),
-      ],
-      outcomes: [
-        outcome('resy', '2026-08-31', { unused: 39.9, unusedHigh: 89.9 }),
-        outcome('lululemon', '2026-08-31', {
-          unused: 75,
-          unusedHigh: 75,
-          engaged: false,
-          verdict: 'unclaimed',
-        }),
-        outcome('hotel', '2026-08-31', {
-          state: 'settling',
-          unused: null,
-          unusedHigh: null,
-          verdict: 'settling',
-        }),
-        outcome('clear', '2026-08-31', {
-          state: 'partial-history',
-          unused: null,
-          unusedHigh: null,
-          verdict: 'unknown',
-        }),
-        outcome('walmart-plus', '2026-08-31', {
-          state: 'not-tracked',
-          unused: null,
-          unusedHigh: null,
-          verdict: undefined,
-        }),
-        outcome('oura', '2026-08-31', { unused: 0.1, unusedHigh: 0.1 }),
-        outcome('resy', '2026-09-30', { unused: 100, unusedHigh: 100 }),
-      ],
-    }
-    expect(platinumCreditSummary(benefits, '2026-08-01', '2026-08-31')).toEqual({
-      earned: 9.9,
-      missed: { low: 40, high: 90 },
-      unclaimed: 75,
-      settling: 1,
-      unknown: 1,
-    })
-    // Hidden benefits leave every total.
-    expect(
-      platinumCreditSummary(benefits, '2026-08-01', '2026-08-31', ['resy', 'lululemon']).missed,
-    ).toEqual({ low: 0.1, high: 0.1 })
-    expect(platinumCreditSummary(undefined, '2026-08-01', '2026-08-31')).toEqual({
-      earned: 0,
-      missed: { low: 0, high: 0 },
-      unclaimed: 0,
-      settling: 0,
-      unknown: 0,
     })
   })
 
@@ -591,26 +486,23 @@ describe('spending view', () => {
     expect(view.total).toBe(25)
   })
 
-  it('resolves short statement dates relative to the snapshot year', () => {
-    expect(transactionDateKey('Aug 31', '2026-09-03T12:00:00Z')).toBe('2026-08-31')
-    expect(transactionDateKey('Dec 31', '2026-01-03T12:00:00Z')).toBe('2025-12-31')
+  it('keys a transaction by its ISO date, or an instant by its UTC day', () => {
+    expect(transactionDateKey('2026-08-31')).toBe('2026-08-31')
+    expect(transactionDateKey('2026-08-31T23:30:00-07:00')).toBe('2026-08-31')
+    expect(transactionDateKey('Tue, 1 Sep 2026 23:30:00 -0700')).toBe('2026-09-02')
+    expect(transactionDateKey('unknown')).toBe('')
   })
 
   it('formats activity dates with the year last', () => {
-    const reference = '2026-09-08T12:00:00Z'
-    expect(formatActivityDate('2026-09-05', reference)).toBe('Sep 5, 2026')
-    expect(formatActivityDate('Sep 5', reference)).toBe('Sep 5, 2026')
+    expect(formatActivityDate('2026-09-05')).toBe('Sep 5, 2026')
   })
 
   it('sorts recent transactions across statement months', () => {
-    const sorted = sortTransactionsByRecency(
-      [
-        transaction({ id: 'july', date: '2026-07-30' }),
-        transaction({ id: 'september', date: '2026-09-01' }),
-        transaction({ id: 'august', date: 'Aug 31' }),
-      ],
-      '2026-09-03T12:00:00Z',
-    )
+    const sorted = sortTransactionsByRecency([
+      transaction({ id: 'july', date: '2026-07-30' }),
+      transaction({ id: 'september', date: '2026-09-01' }),
+      transaction({ id: 'august', date: '2026-08-31' }),
+    ])
 
     expect(sorted.map(({ id }) => id)).toEqual(['september', 'august', 'july'])
   })
@@ -631,47 +523,7 @@ const monthlyWindow = (id: string, overrides: Partial<BenefitWindow>) =>
     ...overrides,
   })
 
-describe('benefitWindowSummary', () => {
-  it('sums current windows as ranges and points at the soonest reset with credit left', () => {
-    expect(
-      benefitWindowSummary([
-        monthlyWindow('dining', {
-          creditedAmount: 7.5,
-          remainingAmount: 2.5,
-          remainingRange: { low: 2.5, high: 2.5 },
-          awaitingCreditAmount: 2.5,
-        }),
-        monthlyWindow('hotel', {
-          cadence: 'semiannual',
-          remainingAmount: 300,
-          remainingRange: { low: 300, high: 300 },
-          windowEnd: '2026-12-31',
-          reset: 'Dec 31',
-          daysRemaining: 108,
-        }),
-        monthlyWindow('used', {
-          creditedAmount: 10,
-          remainingAmount: 0,
-          remainingRange: { low: 0, high: 0 },
-          windowEnd: '2026-09-15',
-        }),
-        monthlyWindow('renewal', { cadence: 'renewal', creditedAmount: 99, remainingAmount: 50 }),
-        monthlyWindow('uncertain', {
-          periodUncertain: true,
-          creditedAmount: 40,
-          remainingAmount: null,
-          remainingRange: { low: 0, high: 40 },
-        }),
-        monthlyWindow('untracked', { remainingAmount: null, remainingRange: undefined }),
-      ]),
-    ).toEqual({
-      captured: 57.5,
-      remaining: { low: 302.5, high: 342.5 },
-      awaiting: 2.5,
-      nextReset: { label: 'Sep 30', daysRemaining: 16 },
-    })
-  })
-
+describe('benefits to use first', () => {
   it("lists benefits to use first in Rust's order", () => {
     // Rust orders them; a hidden benefit (here `hidden`) is left out of what is shown.
     const ordered = benefitsToUseFirst(

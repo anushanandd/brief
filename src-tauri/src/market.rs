@@ -28,7 +28,7 @@ pub(crate) fn get_saved_market(state: State<'_, AppState>) -> Result<Option<Valu
     let Some(market) = state.startup_market.load(&storage.data.snapshot) else {
         return Ok(None);
     };
-    let mut response = market_payload(&storage.data.snapshot, &market)?;
+    let mut response = market_payload(&storage.data.snapshot, &storage.data.settings, &market)?;
     response["cached"] = true.into();
     Ok(Some(response))
 }
@@ -40,15 +40,30 @@ fn json(value: impl serde::Serialize) -> Result<Value, String> {
 /// Quotes with the committed snapshot repriced at them and the chart points they make.
 fn market_payload(
     snapshot: &Snapshot,
+    settings: &crate::settings::FinanceSettings,
     market: &providers::MarketSnapshots,
 ) -> Result<Value, String> {
     let mut response = json(market)?;
-    response["projection"] = json(financial_engine::apply_market_snapshots(
-        snapshot,
-        &market.snapshots,
-    )?)?;
-    response["chartSeries"] = json(market_chart_series(snapshot, market)?)?;
+    response["projection"] = json(project(snapshot, settings, &market.snapshots, false)?)?;
+    response["chartSeries"] = json(market_chart_series(snapshot, settings, market)?)?;
     Ok(response)
+}
+
+/// The committed valuation at these quotes, with the user's closed and manual accounts
+/// applied as the view applies them, so live totals agree with saved ones.
+fn project(
+    snapshot: &Snapshot,
+    settings: &crate::settings::FinanceSettings,
+    quotes: &BTreeMap<String, providers::MarketSnapshot>,
+    historical: bool,
+) -> Result<MarketProjection, String> {
+    let mut projection = if historical {
+        financial_engine::apply_historical_market_snapshots(snapshot, quotes)?
+    } else {
+        financial_engine::apply_market_snapshots(snapshot, quotes)?
+    };
+    financial_engine::manual::adjust_projection(&mut projection, snapshot, settings);
+    Ok(projection)
 }
 
 fn market_chart_values(projection: &MarketProjection, time: i64) -> BTreeMap<String, Value> {
@@ -73,6 +88,7 @@ fn market_chart_values(projection: &MarketProjection, time: i64) -> BTreeMap<Str
 
 fn market_chart_series(
     snapshot: &Snapshot,
+    settings: &crate::settings::FinanceSettings,
     market: &providers::MarketSnapshots,
 ) -> Result<BTreeMap<String, Vec<Value>>, String> {
     let close_time = market
@@ -98,7 +114,7 @@ fn market_chart_series(
                 (symbol.clone(), previous)
             })
             .collect::<BTreeMap<_, _>>();
-        let projection = financial_engine::apply_historical_market_snapshots(snapshot, &closes)?;
+        let projection = project(snapshot, settings, &closes, true)?;
         for (id, point) in market_chart_values(&projection, as_of.timestamp()) {
             series.entry(id).or_default().push(point);
         }
@@ -110,7 +126,7 @@ fn market_chart_series(
         .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
         .filter(|as_of| close_time.is_none_or(|close| *as_of > close))
     {
-        let projection = financial_engine::apply_market_snapshots(snapshot, &market.snapshots)?;
+        let projection = project(snapshot, settings, &market.snapshots, false)?;
         for (id, point) in market_chart_values(&projection, as_of.timestamp()) {
             series.entry(id).or_default().push(point);
         }
@@ -162,7 +178,7 @@ pub(crate) async fn start_market_stream(
     let response = {
         let storage = state.storage()?;
         state.startup_market.save(&storage.data.snapshot, &market);
-        market_payload(&storage.data.snapshot, &market)?
+        market_payload(&storage.data.snapshot, &storage.data.settings, &market)?
     };
     updates
         .send(serde_json::json!({"kind": "update", "market": response}))
@@ -186,15 +202,12 @@ pub(crate) async fn start_market_stream(
                 }
                 let storage = state.storage()?;
                 let committed = &storage.data.snapshot;
-                let projection =
-                    financial_engine::apply_market_snapshots(committed, &tick.market.snapshots)?;
+                let settings = &storage.data.settings;
+                let projection = project(committed, settings, &tick.market.snapshots, false)?;
                 let chart_point = if let (Some(as_of), Some(chart_snapshots)) =
                     (tick.chart_as_of, tick.chart_snapshots)
                 {
-                    let chart_projection = financial_engine::apply_historical_market_snapshots(
-                        committed,
-                        &chart_snapshots,
-                    )?;
+                    let chart_projection = project(committed, settings, &chart_snapshots, true)?;
                     DateTime::parse_from_rfc3339(&as_of)
                         .ok()
                         .map(|time| market_chart_values(&chart_projection, time.timestamp()))

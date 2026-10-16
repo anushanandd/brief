@@ -7,7 +7,7 @@ import {
 } from './graph-preferences'
 
 /**
- * Investments follows the app's chart period (W, M, Q, Y, A), shared with Today and Accounts for
+ * Investments follows the app's chart period (W, M, Q, Y, A), shared with Home and Accounts for
  * the session. Each period is one of the returns windows Rust computes.
  */
 const DAY = 86_400

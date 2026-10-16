@@ -1,3 +1,4 @@
+import { googleMapsUrl } from './places'
 import type { FinanceSnapshot, Transaction } from './schema'
 
 const byRecency = (left: Transaction, right: Transaction) =>
@@ -36,14 +37,7 @@ export function transactionDetail(data: FinanceSnapshot, activityId: string, lim
     historyCount: history.length,
     benefits: (data.insights?.benefits?.activity ?? []).filter((item) => item.id === id),
     categoryOrigin:
-      transaction.categorySource === 'manual'
-        ? ('manual' as const)
-        : transaction.categorySource === 'rule'
-          ? ('rule' as const)
-          : ('provider' as const),
-    rule: transaction.ruleId
-      ? data.rules?.find((candidate) => candidate.id === transaction.ruleId)
-      : undefined,
+      transaction.categorySource === 'manual' ? ('manual' as const) : ('provider' as const),
     ...transactionFlags(data, id),
   }
 }
@@ -66,13 +60,13 @@ export function transactionFlags(data: FinanceSnapshot, id: string) {
   }
 }
 /**
- * Opens the place in Apple Maps, at its coordinates when the bank reported them; nothing is
- * sent until the person follows the link.
+ * Opens the bank's location in Google Maps: a pin at its coordinates when the bank reported
+ * them, otherwise a search. Nothing is sent until the person follows the link.
  */
 export function mapsUrl(address: string, coordinates?: { lat?: number; lon?: number }) {
   if (coordinates?.lat != null && coordinates.lon != null)
-    return `https://maps.apple.com/?ll=${coordinates.lat},${coordinates.lon}&q=${encodeURIComponent(address)}`
-  return `https://maps.apple.com/?q=${encodeURIComponent(address)}`
+    return googleMapsUrl(`${coordinates.lat},${coordinates.lon}`)
+  return googleMapsUrl(address)
 }
 
 /** Categories already in use, for choosing one; the current category is always offered. */

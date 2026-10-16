@@ -116,7 +116,7 @@ export function CommandMenu({
   const activityMatches = searchesActivity
     ? activities.filter(
         (activity) =>
-          activityMatchesChips(activity, chips, referenceIso) &&
+          activityMatchesChips(activity, chips) &&
           (!textSearch || activityMatchesSearch(activity, trimmedQuery)),
       )
     : []
@@ -473,7 +473,13 @@ export function CommandMenu({
               {ask.answer ? (
                 <div className="command-answer">
                   <strong>Brief</strong>
-                  <p>{ask.answer.text}</p>
+                  <p data-outcome={ask.answer.outcome}>{ask.answer.text}</p>
+                  {ask.answer.unverified.length ? (
+                    <small className="command-unverified">
+                      Not in the figures it looked up:{' '}
+                      <span className="sensitive-value">{ask.answer.unverified.join(', ')}</span>
+                    </small>
+                  ) : null}
                   {ask.answer.evidence.length ? (
                     <section className="command-evidence" aria-label="Figures behind this answer">
                       <h3>Based on</h3>
@@ -503,7 +509,7 @@ export function CommandMenu({
                                 )
                               }
                             >
-                              {pinned ? 'Pinned to Today' : 'Pin to Today'}
+                              {pinned ? 'Pinned to Home' : 'Pin to Home'}
                             </button>
                           </details>
                         )

@@ -11,10 +11,11 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
 
-use super::calendar::{self, Zone};
+use super::calendar;
 use crate::finance_contract::Transaction;
-use crate::finance_contract::TransactionLocation;
+use crate::merchants;
 use crate::numeric::{median, minor_units};
+use crate::places::{self, Place};
 use crate::transaction_policy::Kind;
 
 /// A region with purchases on at least this share of days, in at least `HOME_MONTHS`
@@ -29,6 +30,8 @@ const GAP_DAYS: i64 = 3;
 /// Beyond this distance from home a purchase is away, whatever its region.
 const AWAY_KM: f64 = 160.0;
 const HISTORY_DAYS: i64 = 730;
+/// Farther than this from home, a trip was most likely flown.
+const FLIGHT_KM: f64 = 800.0;
 const TOP_CATEGORIES: usize = 3;
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
@@ -39,12 +42,26 @@ pub struct TripCategory {
     pub amount: f64,
 }
 
+/// One calendar day of a trip, including the days without a purchase.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TripDay {
+    pub date: NaiveDate,
+    /// Net spending that day, negative; zero on a day without a purchase.
+    pub spent: f64,
+    pub purchases: u32,
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct Trip {
     pub id: String,
     pub start: NaiveDate,
     pub end: NaiveDate,
+    /// Every day from `start` to `end`, in order.
+    pub days: Vec<TripDay>,
+    /// `total` over the trip's days, negative, to the cent.
+    pub per_day: f64,
     /// The most frequent city and region of the away purchases, or the country abroad.
     pub destination: String,
     pub abroad: bool,
@@ -54,6 +71,31 @@ pub struct Trip {
     pub transaction_ids: Vec<String>,
     /// The latest located purchase is still away from home.
     pub ongoing: bool,
+    /// Most likely flown: abroad, far from home, or with an airline or airport charge on its days.
+    pub flew: bool,
+    /// Each city the away purchases were made in, most purchases first, in the order of the
+    /// first visit when tied.
+    pub stops: Vec<TripStop>,
+    /// Who went, by person id, as saved by hand.
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub companions: Vec<String>,
+}
+
+/// A city a trip's purchases were made in, at its centre or the bank's coordinates.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TripStop {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub city: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
+    pub country: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lat: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub lon: Option<f64>,
+    pub purchases: u32,
+    pub first: NaiveDate,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]
@@ -65,28 +107,13 @@ pub struct Trips {
     pub home: Vec<String>,
 }
 
-fn region_key(location: &TransactionLocation) -> Option<String> {
-    let region = location.region.as_deref()?.trim().to_ascii_uppercase();
-    let country = location
-        .country
-        .as_deref()
-        .unwrap_or("US")
-        .trim()
-        .to_ascii_uppercase();
-    (!region.is_empty()).then(|| format!("{region}, {country}"))
+fn region_key(place: &Place) -> Option<String> {
+    let region = place.region.as_deref()?.trim();
+    (!region.is_empty()).then(|| format!("{region}, {}", place.country))
 }
 
-fn country(location: &TransactionLocation) -> String {
-    location
-        .country
-        .as_deref()
-        .unwrap_or("US")
-        .trim()
-        .to_ascii_uppercase()
-}
-
-fn coordinates(location: &TransactionLocation) -> Option<(f64, f64)> {
-    location.lat.zip(location.lon)
+fn coordinates(place: &Place) -> Option<(f64, f64)> {
+    place.coordinates()
 }
 
 /// Great-circle distance in kilometres.
@@ -105,49 +132,61 @@ struct Home {
 }
 
 impl Home {
-    fn away(&self, location: &TransactionLocation) -> Option<bool> {
-        if let (Some(here), Some(centre)) = (coordinates(location), self.centre) {
+    fn away(&self, place: &Place) -> Option<bool> {
+        if let (Some(here), Some(centre)) = (coordinates(place), self.centre) {
             return Some(distance_km(here, centre) > AWAY_KM);
         }
-        if country(location) != self.country && location.country.is_some() {
+        if place.country != self.country {
             return Some(true);
         }
-        region_key(location).map(|region| !self.regions.contains(&region))
+        region_key(place).map(|region| !self.regions.contains(&region))
     }
 }
 
-fn in_store(transaction: &Transaction) -> bool {
-    transaction.payment_channel.as_deref() == Some("in store")
+/// Whether a purchase shows where the cardholder was: made in person, as `merchants` decides.
+/// Airlines bill from their headquarters, and a descriptor with a web address names the
+/// merchant's site.
+fn presence(transaction: &Transaction) -> bool {
+    transaction
+        .presence
+        .or_else(|| merchants::presence(transaction))
+        == Some(merchants::Presence::InPerson)
 }
 
+/// Everything bought on the trip, including purchases made for someone else, since where they
+/// were made shows where the cardholder was.
 fn spending(transaction: &Transaction) -> bool {
-    matches!(
-        transaction.kind(),
-        Some(Kind::Expense | Kind::Reimbursement)
-    )
+    transaction.classification.as_ref().is_some_and(|value| {
+        matches!(value.kind, Kind::Expense | Kind::Reimbursement)
+            || (value.kind == Kind::Owed && value.others_spending)
+    })
 }
 
-pub fn trips(
-    transactions: &[Transaction],
-    reference: &str,
-    today: NaiveDate,
-    zone: &dyn Zone,
-) -> Trips {
+pub fn trips(transactions: &[Transaction], today: NaiveDate) -> Trips {
     let dated = transactions
         .iter()
         .filter(|transaction| spending(transaction))
         .filter_map(|transaction| {
-            let date = calendar::transaction_date(&transaction.date, reference, zone)?;
+            let date = calendar::transaction_date(&transaction.date)?;
             (date > today - Duration::days(HISTORY_DAYS) && date <= today)
                 .then_some((date, transaction))
         })
         .collect::<Vec<_>>();
+    // The descriptor's place first, then the provider's: see `places`.
+    let resolved = dated
+        .iter()
+        .map(|(_, transaction)| {
+            transaction
+                .place
+                .clone()
+                .or_else(|| places::resolve(transaction))
+        })
+        .collect::<Vec<_>>();
     let located = dated
         .iter()
-        .filter(|(_, transaction)| in_store(transaction))
-        .filter_map(|(date, transaction)| {
-            Some((*date, *transaction, transaction.location.as_ref()?))
-        })
+        .zip(&resolved)
+        .filter(|((_, transaction), _)| presence(transaction))
+        .filter_map(|((date, transaction), place)| Some((*date, *transaction, place.as_ref()?)))
         .collect::<Vec<_>>();
 
     let Some(home) = infer_home(&located, today) else {
@@ -180,7 +219,7 @@ pub fn trips(
 }
 
 /// A dated in-store purchase and where it was made.
-type Located<'a> = (NaiveDate, &'a Transaction, &'a TransactionLocation);
+type Located<'a> = (NaiveDate, &'a Transaction, &'a Place);
 
 /// Home from recent in-store purchases: the region with the most purchase days, and any other
 /// region visited often enough over enough months, with the main region's country and centre.
@@ -227,7 +266,7 @@ fn infer_home(located: &[Located<'_>], today: NaiveDate) -> Option<Home> {
     let main_country = recent
         .iter()
         .find(|(_, region, _)| region == main)
-        .map(|(_, _, location)| country(location))
+        .map(|(_, _, place)| place.country.clone())
         .unwrap_or_else(|| "US".into());
     let (mut lats, mut lons): (Vec<f64>, Vec<f64>) = recent
         .iter()
@@ -246,11 +285,11 @@ fn infer_home(located: &[Located<'_>], today: NaiveDate) -> Option<Home> {
 /// Away purchases grouped into runs: a long gap or a later day back home ends a run. Returns
 /// whether the last run is still going.
 fn away_runs<'a>(
-    marks: &[(NaiveDate, &'a Transaction, &'a TransactionLocation, bool)],
+    marks: &[(NaiveDate, &'a Transaction, &'a Place, bool)],
 ) -> (Vec<Vec<Located<'a>>>, bool) {
     let mut runs: Vec<Vec<Located<'a>>> = Vec::new();
     let mut current: Vec<Located<'a>> = Vec::new();
-    for (date, transaction, location, away) in marks {
+    for (index, (date, transaction, place, away)) in marks.iter().enumerate() {
         if *away {
             if current
                 .last()
@@ -258,10 +297,17 @@ fn away_runs<'a>(
             {
                 runs.push(std::mem::take(&mut current));
             }
-            current.push((*date, transaction, location));
-        } else if current.last().is_some_and(|(last, _, _)| date > last) {
-            // Back home on a later day ends the trip; a home purchase the same day doesn't.
-            runs.push(std::mem::take(&mut current));
+            current.push((*date, transaction, place));
+        } else if let Some((last, _, _)) = current.last().filter(|(last, _, _)| date > last) {
+            // Back home on a later day ends the trip; a home purchase the same day doesn't, and
+            // neither does a lone one between away purchases a few days apart, which is an
+            // online merchant reporting its headquarters.
+            let resumes = marks
+                .get(index + 1)
+                .is_some_and(|(next, _, _, away)| *away && (*next - *last).num_days() <= GAP_DAYS);
+            if !resumes {
+                runs.push(std::mem::take(&mut current));
+            }
         }
     }
     let ongoing_run = !current.is_empty();
@@ -285,10 +331,11 @@ fn trip(
         .map(|(_, transaction, _)| transaction.id.clone())
         .collect::<BTreeSet<_>>();
     for (date, transaction) in dated {
-        let placeless = transaction.location.is_none() && !in_store(transaction);
+        // Travel and transport bought online (rides, hotels billed online) belong to the trip
+        // on its days; their descriptors name the merchant's headquarters, not where it was.
         if *date >= start
             && *date <= end
-            && placeless
+            && !presence(transaction)
             && matches!(transaction.category.as_str(), "Travel" | "Transport")
         {
             ids.insert(transaction.id.clone());
@@ -297,15 +344,33 @@ fn trip(
     let members = dated
         .iter()
         .filter(|(_, transaction)| ids.contains(&transaction.id))
-        .map(|(_, transaction)| *transaction)
+        .map(|(date, transaction)| (*date, *transaction))
         .collect::<Vec<_>>();
     let mut by_category = BTreeMap::<String, i64>::new();
-    for transaction in &members {
+    let mut by_day = BTreeMap::<NaiveDate, (i64, u32)>::new();
+    for (date, transaction) in &members {
+        let day = by_day.entry(*date).or_default();
+        day.1 += 1;
         for (category, amount) in transaction.parts() {
-            *by_category.entry(category.to_owned()).or_default() += minor_units(amount);
+            let cents = minor_units(amount);
+            *by_category.entry(category.to_owned()).or_default() += cents;
+            day.0 += cents;
         }
     }
     let total = by_category.values().sum::<i64>();
+    let day_count = (end - start).num_days() + 1;
+    let days = (0..day_count)
+        .map(|offset| {
+            let date = start + Duration::days(offset);
+            let (spent, purchases) = by_day.get(&date).copied().unwrap_or_default();
+            TripDay {
+                date,
+                spent: spent as f64 / 100.0,
+                purchases,
+            }
+        })
+        .collect::<Vec<_>>();
+    let per_day = (total as f64 / day_count as f64).round() / 100.0;
     let mut categories = by_category
         .into_iter()
         .filter(|(_, amount)| *amount < 0)
@@ -313,15 +378,37 @@ fn trip(
     categories.sort_by(|left, right| left.1.cmp(&right.1).then(left.0.cmp(&right.0)));
     let abroad = run
         .iter()
-        .any(|(_, _, location)| location.country.is_some() && country(location) != home.country);
+        .any(|(_, _, place)| place.country != home.country);
+    let far = home.centre.is_some_and(|centre| {
+        run.iter()
+            .filter_map(|(_, _, location)| coordinates(location))
+            .any(|place| distance_km(place, centre) > FLIGHT_KM)
+    });
+    // Bag and seat fees post on the travel days; tickets, bought weeks ahead, don't count.
+    let airline = dated.iter().any(|(date, transaction)| {
+        *date >= start - Duration::days(1)
+            && *date <= end + Duration::days(1)
+            && transaction
+                .category_detail
+                .as_deref()
+                .is_some_and(|code| code.starts_with("TRAVEL_FLIGHTS"))
+    });
+    let at_airport = run.iter().any(|(_, transaction, _)| {
+        transaction
+            .location
+            .as_ref()
+            .and_then(|location| location.address.as_deref())
+            .is_some_and(|address| address.to_ascii_lowercase().contains("airport"))
+    });
+    let flew = abroad || far || airline || at_airport;
     let mut places = BTreeMap::<String, usize>::new();
     for (_, _, location) in run {
         let place = if abroad {
             location
                 .city
                 .clone()
-                .map(|city| format!("{city}, {}", country(location)))
-                .unwrap_or_else(|| country(location))
+                .map(|city| format!("{city}, {}", location.country))
+                .unwrap_or_else(|| location.country.clone())
         } else {
             match (&location.city, &location.region) {
                 (Some(city), Some(region)) => format!("{city}, {region}"),
@@ -337,10 +424,36 @@ fn trip(
         .max_by(|left, right| left.1.cmp(right.1).then(right.0.cmp(left.0)))
         .map(|(place, _)| place.clone())
         .unwrap_or_else(|| "Away".into());
+    let mut stops = Vec::<TripStop>::new();
+    for (date, _, place) in run {
+        let same = |stop: &TripStop| {
+            stop.city == place.city && stop.region == place.region && stop.country == place.country
+        };
+        match stops.iter_mut().find(|stop| same(stop)) {
+            Some(stop) => stop.purchases += 1,
+            None => stops.push(TripStop {
+                city: place.city.clone(),
+                region: place.region.clone(),
+                country: place.country.clone(),
+                lat: place.lat,
+                lon: place.lon,
+                purchases: 1,
+                first: *date,
+            }),
+        }
+    }
+    stops.sort_by(|left, right| {
+        right
+            .purchases
+            .cmp(&left.purchases)
+            .then(left.first.cmp(&right.first))
+    });
     Trip {
         id: format!("trip:{start}:{end}"),
         start,
         end,
+        days,
+        per_day,
         destination,
         abroad,
         total: total as f64 / 100.0,
@@ -354,6 +467,9 @@ fn trip(
             .collect(),
         transaction_ids: ids.into_iter().collect(),
         ongoing,
+        flew,
+        stops,
+        companions: Vec::new(),
     }
 }
 
@@ -362,9 +478,6 @@ mod tests {
     use serde_json::{json, Value};
 
     use super::*;
-    use crate::insights::calendar::NamedZone;
-
-    const REFERENCE: &str = "2026-09-20T12:00:00Z";
 
     fn day(value: &str) -> NaiveDate {
         NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap()
@@ -444,7 +557,7 @@ mod tests {
             // One purchase passing through is not a trip.
             purchase("gas", "2026-09-12", -45.0, "Transport", at("Fresno", "CA")),
         ]);
-        let result = trips(&transactions, REFERENCE, day("2026-09-20"), &NamedZone::Utc);
+        let result = trips(&transactions, day("2026-09-20"));
         assert_eq!(result.home, ["CA, US", "NV, US"]);
         assert_eq!(result.trips.len(), 1);
         let trip = &result.trips[0];
@@ -454,6 +567,11 @@ mod tests {
         );
         assert_eq!(trip.destination, "Austin, TX");
         assert_eq!(trip.total, -937.0);
+        // Four days, each with its own spending, even one with nothing bought.
+        assert_eq!(trip.per_day, -234.25);
+        assert_eq!(trip.days.len(), 4);
+        assert_eq!(trip.days.iter().map(|day| day.spent).sum::<f64>(), -937.0);
+        assert_eq!(trip.days.iter().map(|day| day.purchases).sum::<u32>(), 5);
         assert_eq!(
             trip.transaction_ids,
             ["bbq", "boots", "hotel", "ride", "tacos"]
@@ -466,6 +584,113 @@ mod tests {
             }
         );
         assert!(!trip.ongoing && !trip.abroad);
+        // Austin is over 800 km from Oakland, so the trip was most likely flown.
+        assert!(trip.flew);
+    }
+
+    #[test]
+    fn a_trip_with_a_flight_charge_counts_as_flown() {
+        let mut transactions = home_life();
+        let mut bags = purchase("bags", "2026-09-03", -35.0, "Travel", None);
+        bags.category_detail = Some("TRAVEL_FLIGHTS".into());
+        transactions.extend([
+            bags,
+            purchase("tacos", "2026-09-03", -40.0, "Dining", at("Austin", "TX")),
+            purchase("bbq", "2026-09-06", -55.0, "Dining", at("Austin", "TX")),
+            purchase(
+                "back",
+                "2026-09-08",
+                -30.0,
+                "Groceries",
+                at("Oakland", "CA"),
+            ),
+        ]);
+        let trip = &trips(&transactions, day("2026-09-20")).trips[0];
+        assert!(trip.flew);
+    }
+
+    #[test]
+    fn counts_purchases_made_for_someone_else() {
+        let mut transactions = home_life();
+        let mut dinner = purchase("dinner", "2026-09-04", -80.0, "Dining", at("Austin", "TX"));
+        let owed = dinner.classification.as_mut().unwrap();
+        crate::transaction_policy::owe(owed, -80.0);
+        transactions.extend([
+            dinner,
+            purchase("tacos", "2026-09-03", -40.0, "Dining", at("Austin", "TX")),
+            purchase(
+                "back",
+                "2026-09-08",
+                -30.0,
+                "Groceries",
+                at("Oakland", "CA"),
+            ),
+        ]);
+        let trip = &trips(&transactions, day("2026-09-20")).trips[0];
+        assert_eq!(trip.transaction_ids, ["dinner", "tacos"]);
+        assert_eq!(trip.total, -120.0);
+    }
+
+    fn charged(id: &str, date: &str, descriptor: &str) -> Transaction {
+        let mut transaction = purchase(id, date, -25.0, "Dining", None);
+        transaction.payment_channel = Some("in store".into());
+        transaction.description = Some(descriptor.into());
+        transaction
+    }
+
+    #[test]
+    fn finds_a_trip_abroad_from_descriptors_when_the_provider_sends_no_location() {
+        let mut transactions = home_life();
+        transactions.extend([
+            charged("berlin", "2026-09-26", "AplPay EXAMPLE CAFE BERLIN DE"),
+            charged("munich", "2026-09-28", "AplPay SUMUP*EXAMPLE MUENCHEN DE"),
+            // A subscription billed from home in the middle of the trip doesn't end it.
+            charged(
+                "software",
+                "2026-09-29",
+                "EXAMPLE SOFTWARE SUBSAN FRANCISCO CA",
+            ),
+            charged("zurich", "2026-10-01", "AplPay EXAMPLE KIOSK ZÜRICH CH"),
+            charged(
+                "grindelwald",
+                "2026-10-02",
+                "AplPay EXAMPLE RAILWAY GRINDELWALD CH",
+            ),
+            purchase(
+                "back",
+                "2026-10-06",
+                -30.0,
+                "Groceries",
+                at("Oakland", "CA"),
+            ),
+        ]);
+        let result = trips(&transactions, day("2026-10-10"));
+        assert_eq!(result.trips.len(), 1);
+        let trip = &result.trips[0];
+        assert_eq!(
+            (trip.start, trip.end),
+            (day("2026-09-26"), day("2026-10-02"))
+        );
+        assert!(trip.abroad && trip.flew);
+        assert_eq!(
+            trip.transaction_ids,
+            ["berlin", "grindelwald", "munich", "zurich"]
+        );
+        // Each city is a stop, in the order first visited when the purchases tie.
+        let stops = trip
+            .stops
+            .iter()
+            .map(|stop| (stop.city.as_deref(), stop.country.as_str()))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            stops,
+            [
+                (Some("Berlin"), "DE"),
+                (Some("Munich"), "DE"),
+                (Some("Zürich"), "CH"),
+                (Some("Grindelwald"), "CH")
+            ]
+        );
     }
 
     #[test]
@@ -474,10 +699,7 @@ mod tests {
             purchase("a", "2026-09-03", -40.0, "Dining", at("Austin", "TX")),
             purchase("b", "2026-09-04", -40.0, "Dining", at("Austin", "TX")),
         ];
-        assert_eq!(
-            trips(&transactions, REFERENCE, day("2026-09-20"), &NamedZone::Utc),
-            Trips::default()
-        );
+        assert_eq!(trips(&transactions, day("2026-09-20")), Trips::default());
     }
 
     #[test]
@@ -502,9 +724,22 @@ mod tests {
             Some(sf.clone()),
         ));
         transactions.push(purchase("sf-2", "2026-09-19", -60.0, "Dining", Some(sf)));
-        let result = trips(&transactions, REFERENCE, day("2026-09-20"), &NamedZone::Utc);
+        let result = trips(&transactions, day("2026-09-20"));
         assert_eq!(result.trips.len(), 1);
         assert_eq!(result.trips[0].destination, "San Francisco, CA");
         assert!(result.trips[0].ongoing);
+        // Under 800 km from home with no airline charge: likely driven.
+        assert!(!result.trips[0].flew);
+        let nyc = json!({ "city": "New York", "region": "NY", "country": "US", "lat": 40.71, "lon": -74.0 });
+        transactions.push(purchase(
+            "ny-1",
+            "2026-09-25",
+            -30.0,
+            "Dining",
+            Some(nyc.clone()),
+        ));
+        transactions.push(purchase("ny-2", "2026-09-26", -30.0, "Dining", Some(nyc)));
+        let far = trips(&transactions, day("2026-09-26"));
+        assert!(far.trips[0].flew);
     }
 }

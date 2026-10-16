@@ -3,9 +3,8 @@
 use chrono::NaiveDate;
 use serde::Serialize;
 
-use super::calendar::{self, Zone};
+use super::calendar::{self};
 use crate::finance_contract::Transaction;
-use crate::rules::normalize_merchant;
 use crate::transaction_policy::Kind;
 
 /// Refunds this recent are matched.
@@ -78,14 +77,22 @@ fn matches(
         .collect()
 }
 
+/// Lowercase alphanumeric words separated by single spaces; reference numbers and masked
+/// card fragments are removed so recurring descriptors normalize to the same text.
+pub fn normalize_merchant(value: &str) -> String {
+    value
+        .to_lowercase()
+        .split(|character: char| !character.is_alphanumeric())
+        .filter(|word| {
+            !word.is_empty() && (word.len() < 5 || !word.chars().all(|c| c.is_ascii_digit()))
+        })
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 /// Suggestions for unlinked refunds posted in the last 90 days.
-pub fn suggestions(
-    transactions: &[Transaction],
-    reference: &str,
-    today: NaiveDate,
-    zone: &dyn Zone,
-) -> Vec<RefundSuggestion> {
-    let posted = calendar::posted_through(transactions, reference, today, zone);
+pub fn suggestions(transactions: &[Transaction], today: NaiveDate) -> Vec<RefundSuggestion> {
+    let posted = calendar::posted_through(transactions, today);
     matches(
         &posted,
         today - chrono::Duration::days(WINDOW_DAYS),

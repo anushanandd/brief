@@ -99,7 +99,7 @@ export function buildChartEventGroups(
 
   for (const transaction of data.transactions) {
     if (transaction.pending || !includesAccount(transaction.accountId)) continue
-    const date = transactionDateKey(transaction.postedOn ?? transaction.date, data.updatedAt)
+    const date = transactionDateKey(transaction.postedOn ?? transaction.date)
     if (!date) continue
     const mark = transactionMarkKind(transaction)
     const amount = Math.abs(transaction.amount)
@@ -214,12 +214,12 @@ export function buildChartEventGroups(
     .toSorted((left, right) => left.date.localeCompare(right.date))
 }
 
-export function chartEventGroupLabel(group: ChartEventGroup, referenceIso: string) {
+export function chartEventGroupLabel(group: ChartEventGroup) {
   const details = group.events.slice(0, 3).map((event) => {
     const value = event.amount == null ? '' : formatCurrency(event.amount)
     const profitLoss = event.profitLossPct == null ? '' : ` · ${formatPercent(event.profitLossPct)}`
     return `${formatActivityName(event.title)}${value ? ` ${value}` : ''}${profitLoss}${event.note ? ` · ${event.note}` : ''}`
   })
   const remainder = group.events.length - details.length
-  return `${formatActivityDate(group.date, referenceIso)} · ${details.join(' · ')}${remainder ? ` · +${remainder} more` : ''}`
+  return `${formatActivityDate(group.date)} · ${details.join(' · ')}${remainder ? ` · +${remainder} more` : ''}`
 }

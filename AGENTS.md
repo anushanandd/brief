@@ -14,7 +14,8 @@ Brief is a personal, local-first macOS finance app (Tauri: Rust + React). Read [
 - Rust computes every financial result. React formats `snapshot.insights` and native classification (through `src/lib/transaction-kind.ts`) and must not reimplement either.
 - Result-changing settings go through `FinanceSettings`: read them with `financeSettings(data)` and change them with `useFinanceEdits`. Never use renderer storage for them.
 - Benefit terms change in `src-tauri/src/insights/amex-platinum.json`, not in code. Read [docs/platinum-benefits.md](docs/platinum-benefits.md) first.
-- Tax rates change in `src-tauri/src/insights/tax-tables.json`, not in code, copied from the IRS revenue procedure the file cites. Never extrapolate a missing year.
+- Tax rates change in `src-tauri/src/insights/tax-tables.json`, and contribution limits in `retirement-limits.json` beside it, not in code, copied from the IRS revenue procedure or notice each file cites. Never extrapolate a missing year.
+- Teach the document readers new labels through `documents/forms.json` and `payslip.json`. A reading never fills in a figure the document doesn't print, and never replaces one the user typed. Validate reader changes against real documents with the ignored `documents::tests::reads_a_folder` test, and keep only synthetic text in the tests themselves.
 - Holdings chart selection must not replace or stop the portfolio market subscriptions.
 - Never call billed Plaid endpoints (live balances, Liabilities) on an ordinary or background refresh.
 - Don't gate native actions with `window.confirm`; the macOS WebView treats it as Cancel. Use an in-app confirmation with pending and error states.
@@ -55,13 +56,13 @@ Run checks in proportion to the change. Docs-only changes need no build.
 
 ## Gotchas
 
-- The browser preview reads `src/data/seed.json` and `seed-insights.json`. Integrations, edits, rules, and Apple Intelligence exist only in the native app.
+- The browser preview reads `src/data/seed.json` and `seed-insights.json`. Integrations, edits, and Apple Intelligence exist only in the native app.
 - Insights depend on the local day. Tests pass an explicit `now` and a named time zone.
 - Keep Tauri crates and their npm packages on the same major.minor, and update both lockfiles together.
 - `liveline@0.0.7` is patched via `pnpm-workspace.yaml`. Read [docs/liveline-patch-review.md](docs/liveline-patch-review.md) before changing it, and restart Vite afterward.
 - Market sockets: preserve timestamp monotonicity, feed separation, correction repair, hidden-window shutdown, and stale cleanup. Price ticks may be coalesced; bar corrections may not be dropped. All-time Holdings history may reuse a cached prefix only after a fresh full verification with an identical overlap.
 - Startup reveal waits for local reads only. Saved market observations must never be labeled live.
-- `pnpm tauri dev` signs builds through `scripts/macos-signed-runner.sh` so Keychain access survives rebuilds. Brief must run from `target/debug/brief`, the path the Keychain trusts; a copy elsewhere can't read saved connections. The runner signs the build in `deps/` that cargo copies from, so later runs launch an already-signed binary (re-signing costs most of a second), and it starts alongside the dev server, waiting for it itself.
+- `pnpm tauri dev` signs builds through `scripts/macos-signed-runner.sh` so Keychain and Contacts access survive rebuilds. Brief must run from `target/debug/brief`, the path the Keychain trusts; a copy elsewhere can't read saved connections. The runner signs the build in `deps/` that cargo copies from, so later runs launch an already-signed binary (re-signing costs most of a second), and it starts alongside the dev server, waiting for it itself.
 - The dev icon is embedded at build time. Regenerate `icon.icns` and `128x128@2x.png` from `icon.svg`, then restart.
 - Don't run `cargo clean` unless necessary.
 

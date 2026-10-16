@@ -6,6 +6,7 @@
 //! pairs them from amounts and dates and places each credit in the window of its purchase.
 //! A credit that can't be placed counts as a range across the two windows it may belong to.
 mod attribution;
+mod history;
 mod windows;
 
 use std::{collections::BTreeMap, sync::LazyLock};
@@ -18,7 +19,12 @@ use super::calendar::{self, NamedZone, Zone};
 use crate::finance_contract::Transaction;
 use crate::numeric::{from_minor, minor_units};
 use attribution::CreditLag;
+pub use history::{BenefitHistory, BenefitReview, PlannedCharge};
 use windows::benefit_window;
+
+/// A leftover under a dollar buys nothing, so a window that leaves only cents was used in
+/// full. The cents still count as missed, so totals stay exact.
+const NEGLIGIBLE_CENTS: i64 = 100;
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
@@ -32,7 +38,7 @@ pub enum Cadence {
 }
 
 impl Cadence {
-    fn is_calendar(self) -> bool {
+    pub fn is_calendar(self) -> bool {
         !matches!(self, Self::Renewal | Self::Purchase)
     }
 }
@@ -99,6 +105,13 @@ struct RuleData {
     /// The longest wait the terms allow between a purchase and its credit.
     #[serde(default = "default_posting_delay")]
     posting_delay_days: i64,
+    /// How long credits usually take to post, used until this card's own credits show it.
+    #[serde(default = "default_typical_delay")]
+    typical_delay_days: i64,
+    /// Spent automatically by a subscription, so there is nothing to do before the deadline
+    /// except check that the credit posted.
+    #[serde(default)]
+    recurring: bool,
     /// The smallest qualifying charge. A smaller remainder can't be used.
     #[serde(default)]
     minimum_charge: Option<f64>,
@@ -110,6 +123,10 @@ fn yes() -> bool {
 
 fn default_posting_delay() -> i64 {
     56
+}
+
+fn default_typical_delay() -> i64 {
+    7
 }
 
 #[derive(Debug, Deserialize)]
@@ -206,6 +223,14 @@ impl Rule {
             _ => remaining,
         }
     }
+
+    /// What is left to spend now: a usable remainder, unless it is only cents.
+    fn spendable(&self, remaining: i64) -> i64 {
+        match self.usable(remaining) {
+            cents if cents < NEGLIGIBLE_CENTS => 0,
+            cents => cents,
+        }
+    }
 }
 
 fn pattern(source: &str) -> Regex {
@@ -227,16 +252,23 @@ pub struct RuleSet {
 #[serde(rename_all = "camelCase")]
 pub struct FeeRecovery {
     pub annual_fee: f64,
-    /// Posted credits net of reversals since `since`, for benefits that are not hidden and
-    /// purchases that were yours.
+    /// Posted credits net of reversals since `since` on purchases that were yours, hidden
+    /// benefits included: hiding a benefit stops reminders, not the money it returned.
     pub recovered: f64,
     /// Credits in the same period on purchases made for someone else: the allowance was used,
     /// but the saving went to them.
     pub for_others: f64,
     pub since: NaiveDate,
     /// `fee-charge` when the year starts at the fee's posting in the saved history, otherwise
-    /// `calendar-year`, because the feed does not report the card's anniversary.
+    /// `calendar-year`, because the feed does not report the card's anniversary, or
+    /// `card-history` when the saved history starts after January.
     pub basis: &'static str,
+    /// The fee year's last day: a year after the fee charge, or December 31 when the
+    /// anniversary is unknown.
+    pub through: NaiveDate,
+    /// Credits still to come by `through` on your purchases: posted purchases waiting for
+    /// theirs, then the charges the forecast expects, as each benefit period plans them.
+    pub expected: f64,
 }
 
 pub static PLATINUM: LazyLock<RuleSet> = LazyLock::new(|| {
@@ -263,7 +295,7 @@ pub static PLATINUM: LazyLock<RuleSet> = LazyLock::new(|| {
                 zone: data
                     .time_zone
                     .as_deref()
-                    .map(|name| NamedZone::parse(name).expect("benefit time zones are supported")),
+                    .map(|name| NamedZone::parse(name).expect("benefit time zones are IANA names")),
                 data,
             })
             .collect(),
@@ -332,7 +364,17 @@ pub struct BenefitActivity {
     pub pending: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub account_id: Option<String>,
+    /// The transaction date: the issuer counts a purchase, and the credit it earns, toward the
+    /// window the merchant processed it in, even when it posts in the next one.
     pub date: NaiveDate,
+    /// When it reached the account, which times credits: how long they take, and when one is
+    /// late or a closed window has settled.
+    #[serde(skip)]
+    pub posted: NaiveDate,
+    /// The feed reported a transaction date apart from the posting date. Without one, `date`
+    /// is the posting date and can't place a credit near a window's start.
+    #[serde(skip)]
+    pub dated: bool,
     pub benefit_id: String,
     pub benefit_name: String,
     pub kind: ActivityKind,
@@ -402,14 +444,18 @@ pub struct BenefitWindow {
     pub snapshot_before_window: bool,
     pub posting_delay_days: i64,
     /// How long this benefit's credits take to post: learned from paired credits when there
-    /// is enough evidence, otherwise the terms' limit.
+    /// is enough evidence, otherwise the usual delay from the rule data.
     pub credit_lag_days: i64,
     pub credit_lag_learned: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub renewal_check: Option<String>,
     pub status: &'static str,
-    /// The card has qualifying purchases or credits for this benefit in its history.
-    pub engaged: bool,
+    /// A subscription spends it automatically; the only thing to check is that it posted.
+    pub recurring: bool,
+    /// The saved card history starts after this window began, so credits before this day are
+    /// missing and the remaining range runs from zero.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub history_from: Option<NaiveDate>,
     /// Credits, net of reversals, placed in this window: by purchase date when paired,
     /// otherwise by posting date.
     pub credited_amount: f64,
@@ -436,60 +482,22 @@ pub struct BenefitWindow {
     pub reset: String,
 }
 
-/// Whether a closed window's unused allowance is known.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
-pub enum OutcomeState {
-    /// Every credit for the window should have posted.
-    Settled,
-    /// Credits for the window may still post.
-    Settling,
-    /// The saved history starts after the window began.
-    PartialHistory,
-    /// Use doesn't appear on the card, as with Uber Cash spent before a charge.
-    NotVisible,
-    /// The rules don't estimate this benefit's unused allowance.
-    NotTracked,
-}
-
-/// What a closed window's unused allowance counts as: missed when the card used the benefit,
-/// unclaimed when it never did, still settling while credits may post, or unknown when the card
-/// history can't say.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
-pub enum Verdict {
-    Missed,
-    Unclaimed,
-    Settling,
-    Unknown,
-}
-
-impl Verdict {
-    fn of(state: OutcomeState, engaged: bool) -> Option<Self> {
-        match state {
-            OutcomeState::Settled if engaged => Some(Self::Missed),
-            OutcomeState::Settled => Some(Self::Unclaimed),
-            OutcomeState::Settling => Some(Self::Settling),
-            OutcomeState::PartialHistory | OutcomeState::NotVisible if engaged => {
-                Some(Self::Unknown)
-            }
-            _ => None,
-        }
-    }
-}
-
 /// Windows with allowance left in the order to use them: dated windows first, soonest
 /// deadline first, the most left first within a deadline; renewal and purchase benefits, which
-/// have no calendar deadline, follow.
+/// have no calendar deadline, follow. Subscriptions spend their credits on their own, so they
+/// are left out; Uber Cash, whose use the card can't show, is listed until a charge suggests it
+/// ran out.
 pub fn use_first(windows: &[BenefitWindow]) -> Vec<String> {
-    let left = |window: &BenefitWindow| {
-        window
-            .remaining_range
-            .as_ref()
-            .map_or(0.0, |range| range.high)
-    };
-    let mut open: Vec<&BenefitWindow> =
-        windows.iter().filter(|window| left(window) > 0.0).collect();
+    let left =
+        |window: &BenefitWindow| match (&window.remaining_range, window.estimated_credit_amount) {
+            (Some(range), _) => range.high,
+            (None, Some(estimated)) if estimated == 0.0 => window.cap,
+            _ => 0.0,
+        };
+    let mut open: Vec<&BenefitWindow> = windows
+        .iter()
+        .filter(|window| !window.recurring && left(window) > 0.0)
+        .collect();
     open.sort_by(|a, b| {
         b.cadence
             .is_calendar()
@@ -501,27 +509,12 @@ pub fn use_first(windows: &[BenefitWindow]) -> Vec<String> {
     open.into_iter().map(|window| window.id.clone()).collect()
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
-#[serde(rename_all = "camelCase")]
-pub struct WindowOutcome {
-    pub window_end: NaiveDate,
-    pub benefit_id: String,
-    pub state: OutcomeState,
-    /// The usable allowance left unused: the low bound when credits can't be placed.
-    pub unused: Option<f64>,
-    pub unused_high: Option<f64>,
-    /// The card has used this benefit, so unused allowance is missed rather than unclaimed.
-    pub engaged: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub verdict: Option<Verdict>,
-}
-
-/// Posted credits net of reversals in a range, plus engaged allowances that expired unused.
-/// The renderer sums the same way over the outcomes it receives.
+/// Posted credits net of reversals in a range, plus allowances that settled unused in periods
+/// that ended in it. The renderer sums the same way over the history it receives.
 #[cfg(test)]
 pub fn credit_summary(
     activity: &[BenefitActivity],
-    outcomes: &[WindowOutcome],
+    history: &[BenefitHistory],
     start: NaiveDate,
     end: NaiveDate,
 ) -> (f64, f64) {
@@ -530,13 +523,12 @@ pub fn credit_summary(
         .filter(|item| item.date >= start && item.date <= end && item.is_posted_credit())
         .map(|item| minor_units(item.amount))
         .sum::<i64>();
-    let missed = outcomes
+    let missed = history
         .iter()
-        .filter(|outcome| {
-            outcome.engaged && outcome.window_end >= start && outcome.window_end <= end
-        })
-        .filter_map(|outcome| outcome.unused)
-        .map(minor_units)
+        .flat_map(|benefit| &benefit.periods)
+        .filter(|period| period.end >= start && period.end <= end)
+        .filter_map(|period| period.unused)
+        .map(|range| minor_units(range.low))
         .sum::<i64>();
     (from_minor(earned), from_minor(missed))
 }

@@ -89,41 +89,7 @@ pub(super) fn investment_performance(
         ) else {
             continue;
         };
-        let account_holdings = parsed
-            .plaid_holdings
-            .iter()
-            .filter(|holding| holding.account_id == account.account_id)
-            .collect::<Vec<_>>();
-        let mut flows = BTreeMap::new();
-        let histories = account_holdings
-            .iter()
-            .filter_map(|holding| {
-                let security = parsed.plaid_securities.get(&holding.security_id)?;
-                let ticker = security.ticker_symbol.as_deref()?;
-                let acquisitions =
-                    reconciled_acquisitions(holding, ticker, &parsed.snap_activities);
-                let prices = sync
-                    .security_history
-                    .get(&ticker.to_ascii_uppercase())
-                    .map(|points| parse_points(points, "Alpaca security history", warnings))
-                    .unwrap_or_default();
-                for acquisition in &acquisitions {
-                    if let Some((_, price)) =
-                        prices.iter().find(|(date, _)| date >= &acquisition.date)
-                    {
-                        *flows.entry(acquisition.date.clone()).or_default() +=
-                            acquisition.quantity * *price;
-                    }
-                }
-                (!acquisitions.is_empty() && !prices.is_empty())
-                    .then(|| holding_history(acquisitions, &prices))
-            })
-            .collect::<Vec<_>>();
-        let history = if histories.len() == account_holdings.len() {
-            combine_value_histories(&histories)
-        } else {
-            Vec::new()
-        };
+        let (history, flows) = stock_plan_history(account, sync, parsed, warnings);
         let comparison_flows = (!history.is_empty()).then_some(&flows);
         individual_performance.push(performance_record(
             SeriesAccount {
@@ -144,6 +110,50 @@ pub(super) fn investment_performance(
         individual: individual_performance,
         brokerage_flows,
     }
+}
+
+/// A stock plan's value history from each holding's reconciled acquisitions priced at Alpaca's
+/// closes, with the acquisitions as its deposits. Empty unless every holding can be priced.
+fn stock_plan_history(
+    account: &PlaidAccount,
+    sync: &ProviderSync,
+    parsed: &Parsed,
+    warnings: &mut Vec<String>,
+) -> (Vec<(String, Decimal)>, BTreeMap<String, Decimal>) {
+    let account_holdings = parsed
+        .plaid_holdings
+        .iter()
+        .filter(|holding| holding.account_id == account.account_id)
+        .collect::<Vec<_>>();
+    let mut flows = BTreeMap::new();
+    let histories = account_holdings
+        .iter()
+        .filter_map(|holding| {
+            let security = parsed.plaid_securities.get(&holding.security_id)?;
+            let ticker = security.ticker_symbol.as_deref()?;
+            let acquisitions = reconciled_acquisitions(holding, ticker, &parsed.snap_activities);
+            let prices = sync
+                .security_history
+                .get(&ticker.to_ascii_uppercase())
+                .map(|points| parse_points(points, "Alpaca security history", warnings))
+                .unwrap_or_default();
+            for acquisition in &acquisitions {
+                if let Some((_, price)) = prices.iter().find(|(date, _)| date >= &acquisition.date)
+                {
+                    *flows.entry(acquisition.date.clone()).or_default() +=
+                        acquisition.quantity * *price;
+                }
+            }
+            (!acquisitions.is_empty() && !prices.is_empty())
+                .then(|| holding_history(acquisitions, &prices))
+        })
+        .collect::<Vec<_>>();
+    let history = if histories.len() == account_holdings.len() {
+        combine_value_histories(&histories)
+    } else {
+        Vec::new()
+    };
+    (history, flows)
 }
 
 /// Each Plaid cash account's balance history, transaction-derived from its current balance.

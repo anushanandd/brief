@@ -1,4 +1,4 @@
-import type { Insights, Transaction } from '../lib/schema'
+import type { BriefDocument, FinanceSettings, Insights, Transaction } from '../lib/schema'
 
 const initial = () => ({
   recovery: undefined as { message: string; canRestore: boolean } | undefined,
@@ -21,10 +21,15 @@ const initial = () => ({
   hiddenBenefits: '',
   spendingAccountId: 'selected',
   insights: {} as Partial<Insights>,
+  people: [] as FinanceSettings['people'],
+  tripCompanions: [] as FinanceSettings['tripCompanions'],
   benefitAmount: 10,
+  /** Files the seven synthetic card credits as income, for tests of a report's chart. */
+  creditKind: 'other' as 'other' | 'income',
   postingDate: undefined as string | undefined,
   activityMethod: undefined as string | undefined,
   snaptradeReference: false,
+  documents: [] as BriefDocument[],
 })
 
 /** The synthetic finance scenario the route tests adjust; `routes.harness` serves it. */

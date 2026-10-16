@@ -12,8 +12,7 @@ pub(super) fn possible_duplicate(
     let snap_institution = normalized(snap.institution_name.as_deref());
     let last_four = |value: &str| value.chars().rev().take(4).collect::<String>();
     let plaid_mask = plaid.mask.as_deref().map(last_four);
-    let snap_number = snap.number.as_deref().or(snap.account_number.as_deref());
-    let snap_mask = snap_number.map(last_four);
+    let snap_mask = snap.printed_number().map(last_four);
     if !plaid_institution.is_empty()
         && plaid_institution == snap_institution
         && plaid_mask.is_some()
@@ -218,12 +217,14 @@ pub(super) fn plaid_transaction(
             .find(|value| value.kind.as_deref() == Some("payment_app"))
     });
     let counterparty_name = counterparty.and_then(|value| value.name.as_deref());
-    let merchant = transaction
-        .merchant_name
-        .as_deref()
-        .or(counterparty_name)
-        .or(transaction.name.as_deref())
-        .unwrap_or("Transaction");
+    // A bank's raw descriptor is titled without its references; the description keeps them.
+    let merchant = match transaction.merchant_name.as_deref().or(counterparty_name) {
+        Some(name) => name.to_owned(),
+        None => transaction
+            .name
+            .as_deref()
+            .map_or_else(|| "Transaction".into(), super::descriptor::readable_title),
+    };
     let categorized = category_name(
         &transaction,
         payment_app.and_then(|value| value.name.as_deref()),
@@ -231,7 +232,7 @@ pub(super) fn plaid_transaction(
     let category = transaction.personal_finance_category.as_ref();
     Some(Transaction {
         id: transaction.transaction_id.clone(),
-        merchant: merchant.into(),
+        merchant,
         description: transaction.name.clone(),
         category: categorized.category,
         subcategory: categorized.label,

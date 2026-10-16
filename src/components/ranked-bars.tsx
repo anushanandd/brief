@@ -9,8 +9,8 @@ export type RankedBar = {
   color: string
   /** Change against the comparable previous window; omitted when there is none. */
   change?: number | null
-  /** Usual value at this point, marked on the track; null or omitted when unknown. */
-  typical?: number | null
+  /** What `change` compares with, marked on the track; null or omitted when unknown. */
+  mark?: number | null
   /** Shown beneath the row when it is expanded, usually the activity behind the total. */
   details?: ReactNode
 }
@@ -28,6 +28,8 @@ export function RankedBars({
   emptyMessage,
   selected,
   onSelect,
+  comparison = 'the previous period',
+  markLabel = 'usually by this point',
 }: {
   items: RankedBar[]
   label: string
@@ -36,6 +38,10 @@ export function RankedBars({
   emptyMessage: string
   selected?: string | null
   onSelect?: (name: string | null) => void
+  /** What `change` is measured against, for screen readers. */
+  comparison?: string
+  /** What the track's mark is, for screen readers. */
+  markLabel?: string
 }) {
   const id = useId()
   const [expanded, setExpanded] = useState<ReadonlySet<string>>(new Set())
@@ -51,7 +57,7 @@ export function RankedBars({
   const visible = folded ? sorted.slice(0, limit - 1) : sorted
   const rest = folded ? sorted.slice(limit - 1) : []
   const maximum = Math.max(
-    ...sorted.map(({ value, typical }) => Math.max(Math.abs(value), Math.abs(typical ?? 0))),
+    ...sorted.map(({ value, mark }) => Math.max(Math.abs(value), Math.abs(mark ?? 0))),
     1,
   )
   const comparable = items.some(({ change }) => change !== undefined)
@@ -64,7 +70,7 @@ export function RankedBars({
       else next.add(name)
       return next
     })
-  const cells = ({ name, value, color, change, typical }: RankedBar, expandable: boolean) => (
+  const cells = ({ name, value, color, change, mark }: RankedBar, expandable: boolean) => (
     <>
       <span className="ranked-bars-name">
         {expandable ? <ChevronRight className="ranked-bars-chevron" size={14} /> : null}
@@ -73,17 +79,17 @@ export function RankedBars({
       </span>
       <span className="ranked-bars-track" aria-hidden="true">
         <span style={{ width: `${(Math.abs(value) / maximum) * 100}%`, background: color }} />
-        {typical != null ? (
+        {mark != null ? (
           <i
-            className="ranked-bars-typical"
-            style={{ left: `${(Math.abs(typical) / maximum) * 100}%` }}
+            className="ranked-bars-mark"
+            style={{ left: `${(Math.abs(mark) / maximum) * 100}%` }}
           />
         ) : null}
       </span>
       <strong className="sensitive-value">
         {formatCurrency(value)}
-        {typical != null ? (
-          <span className="sr-only">, usually {formatCurrency(typical)} by this point</span>
+        {mark != null ? (
+          <span className="sr-only">{`, ${markLabel} ${formatCurrency(mark)}`}</span>
         ) : null}
       </strong>
       {comparable ? (
@@ -97,7 +103,7 @@ export function RankedBars({
             : change === 0
               ? 'No change'
               : `${change > 0 ? '+' : ''}${formatCurrency(change)}`}
-          {change == null ? null : <span className="sr-only"> versus the previous period</span>}
+          {change == null ? null : <span className="sr-only"> versus {comparison}</span>}
         </small>
       ) : null}
     </>

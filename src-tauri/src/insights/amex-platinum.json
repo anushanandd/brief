@@ -1,7 +1,7 @@
 {
   "product": "amex-platinum",
   "name": "American Express Platinum",
-  "version": "2026-10-11",
+  "version": "2026-10-13",
   "termsReviewed": "Sep 20, 2026",
   "annualFee": 895,
   "annualFeeMatches": "annual membership fee|annual fee",
@@ -17,6 +17,7 @@
       "instruction": "Enroll, then pay directly for Disney+, ESPN, Hulu, NYT, Paramount+, standalone Peacock, WSJ or YouTube (including Music). No third-party billing or Peacock bundles with other services.",
       "effectiveFrom": "2025-01-01",
       "url": "https://global.americanexpress.com/card-benefits/detail/digital-entertainment/platinum",
+      "recurring": true,
       "allowanceChanges": [
         { "from": "2025-09-18", "cap": 25, "limit": "$25 / month", "cadence": "monthly" }
       ]
@@ -52,6 +53,7 @@
       "instruction": "Pay directly with Platinum for a U.S. monthly or annual membership; turn Uber Cash off. Free trials, discounts and Uber Cash payments do not qualify.",
       "effectiveFrom": "2025-09-18",
       "url": "https://global.americanexpress.com/card-benefits/detail/uber-one-credit/platinum",
+      "recurring": true,
       "minimumCharge": 9.99
     },
     {
@@ -65,6 +67,7 @@
       "instruction": "Pay with Platinum for one monthly membership, including tax. Excludes annual plans, Plus Ups and Walmart Business+.",
       "effectiveFrom": "2025-01-01",
       "url": "https://global.americanexpress.com/card-benefits/detail/walmart-platinum/platinum",
+      "recurring": true,
       "trackRemaining": false
     },
     {
@@ -171,7 +174,7 @@
       "cadence": "renewal",
       "matches": "global entry|tsa\\s?pre\\s?check",
       "creditMatches": "(?:global entry|tsa\\s?pre\\s?check).*(?:credit|reimbursement)",
-      "instruction": "Pay the application fee: $120 Global Entry or up to $85 TSA PreCheck, once every four years. Additional cards have separate eligibility. Confirm your next eligible date in Amex.",
+      "instruction": "Pay the application fee: $120 Global Entry every four years, or up to $85 TSA PreCheck every four and a half years. Additional cards have separate eligibility. Confirm your next eligible date in Amex.",
       "url": "https://global.americanexpress.com/card-benefits/terms/platinum"
     },
     {
