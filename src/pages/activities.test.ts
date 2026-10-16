@@ -1,8 +1,7 @@
 import { expect, it } from 'vitest'
 
-import { searchShortcutAction } from '../hooks/use-search-shortcuts'
+import { searchEscapeAction } from '../hooks/use-search-shortcuts'
 import { activityDateGroup, groupActivitiesByDate, type ActivityItem } from '../lib/activity'
-import { activityClearShortcut, activityFilterShortcut } from './activities'
 
 const activity = (id: string, date: string): ActivityItem => ({
   id,
@@ -38,35 +37,9 @@ it('groups activity into relative date sections', () => {
   ])
 })
 
-it('focuses, clears, and blurs ledger search without stealing input', () => {
-  const slash = { key: '/', metaKey: false, ctrlKey: false, altKey: false }
-  const escape = { ...slash, key: 'Escape' }
-  expect(searchShortcutAction(slash, false, false, false)).toBe('focus')
-  expect(searchShortcutAction(slash, true, false, false)).toBeUndefined()
-  expect(searchShortcutAction({ ...slash, metaKey: true }, false, false, false)).toBeUndefined()
-  expect(searchShortcutAction(escape, true, true, true)).toBe('clear')
-  expect(searchShortcutAction(escape, true, true, false)).toBe('blur')
-})
-
-it('focuses filters with F and clears them with C outside editing and overlays', () => {
-  const event = {
-    key: 'f',
-    altKey: false,
-    ctrlKey: false,
-    metaKey: false,
-    shiftKey: false,
-    repeat: false,
-  }
-  expect(activityFilterShortcut(event, false)).toBe(true)
-  expect(activityFilterShortcut({ ...event, key: 'F' }, false)).toBe(true)
-  expect(activityFilterShortcut({ ...event, key: '1' }, false)).toBe(false)
-  expect(activityFilterShortcut({ ...event, metaKey: true }, false)).toBe(false)
-  expect(activityFilterShortcut(event, true)).toBe(false)
-  expect(activityClearShortcut({ ...event, key: 'c' }, false)).toBe(true)
-  expect(activityClearShortcut({ ...event, key: 'C' }, false)).toBe(true)
-  expect(activityClearShortcut({ ...event, key: 'c', repeat: true }, false)).toBe(false)
-  expect(activityClearShortcut({ ...event, key: 'c', metaKey: true }, false)).toBe(false)
-  expect(activityClearShortcut({ ...event, key: 'c' }, true)).toBe(false)
+it('clears and then leaves ledger search with Escape', () => {
+  expect(searchEscapeAction(true)).toBe('clear')
+  expect(searchEscapeAction(false)).toBe('blur')
 })
 
 it('starts a named month group at each calendar boundary and distinguishes prior years', () => {

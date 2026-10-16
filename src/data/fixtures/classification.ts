@@ -8,7 +8,7 @@ export function classification(
   overrides: Partial<Classification> = {},
 ): Classification {
   const mark =
-    kind === 'expense' || kind === 'other' || kind === 'tax'
+    kind === 'expense' || kind === 'other' || kind === 'tax' || kind === 'owed'
       ? 'initial'
       : kind === 'reimbursement'
         ? 'refund'

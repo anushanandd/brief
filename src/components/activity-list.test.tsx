@@ -2,7 +2,13 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
 import type { ActivityItem } from '../lib/activity'
-import { ActivityList, GroupedActivityList, activityGridWidths } from './activity-list'
+import {
+  ActivityList,
+  GroupedActivityList,
+  PagedActivityList,
+  activityGridWidths,
+  activityStatus,
+} from './activity-list'
 
 const measureText = (value: string) => value.length * 8
 
@@ -38,50 +44,101 @@ it('sizes ledger columns using every filtered row, including later batches', () 
     detail: '',
     date: '2026-09-20',
     amount: -5,
-    account: index === 60 ? 'A much longer synthetic account display name' : 'Card',
+    account: index >= 50 ? 'A longer synthetic account' : 'Card',
   }))
-  const firstBatch = activityGridWidths(activities.slice(0, 60), '2026-09-20', measureText)
+  const firstBatch = activityGridWidths(activities.slice(0, 50), '2026-09-20', measureText)
   const allRows = activityGridWidths(activities, '2026-09-20', measureText)
-  expect(allRows[1]).toBeGreaterThan(firstBatch[1])
+  expect(allRows[2]).toBeGreaterThan(firstBatch[2])
 })
 
-it('leaves description flexible while sizing the other columns to their contents', () => {
+it('fits every rare long value in full except the flexible description', () => {
+  const activities: ActivityItem[] = Array.from({ length: 40 }, (_, index) => ({
+    id: `synthetic-${index}`,
+    kind: 'spending',
+    category: 'Dining',
+    title: 'Coffee',
+    detail: '',
+    date: '2026-09-20',
+    amount: index === 0 ? -123_456.78 : -5,
+    account: index === 0 ? 'Individual brokerage' : 'Card',
+    location: { city: index === 0 ? 'An Unusually Long Synthetic Town' : 'Oakland', region: 'CA' },
+  }))
+  const [, , account, , owner, location, amount] = activityGridWidths(
+    activities,
+    '2026-09-20',
+    measureText,
+  )
+  const typical = activityGridWidths(activities.slice(1), '2026-09-20', measureText)
+  // A rare long place, account, and amount still show in full.
+  expect(location).toBeGreaterThan(typical[5])
+  expect(account).toBeGreaterThan(typical[2])
+  expect(amount).toBeGreaterThan(typical[6])
+  // So do a rare long subcategory and street address; only the description gives way.
+  const named = activities.map((activity, index) =>
+    index
+      ? activity
+      : {
+          ...activity,
+          title: 'An unusually long synthetic merchant name',
+          subcategory: 'An unusually long synthetic subcategory',
+          location: {
+            city: 'Oakland',
+            region: 'CA',
+            address: '1234 An Unusually Long Synthetic Street',
+          },
+        },
+  )
+  const [, description, , category, , address] = activityGridWidths(
+    named,
+    '2026-09-20',
+    measureText,
+  )
+  expect(description).toBe(typical[1])
+  expect(category).toBeGreaterThan(typical[3])
+  expect(address).toBeGreaterThan(typical[5])
+  // Me or Other: the same width on every ledger.
+  expect(owner).toBe(typical[4])
+})
+
+it('sizes every column to its contents, capping only the description', () => {
   const activity: ActivityItem = {
     id: 'long-description',
     kind: 'spending',
-    category: 'A very long synthetic spending category',
+    category: 'Dining',
+    subcategory: 'A very long synthetic spending subcategory',
     title: 'A considerably longer synthetic merchant description',
     location: {
-      city: 'An Exceptionally Long Synthetic City Name',
+      city: 'Palo Alto',
       region: 'CA',
-      address: '123 Example Street',
+      address: '123 An Exceptionally Long Synthetic Street Name',
     },
     paymentChannel: 'in store',
     detail: '',
     date: '2026-09-20',
     amount: -10,
   }
-  const [descriptionWidth, , categoryWidth, locationWidth] = activityGridWidths(
+  const [, descriptionWidth, , categoryWidth, , locationWidth] = activityGridWidths(
     [activity],
     '2026-09-20',
     measureText,
   )
-  expect(descriptionWidth).toBe(180)
-  expect(categoryWidth).toBe(188)
-  expect(locationWidth).toBe(232)
-  const [shortDescriptionWidth, , shortCategoryWidth, shortLocationWidth] = activityGridWidths(
+  // The description is capped; everything else shows in full, however long.
+  expect(descriptionWidth).toBe(280)
+  expect(categoryWidth).toBeGreaterThan(280)
+  expect(locationWidth).toBeGreaterThan(280)
+  const [, shortDescriptionWidth, , shortCategoryWidth, , shortLocationWidth] = activityGridWidths(
     [
       {
         ...activity,
         title: 'Coffee',
-        category: 'Dining',
+        subcategory: undefined,
         location: { city: 'Palo Alto', region: 'CA' },
       },
     ],
     '2026-09-20',
     measureText,
   )
-  expect(shortDescriptionWidth).toBe(descriptionWidth)
+  expect(shortDescriptionWidth).toBeLessThan(descriptionWidth)
   expect(shortCategoryWidth).toBeLessThan(categoryWidth)
   expect(shortLocationWidth).toBeLessThan(locationWidth)
 })
@@ -118,7 +175,7 @@ it('renders ledger columns without changing the shared compact rows', () => {
   expect(ledger).toContain('category-mark')
   expect(ledger).toContain('var(--spending-food)')
   expect(ledger).toContain(
-    '<span class="financial-activity-amount negative" aria-label="Amount: -$5.00"',
+    '<span class="financial-activity-amount negative" aria-label="Amount: −$5.00"',
   )
   expect(ledger).toContain('aria-label="Filter by date: Sep 20, 2026"')
   expect(ledger).not.toContain('activity-date-mark')
@@ -130,8 +187,9 @@ it('renders ledger columns without changing the shared compact rows', () => {
   )
   expect(compact).not.toContain('financial-activity-header')
   expect(compact).toContain('Everyday card · Dining')
-  expect(compact).toContain('class="negative">-$5.00</strong>')
-  expect(compact).toContain('Sep 20, 2026')
+  expect(compact).toContain('class="negative" data-copy-amount="true">−$5.00</strong>')
+  // Lists name the year only when it isn't the snapshot's.
+  expect(compact).toContain('<small>Sep 20</small>')
 })
 
 it('shows a supplied location and leaves unknown locations unavailable', () => {
@@ -154,42 +212,31 @@ it('shows a supplied location and leaves unknown locations unavailable', () => {
   const withLocation = renderToStaticMarkup(
     <ActivityList activities={[located]} referenceIso="2026-09-20" showColumns />,
   )
-  expect(withLocation).toContain(
-    'aria-label="Full address: 123 Example St · San Francisco, CA · 94103"',
-  )
+  // The place leads; the street sits beneath it, and the full address moves to the detail panel.
   expect(withLocation).toContain('aria-label="Filter by location: San Francisco, CA"')
-  expect(withLocation).not.toContain('financial-activity-method')
   expect(withLocation).toMatch(
-    /financial-activity-location-label[^>]*aria-label="Filter by location: San Francisco, CA"[^>]*>.*?activity-method-mark[^>]*><svg.*?<\/svg><\/span><span>San Francisco, CA<\/span>/s,
+    /place-place[^>]*>.*?activity-method-mark.*?<span class="financial-activity-cell-text"><span>San Francisco, CA<\/span><small>123 Example St<\/small><\/span>/s,
   )
-  expect(withLocation).not.toContain('<small>123 Example St</small>')
   expect(withLocation).toContain('<time dateTime="2026-09-20">Sep 20</time>')
 
   const linked = renderToStaticMarkup(
     <ActivityList
-      activities={[{ ...located, website: 'https://example.com' }]}
+      activities={[
+        {
+          ...located,
+          location: undefined,
+          paymentChannel: 'online',
+          website: 'https://www.example.com',
+        },
+      ]}
       referenceIso="2026-09-20"
       showColumns
     />,
   )
-  expect(linked).toContain('123 Example St · San Francisco, CA · 94103')
-  expect(linked).toContain('aria-label="Open Synthetic purchase website"')
-  expect(linked.match(/<span[^>]*class="financial-activity-address-trigger"[^>]*>/)?.[0]).toContain(
-    'tabindex="0"',
-  )
-
-  const channelOnly = renderToStaticMarkup(
-    <ActivityList
-      activities={[{ ...located, location: undefined, paymentChannel: 'online' }]}
-      referenceIso="2026-09-20"
-      showColumns
-    />,
-  )
-  expect(channelOnly).toMatch(
-    /financial-activity-location-label[^>]*aria-label="Filter by method: Online"[^>]*>.*?activity-method-mark[^>]*><svg.*?<\/svg><\/span><span>Online<\/span>/s,
-  )
-  expect(channelOnly).toContain('>Online</span>')
-  expect(channelOnly).not.toContain('123 Example St')
+  // The website only names the host; nothing links to it.
+  expect(linked).not.toContain('href=')
+  expect(linked).toContain('aria-label="Filter by method: Online"')
+  expect(linked).toContain('<span>Online</span><small>example.com</small>')
 
   const other = renderToStaticMarkup(
     <ActivityList
@@ -198,17 +245,8 @@ it('shows a supplied location and leaves unknown locations unavailable', () => {
       showColumns
     />,
   )
-  expect(other).toMatch(/activity-method-mark[^>]*><svg.*?<\/svg><\/span><span>Other<\/span>/s)
-  expect(other).toContain('>Other</span>')
-
-  const unavailable = renderToStaticMarkup(
-    <ActivityList
-      activities={[{ ...located, location: undefined, paymentChannel: undefined }]}
-      referenceIso="2026-09-20"
-      showColumns
-    />,
-  )
-  expect(unavailable).toContain('aria-label="Location and method unavailable"')
+  expect(other).toContain('aria-label="Location unavailable"')
+  expect(other).toMatch(/place-none[^>]*><button[^>]*disabled/)
 })
 
 it('keeps the full description in the accessible name without a tooltip and labels brokerage trades', () => {
@@ -233,10 +271,35 @@ it('keeps the full description in the accessible name without a tooltip and labe
   expect(html).toContain(
     'aria-label="Filter by description: Bought a synthetic security in a brokerage account"',
   )
-  expect(html).toContain('Bought a synthetic security in…')
+  expect(html).toContain('<strong>Bought a synthetic security in a brokerage account</strong>')
   expect(html).not.toContain('data-base-ui-tooltip-trigger')
   expect(html).toContain('aria-label="Filter by method: Brokerage"')
-  expect(html).toMatch(/activity-method-mark[^>]*><svg.*?<\/svg><\/span><span>Brokerage<\/span>/s)
+  expect(html).toMatch(
+    /place-brokerage[^>]*>.*?<span class="financial-activity-cell-text"><span>Brokerage<\/span><\/span>/s,
+  )
+
+  const opened: string[] = []
+  const openable = renderToStaticMarkup(
+    <ActivityList
+      activities={[
+        {
+          id: 'trade',
+          kind: 'trade',
+          category: 'Trade',
+          title: 'Bought ABC',
+          detail: '',
+          date: '2026-09-20',
+          amount: -5,
+        },
+      ]}
+      referenceIso="2026-09-20"
+      showColumns
+      selectedId="trade"
+      onOpen={({ id }) => opened.push(id)}
+    />,
+  )
+  expect(openable).toMatch(/aria-haspopup="dialog">Open details: (<!-- -->)?Bought ABC<\/button>/)
+  expect(openable).toMatch(/financial-activity-row-columns is-openable"[^>]*data-selected="true"/)
 })
 
 it('uses signed gain colors only in the account activity preview', () => {
@@ -268,11 +331,74 @@ it('uses signed gain colors only in the account activity preview', () => {
     <ActivityList activities={activities} referenceIso="2026-09-20" conciseTradeGain />,
   )
   expect(preview).toContain('Brokerage · <span class="positive">+$5.00</span>')
-  expect(preview).toContain('Brokerage · <span class="negative">-$3.00</span>')
+  expect(preview).toContain('Brokerage · <span class="negative">−$3.00</span>')
   expect(preview).not.toContain('shares · Estimated FIFO P/L')
 
   const ledger = renderToStaticMarkup(
     <ActivityList activities={activities} referenceIso="2026-09-20" />,
   )
   expect(ledger).toContain('2 shares · Estimated FIFO P/L $5.00')
+})
+
+it('pages a compact list and keeps rows that must stay visible', () => {
+  const activities: ActivityItem[] = Array.from({ length: 150 }, (_, i) => ({
+    id: `synthetic-${i}`,
+    kind: 'spending',
+    category: 'Dining',
+    title: `Synthetic ${i}`,
+    detail: 'Synthetic account',
+    date: '2026-09-20',
+    amount: -5,
+  }))
+  const paged = renderToStaticMarkup(
+    <PagedActivityList activities={activities} referenceIso="2026-09-20" />,
+  )
+  expect(paged).toContain('Synthetic 59')
+  expect(paged).not.toContain('Synthetic 60<')
+  expect(paged).toContain('Load more activities')
+  const highlighted = renderToStaticMarkup(
+    <PagedActivityList activities={activities} referenceIso="2026-09-20" minimumCount={100} />,
+  )
+  expect(highlighted).toContain('Synthetic 99<')
+  expect(highlighted).not.toContain('Synthetic 100<')
+  const all = renderToStaticMarkup(
+    <PagedActivityList activities={activities} referenceIso="2026-09-20" minimumCount={150} />,
+  )
+  expect(all).toContain('Synthetic 149<')
+  expect(all).not.toContain('Load more activities')
+})
+
+const row = (patch: Partial<ActivityItem>): ActivityItem => ({
+  id: 'synthetic',
+  kind: 'spending',
+  category: 'Dining',
+  title: 'Synthetic cafe',
+  detail: '',
+  date: '2026-09-18',
+  amount: -12,
+  ...patch,
+})
+
+it('marks a pending or flagged row with a badge beside its merchant', () => {
+  expect(activityStatus({ pending: true, flag: 'duplicate' })?.label).toBe('Pending')
+  expect(activityStatus({ flag: 'duplicate' })).toMatchObject({
+    label: 'Possible duplicate',
+    warning: true,
+  })
+  expect(activityStatus({ flag: 'unusual' })?.label).toBe('Unusual amount')
+  expect(activityStatus({ flag: 'conflict' })).toMatchObject({ badge: 'Check', warning: true })
+  expect(activityStatus({})).toBeUndefined()
+  const html = renderToStaticMarkup(
+    <ActivityList
+      activities={[row({ flag: 'unusual' }), row({ id: 'plain' })]}
+      referenceIso="2026-09-20"
+      showColumns
+    />,
+  )
+  // The badge follows the merchant, named in full on hover; the date stands alone.
+  expect(html).toContain(
+    'Synthetic cafe</strong></button><span class="activity-badge is-warning" title="Unusual amount">Unusual</span>',
+  )
+  expect(html).toContain('aria-label="Filter by date: Sep 18, 2026" disabled=""><time')
+  expect(html.match(/activity-badge/g)).toHaveLength(1)
 })

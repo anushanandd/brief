@@ -1,6 +1,5 @@
-import { useSyncExternalStore } from 'react'
+import { preference } from './preference'
 
-const marketUpdateIntervalKey = 'brief.marketUpdateIntervalSeconds'
 const DEFAULT_MARKET_UPDATE_INTERVAL_SECONDS = 10
 
 export const marketUpdateIntervals = [
@@ -18,30 +17,9 @@ export function parseMarketUpdateInterval(value: unknown) {
   )
 }
 
-export function getMarketUpdateInterval() {
-  return typeof window === 'undefined'
-    ? DEFAULT_MARKET_UPDATE_INTERVAL_SECONDS
-    : parseMarketUpdateInterval(window.localStorage.getItem(marketUpdateIntervalKey))
-}
+const interval = preference('brief.marketUpdateIntervalSeconds', parseMarketUpdateInterval)
 
-export function saveMarketUpdateInterval(seconds: number) {
-  window.localStorage.setItem(marketUpdateIntervalKey, String(parseMarketUpdateInterval(seconds)))
-  window.dispatchEvent(new Event(marketUpdateIntervalKey))
-}
-
-function subscribe(listener: () => void) {
-  window.addEventListener(marketUpdateIntervalKey, listener)
-  window.addEventListener('storage', listener)
-  return () => {
-    window.removeEventListener(marketUpdateIntervalKey, listener)
-    window.removeEventListener('storage', listener)
-  }
-}
-
-export function useMarketUpdateInterval() {
-  return useSyncExternalStore(
-    subscribe,
-    getMarketUpdateInterval,
-    () => DEFAULT_MARKET_UPDATE_INTERVAL_SECONDS,
-  )
-}
+export const getMarketUpdateInterval = interval.get
+export const saveMarketUpdateInterval = (seconds: number) =>
+  interval.save(parseMarketUpdateInterval(seconds))
+export const useMarketUpdateInterval = interval.use

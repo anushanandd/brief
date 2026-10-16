@@ -1,0 +1,39 @@
+{
+  "version": 1,
+  "processors": [
+    { "prefix": "TST", "name": "Toast", "presence": "inPerson" },
+    { "prefix": "SQ", "name": "Square" },
+    { "prefix": "SUMUP", "name": "SumUp", "presence": "inPerson" },
+    { "prefix": "LS", "name": "Lightspeed", "presence": "inPerson", "bare": true },
+    { "prefix": "CTLP", "name": "Cantaloupe", "presence": "inPerson", "billsElsewhere": true },
+    {
+      "prefix": "NAYAX",
+      "name": "Nayax",
+      "presence": "inPerson",
+      "bare": true,
+      "billsElsewhere": true
+    },
+    { "prefix": "LEVY", "name": "Levy", "presence": "inPerson" },
+    { "prefix": "SP", "name": "Shopify", "presence": "remote", "bare": true },
+    { "prefix": "PP", "name": "PayPal", "presence": "remote" },
+    { "prefix": "PAYPAL", "name": "PayPal", "presence": "remote" },
+    { "prefix": "FEVOINC", "name": "Fever", "presence": "remote" },
+    { "prefix": "SEETICKET", "name": "See Tickets", "presence": "remote" }
+  ],
+  "leading": [
+    "APLPAY",
+    "APPLE PAY",
+    "DEBIT CARD PURCHASE",
+    "DEBIT CARD",
+    "POS PURCHASE",
+    "CHECKCARD"
+  ],
+  "aliases": {
+    "DSG": "Dick's Sporting Goods",
+    "DD BR": "Dunkin'",
+    "USPS": "U.S. Post Office"
+  },
+  "remoteWords": ["ONLINE", "MOBI", "SUBSCR", "SUBSCRIPTION", "ECOMM", "WEB"],
+  "remoteCategories": ["internet purchase", "airline", "insurance", "travel agenc", "mail order"],
+  "remoteCodes": ["TRAVEL_FLIGHTS"]
+}

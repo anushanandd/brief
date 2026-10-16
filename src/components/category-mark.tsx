@@ -5,6 +5,7 @@ import {
   BadgeDollarSign,
   Banknote,
   BedDouble,
+  Building,
   CarFront,
   ChartCandlestick,
   Clapperboard,
@@ -12,11 +13,14 @@ import {
   Coins,
   CreditCard,
   Fuel,
+  Gift,
   GraduationCap,
   HandCoins,
   HeartPulse,
   House,
+  Invoice,
   Landmark,
+  MoneySend,
   Package,
   Percent,
   Plane,
@@ -26,6 +30,7 @@ import {
   ShieldCheck,
   ShoppingBag,
   ShoppingBasket,
+  Sofa,
   Sparkles,
   Tag,
   UtensilsCrossed,
@@ -71,6 +76,19 @@ const namedMarks: Record<string, Mark> = {
   travel: { icon: Plane, color: 'var(--spending-travel)' },
   utilities: { icon: Zap, color: 'var(--spending-utilities)' },
   entertainment: { icon: Clapperboard, color: 'var(--spending-entertainment)' },
+  // Brief's top-level groups for Plaid's categories (src-tauri/src/financial_engine/categories.json).
+  rent: { icon: House, color: 'var(--spending-housing)' },
+  home: { icon: Sofa, color: 'var(--spending-housing)' },
+  health: { icon: HeartPulse, color: 'var(--data-4)' },
+  'personal care': { icon: Sparkles, color: 'var(--data-5)' },
+  services: { icon: Wrench, color: 'var(--data-2)' },
+  giving: { icon: Gift, color: 'var(--data-1)' },
+  government: { icon: Building, color: 'var(--data-6)' },
+  taxes: { icon: Invoice, color: 'var(--data-3)' },
+  fees: transactionMarks.fee,
+  transfers: transactionMarks.transfer,
+  'loan payments': transactionMarks.payment,
+  'payments to people': { icon: MoneySend, color: 'var(--data-1)' },
 }
 
 const categoryPatterns: { test: RegExp; icon: IconComponent; color?: string }[] = [
@@ -94,19 +112,17 @@ const categoryPatterns: { test: RegExp; icon: IconComponent; color?: string }[] 
   { test: /service|repair/, icon: Wrench, color: 'var(--data-2)' },
 ]
 
-export function CategoryMark({
-  category,
-  kind,
-  mark,
-  amount,
-  className,
-}: {
+type MarkInput = {
   category: string
   kind?: ActivityItem['kind']
   mark?: ActivityItem['mark']
   amount?: number
-  className?: string
-}) {
+}
+
+/** The color an activity's category mark wears, for anything that labels it elsewhere. */
+export const categoryColor = (input: MarkInput) => categoryMark(input).color
+
+function categoryMark({ category, kind, mark, amount }: MarkInput) {
   const name = category.trim().toLocaleLowerCase()
   const selected =
     kind === 'transfer' || mark === 'transfer'
@@ -127,8 +143,11 @@ export function CategoryMark({
           ? 'var(--positive)'
           : 'var(--negative)'
       : (selected?.color ?? inferred?.color ?? spendingCategoryColor(category))
-  const Icon = selected?.icon ?? inferred?.icon ?? Tag
+  return { color, icon: selected?.icon ?? inferred?.icon ?? Tag }
+}
 
+export function CategoryMark({ className, ...input }: MarkInput & { className?: string }) {
+  const { color, icon: Icon } = categoryMark(input)
   return (
     <span
       className={`transaction-mark category-mark${className ? ` ${className}` : ''}`}

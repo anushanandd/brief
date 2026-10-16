@@ -11,7 +11,6 @@ import {
   holdingRangeChange,
   holdingChartEnd,
   reduceHoldingChart,
-  parseHoldingChartRange,
   type HoldingChartState,
 } from './holding-prices'
 import { holdingChartEventSchema, type HoldingPriceHistory, type PriceBar } from './schema'
@@ -75,13 +74,6 @@ const state = (
   range: 86400,
   bars: [],
   history: history(bars, options),
-})
-
-it('defaults to day and accepts only supported saved Holdings ranges', () => {
-  for (const value of [undefined, null, '', 'invalid', false, {}, -1, 123])
-    expect(parseHoldingChartRange(value)).toBe(86400)
-  for (const value of [86400, 604800, 2592000, 31536000, 0])
-    expect(parseHoldingChartRange(String(value))).toBe(value)
 })
 
 it('cold overnight history retains daytime and overnight executions and their gaps', () => {
@@ -219,6 +211,31 @@ it('suppresses unsupported changes, never interpolating a missing left boundary'
   expect(holdingRangeChange(state(initial.history!.bars), points.slice(1), now)).toBeUndefined()
   const shorter = state([bar(now - 7200), bar(now - 1200)])
   expect(holdingRangeChange(shorter, holdingChartPoints(shorter), now)).toBeUndefined()
+})
+
+it('measures a cropped span of daily history, and never reuses a full-range saved change', () => {
+  const day = (offset: number, close: number) => ({
+    ...bar(now - offset * 86400, close),
+    endTime: now - offset * 86400 + 23400,
+  })
+  const yearly = state([day(300, 50), day(91, 80), day(89, 90), day(1, 100)], {
+    range: 31536000,
+    resolution: 86400,
+  })
+  const points = holdingChartPoints(yearly)
+  // Three months starts from the last close at or before its boundary, never an interpolation.
+  expect(holdingRangeChange(yearly, points, now, 90 * 86400)).toEqual({ change: 20, percent: 25 })
+  const saved = {
+    ...yearly,
+    history: { ...yearly.history!, cached: true },
+    savedComparison: { change: 50, percent: 100, asOf: yearly.history!.fetchedAt },
+  }
+  expect(holdingRangeChange(saved, points, now)).toEqual({ change: 50, percent: 100 })
+  expect(holdingRangeChange(saved, points, now, 90 * 86400)).toBeUndefined()
+  // Three months of daily bars draw daily candles, not weekly ones.
+  const timeline = holdingChartTimeline(yearly.history, points, now, 90 * 86400)
+  expect(holdingChartCandles(yearly, timeline, now, 90 * 86400).resolution).toBe(86400)
+  expect(holdingChartCandles(yearly, timeline, now, 31536000).resolution).toBe(7 * 86400)
 })
 
 it('retains validated saved data on errors and rejects malformed IPC bars', () => {

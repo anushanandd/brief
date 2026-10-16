@@ -1,0 +1,23 @@
+{
+  "reviewed": "2026-10-08",
+  "fomc": {
+    "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
+    "note": "The second day of each scheduled meeting, when the statement is released at 2:00 p.m. Eastern. Add a year only from the Federal Reserve's published calendar; never extrapolate.",
+    "decisions": [
+      "2026-01-28",
+      "2026-03-18",
+      "2026-04-29",
+      "2026-06-17",
+      "2026-07-29",
+      "2026-09-16",
+      "2026-10-28",
+      "2026-12-09"
+    ]
+  },
+  "releases": {
+    "source": "https://www.bls.gov/schedule/",
+    "note": "BLS release dates (8:30 a.m. Eastern), copied from the published schedule when it is reviewed. Empty until then: Brief never infers a release date.",
+    "cpi": [],
+    "employment": []
+  }
+}

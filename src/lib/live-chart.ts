@@ -1,12 +1,12 @@
 import type { LivelinePoint } from 'liveline'
 
+import { dayKey } from './dates'
 import type { MarketSnapshots } from './schema'
 
 const MAX_LIVE_POINTS = 7 * 24 * 60
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
 
 const minute = (time: number) => Math.floor(time / 60) * 60
-const utcDate = (time: number) => new Date(time * 1_000).toISOString().slice(0, 10)
 
 export function appendLiveChartPoint(
   points: LivelinePoint[],
@@ -36,6 +36,21 @@ export function upsertLiveChartPoint(
     return [...points.slice(0, existing), next, ...points.slice(existing + 1)]
   }
   return [...points, next].toSorted((left, right) => left.time - right.time).slice(-MAX_LIVE_POINTS)
+}
+
+/**
+ * A line split at its last observed day: what was observed, and the estimate after it, which
+ * starts at that last observation so the two lines meet. Without `estimatedAfter`, all of it
+ * is observed.
+ */
+export function splitAtEstimate(points: LivelinePoint[], estimatedAfter: string | undefined) {
+  const last = estimatedAfter
+    ? points.findLastIndex(
+        (point) => point.time <= Date.parse(`${estimatedAfter}T23:59:59Z`) / 1_000,
+      )
+    : -1
+  if (last < 0 || last === points.length - 1) return { observed: points, estimated: [] }
+  return { observed: points.slice(0, last + 1), estimated: points.slice(last) }
 }
 
 export function chartPointAtOrAfter(points: LivelinePoint[], time: number) {
@@ -83,7 +98,7 @@ export function buildLiveChartData(
   now: number,
 ): LivelinePoint[] {
   const liveWithCurrent = live.length ? live : appendLiveChartPoint([], currentValue, now)
-  const liveDates = new Set(liveWithCurrent.map((point) => utcDate(point.time)))
+  const liveDates = new Set(liveWithCurrent.map((point) => dayKey(point.time * 1_000)))
   const historical = history.flatMap((point): LivelinePoint[] => {
     if (!DATE_PATTERN.test(point.date) || !Number.isFinite(point.value)) return []
     const time = Date.parse(`${point.date}T12:00:00Z`) / 1_000

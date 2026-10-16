@@ -1,29 +1,40 @@
 use std::{collections::BTreeMap, fs, path::Path, time::Duration};
 
+use chrono::NaiveDate;
 use rusqlite::{
     backup::Backup, params, Connection, DatabaseName, OpenFlags, OptionalExtension, Transaction,
 };
-use serde::{Deserialize, Serialize};
+use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
 
 use crate::{
     providers::http::ProviderDiagnostic,
+    settings::FinanceSettings,
+    statements::StatementFile,
     storage::{Annotation, FinanceState},
+    summary::{Closed, Event, SessionRecord},
 };
 
-const COLLECTIONS: [&str; 10] = [
+mod bank_statements;
+mod journal;
+mod migrations;
+
+pub use bank_statements::{BankStatement, StatementCheck};
+
+const COLLECTIONS: [&str; 11] = [
     "accounts",
     "holdings",
     "transactions",
     "trades",
     "accountMovements",
+    "transactionChanges",
     "observedNetWorthHistory",
     "netWorthHistory",
     "accountBalanceHistory",
     "brokeragePerformance",
     "possibleDuplicateAccounts",
 ];
-const DATABASE_SCHEMA_VERSION: u32 = 5;
+const DATABASE_SCHEMA_VERSION: u32 = 19;
 const DATABASE_APPLICATION_ID: u32 = 0x4252_4946; // BRIF
 
 pub struct Database {
@@ -38,6 +49,77 @@ pub struct SyncDiagnostics {
     pub(crate) providers: Vec<ProviderDiagnostic>,
     #[serde(default)]
     pub(crate) warning_count: usize,
+    /// What each provider used, failed or not: counts and timings, never names or amounts.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub(crate) runs: Vec<ProviderRun>,
+    #[serde(default)]
+    pub(crate) stages: StageTimes,
+    /// The size of the snapshot the renderer received, in bytes of JSON.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) snapshot_bytes: Option<u64>,
+    /// How many saved transactions the refresh added, settled, removed, or amended.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) changes: Option<ChangeCounts>,
+}
+
+/// Counts of what a refresh changed in saved transactions.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ChangeCounts {
+    pub(crate) added: u32,
+    pub(crate) settled: u32,
+    pub(crate) removed: u32,
+    pub(crate) amended: u32,
+    pub(crate) backfilled: u32,
+}
+
+impl ChangeCounts {
+    pub(crate) fn of(change: &crate::finance_contract::Change) -> Self {
+        use crate::finance_contract::TransactionChangeKind as Kind;
+        let count = |kind: Kind| {
+            change
+                .transaction_changes
+                .iter()
+                .filter(|change| change.kind == kind)
+                .count() as u32
+        };
+        Self {
+            added: count(Kind::Added),
+            settled: count(Kind::Settled),
+            removed: count(Kind::Removed),
+            amended: count(Kind::Amended),
+            backfilled: u32::try_from(change.backfilled).unwrap_or(u32::MAX),
+        }
+    }
+}
+
+/// What one provider used during a refresh.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct ProviderRun {
+    pub(crate) provider: String,
+    pub(crate) requests: u32,
+    pub(crate) retries: u32,
+    pub(crate) bytes: u64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) duration_ms: Option<u64>,
+}
+
+/// How long each stage of a refresh took, in milliseconds.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[serde(default, rename_all = "camelCase")]
+pub struct StageTimes {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) fetch_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) project_ms: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) commit_ms: Option<u64>,
+}
+
+/// Whole milliseconds, saturating.
+pub(crate) fn millis(elapsed: std::time::Duration) -> u64 {
+    u64::try_from(elapsed.as_millis()).unwrap_or(u64::MAX)
 }
 
 impl SyncDiagnostics {
@@ -50,7 +132,29 @@ impl SyncDiagnostics {
             phase: phase.chars().take(32).collect(),
             providers: providers.into_iter().take(24).collect(),
             warning_count: warning_count.min(999),
+            ..Self::default()
         }
+    }
+
+    /// These diagnostics with each provider's usage and the time spent fetching.
+    pub(crate) fn with_usage(
+        mut self,
+        usage: BTreeMap<String, crate::providers::http::Usage>,
+        fetch_ms: u64,
+    ) -> Self {
+        self.runs = usage
+            .into_iter()
+            .take(12)
+            .map(|(provider, usage)| ProviderRun {
+                provider: provider.chars().take(32).collect(),
+                requests: usage.requests,
+                retries: usage.retries,
+                bytes: usage.bytes,
+                duration_ms: usage.duration_ms,
+            })
+            .collect();
+        self.stages.fetch_ms = Some(fetch_ms);
+        self
     }
 }
 
@@ -66,181 +170,95 @@ pub struct SyncRun {
     pub(crate) details: SyncDiagnostics,
 }
 
-fn migrate_schema(connection: &Connection, version: u32) -> Result<(), String> {
-    connection
-        .execute_batch(
-            "PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;",
-        )
-        .map_err(db_error)?;
-    let has_state = connection
-        .query_row(
-            "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'state_meta')",
-            [],
-            |row| row.get::<_, bool>(0),
-        )
-        .map_err(db_error)?;
-    if version == 0 && !has_state {
-        return connection
-            .execute_batch(
-                "BEGIN IMMEDIATE;
-                 CREATE TABLE state_meta (
-                   id INTEGER PRIMARY KEY CHECK (id = 1), schema_version INTEGER NOT NULL,
-                   revision INTEGER NOT NULL CHECK (revision >= 0),
-                   plaid_cache_json TEXT NOT NULL CHECK (json_valid(plaid_cache_json)),
-                   provider_data_json TEXT NOT NULL CHECK (json_valid(provider_data_json))
-                 ) STRICT;
-                 CREATE TABLE snapshot_scalar (
-                   key TEXT PRIMARY KEY, value_json TEXT NOT NULL CHECK (json_valid(value_json))
-                 ) STRICT;
-                 CREATE TABLE snapshot_entity (
-                   section TEXT NOT NULL, ordinal INTEGER NOT NULL CHECK (ordinal >= 0),
-                   entity_id TEXT NOT NULL, value_json TEXT NOT NULL CHECK (json_valid(value_json)),
-                   PRIMARY KEY (section, ordinal), UNIQUE (section, entity_id)
-                 ) STRICT;
-                 CREATE TABLE annotations (
-                   transaction_id TEXT PRIMARY KEY, category TEXT,
-                   reviewed INTEGER CHECK (reviewed IN (0, 1)),
-                   benefit_confirmed INTEGER CHECK (benefit_confirmed IN (0, 1))
-                 ) STRICT;
-                 CREATE TABLE account_links (
-                   plaid_account_id TEXT PRIMARY KEY CHECK (plaid_account_id LIKE 'plaid:%'),
-                   snaptrade_account_id TEXT NOT NULL UNIQUE CHECK (snaptrade_account_id LIKE 'snaptrade:%')
-                 ) STRICT;
-                 CREATE TABLE sync_runs (
-                   id TEXT PRIMARY KEY, started_at TEXT NOT NULL, finished_at TEXT NOT NULL,
-                   outcome TEXT NOT NULL CHECK (outcome IN ('committed', 'failed')),
-                   warnings_json TEXT NOT NULL CHECK (json_valid(warnings_json)), error_code TEXT,
-                   details_json TEXT NOT NULL CHECK (json_valid(details_json))
-                 ) STRICT;
-                 CREATE TABLE workspace (
-                   id INTEGER PRIMARY KEY CHECK (id = 1),
-                   value_json TEXT NOT NULL CHECK (json_valid(value_json))
-                 ) STRICT;
-                 CREATE INDEX sync_runs_finished_at ON sync_runs(finished_at DESC);
-                 PRAGMA application_id = 1112688966;
-                 PRAGMA user_version = 5;
-                 COMMIT;",
-            )
-            .map_err(db_error);
-    }
-
-    if version < 3 {
-        connection
-            .execute_batch(
-                "BEGIN IMMEDIATE;
-                 CREATE TABLE IF NOT EXISTS workspace (
-                   id INTEGER PRIMARY KEY CHECK (id = 1),
-                   value_json TEXT NOT NULL CHECK (json_valid(value_json))
-                 ) STRICT;
-                 DROP INDEX IF EXISTS account_links_snaptrade_unique;
-                 PRAGMA user_version = 3;
-                 COMMIT;",
-            )
-            .map_err(db_error)?;
-    }
-    if version < 4 {
-        let has_details = connection
-            .prepare("SELECT 1 FROM pragma_table_info('sync_runs') WHERE name = 'details_json'")
-            .and_then(|mut statement| statement.exists([]))
-            .map_err(db_error)?;
-        connection
-            .execute_batch(if has_details {
-                "PRAGMA user_version = 4;"
+impl SyncRun {
+    /// A run that ends now. Its warnings are kept only as a count.
+    pub(crate) fn ended(
+        id: &str,
+        started_at: &str,
+        outcome: &str,
+        warnings: usize,
+        error_code: Option<&str>,
+        details: SyncDiagnostics,
+    ) -> Self {
+        Self {
+            id: id.into(),
+            started_at: started_at.into(),
+            finished_at: chrono::Utc::now().to_rfc3339(),
+            outcome: outcome.into(),
+            warnings: if warnings == 0 {
+                Vec::new()
             } else {
-                "BEGIN IMMEDIATE;
-                 ALTER TABLE sync_runs ADD COLUMN details_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(details_json));
-                 PRAGMA user_version = 4;
-                 COMMIT;"
-            })
-            .map_err(db_error)?;
+                vec![format!("{warnings} warning(s)")]
+            },
+            error_code: error_code.map(str::to_owned),
+            details,
+        }
     }
-    connection
-        .execute_batch("PRAGMA application_id = 1112688966;")
-        .map_err(db_error)
 }
 
-fn scrub_legacy_diagnostics(connection: &mut Connection) -> Result<(), String> {
-    let transaction = connection.transaction().map_err(db_error)?;
-    if let Some((plaid_cache, provider_data)) = transaction
-        .query_row(
-            "SELECT plaid_cache_json, provider_data_json FROM state_meta WHERE id = 1",
-            [],
-            |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)),
-        )
-        .optional()
-        .map_err(db_error)?
-    {
-        let mut plaid_cache: Value = serde_json::from_str(&plaid_cache).map_err(json_error)?;
-        if let Some(items) = plaid_cache.get_mut("items").and_then(Value::as_object_mut) {
-            for item in items.values_mut().filter_map(Value::as_object_mut) {
-                item.remove("error");
-                if let Some(data) = item.get_mut("data").and_then(Value::as_object_mut) {
-                    data.insert("warnings".into(), Value::Array(Vec::new()));
-                }
-            }
-        }
-        let mut provider_data: Value = serde_json::from_str(&provider_data).map_err(json_error)?;
-        if let Some(statuses) = provider_data
-            .get_mut("syncStatus")
-            .and_then(Value::as_object_mut)
-        {
-            for status in statuses.values_mut().filter_map(Value::as_object_mut) {
-                status.insert("error".into(), Value::Null);
-            }
-        }
-        for provider in ["plaid", "snaptrade"] {
-            if let Some(data) = provider_data
-                .get_mut(provider)
-                .and_then(Value::as_object_mut)
-            {
-                data.insert("warnings".into(), Value::Array(Vec::new()));
-            }
-        }
+const INSERT_ANNOTATION: &str = "INSERT OR REPLACE INTO annotations(transaction_id, category, reviewed, benefit_confirmed, tags_json, splits_json, refund_of, other, benefit_id, note, people_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)";
+
+fn write_documents(
+    transaction: &Transaction<'_>,
+    documents: &[crate::documents::Document],
+) -> Result<(), String> {
+    transaction
+        .execute("DELETE FROM documents", [])
+        .map_err(db_error)?;
+    for document in documents {
         transaction
-            .execute(
-                "UPDATE state_meta SET plaid_cache_json = ?1, provider_data_json = ?2 WHERE id = 1",
-                params![
-                    serde_json::to_string(&plaid_cache).map_err(json_error)?,
-                    serde_json::to_string(&provider_data).map_err(json_error)?,
-                ],
-            )
+            .prepare_cached("INSERT INTO documents(id, value_json) VALUES (?1, ?2)")
+            .map_err(db_error)?
+            .execute(params![
+                document.id,
+                serde_json::to_string(document).map_err(json_error)?
+            ])
             .map_err(db_error)?;
     }
+    Ok(())
+}
+
+fn write_annotation(
+    transaction: &Transaction<'_>,
+    id: &str,
+    annotation: &Annotation,
+) -> Result<(), String> {
+    let tags = annotation
+        .tags
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(json_error)?;
+    let splits = annotation
+        .splits
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(json_error)?;
+    let people = annotation
+        .people
+        .as_ref()
+        .map(serde_json::to_string)
+        .transpose()
+        .map_err(json_error)?;
     transaction
-        .execute(
-            "UPDATE snapshot_scalar SET value_json = '[]' WHERE key = 'syncWarnings'",
-            [],
-        )
-        .map_err(db_error)?;
-    if let Some(saved) = transaction
-        .query_row(
-            "SELECT value_json FROM snapshot_scalar WHERE key = 'providerStatus'",
-            [],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()
+        .prepare_cached(INSERT_ANNOTATION)
         .map_err(db_error)?
-    {
-        let mut statuses: Value = serde_json::from_str(&saved).map_err(json_error)?;
-        if let Some(statuses) = statuses.as_object_mut() {
-            for status in statuses.values_mut().filter_map(Value::as_object_mut) {
-                status.insert("error".into(), Value::Null);
-            }
-        }
-        transaction
-            .execute(
-                "UPDATE snapshot_scalar SET value_json = ?1 WHERE key = 'providerStatus'",
-                [serde_json::to_string(&statuses).map_err(json_error)?],
-            )
-            .map_err(db_error)?;
-    }
-    transaction
-        .execute("UPDATE sync_runs SET warnings_json = '[]'", [])
+        .execute(params![
+            id,
+            annotation.category,
+            annotation.reviewed,
+            annotation.benefit_confirmed,
+            tags,
+            splits,
+            annotation.refund_of,
+            annotation.other,
+            annotation.benefit_id,
+            annotation.note,
+            people,
+        ])
         .map_err(db_error)?;
-    transaction
-        .execute_batch("PRAGMA user_version = 5;")
-        .map_err(db_error)?;
-    transaction.commit().map_err(db_error)
+    Ok(())
 }
 
 impl Database {
@@ -253,9 +271,20 @@ impl Database {
         if version > DATABASE_SCHEMA_VERSION {
             return Err("The finance database requires a newer version of Brief".into());
         }
-        migrate_schema(&connection, version)?;
+        migrations::migrate_schema(&connection, version)?;
         if version < 5 {
-            scrub_legacy_diagnostics(&mut connection)?;
+            migrations::scrub_legacy_diagnostics(&mut connection)?;
+        }
+        // Version 17 adds the change log, starting from what the database already holds.
+        if version < 17 {
+            let transaction = connection.transaction().map_err(db_error)?;
+            journal::baseline(&transaction)?;
+            transaction.commit().map_err(db_error)?;
+        }
+        if version < DATABASE_SCHEMA_VERSION {
+            connection
+                .pragma_update(None, "user_version", DATABASE_SCHEMA_VERSION)
+                .map_err(db_error)?;
         }
         Ok(Self { connection })
     }
@@ -320,31 +349,68 @@ impl Database {
             "accountLinks".into(),
             serde_json::to_value(&account_links).map_err(json_error)?,
         );
+        let settings = self
+            .connection
+            .query_row(
+                "SELECT value_json FROM finance_settings WHERE id = 1",
+                [],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .map_err(db_error)?
+            .map(|json| serde_json::from_str::<FinanceSettings>(&json).map_err(json_error))
+            .transpose()?
+            .unwrap_or_default();
+        let statements = self.load_statements()?;
+        let documents = self.load_documents()?;
         Ok(Some(FinanceState {
             schema_version,
             revision,
-            snapshot: Value::Object(snapshot),
+            settings,
+            statements,
+            documents,
+            snapshot: serde_json::from_value(Value::Object(snapshot))
+                .map_err(|error| format!("Invalid financial snapshot: {error}"))?,
             plaid_cache: serde_json::from_str(&plaid_cache).map_err(json_error)?,
             provider_data: serde_json::from_str(&provider_data).map_err(json_error)?,
             annotations,
             account_links,
-            workspace: self
-                .connection
-                .query_row("SELECT value_json FROM workspace WHERE id = 1", [], |row| {
-                    row.get::<_, String>(0)
-                })
-                .optional()
-                .map_err(db_error)?
-                .map(|json| serde_json::from_str(&json).map_err(json_error))
-                .transpose()?
-                .unwrap_or_default(),
         }))
     }
 
     pub fn replace(&mut self, state: &FinanceState) -> Result<(), String> {
         let transaction = self.connection.transaction().map_err(db_error)?;
+        journal::record_state(&transaction, state)?;
         write_state(&transaction, state)?;
         transaction.commit().map_err(db_error)
+    }
+
+    pub fn erase(&mut self, state: &FinanceState) -> Result<(), String> {
+        self.connection
+            .pragma_update(None, "secure_delete", true)
+            .map_err(db_error)?;
+        let transaction = self.connection.transaction().map_err(db_error)?;
+        write_state(&transaction, state)?;
+        transaction
+            .execute("DELETE FROM sync_runs", [])
+            .map_err(db_error)?;
+        transaction
+            .execute("DELETE FROM market_sessions", [])
+            .map_err(db_error)?;
+        transaction
+            .execute("DELETE FROM market_events", [])
+            .map_err(db_error)?;
+        transaction
+            .execute("DELETE FROM bank_statements", [])
+            .map_err(db_error)?;
+        transaction
+            .execute("DELETE FROM bank_statement_checks", [])
+            .map_err(db_error)?;
+        journal::clear(&transaction)?;
+        transaction.commit().map_err(db_error)?;
+        self.connection
+            .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA secure_delete = OFF;")
+            .map_err(db_error)
     }
 
     pub fn replace_annotations(
@@ -352,14 +418,12 @@ impl Database {
         annotations: &BTreeMap<String, Annotation>,
     ) -> Result<(), String> {
         let transaction = self.connection.transaction().map_err(db_error)?;
+        journal::record_annotations(&transaction, annotations)?;
         transaction
             .execute("DELETE FROM annotations", [])
             .map_err(db_error)?;
         for (id, annotation) in annotations {
-            transaction
-                .prepare_cached("INSERT INTO annotations(transaction_id, category, reviewed, benefit_confirmed) VALUES (?1, ?2, ?3, ?4)").map_err(db_error)?.execute(params![id, annotation.category, annotation.reviewed, annotation.benefit_confirmed],
-                )
-                .map_err(db_error)?;
+            write_annotation(&transaction, id, annotation)?;
         }
         transaction.commit().map_err(db_error)
     }
@@ -381,27 +445,15 @@ impl Database {
         transaction.commit().map_err(db_error)
     }
 
-    pub fn record_sync_run(
-        &mut self,
-        id: &str,
-        started_at: &str,
-        finished_at: &str,
-        outcome: &str,
-        warnings: &[String],
-        error_code: Option<&str>,
-        details: &SyncDiagnostics,
-    ) -> Result<(), String> {
+    pub fn replace_settings(&mut self, settings: &FinanceSettings) -> Result<(), String> {
         let transaction = self.connection.transaction().map_err(db_error)?;
-        write_sync_run(
-            &transaction,
-            id,
-            started_at,
-            finished_at,
-            outcome,
-            warnings,
-            error_code,
-            details,
-        )?;
+        write_settings(&transaction, settings)?;
+        transaction.commit().map_err(db_error)
+    }
+
+    pub fn record_sync_run(&mut self, run: &SyncRun) -> Result<(), String> {
+        let transaction = self.connection.transaction().map_err(db_error)?;
+        write_sync_run(&transaction, run)?;
         transaction.commit().map_err(db_error)
     }
 
@@ -465,41 +517,105 @@ impl Database {
         Ok(())
     }
 
-    #[cfg(test)]
-    pub fn replace_workspace(
-        &mut self,
-        workspace: &crate::workspace::Workspace,
-    ) -> Result<(), String> {
-        self.connection
-            .execute(
-                "INSERT OR REPLACE INTO workspace(id, value_json) VALUES (1, ?1)",
-                [serde_json::to_string(workspace).map_err(json_error)?],
-            )
+    /// One JSON column's rows, in the query's order. A row that no longer reads as `T` is
+    /// left out, so what it held is computed again.
+    fn json_rows<T: DeserializeOwned>(
+        &self,
+        sql: &str,
+        parameters: impl rusqlite::Params,
+    ) -> Result<Vec<T>, String> {
+        let mut statement = self.connection.prepare(sql).map_err(db_error)?;
+        let rows = statement
+            .query_map(parameters, |row| row.get::<_, String>(0))
             .map_err(db_error)?;
-        Ok(())
+        let mut records = Vec::new();
+        for row in rows {
+            if let Ok(record) = serde_json::from_str(&row.map_err(db_error)?) {
+                records.push(record);
+            }
+        }
+        Ok(records)
     }
 
-    #[cfg(test)]
-    pub fn replace_review(
-        &mut self,
-        id: &str,
-        annotation: Option<&Annotation>,
-        workspace: &crate::workspace::Workspace,
-    ) -> Result<(), String> {
+    /// Saved market sessions after `after` through `through`, oldest first.
+    pub fn market_sessions(
+        &self,
+        after: NaiveDate,
+        through: NaiveDate,
+    ) -> Result<Vec<SessionRecord>, String> {
+        self.json_rows(
+            "SELECT record_json FROM market_sessions WHERE session > ?1 AND session <= ?2 ORDER BY session",
+            params![after.to_string(), through.to_string()],
+        )
+    }
+
+    /// The latest `limit` saved market sessions, newest first.
+    pub fn latest_market_sessions(&self, limit: usize) -> Result<Vec<SessionRecord>, String> {
+        self.json_rows(
+            "SELECT record_json FROM market_sessions ORDER BY session DESC LIMIT ?1",
+            [limit as i64],
+        )
+    }
+
+    /// Saved events in sessions after `after` through `through`, oldest first.
+    pub fn market_events(
+        &self,
+        after: NaiveDate,
+        through: NaiveDate,
+    ) -> Result<Vec<Event>, String> {
+        self.json_rows(
+            "SELECT record_json FROM market_events WHERE session > ?1 AND session <= ?2 ORDER BY session, id",
+            params![after.to_string(), through.to_string()],
+        )
+    }
+
+    /// Saves closed sessions and their events in one transaction. A session saved again (by
+    /// another method) replaces its events with the new ones; an event of a session not being
+    /// saved is ignored.
+    pub fn save_market_sessions(&mut self, closed: &Closed) -> Result<(), String> {
+        let sessions: std::collections::BTreeSet<NaiveDate> = closed
+            .sessions
+            .iter()
+            .map(|record| record.session)
+            .collect();
         let transaction = self.connection.transaction().map_err(db_error)?;
-        if let Some(annotation) = annotation {
-            transaction.execute("INSERT OR REPLACE INTO annotations(transaction_id, category, reviewed, benefit_confirmed) VALUES (?1, ?2, ?3, ?4)", params![id, annotation.category, annotation.reviewed, annotation.benefit_confirmed]).map_err(db_error)?;
-        } else {
+        for session in &sessions {
             transaction
-                .execute("DELETE FROM annotations WHERE transaction_id = ?1", [id])
+                .execute(
+                    "DELETE FROM market_events WHERE session = ?1",
+                    [session.to_string()],
+                )
                 .map_err(db_error)?;
         }
-        transaction
-            .execute(
-                "INSERT OR REPLACE INTO workspace(id, value_json) VALUES (1, ?1)",
-                [serde_json::to_string(workspace).map_err(json_error)?],
-            )
-            .map_err(db_error)?;
+        for event in closed
+            .events
+            .iter()
+            .filter(|event| sessions.contains(&event.session))
+        {
+            transaction
+                .prepare_cached("INSERT OR REPLACE INTO market_events(id, session, family, symbol, record_json) VALUES (?1, ?2, ?3, ?4, ?5)")
+                .map_err(db_error)?
+                .execute(params![
+                    event.id,
+                    event.session.to_string(),
+                    event.family.name(),
+                    event.symbol,
+                    serde_json::to_string(event).map_err(json_error)?
+                ])
+                .map_err(db_error)?;
+        }
+        for record in &closed.sessions {
+            transaction
+                .prepare_cached("INSERT OR REPLACE INTO market_sessions(session, method, computed_at, record_json) VALUES (?1, ?2, ?3, ?4)")
+                .map_err(db_error)?
+                .execute(params![
+                    record.session.to_string(),
+                    record.method,
+                    record.computed_at,
+                    serde_json::to_string(record).map_err(json_error)?
+                ])
+                .map_err(db_error)?;
+        }
         transaction.commit().map_err(db_error)
     }
 
@@ -539,30 +655,63 @@ impl Database {
     }
 
     fn load_annotations(&self) -> Result<BTreeMap<String, Annotation>, String> {
+        read_annotations(&self.connection)
+    }
+
+    fn load_documents(&self) -> Result<Vec<crate::documents::Document>, String> {
+        let mut statement = self
+            .connection
+            .prepare("SELECT value_json FROM documents ORDER BY id")
+            .map_err(db_error)?;
+        let rows = statement
+            .query_map([], |row| row.get::<_, String>(0))
+            .map_err(db_error)?;
+        let mut documents = Vec::new();
+        for row in rows {
+            documents.push(serde_json::from_str(&row.map_err(db_error)?).map_err(json_error)?);
+        }
+        Ok(documents)
+    }
+
+    /// Saves what Brief read from documents; the originals live in their own database.
+    pub fn replace_documents(
+        &mut self,
+        documents: &[crate::documents::Document],
+    ) -> Result<(), String> {
+        let transaction = self.connection.transaction().map_err(db_error)?;
+        write_documents(&transaction, documents)?;
+        transaction.commit().map_err(db_error)
+    }
+
+    fn load_statements(&self) -> Result<Vec<StatementFile>, String> {
         let mut statement = self
             .connection
             .prepare(
-                "SELECT transaction_id, category, reviewed, benefit_confirmed FROM annotations ORDER BY transaction_id",
+                "SELECT id, account_id, file_name, imported_at, contents, confirmed_json FROM statement_files ORDER BY imported_at, id",
             )
             .map_err(db_error)?;
         let rows = statement
             .query_map([], |row| {
                 Ok((
-                    row.get::<_, String>(0)?,
-                    Annotation {
-                        category: row.get(1)?,
-                        reviewed: row.get(2)?,
-                        benefit_confirmed: row.get(3)?,
+                    StatementFile {
+                        id: row.get(0)?,
+                        account_id: row.get(1)?,
+                        file_name: row.get(2)?,
+                        imported_at: row.get(3)?,
+                        contents: row.get(4)?,
+                        confirmed_rows: Default::default(),
                     },
+                    row.get::<_, String>(5)?,
                 ))
             })
             .map_err(db_error)?;
-        let mut values = BTreeMap::new();
+        let mut files = Vec::new();
         for row in rows {
-            let (id, annotation) = row.map_err(db_error)?;
-            values.insert(id, annotation);
+            let (mut file, confirmed) = row.map_err(db_error)?;
+            file.confirmed_rows = serde_json::from_str(&confirmed).map_err(json_error)?;
+            files.push(file);
         }
-        Ok(values)
+        Ok(files)
     }
 
     fn load_account_links(&self) -> Result<BTreeMap<String, String>, String> {
@@ -584,22 +733,62 @@ impl Database {
     }
 }
 
-fn write_sync_run(
-    transaction: &Transaction<'_>,
-    id: &str,
-    started_at: &str,
-    finished_at: &str,
-    outcome: &str,
-    warnings: &[String],
-    error_code: Option<&str>,
-    details: &SyncDiagnostics,
-) -> Result<(), String> {
-    let warnings = serde_json::to_string(warnings).map_err(json_error)?;
-    let details = serde_json::to_string(details).map_err(json_error)?;
+fn read_annotations(connection: &Connection) -> Result<BTreeMap<String, Annotation>, String> {
+    let mut statement = connection
+        .prepare(
+            "SELECT transaction_id, category, reviewed, benefit_confirmed, tags_json, splits_json, refund_of, other, benefit_id, note, people_json FROM annotations ORDER BY transaction_id",
+        )
+        .map_err(db_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                Annotation {
+                    category: row.get(1)?,
+                    reviewed: row.get(2)?,
+                    benefit_confirmed: row.get(3)?,
+                    tags: None,
+                    splits: None,
+                    refund_of: row.get(6)?,
+                    other: row.get(7)?,
+                    benefit_id: row.get(8)?,
+                    note: row.get(9)?,
+                    people: None,
+                    clear_benefit: false,
+                },
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+                row.get::<_, Option<String>>(10)?,
+            ))
+        })
+        .map_err(db_error)?;
+    let mut values = BTreeMap::new();
+    for row in rows {
+        let (id, mut annotation, tags, splits, people) = row.map_err(db_error)?;
+        annotation.tags = tags
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(json_error)?;
+        annotation.splits = splits
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(json_error)?;
+        annotation.people = people
+            .map(|json| serde_json::from_str(&json))
+            .transpose()
+            .map_err(json_error)?;
+        values.insert(id, annotation);
+    }
+    Ok(values)
+}
+
+fn write_sync_run(transaction: &Transaction<'_>, run: &SyncRun) -> Result<(), String> {
+    let warnings = serde_json::to_string(&run.warnings).map_err(json_error)?;
+    let details = serde_json::to_string(&run.details).map_err(json_error)?;
     transaction
         .execute(
             "INSERT OR IGNORE INTO sync_runs(id, started_at, finished_at, outcome, warnings_json, error_code, details_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
-            params![id, started_at, finished_at, outcome, warnings, error_code, details],
+            params![run.id, run.started_at, run.finished_at, run.outcome, warnings, run.error_code, details],
         )
         .map_err(db_error)?;
     transaction
@@ -611,12 +800,21 @@ fn write_sync_run(
     Ok(())
 }
 
-fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<(), String> {
+fn write_settings(transaction: &Transaction<'_>, settings: &FinanceSettings) -> Result<(), String> {
     transaction
         .execute(
-            "INSERT OR REPLACE INTO workspace(id, value_json) VALUES (1, ?1)",
-            [serde_json::to_string(&state.workspace).map_err(json_error)?],
+            "INSERT OR REPLACE INTO finance_settings(id, value_json) VALUES (1, ?1)",
+            [serde_json::to_string(settings).map_err(json_error)?],
         )
+        .map_err(db_error)?;
+    Ok(())
+}
+
+fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<(), String> {
+    write_settings(transaction, &state.settings)?;
+    // Category rules were retired; a database that still has the table keeps it empty.
+    transaction
+        .execute("DELETE FROM category_rules", [])
         .map_err(db_error)?;
     transaction
         .execute(
@@ -638,11 +836,10 @@ fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<()
     transaction
         .execute("DELETE FROM snapshot_entity", [])
         .map_err(db_error)?;
-    let snapshot = state
-        .snapshot
-        .as_object()
-        .ok_or("Snapshot must be an object")?;
-    for (key, value) in snapshot {
+    let Value::Object(snapshot) = serde_json::to_value(&state.snapshot).map_err(json_error)? else {
+        return Err("Snapshot must be an object".into());
+    };
+    for (key, value) in &snapshot {
         if key == "accountLinks" {
             continue;
         }
@@ -672,9 +869,28 @@ fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<()
         .execute("DELETE FROM annotations", [])
         .map_err(db_error)?;
     for (id, annotation) in &state.annotations {
-        transaction.prepare_cached("INSERT INTO annotations(transaction_id, category, reviewed, benefit_confirmed) VALUES (?1, ?2, ?3, ?4)").map_err(db_error)?.execute(params![id, annotation.category, annotation.reviewed, annotation.benefit_confirmed],
-        ).map_err(db_error)?;
+        write_annotation(transaction, id, annotation)?;
     }
+    transaction
+        .execute("DELETE FROM statement_files", [])
+        .map_err(db_error)?;
+    for file in &state.statements {
+        transaction
+            .prepare_cached(
+                "INSERT INTO statement_files(id, account_id, file_name, imported_at, contents, confirmed_json) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            )
+            .map_err(db_error)?
+            .execute(params![
+                file.id,
+                file.account_id,
+                file.file_name,
+                file.imported_at,
+                file.contents,
+                serde_json::to_string(&file.confirmed_rows).map_err(json_error)?
+            ])
+            .map_err(db_error)?;
+    }
+    write_documents(transaction, &state.documents)?;
     transaction
         .execute("DELETE FROM account_links", [])
         .map_err(db_error)?;
@@ -701,7 +917,7 @@ fn entity_id(section: &str, value: &Value, ordinal: usize) -> String {
         };
     }
     let field = match section {
-        "accounts" | "transactions" | "trades" | "accountMovements" => "id",
+        "accounts" | "transactions" | "trades" | "accountMovements" | "transactionChanges" => "id",
         "accountBalanceHistory" | "brokeragePerformance" => "accountId",
         "observedNetWorthHistory" | "netWorthHistory" => "date",
         _ => "",
@@ -735,164 +951,4 @@ pub(crate) fn secure_file(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn version_one_migration_preserves_data_and_the_unique_constraint() {
-        let path =
-            std::env::temp_dir().join(format!("brief-migration-{}.sqlite3", uuid::Uuid::new_v4()));
-        let mut db = Database::open(&path).unwrap();
-        let mut state = crate::storage::empty_state().unwrap();
-        state
-            .account_links
-            .insert("plaid:one".into(), "snaptrade:one".into());
-        db.replace(&state).unwrap();
-        db.connection.execute_batch("CREATE UNIQUE INDEX account_links_snaptrade_unique ON account_links(snaptrade_account_id); PRAGMA user_version = 1;").unwrap();
-        drop(db);
-        let db = Database::open(&path).unwrap();
-        assert_eq!(
-            db.load().unwrap().unwrap().account_links,
-            state.account_links
-        );
-        assert!(db
-            .connection
-            .execute(
-                "INSERT INTO account_links VALUES ('plaid:two', 'snaptrade:one')",
-                []
-            )
-            .is_err());
-        let redundant: u32 = db
-            .connection
-            .query_row(
-                "SELECT count(*) FROM sqlite_master WHERE name = 'account_links_snaptrade_unique'",
-                [],
-                |row| row.get(0),
-            )
-            .unwrap();
-        assert_eq!(redundant, 0);
-        drop(db);
-        fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn version_three_migration_adds_details_and_scrubs_legacy_provider_messages() {
-        let path = std::env::temp_dir().join(format!("brief-v3-{}.sqlite3", uuid::Uuid::new_v4()));
-        let mut db = Database::open(&path).unwrap();
-        let mut state = crate::storage::empty_state().unwrap();
-        state.snapshot["syncWarnings"] = serde_json::json!(["raw account message"]);
-        state.snapshot["providerStatus"] = serde_json::json!({
-            "plaid": {"updatedAt": null, "error": "raw account message"}
-        });
-        state.plaid_cache = serde_json::from_value(serde_json::json!({
-            "items": {"item": {
-                "cursor": null, "transactions": [], "error": "raw account message",
-                "data": {
-                    "accounts": [], "transactions": [], "investmentAccounts": [],
-                    "holdings": [], "securities": [], "warnings": ["raw account message"]
-                }
-            }}
-        }))
-        .unwrap();
-        state.provider_data.plaid = Some(crate::providers::PlaidData {
-            warnings: vec!["raw account message".into()],
-            ..Default::default()
-        });
-        state.provider_data.sync_status.insert(
-            "plaid".into(),
-            crate::finance_contract::ProviderSyncStatus {
-                updated_at: None,
-                error: Some("raw account message".into()),
-            },
-        );
-        db.replace(&state).unwrap();
-        db.connection
-            .execute_batch(
-                "DROP INDEX sync_runs_finished_at;
-                 ALTER TABLE sync_runs RENAME TO sync_runs_v4;
-                 CREATE TABLE sync_runs (
-                   id TEXT PRIMARY KEY, started_at TEXT NOT NULL, finished_at TEXT NOT NULL,
-                   outcome TEXT NOT NULL CHECK (outcome IN ('committed', 'failed')),
-                   warnings_json TEXT NOT NULL CHECK (json_valid(warnings_json)), error_code TEXT
-                 ) STRICT;
-                 INSERT INTO sync_runs(id, started_at, finished_at, outcome, warnings_json, error_code)
-                 VALUES ('old', '2026-09-01T00:00:00Z', '2026-09-01T00:00:01Z', 'failed', '[\"raw account message\"]', 'refresh_timeout');
-                 DROP TABLE sync_runs_v4;
-                 CREATE INDEX sync_runs_finished_at ON sync_runs(finished_at DESC);
-                 PRAGMA user_version = 3;",
-            )
-            .unwrap();
-        drop(db);
-
-        let db = Database::open(&path).unwrap();
-        let runs = db.sync_runs().unwrap();
-        assert_eq!(runs.len(), 1);
-        assert_eq!(runs[0].id, "old");
-        assert!(runs[0].warnings.is_empty());
-        assert_eq!(runs[0].details.phase, "");
-        let state = db.load().unwrap().unwrap();
-        assert_eq!(state.snapshot["syncWarnings"], serde_json::json!([]));
-        assert!(state.snapshot["providerStatus"]["plaid"]["error"].is_null());
-        assert!(state.provider_data.plaid.unwrap().warnings.is_empty());
-        assert_eq!(state.provider_data.sync_status["plaid"].error, None);
-        assert!(
-            serde_json::to_value(state.plaid_cache).unwrap()["items"]["item"]["error"].is_null()
-        );
-        assert_eq!(
-            db.connection
-                .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
-                .unwrap(),
-            DATABASE_SCHEMA_VERSION
-        );
-        db.connection
-            .execute_batch(
-                "UPDATE snapshot_scalar SET value_json = '[\"raw account message\"]' WHERE key = 'syncWarnings';
-                 PRAGMA user_version = 4;",
-            )
-            .unwrap();
-        drop(db);
-        let db = Database::open(&path).unwrap();
-        assert_eq!(
-            db.load().unwrap().unwrap().snapshot["syncWarnings"],
-            serde_json::json!([])
-        );
-        drop(db);
-        fs::remove_file(path).unwrap();
-    }
-
-    #[test]
-    fn normalized_store_round_trips_and_rejects_duplicate_entity_ids() {
-        let mut database = Database::open(Path::new(":memory:")).unwrap();
-        let schema_version = database
-            .connection
-            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
-            .unwrap();
-        assert_eq!(schema_version, DATABASE_SCHEMA_VERSION);
-        let mut state = crate::storage::empty_state().unwrap();
-        state.snapshot["transactions"] = serde_json::json!([{
-            "id": "one", "merchant": "Shop", "category": "Other", "date": "2026-09-09",
-            "amount": -1, "account": "Card", "pending": false
-        }]);
-        database.replace(&state).unwrap();
-        let loaded = database.load().unwrap().unwrap();
-        assert_eq!(
-            loaded.snapshot["transactions"],
-            state.snapshot["transactions"]
-        );
-        assert_eq!(loaded.snapshot["netWorth"], state.snapshot["netWorth"]);
-        assert_eq!(loaded.snapshot["accountLinks"], serde_json::json!({}));
-
-        state.snapshot["transactions"] = serde_json::json!([
-            { "id": "same" }, { "id": "same" }
-        ]);
-        assert!(database.replace(&state).is_err());
-        assert_eq!(database.load().unwrap().unwrap().snapshot, loaded.snapshot);
-
-        state.snapshot["transactions"] = serde_json::json!([]);
-        state.account_links = BTreeMap::from([
-            ("plaid:one".into(), "snaptrade:same".into()),
-            ("plaid:two".into(), "snaptrade:same".into()),
-        ]);
-        assert!(database.replace(&state).is_err());
-    }
-}
+mod tests;

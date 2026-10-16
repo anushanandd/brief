@@ -2,11 +2,11 @@ import { expect, it } from 'vitest'
 
 import type { ActivityItem } from './activity'
 import {
-  activityDateBounds,
   activityDatePreset,
   activityDateRangeValue,
   activityFilterCandidates,
   activityMatchesDateRange,
+  selectedFilterValues,
 } from './activity-filters'
 
 const activity = (id: string, date: string): ActivityItem => ({
@@ -20,28 +20,11 @@ const activity = (id: string, date: string): ActivityItem => ({
 })
 
 it('applies inclusive activity date filters', () => {
-  const reference = '2026-09-18T12:00:00Z'
   expect(
-    activityDateBounds(
-      [activity('latest', '2026-09-18'), activity('earliest', '2026-09-11')],
-      reference,
-    ),
-  ).toEqual(['2026-09-11', '2026-09-18'])
-  expect(
-    activityMatchesDateRange(
-      activity('included', '2026-09-12'),
-      reference,
-      '2026-09-12',
-      '2026-09-18',
-    ),
+    activityMatchesDateRange(activity('included', '2026-09-12'), '2026-09-12', '2026-09-18'),
   ).toBe(true)
   expect(
-    activityMatchesDateRange(
-      activity('excluded', '2026-09-11'),
-      reference,
-      '2026-09-12',
-      '2026-09-18',
-    ),
+    activityMatchesDateRange(activity('excluded', '2026-09-11'), '2026-09-12', '2026-09-18'),
   ).toBe(false)
 })
 
@@ -107,7 +90,6 @@ it('limits each filter choice to matching activity while leaving its own facet o
   ]
   const candidates = activityFilterCandidates(
     entries,
-    '2026-09-18T12:00:00Z',
     'chipotle',
     '2026-09-01',
     undefined,
@@ -122,7 +104,6 @@ it('limits each filter choice to matching activity while leaving its own facet o
 
   const wider = activityFilterCandidates(
     entries,
-    '2026-09-18T12:00:00Z',
     'chipotle',
     '2026-09-01',
     undefined,
@@ -133,4 +114,39 @@ it('limits each filter choice to matching activity while leaving its own facet o
   expect(wider.accounts.map(({ accountId }) => accountId)).toEqual(['checking', 'credit'])
   expect(wider.categories.map(({ category }) => category)).toEqual(['Dining', 'Groceries'])
   expect(wider.methods.map(({ paymentChannel }) => paymentChannel)).toEqual(['in store'])
+})
+
+it('finds a split under each of its categories and activity by tag', async () => {
+  const { activityMatchesSearch } = await import('./activity')
+  const split: ActivityItem = {
+    ...activity('split', '2026-09-12'),
+    category: 'Split',
+    splitCategories: ['Groceries', 'Gifts'],
+    tags: ['Trip'],
+  }
+  const plain = { ...activity('plain', '2026-09-12'), category: 'Groceries' }
+  const results = (categories: string[]) =>
+    activityFilterCandidates(
+      [split, plain],
+      '',
+      undefined,
+      undefined,
+      undefined,
+      categories,
+      [],
+    ).results.map(({ id }) => id)
+  expect(results(['Gifts'])).toEqual(['split'])
+  expect(results(['Groceries'])).toEqual(['split', 'plain'])
+  expect(results(['Travel'])).toEqual([])
+  expect(activityMatchesSearch(split, 'tag: trip')).toBe(true)
+  expect(activityMatchesSearch(split, 'trip')).toBe(true)
+  expect(activityMatchesSearch(plain, 'tag: trip')).toBe(false)
+})
+
+it('keeps only the filter values that are still options', () => {
+  expect(selectedFilterValues('cash,missing,credit', ['cash', 'credit'])).toEqual([
+    'cash',
+    'credit',
+  ])
+  expect(selectedFilterValues(undefined, ['cash'])).toEqual([])
 })

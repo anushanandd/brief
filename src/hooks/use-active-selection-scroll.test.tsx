@@ -27,16 +27,27 @@ afterEach(() => {
   document.body.replaceChildren()
 })
 
-it('keeps the active selection visible when it changes', async () => {
+const rect = (left: number, right: number) => new DOMRect(left, 0, right - left, 0)
+
+it('scrolls the strip, not the page, to keep the active selection visible', async () => {
   const scrollIntoView = vi.fn()
   Element.prototype.scrollIntoView = scrollIntoView
   const container = document.body.appendChild(document.createElement('div'))
   const root = createRoot(container)
 
   await act(async () => root.render(<Selector />))
-  await act(async () => container.querySelector<HTMLButtonElement>('button:last-child')!.click())
+  const nav = container.querySelector('nav')!
+  const [first, second] = container.querySelectorAll('button')
+  // A 100px strip holding two 80px items: the second starts out of view.
+  Object.defineProperty(nav, 'scrollWidth', { value: 160 })
+  Object.defineProperty(nav, 'clientWidth', { value: 100 })
+  nav.getBoundingClientRect = () => rect(0, 100)
+  first.getBoundingClientRect = () => rect(0, 80)
+  second.getBoundingClientRect = () => rect(80, 160)
 
-  expect(scrollIntoView).toHaveBeenLastCalledWith({ block: 'nearest', inline: 'nearest' })
-  expect(scrollIntoView).toHaveBeenCalledTimes(2)
+  await act(async () => second.click())
+  expect(nav.scrollLeft).toBe(60)
+  // The page is never scrolled to reach a strip below the fold.
+  expect(scrollIntoView).not.toHaveBeenCalled()
   await act(async () => root.unmount())
 })

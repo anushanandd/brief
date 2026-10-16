@@ -1,0 +1,197 @@
+/* Toasts, refresh progress, loading, and notices. */
+
+.brief-toast {
+  align-items: flex-start !important;
+  border-color: var(--popup-border) !important;
+  border-radius: var(--radius-control) !important;
+  background: var(--popup-surface) !important;
+  box-shadow: var(--shadow-popup) !important;
+  color: var(--text-primary) !important;
+  font-family: inherit !important;
+}
+.brief-toast [data-icon] {
+  margin-top: 2px !important;
+}
+.brief-toast [data-description] {
+  color: var(--text-secondary) !important;
+}
+.refresh-progress {
+  display: grid;
+  gap: 8px;
+  min-width: 280px;
+}
+.refresh-progress-tasks {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.refresh-progress-tasks li {
+  display: grid;
+  grid-template-columns: 7px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.refresh-progress-tasks li > small {
+  color: var(--text-secondary);
+}
+.refresh-task-state {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+.refresh-task-state.waiting,
+.refresh-task-state.cached {
+  background: var(--text-tertiary);
+}
+.refresh-task-state.complete {
+  background: var(--positive);
+}
+.refresh-task-state.warning {
+  border: var(--hairline) solid var(--text-secondary);
+  background: transparent;
+}
+.refresh-progress-track {
+  position: relative;
+  display: block;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--accent-soft);
+}
+.refresh-progress-track > span {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 42%;
+  border-radius: inherit;
+  background: var(--accent);
+  transform: translateX(-100%);
+  animation: refresh-progress 1.2s linear infinite;
+}
+:root[data-theme='dark'] .refresh-progress-track > span {
+  background: var(--brand-gradient-across);
+}
+.refresh-progress small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+@keyframes refresh-progress {
+  to {
+    transform: translateX(338%);
+  }
+}
+
+.loading-page {
+  min-height: 100vh;
+}
+.metric-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+}
+.skeleton {
+  position: relative;
+  overflow: hidden;
+  border-radius: var(--radius-control);
+  background: var(--surface-hover);
+}
+.skeleton::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, var(--shimmer), transparent);
+  animation: shimmer 1.4s infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton::after {
+    animation: none;
+    transform: none;
+    opacity: 0.5;
+  }
+}
+.skeleton-title {
+  width: 210px;
+  height: 38px;
+  margin-bottom: 40px;
+}
+.skeleton-card {
+  min-height: 130px;
+  padding: 20px;
+}
+.skeleton-label {
+  width: 80px;
+  height: 10px;
+}
+.skeleton-value {
+  width: 150px;
+  height: 27px;
+  margin-top: 24px;
+}
+.skeleton-chart {
+  height: 310px;
+  margin-top: 16px;
+}
+.centered-state {
+  min-height: 72vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+.centered-state h1 {
+  margin: 16px 0 8px;
+  font-size: var(--type-page);
+}
+.centered-state p {
+  margin: 0 0 20px;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+}
+@keyframes shimmer {
+  to {
+    transform: translateX(100%);
+  }
+}
+
+h1,
+h2 {
+  text-wrap: balance;
+}
+p {
+  text-wrap: pretty;
+}
+:where(button, select):disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.balance-label {
+  display: block;
+  margin: 0 0 16px;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+.sync-notice {
+  margin: 24px 48px 0;
+  padding: 12px 16px;
+  border: var(--hairline) solid var(--border-strong);
+  border-radius: var(--radius-control);
+  color: var(--text-secondary);
+  background: var(--surface);
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.recovery-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.recovery-confirmation {
+  margin-top: 16px;
+}

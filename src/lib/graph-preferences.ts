@@ -1,13 +1,28 @@
+import { useSyncExternalStore, type Dispatch, type SetStateAction } from 'react'
+
+import { preference } from './preference'
+
 const DAY_SECONDS = 24 * 60 * 60
 const DEFAULT_GRAPH_WINDOW = 7 * DAY_SECONDS
 
+/** The chart periods every W/M/Q/Y/A chart offers, each one of the windows Rust computes. */
 export const graphWindows = [
-  { label: 'W', settingsLabel: 'Week', secs: 7 * DAY_SECONDS },
-  { label: 'M', settingsLabel: 'Month', secs: 30 * DAY_SECONDS },
-  { label: 'Q', settingsLabel: 'Quarter', secs: 90 * DAY_SECONDS },
-  { label: 'Y', settingsLabel: 'Year', secs: 365 * DAY_SECONDS },
-  { label: 'A', settingsLabel: 'All time', secs: 0 },
-]
+  { name: 'week', label: 'W', settingsLabel: 'Week', secs: 7 * DAY_SECONDS },
+  { name: 'month', label: 'M', settingsLabel: 'Month', secs: 30 * DAY_SECONDS },
+  { name: 'quarter', label: 'Q', settingsLabel: 'Quarter', secs: 90 * DAY_SECONDS },
+  { name: 'year', label: 'Y', settingsLabel: 'Year', secs: 365 * DAY_SECONDS },
+  { name: 'all', label: 'A', settingsLabel: 'All time', secs: 0 },
+] as const
+export type ChartPeriod = (typeof graphWindows)[number]['name']
+export const chartPeriods = graphWindows.map(({ name }) => name)
+
+/** The period a chart window in seconds shows; an unknown one shows the week. */
+export const chartPeriod = (seconds: number): ChartPeriod =>
+  graphWindows.find(({ secs }) => secs === seconds)?.name ?? 'week'
+
+/** A period's chart window in seconds. */
+export const chartPeriodSeconds = (period: ChartPeriod) =>
+  graphWindows.find(({ name }) => name === period)!.secs
 
 export function graphWindowForKey(key: string) {
   return graphWindows[['w', 'm', 'q', 'y', 'a'].indexOf(key.toLocaleLowerCase())]?.secs
@@ -19,74 +34,56 @@ export function adjacentGraphWindow(current: number, direction: -1 | 1) {
     .secs
 }
 
-const defaultGraphWindowKey = 'brief.defaultGraphWindow'
-const chartAccountPreferencesKey = 'brief.chartAccountPreferences'
-
-export type ChartAccountPreference = { accountId: string; visible: boolean }
-
 export function parseGraphWindow(value: unknown) {
   if (value === null || value === undefined || value === '') return DEFAULT_GRAPH_WINDOW
   const seconds = Number(value)
   return graphWindows.find((window) => window.secs === seconds)?.secs ?? DEFAULT_GRAPH_WINDOW
 }
 
-export function getDefaultGraphWindow() {
-  return typeof window === 'undefined'
-    ? DEFAULT_GRAPH_WINDOW
-    : parseGraphWindow(window.localStorage.getItem(defaultGraphWindowKey))
-}
+const defaultWindow = preference('brief.defaultGraphWindow', parseGraphWindow)
 
-export function saveDefaultGraphWindow(seconds: number) {
-  window.localStorage.setItem(defaultGraphWindowKey, String(parseGraphWindow(seconds)))
-}
+export const getDefaultGraphWindow = defaultWindow.get
+export const saveDefaultGraphWindow = (seconds: number) =>
+  defaultWindow.save(parseGraphWindow(seconds))
 
-export function parseChartAccountPreferences(value: unknown): ChartAccountPreference[] {
-  if (typeof value !== 'string') return []
-  try {
-    const parsed: unknown = JSON.parse(value)
-    if (!Array.isArray(parsed)) return []
-    const seen = new Set<string>()
-    return parsed.flatMap((item) => {
-      if (
-        typeof item !== 'object' ||
-        item === null ||
-        !('accountId' in item) ||
-        typeof item.accountId !== 'string' ||
-        !item.accountId ||
-        seen.has(item.accountId) ||
-        !('visible' in item) ||
-        typeof item.visible !== 'boolean'
-      )
-        return []
-      seen.add(item.accountId)
-      return [{ accountId: item.accountId, visible: item.visible }]
-    })
-  } catch {
-    return []
+// One range for this session, shared by every page with a W/M/Q/Y/A chart, so moving between
+// pages keeps the period in view. It starts from the saved default and is not persisted.
+let sessionWindow: number | undefined
+const listeners = new Set<() => void>()
+const currentWindow = () => sessionWindow ?? getDefaultGraphWindow()
+const setSessionWindow: Dispatch<SetStateAction<number>> = (next) => {
+  const value = parseGraphWindow(typeof next === 'function' ? next(currentWindow()) : next)
+  if (value === currentWindow()) return
+  sessionWindow = value
+  listeners.forEach((notify) => notify())
+}
+const subscribeWindow = (notify: () => void) => {
+  listeners.add(notify)
+  return () => {
+    listeners.delete(notify)
   }
 }
 
-export function getChartAccountPreferences() {
-  return typeof window === 'undefined'
-    ? []
-    : parseChartAccountPreferences(window.localStorage.getItem(chartAccountPreferencesKey))
-}
+/** The session's chart period now, for work outside React that follows it. */
+export const sessionGraphWindow = () => currentWindow()
 
-export function saveChartAccountPreferences(preferences: ChartAccountPreference[]) {
-  window.localStorage.setItem(chartAccountPreferencesKey, JSON.stringify(preferences))
-}
-
-export function reconcileChartAccountPreferences(
-  accountIds: string[],
-  preferences: ChartAccountPreference[],
-) {
-  const available = new Set(accountIds)
-  const saved = preferences.filter(({ accountId }) => available.has(accountId))
-  const savedIds = new Set(saved.map(({ accountId }) => accountId))
+export function useGraphWindow() {
   return [
-    ...saved,
-    ...accountIds
-      .filter((accountId) => !savedIds.has(accountId))
-      .map((accountId) => ({ accountId, visible: true })),
-  ]
+    useSyncExternalStore(subscribeWindow, currentWindow, () => DEFAULT_GRAPH_WINDOW),
+    setSessionWindow,
+  ] as const
+}
+
+/** The range chosen this session, or undefined until one is; a page with its own default uses it. */
+export function useChosenGraphWindow() {
+  return useSyncExternalStore(
+    subscribeWindow,
+    () => sessionWindow,
+    () => undefined,
+  )
+}
+
+/** For tests: forget the session range. */
+export function resetSessionGraphWindow() {
+  sessionWindow = undefined
 }

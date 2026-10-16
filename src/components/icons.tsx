@@ -1,4 +1,5 @@
 import {
+  PlusSignIcon,
   Activity01Icon,
   AlertCircleIcon,
   ArrowDown01Icon,
@@ -17,28 +18,28 @@ import {
   ChartNoAxesCombinedIcon,
   CheckIcon,
   ChevronDownIcon,
-  ChevronLeftIcon,
   ChevronRightIcon,
   CircleEllipsisIcon,
+  Copy01Icon,
   ClapperboardIcon,
   Coffee01Icon,
   Coins01Icon,
-  CpuIcon,
   CreditCardIcon,
+  Clock01Icon,
   DatabaseIcon,
-  DollarSignIcon,
   Download01Icon,
   EllipsisIcon,
   EyeIcon,
   EyeOffIcon,
   FilePlusIcon,
+  File02Icon,
+  FolderAddIcon,
   FilterIcon,
   FingerPrintIcon,
   FuelIcon,
   GlobeIcon,
   GraduationCapIcon,
   HandCoinsIcon,
-  HardDriveIcon,
   HeartPulseIcon,
   HelpCircleIcon,
   HistoryIcon,
@@ -47,8 +48,8 @@ import {
   LandmarkIcon,
   LinkIcon,
   ListIcon,
+  MagicWand01Icon,
   MapPinnedIcon,
-  MessageCircleIcon,
   MonitorPlayIcon,
   PackageIcon,
   PaletteIcon,
@@ -69,17 +70,30 @@ import {
   ShoppingBasket01Icon,
   SparklesIcon,
   SproutIcon,
+  StarIcon,
   Store01Icon,
   Tag01Icon,
+  Target02Icon,
   TrashIcon,
   TrendingUpIcon,
-  UnfoldMoreIcon,
   Unlink01Icon,
   UtensilsCrossedIcon,
   WalletCardsIcon,
   Wrench01Icon,
   XIcon,
   ZapIcon,
+  Building03Icon,
+  GiftIcon,
+  Invoice01Icon,
+  MoneySend01Icon,
+  Sofa01Icon,
+  Upload01Icon,
+  UsersRoundIcon,
+  Moon02Icon,
+  Bookmark01Icon,
+  Sun03Icon,
+  SunriseIcon,
+  SunsetIcon,
 } from '@hugeicons/core-free-icons'
 import { HugeiconsIcon, type HugeiconsIconProps, type IconSvgElement } from '@hugeicons/react'
 
@@ -100,6 +114,8 @@ function createIcon(icon: IconSvgElement) {
 export type IconComponent = ReturnType<typeof createIcon>
 
 export const Activity = createIcon(Activity01Icon)
+export const WandSparkles = createIcon(MagicWand01Icon)
+export const Target = createIcon(Target02Icon)
 export const AlertCircle = createIcon(AlertCircleIcon)
 export const ArrowDown = createIcon(ArrowDown01Icon)
 export const ArrowDownUp = createIcon(ArrowUpDownIcon)
@@ -110,6 +126,8 @@ export const BadgeDollarSign = createIcon(BadgeDollarSignIcon)
 export const Ban = createIcon(BanIcon)
 export const Banknote = createIcon(BanknoteIcon)
 export const BedDouble = createIcon(BedDoubleIcon)
+export const Building = createIcon(Building03Icon)
+export const Bookmark = createIcon(Bookmark01Icon)
 export const BriefcaseBusiness = createIcon(BriefcaseBusinessIcon)
 export const CalendarDays = createIcon(CalendarDaysIcon)
 export const CarFront = createIcon(CarFrontIcon)
@@ -117,60 +135,70 @@ export const ChartCandlestick = createIcon(ChartCandlestickIcon)
 export const ChartNoAxesCombined = createIcon(ChartNoAxesCombinedIcon)
 export const Check = createIcon(CheckIcon)
 export const ChevronDown = createIcon(ChevronDownIcon)
-export const ChevronLeft = createIcon(ChevronLeftIcon)
 export const ChevronRight = createIcon(ChevronRightIcon)
-export const ChevronsUpDown = createIcon(UnfoldMoreIcon)
 export const CircleEllipsis = createIcon(CircleEllipsisIcon)
 export const Clapperboard = createIcon(ClapperboardIcon)
 export const Coffee = createIcon(Coffee01Icon)
 export const Coins = createIcon(Coins01Icon)
-export const Cpu = createIcon(CpuIcon)
 export const CreditCard = createIcon(CreditCardIcon)
 export const Database = createIcon(DatabaseIcon)
-export const DollarSign = createIcon(DollarSignIcon)
 export const Download = createIcon(Download01Icon)
+export const Upload = createIcon(Upload01Icon)
+export const Clock = createIcon(Clock01Icon)
+export const Copy = createIcon(Copy01Icon)
 export const Ellipsis = createIcon(EllipsisIcon)
 export const Eye = createIcon(EyeIcon)
 export const EyeOff = createIcon(EyeOffIcon)
 export const FilePlus = createIcon(FilePlusIcon)
+export const FileText = createIcon(File02Icon)
+export const FolderPlus = createIcon(FolderAddIcon)
 export const Filter = createIcon(FilterIcon)
 export const Fingerprint = createIcon(FingerPrintIcon)
 export const Fuel = createIcon(FuelIcon)
 export const Globe2 = createIcon(GlobeIcon)
+export const Gift = createIcon(GiftIcon)
 export const GraduationCap = createIcon(GraduationCapIcon)
 export const HandCoins = createIcon(HandCoinsIcon)
-export const HardDrive = createIcon(HardDriveIcon)
 export const HeartPulse = createIcon(HeartPulseIcon)
 export const HelpCircle = createIcon(HelpCircleIcon)
 export const History = createIcon(HistoryIcon)
 export const House = createIcon(House02Icon)
+export const Invoice = createIcon(Invoice01Icon)
 export const Info = createIcon(InfoIcon)
 export const Landmark = createIcon(LandmarkIcon)
 export const Link2 = createIcon(LinkIcon)
 export const List = createIcon(ListIcon)
 export const MapPinned = createIcon(MapPinnedIcon)
-export const MessageCircle = createIcon(MessageCircleIcon)
+export const MoneySend = createIcon(MoneySend01Icon)
 export const MonitorPlay = createIcon(MonitorPlayIcon)
+export const Moon = createIcon(Moon02Icon)
 export const Package = createIcon(PackageIcon)
 export const Palette = createIcon(PaletteIcon)
 export const Percent = createIcon(PercentIcon)
 export const Plane = createIcon(PlaneIcon)
+export const Users = createIcon(UsersRoundIcon)
 export const Receipt = createIcon(ReceiptIcon)
 export const ReceiptText = createIcon(ReceiptTextIcon)
 export const RefreshCw = createIcon(RefreshCwIcon)
 export const Repeat2 = createIcon(RepeatIcon)
+export const Plus = createIcon(PlusSignIcon)
 export const RotateCcw = createIcon(RotateCcwIcon)
 export const Save = createIcon(SaveIcon)
 export const ScrollText = createIcon(ScrollTextIcon)
 export const Search = createIcon(Search01Icon)
+export const Star = createIcon(StarIcon)
 export const Settings = createIcon(Settings01Icon)
 export const Shapes = createIcon(ShapesIcon)
 export const ShieldCheck = createIcon(ShieldCheckIcon)
 export const ShoppingBag = createIcon(ShoppingBag01Icon)
 export const ShoppingBasket = createIcon(ShoppingBasket01Icon)
+export const Sofa = createIcon(Sofa01Icon)
 export const Sparkles = createIcon(SparklesIcon)
 export const Sprout = createIcon(SproutIcon)
 export const Store = createIcon(Store01Icon)
+export const Sun = createIcon(Sun03Icon)
+export const Sunrise = createIcon(SunriseIcon)
+export const Sunset = createIcon(SunsetIcon)
 export const Tag = createIcon(Tag01Icon)
 export const Trash2 = createIcon(TrashIcon)
 export const TrendingUp = createIcon(TrendingUpIcon)

@@ -1,0 +1,128 @@
+/* Element defaults. */
+
+* {
+  box-sizing: border-box;
+}
+/* Brief is driven by the pointer and keyboard shortcuts, so focus never draws a ring. */
+:focus,
+:focus-visible {
+  outline: none;
+}
+
+html {
+  height: 100%;
+  overflow: clip;
+  background: var(--background);
+  overscroll-behavior: none;
+}
+#root {
+  position: fixed;
+  inset: 0;
+  height: 100%;
+  overflow: clip;
+}
+/* No scroll bars: the frame stays clean, and cards that scroll show a cue at their foot. */
+*::-webkit-scrollbar {
+  display: none;
+}
+* {
+  scrollbar-width: none;
+}
+body {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+  overflow: clip;
+  overscroll-behavior: none;
+  background: var(--background);
+  color: var(--text-primary);
+  min-width: 860px;
+}
+strong,
+b,
+h1,
+h2,
+h3 {
+  font-weight: 600;
+}
+button,
+input,
+select {
+  font: inherit;
+}
+button,
+a,
+select {
+  -webkit-tap-highlight-color: transparent;
+}
+button {
+  color: inherit;
+}
+a {
+  color: inherit;
+  text-decoration: none;
+}
+::selection {
+  background: var(--selection);
+}
+
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+/* A disclosure's body fades in as it opens; closing is immediate. The palette's answers
+   open from the keyboard, so they don't fade. */
+details::details-content {
+  opacity: 0;
+  transition: opacity var(--duration-quick) var(--ease-out);
+}
+details[open]::details-content {
+  opacity: 1;
+}
+.command-popup details::details-content {
+  transition: none;
+}
+
+/* Reduced motion keeps the short fades that show what changed and drops what moves: nothing
+   slides, scales, spins, or loops. Surfaces that rise or slide in cross-fade instead. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
+  .settings-dialog,
+  .shortcuts-dialog,
+  .transaction-dialog,
+  .command-dialog,
+  .activity-filter-card,
+  .connection-confirmation,
+  .backup-confirmation,
+  .data-status-popup,
+  .tooltip-content,
+  .date-range-popup,
+  .ledger-select-popup,
+  .benefit-info-popup {
+    transform: none !important;
+    scale: none !important;
+  }
+  .refresh-progress-track > span {
+    width: 100%;
+    transform: none;
+    animation: none !important;
+  }
+  /* Scroll-linked edge fades are not motion; keep them tied to scroll position. */
+  .account-switcher-grid {
+    animation-duration: auto !important;
+  }
+}

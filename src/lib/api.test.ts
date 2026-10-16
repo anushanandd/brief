@@ -31,8 +31,11 @@ describe('refresh process', () => {
       articles: [],
       savedAt: null,
       warning: null,
-      requestsRemaining: 20,
       canRefresh: true,
+      company: null,
+      filings: [],
+      filingsSavedAt: null,
+      filingsWarning: null,
     }
     mockedInvoke.mockResolvedValue(result)
     expect(await getMarketNews(['TEST'])).toEqual(result)
@@ -89,8 +92,14 @@ describe('refresh process', () => {
 
     expect(result.snapshot.revision).toBe(7)
     expect(result.warnings).toEqual(['Cached source'])
-    expect(mockedInvoke).toHaveBeenCalledWith('refresh_finance_snapshot')
+    expect(mockedInvoke).toHaveBeenCalledWith('refresh_finance_snapshot', { liveBalances: false })
     expect(mockedInvoke).toHaveBeenCalledTimes(1)
+  })
+
+  it('requests billed real-time balances only when asked', async () => {
+    mockedInvoke.mockResolvedValue({ ...empty, revision: 8 })
+    await refreshFinanceSnapshot({ liveBalances: true })
+    expect(mockedInvoke).toHaveBeenCalledWith('refresh_finance_snapshot', { liveBalances: true })
   })
 
   it('rejects an invalid native projection', async () => {
@@ -120,7 +129,7 @@ describe('native explanation cancellation', () => {
   })
   afterEach(() => vi.unstubAllGlobals())
   it('defers cancellation until native registration and rejects the abandoned result', async () => {
-    let finish!: (value: string) => void
+    let finish!: (value: unknown) => void
     mockedInvoke.mockImplementation((command) =>
       command === 'generate_foundation_explanation'
         ? new Promise((resolve) => {
@@ -129,11 +138,7 @@ describe('native explanation cancellation', () => {
         : Promise.resolve(undefined),
     )
     const controller = new AbortController()
-    const result = generateFoundationExplanation(
-      'What changed?',
-      'Synthetic evidence',
-      controller.signal,
-    )
+    const result = generateFoundationExplanation('What changed?', controller.signal)
     const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' })
     await Promise.resolve()
     const args = mockedInvoke.mock.calls[0][1]
@@ -145,21 +150,41 @@ describe('native explanation cancellation', () => {
       !(args.started instanceof Channel)
     )
       throw new Error('Missing native registration channel')
-    expect(args).toMatchObject({ question: 'What changed?', evidence: 'Synthetic evidence' })
+    // The renderer sends only the question; native ledger tools supply any figures.
+    expect(args).toMatchObject({ question: 'What changed?' })
+    expect(args).not.toHaveProperty('evidence')
     controller.abort()
     expect(mockedInvoke).toHaveBeenCalledTimes(1)
     args.started.onmessage(null)
     expect(mockedInvoke).toHaveBeenLastCalledWith('cancel_foundation_explanation', {
       requestId: args.requestId,
     })
-    finish('Discard this result')
+    finish({ text: 'Discard this result', evidence: [] })
     await rejected
+  })
+  it('keeps an answer’s outcome and the figures its queries did not return', async () => {
+    mockedInvoke.mockResolvedValue({
+      text: 'You spent $900.',
+      outcome: 'answered',
+      evidence: [],
+      unverified: ['$900'],
+    })
+    await expect(generateFoundationExplanation('What did I spend?', undefined)).resolves.toEqual({
+      text: 'You spent $900.',
+      outcome: 'answered',
+      evidence: [],
+      unverified: ['$900'],
+    })
+    mockedInvoke.mockResolvedValue({ text: 'No saved data covers 2019.', evidence: [] })
+    await expect(
+      generateFoundationExplanation('What did I spend in 2019?', undefined),
+    ).resolves.toMatchObject({ outcome: 'answered', unverified: [] })
   })
   it('never starts a job already cancelled while queued', async () => {
     const controller = new AbortController()
     controller.abort()
     await expect(
-      generateFoundationExplanation('What changed?', 'Synthetic evidence', controller.signal),
+      generateFoundationExplanation('What changed?', controller.signal),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(mockedInvoke).not.toHaveBeenCalled()
   })

@@ -1,0 +1,217 @@
+/* Theme tokens: color, type, geometry, and motion. */
+
+:root {
+  color-scheme: dark;
+  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  font-synthesis: none;
+  font-optical-sizing: auto;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  /* Every rule and border. Retina draws a true half pixel; 1x displays round it to nothing or
+     to two, so they get a whole one. */
+  --hairline: 0.5px;
+  --radius-small: 4px;
+  /* Items nested in a control-radius container. */
+  --radius-inner: 6px;
+  --radius-control: 8px;
+  --radius-card: 16px;
+  --radius-modal: 20px;
+  --radius-badge: var(--radius-control);
+  --card-padding: 24px;
+  /* Cards that end in rows: the last row's own padding makes up the rest. */
+  --card-padding-end: 12px;
+  --companion-card-width: max(280px, calc(27.5% - 4.4px));
+  --type-micro: 11px;
+  --type-meta: 12px;
+  --type-body: 13px;
+  --type-section: 15px;
+  --type-page: 20px;
+  /* Figures in a companion card's metric grid. */
+  --type-figure: 17px;
+  --type-metric: 24px;
+  --type-hero: 36px;
+  --font-mono: -apple-system, BlinkMacSystemFont, 'SF Pro Text', sans-serif;
+  --font-editorial: 'Iowan Old Style', 'Palatino Linotype', 'Book Antiqua', Georgia, serif;
+  --paper: #08090a;
+  --paper-sheet: #111214;
+  --paper-inset: #1b1c1e;
+  --ink: #ffffff;
+  --pencil: #c5c5c6;
+  --ledger-green: #59d499;
+  --background: var(--paper);
+  --background-wash: rgba(8, 9, 10, 0.5);
+  --sidebar-width: 216px;
+  --sidebar: var(--paper);
+  --sidebar-background: transparent;
+  --sidebar-foreground: color-mix(in srgb, var(--text-secondary) 82%, transparent);
+  --sidebar-icon: var(--text-tertiary);
+  --hover-wash: color-mix(in srgb, var(--text-primary) 4%, transparent);
+  --sidebar-accent: color-mix(in srgb, var(--text-primary) 8%, transparent);
+  --ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  /* Popovers and fills, hover and press, then modals (opacity, then the lift). */
+  --duration-instant: 120ms;
+  --duration-quick: 150ms;
+  --duration-modal: 240ms;
+  --duration-modal-lift: 280ms;
+  /* The first reveal only: blocks arrive in reading order, sliding up and coming into focus. */
+  --duration-reveal: 520ms;
+  --reveal-stagger: 60ms;
+  --ease-reveal: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out: cubic-bezier(0.77, 0, 0.175, 1);
+  --sidebar-border: var(--border-subtle);
+  --surface: rgba(8, 9, 10, 0.2);
+  --glass-edge: var(--border-subtle);
+  --surface-raised: var(--control-background);
+  --surface-hover: #232426;
+  --glass-control: var(--control-background);
+  --glass-control-hover: var(--surface-hover);
+  --glass-raised: var(--popup-surface);
+  --glass-filter: blur(18px) saturate(115%);
+  /* Popups are solid, borderless, and lifted by shadow ("Focus"); the navy of the background. */
+  --popup-surface: #070b14;
+  --popup-border: transparent;
+  --popup-sheen: linear-gradient(180deg, rgba(125, 161, 191, 0.06), transparent 40%);
+  --text-primary: var(--ink);
+  --text-secondary: var(--pencil);
+  /* Three inks: primary, secondary, and tertiary for labels, captions, and unavailable values. */
+  --text-tertiary: #98999b;
+  --control-background: rgba(8, 9, 10, 0.18);
+  --control-border: var(--border-subtle);
+  /* Rules are the ink itself, thinned, so a divider always belongs to the text beside it. */
+  --rule-strength: 10%;
+  --border-subtle: color-mix(in srgb, var(--ink) var(--rule-strength), transparent);
+  --border-strong: color-mix(in srgb, var(--ink) calc(var(--rule-strength) * 2), transparent);
+  --positive: var(--ledger-green);
+  --positive-soft: rgba(89, 212, 153, 0.1);
+  --warning: #d6b478;
+  --warning-soft: rgba(214, 180, 120, 0.12);
+  --negative: #ff9592;
+  --negative-soft: rgba(255, 149, 146, 0.1);
+  --accent: #7da1bf;
+  --accent-soft: rgba(125, 161, 191, 0.16);
+  --button-fill: var(--accent);
+  --button-text: #08090a;
+  --chart-primary: #e6e6e6;
+  --chart-secondary: #b0b0b1;
+  --chart-benchmark: #56c2ff;
+  --data-1: #669df6;
+  --holding-1: var(--data-1);
+  --data-2: #e5b454;
+  --holding-2: var(--data-2);
+  --data-3: #b193ed;
+  --holding-3: var(--data-3);
+  --data-4: #58c9b9;
+  --holding-4: var(--data-4);
+  --data-5: #ed8bad;
+  --holding-5: var(--data-5);
+  --data-6: #d98651;
+  --holding-6: var(--data-6);
+  --data-7: #b4c86a;
+  --holding-7: var(--data-7);
+  --asset-brokerage: color-mix(in srgb, var(--data-1) 45%, var(--background));
+  --asset-retirement: color-mix(in srgb, var(--data-3) 45%, var(--background));
+  --asset-cash: color-mix(in srgb, var(--data-4) 45%, var(--background));
+  --asset-credit: color-mix(in srgb, var(--data-5) 45%, var(--background));
+  --asset-loan: color-mix(in srgb, var(--data-6) 45%, var(--background));
+  --asset-other: color-mix(in srgb, var(--data-7) 45%, var(--background));
+  --spending-housing: var(--chart-secondary);
+  --spending-travel: var(--holding-1);
+  --spending-food: var(--holding-3);
+  --spending-shopping: var(--holding-4);
+  --spending-transport: var(--holding-6);
+  --spending-entertainment: var(--holding-5);
+  --spending-utilities: var(--holding-7);
+  --spending-other: var(--holding-2);
+  --shadow-card: inset 0 1px 0 rgba(255, 255, 255, 0.05), inset 0 -1px 0 rgba(0, 0, 0, 0.2);
+  --shadow-input: none;
+  --shadow-popup:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 4px rgba(0, 0, 0, 0.35),
+    0 16px 40px rgba(0, 0, 0, 0.5);
+  /* Modals sit higher: the same shadow plus a wide ambient one, over a receding page. */
+  --shadow-modal:
+    inset 0 1px 0 rgba(255, 255, 255, 0.05), 0 2px 4px rgba(0, 0, 0, 0.35),
+    0 16px 40px rgba(0, 0, 0, 0.5), 0 48px 120px rgba(0, 0, 0, 0.6);
+  --dialog-backdrop: rgba(2, 4, 8, 0.7);
+  --dialog-backdrop-filter: blur(14px) saturate(80%);
+  --modal-enter-from: translateY(8px) scale(0.985);
+  --ease-lift: cubic-bezier(0.16, 1, 0.3, 1);
+  --selection: rgba(125, 161, 191, 0.3);
+  --data-foreground: #ffffff;
+  --data-secondary: rgba(255, 255, 255, 0.8);
+  --data-border: rgba(255, 255, 255, 0.14);
+  --shimmer: rgba(255, 255, 255, 0.28);
+  /* Fields and search bars. */
+  --control-height: 40px;
+  /* Buttons and selects, and the compact size beside dense rows. */
+  --button-height: 32px;
+  --button-height-compact: 28px;
+  /* One mark size for accounts, categories, securities, and reports in every list. */
+  --mark-size: 32px;
+  /* Section titles sit on one line height; controls beside them overhang it. */
+  --heading-line: 20px;
+  /* Every card in a page's selector strip is one width. */
+  --strip-item-width: 192px;
+  --row-height: 64px;
+  /* Dense data rows: ledgers and position tables. */
+  --row-height-compact: 40px;
+}
+
+/* Dark follows Superlogical's dark theme: a green-black paper (#10120f) with panels set apart
+   by hairlines of its warm ink (#ececea at 14%), olive-grey controls, and its lilac, coral, and
+   amber gradient for accent, benchmark, and warning. Gains and losses use its emerald and red. */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+  --paper: #10120f;
+  --paper-sheet: #10120f;
+  --paper-inset: #20231e;
+  --ink: #ececea;
+  --pencil: #b3b3b3;
+  --ledger-green: #00d492;
+  --background: var(--paper);
+  --background-wash: transparent;
+  --sidebar: var(--paper);
+  --sidebar-background: transparent;
+  --hover-wash: rgba(236, 236, 234, 0.04);
+  --sidebar-accent: #20231e;
+  --surface: #10120f;
+  --surface-hover: #2c3029;
+  --popup-surface: #20231e;
+  --popup-border: transparent;
+  --popup-sheen: none;
+  --text-tertiary: #8c9388;
+  --control-background: #20231e;
+  --control-border: transparent;
+  --rule-strength: 14%;
+  --positive: var(--ledger-green);
+  --positive-soft: rgba(0, 212, 146, 0.16);
+  --warning: #ecc273;
+  --warning-soft: rgba(236, 194, 115, 0.14);
+  --negative: #ffa2a2;
+  --negative-soft: rgba(255, 162, 162, 0.16);
+  --accent: #d1b6fe;
+  --accent-soft: rgba(209, 182, 254, 0.14);
+  /* Superlogical's headline ramp: lilac through coral to amber. Brand type and progress only,
+     never figures, where coral and amber would read as status. */
+  --brand-gradient: linear-gradient(180deg, #d1b6fe 30%, #fe9369 58%, #ecc273 78%);
+  --brand-gradient-across: linear-gradient(90deg, #d1b6fe, #fe9369 60%, #ecc273);
+  --button-text: #10120f;
+  --chart-primary: #ececea;
+  --chart-secondary: #b3b3b3;
+  --chart-benchmark: #fe9369;
+  --shadow-card: none;
+  --shadow-popup: 0 12px 32px rgba(0, 0, 0, 0.7);
+  --shadow-modal: 0 24px 64px rgba(0, 0, 0, 0.75);
+  --dialog-backdrop: rgba(16, 18, 15, 0.7);
+  --selection: rgba(209, 182, 254, 0.28);
+  --shimmer: rgba(236, 236, 234, 0.14);
+}
+
+:root[data-theme='dark'] .app-frame {
+  background: var(--background);
+}
+
+@media (-webkit-max-device-pixel-ratio: 1), (max-resolution: 1dppx) {
+  :root {
+    --hairline: 1px;
+  }
+}

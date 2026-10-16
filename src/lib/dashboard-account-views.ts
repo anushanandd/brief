@@ -1,4 +1,5 @@
 import { buildLiveChartData, chartPointsFromStartDate, chartRangeChange } from './live-chart'
+import { cents } from './money'
 import type { Account, FinanceSnapshot } from './schema'
 
 export function accountValueChart(
@@ -21,13 +22,17 @@ export function accountValueChart(
 ) {
   const combined = account.id === 'all' || account.type === 'combined'
   const investment = account.type === 'brokerage' || account.type === 'retirement'
+  // An investment account's history is its performance; a manual one, valued by hand or by
+  // its statements, has only a balance history.
+  const ofAccount = ({ accountId }: { accountId: string }) => accountId === account.id
   const history =
     account.value == null
       ? []
       : combined
         ? data.netWorthHistory
-        : ((investment ? data.brokeragePerformance : data.accountBalanceHistory).find(
-            ({ accountId }) => accountId === account.id,
+        : ((
+            (investment ? data.brokeragePerformance.find(ofAccount) : undefined) ??
+            data.accountBalanceHistory.find(ofAccount)
           )?.points ?? [])
   const chartValue =
     combined && data.netWorthProvisional ? (history.at(-1)?.value ?? account.value) : account.value
@@ -56,7 +61,6 @@ export function accountValueChart(
 type BrokeragePerformance = FinanceSnapshot['brokeragePerformance'][number]
 type ValuePoint = { date: string; value: number }
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
-const WEEK_MS = 7 * 24 * 60 * 60 * 1_000
 
 export function accountValueIncomplete(
   data: Pick<FinanceSnapshot, 'accounts' | 'netWorthIncomplete'>,
@@ -87,31 +91,38 @@ export function hasValueHistory(points: ValuePoint[], startDate?: string) {
   )
 }
 
-export function accountWeeklyChangePct(
-  data: Pick<
-    FinanceSnapshot,
-    'accountBalanceHistory' | 'brokeragePerformance' | 'holdings' | 'updatedAt'
-  >,
-  account: Account,
-  valuationAsOf = data.updatedAt,
-) {
-  if (account.value == null) return null
-  const targetTime = Date.parse(valuationAsOf) - WEEK_MS
-  if (!Number.isFinite(targetTime)) return null
-  const targetDate = new Date(targetTime).toISOString().slice(0, 10)
-  const history = [...data.accountBalanceHistory, ...data.brokeragePerformance].find(
-    ({ accountId }) => accountId === account.id,
-  )
-  const baseline = history?.points
-    .filter(({ date }) => DATE_PATTERN.test(date) && date <= targetDate)
-    .toSorted((left, right) => left.date.localeCompare(right.date))
-    .at(-1)
-  if (baseline?.value && Date.parse(targetDate) - Date.parse(baseline.date) <= 4 * 86_400_000) {
-    return ((account.value - baseline.value) / Math.abs(baseline.value)) * 100
+/**
+ * Spending presents the saved spending card, so the Accounts "All accounts" total and its
+ * history leave that card out, using Rust's card-free history. Net worth is unchanged.
+ */
+export function withoutSpendingCard<
+  T extends Pick<FinanceSnapshot, 'accounts' | 'netWorthHistory'> &
+    Partial<Pick<FinanceSnapshot, 'insights' | 'netWorth'>>,
+>(data: T): T {
+  const total = data.insights?.accountsTotal
+  if (!total) return data
+  const without = (value: number) => (cents(value) - cents(total.excludedValue)) / 100
+  return {
+    ...data,
+    ...(data.netWorth != null && { netWorth: without(data.netWorth) }),
+    accounts: data.accounts.map((account) =>
+      account.id === 'all' && account.value != null
+        ? { ...account, value: without(account.value) }
+        : account,
+    ),
+    netWorthHistory: total.history,
   }
+}
 
-  // A repriced basket of today's positions is not an account balance change.
-  return null
+/** Live net worth points without the spending card, whose balance is not market-driven. */
+export function withoutSpendingCardPoints<P extends { value: number }>(
+  data: Partial<Pick<FinanceSnapshot, 'insights'>>,
+  points: P[],
+): P[] {
+  const excluded = data.insights?.accountsTotal?.excludedValue
+  return excluded == null
+    ? points
+    : points.map((point) => ({ ...point, value: (cents(point.value) - cents(excluded)) / 100 }))
 }
 
 function totalNetWorthPoints(

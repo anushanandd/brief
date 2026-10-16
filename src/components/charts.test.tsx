@@ -2,67 +2,13 @@ import { Liveline } from 'liveline'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { ChartRangeSelector, DonutChart, PerformanceChart, SpendingBarChart } from './charts'
+import { ChartRangeSelector, formatLiveTime, PerformanceChart, SpendingBarChart } from './charts'
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-09-03T12:00:00Z'))
 })
 afterEach(() => vi.useRealTimers())
-
-it('labels every nonzero donut segment in descending order', () => {
-  const markup = renderToStaticMarkup(
-    <DonutChart
-      segments={[
-        { name: 'Travel', value: 50, color: '#fff' },
-        { name: 'Dining', value: 10, color: '#aaa' },
-        { name: 'Shopping', value: 10, color: '#999' },
-        { name: 'Utilities', value: 10, color: '#888' },
-        { name: 'Groceries', value: 10, color: '#777' },
-        { name: 'Entertainment', value: 10, color: '#666' },
-        { name: 'Empty', value: 0, color: '#000' },
-      ]}
-      label="Spending by category"
-      centerValue="$100"
-      centerLabel="spent"
-    />,
-  )
-
-  expect(markup.match(/class="donut-legend-item"/g)).toHaveLength(6)
-  expect(markup).toContain(
-    'class="donut-legend" aria-label="Spending by category, all values" tabindex="0"',
-  )
-  expect(markup.indexOf('>Travel<')).toBeLessThan(markup.indexOf('>Dining<'))
-  expect(markup).toContain('>Entertainment<')
-  expect(markup).toContain('aria-label="Entertainment: $10.00 (10.0%)"')
-  expect(markup).not.toContain('>Empty<')
-})
-
-it('exposes account composition in a keyboard-accessible legend', () => {
-  const html = renderToStaticMarkup(
-    <DonutChart
-      segments={[
-        {
-          name: 'Synthetic account',
-          value: 100,
-          color: '#fff',
-          details: [
-            { name: 'TEST', value: 75, color: '#aaa' },
-            { name: 'Cash', value: 25, color: '#999' },
-          ],
-        },
-      ]}
-      label="Assets"
-      centerValue="$100"
-      centerLabel="assets"
-    />,
-  )
-  expect(html).toContain('<details')
-  expect(html).toContain('<summary')
-  expect(html).toContain('>TEST<')
-  expect(html).toContain('>Cash<')
-  expect(html).toContain('aria-label="$75.00"')
-})
 
 it('renders accessible category-stacked spending bars with five axis labels', () => {
   const html = renderToStaticMarkup(
@@ -253,4 +199,12 @@ it('uses the same badge-buffered marker window for single and comparison charts'
     expect(html).toContain('aria-label="Inside plot"')
     expect(html).not.toContain('aria-label="Outside plot"')
   }
+})
+
+it('names the year on axis labels once a range repeats months', () => {
+  const time = Date.parse('2024-11-25T12:00:00Z') / 1_000
+  const day = 86_400
+  expect(formatLiveTime(time, 90 * day)).toBe('Nov 25')
+  expect(formatLiveTime(time, 365 * day)).toBe('Nov 25 ’24')
+  expect(formatLiveTime(time, 760 * day)).toBe('Nov 25 ’24')
 })

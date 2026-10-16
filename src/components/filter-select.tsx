@@ -2,6 +2,7 @@ import { Select } from '@base-ui/react/select'
 import { useRef } from 'react'
 
 import { Check, ChevronDown } from './icons'
+import { usePopupPortal } from './ui/popup-container'
 
 export type FilterSelectOption = { value: string; label: string }
 
@@ -11,28 +12,35 @@ export function FilterSelect({
   options,
   onValueChange,
   className,
-  blurOnClose = false,
+  command,
+  focusRegionOnPointerSelection = false,
   disabled = false,
+  keyboardOpen = false,
 }: {
   label: string
-  blurOnClose?: boolean
+  /** Inside a list row, Return on the row opens this choice. */
+  keyboardOpen?: boolean
+  focusRegionOnPointerSelection?: boolean
   className?: string
+  /** The registered command (or command family) that makes this choice too. */
+  command?: string
   disabled?: boolean
   value: string
   options: FilterSelectOption[]
   onValueChange: (value: string) => void
 }) {
+  const { container, positionMethod } = usePopupPortal()
   const triggerRef = useRef<HTMLButtonElement>(null)
+  const closeReason = useRef<Select.Root.ChangeEventReason | undefined>(undefined)
+  const pointerSelection = useRef(false)
   return (
     <Select.Root
       disabled={disabled}
       items={options}
       value={value}
-      onOpenChangeComplete={(open) => {
-        if (!open && blurOnClose) {
-          // Base UI restores trigger focus in an unmount microtask.
-          setTimeout(() => triggerRef.current?.blur())
-        }
+      onOpenChange={(open, details) => {
+        closeReason.current = open ? undefined : details.reason
+        if (open) pointerSelection.current = false
       }}
       onValueChange={(nextValue) => {
         if (nextValue != null) onValueChange(nextValue)
@@ -42,30 +50,58 @@ export function FilterSelect({
         ref={triggerRef}
         className={`ledger-select-trigger${className ? ` ${className}` : ''}`}
         aria-label={label}
+        data-command={command}
+        data-keyboard-open={keyboardOpen || undefined}
       >
         <Select.Value className="ledger-select-value">
           {options.find((option) => option.value === value)?.label}
         </Select.Value>
         <Select.Icon className="ledger-select-icon">
-          <ChevronDown size={13} aria-hidden="true" />
+          <ChevronDown size={12} aria-hidden="true" />
         </Select.Icon>
       </Select.Trigger>
-      <Select.Portal>
+      <Select.Portal container={container}>
         <Select.Positioner
           className="ledger-select-positioner"
           sideOffset={6}
           alignItemWithTrigger={false}
+          positionMethod={positionMethod}
         >
-          <Select.Popup className="ledger-select-popup">
+          <Select.Popup
+            className="ledger-select-popup"
+            onPointerDown={() => {
+              pointerSelection.current = true
+            }}
+            onKeyDown={() => {
+              pointerSelection.current = false
+            }}
+            finalFocus={() => {
+              if (closeReason.current === 'outside-press') return false
+              if (
+                !pointerSelection.current ||
+                closeReason.current !== 'item-press' ||
+                !focusRegionOnPointerSelection
+              )
+                return true
+              const trigger = triggerRef.current
+              return (
+                trigger?.closest<HTMLElement>('[data-range-focus-region]') ??
+                trigger
+                  ?.closest('.surface-card')
+                  ?.querySelector<HTMLElement>('[data-range-focus-region]') ??
+                true
+              )
+            }}
+          >
             <Select.List className="ledger-select-list">
               {options.map((option) => (
                 <Select.Item className="ledger-select-item" key={option.value} value={option.value}>
-                  <Select.ItemIndicator className="ledger-select-indicator">
-                    <Check size={13} aria-hidden="true" />
-                  </Select.ItemIndicator>
                   <Select.ItemText className="ledger-select-item-text">
                     {option.label}
                   </Select.ItemText>
+                  <Select.ItemIndicator className="ledger-select-indicator">
+                    <Check size={12} aria-hidden="true" />
+                  </Select.ItemIndicator>
                 </Select.Item>
               ))}
             </Select.List>

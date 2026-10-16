@@ -1,32 +1,35 @@
 import { Liveline, type LivelinePoint, type LivelineSeries } from 'liveline'
+import { useTheme } from 'next-themes'
 import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
 
 import type { ActivityItem } from '../lib/activity'
 import { type ChartEventGroup, chartEventGroupLabel } from '../lib/chart-events'
-import { formatActivityName, formatCompactCurrency, formatCurrency } from '../lib/format'
+import { formatActivityName, formatCompactCurrency, formatCurrency, formatDay } from '../lib/format'
 import { graphWindows } from '../lib/graph-preferences'
-import { chartPointAtOrAfter, chartPointsFromStartDate } from '../lib/live-chart'
+import { chartPointAtOrAfter, chartPointsFromStartDate, splitAtEstimate } from '../lib/live-chart'
+import type { SpendingBar } from '../lib/spending'
 import { ActivityMark } from './activity-list'
 import { ChartRangeSelect } from './ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 const DAY_SECONDS = 24 * 60 * 60
 const WEEK_SECONDS = 7 * DAY_SECONDS
+const YEAR_SECONDS = 365 * DAY_SECONDS
 const reducedMotionQuery = '(prefers-reduced-motion: reduce)'
+// Axis labels read in the user's own time zone. Session boundaries are the exception: the
+// holding chart marks them in Eastern time and says so.
 const timeFormatter = new Intl.DateTimeFormat('en-US', {
   hour: 'numeric',
   minute: '2-digit',
-  timeZone: 'America/Los_Angeles',
 })
 const weekdayFormatter = new Intl.DateTimeFormat('en-US', {
   weekday: 'short',
-  timeZone: 'America/Los_Angeles',
 })
 const dateFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
-  timeZone: 'America/Los_Angeles',
 })
+const shortYearFormatter = new Intl.DateTimeFormat('en-US', { year: '2-digit' })
 const monthFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   timeZone: 'UTC',
@@ -48,6 +51,7 @@ function useReducedMotion() {
 
 // Canvas needs resolved colors; CSS custom-property strings are not canvas colors.
 export function useChartColors() {
+  const { resolvedTheme } = useTheme()
   const [colors, setColors] = useState({
     value: 'transparent',
     deposits: 'transparent',
@@ -64,116 +68,19 @@ export function useChartColors() {
       positive: style.getPropertyValue('--positive').trim(),
       negative: style.getPropertyValue('--negative').trim(),
     })
-  }, [])
-  return colors
+  }, [resolvedTheme])
+  return { ...colors, theme: 'dark' as const }
 }
 
-function formatLiveTime(time: number, windowSeconds: number) {
+export function formatLiveTime(time: number, windowSeconds: number) {
   const date = new Date(time * 1_000)
   if (windowSeconds <= DAY_SECONDS) return timeFormatter.format(date)
-  return windowSeconds <= WEEK_SECONDS ? weekdayFormatter.format(date) : dateFormatter.format(date)
-}
-
-export type DonutSegment = {
-  name: string
-  value: number
-  color: string
-  details?: DonutSegment[]
-}
-
-function renderRing(items: DonutSegment[], radius: number, width: number) {
-  const ringTotal = items.reduce((sum, { value }) => sum + value, 0)
-  let offset = 0
-  return items.map((segment, index) => {
-    const percent = ringTotal ? (segment.value / ringTotal) * 100 : 0
-    const start = offset
-    offset += percent
-    const detail = `${segment.name}: ${formatCurrency(segment.value)} (${percent.toFixed(1)}%)`
-    return (
-      <circle
-        key={`${segment.name}:${index}`}
-        aria-label={detail}
-        className="donut-segment"
-        cx="50"
-        cy="50"
-        fill="none"
-        pathLength="100"
-        r={radius}
-        stroke={segment.color}
-        strokeDasharray={`${Math.max(0, percent - 0.7)} ${100 - Math.max(0, percent - 0.7)}`}
-        strokeDashoffset={-start}
-        strokeWidth={width}
-        tabIndex={0}
-      />
-    )
-  })
-}
-
-export function DonutChart({
-  segments,
-  label,
-  centerValue,
-  centerLabel,
-}: {
-  segments: DonutSegment[]
-  label: string
-  centerValue: string
-  centerLabel: string
-}) {
-  const visibleSegments = segments.filter(({ value }) => value > 0)
-  const legendSegments = visibleSegments.toSorted((left, right) => right.value - left.value)
-  const description = visibleSegments
-    .map(({ name, value }) => `${name} ${formatCurrency(value)}`)
-    .join(', ')
-
-  return (
-    <div className="donut-chart-layout">
-      <div className="donut-chart-visual">
-        <svg viewBox="0 0 100 100" role="img" aria-label={`${label}: ${description || 'No data'}`}>
-          <g transform="rotate(-90 50 50)">{renderRing(visibleSegments, 38, 20)}</g>
-        </svg>
-        <span className="donut-chart-center" aria-hidden="true">
-          <strong>{centerValue}</strong>
-          <small>{centerLabel}</small>
-        </span>
-      </div>
-      <ol className="donut-legend" aria-label={`${label}, all values`} tabIndex={0}>
-        {legendSegments.map((segment) => {
-          const content = (
-            <>
-              <i style={{ background: segment.color }} />
-              <span>{segment.name}</span>
-              <strong aria-label={formatCurrency(segment.value)}>
-                {formatCompactCurrency(segment.value)}
-              </strong>
-            </>
-          )
-          return (
-            <li className="donut-legend-item" key={segment.name}>
-              {segment.details?.length ? (
-                <details className="donut-details">
-                  <summary className="donut-legend-row">{content}</summary>
-                  <ul>
-                    {segment.details.map((detail) => (
-                      <li className="donut-legend-row" key={detail.name}>
-                        <i style={{ background: detail.color }} />
-                        <span>{detail.name}</span>
-                        <strong aria-label={formatCurrency(detail.value)}>
-                          {formatCompactCurrency(detail.value)}
-                        </strong>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              ) : (
-                <div className="donut-legend-row">{content}</div>
-              )}
-            </li>
-          )
-        })}
-      </ol>
-    </div>
-  )
+  if (windowSeconds <= WEEK_SECONDS) return weekdayFormatter.format(date)
+  // A year or more repeats months, so its labels and crosshair name the year, kept short
+  // enough that the axis doesn't drop labels to fit them.
+  return windowSeconds < YEAR_SECONDS
+    ? dateFormatter.format(date)
+    : `${dateFormatter.format(date)} ’${shortYearFormatter.format(date)}`
 }
 
 export function SpendingBarChart({
@@ -182,16 +89,7 @@ export function SpendingBarChart({
   categories,
   activities,
 }: {
-  data: Array<{
-    from: string
-    to: string
-    value: number
-    categories: Array<{
-      name: string
-      value: number
-      activities: Array<{ id: string; value: number }>
-    }>
-  }>
+  data: SpendingBar[]
   label: string
   categories: Array<{ name: string; color: string }>
   activities: Map<string, ActivityItem>
@@ -285,7 +183,15 @@ export function SpendingBarChart({
                                   return [
                                     <li key={item.id}>
                                       <ActivityMark activity={activity} />
-                                      <span>{title}</span>
+                                      <span>
+                                        {title}
+                                        {activity.subcategory ? (
+                                          <small className="spending-bar-tooltip-label">
+                                            {' · '}
+                                            {activity.subcategory}
+                                          </small>
+                                        ) : null}
+                                      </span>
                                       <strong>{formatCurrency(item.value)}</strong>
                                     </li>,
                                   ]
@@ -360,6 +266,7 @@ export function ChartRangeSelector({
   return (
     <ChartRangeSelect
       label="Chart range"
+      command="graph.range."
       options={graphWindows.map(({ label, settingsLabel, secs }) => ({
         label,
         accessibleLabel: settingsLabel,
@@ -381,6 +288,8 @@ export function PerformanceChart({
   startDate,
   selectedWindow,
   sessionBoundary,
+  observedOn = [],
+  estimatedAfter,
 }: {
   data: LivelinePoint[]
   netDeposits?: LivelinePoint[]
@@ -391,6 +300,10 @@ export function PerformanceChart({
   startDate?: string
   selectedWindow: number
   sessionBoundary?: LivelinePoint
+  /** Days the value was observed (a statement price or an entry), each marked with a dot. */
+  observedOn?: string[]
+  /** The last observed day of a value estimated since; the line after it is dashed. */
+  estimatedAfter?: string
 }) {
   const reduceMotion = useReducedMotion()
   const colors = useChartColors()
@@ -407,7 +320,7 @@ export function PerformanceChart({
       : startedPoints
   }
   const windowSeconds = selectedWindow || historyWindow
-  const eventColors = { in: colors.positive, out: colors.negative }
+  const eventColors = { in: colors.positive, out: colors.negative, none: colors.benchmark }
   const referenceTime = Date.parse(referenceIso) / 1_000
   const eventMarkers = events.flatMap((group) => {
     const eventTime =
@@ -423,11 +336,33 @@ export function PerformanceChart({
         time: point.time,
         value: point.value,
         color: eventColors[group.events[0].direction],
-        label: chartEventGroupLabel(group, referenceIso),
+        label: chartEventGroupLabel(group),
       },
     ]
   })
+  // Observed values are dots on the line; between them the line may be an estimate.
+  const observationMarkers = observedOn.flatMap((date) => {
+    const target = Date.parse(`${date}T12:00:00Z`) / 1_000
+    const point = chartPointAtOrAfter(chartData, target - DAY_SECONDS / 2)
+    return point && Math.abs(point.time - target) < DAY_SECONDS
+      ? [
+          {
+            id: `observed:${date}`,
+            time: point.time,
+            value: point.value,
+            color: colors.value,
+            label: `Observed · ${formatDay(date)}`,
+          },
+        ]
+      : []
+  })
+  // After the last observation the value is an estimate, drawn as its own dashed line.
+  const { observed: observedData, estimated: estimatedData } = splitAtEstimate(
+    chartData,
+    estimatedAfter,
+  )
   const markers = [
+    ...observationMarkers,
     ...(sessionBoundary
       ? [
           {
@@ -436,6 +371,7 @@ export function PerformanceChart({
             value: sessionBoundary.value,
             color: colors.deposits,
             label: 'Regular market close',
+            shape: 'rule' as const,
           },
         ]
       : []),
@@ -444,10 +380,22 @@ export function PerformanceChart({
   const series: LivelineSeries[] = [
     {
       id: 'Value',
-      data: chartData,
-      value: plottedValue,
+      data: observedData,
+      value: observedData.at(-1)?.value ?? plottedValue,
       color: colors.value,
     },
+    ...(estimatedData.length >= 2
+      ? [
+          {
+            id: 'Estimated',
+            label: 'Estimated · S&P 500',
+            data: estimatedData,
+            value: plottedValue,
+            color: colors.value,
+            dash: [4, 4],
+          },
+        ]
+      : []),
     ...(netDeposits?.length
       ? [
           {
@@ -476,6 +424,7 @@ export function PerformanceChart({
   return (
     <div
       className="chart-container performance-chart live-performance-chart"
+      data-range-focus-region
       role="group"
       tabIndex={0}
       aria-keyshortcuts="W M Q Y A"
@@ -492,7 +441,7 @@ export function PerformanceChart({
         data={chartData}
         value={plottedValue}
         series={comparisonSeries}
-        theme="dark"
+        theme={colors.theme}
         color={colors.value}
         window={windowSeconds}
         badge
@@ -505,7 +454,9 @@ export function PerformanceChart({
         formatValue={formatCurrency}
         formatTime={(time) => formatLiveTime(time, windowSeconds)}
         pulse={false}
-        continuous
+        // Settled charts stop drawing; new values, range changes and scrubbing still redraw.
+        // The shortest range is a week, where the clock moves the axis about a pixel in 13 min.
+        continuous={false}
         momentum={false}
         lerpSpeed={reduceMotion ? 1 : 0.25}
         lineWidth={1.75}

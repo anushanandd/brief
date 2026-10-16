@@ -1,0 +1,322 @@
+/* Calendar: a month of dated items and activity, tinted by spending, beside the picked day. */
+.calendar-page {
+  min-width: 0;
+}
+.calendar-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+  align-items: start;
+  gap: 48px;
+}
+.calendar-day-column {
+  display: grid;
+  min-width: 0;
+}
+.calendar-month-card,
+.calendar-day-card,
+.calendar-activity-card {
+  min-width: 0;
+  padding-top: var(--card-padding);
+}
+.calendar-activity-card .section-heading-link {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  text-decoration: none;
+}
+.calendar-activity-card .section-heading-link:hover {
+  color: var(--text-primary);
+}
+.calendar-month-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.calendar-previous svg {
+  transform: scaleX(-1);
+}
+.calendar-month-summary {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 12px 0 16px;
+  gap: 4px 16px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.calendar-month-summary strong {
+  font-weight: 500;
+}
+
+/* Your calendars: a menu beside the month's steppers. */
+.calendar-menu-trigger {
+  gap: 6px;
+}
+.calendar-menu-trigger > svg {
+  color: var(--text-tertiary);
+}
+.calendar-menu-count {
+  display: grid;
+  min-width: 16px;
+  height: 16px;
+  padding: 0 4px;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--type-micro);
+  font-variant-numeric: tabular-nums;
+}
+.calendar-menu-popup {
+  width: 260px;
+}
+.calendar-menu-note {
+  display: grid;
+  margin: 0;
+  padding: 8px 10px;
+  gap: 8px;
+  justify-items: start;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+.calendar-menu-note p {
+  margin: 0;
+}
+.date-range-presets > .calendar-toggle {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  gap: 8px;
+}
+.calendar-toggle-check {
+  display: grid;
+  width: 14px;
+  height: 14px;
+  place-items: center;
+  border: 1px solid var(--chip-color);
+  border-radius: var(--radius-small);
+  color: var(--background);
+}
+.calendar-toggle[aria-pressed='true'] .calendar-toggle-check {
+  background: var(--chip-color);
+}
+.calendar-toggle-title {
+  min-width: 0;
+}
+.calendar-toggle-source {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+
+/* The month: hairline weeks, each day tinted by how much was spent. */
+.calendar-grid {
+  display: grid;
+}
+.calendar-weekdays,
+.calendar-week {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+}
+.calendar-weekdays {
+  padding-bottom: 8px;
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.calendar-weekdays span {
+  padding-inline: 8px;
+}
+.calendar-week {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.calendar-week:last-child {
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.calendar-day {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  min-height: 104px;
+  padding: 6px 4px 8px;
+  align-content: start;
+  gap: 2px;
+  background: color-mix(in oklab, var(--accent) calc(var(--heat, 0) * 22%), transparent);
+  cursor: pointer;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.calendar-day.is-weekend:not(.is-selected) {
+  box-shadow: inset 0 0 0 999px color-mix(in oklab, var(--text-primary) 2%, transparent);
+}
+.calendar-day:hover {
+  box-shadow: inset 0 0 0 999px var(--hover-wash);
+}
+.calendar-day.is-selected {
+  box-shadow:
+    inset 0 0 0 999px var(--sidebar-accent),
+    inset 0 2px 0 var(--accent);
+}
+.calendar-day.is-outside > * {
+  opacity: 0.4;
+}
+.calendar-day-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4px;
+  padding: 0 2px 2px;
+}
+.calendar-day-number {
+  display: grid;
+  min-width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.calendar-day.is-today .calendar-day-number {
+  background: var(--accent);
+  color: var(--background);
+  font-weight: 600;
+}
+.calendar-day-spent {
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* A trip runs across its days as one band, labeled where it starts and on each new week. */
+.calendar-band {
+  margin-inline: -4px;
+  padding: 1px 8px;
+  background: color-mix(in oklab, var(--chip-color) 30%, transparent);
+  color: var(--text-primary);
+  font-size: var(--type-micro);
+  font-weight: 500;
+  line-height: 1.4;
+  overflow-wrap: break-word;
+}
+.calendar-band.is-start {
+  margin-left: 0;
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+.calendar-band.is-end {
+  margin-right: 0;
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+
+/* Every line wears its kind's or category's color. Labels wrap rather than clip; the day's
+   lists show the rest of a crowded day. */
+.calendar-chip,
+.calendar-more {
+  min-width: 0;
+  font-size: var(--type-micro);
+  line-height: 1.4;
+  overflow-wrap: break-word;
+}
+.calendar-chip {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  column-gap: 4px;
+  padding: 1px 6px;
+  border-radius: var(--radius-small);
+  background: color-mix(in oklab, var(--chip-color) 18%, transparent);
+  color: var(--text-primary);
+}
+.calendar-chip.is-activity {
+  background: color-mix(in oklab, var(--chip-color) 10%, transparent);
+  color: var(--text-secondary);
+}
+.calendar-chip-title {
+  min-width: 0;
+}
+.calendar-chip-amount {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.calendar-more {
+  padding-left: 6px;
+  color: var(--text-tertiary);
+}
+.calendar-legend {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 16px 0 0;
+  padding: 0;
+  gap: 4px 16px;
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  list-style: none;
+}
+.calendar-legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.calendar-legend li::before {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px; /* scale-exempt: a key swatch */
+  background: color-mix(in oklab, var(--chip-color) 60%, transparent);
+  content: '';
+}
+
+/* The picked day: its figures, what's dated, then its activity in the shared rows. */
+.calendar-day-metrics {
+  display: flex;
+  margin: 12px 0 16px;
+}
+.calendar-day-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.calendar-day-list > li + li {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.calendar-entry {
+  display: grid;
+  grid-template-columns: 2px minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 10px;
+  row-gap: 2px;
+  padding: 8px 0;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  text-decoration: none;
+}
+a.calendar-entry:hover .calendar-entry-title {
+  color: var(--accent);
+}
+.calendar-entry-bar {
+  grid-row: 1 / 3;
+  align-self: stretch;
+  border-radius: 1px; /* scale-exempt: a 2 px bar */
+}
+.calendar-entry-title {
+  min-width: 0;
+  font-weight: 500;
+}
+.calendar-entry-amount {
+  font-variant-numeric: tabular-nums;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.calendar-entry-detail {
+  grid-column: 2 / -1;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+@media (width < 1100px) {
+  .calendar-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

@@ -25,16 +25,15 @@ impl Providers {
         credentials: &AlphaVantageCredentials,
     ) -> Result<Vec<EarningsEvent>, String> {
         let generation = self.credential_generation.load(Ordering::SeqCst);
-        // Serialize news/earnings requests to deduplicate misses and preserve one budget.
-        let _news_request = self.news.lock().await;
-        let mut cache = news_cache::NewsCache::new(self.news_cache_path.as_deref())?;
+        // Serialize earnings requests to deduplicate misses and preserve the daily budget.
+        let mut cache = self.news_cache().await?;
         let now = Utc::now().timestamp();
         if symbol.is_none() {
             if let Some(body) = cache.earnings(now)? {
                 return parse_earnings_csv(&body);
             }
         }
-        cache.reserve(None, now)?;
+        cache.reserve(now)?;
         let mut request = self.http.get("https://www.alphavantage.co/query").query(&[
             ("function", "EARNINGS_CALENDAR"),
             ("horizon", "3month"),
@@ -66,9 +65,7 @@ impl Providers {
         .map_err(|_| "Could not read Alpha Vantage earnings")?;
         if let Ok(payload) = serde_json::from_str::<Value>(&body) {
             cache.provider_limit(&payload, now)?;
-            return Err(
-                "Alpha Vantage earnings unavailable: quota or access limit; try again later".into(),
-            );
+            return Err("Earnings unavailable: quota reached".into());
         }
         let events = parse_earnings_csv(&body)?;
         if self.credential_generation.load(Ordering::SeqCst) != generation {
@@ -79,75 +76,104 @@ impl Providers {
         }
         Ok(events)
     }
+}
 
-    pub async fn market_news(
-        &self,
-        symbols: Vec<String>,
-        refresh: bool,
-    ) -> Result<news_cache::NewsResult, String> {
-        let symbols = normalize_stock_symbols(symbols);
-        if symbols.len() != 1 {
-            return Err("Choose one ticker for news".into());
-        }
-        let symbol = &symbols[0];
-        let _news_request = self.news.lock().await;
-        let mut cache = news_cache::NewsCache::new(self.news_cache_path.as_deref())?;
-        let now = Utc::now().timestamp();
-        if !refresh {
-            return cache.result(symbol, now, None);
-        }
-        let credentials = self.alpha_vantage_credentials()?;
-        let generation = self.credential_generation.load(Ordering::SeqCst);
-        if let Err(error) = cache.reserve(Some(symbol), now) {
-            return cache.result(symbol, now, Some(error));
-        }
-        let fetched = async {
-            let response = self
-                .http
-                .get("https://www.alphavantage.co/query")
-                .timeout(StdDuration::from_secs(15))
-                .query(&[
-                    ("function", "NEWS_SENTIMENT"),
-                    ("tickers", symbol.as_str()),
-                    ("sort", "LATEST"),
-                    ("limit", "25"),
-                    ("apikey", credentials.api_key.as_str()),
-                ])
-                .send()
-                .await
-                .map_err(|_| "Could not reach Alpha Vantage news".to_string())?;
-            if response.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
-                let retry_after = response
-                    .headers()
-                    .get(reqwest::header::RETRY_AFTER)
-                    .and_then(|value| value.to_str().ok())
-                    .and_then(|value| value.parse().ok());
-                cache.provider_throttle(retry_after, now)?;
+pub(super) fn csv_fields(line: &str) -> Vec<String> {
+    let mut fields = Vec::new();
+    let mut field = String::new();
+    let mut quoted = false;
+    let mut characters = line.chars().peekable();
+    while let Some(character) = characters.next() {
+        match character {
+            '"' if quoted && characters.peek() == Some(&'"') => {
+                field.push('"');
+                characters.next();
             }
-            if !response.status().is_success() {
-                return Err(format!("Alpha Vantage news returned {}", response.status()));
-            }
-            let payload: Value = serde_json::from_slice(
-                &http::response_bytes(response, http::MAX_PROVIDER_RESPONSE_BYTES)
-                    .await
-                    .map_err(|_| "Could not read Alpha Vantage news".to_string())?,
-            )
-            .map_err(|_| "Could not read Alpha Vantage news".to_string())?;
-            cache.provider_limit(&payload, now)?;
-            parse_alpha_vantage_news(&payload, symbol)?;
-            Ok(json!({"feed": payload["feed"]}))
+            '"' => quoted = !quoted,
+            ',' if !quoted => fields.push(std::mem::take(&mut field)),
+            '\r' => {}
+            _ => field.push(character),
         }
-        .await;
-        if self.credential_generation.load(Ordering::SeqCst) != generation {
-            return Err("News credentials changed; retry the request".into());
-        }
-        let warning = match fetched {
-            Ok(payload) => cache.save(symbol, &payload, now).err(),
-            Err(error) => Some(error),
+    }
+    fields.push(field);
+    fields
+}
+
+pub(super) fn parse_earnings_csv(body: &str) -> Result<Vec<EarningsEvent>, String> {
+    if body.trim_start().starts_with('{') {
+        return Err("Alpha Vantage did not return an earnings calendar".into());
+    }
+    let mut lines = body.lines();
+    let headers = csv_fields(
+        lines
+            .next()
+            .ok_or("Alpha Vantage returned an empty calendar")?,
+    );
+    let column = |name: &str| {
+        headers
+            .iter()
+            .position(|header| header.eq_ignore_ascii_case(name))
+            .ok_or_else(|| format!("Alpha Vantage earnings calendar omitted {name}"))
+    };
+    let symbol = column("symbol")?;
+    let name = column("name")?;
+    let report_date = column("reportDate")?;
+    let fiscal_date_ending = column("fiscalDateEnding").ok();
+    let estimate = column("estimate").ok();
+    let currency = column("currency").ok();
+    let mut events = Vec::new();
+    for line in lines.filter(|line| !line.trim().is_empty()) {
+        let values = csv_fields(line);
+        let Some(symbol_value) = values
+            .get(symbol)
+            .map(|value| value.trim().to_ascii_uppercase())
+        else {
+            continue;
         };
-        if let Some(ref warning) = warning {
-            cache.failure(symbol, warning)?;
+        let Some(date) = values.get(report_date).map(|value| value.trim()) else {
+            continue;
+        };
+        if symbol_value.is_empty() || NaiveDate::parse_from_str(date, "%Y-%m-%d").is_err() {
+            continue;
         }
-        cache.result(symbol, now, warning)
+        events.push(EarningsEvent {
+            symbol: symbol_value,
+            name: values
+                .get(name)
+                .map(|value| value.trim().to_owned())
+                .unwrap_or_default(),
+            report_date: date.to_owned(),
+            fiscal_date_ending: fiscal_date_ending
+                .and_then(|index| values.get(index))
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty()),
+            estimate: estimate
+                .and_then(|index| values.get(index))
+                .and_then(|value| value.trim().parse().ok()),
+            currency: currency
+                .and_then(|index| values.get(index))
+                .map(|value| value.trim().to_owned())
+                .filter(|value| !value.is_empty()),
+        });
+    }
+    Ok(events)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parses_quoted_earnings_calendar_rows() {
+        let events = parse_earnings_csv(
+            "symbol,name,reportDate,fiscalDateEnding,estimate,currency\nAAPL,\"Apple, Inc.\",2026-10-29,2026-09-30,1.42,USD\n",
+        )
+        .unwrap();
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].symbol, "AAPL");
+        assert_eq!(events[0].name, "Apple, Inc.");
+        assert_eq!(events[0].report_date, "2026-10-29");
+        assert_eq!(events[0].estimate, Some(1.42));
     }
 }

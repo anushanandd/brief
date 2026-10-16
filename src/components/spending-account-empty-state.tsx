@@ -1,21 +1,23 @@
-import { Link } from '@tanstack/react-router'
-
 import { Settings } from './icons'
+import { SettingsLink } from './settings-dialog'
 import { Card, EmptyState } from './ui'
 
 export function SpendingAccountEmptyState() {
   return (
-    <Card>
+    <Card className="spending-account-empty">
       <EmptyState
-        title="Choose a spending account"
+        title="No spending card"
         action={
-          <Link className="button-base button-secondary button-default" to="/settings">
+          <SettingsLink
+            className="button-base button-secondary button-compact"
+            target="spending-account"
+          >
             <Settings size={16} aria-hidden="true" />
-            <span className="sr-only">Open Settings</span>
-          </Link>
+            Choose card
+          </SettingsLink>
         }
       >
-        Brief uses one credit account for spending and benefit views.
+        Statements and benefits need one.
       </EmptyState>
     </Card>
   )
