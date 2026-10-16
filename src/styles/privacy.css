@@ -1,0 +1,55 @@
+/* Screen privacy masks displayed values without changing finance state or exports. */
+:root[data-values-hidden]
+  :where(
+    .hero-number,
+    .hero-change,
+    .change,
+    .account-switcher-value > span,
+    .account-row-values,
+    .metric > strong,
+    .financial-activity-amount,
+    .financial-activity-meta > strong,
+    .financial-activity-row:has(.activity-mark-trade) .financial-activity-copy > small,
+    .financial-activity-copy small .positive,
+    .financial-activity-copy small .negative,
+    .position-table tbody td:not(.holding-account-name, .public-market-value),
+    .sales-table tbody td:not(:nth-child(2)),
+    .treemap-tooltip-heading > span,
+    .treemap-tooltip-metrics dd,
+    .treemap-tooltip-composition li strong,
+    .sankey-label small,
+    .sankey-pool-label strong,
+    .analytics-bar-axis,
+    .monthly-bar-axis,
+    .monthly-bar-column > strong,
+    .analytics-breakdown-row > strong,
+    .expected-activity-amount,
+    .expected-activity-actions strong,
+    .benefit-detail-status,
+    .benefit-remaining,
+    .benefit-evidence li > strong,
+    .benefit-progress,
+    .command-answer > p,
+    .benefit-last-credit-tooltip,
+    .sensitive-value
+  ) {
+  filter: blur(12px);
+  user-select: none;
+}
+
+:root[data-values-hidden] :where(.performance-chart) {
+  filter: blur(16px);
+}
+
+:root[data-values-hidden]
+  :where(
+    .holding-chart-card .hero-number,
+    .holding-chart-card .hero-change,
+    .holding-chart-card .performance-chart,
+    .public-market-value,
+    .public-market-value .change,
+    .holding-earnings > strong
+  ) {
+  filter: none;
+  user-select: auto;
+}

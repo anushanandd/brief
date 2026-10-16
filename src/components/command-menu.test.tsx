@@ -1,25 +1,24 @@
 // @vitest-environment jsdom
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act } from 'react'
+import { act, useMemo } from 'react'
 import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import {
-  CommandMenu,
-  heldSecurities,
-  paletteDateRange,
-  paletteFilter,
-  paletteQuestion,
-} from './command-menu'
+import { ActionProvider, useRegisterActions, type AppAction } from '../lib/action-system'
+import { datePresets } from '../lib/palette-filters'
+import { heldSecurities, paletteQuestion } from '../lib/palette-rows'
+import { CommandMenu } from './command-menu'
 
 const scenario = vi.hoisted(() => ({ refreshing: false, withActivity: false }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
 vi.mock('../hooks/use-finance', () => ({
   useFinance: () => ({
     data: {
-      accounts: [],
+      accounts: scenario.withActivity
+        ? [{ id: 'synthetic-card', name: 'Synthetic Card', institution: 'Bank', type: 'credit' }]
+        : [],
       transactions: scenario.withActivity
         ? ['2026-09-03', '2026-09-02'].map((date, index) => ({
             id: `synthetic-chipotle-${index}`,
@@ -62,6 +61,24 @@ vi.mock('../hooks/use-refresh-finance', () => ({
   useFinanceRefreshState: () => scenario.refreshing,
 }))
 
+function RegisteredMenu() {
+  const actions = useMemo<AppAction[]>(
+    () => [
+      {
+        id: 'appearance.theme.dark',
+        title: 'Switch to Dark theme',
+        search: 'dark mode appearance',
+        group: 'Appearance',
+        scope: 'app',
+        run: vi.fn(),
+      },
+    ],
+    [],
+  )
+  useRegisterActions(actions)
+  return <CommandMenu open onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />
+}
+
 beforeEach(() => {
   vi.stubGlobal(
     'ResizeObserver',
@@ -75,7 +92,13 @@ beforeEach(() => {
     configurable: true,
     value: { getItem: () => null, setItem: () => undefined, removeItem: () => undefined },
   })
-  Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', { value: true, configurable: true })
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true
+  }
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false
+  }
+  Element.prototype.scrollIntoView = vi.fn()
 })
 
 afterEach(() => {
@@ -90,6 +113,48 @@ const renderMenu = () =>
     </QueryClientProvider>,
   )
 
+async function mountMenu(
+  element = <CommandMenu open onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />,
+) {
+  const container = document.createElement('div')
+  document.body.appendChild(container)
+  const root = createRoot(container)
+  await act(async () => {
+    root.render(
+      <ActionProvider>
+        <QueryClientProvider client={new QueryClient()}>{element}</QueryClientProvider>
+      </ActionProvider>,
+    )
+  })
+  const input = () => container.querySelector<HTMLInputElement>('[cmdk-input]')!
+  const type = async (value: string) =>
+    act(async () => {
+      Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
+        input(),
+        value,
+      )
+      input().dispatchEvent(new Event('input', { bubbles: true }))
+    })
+  const press = async (key: string, init: KeyboardEventInit = {}) =>
+    act(async () => {
+      input().dispatchEvent(new KeyboardEvent('keydown', { key, bubbles: true, ...init }))
+    })
+  const labels = () =>
+    [...container.querySelectorAll('[cmdk-item]')].map(
+      (item) => item.querySelector('.command-item-copy > span')?.textContent ?? '',
+    )
+  const selectedLabel = () =>
+    container.querySelector('[cmdk-item][data-selected="true"] .command-item-copy > span')
+      ?.textContent
+  const footer = () => container.querySelector('.command-footer')?.textContent ?? ''
+  const activeTab = () => container.querySelector('[role="tab"][aria-selected="true"]')?.textContent
+  const cleanup = async () => {
+    await act(async () => root.unmount())
+    container.remove()
+  }
+  return { container, input, type, press, labels, selectedLabel, footer, activeTab, cleanup }
+}
+
 it('renders an accessible combobox linked to its list of commands', () => {
   const html = renderMenu()
   const listId = html.match(/aria-controls="([^"]+)"/)?.[1]
@@ -101,8 +166,7 @@ it('renders an accessible combobox linked to its list of commands', () => {
   expect(html).toContain('Refresh snapshot')
   expect(html).toContain('Keyboard shortcuts')
   expect(html).not.toContain('Review data sources')
-  expect(html).toContain('? to ask')
-  expect(html).not.toContain('Try description:coffee')
+  expect(html).toContain('aria-label="Close"')
 })
 
 it('marks refresh unavailable while one is running', () => {
@@ -124,80 +188,190 @@ it('lists each held ticker once with its searchable security name', () => {
   ])
 })
 
-it('puts exact held tickers before Activity search and individual entries', () => {
-  expect(paletteFilter('holding:NVDA', 'nvda', ['NVDA · NVIDIA'])).toBe(2)
-  expect(paletteFilter('holding:NVDA', 'nvidia', ['NVDA · NVIDIA'])).toBe(1)
-  expect(paletteFilter('navigate:/logs', 'nvda', ['Diagnostics', 'navigate Diagnostics'])).toBe(0)
-  expect(paletteFilter('activity:search:nvda', 'nvda', ['Search Activity for NVDA'])).toBe(1.5)
-  expect(paletteFilter('activity:purchase', 'nvda', ['Purchase of NVDA'])).toBe(0.5)
-  expect(paletteFilter('activity-filter:category:Coffee', 'coffee', ['Coffee'])).toBe(0.5)
+it('offers date filters that end today', () => {
+  expect(datePresets('2026-09-15')).toEqual([
+    { label: 'Today', from: '2026-09-15', to: '2026-09-15' },
+    { label: 'Past 7 days', from: '2026-09-09', to: '2026-09-15' },
+    { label: 'Past 30 days', from: '2026-08-17', to: '2026-09-15' },
+    { label: 'This month', from: '2026-09-01', to: '2026-09-15' },
+    { label: 'This year', from: '2026-01-01', to: '2026-09-15' },
+  ])
 })
 
-it('shows and selects Activity search before matching merchant purchases', async () => {
-  scenario.withActivity = true
-  HTMLDialogElement.prototype.showModal = function () {
-    this.open = true
-  }
-  HTMLDialogElement.prototype.close = function () {
-    this.open = false
-  }
-  Element.prototype.scrollIntoView = vi.fn()
-  const container = document.createElement('div')
-  document.body.appendChild(container)
-  const root = createRoot(container)
-  await act(async () => {
-    root.render(
-      <QueryClientProvider client={new QueryClient()}>
-        <CommandMenu open onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />
-      </QueryClientProvider>,
-    )
-  })
-  const input = container.querySelector<HTMLInputElement>('[cmdk-input]')!
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(input, 'nvda')
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  })
-  const labels = [...container.querySelectorAll('[cmdk-item]')]
-    .filter((item) => !item.closest('[hidden]'))
-    .map((item) => item.textContent)
-  const holding = labels.findIndex((label) => label?.includes('NVDA · Synthetic Security'))
-  const search = labels.findIndex((label) => label?.includes('Search Activity for “nvda”'))
-  const purchase = labels.findIndex((label) => label?.includes('Bought NVDA'))
-  expect(holding).toBeGreaterThanOrEqual(0)
-  expect(search).toBeGreaterThan(holding)
-  expect(purchase).toBeGreaterThan(search)
-  await act(async () => {
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(
-      input,
-      'chipotle',
-    )
-    input.dispatchEvent(new Event('input', { bubbles: true }))
-  })
-  const visible = [...container.querySelectorAll<HTMLElement>('[cmdk-item]')].filter(
-    (item) => !item.closest('[hidden]'),
-  )
-  expect(visible[0].textContent).toContain('Search Activity for “chipotle”')
-  expect(visible[0].getAttribute('data-selected')).toBe('true')
-  expect(visible[1].textContent).toContain('Chipotle')
-  await act(async () => root.unmount())
-  container.remove()
-})
-
-it('accepts real single dates and ordered date ranges for Activity filters', () => {
-  expect(paletteDateRange('date:2026-09-03')).toEqual({
-    from: '2026-09-03',
-    to: '2026-09-03',
-  })
-  expect(paletteDateRange('2026-09-01..2026-09-30')).toEqual({
-    from: '2026-09-01',
-    to: '2026-09-30',
-  })
-  expect(paletteDateRange('date:2026-09-31')).toBeUndefined()
-  expect(paletteDateRange('date:2026-09-30..2026-09-01')).toBeUndefined()
-})
-
-it('requires an explicit question prefix', () => {
+it('keeps the question after a leading ?', () => {
   expect(paletteQuestion('dividends')).toBeNull()
   expect(paletteQuestion('  ? Why did dividends rise?  ')).toBe('Why did dividends rise?')
-  expect(paletteQuestion('?')).toBe('')
+})
+
+it('ranks an exact ticker, then Activity search, then matching entries', async () => {
+  scenario.withActivity = true
+  const menu = await mountMenu()
+  await menu.type('nvda')
+  const labels = menu.labels()
+  const holding = labels.indexOf('NVDA · Synthetic Security')
+  const search = labels.indexOf('Search Activity for “nvda”')
+  const purchase = labels.indexOf('Bought NVDA')
+  expect(holding).toBe(0)
+  expect(search).toBeGreaterThan(holding)
+  expect(purchase).toBeGreaterThan(search)
+  await menu.type('chipotle')
+  expect(menu.selectedLabel()).toBe('Search Activity for “chipotle”')
+  expect(menu.labels()[1]).toBe('Chipotle')
+  await menu.cleanup()
+})
+
+it('keeps the top result selected and in view for a one-letter query', async () => {
+  const page = document.createElement('section')
+  page.setAttribute('aria-label', 'Holdings')
+  page.setAttribute('data-keyboard-region', '')
+  page.innerHTML = '<button>Add account</button>'
+  document.body.appendChild(page)
+  const menu = await mountMenu()
+  const list = menu.container.querySelector<HTMLElement>('[cmdk-list]')!
+  list.scrollTop = 120
+  await menu.type('a')
+  expect(menu.container.textContent).not.toContain('Focus Holdings')
+  expect(menu.container.textContent).not.toContain('Activate Add account')
+  expect(menu.container.querySelector('[cmdk-item]')?.getAttribute('data-selected')).toBe('true')
+  expect(list.scrollTop).toBe(0)
+  await menu.cleanup()
+  page.remove()
+})
+
+it('completes the selected row one segment at a time', async () => {
+  const menu = await mountMenu(<RegisteredMenu />)
+  expect(menu.container.textContent).not.toContain('Switch to Dark theme')
+  await menu.type('Sw')
+  expect(menu.container.querySelector('.autofill-ghost')?.textContent).toBe('Switch to Dark theme')
+  await menu.press('Tab')
+  expect(menu.input().value).toBe('Switch ')
+  await menu.cleanup()
+})
+
+it('starts with Recents and Actions and shows a static key footer', async () => {
+  const menu = await mountMenu()
+  const headings = [...menu.container.querySelectorAll('[cmdk-group-heading]')].map(
+    (heading) => heading.textContent,
+  )
+  expect(headings).toEqual(['Actions'])
+  expect(menu.labels()).toEqual(['Refresh snapshot', 'Keyboard shortcuts'])
+  expect(menu.footer()).toBe('CloseEscChange type←→Filters/Actions⌥↵')
+  await menu.cleanup()
+})
+
+it('changes type with the arrow keys and with a leading prefix', async () => {
+  scenario.withActivity = true
+  const menu = await mountMenu()
+  expect(menu.activeTab()).toBe('All')
+  await menu.press('ArrowRight')
+  expect(menu.activeTab()).toBe('Commands')
+  await menu.press('ArrowRight')
+  await menu.press('ArrowRight')
+  expect(menu.activeTab()).toBe('Holdings')
+  expect(menu.labels()).toEqual(['NVDA · Synthetic Security'])
+  await menu.press('ArrowLeft')
+  await menu.press('ArrowLeft')
+  await menu.press('ArrowLeft')
+  expect(menu.activeTab()).toBe('All')
+  await menu.type('@syn')
+  expect(menu.activeTab()).toBe('Accounts')
+  expect(menu.input().value).toBe('syn')
+  expect(menu.labels()).toEqual(['Synthetic Card'])
+  await menu.type('zzz')
+  expect(menu.container.querySelector('.command-empty')?.textContent).toContain(
+    'No results in Accounts',
+  )
+  expect(menu.container.querySelector('.command-empty-action')?.textContent).toBe('Search all')
+  await menu.cleanup()
+})
+
+it('filters Activity with / and removes a chip with Backspace', async () => {
+  scenario.withActivity = true
+  const menu = await mountMenu()
+  await menu.type('/')
+  expect(menu.input().value).toBe('')
+  expect(menu.labels()).toEqual([
+    'Filter by Account',
+    'Filter by Category',
+    'Filter by Method',
+    'Filter by Date',
+  ])
+  expect(menu.footer()).toBe('CloseEscBack⌫Choose↵')
+  await menu.press('ArrowDown')
+  await menu.press('Enter')
+  expect(menu.labels()).toEqual(['Dining', 'Trade'])
+  await menu.press('Enter')
+  expect(menu.container.querySelector('.command-chip')?.textContent).toBe('Dining')
+  expect(menu.activeTab()).toBe('Activity')
+  expect(menu.labels()).toEqual(['Show filtered Activity', 'Chipotle', 'Chipotle'])
+  expect(menu.container.querySelector('[cmdk-item] small')?.textContent).toBe('2 matching entries')
+  await menu.press('Backspace')
+  expect(menu.container.querySelector('.command-chip')).toBeNull()
+  await menu.cleanup()
+})
+
+it('opens a numbered Actions menu beside the selected row', async () => {
+  scenario.withActivity = true
+  const menu = await mountMenu()
+  await menu.type('nvda')
+  await menu.press('Enter', { altKey: true })
+  const popover = menu.container.querySelector('.command-menu-popover')
+  expect(popover?.querySelector('.command-menu-header')?.textContent).toBe(
+    'NVDA · Synthetic SecurityHolding',
+  )
+  expect(
+    [...(popover?.querySelectorAll('[role="menuitem"]') ?? [])].map((item) => item.textContent),
+  ).toEqual([
+    'Open holding1',
+    'Search Activity for NVDA2',
+    'Copy ticker3',
+    'Add to Favorites4',
+    'Reset ranking5',
+  ])
+  await menu.press('Escape')
+  expect(menu.container.querySelector('.command-menu-popover')).toBeNull()
+  expect(menu.input().value).toBe('nvda')
+  await menu.press('Enter', { altKey: true })
+  await menu.press('4')
+  expect(menu.footer()).toBe('Added to Favorites')
+  await menu.type('')
+  const favorites = menu.container.querySelector('[cmdk-group]')
+  expect(favorites?.querySelector('[cmdk-group-heading]')?.textContent).toBe('Favorites')
+  expect(favorites?.textContent).toContain('NVDA · Synthetic Security')
+  await menu.cleanup()
+})
+
+it('switches to Ask with ? and only offers Ask ↵ when Brief can answer', async () => {
+  scenario.withActivity = true
+  const menu = await mountMenu()
+  await menu.type('?why')
+  expect(menu.container.querySelector('.command-modes [aria-pressed="true"]')?.textContent).toBe(
+    'Ask',
+  )
+  expect(menu.input().value).toBe('why')
+  expect(menu.container.querySelector('.command-ask-status')?.textContent).toBe(
+    'Apple Intelligence requires the desktop app',
+  )
+  expect(menu.footer()).not.toContain('Ask')
+  await menu.type('')
+  await menu.press('Backspace')
+  expect(menu.container.querySelector('.command-modes [aria-pressed="true"]')?.textContent).toBe(
+    'Search',
+  )
+  await menu.cleanup()
+})
+
+it('steps back one level per Esc before closing', async () => {
+  const onOpenChange = vi.fn()
+  const menu = await mountMenu(
+    <CommandMenu open onOpenChange={onOpenChange} onShowShortcuts={vi.fn()} />,
+  )
+  await menu.type('/')
+  await menu.press('Escape')
+  expect(menu.container.querySelector('.command-tabs')).not.toBeNull()
+  await menu.type('refresh')
+  await menu.press('Escape')
+  expect(menu.input().value).toBe('')
+  expect(onOpenChange).not.toHaveBeenCalled()
+  await menu.cleanup()
 })

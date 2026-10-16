@@ -1,0 +1,114 @@
+/* Edits inside the transaction details dialog. */
+.transaction-edits {
+  display: grid;
+  padding: 0 20px 12px;
+}
+.transaction-edits[aria-busy] {
+  opacity: 0.7;
+}
+.transaction-edit-row {
+  display: grid;
+  min-height: 44px;
+  padding: 8px 0;
+  grid-template-columns: 72px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  border-top: var(--hairline) solid var(--border-subtle);
+  font-size: var(--type-body);
+}
+.transaction-edit-row:first-child {
+  border-top: 0;
+}
+.transaction-edit-row > span {
+  padding-top: 8px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.transaction-edit-row > div {
+  display: flex;
+  min-height: 32px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 8px;
+}
+.transaction-edit-note {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.transaction-tag,
+.transaction-split-saved {
+  display: inline-flex;
+  height: 24px;
+  padding: 0 8px;
+  align-items: center;
+  gap: 6px;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-badge);
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.transaction-split-saved > strong {
+  color: var(--text-primary);
+  font-weight: 500;
+}
+.transaction-tag > button {
+  display: grid;
+  padding: 0;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.transaction-tag > button:hover {
+  color: var(--text-primary);
+}
+.transaction-tag-input {
+  width: 112px;
+  height: 28px;
+  padding: 0 8px;
+  border: var(--hairline) solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-background);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--type-meta);
+  outline: none;
+}
+.transaction-split.transaction-split {
+  display: grid;
+  justify-items: start;
+  gap: 6px;
+}
+.transaction-split-part,
+.transaction-split-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.transaction-split-amount {
+  width: 96px;
+  height: var(--control-height);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.transaction-edit-error {
+  margin: 4px 0 0;
+  color: var(--negative);
+  font-size: var(--type-meta);
+}
+.transaction-details-keys {
+  margin-top: auto;
+  flex: none;
+}
+.transaction-note-input {
+  width: 100%;
+  max-width: 320px;
+  min-height: 28px;
+  height: auto;
+  padding: 4px 8px;
+  line-height: 1.35;
+  resize: vertical;
+}

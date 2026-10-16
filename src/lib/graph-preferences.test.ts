@@ -1,12 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import {
-  adjacentGraphWindow,
-  graphWindowForKey,
-  parseChartAccountPreferences,
-  parseGraphWindow,
-  reconcileChartAccountPreferences,
-} from './graph-preferences'
+import { adjacentGraphWindow, graphWindowForKey, parseGraphWindow } from './graph-preferences'
 
 describe('graph preferences', () => {
   it('validates saved ranges and wraps keyboard selection', () => {
@@ -30,19 +24,46 @@ describe('graph preferences', () => {
     expect(graphWindowForKey('a')).toBe(0)
     expect(graphWindowForKey('x')).toBeUndefined()
   })
+})
 
-  it('keeps saved chart visibility and order while appending new accounts', () => {
-    const saved = parseChartAccountPreferences(
-      JSON.stringify([
-        { accountId: 'second', visible: false },
-        { accountId: 'first', visible: true },
-      ]),
-    )
-    expect(reconcileChartAccountPreferences(['first', 'second', 'new'], saved)).toEqual([
-      { accountId: 'second', visible: false },
-      { accountId: 'first', visible: true },
-      { accountId: 'new', visible: true },
-    ])
-    expect(parseChartAccountPreferences('{broken')).toEqual([])
+it('shares one session range between pages and ignores values that are not a range', async () => {
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { createElement } = await import('react')
+  const { useGraphWindow, resetSessionGraphWindow } = await import('./graph-preferences')
+  resetSessionGraphWindow()
+  let setter: ReturnType<typeof useGraphWindow>[1] | undefined
+  const Probe = () => {
+    const [, setWindow] = useGraphWindow()
+    setter = setWindow
+    return null
+  }
+  renderToStaticMarkup(createElement(Probe))
+  const set = setter
+  if (!set) throw new Error('The probe did not render')
+  const read = () => {
+    let value = -1
+    const Reader = () => {
+      ;[value] = useGraphWindow()
+      return null
+    }
+    renderToStaticMarkup(createElement(Reader))
+    return value
+  }
+  set(365 * 24 * 60 * 60)
+  set((current) => current)
+  // Server rendering reads the default; the store itself is checked through a second setter.
+  let seen = 0
+  set((current) => {
+    seen = current
+    return current
   })
+  expect(seen).toBe(365 * 24 * 60 * 60)
+  set(123)
+  set((current) => {
+    seen = current
+    return current
+  })
+  expect(seen).toBe(7 * 24 * 60 * 60)
+  expect(read()).toBe(7 * 24 * 60 * 60)
+  resetSessionGraphWindow()
 })

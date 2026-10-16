@@ -1,4 +1,3 @@
-import { Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 
 import { ActivityList } from '../components/activity-list'
@@ -19,7 +18,7 @@ const foundations = [
   ['Overlay', 'popup-surface'],
   ['Primary', 'text-primary'],
   ['Secondary', 'text-secondary'],
-  ['Muted', 'text-muted'],
+  ['Tertiary', 'text-tertiary'],
   ['Accent', 'accent'],
   ['Positive', 'positive'],
   ['Negative', 'negative'],
@@ -47,7 +46,6 @@ const detailTokens = [
   'control-border',
   'surface-hover',
   'accent-soft',
-  'popup-filter',
   'shadow-popup',
 ]
 
@@ -73,15 +71,6 @@ export function DesignPage() {
         showRefresh={false}
       />
       <div className="design-sections">
-        <Card>
-          <SectionHeading title="Midday study" />
-          <div className="midday-study-links">
-            <Link to="/settings/design/midday/home">Home prototype</Link>
-            <Link to="/settings/design/midday/activity" search={{}}>
-              Activity prototype
-            </Link>
-          </div>
-        </Card>
         <Card>
           <SectionHeading title="Foundations" />
           <div className="design-swatches">

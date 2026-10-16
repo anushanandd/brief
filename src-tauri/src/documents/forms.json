@@ -1,0 +1,208 @@
+{
+  "forms": [
+    {
+      "form": "W-2",
+      "titles": ["wage and tax statement", "w-2 wage and tax", "w-2 and earnings summary"],
+      "corrected": ["w-2c", "corrected wage and tax statement"],
+      "issuerLabels": ["employer's name", "employer s name", "employers name"],
+      "boxes": [
+        {
+          "key": "box1",
+          "label": "Wages, tips, other compensation",
+          "patterns": ["wages, tips, other comp", "wages tips other comp", "wages, tips, other co"]
+        },
+        {
+          "key": "box2",
+          "label": "Federal income tax withheld",
+          "patterns": ["federal income tax withheld", "federal income tax with"]
+        },
+        {
+          "key": "box3",
+          "label": "Social Security wages",
+          "patterns": ["social security wages", "social security wa"]
+        },
+        {
+          "key": "box4",
+          "label": "Social Security tax withheld",
+          "patterns": ["social security tax withheld", "social security tax with"]
+        },
+        {
+          "key": "box5",
+          "label": "Medicare wages and tips",
+          "patterns": ["medicare wages and tips", "medicare wages"]
+        },
+        {
+          "key": "box6",
+          "label": "Medicare tax withheld",
+          "patterns": ["medicare tax withheld", "medicare tax with"]
+        },
+        {
+          "key": "box16",
+          "label": "State wages",
+          "patterns": ["state wages, tips", "state wages"]
+        },
+        { "key": "box17", "label": "State income tax", "patterns": ["state income tax"] },
+        { "key": "box18", "label": "Local wages", "patterns": ["local wages"] },
+        {
+          "key": "box19",
+          "label": "Local income tax",
+          "patterns": ["local income tax", "local income ta", "loc al income"]
+        }
+      ]
+    },
+    {
+      "form": "3922",
+      "titles": ["transfer of stock acquired through an employee stock purchase plan", "3922"],
+      "requires": ["employee stock purchase"],
+      "issuerLabels": ["transferor's name", "corporation's name"],
+      "boxes": [
+        {
+          "key": "box3",
+          "label": "Fair market value per share on grant date",
+          "patterns": ["fair market value per share on grant date", "value per share on grant date"]
+        },
+        {
+          "key": "box4",
+          "label": "Fair market value per share on exercise date",
+          "patterns": [
+            "fair market value per share on exercise date",
+            "value per share on exercise date"
+          ]
+        },
+        {
+          "key": "box5",
+          "label": "Exercise price paid per share",
+          "patterns": ["exercise price paid per share", "price paid per share"]
+        },
+        {
+          "key": "box8",
+          "label": "Exercise price per share as if exercised on the grant date",
+          "patterns": ["exercise price per share determined", "as if the option was exercised"]
+        }
+      ]
+    },
+    {
+      "form": "5498",
+      "titles": ["ira contribution information", "5498"],
+      "requires": ["ira"],
+      "issuerLabels": ["trustee's or issuer's name", "trustee's name", "issuer's name"],
+      "boxes": [
+        {
+          "key": "box1",
+          "label": "IRA contributions",
+          "patterns": ["ira contributions (other than"]
+        },
+        {
+          "key": "box2",
+          "label": "Rollover contributions",
+          "patterns": ["rollover contributions"]
+        },
+        {
+          "key": "box3",
+          "label": "Roth IRA conversion amount",
+          "patterns": ["roth ira conversion amount", "roth conversion"]
+        },
+        {
+          "key": "box5",
+          "label": "Fair market value of account",
+          "patterns": ["fair market value of account"]
+        },
+        {
+          "key": "box10",
+          "label": "Roth IRA contributions",
+          "patterns": ["roth ira contributions"]
+        }
+      ]
+    },
+    {
+      "form": "1099-NEC",
+      "titles": ["nonemployee compensation"],
+      "issuerLabels": ["payer's name", "payer s name", "payers name"],
+      "boxes": [
+        {
+          "key": "box1",
+          "label": "Nonemployee compensation",
+          "patterns": ["nonemployee compensation"]
+        },
+        {
+          "key": "box4",
+          "label": "Federal income tax withheld",
+          "patterns": ["federal income tax withheld"]
+        }
+      ]
+    },
+    {
+      "form": "1099-INT",
+      "titles": ["1099-int", "interest income"],
+      "requires": ["1099"],
+      "issuerLabels": ["payer's name", "payer s name", "payers name"],
+      "boxes": [
+        { "key": "box1", "label": "Interest income", "patterns": ["interest income"] },
+        {
+          "key": "box3",
+          "label": "Interest on U.S. savings bonds and Treasury obligations",
+          "patterns": ["savings bonds and treasury", "u.s. savings bonds"]
+        },
+        {
+          "key": "box4",
+          "label": "Federal income tax withheld",
+          "patterns": ["federal income tax withheld"]
+        }
+      ]
+    },
+    {
+      "form": "1099-DIV",
+      "titles": ["1099-div", "dividends and distributions"],
+      "issuerLabels": ["payer's name", "payer s name", "payers name"],
+      "boxes": [
+        {
+          "key": "box1a",
+          "label": "Total ordinary dividends",
+          "patterns": ["total ordinary dividends"]
+        },
+        { "key": "box1b", "label": "Qualified dividends", "patterns": ["qualified dividends"] },
+        {
+          "key": "box2a",
+          "label": "Total capital gain distributions",
+          "patterns": ["total capital gain distr", "capital gain distributions"]
+        },
+        {
+          "key": "box4",
+          "label": "Federal income tax withheld",
+          "patterns": ["federal income tax withheld"]
+        }
+      ]
+    },
+    {
+      "form": "1099-MISC",
+      "titles": ["1099-misc", "miscellaneous information"],
+      "issuerLabels": ["payer's name", "payer s name", "payers name"],
+      "boxes": [
+        { "key": "box3", "label": "Other income", "patterns": ["other income"] },
+        {
+          "key": "box4",
+          "label": "Federal income tax withheld",
+          "patterns": ["federal income tax withheld"]
+        }
+      ]
+    },
+    {
+      "form": "1099-B",
+      "titles": ["1099-b", "proceeds from broker"],
+      "issuerLabels": ["payer's name", "payer s name", "payers name"],
+      "boxes": [
+        {
+          "key": "proceeds",
+          "label": "Total proceeds",
+          "patterns": ["total proceeds", "proceeds"]
+        },
+        {
+          "key": "costBasis",
+          "label": "Total cost basis",
+          "patterns": ["total cost basis", "cost or other basis", "cost basis"]
+        }
+      ]
+    }
+  ],
+  "composite": ["1099-div", "1099-int", "1099-b", "1099-misc"]
+}

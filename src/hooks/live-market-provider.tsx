@@ -125,6 +125,10 @@ function useLiveMarketState() {
     marketSeries: market?.cached ? (market.chartSeries ?? {}) : market ? state.series : {},
     marketCloseTime,
     marketSession: market?.session,
+    marketAsOf: market?.asOf ?? undefined,
+    marketFeedLabel,
+    marketDelayMinutes: market?.delayMinutes,
+    marketNextTransitionAt: market?.nextTransitionAt ?? undefined,
     marketPriceState:
       enabled && state.error
         ? ('error' as const)
@@ -133,12 +137,7 @@ function useLiveMarketState() {
           : market?.pollIntervalMs && !market.cached
             ? ('active' as const)
             : ('idle' as const),
-    marketPriceMessage:
-      enabled && state.error
-        ? state.error
-        : marketFeedLabel
-          ? `${marketFeedLabel}${market?.delayMinutes ? ` · ${market.delayMinutes}-minute delayed` : ''}`
-          : undefined,
+    marketPriceMessage: enabled && state.error ? state.error : undefined,
     marketPriceNote: market
       ? `${state.error ? 'Refresh failed; last available values. ' : ''}${market.cached ? 'Saved market observations · ' : ''}${market.session} · ${marketFeedLabel ?? 'Market data'} · ${market.asOf ? new Date(market.asOf).toLocaleString() : 'Observation time unavailable'}. Values and changes use the shared Rust valuation.`
       : enabled && state.error

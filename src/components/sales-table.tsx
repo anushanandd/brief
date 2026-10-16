@@ -2,7 +2,7 @@ import type { Ref } from 'react'
 
 import { formatCurrency, formatPercent, formatShares, valueTone } from '../lib/format'
 import type { Trade } from '../lib/schema'
-import { formatActivityDate } from '../lib/spending'
+import { formatListDate } from '../lib/spending'
 import { SecurityLink } from './security-link'
 import { EmptyState, SectionHeading } from './ui'
 
@@ -59,9 +59,15 @@ export function SalesTable({
                 />
               </th>
               <td>
-                <time dateTime={trade.date}>{formatActivityDate(trade.date, referenceIso)}</time>
+                <time dateTime={trade.date}>{formatListDate(trade.date, referenceIso)}</time>
               </td>
-              <td>{formatShares(trade.units)}</td>
+              <td
+                title={
+                  trade.splitRatio ? `Restated for a ${trade.splitRatio}-for-1 split` : undefined
+                }
+              >
+                {formatShares(trade.units)}
+              </td>
               <td>{formatCurrency(trade.price)}</td>
               <td>{formatCurrency(Math.abs(trade.amount))}</td>
               <td>{formatCurrency(trade.realizedCostBasis)}</td>
@@ -70,7 +76,9 @@ export function SalesTable({
                 <small>
                   {trade.estimatedRealizedGain == null
                     ? 'Lot match unavailable'
-                    : formatPercent(trade.estimatedRealizedGainPct)}
+                    : [formatPercent(trade.estimatedRealizedGainPct), holdingTerm(trade)]
+                        .filter(Boolean)
+                        .join(' · ')}
                 </small>
               </td>
             </tr>
@@ -79,4 +87,13 @@ export function SalesTable({
       </table>
     </div>
   )
+}
+
+/** Which holding period the gain falls in, or both when the sale spanned lots. */
+function holdingTerm(trade: { estimatedShortTermGain?: number; estimatedLongTermGain?: number }) {
+  const short = trade.estimatedShortTermGain ?? 0
+  const long = trade.estimatedLongTermGain ?? 0
+  if (!short && !long) return ''
+  if (short && long) return 'short and long'
+  return long ? 'long-term' : 'short-term'
 }

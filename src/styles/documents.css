@@ -1,0 +1,676 @@
+/* Documents: a search over every year, then the year's documents beside the one open, or
+   beside what the year's documents say it earned. */
+.documents-page {
+  display: grid;
+  align-content: start;
+  row-gap: var(--card-padding);
+}
+.documents-page > .page-header {
+  margin-bottom: 0;
+}
+.documents-progress {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Search, what the list holds, and reading again when the reader improved. */
+.documents-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px 16px;
+}
+.documents-search {
+  display: flex;
+  width: min(100%, 440px);
+  height: var(--button-height);
+  padding: 0 6px 0 12px;
+  align-items: center;
+  gap: 10px;
+  border: var(--hairline) solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-background);
+  box-shadow: var(--shadow-input);
+  color: var(--text-tertiary);
+  transition: border-color var(--duration-quick) var(--ease-out);
+}
+.documents-search:focus-within {
+  border-color: var(--border-strong);
+  color: var(--text-secondary);
+}
+.documents-search .autofill-field {
+  min-width: 0;
+  flex: 1;
+}
+.documents-search input {
+  width: 100%;
+  min-width: 0;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  outline: 0;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+}
+.documents-search kbd {
+  padding: 0 6px;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-small);
+  color: var(--text-tertiary);
+  font-family: inherit;
+  font-size: var(--type-micro);
+}
+.documents-count {
+  display: flex;
+  margin: 0;
+  gap: 12px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.documents-count > .is-attention {
+  color: var(--warning);
+}
+
+/* Sections keep the page's spacing below their rule. */
+.documents-section {
+  padding-top: var(--card-padding);
+}
+.documents-group-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.documents-group-count {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+  font-variant-numeric: tabular-nums;
+}
+
+/* A kind's tile: its color, and a tax form's number or the kind's icon. */
+.documents-mark {
+  display: grid;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  flex: none;
+  place-items: center;
+  border-radius: var(--radius-inner);
+  background: color-mix(in srgb, var(--kind-color) 14%, var(--surface-raised));
+  color: var(--kind-color);
+  font-size: var(--type-micro);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+.documents-year-mark {
+  display: grid;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  place-items: center;
+  border-radius: var(--radius-inner);
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--type-meta);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.documents-toolbar > button {
+  margin-left: auto;
+}
+
+/* The list, and beside it the open document or the year's income. */
+.documents-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(360px, 0.85fr);
+  align-items: start;
+}
+.documents-layout.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 1180px) {
+  .documents-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.documents-list,
+.documents-summary {
+  display: grid;
+  align-content: start;
+  min-width: 0;
+}
+
+/* Rows bleed into the gutter on hover so their text lines up with the heading. */
+.documents-rows {
+  display: grid;
+  gap: 2px;
+  margin: 8px -8px 0;
+  padding: 0;
+  list-style: none;
+}
+.documents-row {
+  display: grid;
+  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  min-height: var(--row-height-compact);
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  color: inherit;
+  font-size: var(--type-body);
+  text-decoration: none;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.documents-row:hover {
+  background: var(--hover-wash);
+}
+.documents-row.is-selected {
+  background: var(--sidebar-accent);
+}
+.documents-row-mark {
+  display: grid;
+  width: var(--mark-size);
+  height: var(--mark-size);
+  place-items: center;
+  color: var(--text-tertiary);
+}
+.documents-row-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.documents-row-copy > strong {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.documents-row-copy > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  overflow-wrap: break-word;
+}
+.documents-row-copy > small.is-attention {
+  color: var(--warning);
+}
+.documents-row-end {
+  display: grid;
+  justify-items: end;
+  gap: 4px;
+}
+.documents-row-amount {
+  color: var(--text-primary);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.documents-badge {
+  display: inline-flex;
+  max-width: 200px;
+  min-height: 18px;
+  padding: 0 6px;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px; /* scale-exempt: a pill */
+  font-size: var(--type-micro);
+  font-weight: 600;
+  line-height: 1.3;
+}
+.documents-badge.is-done {
+  background: var(--positive-soft);
+  color: var(--positive);
+}
+.documents-badge.is-attention {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+
+/* The open document. */
+.documents-panel {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+.documents-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.documents-meta > span {
+  overflow-wrap: anywhere;
+}
+.documents-meta > span + span::before {
+  padding: 0 8px;
+  color: var(--text-tertiary);
+  content: '·';
+}
+.documents-kind {
+  color: var(--kind-color);
+  font-weight: 500;
+}
+/* What still needs the user, said once above the figures it concerns. */
+.documents-callout {
+  margin: 0;
+  padding: 8px 12px;
+  border-radius: var(--radius-inner);
+  background: var(--warning-soft);
+  color: var(--warning);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+/* What the model wrote, set apart by a rule and labeled with where it came from. */
+.documents-summary-note {
+  display: grid;
+  gap: 6px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent-soft);
+}
+.documents-summary-note > p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.documents-summary-note > small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+}
+.documents-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.documents-actions-end {
+  display: flex;
+  gap: 8px;
+  margin-left: auto;
+}
+.documents-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px 16px;
+}
+.documents-details > label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.documents-input,
+.documents-amount {
+  width: 100%;
+  min-width: 0;
+  height: var(--control-height);
+  padding: 0 12px;
+  border: var(--hairline) solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-background);
+  box-shadow: var(--shadow-input);
+  color: var(--text-primary);
+  font-size: var(--type-body);
+}
+.documents-amount {
+  height: var(--button-height-compact);
+  padding: 0 8px;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.documents-amount[aria-invalid='true'] {
+  border-color: var(--warning);
+  background: var(--warning-soft);
+}
+
+/* One figure per row: what it is, then the amount (for pay, this period's and the year's). */
+.documents-block {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.documents-block-title {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.documents-fields {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.documents-field {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(104px, 136px);
+  align-items: center;
+  gap: 12px;
+  min-height: var(--row-height-compact);
+  padding: 4px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-size: var(--type-body);
+  font-variant-numeric: tabular-nums;
+}
+.documents-field.has-ytd {
+  grid-template-columns: minmax(0, 1fr) repeat(2, minmax(104px, 136px));
+}
+.documents-field:last-child {
+  border-bottom: 0;
+}
+.documents-field-head {
+  min-height: 0;
+  padding: 0 0 6px;
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+.documents-field-head > span:not(:first-child) {
+  text-align: right;
+}
+.documents-field-label {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+  color: var(--text-secondary);
+  overflow-wrap: anywhere;
+}
+.documents-field-label > small {
+  color: var(--accent);
+  font-size: var(--type-meta);
+}
+.documents-field.is-doubtful .documents-field-label {
+  color: var(--text-primary);
+}
+.documents-field.is-doubtful .documents-field-label > small {
+  color: var(--warning);
+}
+.documents-field-text {
+  color: var(--text-primary);
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+.documents-field.is-doubtful .documents-field-text {
+  color: var(--warning);
+}
+
+.documents-checks {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  list-style: none;
+}
+.documents-checks > li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+}
+.documents-checks > li > span:first-child {
+  width: 12px;
+  color: var(--text-tertiary);
+  text-align: center;
+}
+.documents-checks > li.is-done > span:first-child {
+  color: var(--positive);
+}
+.documents-checks > li.is-attention > span:first-child {
+  color: var(--warning);
+}
+.documents-checks a {
+  color: var(--accent);
+}
+.documents-history {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px 12px;
+  padding-top: 16px;
+  border-top: var(--hairline) solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+
+/* What the year's documents say it earned. */
+.documents-ledger {
+  display: grid;
+  margin: 8px 0 0;
+}
+.documents-ledger > div {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 10px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-size: var(--type-body);
+}
+.documents-ledger > div:last-child {
+  border-bottom: 0;
+}
+.documents-ledger dt {
+  display: grid;
+  gap: 2px;
+  color: var(--text-secondary);
+}
+.documents-ledger dt > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.documents-ledger dd {
+  margin: 0;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.documents-ledger > .is-total dt {
+  color: var(--text-primary);
+}
+.documents-ledger > .is-total dd {
+  font-size: var(--type-figure);
+  font-weight: 500;
+}
+.documents-ledger + button {
+  margin-top: 12px;
+}
+.documents-note {
+  margin: 12px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+
+/* Coverage: a cell per month for each monthly kind, filled in its color where a document is,
+   outlined in warning where a month that's passed has none. */
+.documents-coverage {
+  display: grid;
+  margin-top: 12px;
+  gap: 6px;
+}
+.documents-coverage-row {
+  display: grid;
+  grid-template-columns: 80px repeat(12, minmax(0, 1fr)) 40px;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.documents-coverage-row.is-head {
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  text-align: center;
+}
+.documents-cell {
+  height: 20px;
+  border-radius: var(--radius-small);
+  background: color-mix(in oklab, var(--text-primary) 4%, transparent);
+}
+.documents-cell.is-filled {
+  background: color-mix(in oklab, var(--kind-color) 70%, transparent);
+}
+.documents-cell.is-missing {
+  box-shadow: inset 0 0 0 1px color-mix(in oklab, var(--warning) 55%, transparent);
+  background: var(--warning-soft);
+}
+.documents-coverage-total {
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.documents-forms {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 16px 0 0;
+  padding: 0;
+  gap: 8px;
+  list-style: none;
+}
+.documents-form-chip {
+  display: inline-flex;
+  max-width: 100%;
+  padding: 4px 10px 4px 4px;
+  align-items: center;
+  gap: 8px;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-size: var(--type-meta);
+  text-decoration: none;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.documents-form-chip:hover {
+  background: var(--hover-wash);
+}
+
+/* The original, docked to the right edge like the activity inspector, over a light backdrop
+   so the list stays readable beside it. */
+.documents-viewer {
+  position: fixed;
+  z-index: 20;
+  inset: 0;
+  display: flex;
+  justify-content: flex-end;
+}
+.documents-viewer-backdrop {
+  position: absolute;
+  inset: 0;
+  background: color-mix(in srgb, var(--dialog-backdrop) 45%, transparent);
+}
+.documents-viewer-sheet {
+  position: relative;
+  display: flex;
+  width: min(880px, calc(100vw - 96px));
+  margin: 12px;
+  flex-direction: column;
+  overflow: hidden;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-card);
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-modal);
+  animation: documents-viewer-in var(--duration-modal) var(--ease-out);
+}
+@keyframes documents-viewer-in {
+  from {
+    opacity: 0;
+    transform: translateX(16px);
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .documents-viewer-sheet {
+    animation-name: documents-viewer-fade;
+  }
+  @keyframes documents-viewer-fade {
+    from {
+      opacity: 0;
+    }
+  }
+}
+.documents-viewer-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 12px 12px 20px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.documents-viewer-header > span {
+  display: grid;
+  min-width: 0;
+  flex: 1;
+  gap: 2px;
+}
+.documents-viewer-header strong {
+  overflow: hidden;
+  font-size: var(--type-body);
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.documents-viewer-header small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.documents-viewer-body {
+  display: grid;
+  min-height: 0;
+  flex: 1;
+  overflow: auto;
+}
+.documents-viewer-body > iframe {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  background: var(--background);
+}
+.documents-viewer-body > img {
+  max-width: 100%;
+  margin: auto;
+  object-fit: contain;
+}
+.documents-viewer-body > .empty-state {
+  padding: 20px;
+}
+.documents-viewer-text {
+  margin: 0;
+  padding: 16px 20px;
+  color: var(--text-secondary);
+  font-family: ui-monospace, monospace;
+  font-size: var(--type-meta);
+  white-space: pre;
+}
+
+/* Dropping files anywhere on the window adds them. */
+.documents-drop {
+  position: fixed;
+  z-index: 10;
+  bottom: 32px;
+  left: 50%;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 20px;
+  transform: translateX(-50%);
+  border: var(--hairline) solid var(--accent);
+  border-radius: 999px;
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-modal);
+  color: var(--accent);
+  font-size: var(--type-body);
+  pointer-events: none;
+}

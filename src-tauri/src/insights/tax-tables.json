@@ -1,0 +1,132 @@
+{
+  "version": "2026-10-07",
+  "sources": [
+    "Rev. Proc. 2024-40, sections 3.01 and 3.03 (taxable years beginning in 2025)",
+    "Rev. Proc. 2025-32, sections 4.01 and 4.03 (taxable years beginning in 2026)",
+    "26 U.S.C. 1411 (net investment income tax thresholds, not indexed)",
+    "26 U.S.C. 1211(b) (capital loss limit)",
+    "P.L. 119-21, section 70102 (2025 standard deduction); Rev. Proc. 2025-32, section 4.14 (2026)",
+    "SSA, contribution and benefit base for 2025 and 2026"
+  ],
+  "niitRate": 3.8,
+  "niitThresholds": {
+    "single": 200000,
+    "marriedJoint": 250000,
+    "marriedSeparate": 125000,
+    "headOfHousehold": 200000
+  },
+  "capitalLossLimit": {
+    "single": 3000,
+    "marriedJoint": 3000,
+    "marriedSeparate": 1500,
+    "headOfHousehold": 3000
+  },
+  "years": {
+    "2025": {
+      "ordinary": {
+        "single": [
+          [11925, 10],
+          [48475, 12],
+          [103350, 22],
+          [197300, 24],
+          [250525, 32],
+          [626350, 35],
+          [null, 37]
+        ],
+        "marriedJoint": [
+          [23850, 10],
+          [96950, 12],
+          [206700, 22],
+          [394600, 24],
+          [501050, 32],
+          [751600, 35],
+          [null, 37]
+        ],
+        "marriedSeparate": [
+          [11925, 10],
+          [48475, 12],
+          [103350, 22],
+          [197300, 24],
+          [250525, 32],
+          [375800, 35],
+          [null, 37]
+        ],
+        "headOfHousehold": [
+          [17000, 10],
+          [64850, 12],
+          [103350, 22],
+          [197300, 24],
+          [250500, 32],
+          [626350, 35],
+          [null, 37]
+        ]
+      },
+      "capitalGains": {
+        "single": [48350, 533400],
+        "marriedJoint": [96700, 600050],
+        "marriedSeparate": [48350, 300000],
+        "headOfHousehold": [64750, 566700]
+      },
+      "standardDeduction": {
+        "single": 15750,
+        "marriedJoint": 31500,
+        "marriedSeparate": 15750,
+        "headOfHousehold": 23625
+      },
+      "socialSecurityWageBase": 176100
+    },
+    "2026": {
+      "ordinary": {
+        "single": [
+          [12400, 10],
+          [50400, 12],
+          [105700, 22],
+          [201775, 24],
+          [256225, 32],
+          [640600, 35],
+          [null, 37]
+        ],
+        "marriedJoint": [
+          [24800, 10],
+          [100800, 12],
+          [211400, 22],
+          [403550, 24],
+          [512450, 32],
+          [768700, 35],
+          [null, 37]
+        ],
+        "marriedSeparate": [
+          [12400, 10],
+          [50400, 12],
+          [105700, 22],
+          [201775, 24],
+          [256225, 32],
+          [384350, 35],
+          [null, 37]
+        ],
+        "headOfHousehold": [
+          [17700, 10],
+          [67450, 12],
+          [105700, 22],
+          [201750, 24],
+          [256200, 32],
+          [640600, 35],
+          [null, 37]
+        ]
+      },
+      "capitalGains": {
+        "single": [49450, 545500],
+        "marriedJoint": [98900, 613700],
+        "marriedSeparate": [49450, 306850],
+        "headOfHousehold": [66200, 579600]
+      },
+      "standardDeduction": {
+        "single": 16100,
+        "marriedJoint": 32200,
+        "marriedSeparate": 16100,
+        "headOfHousehold": 24150
+      },
+      "socialSecurityWageBase": 184500
+    }
+  }
+}

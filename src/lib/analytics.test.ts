@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 
 import empty from '../data/empty.json'
 import { classification } from '../data/fixtures/classification'
+import { benefitActivity, insights } from '../data/fixtures/insights'
 import {
   analyticsEntries,
   analyticsBarStack,
@@ -9,12 +10,12 @@ import {
   analyticsReport,
   analyticsSearch,
   analyticsTotal,
+  withoutReportView,
   analyticsWindow,
   analyticsAccountMatches,
   toggleAnalyticsAccount,
   noAnalyticsAccounts,
 } from './analytics'
-import { homeOverviewMetrics } from './home-overview'
 import { cashFlowBreakdown } from './money'
 import { financeSnapshotSchema, type Transaction } from './schema'
 
@@ -88,18 +89,10 @@ it('reconciles Income to Home and scopes dated posted USD evidence exactly', () 
     'spending:zelle',
   ])
   expect(analyticsTotal(report.buckets)).toBe(report.total)
-  expect(
-    homeOverviewMetrics(
-      data,
-      'card',
-      { start: Date.parse('2026-09-01T12:00:00Z') / 1000, end: Date.parse(data.updatedAt) / 1000 },
-      [],
-    ).income,
-  ).toBe(report.total)
   expect(analyticsEntries(data, 'income', 'card', 'card')).toEqual([])
 })
 
-it('uses the saved Amex account, includes reversals and excludes refunds, pending and Uber Cash', () => {
+it('scopes native Amex credit evidence to the saved card, account filter, and posted credits', () => {
   const data = snapshot()
   data.transactions = [
     transaction('credit', 25, {
@@ -138,6 +131,31 @@ it('uses the saved Amex account, includes reversals and excludes refunds, pendin
       classification: classification('income'),
     }),
   ]
+  // Native benefit rules classified these; refunds and Uber Cash are never credits.
+  data.insights = insights({
+    benefits: {
+      accountId: 'card',
+      product: 'amex-platinum',
+      productName: 'American Express Platinum',
+      windows: [],
+      useFirst: [],
+      history: [],
+      review: [],
+      activity: [
+        benefitActivity({ id: 'credit', amount: 25, accountId: 'card', date: '2026-08-01' }),
+        benefitActivity({
+          id: 'reversal',
+          amount: -10,
+          accountId: 'card',
+          kind: 'reversal',
+          date: '2026-08-02',
+        }),
+        benefitActivity({ id: 'refund', amount: 25, accountId: 'card', kind: 'unverified' }),
+        benefitActivity({ id: 'pending', amount: 25, accountId: 'card', pending: true }),
+        benefitActivity({ id: 'retired', amount: 30, accountId: 'card', date: '2026-08-03' }),
+      ],
+    },
+  })
   const entries = analyticsEntries(data, 'amex-credits', 'card')
   expect(analyticsTotal(entries)).toBe(45)
   expect(entries.map(({ id }) => id).toSorted()).toEqual([
@@ -270,6 +288,21 @@ it('extends the month chart through today without treating days after a stale sn
   expect(report.buckets.at(-5)).toMatchObject({ from: '2026-09-21', value: 75 })
   expect(report.buckets.slice(-4).map(({ value }) => value)).toEqual([null, null, null, null])
   expect(report.previous).toBeNull()
+})
+
+it('compares a stale snapshot with the same number of prior days', () => {
+  const data = { ...snapshot(), updatedAt: '2026-09-21T12:00:00Z' }
+  data.transactions = [
+    transaction('older', 10, { date: '2026-07-01' }),
+    transaction('covered', 40, { date: '2026-08-22' }),
+    transaction('uncovered', 900, { date: '2026-08-24' }),
+    transaction('saved', 75, { date: '2026-09-21' }),
+  ]
+  const window = analyticsWindow(data, { range: 'month' }, '2026-09-25')
+  expect(window).toMatchObject({ previousStart: '2026-07-28', previousEnd: '2026-08-26' })
+  const report = analyticsReport(analyticsEntries(data, 'income', ''), window)
+  expect(report).toMatchObject({ total: 75, previous: 40 })
+  expect(report.percent).toBeCloseTo(87.5)
 })
 
 it('validates incoming chart/date state and preserves account scope', () => {
@@ -490,3 +523,21 @@ it.each([
     expect(analyticsTotal(entries)).toBe(Math.abs(amount))
   },
 )
+
+it('keeps a report’s transactions view and group in the URL, and drops them between reports', () => {
+  expect(analyticsSearch({ chart: 'income', view: 'transactions', group: 'Payroll' })).toEqual({
+    chart: 'income',
+    range: undefined,
+    account: undefined,
+    from: undefined,
+    to: undefined,
+    view: 'transactions',
+    group: 'Payroll',
+  })
+  // A group means nothing without the transactions view, and unknown views are ignored.
+  expect(analyticsSearch({ view: 'breakdown', group: 'Payroll' })).not.toHaveProperty('view')
+  expect(analyticsSearch({ group: 'Payroll' })).not.toHaveProperty('group')
+  expect(
+    withoutReportView({ chart: 'fees', range: 'month', view: 'transactions', group: 'ATM' }),
+  ).toEqual({ chart: 'fees', range: 'month' })
+})

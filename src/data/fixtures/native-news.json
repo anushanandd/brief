@@ -1,19 +1,46 @@
 {
   "articles": [
     {
-      "headline": "Synthetic news",
-      "summary": "Synthetic evidence",
-      "source": "Example",
-      "url": "https://example.com/story",
       "createdAt": "2026-09-21T12:00:00+00:00",
+      "headline": "TEST Beats Estimates, Raises FY Guidance",
+      "relevance": 100,
+      "scope": "company",
+      "source": "Example",
+      "summary": "Synthetic evidence",
       "symbols": ["TEST"],
-      "relevanceScore": 0.91,
-      "sentimentScore": -0.3,
-      "sentimentLabel": "Somewhat-Bearish"
+      "tags": ["earnings", "guidance"],
+      "url": "https://example.com/story"
+    },
+    {
+      "createdAt": "2026-09-21T11:00:00+00:00",
+      "headline": "Stock Market Today: Synthetic Index Climbs",
+      "relevance": 25,
+      "scope": "market",
+      "source": "Example",
+      "summary": "Synthetic evidence",
+      "symbols": ["TEST"],
+      "tags": [],
+      "url": "https://example.com/roundup"
     }
   ],
+  "canRefresh": true,
+  "company": "Synthetic Corp",
+  "filings": [
+    {
+      "filedAt": "2026-09-20T20:05:00+00:00",
+      "form": "8-K",
+      "items": [
+        {
+          "code": "2.02",
+          "label": "Earnings results"
+        }
+      ],
+      "title": "Earnings results",
+      "url": "https://www.sec.gov/Archives/edgar/data/1/1/synthetic.htm"
+    }
+  ],
+  "filingsSavedAt": "2026-09-21T12:00:00+00:00",
+  "filingsWarning": null,
   "savedAt": "2026-09-21T12:00:00+00:00",
-  "warning": "Synthetic refresh failure",
-  "requestsRemaining": 19,
-  "canRefresh": true
+  "warning": "Synthetic refresh failure"
 }

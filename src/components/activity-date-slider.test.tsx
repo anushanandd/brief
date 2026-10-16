@@ -15,10 +15,6 @@ it('keeps the start thumb focused across keyboard date commits', async () => {
       disconnect() {}
     },
   )
-  Object.defineProperty(globalThis, 'IS_REACT_ACT_ENVIRONMENT', {
-    value: true,
-    configurable: true,
-  })
   const onChange = vi.fn()
   function Harness() {
     const [range, setRange] = useState({ from: '2026-09-10', to: '2026-09-20' })

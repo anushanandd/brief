@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from 'vitest'
 
-import { measureNavigation } from './navigation-performance'
+import { measureNavigation, navigationBudget } from './navigation-performance'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -46,4 +46,33 @@ it('records completed visible switches after two frames and discards superseded 
   expect(performance.getEntriesByName('brief:navigation-to-frame')).toHaveLength(1)
   dispose()
   expect(listeners.size).toBe(0)
+})
+
+it('counts selector steps that change only the search and reports misses against the budget', () => {
+  const listeners = new Map<
+    string,
+    (event: { fromLocation?: unknown; pathChanged: boolean; hrefChanged?: boolean }) => void
+  >()
+  const frames: FrameRequestCallback[] = []
+  vi.stubGlobal('document', { hidden: false })
+  vi.stubGlobal('requestAnimationFrame', (callback: FrameRequestCallback) => frames.push(callback))
+  vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  const now = vi.spyOn(performance, 'now')
+  measureNavigation({
+    subscribe: (name, callback) => {
+      listeners.set(name, callback)
+      return () => listeners.delete(name)
+    },
+  })
+  const step = (start: number, end: number) => {
+    now.mockReturnValue(start)
+    listeners.get('onBeforeNavigate')!({ fromLocation: {}, pathChanged: false, hrefChanged: true })
+    listeners.get('onRendered')!({ pathChanged: false })
+    now.mockReturnValue(end)
+    frames.shift()!(end)
+    frames.shift()!(end)
+  }
+  step(0, 40)
+  step(100, 260)
+  expect(navigationBudget()).toEqual({ budgetMs: 100, count: 2, p95Ms: 160, overBudget: 1 })
 })

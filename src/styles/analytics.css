@@ -1,0 +1,465 @@
+/* Analytics charts, news, and holding chart sessions. */
+
+/* Analytics shares Accounts' selector, chart header, and companion-card layout. */
+.analytics-chart-card .home-balance-header {
+  margin-bottom: 12px;
+}
+
+.analytics-chart-card .chart-summary-row > .hero-change {
+  min-height: 28px;
+}
+
+.analytics-chart-card > .empty-state {
+  display: grid;
+  min-height: 240px;
+  place-content: center;
+}
+.analytics-primary,
+.analytics-companion {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.analytics-breakdown {
+  margin-top: 12px;
+  max-height: 320px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+.analytics-breakdown-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  min-height: 48px;
+  padding: 12px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-size: var(--type-body);
+}
+.analytics-breakdown-row > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.analytics-breakdown-row strong {
+  flex-shrink: 0;
+  font-size: var(--type-body);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.analytics-breakdown-row small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.analytics-breakdown-row:last-child {
+  border-bottom: 0;
+}
+.expected-activity-card > .section-heading {
+  margin-bottom: 12px;
+}
+.expected-horizon {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  white-space: nowrap;
+}
+.expected-activity-list {
+  margin: 0;
+  padding: 0;
+  outline: 0;
+  list-style: none;
+}
+.expected-activity-item {
+  display: grid;
+  min-height: var(--row-height);
+  padding: 10px 0;
+  grid-template-columns: 32px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.expected-activity-item:last-child {
+  border-bottom: 0;
+}
+.expected-activity-item > .transaction-mark {
+  width: 32px;
+  height: 32px;
+}
+.expected-activity-content {
+  display: grid;
+  min-width: 0;
+  min-height: 32px;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.expected-activity-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+}
+.expected-activity-merchant {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.expected-activity-merchant:hover {
+  color: var(--accent);
+}
+.expected-activity-info {
+  display: inline-flex;
+  flex: none;
+  color: var(--text-tertiary);
+}
+.expected-activity-info:hover {
+  color: var(--text-primary);
+}
+.expected-activity-amount.positive {
+  color: var(--positive);
+}
+.expected-activity-amount.negative {
+  color: var(--negative);
+}
+.expected-activity-tooltip {
+  width: min(300px, calc(100vw - 24px));
+  padding: 12px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.expected-activity-tooltip p {
+  margin: 0;
+}
+.expected-activity-tooltip p + p {
+  margin-top: 8px;
+}
+.metric-link:hover,
+.analytics-breakdown-row a:hover {
+  color: var(--accent);
+}
+.analytics-plot {
+  display: flex;
+  gap: 24px;
+  height: 240px;
+  margin-top: 12px;
+}
+.analytics-period-plot {
+  height: auto;
+  flex-direction: column;
+  gap: 12px;
+}
+.analytics-period-plot > .analytics-bars {
+  width: 100%;
+  height: 240px;
+  flex: none;
+}
+.spending-chart-region > .spending-bar-chart {
+  height: auto;
+  margin-top: 0;
+}
+.analytics-bars {
+  display: flex;
+  height: 100%;
+  flex: 1;
+  min-width: 0;
+  gap: 12px;
+}
+.analytics-bar-axis {
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  flex-shrink: 0;
+  padding-bottom: 24px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+.spending-bar-chart .analytics-bar-axis {
+  order: 1;
+  text-align: left;
+}
+.analytics-bars-scroll {
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+.analytics-bars-grid {
+  display: grid;
+  height: 100%;
+  gap: 8px;
+}
+.analytics-bars-grid.is-dense {
+  gap: 4px;
+}
+.analytics-bars-grid.is-dense .analytics-bar-column > small {
+  overflow: visible;
+}
+.analytics-bars-grid.is-dense .analytics-bar-column:first-child > small {
+  text-align: left;
+}
+.analytics-bars-grid.is-dense .analytics-bar-column:last-child > small {
+  text-align: right;
+}
+.analytics-bar-column {
+  grid-template-rows: minmax(0, 1fr) 16px;
+  border-radius: var(--radius-control);
+}
+.analytics-bar-track {
+  display: block;
+  position: relative;
+  min-height: 0;
+}
+.analytics-bar-zero {
+  position: absolute;
+  left: 0;
+  right: 0;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.analytics-bar-fill {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: min(34px, 66%);
+  margin-inline: auto;
+  border-radius: var(--radius-small) var(--radius-small) 1px 1px;
+  background: var(--chart-primary);
+  box-shadow:
+    inset 0 1px var(--surface),
+    inset 0 -1px var(--surface);
+}
+.analytics-bar-category:hover .analytics-bar-fill,
+.spending-bar-fill:hover {
+  filter: brightness(1.15);
+}
+
+.analytics-bar-fill.is-negative {
+  border-radius: 1px 1px var(--radius-small) var(--radius-small);
+}
+.analytics-category-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  margin-right: 6px;
+  border-radius: 50%;
+}
+.analytics-bar-missing {
+  color: var(--text-tertiary);
+}
+.analytics-account-row {
+  display: grid;
+  grid-template-columns: 16px 31px minmax(0, 1fr) auto;
+  min-height: var(--row-height);
+  gap: 12px;
+  cursor: pointer;
+}
+.analytics-account-row .account-row-name > small {
+  margin-top: 0;
+}
+
+.analytics-account-row input {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  flex-shrink: 0;
+  accent-color: var(--accent);
+}
+.analytics-account-row > span {
+  flex: 1;
+}
+.analytics-account-row:has(input:not(:checked)) {
+  color: var(--text-tertiary);
+}
+.analytics-account-row:hover,
+.analytics-account-row:hover .account-row-name > strong {
+  color: var(--text-primary);
+}
+
+.news-story {
+  display: grid;
+  gap: 8px;
+  padding: 12px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.news-story:last-child,
+.news-story > .news-row {
+  border-bottom: 0;
+}
+.news-story > .news-row {
+  min-height: 0;
+  padding: 0;
+}
+.news-related {
+  padding-bottom: 0;
+  font-size: var(--type-meta);
+  color: var(--text-secondary);
+}
+.news-related summary {
+  cursor: pointer;
+}
+.news-related a {
+  display: block;
+  padding-top: 8px;
+}
+.news-related a:hover {
+  color: var(--text-primary);
+}
+.analytics-bar-category {
+  position: absolute;
+  left: 0;
+  right: 0;
+  width: min(34px, 66%);
+  margin-inline: auto;
+}
+.analytics-bar-category .analytics-bar-fill {
+  width: 100%;
+}
+.analytics-legend {
+  display: grid;
+  align-content: start;
+  width: 100%;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  gap: 12px;
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+}
+.analytics-legend .analytics-category-dot {
+  flex-shrink: 0;
+}
+.analytics-legend li {
+  overflow-wrap: anywhere;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  text-align: left;
+}
+.bar-chart-legend {
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  max-height: none;
+  margin: 0 auto;
+  overflow-x: auto;
+  align-items: center;
+  gap: 24px;
+}
+.bar-chart-legend li {
+  min-width: max-content;
+}
+.spending-total-panel > .bar-chart-legend {
+  margin-top: 16px;
+}
+
+.activity-load-more {
+  display: block;
+  margin: 8px auto;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.holding-chart-card .performance-chart {
+  position: relative;
+}
+
+.holding-session-overlay {
+  position: absolute;
+  inset: 24px 80px 28px 12px;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.holding-session {
+  position: absolute;
+  inset-block: 0;
+  border-left: var(--hairline) solid var(--border-subtle);
+}
+
+.holding-session-extended {
+  background: color-mix(in srgb, var(--text-tertiary) 4%, transparent);
+}
+
+.holding-session-overnight {
+  background: color-mix(in srgb, var(--text-tertiary) 8%, transparent);
+}
+
+.holding-session span {
+  position: absolute;
+  top: 0;
+  left: 5px;
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  white-space: nowrap;
+}
+
+.holding-session-closure {
+  position: absolute;
+  inset-block: 0;
+  border-left: var(--hairline) dashed var(--text-tertiary);
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+
+.news-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+
+.holding-news-card > .section-heading {
+  margin-bottom: 0;
+}
+.holding-news-card .news-row-meta {
+  flex-wrap: wrap;
+  gap: 4px 8px;
+}
+
+.news-warning {
+  margin: 8px 0;
+  font-size: var(--type-meta);
+}
+
+.news-market {
+  margin-top: 12px;
+}
+.news-market > summary {
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  cursor: default;
+}
+
+/* A report's lower card lists its transactions once, behind the Breakdown/Transactions switch. */
+.report-group-scope {
+  display: flex;
+  margin: 8px 0 4px;
+  align-items: center;
+  gap: 10px;
+}
+.report-group-count {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.report-transactions-scroll {
+  max-height: 520px;
+  margin-top: 4px;
+}
+.report-open-activity {
+  margin-top: 4px;
+}

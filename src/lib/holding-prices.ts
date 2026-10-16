@@ -103,32 +103,6 @@ export function reduceHoldingChart(
   return state
 }
 
-export const holdingChartRanges = [
-  { label: 'D', value: 86400, accessibleLabel: 'Day' },
-  { label: 'W', value: 7 * 86400, accessibleLabel: 'Week' },
-  { label: 'M', value: 30 * 86400, accessibleLabel: 'Month' },
-  { label: 'Y', value: 365 * 86400, accessibleLabel: 'Year' },
-  { label: 'A', value: 0, accessibleLabel: 'All time' },
-]
-
-const holdingChartRangeKey = 'brief.holdingChartRange'
-
-export function parseHoldingChartRange(value: unknown) {
-  if ((typeof value !== 'number' && typeof value !== 'string') || value === '') return 86400
-  const seconds = Number(value)
-  return holdingChartRanges.find((range) => range.value === seconds)?.value ?? 86400
-}
-
-export function getDefaultHoldingChartRange() {
-  return typeof window === 'undefined'
-    ? 86400
-    : parseHoldingChartRange(window.localStorage.getItem(holdingChartRangeKey))
-}
-
-export function saveDefaultHoldingChartRange(value: number) {
-  window.localStorage.setItem(holdingChartRangeKey, String(parseHoldingChartRange(value)))
-}
-
 export function holdingChartTime(time: number, now: number, seconds = false) {
   const date = new Date(time * 1000)
   const sameDay = date.toDateString() === new Date(now * 1000).toDateString()
@@ -188,26 +162,33 @@ export function holdingChartEnd(state: HoldingChartState, points: LivelinePoint[
     : now
 }
 
-export function holdingRangeChange(state: HoldingChartState, points: LivelinePoint[], now: number) {
+/** The change over `span` seconds of the history (its whole range by default). */
+export function holdingRangeChange(
+  state: HoldingChartState,
+  points: LivelinePoint[],
+  now: number,
+  span = state.history?.range ?? 0,
+) {
   const history = state.history
   if (!history) return undefined
   if (history.cached || state.historyError || state.error) {
+    // A saved comparison covers the history's whole range, never a cropped part of it.
     const saved = state.savedComparison
-    return saved && saved.asOf === history.fetchedAt
+    return saved && saved.asOf === history.fetchedAt && span === history.range
       ? { change: saved.change, percent: saved.percent }
       : undefined
   }
   if (points.length < 2) return undefined
   const end = holdingChartEnd(state, points, now)
   const last = points.findLast((point) => point.time <= end)
-  const boundary = end - history.range
-  const first = history.range ? points.findLast((point) => point.time <= boundary) : points[0]
+  const boundary = end - span
+  const first = span ? points.findLast((point) => point.time <= boundary) : points[0]
   if (
     !first ||
     !last ||
     first.time >= last.time ||
     first.value <= 0 ||
-    (history.range && boundary - first.time > 7 * 86400) ||
+    (span && boundary - first.time > 7 * 86400) ||
     now - last.time > 7 * 86400
   )
     return undefined
@@ -307,9 +288,9 @@ export function holdingChartTimeline(
     return time + removed
   }
   const displayEnd = toDisplay(end)
-  const window = Math.max(60, (displayEnd - toDisplay(start)) / 0.95)
-  const left = displayEnd - window * 0.95
-  const position = (time: number) => ((toDisplay(time) - left) / window) * 100
+  const span = Math.max(60, (displayEnd - toDisplay(start)) / 0.95)
+  const left = displayEnd - span * 0.95
+  const position = (time: number) => ((toDisplay(time) - left) / span) * 100
   return {
     points: points.map((point, i) => ({
       ...point,
@@ -321,7 +302,7 @@ export function holdingChartTimeline(
           gaps.some((gap) => points[i - 1].time <= gap.start && point.time >= gap.end)),
     })),
     end: displayEnd,
-    window,
+    span,
     toDisplay,
     toActual,
     position,
@@ -336,16 +317,19 @@ export function holdingChartCandles(
   end: number,
   range: number,
 ) {
-  const resolution =
-    range === 86400
+  const resolution = !range
+    ? 30 * 86400
+    : range <= 86400
       ? 900
-      : range === 604800
+      : range <= 604800
         ? 3600
-        : range === 2592000
+        : range <= 2592000
           ? 14400
-          : range === 31536000
-            ? 7 * 86400
-            : 30 * 86400
+          : range <= 120 * 86400
+            ? 86400
+            : range <= 31536000
+              ? 7 * 86400
+              : 30 * 86400
   const sessions = holdingSessions(state.history)
   const grouped: Array<PriceBar & { bucket: number; session: number }> = []
   for (const bar of holdingChartBars(state)) {

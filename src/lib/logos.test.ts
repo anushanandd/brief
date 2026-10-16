@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
 import {
+  institutionLogoUrl,
   brandLogoUrl,
   brandMarkLabel,
   markColor,
@@ -56,15 +57,38 @@ describe('logo resolution', () => {
         true,
       ),
     ).toBe('https://plaid-merchant-logos.plaid.com/merchant.png')
+    const merchant = (confidence: string) =>
+      transaction({
+        logoUrl: 'https://untrusted.example/logo.png',
+        logoName: 'Example Coffee',
+        counterparties: [{ name: 'Example Coffee', type: 'merchant', confidence }],
+      })
+    expect(transactionLogoUrl(merchant('HIGH'), true)).toContain(
+      'https://img.logo.dev/name/Example%20Coffee',
+    )
+    expect(
+      transactionLogoUrl({ ...merchant('VERY_HIGH'), website: 'https://www.example.com' }, true),
+    ).toContain('https://img.logo.dev/example.com')
+  })
+
+  it('never guesses a logo for a merchant Plaid did not recognize', () => {
+    for (const confidence of ['LOW', 'MEDIUM', 'UNKNOWN']) {
+      const guess = transaction({
+        logoName: 'Example Coffee',
+        website: 'https://www.example.com',
+        counterparties: [{ name: 'Example Coffee', type: 'merchant', confidence }],
+      })
+      expect(transactionLogoUrl(guess, true)).toBeUndefined()
+    }
+    // No counterparty at all, as on an imported statement row, is not recognized either.
+    expect(transactionLogoUrl(transaction({ logoName: 'Example Coffee' }), true)).toBeUndefined()
+    // Plaid's own logo is kept: Plaid attaches one only to a merchant it matched.
     expect(
       transactionLogoUrl(
-        transaction({
-          logoUrl: 'https://untrusted.example/logo.png',
-          logoName: 'Example Coffee',
-        }),
+        transaction({ logoUrl: 'https://plaid-merchant-logos.plaid.com/merchant.png' }),
         true,
       ),
-    ).toContain('https://img.logo.dev/name/Example%20Coffee')
+    ).toBe('https://plaid-merchant-logos.plaid.com/merchant.png')
   })
 
   it('uses American Express branding for its card payments', () => {
@@ -96,4 +120,22 @@ describe('logo resolution', () => {
       ),
     ).toBeUndefined()
   })
+})
+
+it('looks up institution logos by exact domain, only with consent', () => {
+  expect(institutionLogoUrl({ institution: 'Chase', domain: 'chase.com' }, false)).toBeUndefined()
+  expect(institutionLogoUrl({ institution: 'Local Credit Union' }, true)).toBeUndefined()
+  // A common institution without a reported website still gets its logo.
+  expect(institutionLogoUrl({ institution: 'Chase' }, true)).toMatch(/\/chase\.com\?/)
+  expect(institutionLogoUrl({ institution: 'E-Trade' }, true)).toMatch(/\/etrade\.com\?/)
+  expect(institutionLogoUrl({ institution: 'Chase', domain: 'chase.com' }, true)).toMatch(
+    /^https:\/\/img\.logo\.dev\/chase\.com\?/,
+  )
+  // A brand the provider's website doesn't match is overridden by name.
+  expect(
+    institutionLogoUrl(
+      { institution: 'E*TRADE from Morgan Stanley', domain: 'morganstanley.com' },
+      true,
+    ),
+  ).toMatch(/^https:\/\/img\.logo\.dev\/etrade\.com\?/)
 })

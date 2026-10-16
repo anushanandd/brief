@@ -1,6 +1,8 @@
 import { Tooltip as TooltipPrimitive } from '@base-ui/react/tooltip'
 import { createContext, useContext, useState } from 'react'
 
+import { usePopupPortal } from './popup-container'
+
 const TooltipPointerContext = createContext<{
   pointer: { x: number; y: number } | null
   setPointer: (pointer: { x: number; y: number } | null) => void
@@ -53,11 +55,12 @@ function TooltipContent({
     'align' | 'alignOffset' | 'anchor' | 'side' | 'sideOffset'
   >) {
   const pointer = useContext(TooltipPointerContext)?.pointer
+  const { container, positionMethod } = usePopupPortal()
   const pointerAnchor = pointer
     ? { getBoundingClientRect: () => DOMRect.fromRect({ x: pointer.x, y: pointer.y }) }
     : undefined
   return (
-    <TooltipPrimitive.Portal>
+    <TooltipPrimitive.Portal container={container}>
       <TooltipPrimitive.Positioner
         className="tooltip-positioner"
         align={align}
@@ -65,6 +68,7 @@ function TooltipContent({
         anchor={pointerAnchor ?? anchor}
         side={side}
         sideOffset={sideOffset}
+        positionMethod={positionMethod}
       >
         <TooltipPrimitive.Popup
           data-slot="tooltip-content"

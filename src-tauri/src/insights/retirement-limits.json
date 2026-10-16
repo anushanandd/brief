@@ -1,0 +1,20 @@
+{
+  "version": "2026-10-15",
+  "sources": ["Notice 2024-80 (limitations for 2025)", "Notice 2025-67 (limitations for 2026)"],
+  "years": {
+    "2025": {
+      "electiveDeferral": 23500,
+      "catchUp50": 7500,
+      "catchUp60To63": 11250,
+      "ira": 7000,
+      "iraCatchUp50": 1000
+    },
+    "2026": {
+      "electiveDeferral": 24500,
+      "catchUp50": 8000,
+      "catchUp60To63": 11250,
+      "ira": 7500,
+      "iraCatchUp50": 1100
+    }
+  }
+}

@@ -1,0 +1,218 @@
+/* Activity search: the query bar, the review switch, and the row details it filters on. */
+
+/* One field for search and filters; see ActivityQueryBar. */
+.query-bar {
+  position: relative;
+  grid-column: 1;
+  grid-row: 1;
+  min-width: 0;
+}
+.query-bar-field {
+  display: flex;
+  min-height: var(--control-height);
+  padding: 4px 4px 4px 12px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 6px;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  transition: border-color var(--duration-quick) var(--ease-out);
+}
+.query-bar[data-focused] .query-bar-field {
+  border-color: var(--border-strong);
+}
+.query-bar-field > svg {
+  flex: none;
+  color: var(--text-tertiary);
+}
+.query-bar-input {
+  --autofill-inset: 4px;
+  min-width: 180px;
+  margin-right: auto;
+}
+.query-bar-input > input {
+  height: 28px;
+  padding: 0 4px;
+  flex: 1;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--type-body);
+}
+.query-bar-input > input::placeholder {
+  color: var(--text-tertiary);
+}
+.query-chip {
+  display: inline-flex;
+  max-width: 260px;
+  min-height: 26px;
+  padding: 0 6px 0 8px;
+  align-items: center;
+  gap: 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--type-meta);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.query-chip > span {
+  color: var(--text-tertiary);
+}
+.query-chip > svg {
+  flex: none;
+  color: var(--text-tertiary);
+}
+.query-chip:hover > svg {
+  color: var(--text-primary);
+}
+.query-bar-action {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--text-tertiary);
+  cursor: pointer;
+}
+.query-bar-action:not(:disabled):hover {
+  background: var(--hover-wash);
+  color: var(--text-primary);
+}
+.query-bar-action:disabled {
+  opacity: 0.4;
+  cursor: default;
+}
+.query-preview {
+  display: flex;
+  margin: 6px 0 0;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.query-preview > svg {
+  color: var(--accent);
+}
+.query-preview > kbd {
+  margin-left: 4px;
+  font-size: var(--type-meta);
+}
+.activity-facets:empty {
+  display: none;
+}
+.activity-facets {
+  display: flex;
+  margin-top: 10px;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+}
+/* The review queue's switch: the one warm control, because it leads to what needs a look. */
+.activity-review-view {
+  display: inline-flex;
+  min-height: 28px;
+  padding: 0 10px 0 8px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--warning-soft);
+  color: var(--warning);
+  font: inherit;
+  font-size: var(--type-meta);
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.activity-review-view:hover {
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+.activity-review-view[aria-pressed='true'] {
+  background: var(--warning);
+  color: var(--button-text);
+}
+.activity-review-view > span {
+  font-variant-numeric: tabular-nums;
+  opacity: 0.8;
+}
+.activity-facet-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+.activity-facet-list > button {
+  display: inline-flex;
+  min-height: 28px;
+  padding: 0 8px 0 4px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--type-meta);
+  cursor: pointer;
+  transition:
+    background-color var(--duration-quick) var(--ease-out),
+    color var(--duration-quick) var(--ease-out);
+}
+.activity-facet-list > button:hover {
+  background: var(--hover-wash);
+  color: var(--text-primary);
+}
+.activity-facet-list .transaction-mark {
+  width: 20px;
+  height: 20px;
+}
+.activity-facet-list .transaction-mark svg {
+  width: 11px;
+  height: 11px;
+}
+.activity-facet-list > button > span {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.activity-facets > .activity-saved-views {
+  margin: 0 0 0 auto;
+}
+.activity-saved-view > button:first-child {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+/* Yours by default, so Me stays quiet and Other stands out. */
+.financial-activity-cell-button.financial-activity-owner {
+  color: var(--text-tertiary);
+}
+.financial-activity-cell-button.financial-activity-owner.is-other {
+  color: var(--text-primary);
+}
+
+/* Where: one place, with the street, channel, or site beneath it. */
+.financial-activity-location.place-none .financial-activity-cell-button {
+  color: var(--text-tertiary);
+}
+.financial-activity-row[data-selected],
+.financial-activity-row:focus {
+  background: var(--sidebar-accent);
+}
+
+/* Linked to the day under a chart's pointer. */
+.financial-activity-row[data-highlighted] {
+  border-radius: var(--radius-control);
+  background: var(--hover-wash);
+}
+/* Rows chosen for a bulk edit keep their mark while focus moves on. */
+.financial-activity-row[data-checked] {
+  background: var(--accent-soft);
+  box-shadow: inset 2px 0 0 var(--accent);
+}

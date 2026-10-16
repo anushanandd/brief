@@ -1,5 +1,7 @@
 //! App-owned transports. Consumers select data; they never replace subscriptions.
+use super::alpaca::quote_midpoint;
 use super::*;
+use chrono::FixedOffset;
 use std::sync::Arc;
 use tokio::sync::{broadcast, watch};
 
@@ -23,6 +25,73 @@ pub struct FeedState {
     pub error: Option<String>,
     pub finished: bool,
 }
+
+impl FeedState {
+    /// Keeps a price observation unless the saved one is newer, so prices never move back in
+    /// time. Returns whether it was kept.
+    fn observe(&mut self, symbol: &str, item: &Value, time: DateTime<FixedOffset>) -> bool {
+        let newer = self
+            .quotes
+            .get(symbol)
+            .and_then(stamp)
+            .is_none_or(|saved| time >= saved);
+        if newer {
+            self.quotes.insert(symbol.into(), item.clone());
+        }
+        newer
+    }
+
+    /// A corrected or cancelled trade: the symbol's live observations are no longer trusted.
+    fn forget(&mut self, symbol: &str) {
+        self.quotes.remove(symbol);
+        self.bars.remove(symbol);
+    }
+
+    /// Keeps the two latest minute bars, a bar replacing one with the same start. Returns
+    /// whether an updated bar is older than every bar kept, so history needs repair.
+    fn record_bar(&mut self, symbol: &str, item: &Value, time: DateTime<FixedOffset>) -> bool {
+        let bars = self.bars.entry(symbol.into()).or_default();
+        bars.retain(|bar| bar["t"] != item["t"]);
+        let repair = item["T"] == "u"
+            && bars
+                .iter()
+                .filter_map(stamp)
+                .min()
+                .is_some_and(|oldest| time < oldest);
+        bars.push(item.clone());
+        bars.sort_by_key(stamp);
+        if bars.len() > 2 {
+            bars.remove(0);
+        }
+        repair
+    }
+}
+
+/// When a stream message happened.
+fn stamp(item: &Value) -> Option<DateTime<FixedOffset>> {
+    item["t"]
+        .as_str()
+        .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
+}
+
+/// The message's symbol, if it is one this connection asked for.
+fn listed<'a>(item: &'a Value, requested: &[String]) -> Option<&'a str> {
+    item["S"]
+        .as_str()
+        .filter(|symbol| requested.iter().any(|value| value == symbol))
+}
+
+/// A trade's price, or an overnight quote's midpoint unless the quote is crossed.
+fn stream_price(item: &Value, feed: &str) -> Option<f64> {
+    if feed != "overnight" {
+        item["p"].as_f64()
+    } else if item["bp"].as_f64() > item["ap"].as_f64() {
+        None
+    } else {
+        quote_midpoint(item)
+    }
+}
+
 pub struct Feed {
     pub state: Arc<Mutex<FeedState>>,
     pub events: broadcast::Sender<Vec<Value>>,
@@ -150,10 +219,9 @@ where
 {
     socket
         .send(Message::Text(
-            json!({"action":"auth", "key":credentials.key_id,
-        "secret":credentials.secret_key})
-            .to_string()
-            .into(),
+            json!({"action": "auth", "key": credentials.key_id, "secret": credentials.secret_key})
+                .to_string()
+                .into(),
         ))
         .await
         .map_err(|_| "Authentication failed")?;
@@ -227,88 +295,32 @@ where
                             durable.push(item);
                         }
                         Some("q" | "t") => {
-                            let Some(symbol) = item["S"]
-                                .as_str()
-                                .filter(|s| requested.iter().any(|v| v == s))
-                            else {
+                            let Some(symbol) = listed(&item, &requested) else {
                                 continue;
                             };
-                            let Some(time) = item["t"]
-                                .as_str()
-                                .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
-                            else {
+                            let Some(time) = stamp(&item) else {
                                 continue;
                             };
-                            let price = if feed == "overnight" {
-                                if item["bp"].as_f64() > item["ap"].as_f64() {
-                                    None
-                                } else {
-                                    quote_midpoint(&item)
-                                }
-                            } else {
-                                item["p"].as_f64()
-                            };
-                            if !price.is_some_and(|p| p.is_finite() && p > 0.0)
+                            if !stream_price(&item, feed).is_some_and(|p| p.is_finite() && p > 0.0)
                                 || time > Utc::now() + Duration::seconds(5)
                             {
                                 continue;
                             }
-                            let mut current = state.lock().unwrap();
-                            let previous = current
-                                .quotes
-                                .get(symbol)
-                                .and_then(|v| v["t"].as_str())
-                                .and_then(|t| DateTime::parse_from_rfc3339(t).ok());
-                            if previous.is_none_or(|old| time >= old) {
-                                current.quotes.insert(symbol.into(), item.clone());
+                            if state.lock().unwrap().observe(symbol, &item, time) {
                                 pending.insert(symbol.into(), item);
                             }
                         }
-                        Some("b" | "u" | "c" | "x")
-                            if item["S"]
-                                .as_str()
-                                .is_some_and(|s| requested.iter().any(|v| v == s)) =>
-                        {
-                            if matches!(item["T"].as_str(), Some("c" | "x")) {
-                                let symbol = item["S"].as_str().unwrap();
-                                epoch.fetch_add(1, Ordering::SeqCst);
-                                pending.remove(symbol);
-                                let mut current = state.lock().unwrap();
-                                current.quotes.remove(symbol);
-                                current.bars.remove(symbol);
-                            }
-                            if matches!(item["T"].as_str(), Some("b" | "u")) {
-                                if let (Some(symbol), Some(time)) = (
-                                    item["S"].as_str(),
-                                    item["t"]
-                                        .as_str()
-                                        .and_then(|t| DateTime::parse_from_rfc3339(t).ok()),
-                                ) {
-                                    let mut current = state.lock().unwrap();
-                                    let bars = current.bars.entry(symbol.into()).or_default();
-                                    bars.retain(|bar| bar["t"] != item["t"]);
-                                    if item["T"] == "u"
-                                        && bars
-                                            .iter()
-                                            .filter_map(|bar| {
-                                                bar["t"].as_str().and_then(|t| {
-                                                    DateTime::parse_from_rfc3339(t).ok()
-                                                })
-                                            })
-                                            .min()
-                                            .is_some_and(|oldest| time < oldest)
-                                    {
-                                        epoch.fetch_add(1, Ordering::SeqCst);
-                                    }
-                                    bars.push(item.clone());
-                                    bars.sort_by_key(|bar| {
-                                        bar["t"]
-                                            .as_str()
-                                            .and_then(|t| DateTime::parse_from_rfc3339(t).ok())
-                                    });
-                                    if bars.len() > 2 {
-                                        bars.remove(0);
-                                    }
+                        Some("c" | "x") if listed(&item, &requested).is_some() => {
+                            let symbol = item["S"].as_str().unwrap_or_default();
+                            epoch.fetch_add(1, Ordering::SeqCst);
+                            pending.remove(symbol);
+                            state.lock().unwrap().forget(symbol);
+                            durable.push(item);
+                        }
+                        Some("b" | "u") if listed(&item, &requested).is_some() => {
+                            if let (Some(symbol), Some(time)) = (item["S"].as_str(), stamp(&item)) {
+                                if state.lock().unwrap().record_bar(symbol, &item, time) {
+                                    epoch.fetch_add(1, Ordering::SeqCst);
                                 }
                             }
                             durable.push(item);
@@ -341,6 +353,371 @@ impl Feed {
             cancel,
         }
     }
+}
+
+// Dropping the previous socket future releases this lease before its replacement starts.
+pub(crate) async fn socket_lease<'a>(
+    socket: &'a tokio::sync::Mutex<()>,
+    mut cancellation: tokio::sync::watch::Receiver<bool>,
+) -> Option<tokio::sync::MutexGuard<'a, ()>> {
+    if *cancellation.borrow() {
+        return None;
+    }
+    let lease = tokio::select! {
+        _ = cancellation.changed() => return None,
+        lease = socket.lock() => lease,
+    };
+    if *cancellation.borrow() {
+        None
+    } else {
+        Some(lease)
+    }
+}
+
+/// A chart's prices over time: each symbol's previous close, then the bars that arrived, by
+/// minute. Kept apart from the latest trades and quotes, which only reprice the portfolio.
+pub(super) struct ChartFrames {
+    seed: BTreeMap<String, MarketSnapshot>,
+    frames: BTreeMap<String, BTreeMap<String, MarketSnapshot>>,
+}
+
+impl ChartFrames {
+    pub(super) fn new(seed: BTreeMap<String, MarketSnapshot>) -> Self {
+        Self {
+            seed,
+            frames: BTreeMap::new(),
+        }
+    }
+
+    /// Every symbol's latest price at `as_of`.
+    fn at(&self, as_of: &str) -> BTreeMap<String, MarketSnapshot> {
+        chart_snapshots_at(as_of, &self.seed, &self.frames)
+    }
+}
+
+/// How long a stream runs, and how often it publishes what changed.
+pub(super) struct StreamPacing {
+    /// The next market transition, when the feed changes.
+    pub(super) until: DateTime<Utc>,
+    pub(super) every: StdDuration,
+}
+
+pub(super) async fn consume_market_stream<F>(
+    feed: &market_stream::Feed,
+    symbols: &[String],
+    pacing: &StreamPacing,
+    market: &mut MarketSnapshots,
+    chart: &mut ChartFrames,
+    cancel: &mut tokio::sync::watch::Receiver<bool>,
+    publish: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(MarketStreamTick) -> Result<(), String> + Send,
+{
+    let mut messages = feed.events.subscribe();
+    let initial = feed
+        .state
+        .lock()
+        .map_err(|_| "Market state unavailable")?
+        .clone();
+    if initial.finished {
+        return Err(initial
+            .error
+            .unwrap_or_else(|| "Market disconnected".into()));
+    }
+    for (symbol, quote) in initial.quotes {
+        let price = if market.feed == "overnight" {
+            quote_midpoint(&quote)
+        } else {
+            quote["p"].as_f64()
+        };
+        if let (Some(price), Some(time)) = (price, quote["t"].as_str()) {
+            update_stream_price(&mut market.snapshots, &symbol, price, time);
+        }
+    }
+    let wait = (pacing.until - Utc::now())
+        .to_std()
+        .unwrap_or_else(|_| StdDuration::from_secs(0));
+    let transition_sleep = tokio::time::sleep(wait);
+    tokio::pin!(transition_sleep);
+    let mut flush = tokio::time::interval(pacing.every.max(StdDuration::from_secs(1)));
+    flush.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
+    flush.tick().await;
+    let mut market_changed = true;
+    let mut chart_times = BTreeSet::new();
+
+    loop {
+        tokio::select! {
+            changed = cancel.changed() => {
+                if changed.is_err() || *cancel.borrow() {
+                    return Ok(());
+                }
+            }
+            _ = &mut transition_sleep => {
+                publish_pending_market_updates(
+                    market,
+                    chart,
+                    &mut market_changed,
+                    &mut chart_times,
+                    publish,
+                )?;
+                return Ok(());
+            }
+            _ = flush.tick() => {
+                publish_pending_market_updates(
+                    market,
+                    chart,
+                    &mut market_changed,
+                    &mut chart_times,
+                    publish,
+                )?;
+            }
+            message = messages.recv() => {
+                let items = message.map_err(|_| "Market consumer needs reconciliation")?;
+                        for item in items {
+                            if item.get("T").and_then(Value::as_str) == Some("error") {
+                                return Err(stream_error(&item));
+                            }
+                            let Some(symbol) = item
+                                .get("S")
+                                .and_then(Value::as_str)
+                                .filter(|symbol| symbols.iter().any(|candidate| candidate == symbol))
+                            else {
+                                continue;
+                            };
+                            if matches!(item["T"].as_str(), Some("c" | "x")) {
+                                return Err("Market correction requires reconciliation".into());
+                            }
+                            let Some(as_of) = item.get("t").and_then(Value::as_str) else {
+                                continue;
+                            };
+                            match item.get("T").and_then(Value::as_str) {
+                                Some("q") if market.feed == "overnight" => {
+                                    if let Some(price) = quote_midpoint(&item) {
+                                        market_changed |= update_stream_price(
+                                            &mut market.snapshots,
+                                            symbol,
+                                            price,
+                                            as_of,
+                                        );
+                                    }
+                                }
+                                Some("t") if market.feed != "overnight" => {
+                                    if let Some(price) = item.get("p").and_then(Value::as_f64) {
+                                        market_changed |= update_stream_price(
+                                            &mut market.snapshots,
+                                            symbol,
+                                            price,
+                                            as_of,
+                                        );
+                                    }
+                                }
+                                Some("b" | "u") => {
+                                    if let Some(price) = item.get("c").and_then(Value::as_f64) {
+                                        let base = market
+                                            .snapshots
+                                            .get(symbol)
+                                            .or_else(|| chart.seed.get(symbol));
+                                        if let Some(snapshot) = stream_snapshot(base, symbol, price, as_of) {
+                                            chart
+                                                .frames
+                                                .entry(as_of.to_string())
+                                                .or_default()
+                                                .insert(symbol.to_string(), snapshot);
+                                            chart_times.insert(as_of.to_string());
+                                        }
+                                    }
+                                }
+                                _ => {}
+                            }
+                        }
+                        market.as_of = newest_market_time(&market.snapshots);
+            }
+        }
+    }
+}
+
+pub(super) fn publish_market_backfill<F>(
+    market: &MarketSnapshots,
+    backfill: Vec<MarketFrame>,
+    chart: &mut ChartFrames,
+    publish: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(MarketStreamTick) -> Result<(), String>,
+{
+    for frame in backfill {
+        let changed = chart.frames.get(&frame.as_of) != Some(&frame.snapshots);
+        chart.frames.insert(frame.as_of.clone(), frame.snapshots);
+        if changed {
+            publish(MarketStreamTick {
+                market: market.clone(),
+                chart_snapshots: Some(chart.at(&frame.as_of)),
+                chart_as_of: Some(frame.as_of),
+            })?;
+        }
+    }
+    Ok(())
+}
+
+pub(super) fn publish_pending_market_updates<F>(
+    market: &MarketSnapshots,
+    chart: &ChartFrames,
+    market_changed: &mut bool,
+    chart_times: &mut BTreeSet<String>,
+    publish: &mut F,
+) -> Result<(), String>
+where
+    F: FnMut(MarketStreamTick) -> Result<(), String>,
+{
+    if !*market_changed && chart_times.is_empty() {
+        return Ok(());
+    }
+    if chart_times.is_empty() {
+        publish(MarketStreamTick {
+            market: market.clone(),
+            chart_as_of: None,
+            chart_snapshots: None,
+        })?;
+    } else {
+        for as_of in std::mem::take(chart_times) {
+            publish(MarketStreamTick {
+                market: market.clone(),
+                chart_snapshots: Some(chart.at(&as_of)),
+                chart_as_of: Some(as_of),
+            })?;
+        }
+    }
+    *market_changed = false;
+    Ok(())
+}
+
+pub(super) fn parse_stream_payload(text: &str) -> Result<Vec<Value>, String> {
+    let payload: Value = serde_json::from_str(text)
+        .map_err(|error| format!("Alpaca WebSocket sent invalid data: {error}"))?;
+    match payload {
+        Value::Array(items) => Ok(items),
+        item @ Value::Object(_) => Ok(vec![item]),
+        _ => Err("Alpaca WebSocket sent an unexpected message".into()),
+    }
+}
+
+pub(super) fn stream_error(value: &Value) -> String {
+    let message = value
+        .get("msg")
+        .and_then(Value::as_str)
+        .unwrap_or("unknown error");
+    let code = value
+        .get("code")
+        .and_then(Value::as_i64)
+        .unwrap_or_default();
+    format!("Alpaca WebSocket error {code}: {message}")
+}
+
+pub(super) fn update_stream_price(
+    snapshots: &mut BTreeMap<String, MarketSnapshot>,
+    symbol: &str,
+    price: f64,
+    as_of: &str,
+) -> bool {
+    if !price.is_finite() || price <= 0.0 {
+        return false;
+    }
+    if snapshots.get(symbol).is_some_and(|current| {
+        let current_time = DateTime::parse_from_rfc3339(&current.as_of).ok();
+        let next_time = DateTime::parse_from_rfc3339(as_of).ok();
+        current_time
+            .zip(next_time)
+            .is_some_and(|(current, next)| next < current)
+    }) {
+        return false;
+    }
+    let Some(snapshot) = stream_snapshot(snapshots.get(symbol), symbol, price, as_of) else {
+        return false;
+    };
+    snapshots.insert(symbol.to_string(), snapshot);
+    true
+}
+
+pub(super) fn stream_snapshot(
+    base: Option<&MarketSnapshot>,
+    symbol: &str,
+    price: f64,
+    as_of: &str,
+) -> Option<MarketSnapshot> {
+    if !price.is_finite() || price <= 0.0 || DateTime::parse_from_rfc3339(as_of).is_err() {
+        return None;
+    }
+    let previous_close = base
+        .map(|snapshot| snapshot.previous_close)
+        .unwrap_or(price);
+    let weekly_reference_price = base.and_then(|snapshot| snapshot.weekly_reference_price);
+    Some(MarketSnapshot {
+        symbol: symbol.to_string(),
+        price,
+        previous_close,
+        previous_close_as_of: base.and_then(|snapshot| snapshot.previous_close_as_of.clone()),
+        daily_change_pct: if previous_close == 0.0 {
+            0.0
+        } else {
+            (price - previous_close) / previous_close * 100.0
+        },
+        weekly_change_pct: weekly_reference_price
+            .map(|reference| (price - reference) / reference * 100.0),
+        weekly_reference_price,
+        weekly_reference_date: base.and_then(|snapshot| snapshot.weekly_reference_date.clone()),
+        as_of: as_of.to_string(),
+    })
+}
+
+pub(super) fn newest_market_time(snapshots: &BTreeMap<String, MarketSnapshot>) -> Option<String> {
+    snapshots
+        .values()
+        .filter_map(|snapshot| {
+            DateTime::parse_from_rfc3339(&snapshot.as_of)
+                .ok()
+                .map(|time| (time, snapshot.as_of.clone()))
+        })
+        .max_by_key(|(time, _)| *time)
+        .map(|(_, value)| value)
+}
+
+pub(super) fn previous_close_snapshots(
+    snapshots: &BTreeMap<String, MarketSnapshot>,
+    history: &[MarketFrame],
+) -> BTreeMap<String, MarketSnapshot> {
+    let as_of = history
+        .first()
+        .map(|frame| frame.as_of.clone())
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    snapshots
+        .iter()
+        .filter_map(|(symbol, snapshot)| {
+            stream_snapshot(Some(snapshot), symbol, snapshot.previous_close, &as_of)
+                .map(|snapshot| (symbol.clone(), snapshot))
+        })
+        .collect()
+}
+
+pub(super) fn chart_snapshots_at(
+    as_of: &str,
+    seed: &BTreeMap<String, MarketSnapshot>,
+    frames: &BTreeMap<String, BTreeMap<String, MarketSnapshot>>,
+) -> BTreeMap<String, MarketSnapshot> {
+    let Some(target) = DateTime::parse_from_rfc3339(as_of).ok() else {
+        return seed.clone();
+    };
+    let mut snapshots = seed.clone();
+    for (frame_time, frame) in frames {
+        let Some(frame_time) = DateTime::parse_from_rfc3339(frame_time).ok() else {
+            continue;
+        };
+        if frame_time > target {
+            continue;
+        }
+        snapshots.extend(frame.clone());
+    }
+    snapshots
 }
 
 #[cfg(test)]
@@ -562,23 +939,50 @@ mod tests {
         .await
         .unwrap();
     }
-}
 
-// Dropping the previous socket future releases this lease before its replacement starts.
-pub(crate) async fn socket_lease<'a>(
-    socket: &'a tokio::sync::Mutex<()>,
-    mut cancellation: tokio::sync::watch::Receiver<bool>,
-) -> Option<tokio::sync::MutexGuard<'a, ()>> {
-    if *cancellation.borrow() {
-        return None;
+    fn at(time: &str) -> DateTime<FixedOffset> {
+        DateTime::parse_from_rfc3339(time).unwrap()
     }
-    let lease = tokio::select! {
-        _ = cancellation.changed() => return None,
-        lease = socket.lock() => lease,
-    };
-    if *cancellation.borrow() {
-        None
-    } else {
-        Some(lease)
+
+    #[test]
+    fn feed_state_keeps_prices_monotonic_and_flags_bars_that_need_repair() {
+        let mut state = FeedState::default();
+        let newer = json!({"T": "t", "S": "TEST", "p": 10.0, "t": "2026-09-18T14:00:02Z"});
+        let older = json!({"T": "t", "S": "TEST", "p": 9.0, "t": "2026-09-18T14:00:01Z"});
+        assert!(state.observe("TEST", &newer, at("2026-09-18T14:00:02Z")));
+        assert!(!state.observe("TEST", &older, at("2026-09-18T14:00:01Z")));
+        assert_eq!(state.quotes["TEST"]["p"], 10.0);
+
+        let bar = |kind: &str, time: &str| json!({"T": kind, "S": "TEST", "t": time});
+        for time in [
+            "2026-09-18T14:01:00Z",
+            "2026-09-18T14:02:00Z",
+            "2026-09-18T14:03:00Z",
+        ] {
+            assert!(!state.record_bar("TEST", &bar("b", time), at(time)));
+        }
+        let kept: Vec<_> = state.bars["TEST"]
+            .iter()
+            .map(|bar| bar["t"].clone())
+            .collect();
+        assert_eq!(kept, ["2026-09-18T14:02:00Z", "2026-09-18T14:03:00Z"]);
+        // An update to a bar older than any kept means the saved history is out of date.
+        let late = "2026-09-18T14:00:00Z";
+        assert!(state.record_bar("TEST", &bar("u", late), at(late)));
+        // An update to a kept bar replaces it in place.
+        let kept_time = "2026-09-18T14:03:00Z";
+        assert!(!state.record_bar("TEST", &bar("u", kept_time), at(kept_time)));
+
+        state.forget("TEST");
+        assert!(state.quotes.is_empty() && state.bars.is_empty());
+    }
+
+    #[test]
+    fn overnight_quotes_use_the_midpoint_unless_crossed() {
+        let trade = json!({"p": 10.0, "bp": 11.0, "ap": 9.0});
+        assert_eq!(stream_price(&trade, "sip"), Some(10.0));
+        assert_eq!(stream_price(&trade, "overnight"), None);
+        let quote = json!({"bp": 9.0, "ap": 11.0});
+        assert_eq!(stream_price(&quote, "overnight"), quote_midpoint(&quote));
     }
 }

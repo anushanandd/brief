@@ -24,7 +24,7 @@ it('shows provider progress without inventing completion percentages', () => {
   expect(markup).toContain('Checking')
   expect(markup).toContain('role="progressbar"')
   expect(markup).not.toContain('aria-valuenow')
-  expect(markup).toContain('Your saved data remains available')
+  expect(markup).toContain('Saved data stays available')
 
   const finished = renderToStaticMarkup(
     <RefreshProgress detail="Validated and saved locally." startedAt={Date.now()} finished />,

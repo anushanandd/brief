@@ -53,9 +53,7 @@ export function RefreshProgress({
         </span>
       )}
       <small>
-        {finished
-          ? `${elapsed}s total`
-          : `${elapsed}s elapsed · Your saved data remains available until this refresh is validated.`}
+        {finished ? `${elapsed}s total` : `${elapsed}s elapsed · Saved data stays available`}
       </small>
     </div>
   )

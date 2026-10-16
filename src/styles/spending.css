@@ -1,0 +1,531 @@
+/* Spending, range controls, and Platinum benefits. */
+
+.spending-overview-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+  align-items: start;
+  gap: 16px;
+}
+.spending-main {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.spending-hero-card {
+  overflow: hidden;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.spending-category-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.spending-total-panel .chart-summary-row {
+  justify-content: flex-start;
+}
+.spending-category-scope,
+.spending-daily-average {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  white-space: nowrap;
+}
+.spending-category-scope {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+/* What categories compare with: the last period or the average of earlier ones. */
+.spending-tabs {
+  display: flex;
+  gap: 2px;
+}
+.spending-tabs > button {
+  display: inline-flex;
+  padding: 2px 8px;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  border-radius: var(--radius-inner);
+  background: transparent;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  white-space: nowrap;
+  cursor: pointer;
+}
+.spending-tabs > button:hover {
+  color: var(--text-secondary);
+}
+.spending-tabs > button[aria-selected='true'] {
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+}
+.ranked-bars-mark-key {
+  width: 2px;
+  height: 10px;
+  border-radius: 1px;
+  background: var(--text-secondary);
+}
+/* The focused category, cleared here or with Escape. */
+.spending-focus-chip {
+  display: inline-flex;
+  min-height: 24px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border: var(--hairline) solid var(--control-border);
+  border-radius: 999px;
+  background: var(--control-background);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--type-meta);
+  cursor: pointer;
+}
+.spending-focus-chip:hover {
+  background: var(--hover-wash);
+}
+
+.spending-focus-chip > i {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.spending-category-card .ranked-bars {
+  margin-top: 12px;
+}
+.spending-total-panel,
+.spending-category-panel {
+  min-width: 0;
+}
+.spending-total-panel {
+  display: flex;
+  flex-direction: column;
+}
+.spending-total-panel .workspace-brief-heading > div {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  gap: 0;
+}
+.spending-balance-stack {
+  display: grid;
+  align-content: start;
+}
+.spending-total-panel .hero-number {
+  --number-flow-mask-height: 0.125em;
+  font-size: var(--type-hero);
+  font-weight: 500;
+  letter-spacing: -0.04em;
+}
+.spending-total-panel .balance-label {
+  margin-bottom: 4px;
+}
+.spending-chart-region {
+  position: relative;
+  display: flex;
+  width: 100%;
+  min-width: 0;
+  min-height: 240px;
+  margin-top: 12px;
+  overflow: hidden;
+  flex: 1;
+}
+.chart-range-select {
+  width: auto;
+  min-width: 0;
+  flex: none;
+  min-height: var(--button-height);
+  height: var(--button-height);
+  padding: 0 8px 0 10px;
+  gap: 6px;
+  border-color: var(--border-subtle);
+  background: transparent;
+  box-shadow: none;
+  color: var(--text-primary);
+  font-size: var(--type-meta);
+}
+.chart-range-select:hover,
+.chart-range-select[data-popup-open] {
+  border-color: var(--border-strong);
+  background: transparent;
+}
+.spending-heading-controls {
+  display: flex;
+  flex: none;
+  gap: 6px;
+}
+.home-balance-header > .chart-range-select {
+  align-self: start;
+  justify-self: end;
+}
+.spending-bar-chart {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 240px;
+  flex: 1;
+}
+.spending-benefits-card,
+.spending-transactions-preview {
+  min-width: 0;
+  overflow: hidden;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.spending-companion {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.spending-benefits-card .benefit-detail-row {
+  gap: 6px 8px;
+}
+.spending-benefits-card .benefit-title-row h4 {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.spending-benefits-card .benefit-allowance {
+  max-width: 84px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.35;
+  text-wrap: balance;
+}
+.spending-benefits-card .benefit-detail-status {
+  grid-column: 2 / -1;
+}
+.spending-benefits-card .benefit-detail-row > small {
+  display: none;
+}
+.benefit-detail-row {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 4px 12px;
+}
+.benefit-detail-row > .benefit-mark {
+  grid-row: 1 / 4;
+  align-self: start;
+}
+.benefit-detail-row > .benefit-progress {
+  grid-column: 2 / -1;
+}
+.benefit-warning {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: var(--warning);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.benefit-progress {
+  width: 100%;
+  height: 4px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 999px;
+  appearance: none;
+  background: var(--surface-hover);
+  color: var(--accent);
+}
+.benefit-progress::-webkit-progress-bar {
+  background: var(--surface-hover);
+}
+.benefit-progress::-webkit-progress-value {
+  border-radius: 999px;
+  background: var(--accent);
+}
+.benefit-progress::-moz-progress-bar {
+  border-radius: 999px;
+  background: var(--accent);
+}
+.spending-benefit-row {
+  min-height: var(--row-height);
+  padding: 10px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
+}
+.benefit-title-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+.benefit-title-row h4 {
+  min-width: 0;
+}
+.benefit-mark img {
+  padding: 0;
+  object-fit: cover;
+}
+.benefit-mark-entertainment {
+  background: color-mix(in srgb, var(--data-3) 16%, var(--surface-raised));
+  color: var(--data-3);
+}
+.benefit-mark-hotel {
+  background: color-mix(in srgb, var(--data-2) 16%, var(--surface-raised));
+  color: var(--data-2);
+}
+.benefit-mark-airline {
+  background: color-mix(in srgb, var(--data-1) 16%, var(--surface-raised));
+  color: var(--data-1);
+}
+.benefit-detail-row h4 {
+  margin: 0;
+  font-size: var(--type-body);
+  font-weight: 600;
+  line-height: 1.5;
+}
+.benefit-info-trigger {
+  flex: none;
+}
+.benefit-info-positioner {
+  z-index: 40;
+}
+.benefit-info-popup {
+  box-sizing: border-box;
+  width: 360px;
+  max-width: var(--available-width);
+  max-height: var(--available-height);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 16px;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-card);
+  background: var(--popup-surface);
+  box-shadow: var(--shadow-popup);
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  line-height: 1.6;
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--duration-instant) var(--ease-out),
+    scale var(--duration-instant) var(--ease-out);
+}
+.benefit-info-popup[data-starting-style],
+.benefit-info-popup[data-ending-style] {
+  opacity: 0;
+  scale: 0.98;
+}
+.benefit-info-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.benefit-info-heading h2 {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+.benefit-info-popup p {
+  margin: 12px 0;
+}
+.benefit-terms-link {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  color: var(--accent);
+}
+.benefit-allowance {
+  text-align: right;
+  font-size: var(--type-body);
+  font-weight: 500;
+  line-height: 1.5;
+}
+.benefit-detail-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.benefit-detail-status.positive {
+  color: var(--positive);
+}
+.benefit-evidence-trigger {
+  color: inherit;
+}
+.benefit-evidence-trigger:hover {
+  color: var(--text-primary);
+}
+.benefit-evidence-tooltip {
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px;
+}
+.benefit-evidence-tooltip .benefit-evidence {
+  margin: 0;
+}
+.benefit-evidence-tooltip .benefit-evidence li {
+  min-height: 0;
+  padding: 8px 0 0;
+}
+.benefit-detail-row > small {
+  max-width: 220px;
+  text-align: right;
+  text-wrap: pretty;
+}
+.benefit-detail-row > small,
+.benefit-evidence small {
+  display: block;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+  line-height: 1.5;
+}
+.benefit-deadline-group {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  column-gap: 16px;
+  margin-top: 16px;
+}
+.spending-benefits-card .benefit-deadline-group {
+  grid-template-columns: minmax(0, 1fr);
+}
+.spending-benefits-card .benefit-deadline-group + .benefit-deadline-group {
+  margin-top: 8px;
+}
+.benefit-deadline-group + .benefit-deadline-group {
+  margin-top: 32px;
+}
+.benefit-deadline-group h3 {
+  display: flex;
+  grid-column: 1 / -1;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 0;
+  padding: 12px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.benefit-deadline-group h3 span {
+  color: var(--text-tertiary);
+  font-weight: 400;
+}
+.benefit-deadline-group h3 .benefit-ending-soon {
+  color: var(--warning);
+}
+.benefit-evidence {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.spending-benefit-row > .benefit-evidence {
+  margin-left: calc(var(--mark-size) + 12px);
+}
+.benefit-evidence li {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  min-height: var(--row-height);
+  align-items: center;
+  gap: 16px;
+  padding: 12px 0;
+  font-size: var(--type-meta);
+  line-height: 1.5;
+}
+.benefit-evidence li.with-mark {
+  grid-template-columns: 32px minmax(0, 1fr) max-content;
+  gap: 12px;
+}
+.benefit-evidence li + li {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.benefit-evidence time {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.benefit-evidence li > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.benefit-evidence li > span > span {
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+.benefit-evidence strong {
+  text-align: right;
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.benefit-deadline-group > .spending-benefit-row:nth-last-child(-n + 2),
+.spending-benefit-row:last-child {
+  border-bottom: 0;
+}
+.spending-benefits-card .benefit-deadline-group > .spending-benefit-row:nth-last-child(2) {
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+
+.credit-summary-note {
+  margin: 0 0 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.spending-benefits-card .benefit-deadline-group:first-of-type {
+  margin-top: 4px;
+}
+
+/* Where it went and Latest side by side, stacked when the column is too narrow for both. */
+.spending-main {
+  container-type: inline-size;
+}
+.spending-activity-columns {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  /* The two cards share a height, so their bottoms line up. */
+  align-items: stretch;
+  gap: 16px;
+}
+@container (max-width: 720px) {
+  .spending-activity-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+/* A merchant's total that opens to its activities; the group owns the divider. The list sits
+   as far below its heading as an activity list does. */
+.merchant-groups {
+  margin-top: 12px;
+}
+.merchant-group {
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.merchant-group:last-child {
+  border-bottom: 0;
+}
+.merchant-group-row {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+/* The chevron follows the count, so the total lines up with its activities' amounts. */
+.merchant-group-count {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.merchant-group-count > svg {
+  flex: none;
+  transition: transform var(--duration-quick) var(--ease-out);
+}
+.merchant-group[data-open] .merchant-group-count > svg {
+  transform: rotate(180deg);
+}
+.merchant-group-activities > .financial-activity-list,
+.merchant-group-single > .financial-activity-list {
+  margin-top: 0;
+}
+@media (prefers-reduced-motion: reduce) {
+  .merchant-group-count > svg {
+    transition: none;
+  }
+}

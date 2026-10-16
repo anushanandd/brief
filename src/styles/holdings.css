@@ -1,0 +1,845 @@
+/* Holdings workspace. */
+
+.holdings-page {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+}
+
+/* The grid's gap supplies the rest of the header's usual 24 px. */
+.holdings-page > .page-header {
+  margin-bottom: 8px;
+}
+
+.holding-chart-card .brokerage-chart-viewport > .empty-state {
+  min-height: 240px;
+}
+
+.holding-news-card {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.holding-news-content {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.holding-detail-card {
+  padding: var(--card-padding);
+  min-width: 0;
+}
+.holding-chart-card {
+  container-type: inline-size;
+}
+
+.metric-detail {
+  margin-left: 6px;
+  font-size: var(--type-meta);
+  font-weight: 400;
+}
+.metric > .holding-earnings-dates {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.holding-chart-controls {
+  display: grid;
+  justify-self: end;
+  justify-items: end;
+  gap: 4px;
+  max-width: 360px;
+  text-align: right;
+}
+.holding-chart-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+.holding-chart-tooltip {
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px;
+  text-align: left;
+}
+.holding-chart-tooltip p {
+  margin: 0;
+}
+.holding-chart-tooltip p + p {
+  margin-top: 6px;
+}
+
+.holding-chart-card .home-balance-header {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.holding-chart-controls .holding-chart-status {
+  margin: 0;
+}
+
+.holding-chart-status {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  margin: 8px 0;
+}
+
+.chart-summary-row > .holding-chart-status {
+  margin: 0;
+}
+
+.home-loading-chart,
+.home-loading-overview {
+  min-height: 350px;
+  padding: 24px;
+}
+.home-loading .skeleton::after {
+  animation: none;
+  background: none;
+}
+.home-loading .home-secondary-grid {
+  margin-top: 24px;
+}
+.home-loading .skeleton-card {
+  min-height: 240px;
+}
+
+@container (max-width: 560px) {
+  .holding-chart-controls {
+    max-width: 200px;
+  }
+}
+
+.holding-detail-card > .section-heading {
+  margin-bottom: 12px;
+}
+.holding-detail-card .financial-activity-list,
+.holding-news-content .news-list {
+  margin-top: 0;
+}
+.holding-detail-card .empty-state {
+  padding: 20px 0;
+}
+
+.portfolio-note > button.metric-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  text-decoration: underline;
+}
+
+.security-position-accounts {
+  display: grid;
+  margin: 0 -12px;
+}
+.security-position-accounts > .account-row {
+  padding-inline: 12px;
+  border-radius: var(--radius-control);
+}
+/* In a companion card the name keeps its line and the figures go beneath it, rather than
+   squeezing the name to a couple of letters. */
+.security-position-accounts {
+  container: account-rows / inline-size;
+}
+@container account-rows (max-width: 320px) {
+  .security-position-accounts > .account-row {
+    grid-template-columns: var(--mark-size) minmax(0, 1fr) 16px;
+    row-gap: 4px;
+  }
+  .security-position-accounts .account-row-values {
+    grid-row: 2;
+    grid-column: 2;
+    flex-direction: row;
+    align-items: baseline;
+    gap: 8px;
+    text-align: left;
+  }
+  .security-position-accounts > .account-row > svg {
+    grid-row: 1 / span 2;
+    grid-column: 3;
+  }
+  .security-position-accounts > .account-row > .transaction-mark {
+    grid-row: 1 / span 2;
+  }
+}
+
+/* A holding: news beside where it's held and what you did with it. */
+.holding-columns {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+@media (max-width: 1000px) {
+  .holding-columns {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.holding-aside {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+.investments-pane {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+
+/* The chart and its summary in the main column, the period's figures and what's ahead in a
+   narrow one on the right. Three quarters and one: the side column is as wide as one card of a
+   four-card strip, and the holding's news below shares the split so the columns line up. */
+.investments-hero {
+  display: grid;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  align-items: start;
+  gap: 16px;
+}
+.investments-main,
+.investments-side {
+  display: grid;
+  align-content: start;
+  gap: 16px;
+  min-width: 0;
+}
+@media (max-width: 1000px) {
+  .investments-hero {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  /* Stacked under the chart, the side card's figures run across in columns. */
+  .investments-side-stats > .metric {
+    flex-basis: 150px;
+  }
+}
+/* The chart fills its card, which keeps a steady height above the summary. */
+.investments-main > .brokerage-performance-card {
+  display: flex;
+  flex-direction: column;
+}
+.investments-hero .brokerage-chart-viewport {
+  display: flex;
+  min-height: 240px;
+  flex: 1 1 auto;
+}
+.investments-hero .brokerage-chart-slide,
+.investments-hero .brokerage-chart-content {
+  display: flex;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.investments-hero .performance-chart {
+  height: auto;
+  min-height: 280px;
+  flex: 1 1 auto;
+}
+.investments-hero .brokerage-chart-viewport > .empty-state,
+.investments-hero .brokerage-chart-content > .empty-state {
+  flex: 1 1 auto;
+}
+.investments-side-card {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  padding: var(--card-padding);
+}
+.investments-side-stats > .metric {
+  padding: 0;
+  border-left: 0;
+}
+/* The weight and percent gain sit under their figures, so the card stays narrow. */
+.investments-side-stats .metric-detail {
+  display: block;
+  margin: 2px 0 0;
+}
+.investments-side-stats .metric > strong:not(.positive, .negative) .metric-detail {
+  color: var(--text-tertiary);
+}
+/* What the period paid and realized; each figure opens its report. */
+.investments-reports {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.investments-side-stats:empty {
+  display: none;
+}
+.investments-side-stats:empty + .investments-reports {
+  margin-top: 0;
+  padding-top: 0;
+  border-top: 0;
+}
+.investments-report-metric {
+  color: inherit;
+}
+/* A report link highlights like links elsewhere: its text turns the accent colour. */
+.investments-report-metric > span,
+.investments-report-metric > strong,
+.investments-report-metric > strong * {
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.investments-report-metric:hover > span,
+.investments-report-metric:hover > strong,
+.investments-report-metric:hover > strong * {
+  color: var(--accent);
+}
+.position-card-action {
+  display: flex;
+  margin-top: auto;
+  padding-top: 20px;
+}
+/* Taxes is a control like the page's selects, so it reads as something to open. */
+.position-card-action > .button-base {
+  height: 32px;
+  padding: 0 12px 0 10px;
+  border: var(--hairline) solid var(--border-subtle);
+  background: var(--glass-control);
+  font-weight: 500;
+  transition:
+    border-color var(--duration-quick) var(--ease-out),
+    color var(--duration-quick) var(--ease-out);
+}
+.position-card-action > .button-base:hover {
+  border-color: var(--border-strong);
+}
+
+.security-mark-small {
+  width: 22px;
+  height: 22px;
+  font-size: 10px; /* scale-exempt: a ticker inside a small mark */
+}
+
+/* The focal card: value, the period in a sentence, then the chart. */
+.investments-portfolio-card .home-balance-header {
+  margin-bottom: 8px;
+}
+.investments-sentence {
+  margin: 10px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-section);
+  line-height: 1.45;
+  text-wrap: pretty;
+  font-variant-numeric: tabular-nums;
+}
+.investments-sentence > strong {
+  font-weight: 500;
+}
+.investments-sentence-unavailable {
+  color: var(--text-tertiary);
+}
+.investments-standout {
+  margin: 4px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.investments-standout > strong {
+  font-weight: 500;
+}
+.investments-standout a {
+  color: var(--accent);
+}
+/* Two columns of equal weight at the foot of the page. */
+.investments-pair {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 320px), 1fr));
+  align-items: start;
+  gap: 16px;
+}
+
+.investments-attention-card > .section-heading,
+.investments-coming-card > .section-heading {
+  margin-bottom: 12px;
+}
+/* One decision per row, in the column under the movers. */
+.investments-attention {
+  display: grid;
+  gap: 2px;
+  margin: 0 -12px;
+  padding: 0;
+  list-style: none;
+}
+.investments-attention-row {
+  display: grid;
+  grid-template-columns: 22px minmax(0, 1fr) 16px;
+  align-items: start;
+  gap: 10px;
+  height: 100%;
+  padding: 10px 12px;
+  border-radius: var(--radius-control);
+  color: inherit;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.investments-attention-row:hover {
+  background: var(--hover-wash);
+}
+.investments-attention-row > .security-mark {
+  margin-top: 1px;
+}
+/* A flag about the whole portfolio has no holding to open, so it carries a warning mark. */
+.investments-attention-mark {
+  display: grid;
+  width: 22px;
+  height: 22px;
+  margin-top: 1px;
+  place-items: center;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--warning) 16%, transparent);
+  color: var(--warning);
+}
+div.investments-attention-row:hover {
+  background: none;
+}
+.investments-attention-copy {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.investments-attention-copy > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.investments-attention-copy > strong {
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.investments-attention-copy > span {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+.investments-attention-row > svg {
+  align-self: center;
+  color: var(--text-tertiary);
+  transition:
+    color var(--duration-quick) var(--ease-out),
+    transform var(--duration-quick) var(--ease-out);
+}
+.investments-attention-row:hover > svg {
+  color: var(--text-secondary);
+  transform: translateX(2px);
+}
+.investments-attention-row:hover .investments-attention-copy > strong {
+  color: var(--accent);
+}
+/* Taxes open on request, in the inspector the transaction details use. */
+.transaction-details-header > .security-mark {
+  width: 36px;
+  height: 36px;
+}
+.security-taxes-body {
+  overflow-y: auto;
+  padding: 16px 20px 20px;
+  overscroll-behavior: contain;
+}
+/* The inspector is narrow: lots keep tight columns, and the term wraps under its date. */
+.security-taxes-body .security-lots th,
+.security-taxes-body .security-lots td {
+  padding-inline: 6px;
+}
+.security-taxes-body .security-lots th:first-child,
+.security-taxes-body .security-lots td:first-child {
+  padding-left: 0;
+}
+.security-taxes-body .security-lots th:last-child,
+.security-taxes-body .security-lots td:last-child {
+  padding-right: 0;
+  white-space: normal;
+}
+
+.security-taxes + .security-taxes {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.security-taxes h3 {
+  margin: 0 0 12px;
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.security-taxes p {
+  margin: 12px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.security-taxes .security-lots {
+  margin-top: 16px;
+}
+.security-taxes small {
+  display: block;
+  margin-top: 8px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.holding-chart-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.security-taxes > .account-summary-metrics > .metric {
+  flex-basis: calc(33.333% - 16px);
+}
+
+/* The summary card: a short paragraph about today, then the news behind it. */
+.investment-summary-card > .section-heading {
+  margin-bottom: 12px;
+}
+/* Today in plain words: figures read as part of the sentence, never as a dashboard. */
+.investment-brief {
+  max-width: 68ch;
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--type-section);
+  line-height: 1.6;
+  text-wrap: pretty;
+}
+.investment-brief strong {
+  color: inherit;
+  font-weight: 500;
+}
+.investment-summary-as-of {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+/* The news behind the day: each headline as published, with its publisher and time below. */
+.brief-headlines {
+  display: grid;
+  gap: 2px;
+  margin: 12px -8px 0;
+  padding: 0;
+  list-style: none;
+}
+.brief-headlines a {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border-radius: var(--radius-control);
+  color: var(--text-primary);
+  font-size: var(--type-body);
+  line-height: 1.45;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.brief-headlines a:hover {
+  background: var(--hover-wash);
+}
+.brief-headlines a:hover > span {
+  color: var(--accent);
+}
+.brief-headlines small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.investment-brief-pending {
+  display: grid;
+  gap: 8px;
+}
+.investment-brief-pending > .skeleton {
+  height: 14px;
+  border-radius: var(--radius-small);
+}
+.investment-brief-pending > .skeleton:last-child {
+  width: 62%;
+}
+/* A story's relevance to its company, 0–100: accented when it is about the company, quiet when
+   it only mentions it. */
+.news-relevance {
+  display: inline-flex;
+  flex: none;
+  min-width: 22px;
+  height: 16px;
+  padding: 0 6px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px; /* scale-exempt: a pill */
+  background: var(--accent-soft);
+  color: var(--accent);
+  font-size: var(--type-micro);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.news-relevance-low {
+  background: var(--hover-wash);
+  color: var(--text-tertiary);
+}
+.news-row-meta > .news-relevance {
+  overflow: visible;
+}
+
+/* Every holding, one row each, opening its page. */
+.holdings-table-card > .section-heading {
+  margin-bottom: 8px;
+}
+.holdings-table-card {
+  padding-bottom: var(--card-padding-end);
+}
+.holdings-table-scroll {
+  overflow-x: auto;
+  margin: 0 calc(var(--card-padding) * -1);
+  padding: 0 var(--card-padding);
+}
+.holdings-table {
+  min-width: 780px;
+  font-variant-numeric: tabular-nums;
+}
+.holdings-table-head,
+.holdings-table-row {
+  display: grid;
+  grid-template-columns:
+    minmax(180px, 1.8fr) repeat(2, minmax(88px, 0.8fr)) minmax(100px, 0.9fr)
+    minmax(120px, 1.1fr) minmax(100px, 0.9fr) minmax(64px, 0.5fr);
+  align-items: center;
+  column-gap: 16px;
+}
+.holdings-table-head {
+  min-height: 36px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.holdings-table-head > button {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--type-meta);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.holdings-table-head > button:first-child {
+  justify-content: flex-start;
+}
+.holdings-table-head > button:hover,
+.holdings-table-head > button[aria-pressed='true'] {
+  color: var(--text-primary);
+}
+.holdings-table-body {
+  margin: 0 -8px;
+  padding: 0;
+  list-style: none;
+}
+.holdings-table-row {
+  min-height: var(--row-height);
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  color: inherit;
+  font-size: var(--type-body);
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.holdings-table-row:hover {
+  background: var(--hover-wash);
+}
+.holdings-table-row > :not(:first-child) {
+  justify-self: end;
+  text-align: right;
+}
+.holdings-table-name {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+.holdings-table-name > span {
+  display: grid;
+  min-width: 0;
+}
+.holdings-table-name strong {
+  font-weight: 500;
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.holdings-table-row:hover .holdings-table-name strong {
+  color: var(--accent);
+}
+.holdings-table-name small,
+.holdings-table-pair > small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.holdings-table-pair {
+  display: grid;
+  justify-items: end;
+}
+.holdings-table-row > .holdings-table-weight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  justify-self: stretch;
+}
+.holdings-table-weight > span:last-child {
+  flex: none;
+  width: 44px;
+  text-align: right;
+}
+.holdings-table-track {
+  display: flex;
+  flex: 1;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-small);
+  background: var(--hover-wash);
+}
+.holdings-table-track > span {
+  border-radius: var(--radius-small);
+  background: var(--accent);
+}
+.holdings-table-news {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-secondary);
+}
+
+/* What's scheduled: date, what, and any amount, opening the holding. */
+.investments-coming {
+  display: grid;
+  gap: 2px;
+  margin: 0 -12px;
+  padding: 0;
+  list-style: none;
+}
+.investments-coming-row {
+  display: grid;
+  grid-template-columns: 48px minmax(0, 1fr) auto;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: var(--radius-control);
+  color: inherit;
+  font-size: var(--type-body);
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.investments-coming-row:hover {
+  background: var(--hover-wash);
+}
+.investments-coming-row > time,
+.investments-coming-row small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.investments-coming-row:hover > span:nth-child(2) {
+  color: var(--accent);
+}
+
+/* Returns for every period beside the S&P 500; the page's period is marked. */
+.investments-performance-card {
+  padding-bottom: var(--card-padding-end);
+}
+.investments-performance-card > .section-heading {
+  margin-bottom: 12px;
+}
+.investments-performance-head,
+.investments-performance-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(3, minmax(72px, auto));
+  align-items: center;
+  column-gap: 16px;
+  font-variant-numeric: tabular-nums;
+}
+.investments-performance-head {
+  padding: 0 8px 8px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.investments-performance-head > span:not(:first-child),
+.investments-performance-row > span:not(:first-child) {
+  text-align: right;
+}
+.investments-performance > ul {
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.investments-performance-row {
+  width: 100%;
+  min-height: var(--row-height-compact);
+  padding: 0 8px;
+  border: 0;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: var(--type-body);
+  cursor: pointer;
+  text-align: left;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.investments-performance-row:hover {
+  background: var(--hover-wash);
+}
+.investments-performance-row[aria-pressed='true'] {
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+}
+.investments-performance-row[aria-pressed='true'] > span:first-child {
+  font-weight: 500;
+}
+
+/* Retirement: each limit as its figure over a thin track, then what's next for it. */
+.retirement-limits {
+  display: grid;
+  gap: 16px;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.retirement-limit {
+  display: grid;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.retirement-limit-heading {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 4px 12px;
+  font-size: var(--type-body);
+}
+.retirement-limit-heading > strong {
+  font-weight: 500;
+}
+.retirement-limit-heading small,
+.retirement-limit > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.retirement-limit-heading > span {
+  white-space: nowrap;
+}
+.retirement-limit-track {
+  display: flex;
+  height: 4px;
+  overflow: hidden;
+  border-radius: var(--radius-small);
+  background: var(--hover-wash);
+}
+.retirement-limit-track > span {
+  border-radius: var(--radius-small);
+  background: var(--accent);
+}
+.retirement-subheading {
+  margin: 20px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.retirement-inflow {
+  grid-template-columns: 44px var(--mark-size) minmax(0, 1fr) auto auto;
+}
+.retirement-metrics > .metric {
+  flex-basis: calc(33.333% - 16px);
+}

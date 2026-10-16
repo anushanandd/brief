@@ -15,7 +15,7 @@ pub async fn authenticate_sensitive_action() -> Result<(), String> {
         let policy = LAPolicy::DeviceOwnerAuthentication;
         unsafe { context.canEvaluatePolicy_error(policy) }.map_err(|error| error.to_string())?;
 
-        let reason = NSString::from_str("edit provider credentials");
+        let reason = NSString::from_str("change protected Brief data");
         let (sender, receiver) = mpsc::sync_channel(1);
         let reply = RcBlock::new(move |success: Bool, _error: *mut NSError| {
             let _ = sender.send(success.as_bool());
@@ -35,5 +35,5 @@ pub async fn authenticate_sensitive_action() -> Result<(), String> {
 
 #[cfg(not(target_os = "macos"))]
 pub async fn authenticate_sensitive_action() -> Result<(), String> {
-    Err("System authentication for credential changes is currently available on macOS".into())
+    Err("System authentication for protected changes is currently available on macOS".into())
 }

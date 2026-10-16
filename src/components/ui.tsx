@@ -1,8 +1,8 @@
 import NumberFlow from '@number-flow/react'
 import { useLayoutEffect, useRef, useState } from 'react'
-import type { ButtonHTMLAttributes, ComponentPropsWithRef, ReactNode } from 'react'
+import type { ComponentPropsWithRef, ReactNode } from 'react'
 
-import { formatCurrency, formatPercent, valueTone } from '../lib/format'
+import { formatCurrency, formatPercent, formatSignedCurrency, valueTone } from '../lib/format'
 import { FilterSelect } from './filter-select'
 import { ChevronDown } from './icons'
 import type { IconComponent } from './icons'
@@ -43,9 +43,9 @@ export function Button({
   icon: Icon,
   children,
   ...props
-}: ButtonHTMLAttributes<HTMLButtonElement> & {
+}: ComponentPropsWithRef<'button'> & {
   icon?: IconComponent
-  variant?: 'primary' | 'secondary' | 'ghost' | 'destructive'
+  variant?: 'primary' | 'secondary' | 'ghost' | 'positive' | 'destructive'
   size?: 'default' | 'icon' | 'icon-compact' | 'compact'
 }) {
   return (
@@ -57,7 +57,11 @@ export function Button({
       {Icon ? (
         <>
           <Icon size={16} aria-hidden="true" />
-          <span className="sr-only">{children}</span>
+          {size === 'icon' || size === 'icon-compact' ? (
+            <span className="sr-only">{children}</span>
+          ) : (
+            children
+          )}
         </>
       ) : (
         children
@@ -112,7 +116,7 @@ export function ScrollCueCard({
         data-visible={showScrollCue || undefined}
         aria-hidden="true"
       >
-        <ChevronDown size={18} strokeWidth={1.75} />
+        <ChevronDown size={16} strokeWidth={1.75} />
       </span>
       {children}
     </Card>
@@ -169,7 +173,7 @@ export function SectionHeading({
         <h2>{title}</h2>
         {detail ? <p>{detail}</p> : null}
       </div>
-      {action}
+      {action == null ? null : <div className="section-heading-action">{action}</div>}
     </div>
   )
 }
@@ -180,58 +184,24 @@ export type RangeSelectorOption<T extends number | string> = {
   accessibleLabel: string
 }
 
-export function RangeSelector<T extends number | string>({
-  label,
-  options,
-  value,
-  onValueChange,
-  className,
-}: {
-  label: string
-  options: RangeSelectorOption<T>[]
-  value: T
-  onValueChange: (value: T) => void
-  className?: string
-}) {
-  return (
-    <div
-      className={`range-selector${className ? ` ${className}` : ''}`}
-      role="group"
-      aria-label={label}
-    >
-      {options.map((option) => (
-        <Button
-          key={option.value}
-          type="button"
-          size="compact"
-          variant="ghost"
-          aria-label={option.accessibleLabel}
-          aria-pressed={option.value === value}
-          title={option.accessibleLabel}
-          onClick={() => onValueChange(option.value)}
-        >
-          {option.label}
-        </Button>
-      ))}
-    </div>
-  )
-}
-
 export function ChartRangeSelect<T extends number | string>({
   label,
+  command,
   options,
   value,
   onValueChange,
 }: {
   label: string
+  command?: string
   options: RangeSelectorOption<T>[]
   value: T
   onValueChange: (value: T) => void
 }) {
   return (
     <FilterSelect
-      blurOnClose
+      focusRegionOnPointerSelection
       className="chart-range-select"
+      command={command}
       label={label}
       value={String(value)}
       options={options.map((option) => ({
@@ -259,12 +229,23 @@ export function ChartChange({
 }) {
   const tone = valueTone(amount == null || favorable === 'increase' ? amount : -amount)
 
+  if (amount == null && percent == null)
+    return (
+      <strong
+        className="hero-change hero-change-unavailable"
+        role={ariaLabel ? 'group' : undefined}
+        aria-label={ariaLabel}
+      >
+        Change unavailable
+      </strong>
+    )
+
   return (
     <strong className="hero-change" role={ariaLabel ? 'group' : undefined} aria-label={ariaLabel}>
-      <span className={tone}>
-        {amount == null ? '—' : `${amount >= 0 ? '+' : ''}${formatCurrency(amount)}`}
-      </span>
-      <span className={tone}>({formatPercent(percent).replace(/^\+/, '')})</span>
+      <span className={tone}>{formatSignedCurrency(amount)}</span>
+      {percent == null ? null : (
+        <span className={tone}>({formatPercent(percent).replace(/^\+/, '')})</span>
+      )}
     </strong>
   )
 }

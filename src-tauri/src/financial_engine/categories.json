@@ -1,0 +1,730 @@
+{
+  "version": "2026-10-02",
+  "source": "Plaid personal finance categories v2 (with v1 codes)",
+  "primary": {
+    "BANK_FEES": {
+      "category": "Fees",
+      "kind": "fee"
+    },
+    "ENTERTAINMENT": {
+      "category": "Entertainment",
+      "kind": "expense"
+    },
+    "FOOD_AND_DRINK": {
+      "category": "Dining",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE": {
+      "category": "Shopping",
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES": {
+      "category": "Services",
+      "kind": "expense"
+    },
+    "GOVERNMENT_AND_NON_PROFIT": {
+      "category": "Government",
+      "kind": "expense"
+    },
+    "HOME_IMPROVEMENT": {
+      "category": "Home",
+      "kind": "expense"
+    },
+    "INCOME": {
+      "category": "Income",
+      "kind": "income"
+    },
+    "LOAN_DISBURSEMENTS": {
+      "category": "Transfers",
+      "kind": "transfer"
+    },
+    "LOAN_PAYMENTS": {
+      "category": "Loan Payments",
+      "kind": "payment"
+    },
+    "MEDICAL": {
+      "category": "Health",
+      "kind": "expense"
+    },
+    "OTHER": {
+      "category": "Other",
+      "kind": "expense"
+    },
+    "PERSONAL_CARE": {
+      "category": "Personal Care",
+      "kind": "expense"
+    },
+    "RENT_AND_UTILITIES": {
+      "category": "Utilities",
+      "kind": "expense"
+    },
+    "TRANSFER_IN": {
+      "category": "Transfers",
+      "kind": "transfer"
+    },
+    "TRANSFER_OUT": {
+      "category": "Transfers",
+      "kind": "transfer"
+    },
+    "TRANSPORTATION": {
+      "category": "Transport",
+      "kind": "expense"
+    },
+    "TRAVEL": {
+      "category": "Travel",
+      "kind": "expense"
+    }
+  },
+  "detailed": {
+    "BANK_FEES_ATM_FEES": {
+      "category": "Fees",
+      "label": "ATM fee",
+      "kind": "fee"
+    },
+    "BANK_FEES_CASH_ADVANCE": {
+      "category": "Fees",
+      "label": "Cash advance fee",
+      "kind": "fee"
+    },
+    "BANK_FEES_FOREIGN_TRANSACTION_FEES": {
+      "category": "Fees",
+      "label": "Foreign transaction fee",
+      "kind": "fee"
+    },
+    "BANK_FEES_INSUFFICIENT_FUNDS": {
+      "category": "Fees",
+      "label": "Insufficient funds fee",
+      "kind": "fee"
+    },
+    "BANK_FEES_INTEREST_CHARGE": {
+      "category": "Fees",
+      "label": "Interest charge",
+      "kind": "fee"
+    },
+    "BANK_FEES_LATE_FEES": {
+      "category": "Fees",
+      "label": "Late fee",
+      "kind": "fee"
+    },
+    "BANK_FEES_OTHER_BANK_FEES": {
+      "category": "Fees",
+      "label": null,
+      "kind": "fee"
+    },
+    "BANK_FEES_OVERDRAFT_FEES": {
+      "category": "Fees",
+      "label": "Overdraft fee",
+      "kind": "fee"
+    },
+    "ENTERTAINMENT_CASINOS_AND_GAMBLING": {
+      "category": "Entertainment",
+      "label": "Gambling",
+      "kind": "expense"
+    },
+    "ENTERTAINMENT_MUSIC_AND_AUDIO": {
+      "category": "Entertainment",
+      "label": "Music & audio",
+      "kind": "expense"
+    },
+    "ENTERTAINMENT_OTHER_ENTERTAINMENT": {
+      "category": "Entertainment",
+      "label": null,
+      "kind": "expense"
+    },
+    "ENTERTAINMENT_SPORTING_EVENTS_AMUSEMENT_PARKS_AND_MUSEUMS": {
+      "category": "Entertainment",
+      "label": "Events & outings",
+      "kind": "expense"
+    },
+    "ENTERTAINMENT_TV_AND_MOVIES": {
+      "category": "Entertainment",
+      "label": "Streaming & movies",
+      "kind": "expense"
+    },
+    "ENTERTAINMENT_VIDEO_GAMES": {
+      "category": "Entertainment",
+      "label": "Games",
+      "kind": "expense"
+    },
+    "FOOD_AND_DRINK_BEER_WINE_AND_LIQUOR": {
+      "category": "Dining",
+      "label": "Bars & liquor",
+      "kind": "expense"
+    },
+    "FOOD_AND_DRINK_COFFEE": {
+      "category": "Dining",
+      "label": "Coffee",
+      "kind": "expense"
+    },
+    "FOOD_AND_DRINK_FAST_FOOD": {
+      "category": "Dining",
+      "label": "Fast food",
+      "kind": "expense"
+    },
+    "FOOD_AND_DRINK_GROCERIES": {
+      "category": "Groceries",
+      "label": null,
+      "kind": "expense"
+    },
+    "FOOD_AND_DRINK_OTHER_FOOD_AND_DRINK": {
+      "category": "Dining",
+      "label": null,
+      "kind": "expense"
+    },
+    "FOOD_AND_DRINK_RESTAURANT": {
+      "category": "Dining",
+      "label": "Restaurants",
+      "kind": "expense"
+    },
+    "FOOD_AND_DRINK_VENDING_MACHINES": {
+      "category": "Dining",
+      "label": "Vending",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_BOOKSTORES_AND_NEWSSTANDS": {
+      "category": "Shopping",
+      "label": "Books & news",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_CLOTHING_AND_ACCESSORIES": {
+      "category": "Shopping",
+      "label": "Clothing",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_CONVENIENCE_STORES": {
+      "category": "Shopping",
+      "label": "Convenience stores",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_DEPARTMENT_STORES": {
+      "category": "Shopping",
+      "label": "Department stores",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_DISCOUNT_STORES": {
+      "category": "Shopping",
+      "label": "Discount stores",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_ELECTRONICS": {
+      "category": "Shopping",
+      "label": "Electronics",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_GIFTS_AND_NOVELTIES": {
+      "category": "Shopping",
+      "label": "Gifts",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_OFFICE_SUPPLIES": {
+      "category": "Shopping",
+      "label": "Office supplies",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_ONLINE_MARKETPLACES": {
+      "category": "Shopping",
+      "label": "Online marketplaces",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_OTHER_GENERAL_MERCHANDISE": {
+      "category": "Shopping",
+      "label": null,
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_PET_SUPPLIES": {
+      "category": "Shopping",
+      "label": "Pet supplies",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_SPORTING_GOODS": {
+      "category": "Shopping",
+      "label": "Sporting goods",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_SUPERSTORES": {
+      "category": "Shopping",
+      "label": "Superstores",
+      "kind": "expense"
+    },
+    "GENERAL_MERCHANDISE_TOBACCO_AND_VAPE": {
+      "category": "Shopping",
+      "label": "Tobacco & vape",
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES_ACCOUNTING_AND_FINANCIAL_PLANNING": {
+      "category": "Services",
+      "label": "Financial services",
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES_AUTOMOTIVE": {
+      "category": "Services",
+      "label": "Auto services",
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES_CHILDCARE": {
+      "category": "Services",
+      "label": "Childcare",
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES_CONSULTING_AND_LEGAL": {
+      "category": "Services",
+      "label": "Legal & consulting",
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES_EDUCATION": {
+      "category": "Services",
+      "label": "Education",
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES_INSURANCE": {
+      "category": "Services",
+      "label": "Insurance",
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES_OTHER_GENERAL_SERVICES": {
+      "category": "Services",
+      "label": null,
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES_POSTAGE_AND_SHIPPING": {
+      "category": "Services",
+      "label": "Shipping",
+      "kind": "expense"
+    },
+    "GENERAL_SERVICES_STORAGE": {
+      "category": "Services",
+      "label": "Storage",
+      "kind": "expense"
+    },
+    "GOVERNMENT_AND_NON_PROFIT_DONATIONS": {
+      "category": "Giving",
+      "label": "Donations",
+      "kind": "expense"
+    },
+    "GOVERNMENT_AND_NON_PROFIT_GOVERNMENT_DEPARTMENTS_AND_AGENCIES": {
+      "category": "Government",
+      "label": "Government services",
+      "kind": "expense"
+    },
+    "GOVERNMENT_AND_NON_PROFIT_OTHER_GOVERNMENT_AND_NON_PROFIT": {
+      "category": "Government",
+      "label": null,
+      "kind": "expense"
+    },
+    "GOVERNMENT_AND_NON_PROFIT_TAX_PAYMENT": {
+      "category": "Taxes",
+      "label": null,
+      "kind": "tax"
+    },
+    "HOME_IMPROVEMENT_FURNITURE": {
+      "category": "Home",
+      "label": "Furniture",
+      "kind": "expense"
+    },
+    "HOME_IMPROVEMENT_HARDWARE": {
+      "category": "Home",
+      "label": "Hardware",
+      "kind": "expense"
+    },
+    "HOME_IMPROVEMENT_OTHER_HOME_IMPROVEMENT": {
+      "category": "Home",
+      "label": null,
+      "kind": "expense"
+    },
+    "HOME_IMPROVEMENT_REPAIR_AND_MAINTENANCE": {
+      "category": "Home",
+      "label": "Repairs",
+      "kind": "expense"
+    },
+    "HOME_IMPROVEMENT_SECURITY": {
+      "category": "Home",
+      "label": "Security",
+      "kind": "expense"
+    },
+    "INCOME_CHILD_SUPPORT": {
+      "category": "Income",
+      "label": "Child support",
+      "kind": "income"
+    },
+    "INCOME_CONTRACTOR": {
+      "category": "Income",
+      "label": "Contract work",
+      "kind": "income"
+    },
+    "INCOME_DIVIDENDS": {
+      "category": "Income",
+      "label": "Dividends",
+      "kind": "dividend"
+    },
+    "INCOME_GIG_ECONOMY": {
+      "category": "Income",
+      "label": "Gig work",
+      "kind": "income"
+    },
+    "INCOME_INTEREST_EARNED": {
+      "category": "Income",
+      "label": "Interest",
+      "kind": "interest"
+    },
+    "INCOME_LONG_TERM_DISABILITY": {
+      "category": "Income",
+      "label": "Disability",
+      "kind": "income"
+    },
+    "INCOME_MILITARY": {
+      "category": "Income",
+      "label": "Military pay",
+      "kind": "income"
+    },
+    "INCOME_OTHER": {
+      "category": "Income",
+      "label": null,
+      "kind": "income"
+    },
+    "INCOME_OTHER_INCOME": {
+      "category": "Income",
+      "label": null,
+      "kind": "income"
+    },
+    "INCOME_RENTAL": {
+      "category": "Income",
+      "label": "Rental income",
+      "kind": "income"
+    },
+    "INCOME_RETIREMENT_PENSION": {
+      "category": "Income",
+      "label": "Pension",
+      "kind": "income"
+    },
+    "INCOME_SALARY": {
+      "category": "Income",
+      "label": "Paycheck",
+      "kind": "income"
+    },
+    "INCOME_TAX_REFUND": {
+      "category": "Income",
+      "label": "Tax refund",
+      "kind": "income"
+    },
+    "INCOME_UNEMPLOYMENT": {
+      "category": "Income",
+      "label": "Unemployment",
+      "kind": "income"
+    },
+    "INCOME_WAGES": {
+      "category": "Income",
+      "label": "Paycheck",
+      "kind": "income"
+    },
+    "LOAN_DISBURSEMENTS_AUTO": {
+      "category": "Transfers",
+      "label": "Auto loan",
+      "kind": "transfer"
+    },
+    "LOAN_DISBURSEMENTS_CASH_ADVANCES": {
+      "category": "Transfers",
+      "label": "Cash advance",
+      "kind": "transfer"
+    },
+    "LOAN_DISBURSEMENTS_EWA": {
+      "category": "Transfers",
+      "label": "Pay advance",
+      "kind": "transfer"
+    },
+    "LOAN_DISBURSEMENTS_MORTGAGE": {
+      "category": "Transfers",
+      "label": "Mortgage",
+      "kind": "transfer"
+    },
+    "LOAN_DISBURSEMENTS_OTHER_DISBURSEMENT": {
+      "category": "Transfers",
+      "label": "Loan proceeds",
+      "kind": "transfer"
+    },
+    "LOAN_DISBURSEMENTS_PERSONAL": {
+      "category": "Transfers",
+      "label": "Personal loan",
+      "kind": "transfer"
+    },
+    "LOAN_DISBURSEMENTS_STUDENT": {
+      "category": "Transfers",
+      "label": "Student loan",
+      "kind": "transfer"
+    },
+    "LOAN_PAYMENTS_BNPL": {
+      "category": "Loan Payments",
+      "label": "Buy now, pay later",
+      "kind": "payment"
+    },
+    "LOAN_PAYMENTS_CAR_PAYMENT": {
+      "category": "Loan Payments",
+      "label": "Car loan",
+      "kind": "payment"
+    },
+    "LOAN_PAYMENTS_CASH_ADVANCES": {
+      "category": "Loan Payments",
+      "label": "Cash advance",
+      "kind": "payment"
+    },
+    "LOAN_PAYMENTS_CREDIT_CARD_PAYMENT": {
+      "category": "Loan Payments",
+      "label": "Credit card",
+      "kind": "payment"
+    },
+    "LOAN_PAYMENTS_EWA": {
+      "category": "Loan Payments",
+      "label": "Pay advance",
+      "kind": "payment"
+    },
+    "LOAN_PAYMENTS_MORTGAGE_PAYMENT": {
+      "category": "Loan Payments",
+      "label": "Mortgage",
+      "kind": "payment"
+    },
+    "LOAN_PAYMENTS_OTHER_PAYMENT": {
+      "category": "Loan Payments",
+      "label": null,
+      "kind": "payment"
+    },
+    "LOAN_PAYMENTS_PERSONAL_LOAN_PAYMENT": {
+      "category": "Loan Payments",
+      "label": "Personal loan",
+      "kind": "payment"
+    },
+    "LOAN_PAYMENTS_STUDENT_LOAN_PAYMENT": {
+      "category": "Loan Payments",
+      "label": "Student loan",
+      "kind": "payment"
+    },
+    "MEDICAL_DENTAL_CARE": {
+      "category": "Health",
+      "label": "Dental",
+      "kind": "expense"
+    },
+    "MEDICAL_EYE_CARE": {
+      "category": "Health",
+      "label": "Eye care",
+      "kind": "expense"
+    },
+    "MEDICAL_NURSING_CARE": {
+      "category": "Health",
+      "label": "Nursing care",
+      "kind": "expense"
+    },
+    "MEDICAL_OTHER_MEDICAL": {
+      "category": "Health",
+      "label": null,
+      "kind": "expense"
+    },
+    "MEDICAL_PHARMACIES_AND_SUPPLEMENTS": {
+      "category": "Health",
+      "label": "Pharmacy",
+      "kind": "expense"
+    },
+    "MEDICAL_PRIMARY_CARE": {
+      "category": "Health",
+      "label": "Doctor",
+      "kind": "expense"
+    },
+    "MEDICAL_VETERINARY_SERVICES": {
+      "category": "Health",
+      "label": "Vet",
+      "kind": "expense"
+    },
+    "OTHER_OTHER": {
+      "category": "Other",
+      "label": null,
+      "kind": "expense"
+    },
+    "PERSONAL_CARE_GYMS_AND_FITNESS_CENTERS": {
+      "category": "Personal Care",
+      "label": "Fitness",
+      "kind": "expense"
+    },
+    "PERSONAL_CARE_HAIR_AND_BEAUTY": {
+      "category": "Personal Care",
+      "label": "Hair & beauty",
+      "kind": "expense"
+    },
+    "PERSONAL_CARE_LAUNDRY_AND_DRY_CLEANING": {
+      "category": "Personal Care",
+      "label": "Laundry",
+      "kind": "expense"
+    },
+    "PERSONAL_CARE_OTHER_PERSONAL_CARE": {
+      "category": "Personal Care",
+      "label": null,
+      "kind": "expense"
+    },
+    "RENT_AND_UTILITIES_GAS_AND_ELECTRICITY": {
+      "category": "Utilities",
+      "label": "Gas & electric",
+      "kind": "expense"
+    },
+    "RENT_AND_UTILITIES_INTERNET_AND_CABLE": {
+      "category": "Utilities",
+      "label": "Internet & cable",
+      "kind": "expense"
+    },
+    "RENT_AND_UTILITIES_OTHER_UTILITIES": {
+      "category": "Utilities",
+      "label": null,
+      "kind": "expense"
+    },
+    "RENT_AND_UTILITIES_RENT": {
+      "category": "Rent",
+      "label": null,
+      "kind": "expense"
+    },
+    "RENT_AND_UTILITIES_SEWAGE_AND_WASTE_MANAGEMENT": {
+      "category": "Utilities",
+      "label": "Trash & sewer",
+      "kind": "expense"
+    },
+    "RENT_AND_UTILITIES_TELEPHONE": {
+      "category": "Utilities",
+      "label": "Phone",
+      "kind": "expense"
+    },
+    "RENT_AND_UTILITIES_WATER": {
+      "category": "Utilities",
+      "label": "Water",
+      "kind": "expense"
+    },
+    "TRANSFER_IN_ACCOUNT_TRANSFER": {
+      "category": "Transfers",
+      "label": "Between accounts",
+      "kind": "transfer"
+    },
+    "TRANSFER_IN_CASH_ADVANCES_AND_LOANS": {
+      "category": "Transfers",
+      "label": "Loan proceeds",
+      "kind": "transfer"
+    },
+    "TRANSFER_IN_DEPOSIT": {
+      "category": "Transfers",
+      "label": "Deposit",
+      "kind": "transfer"
+    },
+    "TRANSFER_IN_INVESTMENT_AND_RETIREMENT_FUNDS": {
+      "category": "Transfers",
+      "label": "From investments",
+      "kind": "transfer"
+    },
+    "TRANSFER_IN_OTHER_TRANSFER_IN": {
+      "category": "Transfers",
+      "label": null,
+      "kind": "transfer"
+    },
+    "TRANSFER_IN_SAVINGS": {
+      "category": "Transfers",
+      "label": "From savings",
+      "kind": "transfer"
+    },
+    "TRANSFER_IN_TRANSFER_IN_FROM_APPS": {
+      "category": "Transfers",
+      "label": "Payment apps",
+      "kind": "transfer"
+    },
+    "TRANSFER_IN_WIRE": {
+      "category": "Transfers",
+      "label": "Wire",
+      "kind": "transfer"
+    },
+    "TRANSFER_OUT_ACCOUNT_TRANSFER": {
+      "category": "Transfers",
+      "label": "Between accounts",
+      "kind": "transfer"
+    },
+    "TRANSFER_OUT_CRYPTO": {
+      "category": "Transfers",
+      "label": "Crypto",
+      "kind": "transfer"
+    },
+    "TRANSFER_OUT_INVESTMENT_AND_RETIREMENT_FUNDS": {
+      "category": "Transfers",
+      "label": "To investments",
+      "kind": "transfer"
+    },
+    "TRANSFER_OUT_OTHER_TRANSFER_OUT": {
+      "category": "Transfers",
+      "label": null,
+      "kind": "transfer"
+    },
+    "TRANSFER_OUT_SAVINGS": {
+      "category": "Transfers",
+      "label": "To savings",
+      "kind": "transfer"
+    },
+    "TRANSFER_OUT_TRANSFER_OUT_FROM_APPS": {
+      "category": "Payments To People",
+      "label": null,
+      "kind": "expense"
+    },
+    "TRANSFER_OUT_WIRE": {
+      "category": "Transfers",
+      "label": "Wire",
+      "kind": "transfer"
+    },
+    "TRANSFER_OUT_WITHDRAWAL": {
+      "category": "Transfers",
+      "label": "Cash withdrawal",
+      "kind": "transfer"
+    },
+    "TRANSPORTATION_BIKES_AND_SCOOTERS": {
+      "category": "Transport",
+      "label": "Bikes & scooters",
+      "kind": "expense"
+    },
+    "TRANSPORTATION_GAS": {
+      "category": "Transport",
+      "label": "Gas",
+      "kind": "expense"
+    },
+    "TRANSPORTATION_OTHER_TRANSPORTATION": {
+      "category": "Transport",
+      "label": null,
+      "kind": "expense"
+    },
+    "TRANSPORTATION_PARKING": {
+      "category": "Transport",
+      "label": "Parking",
+      "kind": "expense"
+    },
+    "TRANSPORTATION_PUBLIC_TRANSIT": {
+      "category": "Transport",
+      "label": "Transit",
+      "kind": "expense"
+    },
+    "TRANSPORTATION_TAXIS_AND_RIDE_SHARES": {
+      "category": "Transport",
+      "label": "Rideshare",
+      "kind": "expense"
+    },
+    "TRANSPORTATION_TOLLS": {
+      "category": "Transport",
+      "label": "Tolls",
+      "kind": "expense"
+    },
+    "TRAVEL_FLIGHTS": {
+      "category": "Travel",
+      "label": "Flights",
+      "kind": "expense"
+    },
+    "TRAVEL_LODGING": {
+      "category": "Travel",
+      "label": "Hotels",
+      "kind": "expense"
+    },
+    "TRAVEL_OTHER_TRAVEL": {
+      "category": "Travel",
+      "label": null,
+      "kind": "expense"
+    },
+    "TRAVEL_RENTAL_CARS": {
+      "category": "Travel",
+      "label": "Rental cars",
+      "kind": "expense"
+    }
+  }
+}

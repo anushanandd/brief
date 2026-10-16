@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { rankHoldingNews } from './holding-news'
+import { holdingNewsDigest, newsNeedsRefresh, rankHoldingNews } from './holding-news'
 import type { MarketNewsArticle } from './schema'
 
 const article = (overrides: Partial<MarketNewsArticle> = {}): MarketNewsArticle => ({
@@ -10,6 +10,9 @@ const article = (overrides: Partial<MarketNewsArticle> = {}): MarketNewsArticle 
   url: 'https://example.com/earnings',
   createdAt: '2026-09-20T11:00:00Z',
   symbols: ['TEST'],
+  scope: 'company',
+  tags: [],
+  relevance: 90,
   ...overrides,
 })
 
@@ -50,17 +53,16 @@ it('shows newest stories first, groups near-duplicates, and preserves different 
   ])
 })
 
-it('keeps chronology predictable instead of allowing provider scores to reorder the feed', () => {
+it('keeps chronology predictable instead of allowing tags to reorder the feed', () => {
   const groups = rankHoldingNews(
     [
       article({
-        headline: 'Older high-relevance story',
-        relevanceScore: 0.95,
+        headline: 'Older deal story',
+        tags: ['deal'],
         createdAt: '2026-09-20T10:00:00Z',
       }),
       article({
-        headline: 'Newer low-relevance story',
-        relevanceScore: 0,
+        headline: 'Newer general story',
         createdAt: '2026-09-20T12:00:00Z',
         url: 'https://example.com/newer',
       }),
@@ -71,4 +73,57 @@ it('keeps chronology predictable instead of allowing provider scores to reorder 
     'https://example.com/newer',
     'https://example.com/earnings',
   ])
+})
+
+it('ranks recent company stories by events and coverage for chart markers', () => {
+  const now = Date.parse('2026-09-20T12:00:00Z')
+  const groups = rankHoldingNews(
+    [
+      article({
+        headline: 'Fresh general story',
+        url: 'https://example.com/fresh',
+        createdAt: '2026-09-20T11:30:00Z',
+      }),
+      article({
+        headline: 'Widely covered acquisition',
+        url: 'https://example.com/covered',
+        createdAt: '2026-09-20T02:00:00Z',
+        tags: ['deal'],
+      }),
+      article({
+        headline: 'Widely covered acquisition',
+        url: 'https://example.com/covered-2',
+        createdAt: '2026-09-20T03:00:00Z',
+        tags: ['deal'],
+      }),
+      article({
+        headline: 'Market recap names many tickers',
+        url: 'https://example.com/recap',
+        createdAt: '2026-09-20T11:45:00Z',
+        scope: 'market',
+      }),
+      article({
+        headline: 'Old story outside the window',
+        url: 'https://example.com/old',
+        createdAt: '2026-09-17T12:00:00Z',
+        tags: ['earnings'],
+      }),
+    ],
+    'TEST',
+  )
+  const digest = holdingNewsDigest(groups, now)
+  expect(digest.top.map(({ article: item }) => item.url)).toEqual([
+    'https://example.com/covered-2',
+    'https://example.com/fresh',
+  ])
+  expect(digest.storyCount).toBe(2)
+  expect(holdingNewsDigest([], now)).toEqual({ top: [], storyCount: 0 })
+})
+
+it('refreshes saved news only when it is missing or half an hour old', () => {
+  const now = Date.parse('2026-09-20T18:00:00Z')
+  expect(newsNeedsRefresh(null, now)).toBe(true)
+  expect(newsNeedsRefresh('not a date', now)).toBe(true)
+  expect(newsNeedsRefresh('2026-09-20T17:30:00Z', now)).toBe(true)
+  expect(newsNeedsRefresh('2026-09-20T17:30:01Z', now)).toBe(false)
 })

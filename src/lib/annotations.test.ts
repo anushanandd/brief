@@ -11,7 +11,7 @@ afterEach(() => vi.resetAllMocks())
 it('returns the native annotation-aware snapshot without interpreting its transactions', async () => {
   const result = { annotations: { synthetic: { category: 'Travel' } }, snapshot: native }
   vi.mocked(invoke).mockResolvedValue(result)
-  expect(await saveTransactionCategory('synthetic', 'Travel')).toEqual(result)
+  expect(await saveTransactionCategory('synthetic', 'Travel')).toEqual({ ...result, previous: {} })
   expect(invoke).toHaveBeenCalledWith('transaction_annotations', {
     changes: { synthetic: { category: 'Travel' } },
     importing: false,

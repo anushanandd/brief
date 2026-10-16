@@ -1,8 +1,10 @@
 //! Disposable last-market observations, separate from committed financial state.
-use crate::{finance_contract::MarketProjection, providers::MarketSnapshots};
+use crate::{
+    finance_contract::{MarketProjection, Snapshot},
+    providers::MarketSnapshots,
+};
 use chrono::{DateTime, Local, Utc};
 use rusqlite::{params, Connection};
-use serde::Deserialize;
 use serde_json::Value;
 use std::{
     path::PathBuf,
@@ -15,11 +17,12 @@ pub struct StartupMarket {
     written: Mutex<Option<(u64, Instant)>>,
 }
 
-fn identity(snapshot: &Value) -> Option<Value> {
-    Some(serde_json::json!({
-        "calculationVersion": snapshot.get("calculationVersion"),
-        "valuation": MarketProjection::deserialize(snapshot).ok()?,
-    }))
+/// What saved quotes were observed against: they apply only to the same valuation.
+fn identity(snapshot: &Snapshot) -> Value {
+    serde_json::json!({
+        "calculationVersion": snapshot.calculation_version,
+        "valuation": MarketProjection::from(snapshot),
+    })
 }
 
 fn valid(market: &MarketSnapshots, saved_at: &str, now: DateTime<Utc>) -> bool {
@@ -56,7 +59,7 @@ impl StartupMarket {
             written: Mutex::new(None),
         }
     }
-    pub fn load(&self, snapshot: &Value) -> Option<MarketSnapshots> {
+    pub fn load(&self, snapshot: &Snapshot) -> Option<MarketSnapshots> {
         crate::database::secure_file(&self.path).ok()?;
         let db =
             Connection::open_with_flags(&self.path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
@@ -68,18 +71,36 @@ impl StartupMarket {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .ok()?;
-        if serde_json::from_str::<Value>(&basis).ok()? != identity(snapshot)? {
+        if serde_json::from_str::<Value>(&basis).ok()? != identity(snapshot) {
             return None;
         }
         let market = serde_json::from_str(&market).ok()?;
         valid(&market, &saved, Utc::now()).then_some(market)
     }
-    pub fn save(&self, snapshot: &Value, market: &MarketSnapshots) {
+    pub fn clear(&self) -> Result<(), String> {
+        if self.path.exists() {
+            let db = Connection::open(&self.path)
+                .map_err(|_| "Startup market storage is unavailable")?;
+            db.pragma_update(None, "secure_delete", true)
+                .map_err(|_| "Startup market storage is unavailable")?;
+            db.execute("DELETE FROM startup", [])
+                .map_err(|_| "Could not clear startup market data")?;
+            db.execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM;")
+                .map_err(|_| "Could not compact cleared startup market data")?;
+        }
+        *self
+            .written
+            .lock()
+            .map_err(|_| "Startup market state is unavailable")? = None;
+        Ok(())
+    }
+
+    pub fn save(&self, snapshot: &Snapshot, market: &MarketSnapshots) {
         let now = Utc::now();
         if !valid(market, &now.to_rfc3339(), now) {
             return;
         }
-        let revision = snapshot["revision"].as_u64().unwrap_or(0);
+        let revision = snapshot.revision.unwrap_or(0);
         let Ok(mut written) = self.written.lock() else {
             return;
         };
@@ -89,7 +110,7 @@ impl StartupMarket {
             return;
         }
         let result = (|| -> Option<()> {
-            let basis = identity(snapshot)?;
+            let basis = identity(snapshot);
             let db = Connection::open(&self.path).ok()?;
             crate::database::secure_file(&self.path).ok()?;
             db.execute_batch("CREATE TABLE IF NOT EXISTS startup (id INTEGER PRIMARY KEY CHECK(id=1), basis TEXT NOT NULL, market TEXT NOT NULL, saved TEXT NOT NULL);").ok()?;
@@ -174,7 +195,7 @@ mod tests {
             std::env::temp_dir().join(format!("brief-startup-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
         let cache = StartupMarket::new(directory.join("market.sqlite3"));
-        let snapshot: Value =
+        let snapshot: Snapshot =
             serde_json::from_str(include_str!("../../src/data/fixtures/native-finance.json"))
                 .unwrap();
         assert!(cache.load(&snapshot).is_none());
@@ -185,10 +206,10 @@ mod tests {
             110.0
         );
         let mut changed = snapshot.clone();
-        changed["revision"] = (snapshot["revision"].as_u64().unwrap_or(0) + 1).into();
+        changed.revision = Some(snapshot.revision.unwrap_or(0) + 1);
         assert!(cache.load(&changed).is_none());
         changed = snapshot.clone();
-        changed["holdings"][0]["shares"] = 999.0.into();
+        changed.holdings[0].shares = Some(999.0);
         assert!(cache.load(&changed).is_none());
         let mut invalid = quotes;
         invalid.snapshots.get_mut("TEST").unwrap().price = f64::NAN;

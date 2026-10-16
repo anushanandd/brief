@@ -1,80 +1,51 @@
 # Brief
 
-Brief is a private, local-first personal finance app for macOS. React renders the interface; Tauri and Rust connect read-only providers, build the committed financial snapshot, and store it locally. Brief has no hosted backend or cloud synchronization.
+Brief is a private personal-finance app for macOS. It reads your bank, card, and brokerage accounts, keeps everything on your Mac, and shows where you stand: net worth, spending, holdings, expected bills, and card benefits.
 
-## Capabilities
+There is no server and no cloud sync. Providers are read-only.
 
-- Home, Accounts, Spending, Analytics, Holdings, Activity, and Data Health workspaces
-- Plaid bank, card, and investment imports, plus an on-demand view of Plaid Recurring Transactions for manual accuracy checks
-- SnapTrade brokerage accounts, positions, and activity
-- Brokerage balances calculated from cash and positions, with the dated SnapTrade total shown on individual brokerage graphs
-- Alpaca portfolio pricing, benchmark data, and security charts
-- Alpha Vantage ticker news and earnings dates
-- Local recurring-activity forecasts across accounts, including recognized monthly Platinum credits and banking streams
-- Local transaction annotations, account links, display preferences (including Analytics chart order), and CSV exports
-- Time-weighted and money-weighted investment returns, volatility, drawdown, benchmark comparison, and explicit data-quality limits
-- Validated portable financial backups with retained-state restore protection
-- Optional on-device Apple Intelligence answers from bounded, supplied evidence
-- ⌘H or the sidebar control temporarily masks personal financial numbers and balance-history charts
-- ⌘K searches local activity descriptions and filters alongside pages, accounts, and holdings
+## Features
 
-Browser development uses deterministic synthetic data from `src/data/seed.json`. Provider connections and durable financial edits are available only in the native app.
+- **Workspaces:** Today, Money, Investments, Accounts, Activity, and Data health
+- **Sources:** Plaid (banks, cards, investments), SnapTrade (brokerages), Alpaca (prices, charts, and news), SEC EDGAR (company filings), Alpha Vantage (earnings)
+- **Insights:** expected bills and income, card statement dates and utilization, Amex Platinum credits, unusual or duplicate charges, subscription price changes, trips, investment returns, dividend income
+- **Taxes:** a 1099 preview, wash sales, losses to harvest, and, with a tax profile, an estimated tax
+- **Your data:** transaction edits, category rules, CSV export, and validated backups
+- **Optional extras:** on-device Apple Intelligence answers, daily background refresh, Open at login
+- **Keyboard-first:** ⌘K command palette, `?` key guide, ⌘H hides amounts on screen
 
-## Privacy and storage
+## Privacy
 
-Provider credentials and access tokens are stored in macOS Keychain. The committed snapshot, provider caches, annotations, account links, and bounded, redacted sync diagnostics are stored in `finance-state.sqlite3` under the app data directory. Market, startup, and news caches use separate local SQLite files.
-
-The finance database and caches are ordinary local application files; Keychain does not encrypt them. Brief restricts its app-data directory and local database permissions on macOS, but the macOS account should still use normal login security and FileVault. Portable `.briefbackup` files are also unencrypted financial databases. They exclude Keychain credentials, renderer display preferences, and disposable market, startup, and news caches, and should be stored somewhere private.
-
-Financial providers are read-only. Remote merchant and security logos are disabled by default; enabling them allows Logo.dev or Plaid's logo host to receive the relevant ticker or merchant-domain identifier.
-
-Value masking is for screen privacy. Public security prices, market changes, and price-history charts remain visible. Masking does not change stored data, accessibility descriptions, or CSV exports, and resets when Brief restarts.
-
-See [ARCHITECTURE.md](ARCHITECTURE.md) for ownership, persistence, refresh, and market-data flows.
+- Credentials and provider tokens live only in macOS Keychain.
+- Financial data lives in SQLite files in Brief's app-data folder, readable only by your user. **These files are not encrypted**, so use FileVault.
+- `.briefbackup` files are complete, unencrypted copies of your financial data. Exporting or restoring one requires macOS authentication.
+- Logos are off by default. Turning them on sends tickers and merchant and institution domains to Logo.dev and Plaid.
+- Plaid live balances, card statement details, investment activity, and recurring streams are billed per request or per connection. They run only when you turn them on.
 
 ## Develop
 
-Install the JavaScript dependencies:
+Requirements: macOS 14+, Xcode, Rust 1.89+, Node, and pnpm. Apple Intelligence needs macOS 26.
 
 ```sh
 pnpm install
+pnpm dev          # browser preview with synthetic data
+pnpm tauri dev    # native app with real providers
 ```
 
-Run the browser preview with synthetic data:
-
-```sh
-pnpm dev
-```
-
-Run the native macOS app with provider support:
-
-```sh
-pnpm tauri dev
-```
-
-Native development builds are signed before launch using `APPLE_SIGNING_IDENTITY`, or the first valid Apple Development identity in Keychain. This lets Keychain remember provider-vault access across Rust rebuilds. On first use, choose **Always Allow** when macOS asks to use the signing key and provider credentials. Set `APPLE_SIGNING_IDENTITY` explicitly when more than one development identity is installed.
-
-Provider credentials and connections are configured in Settings. The Plaid recurring check requires Plaid's Recurring Transactions add-on; it fetches provider-detected streams only when requested and does not save them or use them in Expected activity. Brief loads the last committed snapshot first and refreshes configured providers in the background when that snapshot is at least one hour old.
+Add provider credentials in Settings → Connections. Native dev builds are code-signed so Keychain access survives rebuilds; if you have several Apple Development identities, set `APPLE_SIGNING_IDENTITY`.
 
 ## Verify
 
-Frontend checks:
-
 ```sh
-pnpm check
-```
-
-Rust checks:
-
-```sh
+pnpm check                                             # format, lint, test, build
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 
 ## Documentation
 
-- [AGENTS.md](AGENTS.md): repository rules and verification requirements
-- [ARCHITECTURE.md](ARCHITECTURE.md): system boundaries and data flows
-- [.interface-design/system.md](.interface-design/system.md): interface principles and shared tokens
-- [docs/platinum-benefits.md](docs/platinum-benefits.md): implemented benefit rules and evidence limits
-- [docs/liveline-patch-review.md](docs/liveline-patch-review.md): patched chart behavior and upgrade checklist
+- [ARCHITECTURE.md](ARCHITECTURE.md): how the system fits together and what must stay true
+- [AGENTS.md](AGENTS.md): rules for coding agents
+- [.interface-design/system.md](.interface-design/system.md): interface principles and tokens
+- [docs/platinum-benefits.md](docs/platinum-benefits.md): benefit rules and their limits
+- [docs/liveline-patch-review.md](docs/liveline-patch-review.md): the chart library patch

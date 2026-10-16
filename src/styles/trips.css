@@ -1,0 +1,478 @@
+/* Trips: a year as a wall calendar of days away and a row per trip beside its places; a trip as
+   its route and money day by day, its purchases, and beside them its split. */
+.trips-page,
+.trips-main {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
+}
+.trips-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+  align-items: start;
+  gap: 16px;
+}
+.trips-year-card,
+.trips-now-card,
+.trips-hero-card,
+.trips-card,
+.trips-places-card {
+  min-width: 0;
+  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
+}
+.trips-eyebrow {
+  display: block;
+  color: var(--trip-color, var(--text-tertiary));
+  font-size: var(--type-meta);
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.trips-flags {
+  letter-spacing: 0.08em;
+}
+.trips-year-top {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-start;
+  gap: 24px;
+}
+.trips-year-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+.trips-year-summary .balance-label {
+  margin-bottom: 4px;
+}
+.trips-year-stats {
+  display: flex;
+  align-self: flex-end;
+}
+.trips-year-stats .metric > strong {
+  margin-top: 4px;
+  font-size: var(--type-metric);
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.trips-year-line {
+  margin: 8px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+  font-variant-numeric: tabular-nums;
+}
+.trips-year-note {
+  margin: 12px 0 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+
+/* Away now: the trip under way, ahead of the year, in one band. */
+.trips-now {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(96px, 240px) auto auto;
+  align-items: center;
+  gap: 24px;
+}
+.trips-now .trip-days {
+  height: 40px;
+}
+.trips-now-copy {
+  min-width: 0;
+}
+.trips-now-title {
+  margin: 4px 0 0;
+  font-family: var(--font-editorial);
+  font-size: var(--type-metric);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+  line-height: 1.1;
+}
+.trips-now-figures {
+  display: flex;
+}
+.trips-now-open {
+  text-decoration: none;
+}
+
+/* The calendar: twelve months of week rows, each trip a band across its days. */
+.trips-calendar {
+  display: grid;
+  margin: 24px 0 0;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  gap: 20px 24px;
+}
+.trips-calendar-month {
+  display: grid;
+  min-width: 0;
+  align-content: start;
+  gap: 6px;
+}
+.trips-calendar-label {
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.trips-calendar-days {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  row-gap: 2px;
+}
+.trips-day {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  aspect-ratio: 1;
+  padding: 0;
+  border: 0;
+  place-items: center;
+  background: none;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--type-micro);
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+.trips-day.is-future {
+  opacity: 0.4;
+}
+.trips-day.is-today {
+  border-radius: 999px;
+  box-shadow: inset 0 0 0 1px var(--text-secondary);
+  color: var(--text-primary);
+}
+.trips-day.is-away {
+  cursor: pointer;
+}
+.trips-day.is-away.is-today {
+  box-shadow: none;
+}
+.trips-day.is-away::before {
+  position: absolute;
+  inset: 2px 0;
+  background: currentColor;
+  content: '';
+  transition: opacity var(--duration-quick) var(--ease-out);
+}
+.trips-day.is-run-start::before {
+  left: 2px;
+  border-top-left-radius: 999px;
+  border-bottom-left-radius: 999px;
+}
+.trips-day.is-run-end::before {
+  right: 2px;
+  border-top-right-radius: 999px;
+  border-bottom-right-radius: 999px;
+}
+.trips-day.is-away > span {
+  position: relative;
+  color: var(--background);
+  font-weight: 500;
+}
+.trips-day.is-away.is-today > span {
+  font-weight: 600;
+  text-decoration: underline;
+}
+.trips-calendar.is-picking .trips-day.is-away:not(.is-picked)::before {
+  opacity: 0.3;
+}
+
+/* The year's trips: a row each, its days drawn to the longest trip's scale. */
+.trips-journeys {
+  display: grid;
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.trips-journeys > li + li {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.trips-journey {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) minmax(64px, 200px) auto;
+  align-items: center;
+  margin: 0 -8px;
+  padding: 12px 8px;
+  gap: 16px;
+  border-radius: var(--radius-inner);
+  color: inherit;
+  text-decoration: none;
+  transition: background var(--duration-quick) var(--ease-out);
+}
+.trips-journey:hover,
+.trips-journey.is-picked {
+  background: var(--hover-wash);
+}
+.trips-journey-mark {
+  display: grid;
+  place-items: center;
+  color: var(--trip-color, var(--text-secondary));
+}
+.trips-journey-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.trips-journey-copy > strong {
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.trips-journey-copy small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+}
+.trips-journey-span > span {
+  display: block;
+  min-width: 8px;
+}
+.trips-journey-figures {
+  display: grid;
+  justify-items: end;
+  gap: 2px;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.trips-journey-figures > strong {
+  font-size: var(--type-figure);
+  font-weight: 500;
+  letter-spacing: -0.02em;
+}
+.trips-journey-figures > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+
+/* Day by day: a column per day, the biggest day solid, the rest in the trip's color washed. */
+.trip-days {
+  display: flex;
+  height: 120px;
+  margin-top: 16px;
+  align-items: stretch;
+  gap: 2px;
+}
+.trip-days.is-mini {
+  height: 24px;
+  margin-top: 0;
+}
+.trip-day-slot {
+  display: flex;
+  flex: 1 1 0;
+  min-width: 0;
+}
+.trip-day {
+  display: grid;
+  width: 100%;
+  grid-template-rows: minmax(0, 1fr) auto;
+  gap: 4px;
+}
+.trip-days.is-mini .trip-day {
+  grid-template-rows: minmax(0, 1fr);
+  gap: 0;
+}
+.trip-day-bar {
+  display: block;
+  align-self: end;
+  width: 100%;
+  min-height: 2px;
+  border-radius: var(--radius-small) var(--radius-small) 0 0;
+  background: color-mix(in srgb, currentColor 55%, transparent);
+  transition: background var(--duration-quick) var(--ease-out);
+}
+.trip-days.is-mini .trip-day-bar {
+  border-radius: 1px 1px 0 0;
+}
+.trip-day.is-peak .trip-day-bar {
+  background: currentColor;
+}
+.trip-day.is-empty .trip-day-bar {
+  background: var(--border-strong);
+}
+.trip-day-slot:hover .trip-day-bar {
+  background: currentColor;
+}
+.trip-day-label {
+  display: grid;
+  height: 24px;
+  justify-items: center;
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  line-height: 1.2;
+  font-variant-numeric: tabular-nums;
+}
+.trip-day-label small {
+  font-size: var(--type-micro);
+  opacity: 0.7;
+}
+.trips-hero-card .section-heading {
+  margin-top: 24px;
+}
+.trips-steps {
+  display: flex;
+  gap: 4px;
+}
+
+/* The route: out from home, each stop in order on a dashed path, and home again. */
+.trips-route {
+  display: flex;
+  flex-wrap: wrap;
+  margin: 24px 0 0;
+  padding: 0;
+  row-gap: 16px;
+  list-style: none;
+}
+.trips-route > li {
+  position: relative;
+  display: grid;
+  flex: 1 1 0;
+  min-width: 120px;
+  align-content: start;
+  gap: 8px;
+}
+.trips-route > li:not(:last-child)::after {
+  position: absolute;
+  top: 10px;
+  right: 8px;
+  left: 28px;
+  border-top: 1px dashed
+    color-mix(in srgb, var(--trip-color, var(--text-tertiary)) 70%, transparent);
+  content: '';
+}
+.trips-route-node {
+  position: relative;
+  display: grid;
+  width: 20px;
+  height: 20px;
+  place-items: center;
+  border-radius: 999px;
+  color: var(--text-secondary);
+}
+.trips-route > li:not(.is-home) .trips-route-node::before {
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: var(--trip-color, var(--text-secondary));
+  content: '';
+}
+.trips-route > li.is-home .trips-route-node {
+  background: var(--control-background);
+}
+.trips-route-copy {
+  display: grid;
+  min-width: 0;
+  padding-right: 12px;
+  gap: 2px;
+}
+.trips-route-copy > strong {
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.trips-route-copy > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The split: the share line and its legend. */
+.trips-split {
+  margin-top: 16px;
+}
+.trips-split .share-line {
+  margin-top: 0;
+}
+.trips-split-legend {
+  display: grid;
+  margin: 8px 0 0;
+  padding: 0;
+  gap: 4px;
+  list-style: none;
+  font-size: var(--type-meta);
+}
+.trips-split-legend li {
+  display: grid;
+  grid-template-columns: 8px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+}
+.trips-split-legend li > span:not(.trips-split-swatch) {
+  overflow: hidden;
+  color: var(--text-secondary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.trips-split-legend strong {
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.trips-split-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+}
+
+/* Places: every city reached with its country's flag, scrolling past about eight rows. */
+.trips-places {
+  display: grid;
+  max-height: 432px;
+  margin: 16px 0 0;
+  padding: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  list-style: none;
+}
+.trips-places li {
+  display: grid;
+  grid-template-columns: 20px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 0;
+  border-top: var(--hairline) solid var(--border-subtle);
+  outline: 0;
+}
+.trips-place-mark {
+  display: grid;
+  place-items: center;
+  color: var(--text-tertiary);
+  font-size: var(--type-body);
+}
+.trips-place-copy {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+.trips-place-copy > strong {
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.trips-places small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 1250px) {
+  .trips-calendar {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+  }
+}
+@media (max-width: 1050px) {
+  .trips-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .trips-now {
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+  .trips-now .trip-days {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .trips-day.is-away::before,
+  .trips-journey,
+  .trip-day-bar {
+    transition: none;
+  }
+}

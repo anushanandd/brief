@@ -1,0 +1,442 @@
+/* App frame, sidebar, and page container. */
+
+.app-frame {
+  position: relative;
+  display: flow-root;
+  height: 100dvh;
+  overflow: clip;
+  background:
+    linear-gradient(var(--background-wash), var(--background-wash)),
+    var(--background) url('../assets/background.webp') center / cover;
+}
+html.activity-viewport .main-content {
+  overflow: clip;
+}
+
+.window-drag-region {
+  position: fixed;
+  inset: 0 0 auto var(--sidebar-width);
+  z-index: 19;
+  height: 25px;
+}
+
+.sidebar {
+  position: fixed;
+  inset: 0 auto 0 0;
+  z-index: 20;
+  display: flex;
+  width: var(--sidebar-width);
+  padding: 40px 12px 12px;
+  overflow: hidden;
+  flex-direction: column;
+  border-right: var(--hairline) solid var(--sidebar-border);
+  background: var(--sidebar-background);
+  color: var(--sidebar-foreground);
+}
+.sidebar-header {
+  padding: 0 8px 20px 14px; /* scale-exempt: aligns the wordmark with the nav icons */
+  flex: none;
+}
+.sidebar-content {
+  min-height: 0;
+  overflow-y: auto;
+  flex: 1;
+  overscroll-behavior: contain;
+}
+.sidebar-footer {
+  padding: 12px 4px 0;
+  border-top: var(--hairline) solid var(--sidebar-border);
+  flex: none;
+}
+.sidebar-navigation {
+  display: grid;
+  gap: 8px;
+}
+.sidebar-group {
+  min-width: 0;
+  margin: 0;
+  padding: 0 4px;
+}
+.sidebar-group-label {
+  min-height: 28px;
+  margin: 0;
+  padding: 8px 10px 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+  line-height: 1;
+}
+.sidebar-group-label:has(.sidebar-group-toggle) {
+  padding: 0;
+}
+.sidebar-group-toggle {
+  display: inline-flex;
+  min-height: 28px;
+  padding: 8px 10px 4px;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  line-height: 1;
+  cursor: pointer;
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.sidebar-group-toggle:hover:not(:disabled) {
+  color: var(--text-secondary);
+}
+.sidebar-group-toggle:disabled {
+  cursor: default;
+}
+.sidebar-group-toggle > svg {
+  width: 12px;
+  height: 12px;
+  opacity: 0;
+  transform: rotate(-90deg);
+  transition:
+    opacity var(--duration-quick) var(--ease-out),
+    transform var(--duration-quick) var(--ease-out);
+}
+.sidebar-group-toggle[aria-expanded='true'] > svg {
+  transform: none;
+}
+.sidebar:hover .sidebar-group-toggle:not(:disabled) > svg,
+.sidebar-group-toggle[aria-expanded='false'] > svg {
+  opacity: 1;
+}
+.sidebar-menu {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.sidebar-menu[hidden] {
+  display: none;
+}
+/* The Reports group fades with its chevron instead of snapping while the chevron turns. */
+.sidebar-group-label:has(> .sidebar-group-toggle) + .sidebar-menu {
+  transition:
+    opacity var(--duration-quick) var(--ease-out),
+    display var(--duration-quick) allow-discrete;
+}
+.sidebar-group-label:has(> .sidebar-group-toggle) + .sidebar-menu[hidden] {
+  opacity: 0;
+}
+@starting-style {
+  .sidebar-group-label:has(> .sidebar-group-toggle) + .sidebar-menu:not([hidden]) {
+    opacity: 0;
+  }
+}
+.sidebar-menu-item {
+  min-width: 0;
+}
+.sidebar-menu-button {
+  display: grid;
+  width: 100%;
+  min-width: 0;
+  min-height: 34px;
+  padding: 0 10px;
+  grid-template-columns: 18px minmax(0, 1fr);
+  align-items: center;
+  gap: 10px;
+  border-radius: var(--radius-control);
+  color: var(--sidebar-foreground);
+  font-size: var(--type-body);
+  font-weight: 500;
+  line-height: 1.3;
+  transition:
+    background-color var(--duration-quick) var(--ease-out),
+    color var(--duration-quick) var(--ease-out),
+    transform var(--duration-quick) var(--ease-out);
+}
+.sidebar-menu-button > svg {
+  color: var(--sidebar-icon);
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.sidebar-menu-button:hover {
+  background: var(--hover-wash);
+  color: var(--text-primary);
+}
+.sidebar-menu-button:hover > svg,
+.sidebar-menu-button.active > svg {
+  color: var(--text-primary);
+}
+.sidebar-menu-button:active {
+  transform: scale(0.985);
+  transition-duration: 0s;
+}
+.sidebar-menu-button.active {
+  background: var(--sidebar-accent);
+  color: var(--text-primary);
+}
+.sidebar-menu-button > svg {
+  width: 16px;
+  height: 16px;
+}
+.sidebar-menu-button > svg.brief-icon * {
+  stroke-width: 1.6;
+}
+.brand {
+  display: flex;
+  min-height: 30px;
+  align-items: center;
+}
+.brand-name {
+  font-family: var(--font-editorial);
+  font-size: var(--type-page);
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--text-primary);
+}
+kbd {
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--type-body);
+  font-weight: 500;
+}
+.main-content {
+  height: 100dvh;
+  margin-left: var(--sidebar-width);
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: none;
+  background: transparent;
+}
+.page {
+  width: min(1560px, 100%);
+  margin: 0 auto;
+  padding: 40px 48px 72px;
+}
+/* One height on every page, whatever its actions, so what follows starts at one line. */
+.page-header {
+  display: flex;
+  min-height: var(--button-height);
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+  flex-wrap: wrap;
+  gap: 12px 24px;
+}
+.page-header h1 {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: var(--type-page);
+  font-weight: 400;
+  line-height: 1.5;
+}
+:root[data-theme='dark'] .brand-name,
+:root[data-theme='dark'] .page-header h1 {
+  background: var(--brand-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+.page-route {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.page-route a {
+  color: var(--text-secondary);
+}
+.page-route a:hover {
+  color: var(--accent);
+}
+.page-route-separator {
+  color: var(--text-tertiary);
+}
+.page > .page-header h1 {
+  color: var(--text-primary);
+}
+.page > .page-header p {
+  color: var(--text-secondary);
+}
+.freshness {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-tertiary);
+  white-space: normal;
+  font-size: var(--type-meta);
+}
+.freshness > svg {
+  flex: none;
+  color: var(--text-tertiary);
+}
+.market-freshness[data-tone='positive'] > svg {
+  color: var(--positive);
+}
+.market-freshness[data-tone='negative'] > svg,
+.snapshot-freshness.warning > svg {
+  color: var(--negative);
+}
+.status-dot {
+  display: inline-block;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--positive);
+  flex: none;
+}
+.status-dot.negative {
+  background: var(--negative);
+}
+.status-dot.neutral {
+  background: var(--text-tertiary);
+}
+.status-dot.warning {
+  background: var(--warning);
+}
+.data-status-positioner {
+  z-index: 40;
+}
+.data-status-popup {
+  box-sizing: border-box;
+  width: 320px;
+  max-width: var(--available-width);
+  max-height: var(--available-height);
+  overflow: auto;
+  overscroll-behavior: contain;
+  padding: 4px 16px;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-card);
+  background: var(--popup-sheen), var(--popup-surface);
+  box-shadow: var(--shadow-popup);
+  color: var(--text-primary);
+  font-size: var(--type-meta);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--duration-instant) var(--ease-out),
+    scale var(--duration-instant) var(--ease-out);
+}
+.data-status-popup[data-starting-style],
+.data-status-popup[data-ending-style] {
+  opacity: 0;
+  scale: 0.98;
+}
+.data-status-section {
+  padding: 10px 0;
+}
+.data-status-section + .data-status-section {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.data-status-section h3 {
+  margin: 0 0 6px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 600;
+}
+.data-status-rows {
+  display: grid;
+  margin: 0;
+}
+.data-status-rows > div,
+.data-status-setting,
+.data-status-connections > li {
+  display: flex;
+  min-height: 26px;
+  align-items: center;
+  gap: 8px;
+}
+.data-status-rows dt {
+  flex: none;
+  width: 72px;
+  color: var(--text-secondary);
+}
+.data-status-rows dd {
+  display: inline-flex;
+  min-width: 0;
+  margin: 0;
+  align-items: center;
+  gap: 6px;
+  font-variant-numeric: tabular-nums;
+}
+.data-status-rows dd > svg {
+  flex: none;
+  color: var(--text-tertiary);
+}
+.data-status-rows dd[data-tone='negative'] {
+  color: var(--negative);
+}
+.data-status-muted {
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
+.data-status-note,
+.data-status-warnings {
+  margin: 6px 0 0;
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+.data-status-warnings {
+  padding-left: 16px;
+}
+.data-status-setting {
+  margin-top: 4px;
+  justify-content: space-between;
+  color: var(--text-secondary);
+}
+.data-status-connections {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.data-status-connections > li:not([data-configured]) > span:not(.data-status-muted) {
+  color: var(--text-tertiary);
+}
+.data-status-connections > li > .data-status-muted {
+  margin-left: auto;
+}
+.data-status-links {
+  display: flex;
+  padding: 10px 0;
+  gap: 16px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.data-status-links > a {
+  color: var(--accent);
+  text-decoration: none;
+}
+.data-status-links > a:hover {
+  text-decoration: underline;
+}
+@media (prefers-reduced-motion: reduce) {
+  .workspace-status,
+  .data-status-popup {
+    transition: none;
+  }
+}
+
+/* The first reveal, once per launch: the page's blocks arrive in reading order, rising and
+   coming into focus. Navigation and keyboard steps never animate. */
+@keyframes first-reveal {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+    filter: blur(3px);
+  }
+}
+:root[data-first-reveal] .page > * {
+  animation: first-reveal var(--duration-reveal) var(--ease-reveal) both paused;
+}
+:root[data-first-reveal='running'] .page > * {
+  animation-play-state: running;
+}
+:root[data-first-reveal] .page > :nth-child(2) {
+  animation-delay: var(--reveal-stagger);
+}
+:root[data-first-reveal] .page > :nth-child(3) {
+  animation-delay: calc(var(--reveal-stagger) * 2);
+}
+:root[data-first-reveal] .page > :nth-child(n + 4) {
+  animation-delay: calc(var(--reveal-stagger) * 3);
+}
+@media (prefers-reduced-motion: reduce) {
+  :root[data-first-reveal] .page > * {
+    animation: none;
+  }
+}

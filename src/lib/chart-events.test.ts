@@ -142,10 +142,8 @@ describe('buildChartEventGroups', () => {
       ['sale', 'out'],
       ['transfer', 'out'],
     ])
-    expect(chartEventGroupLabel(brokerage[1], data.updatedAt)).toContain(
-      'Sold VTI $207.05 · -12.50%',
-    )
-    expect(chartEventGroupLabel(brokerage[2], data.updatedAt)).toContain('Near sold vti')
-    expect(chartEventGroupLabel(brokerage[0], data.updatedAt)).toContain('Bought VXUS')
+    expect(chartEventGroupLabel(brokerage[1])).toContain('Sold VTI $207.05 · −12.50%')
+    expect(chartEventGroupLabel(brokerage[2])).toContain('Near sold vti')
+    expect(chartEventGroupLabel(brokerage[0])).toContain('Bought VXUS')
   })
 })

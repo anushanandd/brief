@@ -7,8 +7,30 @@ import {
   chartPointsFromStartDate,
   chartRangeChange,
   marketClosePoint,
+  splitAtEstimate,
   upsertLiveChartPoint,
 } from './live-chart'
+
+/** A daily chart point at a market close. */
+const day = (date: string, value: number) => ({
+  time: Date.parse(`${date}T16:00:00Z`) / 1_000,
+  value,
+})
+
+it('splits a line at its last observed day so the estimate starts where it ends', () => {
+  const points = [
+    day('2026-07-30', 100),
+    day('2026-07-31', 101),
+    day('2026-08-03', 102),
+    day('2026-08-04', 104),
+  ]
+  const { observed, estimated } = splitAtEstimate(points, '2026-07-31')
+  expect(observed.map(({ value }) => value)).toEqual([100, 101])
+  expect(estimated.map(({ value }) => value)).toEqual([101, 102, 104])
+  expect(splitAtEstimate(points, undefined)).toEqual({ observed: points, estimated: [] })
+  // Observed through the last point: nothing is estimated.
+  expect(splitAtEstimate(points, '2026-08-04').estimated).toEqual([])
+})
 
 describe('live chart points', () => {
   it('keeps a single provider close point visible outside regular hours', () => {

@@ -1,0 +1,162 @@
+/* Activity's toolbar and date range. Loads after activity-details.css, whose cascade it
+   continues. */
+
+/* Date range: presets in one popover; exact dates are typed in search. */
+.date-range-trigger {
+  display: inline-flex;
+  min-height: var(--control-height);
+  padding: 0 10px;
+  align-items: center;
+  gap: 8px;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--type-meta);
+  white-space: nowrap;
+  cursor: pointer;
+  transition: border-color var(--duration-quick) var(--ease-out);
+}
+.date-range-trigger > svg {
+  flex: none;
+  color: var(--text-tertiary);
+}
+.date-range-trigger:hover,
+.date-range-trigger[data-popup-open] {
+  border-color: var(--border-strong);
+}
+.date-range-trigger[data-custom] > svg:first-child {
+  color: var(--accent);
+}
+.activity-toolbar > .date-range-trigger {
+  grid-column: 3;
+  grid-row: 1;
+}
+/* Search, Filters, dates, then download, in one row. */
+.activity-toolbar > .activity-filters-button {
+  grid-column: 2;
+}
+.date-range-positioner {
+  z-index: 50;
+}
+.date-range-popup {
+  min-width: 200px;
+  padding: 4px;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-control);
+  background: var(--popup-sheen), var(--popup-surface);
+  box-shadow: var(--shadow-popup);
+  transform-origin: var(--transform-origin);
+  transition:
+    opacity var(--duration-instant) var(--ease-out),
+    scale var(--duration-instant) var(--ease-out);
+}
+.date-range-popup[data-starting-style],
+.date-range-popup[data-ending-style] {
+  opacity: 0;
+  scale: 0.98;
+}
+.date-range-presets {
+  display: grid;
+  gap: 1px;
+}
+.date-range-presets > button {
+  display: flex;
+  min-height: 32px;
+  padding: 0 8px 0 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: var(--type-body);
+  text-align: left;
+  cursor: pointer;
+}
+.date-range-presets > button:hover {
+  background: var(--hover-wash);
+}
+.date-range-presets > button[aria-pressed='true'] {
+  background: var(--sidebar-accent);
+}
+.date-range-presets > button > svg {
+  color: var(--accent);
+}
+.transaction-details-tag.is-warning {
+  background: var(--warning-soft);
+  color: var(--warning);
+}
+.transaction-details-flag {
+  display: flex;
+  margin: 0 20px;
+  padding: 10px 12px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border-radius: var(--radius-inner);
+  background: var(--warning-soft);
+}
+.transaction-details-flag p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+.transaction-details-flag {
+  flex-wrap: wrap;
+}
+.transaction-details-flag .transaction-details-error {
+  flex-basis: 100%;
+  color: var(--negative);
+}
+.transaction-details-more {
+  margin: 0 20px 12px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.transaction-details-more > summary {
+  padding: 10px 0 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  cursor: default;
+}
+.transaction-details-more > .transaction-details-facts {
+  padding: 0;
+}
+.security-taxes-flag {
+  margin: 0 0 12px;
+  padding: 10px 12px;
+  border-radius: var(--radius-inner);
+  background: var(--warning-soft);
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  line-height: 1.45;
+}
+.subscription-price-change {
+  color: var(--warning);
+}
+/* The selection's shared controls, above the list while anything is selected. */
+.activity-selection-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  padding: 6px 12px;
+  border-radius: var(--radius-control);
+  background: var(--accent-soft);
+  font-size: var(--type-meta);
+}
+.activity-selection-bar > strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  font-weight: 500;
+}
+.activity-selection-bar form {
+  display: contents;
+}

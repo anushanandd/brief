@@ -1,4 +1,11 @@
-import { formatCurrency, formatActivityName } from '../lib/format'
+import { validDate } from '../lib/dates'
+import {
+  countOf,
+  formatActivityName,
+  formatCurrency,
+  formatShortDay,
+  pluralize,
+} from '../lib/format'
 import type { CashFlowBreakdownItem } from '../lib/money'
 import { EmptyState } from './ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
@@ -97,20 +104,16 @@ function bandPath(
   return `M ${startX} ${startTop} C ${middle} ${startTop}, ${middle} ${endTop}, ${endX} ${endTop} L ${endX} ${endBottom} C ${middle} ${endBottom}, ${middle} ${startBottom}, ${startX} ${startBottom} Z`
 }
 
-const transactionDate = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-})
+const flowDate = (date: string) => (validDate(date) ? formatShortDay(date) : '')
 
 export const boundedTransactionTitle = formatActivityName
 
 function transactionLabel(flow: Flow) {
   return flow.children
-    .map(
-      (transaction) =>
-        `${transaction.label} ${formatCurrency(transaction.value)} on ${transactionDate.format(new Date(`${transaction.date}T00:00:00Z`))}`,
-    )
+    .map((transaction) => {
+      const date = flowDate(transaction.date)
+      return `${transaction.label} ${formatCurrency(transaction.value)}${date ? ` on ${date}` : ''}`
+    })
     .join(', ')
 }
 
@@ -124,13 +127,12 @@ function FlowTooltip({ flow }: { flow: Flow }) {
         <span>{formatCurrency(flow.value)}</span>
       </div>
       <div className="treemap-tooltip-composition">
-        <span>{flow.children.length === 1 ? 'Transaction' : 'Transactions'}</span>
+        <span>{pluralize(flow.children.length, 'Transaction')}</span>
         <ul>
           {details.map((transaction) => (
             <li key={transaction.id}>
               <span>
-                {boundedTransactionTitle(transaction.label)} ·{' '}
-                {transactionDate.format(new Date(`${transaction.date}T00:00:00Z`))}
+                {boundedTransactionTitle(transaction.label)} · {flowDate(transaction.date)}
               </span>
               <strong>{formatCurrency(transaction.value)}</strong>
             </li>
@@ -162,7 +164,34 @@ function FlowBand({ flow, path }: { flow: Flow; path: string }) {
   )
 }
 
-function FlowLabel({ flow, side }: { flow: PositionedFlow; side: 'source' | 'use' }) {
+const labelSpacing = 38
+
+/** Moves label centers apart by at least `spacing`, staying within `[min, max]`. */
+export function spreadLabels(centers: number[], spacing: number, min: number, max: number) {
+  const placed = centers.map((center, index) => ({ center, index }))
+  placed.sort((a, b) => a.center - b.center)
+  for (let index = 0; index < placed.length; index += 1) {
+    const floor = index ? placed[index - 1].center + spacing : min
+    placed[index].center = Math.max(placed[index].center, floor)
+  }
+  for (let index = placed.length - 1; index >= 0; index -= 1) {
+    const ceiling = index < placed.length - 1 ? placed[index + 1].center - spacing : max
+    placed[index].center = Math.min(placed[index].center, ceiling)
+  }
+  const result = Array<number>(centers.length)
+  for (const { center, index } of placed) result[index] = center
+  return result
+}
+
+function FlowLabel({
+  flow,
+  side,
+  top,
+}: {
+  flow: PositionedFlow
+  side: 'source' | 'use'
+  top: number
+}) {
   const label = (
     <>
       <strong>{boundedTransactionTitle(flow.label)}</strong>
@@ -171,7 +200,7 @@ function FlowLabel({ flow, side }: { flow: PositionedFlow; side: 'source' | 'use
   )
   if (!flow.children.length) {
     return (
-      <span className={`sankey-label sankey-label-${side}`} style={{ top: flow.center }}>
+      <span className={`sankey-label sankey-label-${side}`} style={{ top }}>
         {label}
       </span>
     )
@@ -183,7 +212,7 @@ function FlowLabel({ flow, side }: { flow: PositionedFlow; side: 'source' | 'use
           <button
             type="button"
             className={`sankey-label sankey-label-${side} sankey-label-interactive`}
-            style={{ top: flow.center }}
+            style={{ top }}
             aria-label={`${flow.label}, ${formatCurrency(flow.value)}: ${transactionLabel(flow)}`}
           />
         }
@@ -197,13 +226,13 @@ function FlowLabel({ flow, side }: { flow: PositionedFlow; side: 'source' | 'use
 
 function describeGroup(flow: Flow) {
   const count = flow.children.length
-  return `${flow.label} ${formatCurrency(flow.value)}${count ? ` across ${count} ${count === 1 ? 'transaction' : 'transactions'}` : ''}`
+  return `${flow.label} ${formatCurrency(flow.value)}${count ? ` across ${countOf(count, 'transaction')}` : ''}`
 }
 
 export function CashFlowSankey({ values }: { values: CashFlowSankeyValues }) {
   const model = cashFlowSankeyModel(values)
   if (!model.total) {
-    return <EmptyState>No classified cash flow is available for this period.</EmptyState>
+    return <EmptyState>No cash flow in this period.</EmptyState>
   }
 
   const maxCount = Math.max(model.sources.length, model.uses.length)
@@ -214,6 +243,17 @@ export function CashFlowSankey({ values }: { values: CashFlowSankeyValues }) {
   const poolY = (chartHeight - flowHeight) / 2
   let incomingY = poolY
   let outgoingY = poolY
+  const labelBounds = [labelSpacing / 2, chartHeight - labelSpacing / 2] as const
+  const sourceLabels = spreadLabels(
+    sources.map(({ center }) => center),
+    labelSpacing,
+    ...labelBounds,
+  )
+  const useLabels = spreadLabels(
+    uses.map(({ center }) => center),
+    labelSpacing,
+    ...labelBounds,
+  )
   const description = `Cash sources: ${model.sources.map(describeGroup).join(', ')}. Cash uses: ${model.uses.map(describeGroup).join(', ')}.`
 
   return (
@@ -285,11 +325,11 @@ export function CashFlowSankey({ values }: { values: CashFlowSankeyValues }) {
         <span className="sankey-pool-label">
           <strong>{formatCurrency(model.total)}</strong>
         </span>
-        {sources.map((flow) => (
-          <FlowLabel flow={flow} side="source" key={flow.id} />
+        {sources.map((flow, index) => (
+          <FlowLabel flow={flow} side="source" top={sourceLabels[index]} key={flow.id} />
         ))}
-        {uses.map((flow) => (
-          <FlowLabel flow={flow} side="use" key={flow.id} />
+        {uses.map((flow, index) => (
+          <FlowLabel flow={flow} side="use" top={useLabels[index]} key={flow.id} />
         ))}
       </div>
     </div>

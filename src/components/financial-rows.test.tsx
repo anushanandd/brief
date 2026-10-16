@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
+import { benefitActivity, insights } from '../data/fixtures/insights'
 import { buildActivities } from '../lib/activity'
 import type { FinanceSnapshot } from '../lib/schema'
 import { ActivityList } from './activity-list'
@@ -114,31 +115,20 @@ it('preserves pending status, merchant links, categories and descriptions across
       },
     ],
   })
-  for (const compact of [false, true]) {
-    const html = renderToStaticMarkup(
-      <ActivityList
-        activities={activities}
-        referenceIso={referenceIso}
-        compact={compact}
-        showDescriptions
-      />,
-    )
-    expect(html).toContain('Dec 31, 2025 · Pending')
-    expect(html).toContain('Synthetic card · Dining')
-    expect(html).toContain('Original provider description')
-    expect(html).toContain('href="https://example.com/"')
-    expect(html).not.toContain('Verified')
-  }
-  const unsafe = renderToStaticMarkup(
-    <ActivityList
-      activities={[{ ...activities[0], website: 'javascript:alert(1)' }]}
-      referenceIso={referenceIso}
-    />,
+  const html = renderToStaticMarkup(
+    <ActivityList activities={activities} referenceIso={referenceIso} showDescriptions />,
   )
-  expect(unsafe).not.toContain('href=')
+  // Pending is a badge beside the merchant, not a suffix on the date.
+  expect(html).toContain('<span class="activity-badge" title="Pending">Pending</span>')
+  expect(html).toContain('<small>Dec 31, 2025</small>')
+  expect(html).toContain('Synthetic card · Dining')
+  expect(html).toContain('Original provider description')
+  // A merchant's website is never a link out of the row.
+  expect(html).not.toContain('href=')
+  expect(html).not.toContain('Verified')
 })
 
-it('limits displayed activity names to five words without changing the source title', () => {
+it('shows the whole activity name and leaves cutting it to the column width', () => {
   const activity = {
     id: 'example',
     kind: 'credit' as const,
@@ -152,6 +142,85 @@ it('limits displayed activity names to five words without changing the source ti
   const html = renderToStaticMarkup(
     <ActivityList activities={[activity]} referenceIso="2026-09-20" />,
   )
-  expect(html).toContain('<strong>Example airline fee reimbursement for…</strong>')
+  expect(html).toContain(
+    '<strong>Example airline fee reimbursement for a synthetic purchase</strong>',
+  )
   expect(activity.title).toBe('Example airline fee reimbursement for a synthetic purchase')
+})
+
+it('notes native benefit credits on purchase and credit rows and marks linked rows', () => {
+  const referenceIso = '2026-08-20T12:00:00Z'
+  const row = {
+    account: 'Synthetic card',
+    accountId: 'card',
+    category: 'Entertainment',
+    pending: false,
+  }
+  const activities = buildActivities({
+    updatedAt: referenceIso,
+    trades: [],
+    transactions: [
+      {
+        ...row,
+        id: 'purchase',
+        merchant: 'Synthetic stream',
+        date: '2026-08-15',
+        amount: -13.99,
+        classification: classification('expense'),
+      },
+      {
+        ...row,
+        id: 'credit',
+        merchant: 'Synthetic credit',
+        date: '2026-08-17',
+        amount: 13.99,
+        classification: classification('other', { credit: true }),
+      },
+    ],
+    insights: insights({
+      benefits: {
+        accountId: 'card',
+        product: 'amex-platinum',
+        productName: 'American Express Platinum',
+        windows: [],
+        useFirst: [],
+        history: [],
+        review: [],
+        activity: [
+          benefitActivity({
+            id: 'purchase',
+            kind: 'purchase',
+            merchant: 'Synthetic stream',
+            date: '2026-08-15',
+            amount: -13.99,
+            benefitName: 'Digital entertainment',
+            pairedId: 'credit',
+            credit: { state: 'credited', amount: 13.99 },
+          }),
+          benefitActivity({
+            id: 'credit',
+            date: '2026-08-17',
+            amount: 13.99,
+            benefitName: 'Digital entertainment',
+            pairedId: 'purchase',
+          }),
+        ],
+      },
+    }),
+  })
+  const html = renderToStaticMarkup(
+    <ActivityList
+      activities={activities}
+      referenceIso={referenceIso}
+      highlightedIds={new Set(['spending:credit'])}
+    />,
+  )
+  // A short badge beside the merchant, the full note behind it.
+  expect(html).toContain(
+    'title="Digital entertainment · Credited $13.99">Credited<span class="sr-only">',
+  )
+  expect(html).toContain(
+    'title="Digital entertainment credit for Synthetic stream on Aug 15">Benefit credit',
+  )
+  expect(html.match(/data-highlighted="true"/g)).toHaveLength(1)
 })

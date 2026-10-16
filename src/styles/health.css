@@ -1,0 +1,206 @@
+/* Data health workspace */
+.health-page {
+  padding-bottom: 48px;
+}
+/* The verdict, then the counts in the metric strip every page uses. */
+.health-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--card-padding) 48px;
+  padding: var(--card-padding) 0 0;
+}
+.health-summary-status {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+.health-summary-status > div:last-child {
+  display: grid;
+  gap: 4px;
+}
+.health-summary-mark {
+  display: grid;
+  width: 40px;
+  height: 40px;
+  flex: none;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--positive-soft);
+  color: var(--positive);
+}
+.health-info .health-summary-mark,
+.health-issue-info .health-issue-mark {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+.health-warning .health-summary-mark,
+.health-issue-warning .health-issue-mark {
+  background: color-mix(in srgb, var(--warning) 12%, transparent);
+  color: var(--warning);
+}
+.health-error .health-summary-mark,
+.health-critical .health-summary-mark,
+.health-issue-error .health-issue-mark,
+.health-issue-critical .health-issue-mark {
+  background: var(--negative-soft);
+  color: var(--negative);
+}
+.health-summary-status strong {
+  font-size: var(--type-section);
+  font-weight: 500;
+}
+.health-summary-status small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.health-counts {
+  display: flex;
+  margin: 0;
+}
+.health-counts > div {
+  min-width: 96px;
+  padding: 0 16px;
+  border-left: var(--hairline) solid var(--border-subtle);
+}
+.health-counts > div:last-child {
+  padding-right: 0;
+}
+.health-counts dt {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.4;
+  white-space: nowrap;
+}
+.health-counts dd {
+  margin: 8px 0 0;
+  font-size: var(--type-section);
+  font-weight: 500;
+  font-variant-numeric: tabular-nums;
+}
+.health-counts > div[data-empty] dd {
+  color: var(--text-tertiary);
+}
+
+/* One section per severity, its issues as rows. */
+.health-section {
+  margin-top: var(--card-padding);
+  padding-top: var(--card-padding);
+}
+.health-section-count {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+}
+.health-issue-list {
+  margin-top: 8px;
+}
+.health-issue {
+  display: grid;
+  grid-template-columns: 24px minmax(0, 1fr) auto;
+  align-items: start;
+  gap: 12px;
+  padding: 16px 0;
+}
+.health-issue + .health-issue {
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.health-issue:last-child {
+  padding-bottom: 0;
+}
+.health-issue-mark {
+  display: grid;
+  width: 24px;
+  height: 24px;
+  place-items: center;
+  border-radius: 50%;
+}
+.health-issue-body {
+  display: grid;
+  min-width: 0;
+  max-width: 680px;
+  gap: 4px;
+}
+.health-issue h3 {
+  margin: 0;
+  font-size: var(--type-body);
+  font-weight: 600;
+  line-height: 24px;
+}
+.health-issue p {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-body);
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+.health-evidence,
+.health-affected ul {
+  margin: 4px 0 0;
+  padding: 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  line-height: 1.5;
+  list-style: none;
+}
+.health-evidence li + li {
+  margin-top: 2px;
+}
+.health-evidence li::before {
+  margin-right: 8px;
+  content: '•';
+}
+.health-affected {
+  margin-top: 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.health-affected summary {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  list-style: none;
+  cursor: pointer;
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.health-affected summary::-webkit-details-marker {
+  display: none;
+}
+.health-affected summary:hover {
+  color: var(--text-secondary);
+}
+.health-affected summary > svg {
+  transition: transform var(--duration-quick) var(--ease-out);
+}
+.health-affected[open] summary > svg {
+  transform: rotate(90deg);
+}
+.health-affected ul {
+  max-height: 120px;
+  margin-top: 8px;
+  overflow-y: auto;
+}
+.health-action .button-base {
+  white-space: nowrap;
+}
+@media (prefers-reduced-motion: reduce) {
+  .health-affected summary,
+  .health-affected summary > svg {
+    transition-duration: var(--duration-instant) !important;
+  }
+}
+/* Below the verdict, the counts start at the page's edge. */
+@media (max-width: 1100px) {
+  .health-counts {
+    flex-basis: 100%;
+  }
+  .health-counts > div:first-child {
+    padding-left: 0;
+    border-left: 0;
+  }
+}

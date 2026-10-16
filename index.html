@@ -3,7 +3,7 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#08090a" />
+    <meta name="theme-color" content="#000000" />
     <meta name="description" content="A private, local-first view of your finances." />
     <style>
       html,
@@ -11,8 +11,10 @@
       #root {
         margin: 0;
         min-height: 100%;
-        background: #08090a;
-        color: #e8e8e8;
+        background: var(--background, #000000);
+        color: var(--text-primary, #e8e8e8);
+      }
+      html {
         color-scheme: dark;
       }
     </style>

@@ -12,4 +12,8 @@ export default defineConfig({
     strictPort: true,
   },
   envPrefix: ['VITE_', 'TAURI_'],
+  build: {
+    // The app loads its chunks from local disk, so size costs no download; routes still split.
+    chunkSizeWarningLimit: 1024,
+  },
 })
