@@ -1,12 +1,10 @@
 //! Disposable last-market observations, separate from committed financial state.
-use crate::{
-    finance_contract::{MarketProjection, Snapshot},
-    providers::MarketSnapshots,
-};
+use crate::{finance_contract::Snapshot, providers::MarketSnapshots};
 use chrono::{DateTime, Local, Utc};
 use rusqlite::{params, Connection};
 use serde_json::Value;
 use std::{
+    collections::BTreeSet,
     path::PathBuf,
     sync::Mutex,
     time::{Duration, Instant},
@@ -17,11 +15,19 @@ pub struct StartupMarket {
     written: Mutex<Option<(u64, Instant)>>,
 }
 
-/// What saved quotes were observed against: they apply only to the same valuation.
+/// What saved quotes apply to. Quotes are prices per symbol, and the saved payload is repriced
+/// against the current snapshot on every read, so they stay usable across refreshes that keep
+/// the same calculation and the same quoted holdings. A new or sold symbol waits for live data.
 fn identity(snapshot: &Snapshot) -> Value {
+    let symbols: BTreeSet<String> = snapshot
+        .holdings
+        .iter()
+        .filter(|holding| holding.quote_eligible == Some(true))
+        .map(|holding| holding.ticker.trim().to_uppercase())
+        .collect();
     serde_json::json!({
         "calculationVersion": snapshot.calculation_version,
-        "valuation": MarketProjection::from(snapshot),
+        "symbols": symbols,
     })
 }
 
@@ -190,7 +196,7 @@ mod tests {
     }
 
     #[test]
-    fn cache_is_optional_revision_bound_and_failed_updates_preserve_prior_observations() {
+    fn cache_survives_refreshes_of_the_same_holdings_and_failed_updates_preserve_it() {
         let directory =
             std::env::temp_dir().join(format!("brief-startup-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&directory).unwrap();
@@ -205,11 +211,22 @@ mod tests {
             cache.load(&snapshot).unwrap().snapshots["TEST"].price,
             110.0
         );
+        // A refresh that keeps the quoted symbols keeps the saved quotes; the read reprices them.
         let mut changed = snapshot.clone();
         changed.revision = Some(snapshot.revision.unwrap_or(0) + 1);
+        changed.holdings[0].shares = Some(999.0);
+        assert!(cache.load(&changed).is_some());
+        // A different quoted symbol has no saved quote, so it waits for live data.
+        changed = snapshot.clone();
+        let quoted = changed
+            .holdings
+            .iter_mut()
+            .find(|holding| holding.quote_eligible == Some(true))
+            .unwrap();
+        quoted.ticker = "OTHER".into();
         assert!(cache.load(&changed).is_none());
         changed = snapshot.clone();
-        changed.holdings[0].shares = Some(999.0);
+        changed.calculation_version = Some(changed.calculation_version.unwrap_or(0) + 1);
         assert!(cache.load(&changed).is_none());
         let mut invalid = quotes;
         invalid.snapshots.get_mut("TEST").unwrap().price = f64::NAN;

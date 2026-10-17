@@ -1,4 +1,4 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 
 import { AccountGroups, AccountRows } from '../components/account-groups'
@@ -40,12 +40,7 @@ import {
   saveAccountGroupsMode,
   useAccountGroupsMode,
 } from '../lib/home-preferences'
-import {
-  buildLiveChartData,
-  chartPointsFromStartDate,
-  chartRangeChange,
-  marketClosePoint,
-} from '../lib/live-chart'
+import { buildLiveChartData, chartPointsFromStartDate, chartRangeChange } from '../lib/live-chart'
 import { getExternalLogosEnabled } from '../lib/logos'
 import type { FinanceSnapshot } from '../lib/schema'
 
@@ -69,6 +64,7 @@ export function OverviewPage() {
     [live],
   )
   const finance = useFinance()
+  const navigate = useNavigate()
   const committed = finance.data
   const [graphWindow, setGraphWindow] = useGraphWindow()
   const accountGroupsMode = useAccountGroupsMode()
@@ -144,7 +140,6 @@ export function OverviewPage() {
     graphWindow,
     chartNow,
   )
-  const closePoint = marketClosePoint(livePoints ?? [], query.marketSession, query.marketCloseTime)
   const netDepositsData =
     account.accountId === 'net-worth' || account.performanceMethod === 'value-only'
       ? undefined
@@ -250,7 +245,6 @@ export function OverviewPage() {
                       referenceIso={data.updatedAt}
                       startDate={startDate}
                       selectedWindow={graphWindow}
-                      sessionBoundary={closePoint}
                     />
                   ) : (
                     <ValueHistoryEmptyState incomplete={incomplete} valueAvailable={!incomplete} />
@@ -355,6 +349,12 @@ export function OverviewPage() {
               <ActivityList
                 activities={latestActivities.slice(0, recentActivityRows)}
                 referenceIso={data.updatedAt}
+                onOpen={(activity) =>
+                  void navigate({
+                    to: '/activities',
+                    search: { open: activity.id.replace(/^spending:/, '') },
+                  })
+                }
               />
             </Card>
           </div>

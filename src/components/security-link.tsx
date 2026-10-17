@@ -1,7 +1,9 @@
+import { Link } from '@tanstack/react-router'
+
 import { stockLogoUrl, stockMarkColor, stockMarkLabel } from '../lib/logos'
 import { BrandMark } from './brand-mark'
-import { ExternalLink } from './external-link'
 
+/** A security's mark and ticker, opening its page on Investments. */
 export function SecurityLink({
   ticker,
   name,
@@ -30,13 +32,14 @@ export function SecurityLink({
     </>
   )
   return ticker ? (
-    <ExternalLink
+    <Link
       className="position-security"
       data-keyboard-open
-      href={`https://finance.yahoo.com/quote/${encodeURIComponent(ticker)}/`}
+      to="/holdings/$ticker"
+      params={{ ticker }}
     >
       {content}
-    </ExternalLink>
+    </Link>
   ) : (
     <span className="position-security">{content}</span>
   )

@@ -287,7 +287,6 @@ export function PerformanceChart({
   referenceIso,
   startDate,
   selectedWindow,
-  sessionBoundary,
   observedOn = [],
   estimatedAfter,
 }: {
@@ -299,7 +298,6 @@ export function PerformanceChart({
   referenceIso: string
   startDate?: string
   selectedWindow: number
-  sessionBoundary?: LivelinePoint
   /** Days the value was observed (a statement price or an entry), each marked with a dot. */
   observedOn?: string[]
   /** The last observed day of a value estimated since; the line after it is dashed. */
@@ -361,22 +359,7 @@ export function PerformanceChart({
     chartData,
     estimatedAfter,
   )
-  const markers = [
-    ...observationMarkers,
-    ...(sessionBoundary
-      ? [
-          {
-            id: 'market-close',
-            time: sessionBoundary.time,
-            value: sessionBoundary.value,
-            color: colors.deposits,
-            label: 'Regular market close',
-            shape: 'rule' as const,
-          },
-        ]
-      : []),
-    ...eventMarkers,
-  ]
+  const markers = [...observationMarkers, ...eventMarkers]
   const series: LivelineSeries[] = [
     {
       id: 'Value',
@@ -428,7 +411,7 @@ export function PerformanceChart({
       role="group"
       tabIndex={0}
       aria-keyshortcuts="W M Q Y A"
-      aria-label={`Account value over time${benchmark?.length ? ' compared with VOO' : ''}${events.length ? ` with ${events.length} key event markers` : ''}${sessionBoundary ? ', with the regular-market close marked' : ''}`}
+      aria-label={`Account value over time${benchmark?.length ? ' compared with VOO' : ''}${events.length ? ` with ${events.length} key event markers` : ''}`}
     >
       <span className="sr-only" role="status">
         Chart range: {graphWindows.find(({ secs }) => secs === selectedWindow)?.settingsLabel}

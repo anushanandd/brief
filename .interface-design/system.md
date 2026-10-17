@@ -1,5 +1,7 @@
 # Interface system
 
+> Superseded by [DESIGN.md](../DESIGN.md). Where the two disagree, DESIGN.md wins; this file shrinks as the redesign replaces what it describes.
+
 Brief should feel like a private macOS financial instrument: calm, compact, and evidence-first. This file records the rules that keep the interface coherent. The tokens in `src/styles/tokens.css` and the shared components in `src/components/` are the implementation; read them for exact values.
 
 ## Principles

@@ -95,12 +95,6 @@ function useLiveMarketState() {
     () => (base.data ? applyLiveProjection(base.data, market?.projection) : undefined),
     [base.data, market?.projection],
   )
-  const marketCloseTime = market
-    ? Object.values(market.snapshots).reduce<number | undefined>((latest, snapshot) => {
-        const time = Date.parse(snapshot.previousCloseAsOf ?? '') / 1_000
-        return Number.isFinite(time) && (latest === undefined || time > latest) ? time : latest
-      }, undefined)
-    : undefined
   const marketFeedLabel =
     market?.feed === 'iex'
       ? 'IEX'
@@ -123,7 +117,6 @@ function useLiveMarketState() {
       !base.integrationStatusLoading &&
       (!base.liveMarketEnabled || !symbolKey || !!state.market || !!state.error),
     marketSeries: market?.cached ? (market.chartSeries ?? {}) : market ? state.series : {},
-    marketCloseTime,
     marketSession: market?.session,
     marketAsOf: market?.asOf ?? undefined,
     marketFeedLabel,

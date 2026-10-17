@@ -10,6 +10,12 @@ rust-version = "1.89"
 name = "brief_lib"
 crate-type = ["rlib"]
 
+[profile.dev]
+debug = "line-tables-only"
+
+[profile.dev.package."*"]
+debug = false
+
 [profile.release]
 lto = true
 codegen-units = 1

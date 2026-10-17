@@ -1,5 +1,7 @@
 # Architecture
 
+> This describes the code as it stands. Why the invariants exist is in [PRINCIPLES.md](PRINCIPLES.md); this file shrinks as the planned storage changes replace what it describes.
+
 Brief is a single-user macOS app built with Tauri. Rust owns everything that touches money or secrets: provider access, credentials, calculations, and durable state. React owns presentation and view state. Nothing runs on a server.
 
 ```text
@@ -163,7 +165,7 @@ The window stays hidden until local reads finish, with a three-second watchdog. 
 
 - **Backups** (`.briefbackup`): SQLite Backup API copies of the whole finance database, excluding Keychain, display preferences, and caches. Export and restore require a single-use macOS authentication. Restore validates the application ID, schema version, integrity, and typed state before installing through the open connection, then advances the revision.
 - **Preferences** (`.briefsettings`): a bounded JSON file of display preferences, with no financial data.
-- **Erasure:** clears the finance database (bank statements included), retained copies, opened statement copies, and caches, but keeps Keychain credentials. Removing credentials is a separate action.
+- **Erasure:** clears the finance database (bank statements included), every other copy of it in the app-data folder (backups, retained copies, and leftovers from earlier versions), opened statement copies, and caches, but keeps Keychain credentials. Removing credentials is a separate action.
 
 ## Live market data
 

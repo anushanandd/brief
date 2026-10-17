@@ -16,11 +16,14 @@ export function AnimatedCurrency({
 }) {
   if (value == null) return <span className={className}>{formatCurrency(value)}</span>
 
+  // Values change when data arrives or a key steps through rows, never by a gesture worth
+  // animating, so digits update in place rather than rolling.
   return (
     <NumberFlow
       className={className}
       value={value}
       locales="en-US"
+      animated={false}
       respectMotionPreference
       format={{ style: 'currency', currency: 'USD', maximumFractionDigits: 2 }}
       transformTiming={{

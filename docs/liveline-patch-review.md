@@ -16,6 +16,7 @@ The patch modifies both runtime formats and both declaration outputs. Keep those
 - `minValueRange` places a lower bound on the displayed numerical span.
 - Series `dash` and `currentLine` control comparison and current-value presentation.
 - `continuous={false}` allows settled charts to stop requesting frames.
+- A chart mounted with data appears fully drawn; the reveal plays only when data arrives after an empty or loading state.
 - Accessible markers are positioned from chart coordinates and remain filtered against `endTime` for historical views. A marker is a dot on the line, or with `shape: 'rule'` a dashed vertical rule that needs only a time.
 - The primary series can retain an endpoint badge in multi-series mode.
 - Candles support an optional display `width`, fixed-window endpoints, quote markers, reference lines, and center-based hover timestamps.

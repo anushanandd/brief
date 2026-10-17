@@ -1,5 +1,5 @@
 diff --git a/dist/index.cjs b/dist/index.cjs
-index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..3acd4211f3ffc35c56f9526f99af9037032bcc79 100644
+index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..3b9b4b1f3b191c4f03519ca3568beaa8819ed3c7 100644
 --- a/dist/index.cjs
 +++ b/dist/index.cjs
 @@ -83,9 +83,9 @@ function resolveTheme(color, mode) {
@@ -375,7 +375,7 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..3acd4211f3ffc35c56f9526f99af9037
          targetVisible.push(c);
        }
      }
-@@ -2349,6 +2386,8 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -2349,13 +2386,15 @@ function useLivelineEngine(canvasRef, containerRef, config) {
    const sizeRef = (0, import_react.useRef)({ w: 0, h: 0 });
    const ctxRef = (0, import_react.useRef)(null);
    const rafRef = (0, import_react.useRef)(0);
@@ -384,6 +384,14 @@ index 4709730f1d6608dee4ffb3a386d1732f776c5f5c..3acd4211f3ffc35c56f9526f99af9037
    const lastFrameRef = (0, import_react.useRef)(0);
    const badgeRef = (0, import_react.useRef)(null);
    const hoverXRef = (0, import_react.useRef)(null);
+   const scrubAmountRef = (0, import_react.useRef)(0);
+   const lastHoverRef = (0, import_react.useRef)(null);
+   const lastHoverEntriesRef = (0, import_react.useRef)([]);
+-  const chartRevealRef = (0, import_react.useRef)(0);
++  const chartRevealRef = (0, import_react.useRef)(1);
+   const pauseProgressRef = (0, import_react.useRef)(0);
+   const timeDebtRef = (0, import_react.useRef)(0);
+   const lastDataRef = (0, import_react.useRef)([]);
 @@ -2425,6 +2464,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
        if (!entry) return;
        const { width, height } = entry.contentRect;
@@ -1185,7 +1193,7 @@ index 414c4e61bac1017c49bbaedbd1691bcd9cdd667c..9db583ddf50883ff085d1ac5c5e6f764
  interface LivelineTransitionProps {
      /** Key of the active child to display. Must match a child's `key` prop. */
 diff --git a/dist/index.js b/dist/index.js
-index fd0506272e9a54432a0882c3a389ee74302e4718..a86176354cea2a327ee75041aa48bde35c996c82 100644
+index fd0506272e9a54432a0882c3a389ee74302e4718..01b256cb25e7f8ce56e7d06be4c61e3a4f6bba7d 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -56,9 +56,9 @@ function resolveTheme(color, mode) {
@@ -1561,7 +1569,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..a86176354cea2a327ee75041aa48bde3
          targetVisible.push(c);
        }
      }
-@@ -2322,6 +2359,8 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -2322,13 +2359,15 @@ function useLivelineEngine(canvasRef, containerRef, config) {
    const sizeRef = useRef({ w: 0, h: 0 });
    const ctxRef = useRef(null);
    const rafRef = useRef(0);
@@ -1570,6 +1578,14 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..a86176354cea2a327ee75041aa48bde3
    const lastFrameRef = useRef(0);
    const badgeRef = useRef(null);
    const hoverXRef = useRef(null);
+   const scrubAmountRef = useRef(0);
+   const lastHoverRef = useRef(null);
+   const lastHoverEntriesRef = useRef([]);
+-  const chartRevealRef = useRef(0);
++  const chartRevealRef = useRef(1);
+   const pauseProgressRef = useRef(0);
+   const timeDebtRef = useRef(0);
+   const lastDataRef = useRef([]);
 @@ -2398,6 +2437,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
        if (!entry) return;
        const { width, height } = entry.contentRect;

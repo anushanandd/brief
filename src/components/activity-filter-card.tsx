@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode, type Ref } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import type { ActivityEvidence } from '../lib/activity'
 import { evidenceKinds, evidenceLabels } from '../lib/activity-ledger'
@@ -57,8 +57,6 @@ export function ActivityFilterCard({
   sections,
   onClear,
   onClose,
-  leaving,
-  ref,
 }: {
   active: number
   owner?: Owner
@@ -93,9 +91,6 @@ export function ActivityFilterCard({
   sections: Record<'categories' | 'accounts' | 'methods' | 'amount', SectionActions>
   onClear: () => void
   onClose: () => void
-  /** Closed: the card slides back out and takes no keys while it goes. */
-  leaving?: boolean
-  ref?: Ref<HTMLDivElement>
 }) {
   const [custom, setCustom] = useState(dateRange === 'custom')
   const [allCategories, setAllCategories] = useState(false)
@@ -110,12 +105,7 @@ export function ActivityFilterCard({
   const moreCategories = categories.length - shownCategories.length
 
   return (
-    <Card
-      ref={ref}
-      className="activity-filter-card"
-      data-leaving={leaving ? '' : undefined}
-      inert={leaving || undefined}
-    >
+    <Card className="activity-filter-card">
       <SectionHeading
         title="Filters"
         action={

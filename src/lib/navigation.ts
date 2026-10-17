@@ -12,6 +12,7 @@ import {
   Palette,
   Percent,
   Receipt,
+  ReceiptText,
   ScrollText,
   Settings,
   ShieldCheck,
@@ -30,6 +31,7 @@ export const primaryNavigation = [
   { to: '/insights', label: 'Insights', icon: Sparkles, shortcut: '⌘6' },
   { to: '/calendar', label: 'Calendar', icon: CalendarDays, shortcut: '⌘7' },
   { to: '/documents', label: 'Documents', icon: FileText, shortcut: '⌘8' },
+  { to: '/taxes', label: 'Taxes', icon: ReceiptText, shortcut: '⌘9' },
 ] as const
 
 // Settings opens as a dialog over the current page rather than a sidebar page.

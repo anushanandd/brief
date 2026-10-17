@@ -92,11 +92,6 @@
     transform: translateX(8px);
   }
 }
-/* Closing, it slides back toward the edge it came from. */
-.activity-filter-card[data-leaving] {
-  opacity: 0;
-  transform: translateX(8px);
-}
 .activity-filter-card > .section-heading {
   margin-bottom: 12px;
   padding: 0 8px;

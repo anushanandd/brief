@@ -1,3 +1,10 @@
+import {
+  createMemoryHistory,
+  createRootRoute,
+  createRouter,
+  RouterProvider,
+} from '@tanstack/react-router'
+import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
@@ -27,13 +34,23 @@ const position: FinanceSnapshot['holdings'][number] = {
   valuationNote: 'USD valuation unavailable',
 }
 
+/** Security links are router links, so tables render inside a router. */
+async function renderWithRouter(view: ReactNode) {
+  const router = createRouter({
+    routeTree: createRootRoute({ component: () => view }),
+    history: createMemoryHistory(),
+  })
+  await router.load()
+  return renderToStaticMarkup(<RouterProvider router={router} />)
+}
+
 it.each(['positions', 'market', 'summary'] as const)(
   'keeps security links, coverage and neutral zero changes in the %s view',
-  (view) => {
-    const html = renderToStaticMarkup(
+  async (view) => {
+    const html = await renderWithRouter(
       <PositionTable positions={[position]} view={view} externalLogosEnabled={false} />,
     )
-    expect(html).toContain('href="https://finance.yahoo.com/quote/TEST/"')
+    expect(html).toContain('href="/holdings/TEST"')
     expect(html).toContain('USD valuation unavailable')
     expect(html).toContain('data-keyboard-row="true"')
     expect(html).toContain('data-keyboard-open="true"')
@@ -43,7 +60,7 @@ it.each(['positions', 'market', 'summary'] as const)(
   },
 )
 
-it('marks public security prices and market changes separately from position values', () => {
+it('marks public security prices and market changes separately from position values', async () => {
   const holding = {
     ...position,
     price: 25,
@@ -51,10 +68,10 @@ it('marks public security prices and market changes separately from position val
     dailyChangePct: 1,
     weeklyChangePct: 2,
   }
-  const market = renderToStaticMarkup(
+  const market = await renderWithRouter(
     <PositionTable positions={[holding]} view="market" externalLogosEnabled={false} />,
   )
-  const positions = renderToStaticMarkup(
+  const positions = await renderWithRouter(
     <PositionTable positions={[holding]} view="positions" externalLogosEnabled={false} />,
   )
   expect(market.match(/class="public-market-value"/g)).toHaveLength(3)
@@ -63,8 +80,8 @@ it('marks public security prices and market changes separately from position val
   expect(positions.match(/class="public-market-value"/g)).toHaveLength(1)
 })
 
-it('keeps unmatched sales visible without inventing profit or a current-year date', () => {
-  const html = renderToStaticMarkup(
+it('keeps unmatched sales visible without inventing profit or a current-year date', async () => {
+  const html = await renderWithRouter(
     <SalesTable
       externalLogosEnabled={false}
       referenceIso="2026-09-03T12:00:00Z"
@@ -90,7 +107,7 @@ it('keeps unmatched sales visible without inventing profit or a current-year dat
   expect(html).toContain('Lot match unavailable')
   expect(html).toContain('2.125')
   expect(html).toContain('$100.00')
-  expect(html).toContain('href="https://finance.yahoo.com/quote/TEST/"')
+  expect(html).toContain('href="/holdings/TEST"')
   expect(html).not.toContain(' positive')
 })
 
