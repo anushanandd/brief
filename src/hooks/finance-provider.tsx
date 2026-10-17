@@ -8,6 +8,7 @@ import { localDateKey } from '../lib/dates'
 import { hasLegacySettings, importLegacyFinanceSettings } from '../lib/finance-settings'
 import { formatUpdatedAt } from '../lib/format'
 import { FinanceContext, financeQueryKey } from './use-finance'
+import { usePrefetchOpeningSpending } from './use-spending-period'
 
 export type RuntimeLogEntry = {
   id: number
@@ -70,6 +71,7 @@ function useBaseFinanceState() {
     enabled: !legacyImport || annotations.isSuccess || annotations.isError,
     staleTime: Number.POSITIVE_INFINITY,
   })
+  usePrefetchOpeningSpending(query.data)
   const insightsDay = query.data?.insights?.today
   const refetchSnapshot = query.refetch
   const tickers = useMemo(

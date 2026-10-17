@@ -102,11 +102,6 @@ describe('refresh process', () => {
     expect(mockedInvoke).toHaveBeenCalledWith('refresh_finance_snapshot', { liveBalances: true })
   })
 
-  it('rejects an invalid native projection', async () => {
-    mockedInvoke.mockResolvedValue({ ...empty, netWorth: 'invalid' })
-    await expect(refreshFinanceSnapshot()).rejects.toThrow()
-  })
-
   it('never exposes an uncommitted snapshot when native refresh fails', async () => {
     mockedInvoke.mockRejectedValue(new Error('Refresh superseded'))
     await expect(refreshFinanceSnapshot()).rejects.toThrow('Refresh superseded')
@@ -175,10 +170,21 @@ describe('native explanation cancellation', () => {
       evidence: [],
       unverified: ['$900'],
     })
-    mockedInvoke.mockResolvedValue({ text: 'No saved data covers 2019.', evidence: [] })
+    // Evidence is kept only as the ledger queries Rust ran: objects in and out.
+    mockedInvoke.mockResolvedValue({
+      text: 'Checked.',
+      outcome: 'answered',
+      evidence: [
+        { name: 'cashFlow', arguments: {}, result: { spending: -812.4 } },
+        { name: 'document', arguments: null, result: 'summary text' },
+      ],
+      unverified: [],
+    })
     await expect(
-      generateFoundationExplanation('What did I spend in 2019?', undefined),
-    ).resolves.toMatchObject({ outcome: 'answered', unverified: [] })
+      generateFoundationExplanation('What did I spend?', undefined),
+    ).resolves.toMatchObject({
+      evidence: [{ name: 'cashFlow', arguments: {}, result: { spending: -812.4 } }],
+    })
   })
   it('never starts a job already cancelled while queued', async () => {
     const controller = new AbortController()

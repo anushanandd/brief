@@ -43,14 +43,10 @@ impl Storage {
         DocumentFiles::open(&self.documents_path()?)
     }
 
+    /// Saves what Brief read from documents; `change::apply` validates each one.
     fn commit_documents(&mut self, documents: Vec<Document>) -> Result<(), String> {
-        for document in &documents {
-            document.validate()?;
-        }
         self.backup_before_edit()?;
-        self.database.replace_documents(&documents)?;
-        self.data.documents = documents;
-        Ok(())
+        self.record(super::change::Change::Documents(documents))
     }
 
     /// Saves new documents and their sealed originals. A document already saved is left as it

@@ -19,15 +19,8 @@ vi.mock('../hooks/use-reports', () => ({
     request: import('../lib/api').ReportRequest,
   ) => ({ data: scenarioReports(data, request), isLoading: false, isError: false }),
 }))
-import seedInsights from '../data/seed-insights.json'
-import seed from '../data/seed.json'
-import {
-  financeSnapshotSchema,
-  investmentSummarySchema,
-  type Insights,
-  type PortfolioToday,
-  type Statement,
-} from '../lib/schema'
+import { seedSnapshot, seedSummary } from '../data/fixtures/records'
+import type { Insights, PortfolioToday, Statement } from '../lib/schema'
 import { HoldingsTable } from './holdings-table'
 import {
   InvestmentsAttention,
@@ -56,7 +49,7 @@ async function render(
 }
 
 function snapshot(overrides: Partial<Insights>) {
-  const data = financeSnapshotSchema.parse(seed)
+  const data = seedSnapshot()
   data.insights = insights({ today: '2026-09-16', ...overrides })
   return data
 }
@@ -203,7 +196,7 @@ it('backs the period with its evidence and what it paid, never inventing either'
       <PeriodCard
         data={{
           ...data,
-          trades: data.trades.map((trade) => ({ ...trade, estimatedRealizedGain: undefined })),
+          trades: data.trades.map((trade) => ({ ...trade, estimatedRealizedGain: null })),
         }}
         span={{ ...yearWindow, moneyWeightedPct: null, benchmarkPct: null }}
         range="year"
@@ -344,7 +337,7 @@ it('lists what’s coming in the next month and nothing when there is none', asy
         data={data}
         earningsConnected={false}
         summary={{
-          ...investmentSummarySchema.parse(seedInsights.summary),
+          ...seedSummary(),
           ahead: [
             {
               date: '2026-09-16',

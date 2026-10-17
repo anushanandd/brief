@@ -13,7 +13,10 @@ fn old_history_corrections_are_removed_during_projection_upgrade() {
     let mut storage = Storage::new(directory.clone()).unwrap();
     storage.data.snapshot.updated_at = "2026-09-10T07:30:00Z".into();
     storage.data.snapshot.calculation_version = Some(22);
-    storage.database.replace(&storage.data).unwrap();
+    storage
+        .database
+        .checkpoint(&storage.data, change::Reason::Start)
+        .unwrap();
     // A key from an older build, which the typed snapshot no longer carries.
     rusqlite::Connection::open(&storage.path)
         .unwrap()
@@ -116,8 +119,9 @@ fn older_calculation_versions_rebuild_from_the_committed_cache() {
         Some(crate::financial_engine::CALCULATION_VERSION)
     );
     let account = &storage.data.snapshot.brokerage_performance[1];
-    assert_eq!(account.points[1].net_deposits, Some(200.0));
-    assert_eq!(account.points[1].sp500, Some(201.9));
+    let today = account.points.last().unwrap();
+    assert_eq!(today.net_deposits, Some(200.0));
+    assert_eq!(today.sp500, Some(202.0));
     drop(storage);
     assert_eq!(
         Storage::new(directory.clone())
@@ -358,7 +362,10 @@ fn explicit_erasure_replaces_finance_state_and_removes_retained_copies() {
     let directory = directory();
     let mut storage = Storage::new(directory.clone()).unwrap();
     storage.data.snapshot.net_worth = 123.0;
-    storage.database.replace(&storage.data).unwrap();
+    storage
+        .database
+        .checkpoint(&storage.data, change::Reason::Start)
+        .unwrap();
     storage.database.backup(&storage.backup_path()).unwrap();
     let retained = storage.path.with_extension("retained-test.sqlite3");
     fs::write(&retained, b"retained financial data").unwrap();
@@ -581,7 +588,10 @@ fn superseded_refresh_and_unknown_versions_are_rejected() {
         .commit_value(&old, storage.data.snapshot.clone())
         .is_err());
     storage.data.schema_version = 2;
-    storage.database.replace(&storage.data).unwrap();
+    storage
+        .database
+        .checkpoint(&storage.data, change::Reason::Start)
+        .unwrap();
     drop(storage);
     let recovery = Storage::new(directory.clone()).unwrap();
     assert!(recovery.recovery.is_some());
@@ -863,5 +873,6 @@ fn portable_backup_round_trips_edits_and_invalid_restore_preserves_state() {
 
 mod annotations;
 mod documents;
+mod replay;
 mod sessions;
 mod statements;

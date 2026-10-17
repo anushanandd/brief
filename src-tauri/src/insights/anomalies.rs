@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use crate::finance_contract::Transaction;
@@ -24,8 +25,9 @@ const HISTORY_DAYS: i64 = 365;
 /// Above the usual amount by at least this much, in cents.
 const UNUSUAL_MINIMUM: i64 = 2_000;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "DuplicateCharge")]
 pub struct PossibleDuplicate {
     pub id: String,
     pub account_id: String,
@@ -37,7 +39,7 @@ pub struct PossibleDuplicate {
     pub transaction_ids: [String; 2],
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct UnusualCharge {
     pub transaction_id: String,
@@ -49,7 +51,7 @@ pub struct UnusualCharge {
     pub observations: usize,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Anomalies {
     pub duplicates: Vec<PossibleDuplicate>,

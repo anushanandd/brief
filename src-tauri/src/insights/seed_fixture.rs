@@ -50,12 +50,12 @@ fn spending_periods(
     periods
 }
 
-/// The browser preview has no native runtime, so it reads insights computed here from
-/// the same synthetic seed. Regenerate with `BRIEF_UPDATE_CONTRACT_FIXTURE=1`.
+/// The browser preview has no native runtime, so it reads the view, Spending periods, and
+/// reports made here from the synthetic seed by the native code. Regenerate with
+/// `BRIEF_UPDATE_CONTRACT_FIXTURE=1`.
 #[test]
 fn browser_seed_insights_match_native_insights() {
     let seed: Value = serde_json::from_str(include_str!("../../../src/data/seed.json")).unwrap();
-    let mut snapshot = seed.clone();
     let spending_account_id = seed["accounts"]
         .as_array()
         .unwrap()
@@ -72,21 +72,33 @@ fn browser_seed_insights_match_native_insights() {
     let now = DateTime::parse_from_rfc3339(seed["updatedAt"].as_str().unwrap())
         .unwrap()
         .to_utc();
-    attach(&mut snapshot, &settings, now, &NamedZone::Utc).unwrap();
+    // The view as the native app would send it, so the preview reads the renderer's own type.
+    let state = crate::storage::FinanceState {
+        snapshot: serde_json::from_value(seed.clone()).unwrap(),
+        settings: settings.clone(),
+        ..crate::storage::empty_state().unwrap()
+    };
+    let (read, view) =
+        crate::storage::derive_view(&state, None, &BTreeMap::new(), now, &NamedZone::Utc).unwrap();
+    // The renderer's `Transaction` type relies on every transaction it reads being classified.
+    assert!(read
+        .snapshot
+        .transactions
+        .iter()
+        .all(|transaction| transaction.classification.is_some()));
     let fixture = json!({
         "spendingAccountId": spending_account_id,
-        "insights": snapshot["insights"],
+        "view": view,
         // The investment summary needs prices the preview doesn't have; this one is made
         // from synthetic closes by the same code (`crate::summary::preview`).
         "summary": crate::summary::preview::summary(),
-        "recurringIds": snapshot["transactions"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|transaction| (transaction["id"].as_str().unwrap().to_owned(), transaction["recurringId"].clone()))
-            .collect::<serde_json::Map<_, _>>(),
     });
-    matches_fixture("seed-insights.json", &fixture, true);
+    matches_fixture("seed-view.json", &fixture, false);
+    // A view of no saved data, which renderer tests start from.
+    let empty = crate::storage::empty_state().unwrap();
+    let (_, view) =
+        crate::storage::derive_view(&empty, None, &BTreeMap::new(), now, &NamedZone::Utc).unwrap();
+    matches_fixture("empty-view.json", &view, false);
     // Periods are read on demand, so the preview loads them on its own; the file stays compact
     // and out of the formatter.
     let periods = Value::Object(spending_periods(&seed, &settings, now));

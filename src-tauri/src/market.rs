@@ -392,7 +392,10 @@ pub(crate) async fn start_market_stream(
     }
 
     // The week of five-minute bars arrives a moment after the first frame, as its own message,
-    // so it never rolls the live prices back to the first frame's.
+    // so it never rolls the live prices back to the first frame's. The renderer shows the
+    // changes once that message completes the lines, so one always comes, without a week
+    // when there is none to add.
+    let no_week = serde_json::json!({ "kind": "history", "chartSeries": {} });
     if let Some(cache) = price_cache(&app) {
         let app = app.clone();
         let updates = updates.clone();
@@ -410,6 +413,7 @@ pub(crate) async fn start_market_stream(
                 return;
             }
             let Ok(bars) = bars else {
+                let _ = updates.send(no_week);
                 return;
             };
             let message = (|| -> Result<Option<Value>, String> {
@@ -448,10 +452,13 @@ pub(crate) async fn start_market_stream(
                     "chartChanges": changes,
                 })))
             })();
-            if let Ok(Some(message)) = message {
-                let _ = updates.send(message);
-            }
+            let _ = updates.send(match message {
+                Ok(Some(message)) => message,
+                _ => no_week,
+            });
         });
+    } else {
+        let _ = updates.send(no_week);
     }
 
     tauri::async_runtime::spawn(async move {
@@ -492,22 +499,27 @@ pub(crate) async fn start_market_stream(
                         let mut held =
                             lines.lock().map_err(|_| "Market chart state unavailable")?;
                         held.upsert(point);
-                        let now = point
-                            .values()
-                            .filter_map(|point| point["time"].as_i64())
-                            .max()
-                            .unwrap_or_else(|| Utc::now().timestamp());
-                        let net_worth = crate::insights::rollup::without_cards(
-                            &projection.accounts,
-                            projection.net_worth,
-                            settings,
-                        );
-                        Some(json(held.changes(
-                            &*storage.read_view()?,
-                            settings,
-                            net_worth,
-                            now,
-                        ))?)
+                        if !tick.latest {
+                            // A past minute of a run joins the lines; the run's last reads them.
+                            None
+                        } else {
+                            let now = point
+                                .values()
+                                .filter_map(|point| point["time"].as_i64())
+                                .max()
+                                .unwrap_or_else(|| Utc::now().timestamp());
+                            let net_worth = crate::insights::rollup::without_cards(
+                                &projection.accounts,
+                                projection.net_worth,
+                                settings,
+                            );
+                            Some(json(held.changes(
+                                &*storage.read_view()?,
+                                settings,
+                                net_worth,
+                                now,
+                            ))?)
+                        }
                     }
                     None => None,
                 };

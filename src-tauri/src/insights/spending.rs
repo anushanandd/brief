@@ -8,6 +8,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use super::calendar::{self, Zone};
 use super::statement::StatementCycle;
@@ -26,7 +27,7 @@ pub const ALL_ACCOUNTS: &str = "all";
 /// The months an account's spending chart shows.
 const RECENT_MONTHS: i64 = 6;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum PeriodKind {
     Statement,
@@ -50,8 +51,9 @@ impl PeriodKind {
 }
 
 /// What a period spent, beside the period before to the same day.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct Spent {
     pub total: f64,
     /// None for all time, which has no period before it.
@@ -63,7 +65,7 @@ pub struct Spent {
     pub daily: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CategorySpent {
     pub name: String,
@@ -78,7 +80,7 @@ pub struct CategorySpent {
 }
 
 /// Where a period's spending is heading at its pace so far.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Projection {
     pub total: f64,
@@ -86,7 +88,7 @@ pub struct Projection {
     pub categories: BTreeMap<String, f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SpendingPeriod {
     pub kind: PeriodKind,
@@ -98,24 +100,29 @@ pub struct SpendingPeriod {
     /// Spending still pending.
     pub pending: f64,
     /// The largest purchase's transaction ID.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub largest: Option<String>,
     /// Categories with spending, largest first; a split part counts under its own category.
     pub categories: Vec<CategorySpent>,
     /// The statement balance at the period's end: the opening plus purchases, less credits and
     /// payments.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub balance: Option<f64>,
     /// Usual spending by this point in the period, by category: the average of up to three
     /// earlier periods cut at the same day, when the saved history covers at least two.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub typical: Option<BTreeMap<String, f64>>,
     /// The current period only, once a week of it has passed with days still left.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub projected: Option<Projection>,
     /// The saved card's statement balance when the period opened: today's balance less this
     /// cycle's activity, or for a closed cycle the autopay that paid the statement before it.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub opening: Option<f64>,
 }
 
@@ -131,7 +138,7 @@ pub struct PeriodRequest {
 }
 
 /// Whose spending a scope counts: yours, purchases made for someone else, or both.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Owner {
     Me,
@@ -139,7 +146,7 @@ pub enum Owner {
     All,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SpendingScope {
     /// An account ID, or `all`.
@@ -152,7 +159,7 @@ pub struct SpendingScope {
 }
 
 /// One calendar month's spending, this month's to date.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MonthSpent {
     /// `YYYY-MM`.

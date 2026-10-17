@@ -4,8 +4,9 @@ use crate::{
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use ts_rs::TS;
 
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Mark {
     Transfer,
@@ -18,8 +19,9 @@ pub enum Mark {
     Cash,
     Initial,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename = "TransactionKind")]
 pub enum Kind {
     Income,
     Dividend,
@@ -34,7 +36,7 @@ pub enum Kind {
     Owed,
     Other,
 }
-#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Classification {
     pub mark: Mark,
@@ -250,7 +252,7 @@ fn classify_by_name(t: &Transaction) -> Classification {
 }
 
 /// Where a transaction's category came from: chosen by hand, by a rule, or the provider's.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum CategorySource {
     Manual,
@@ -259,7 +261,7 @@ pub enum CategorySource {
 
 /// Where a transaction's people came from: chosen by hand (possibly nobody), or matched by a
 /// person's match name.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum PeopleSource {
     Manual,

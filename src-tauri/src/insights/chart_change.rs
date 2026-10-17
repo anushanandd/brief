@@ -7,6 +7,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{DateTime, NaiveDate, NaiveTime};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use super::changes::Window;
@@ -27,7 +28,7 @@ pub const WINDOWS: [(Window, i64); 6] = [
 /// The chart standing for every account, without the spending cards.
 pub const NET_WORTH: &str = "net-worth";
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct RangeChange {
     pub change: f64,
@@ -36,7 +37,7 @@ pub struct RangeChange {
 }
 
 /// One chart's change for each window.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ChartChanges {
     pub series: String,

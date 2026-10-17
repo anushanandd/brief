@@ -8,8 +8,9 @@ use tauri::{AppHandle, Emitter, State};
 
 use crate::{places, AppState};
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "PlacesProgress")]
 struct Progress {
     done: usize,
     total: usize,

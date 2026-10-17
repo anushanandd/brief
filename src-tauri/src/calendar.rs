@@ -7,6 +7,7 @@ use std::sync::Mutex;
 use chrono::{Duration, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Manager};
+use ts_rs::TS;
 
 use crate::insights::agenda::{AgendaItem, AgendaKind};
 use crate::insights::View;
@@ -15,8 +16,9 @@ use crate::AppState;
 
 /// Whether Brief may use Calendar: `notAsked`, `restricted`, `denied`, `allowed` (full
 /// access), `writeOnly` (not enough to keep a calendar), or `unavailable` off macOS.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "CalendarAccess")]
 pub enum Access {
     NotAsked,
     Restricted,
@@ -28,8 +30,9 @@ pub enum Access {
 }
 
 /// A calendar account a calendar can be made in.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "CalendarSource")]
 pub struct Source {
     pub id: String,
     pub title: String,
@@ -37,26 +40,29 @@ pub struct Source {
     pub kind: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct CalendarInfo {
     pub id: String,
     pub title: String,
     pub source: String,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Attendee {
     pub name: String,
     /// The Contacts card this attendee is, when Contacts can be read.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub contact_id: Option<String>,
 }
 
 /// An event as EventKit reports it. All-day events carry dates; others, local instants.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "CalendarEvent")]
 pub struct Event {
     pub id: String,
     pub calendar: String,
@@ -65,12 +71,16 @@ pub struct Event {
     pub end: String,
     pub all_day: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub color: Option<String>,
     #[serde(default, skip_serializing)]
+    #[ts(skip)]
     pub url: Option<String>,
     #[serde(default, skip_serializing)]
+    #[ts(skip)]
     pub notes: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub location: Option<String>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub attendees: Vec<Attendee>,
@@ -142,7 +152,7 @@ fn reference(item: &str) -> String {
 }
 
 /// An event the Brief calendar should hold.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Desired {
     /// The agenda item's reference, which matches it to its event.
@@ -190,7 +200,7 @@ impl Desired {
     }
 }
 
-#[derive(Debug, Default, Serialize, PartialEq)]
+#[derive(Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncPlan {
     pub add: Vec<Desired>,
@@ -198,7 +208,7 @@ pub struct SyncPlan {
     pub remove: Vec<String>,
 }
 
-#[derive(Debug, Serialize, PartialEq)]
+#[derive(Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Update {
     pub id: String,
@@ -677,11 +687,12 @@ async fn read_events(
 }
 
 /// The last sync's outcome, for Settings.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncOutcome {
     pub at: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub error: Option<String>,
 }
 
@@ -813,15 +824,18 @@ pub fn start(app: AppHandle) {
     });
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "CalendarStatus")]
 pub(crate) struct Status {
     access: Access,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     calendar: Option<CalendarInfo>,
     /// Sync is on but its calendar is gone.
     missing: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     last_sync: Option<SyncOutcome>,
 }
 
@@ -940,13 +954,15 @@ pub(crate) async fn calendar_list(
         .collect())
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct ListedCalendar {
     pub id: String,
     pub title: String,
     pub source: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub color: Option<String>,
 }
 

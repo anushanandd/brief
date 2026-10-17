@@ -2,8 +2,14 @@ import { invoke } from '@tauri-apps/api/core'
 import { z } from 'zod'
 
 import { isTauri } from './api'
-import { financeSnapshotSchema } from './schema'
+import type { AnnotationsSaved } from './bindings/AnnotationsSaved'
+import type { FinanceSnapshot } from './schema'
 
+/** What an edit returns, with the view typed as the renderer reads it. */
+type Saved = Omit<AnnotationsSaved, 'snapshot'> & { snapshot: FinanceSnapshot }
+
+// Edits are checked before they leave, and annotations an older build left in browser storage
+// are checked when read; Rust validates edits again.
 const splitSchema = z.object({ category: z.string().min(1).max(100), amount: z.number() })
 const annotationsSchema = z.record(
   z.string(),
@@ -21,12 +27,6 @@ const annotationsSchema = z.record(
   }),
 )
 export type TransactionAnnotations = z.infer<typeof annotationsSchema>
-const annotationResultSchema = z.object({
-  annotations: annotationsSchema,
-  /** The changed transactions' annotations as they were, for undo. */
-  previous: annotationsSchema.default({}),
-  snapshot: financeSnapshotSchema,
-})
 
 export async function saveTransactionCategory(id: string, category: string) {
   return saveTransactionAnnotation(id, { category })
@@ -63,17 +63,13 @@ export type TransactionAnnotationChanges = z.infer<typeof annotationChangesSchem
 /** Puts back annotations a save returned as `previous`, undoing that save. */
 export async function restoreTransactionAnnotations(previous: TransactionAnnotations) {
   if (!isTauri()) throw new Error('Transaction edits require the Brief desktop app')
-  return z
-    .object({ annotations: annotationsSchema, snapshot: financeSnapshotSchema })
-    .parse(await invoke('restore_transaction_annotations', { previous }))
+  return invoke<Saved>('restore_transaction_annotations', { previous })
 }
 
 export async function saveTransactionAnnotations(changes: TransactionAnnotationChanges) {
   const parsed = annotationChangesSchema.parse(changes)
   if (isTauri()) {
-    return annotationResultSchema.parse(
-      await invoke('transaction_annotations', { changes: parsed, importing: false }),
-    )
+    return invoke<Saved>('transaction_annotations', { changes: parsed, importing: false })
   }
   throw new Error('Transaction edits require the Brief desktop app')
 }
@@ -131,9 +127,8 @@ export async function loadTransactionAnnotations(): Promise<{
     // Nothing to import, so no native write: annotations already live in Rust.
     annotations = {}
   } else if (isTauri()) {
-    annotations = annotationResultSchema.parse(
-      await invoke('transaction_annotations', { changes, importing: true }),
-    ).annotations
+    annotations = (await invoke<Saved>('transaction_annotations', { changes, importing: true }))
+      .annotations
   } else {
     annotations = changes
     try {

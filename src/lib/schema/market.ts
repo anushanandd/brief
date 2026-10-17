@@ -1,8 +1,13 @@
-/** Live market data: quotes, the valuation projection they update, price history, and holding chart events. */
+/**
+ * Live market data: quotes, the valuation projection they update, price history, and holding
+ * chart events. Rust assembles these messages as JSON on the stream, so they keep runtime
+ * schemas; the projection inside them is a Rust type, generated (`src/lib/bindings`).
+ */
 import { z } from 'zod'
 
-import { chartChangesSchema, rollupSchema } from './insights'
-import { financeSnapshotSchema, performanceSchema } from './snapshot'
+import type { MarketProjection as Projection } from '../bindings/MarketProjection'
+import type { Rollup } from '../bindings/Rollup'
+import type { ChartChanges } from './insights'
 
 const marketSnapshotSchema = z.object({
   symbol: z.string(),
@@ -16,22 +21,8 @@ const marketSnapshotSchema = z.object({
   asOf: z.string(),
 })
 
-export const marketProjectionSchema = financeSnapshotSchema
-  .pick({
-    revision: true,
-    updatedAt: true,
-    netWorth: true,
-    netWorthIncomplete: true,
-    accounts: true,
-    holdings: true,
-  })
-  .extend({
-    revision: z.number().int().nonnegative(),
-    brokeragePerformance: z.array(performanceSchema.pick({ accountId: true, currentValue: true })),
-    /** Account totals at these live values. */
-    rollup: rollupSchema,
-  })
-export type MarketProjection = z.infer<typeof marketProjectionSchema>
+/** A live projection, with its account totals at these values. */
+export type MarketProjection = Projection & { rollup: Rollup }
 const marketPointSchema = z.object({ time: z.number().int(), value: z.number() })
 
 export const marketSnapshotsSchema = z.object({
@@ -47,9 +38,9 @@ export const marketSnapshotsSchema = z.object({
   historyDelayMinutes: z.number().int().nonnegative(),
   chartSeries: z.record(z.string(), z.array(marketPointSchema)).optional(),
   chartPoint: z.record(z.string(), marketPointSchema).optional(),
-  projection: marketProjectionSchema.optional(),
+  projection: z.custom<MarketProjection>((value) => typeof value === 'object').optional(),
   /** Each value chart's change at these live values. */
-  chartChanges: chartChangesSchema.optional(),
+  chartChanges: z.custom<ChartChanges>((value) => typeof value === 'object').optional(),
 })
 export type MarketSnapshots = z.infer<typeof marketSnapshotsSchema>
 /** The portfolio's intraday week, sent once the stream's bars arrive. */

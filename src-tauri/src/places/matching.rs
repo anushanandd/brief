@@ -238,8 +238,9 @@ pub fn choose(
 }
 
 /// How far matching has got, for Settings.
-#[derive(Clone, Debug, Default, serde::Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, serde::Serialize, PartialEq, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "PlacesStatus")]
 pub struct Status {
     pub in_person: usize,
     pub matched: usize,

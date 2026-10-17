@@ -18,7 +18,7 @@ const REFIT_SESSIONS: usize = 5;
 pub const METHOD: u32 = 2;
 
 /// One session's layers, as saved.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionRecord {
     pub session: NaiveDate,
@@ -35,7 +35,7 @@ pub struct SessionRecord {
     pub quiet: Option<super::eventlog::Quiet>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingSession {
     pub ticker: String,
@@ -55,7 +55,7 @@ pub struct HoldingSession {
     pub fit: Option<FitMeta>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupSession {
     /// The fund's symbol, or the members joined by `+` for a group without one.
@@ -69,8 +69,9 @@ pub struct GroupSession {
 }
 
 /// What the session flagged, to measure how often the thresholds fire.
-#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "SessionCalibration")]
 pub struct Calibration {
     pub modeled: usize,
     pub fund_groups: usize,
@@ -258,7 +259,7 @@ pub fn session_kind(row: &HoldingSession) -> Option<&'static str> {
 }
 
 /// One holding's layers summed over a period's sessions.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingPeriod {
     /// Each layer's daily parts added up, in percent.
@@ -323,7 +324,7 @@ pub(super) fn holding_period(records: &[&SessionRecord], ticker: &str) -> Option
 }
 
 /// The portfolio's layers summed over a period's sessions, in dollars.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodLayers {
     /// Sessions summed, and sessions in the period without a record.
@@ -338,7 +339,7 @@ pub struct PeriodLayers {
     pub unmodeled: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodGroup {
     pub fund: String,
@@ -349,7 +350,7 @@ pub struct PeriodGroup {
     pub flagged: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodOwn {
     pub ticker: String,
@@ -445,8 +446,9 @@ pub(super) fn own_series(
 }
 
 /// How often the thresholds fired across saved sessions, to measure them before tuning them.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "Calibration")]
 pub struct CalibrationSummary {
     pub sessions: usize,
     pub first: Option<NaiveDate>,
@@ -461,7 +463,7 @@ pub struct CalibrationSummary {
     pub quiet: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct FundRate {
     pub fund: String,

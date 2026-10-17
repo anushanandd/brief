@@ -1,11 +1,16 @@
 import { useEffect, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { beginProviderLink, cancelProviderLink, pollProviderLink } from '../lib/api'
+import {
+  beginProviderLink,
+  cancelProviderLink,
+  pollProviderLink,
+  type LinkProvider,
+} from '../lib/api'
 import { errorMessage } from '../lib/errors'
 import type { ProviderLinkSession } from '../lib/schema'
 
-export type LinkProvider = ProviderLinkSession['provider']
+export type { LinkProvider }
 export type LinkPhase = 'browser' | 'checking' | 'refreshing'
 
 export const linkProviderNames: Record<LinkProvider, string> = {

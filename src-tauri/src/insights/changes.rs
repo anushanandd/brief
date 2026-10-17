@@ -6,14 +6,16 @@ use std::collections::BTreeMap;
 
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use crate::finance_contract::Transaction;
 use crate::finance_contract::{Account, Performance};
 use crate::numeric::{from_minor, minor_units};
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
+#[ts(rename = "ChartWindow")]
 pub enum Window {
     Day,
     Week,
@@ -33,14 +35,15 @@ pub const WINDOWS: [(Window, Option<i64>); 6] = [
     (Window::All, None),
 ];
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "PeriodAccountChange")]
 pub struct AccountChange {
     pub account_id: String,
     pub change: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodChange {
     pub window: Window,
@@ -61,7 +64,7 @@ pub struct PeriodChange {
     pub cards: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TypeChange {
     #[serde(rename = "type")]

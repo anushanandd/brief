@@ -1,15 +1,17 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
 import { emptyRollup, insights } from '../data/fixtures/insights'
-import seed from '../data/seed.json'
+import { seedSnapshot } from '../data/fixtures/records'
 import { startMarketStream, stopMarketStream } from './api'
 import {
   applyLiveProjection,
   liveMarketSeries,
   subscribeLiveMarket,
+  withMarketFrame,
   withMarketHistory,
+  withMarketWeek,
 } from './live-market'
-import { financeSnapshotSchema, marketSnapshotsSchema, type MarketProjection } from './schema'
+import { marketSnapshotsSchema, type ChartChanges, type MarketProjection } from './schema'
 
 vi.mock('./api', () => ({
   startMarketStream: vi.fn(),
@@ -29,7 +31,7 @@ afterEach(() => {
 })
 
 it('rejects stale revisions and timestamps and retains immutable history references', () => {
-  const saved = { ...financeSnapshotSchema.parse(seed), revision: 4 }
+  const saved = { ...seedSnapshot(), revision: 4 }
   const projection: MarketProjection = {
     rollup: emptyRollup(),
     ...saved,
@@ -79,7 +81,7 @@ it('retains previous close and five-minute portfolio projections instead of only
 })
 
 it('atomically replaces every current valuation while retaining committed evidence', () => {
-  const saved = { ...financeSnapshotSchema.parse(seed), revision: 4 }
+  const saved = { ...seedSnapshot(), revision: 4 }
   const accounts = saved.accounts.map((account, index) => ({
     ...account,
     value: account.value == null ? null : account.value + index + 10,
@@ -97,6 +99,7 @@ it('atomically replaces every current valuation while retaining committed eviden
     updatedAt: saved.updatedAt,
     netWorth: saved.netWorth + 100,
     netWorthIncomplete: saved.netWorthIncomplete,
+    netWorthProvisional: saved.netWorthProvisional,
     accounts,
     holdings,
     brokeragePerformance: saved.brokeragePerformance.map(({ accountId, currentValue }, index) => ({
@@ -212,7 +215,7 @@ it('keeps the native connection across focus and REST reconciliation cadence', a
 })
 
 it('keeps annotation-aware account income and classified ledger evidence through price ticks', () => {
-  const saved = { ...financeSnapshotSchema.parse(seed), revision: 4 }
+  const saved = { ...seedSnapshot(), revision: 4 }
   saved.accounts[0].investmentIncomeYtd = 12
   const projection: MarketProjection = {
     rollup: emptyRollup(),
@@ -228,6 +231,31 @@ it('keeps annotation-aware account income and classified ledger evidence through
   expect(live.accounts[0].investmentIncomeYtd).toBe(12)
   expect(live.transactions).toBe(saved.transactions)
   expect(live.spending).toBe(saved.spending)
+})
+
+const dayChange = (change: number): ChartChanges => [
+  { series: 'net-worth', windows: { day: { change, percent: change / 100 } } },
+]
+
+it('shows a stream’s changes only once its week completes the lines', () => {
+  const day = dayChange
+  const frame = (change: number) => ({ ...closedMarket(), chartChanges: day(change) })
+  // Frames before the week read a partial line, so nothing is shown from them yet.
+  let state = withMarketFrame({ series: {} }, frame(1), 'TEST', true)
+  state = withMarketFrame(state, frame(2), 'TEST', false)
+  expect(state.changes).toBeUndefined()
+  state = withMarketWeek(state, {}, day(5), 'TEST')
+  expect(state.changes).toEqual(day(5))
+  state = withMarketFrame(state, frame(6), 'TEST', false)
+  expect(state.changes).toEqual(day(6))
+  // A restart keeps what it showed until its own week; a week without changes settles on the
+  // latest frame's.
+  state = withMarketFrame(state, frame(3), 'TEST', true)
+  expect(state.changes).toEqual(day(6))
+  state = withMarketWeek(state, {}, undefined, 'TEST')
+  expect(state.changes).toEqual(day(3))
+  // Another set of symbols' week is ignored.
+  expect(withMarketWeek(state, {}, day(9), 'OTHER')).toBe(state)
 })
 
 it('replaces the frame with the intraday week and keeps ticks that arrived after it', () => {

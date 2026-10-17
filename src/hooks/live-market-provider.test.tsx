@@ -2,16 +2,16 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { renderToString } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 
-import empty from '../data/empty.json'
 import { emptyRollup } from '../data/fixtures/insights'
-import { financeSnapshotSchema, type MarketSnapshots } from '../lib/schema'
+import { emptySnapshot } from '../data/fixtures/records'
+import type { MarketSnapshots } from '../lib/schema'
 import { LiveMarketProvider } from './live-market-provider'
 import { useLiveFinance } from './use-live-finance'
 
 vi.mock('../lib/api', () => ({ isTauri: () => true, getSavedMarket: vi.fn() }))
 vi.mock('./use-finance', () => ({
   useFinance: () => ({
-    data: { ...financeSnapshotSchema.parse(empty), revision: 4 },
+    data: { ...emptySnapshot(), revision: 4 },
     marketSymbols: ['TEST'],
     liveMarketEnabled: true,
     isLoading: false,
@@ -37,7 +37,7 @@ function Values() {
 }
 
 function renderSaved(revision: number) {
-  const base = { ...financeSnapshotSchema.parse(empty), revision: 4 }
+  const base = { ...emptySnapshot(), revision: 4 }
   const market: MarketSnapshots = {
     cached: true,
     snapshots: {},

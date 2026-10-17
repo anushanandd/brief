@@ -9,7 +9,7 @@ const MAX_SAVED_FILINGS: usize = 40;
 const MAX_INSIDER_FILINGS: usize = 24;
 
 /// A company as EDGAR knows it, with its recent current reports.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SecCompany {
     pub cik: u64,
@@ -21,7 +21,7 @@ pub struct SecCompany {
     pub insider_filings: Vec<super::insiders::InsiderFiling>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SecFiling {
     pub form: String,
@@ -51,7 +51,7 @@ pub(crate) fn filing_title(filing: &SecFiling) -> String {
     }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SecItem {
     pub code: String,

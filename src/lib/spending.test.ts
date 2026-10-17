@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
 import { benefitWindow } from '../data/fixtures/insights'
+import {
+  account as accountRecord,
+  transaction as transactionRecord,
+} from '../data/fixtures/records'
 import type {
   Account,
   BenefitWindow,
@@ -29,17 +33,18 @@ import {
   transactionDateKey,
 } from './spending'
 
-const transaction = (overrides: Partial<Transaction>): Transaction => ({
-  id: 'transaction',
-  merchant: 'Merchant',
-  category: 'Shopping',
-  date: '2026-09-01',
-  amount: -10,
-  account: 'Platinum Card',
-  classification: classification('expense'),
-  pending: false,
-  ...overrides,
-})
+const transaction = (overrides: Partial<Transaction>): Transaction =>
+  transactionRecord({
+    id: 'transaction',
+    merchant: 'Merchant',
+    category: 'Shopping',
+    date: '2026-09-01',
+    amount: -10,
+    account: 'Platinum Card',
+    classification: classification('expense'),
+    pending: false,
+    ...overrides,
+  })
 
 /** A period as Rust sums and judges it; only the fields a test names matter. */
 const rustPeriod = (overrides: Partial<SpendingPeriodJudgment>): SpendingPeriodJudgment => ({
@@ -222,7 +227,7 @@ describe('spending periods', () => {
 
   it("heads Money with the statement balance, or the period's spending and its change", () => {
     const accounts: Account[] = [
-      { id: 'card', name: 'Card', institution: 'Bank', type: 'credit', value: -50 },
+      accountRecord({ id: 'card', name: 'Card', institution: 'Bank', type: 'credit', value: -50 }),
     ]
     const insights = {
       spending: [
@@ -260,9 +265,15 @@ describe('spending periods', () => {
 
   it('uses only the explicitly selected credit account', () => {
     const accounts: Account[] = [
-      { id: 'cash', name: 'Checking', institution: 'Bank', type: 'cash', value: 100 },
-      { id: 'card-1', name: 'One', institution: 'Bank', type: 'credit', value: -10 },
-      { id: 'card-2', name: 'Two', institution: 'Bank', type: 'credit', value: -20 },
+      accountRecord({
+        id: 'cash',
+        name: 'Checking',
+        institution: 'Bank',
+        type: 'cash',
+        value: 100,
+      }),
+      accountRecord({ id: 'card-1', name: 'One', institution: 'Bank', type: 'credit', value: -10 }),
+      accountRecord({ id: 'card-2', name: 'Two', institution: 'Bank', type: 'credit', value: -20 }),
     ]
 
     expect(resolveSpendingAccount(accounts, 'card-2')?.id).toBe('card-2')
@@ -318,26 +329,21 @@ describe('benefits to use first', () => {
   })
 })
 
-const account = (id: string, type: string, currency = 'USD') => ({
-  id,
-  name: id,
-  institution: 'Bank',
-  type,
-  value: 0,
-  currency,
-})
+const account = (id: string, type: string, currency = 'USD') =>
+  accountRecord({ id, name: id, institution: 'Bank', type, value: 0, currency })
 
-const purchase = (id: string, accountId: string, kind: 'expense' | 'transfer' = 'expense') => ({
-  id,
-  account: accountId,
-  accountId,
-  merchant: 'Example',
-  category: 'Shopping',
-  amount: -10,
-  classification: classification(kind),
-  pending: false,
-  date: '2026-09-10',
-})
+const purchase = (id: string, accountId: string, kind: 'expense' | 'transfer' = 'expense') =>
+  transactionRecord({
+    id,
+    account: accountId,
+    accountId,
+    merchant: 'Example',
+    category: 'Shopping',
+    amount: -10,
+    classification: classification(kind),
+    pending: false,
+    date: '2026-09-10',
+  })
 
 it('scopes spending to the saved card by default, one chosen account, or every USD account', () => {
   const accounts = [

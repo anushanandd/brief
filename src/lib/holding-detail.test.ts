@@ -1,10 +1,10 @@
 import { expect, it } from 'vitest'
 
 import { emptyRollup, insights } from '../data/fixtures/insights'
+import { holding } from '../data/fixtures/records'
 import { holdingDetail } from './holding-detail'
-import type { FinanceSnapshot } from './schema'
 
-const position: FinanceSnapshot['holdings'][number] = {
+const position = holding({
   ticker: 'TEST',
   name: 'Synthetic',
   accountId: 'one',
@@ -14,11 +14,9 @@ const position: FinanceSnapshot['holdings'][number] = {
   costBasis: 80,
   dailyChangePct: 2,
   weeklyChangePct: 3,
-  weeklyReferencePrice: null,
-  weeklyReferenceDate: null,
   totalChangePct: 25,
   color: '#fff',
-}
+})
 
 const total = {
   ticker: 'TEST',

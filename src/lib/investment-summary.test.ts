@@ -2,11 +2,13 @@ import { expect, it } from 'vitest'
 
 import { insights } from '../data/fixtures/insights'
 import nativeSummary from '../data/fixtures/native-summary.json'
-import seed from '../data/seed.json'
+import { seedSnapshot } from '../data/fixtures/records'
 import { summaryStart } from './investment-summary'
-import { financeSnapshotSchema, investmentSummarySchema } from './schema'
+import { fromRust } from './rust-json'
+import type { InvestmentSummary } from './schema'
 
-const summary = investmentSummarySchema.parse(nativeSummary)
+// Rust's own serialization of a summary, checked from the Rust side.
+const summary = fromRust<InvestmentSummary>(nativeSummary)
 
 it('carries Rust’s brief whole, line by line, with its headlines as published', () => {
   const brief = summary.brief!
@@ -23,7 +25,7 @@ it('carries Rust’s brief whole, line by line, with its headlines as published'
 })
 
 it('starts a summary where the portfolio’s reconciled period does, or the day before the range', () => {
-  const data = financeSnapshotSchema.parse(seed)
+  const data = seedSnapshot()
   const month = {
     window: 'month' as const,
     start: '2026-09-06',

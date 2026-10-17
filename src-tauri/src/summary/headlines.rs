@@ -90,7 +90,7 @@ fn fits(headline: &str, change_pct: f64) -> Option<u8> {
 }
 
 /// A headline shown beside the day's figures, as published.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Headline {
     /// The holdings it names among the day's movers, or none for the market's.

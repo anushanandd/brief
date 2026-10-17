@@ -1,18 +1,16 @@
-import type {
-  BriefDocument,
-  FinanceSnapshot,
-  FinanceSettings,
-  Insights,
-  Reports,
-  Transaction,
-} from '../lib/schema'
+import type { Holding } from '../lib/bindings/Holding'
+import type { BriefDocument, FinanceSettings, Insights, Reports, Transaction } from '../lib/schema'
 
 const initial = () => ({
   recovery: undefined as { message: string; canRestore: boolean } | undefined,
   annotationWarning: undefined as string | undefined,
-  holdings: [] as FinanceSnapshot['holdings'],
+  /** Holdings by the fields a test names; the harness fills the rest as Rust would. */
+  holdings: [] as Array<Pick<Holding, 'ticker' | 'accountId'> & Partial<Holding>>,
   trades: [] as Array<Record<string, unknown>>,
-  extraTransactions: [] as Transaction[],
+  /** Transactions by the fields a test names; the harness fills the rest as Rust would. */
+  extraTransactions: [] as Array<
+    Pick<Transaction, 'id' | 'date' | 'amount'> & Partial<Transaction>
+  >,
   incomplete: false,
   providerError: false,
   singleHistory: false,

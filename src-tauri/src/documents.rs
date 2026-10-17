@@ -4,6 +4,7 @@
 //! where columns matter or there is no text. Every figure is read, never inferred; the user
 //! confirms or corrects it, and a confirmed value is never overwritten by a later reading.
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 pub mod crypto;
 pub mod files;
@@ -20,8 +21,9 @@ pub const READER_VERSION: u32 = 4;
 /// Imports refuse anything larger; a phone photo of a form is a few megabytes.
 pub const MAX_DOCUMENT_BYTES: usize = 40 * 1024 * 1024;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, TS, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "DocumentKind")]
 pub enum Kind {
     Payslip,
     /// A W-2, 1099, 5498, 3922, or another information return; `form` says which.
@@ -36,7 +38,7 @@ pub enum Kind {
 }
 
 /// One figure a document states, as read and as the user confirmed or corrected it.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Field {
     /// Stable within a form: `box1`, `box12:D`, `gross`, `pretax401k`.
@@ -44,12 +46,15 @@ pub struct Field {
     pub label: String,
     /// The period's amount, or the box's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub amount: Option<f64>,
     /// A pay statement's year-to-date amount.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub ytd: Option<f64>,
     /// A code, date, or name rather than an amount.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub text: Option<String>,
     /// The reading disagreed with itself (copies of a form, or recognition below certainty).
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
@@ -60,24 +65,25 @@ pub struct Field {
 }
 
 /// Money a pay statement says it deposited, and where.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PayDeposit {
     /// The account number's last characters as printed, such as `8549`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub mask: Option<String>,
     pub amount: f64,
 }
 
 /// A self-check the reading passed or failed, such as gross less deductions equalling net.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Check {
     pub label: String,
     pub passed: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Document {
     /// SHA-256 of the original bytes, so a file imported twice is one document.
@@ -89,51 +95,64 @@ pub struct Document {
     pub kind: Kind,
     /// The form's name, such as `W-2` or `1099-NEC`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub form: Option<String>,
     /// A corrected form (W-2c, or a 1099 marked CORRECTED) replaces the original's figures.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub corrected: bool,
     /// The employer, payer, or institution.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub issuer: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub tax_year: Option<i32>,
     /// A pay statement's check date, or a statement's last day.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub date: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub period_start: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub period_end: Option<String>,
     /// The account it belongs to: a statement's, or the one a statement's mask names.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub account_id: Option<String>,
     /// The account number's last characters as the document prints them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub mask: Option<String>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub fields: Vec<Field>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub deposits: Vec<PayDeposit>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    #[serde(default)]
     pub checks: Vec<Check>,
     /// The statement history Brief read from it, kept as an import the user adds by hand.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub statement_rows: Option<usize>,
     /// A PDF statement's rows as CSV, for the statement importer. An export is its own CSV.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub statement_csv: Option<String>,
     /// The imported statement file made from this document, once the user added it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub statement_file_id: Option<String>,
     /// The user looked over every figure.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub reviewed: bool,
     /// Whose document it is when it isn't the user's, by person id.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub person: Option<String>,
     /// Why nothing could be read, such as a password-protected PDF.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub unreadable: Option<String>,
     /// The `READER_VERSION` that read it; zero for documents read before versions.
     #[serde(default)]
@@ -141,6 +160,7 @@ pub struct Document {
     /// A few sentences on what it is, written on this Mac by Apple Intelligence from the
     /// document's text. Kept only when every figure it states is printed in the document.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub summary: Option<String>,
 }
 

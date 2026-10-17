@@ -43,6 +43,7 @@ use std::collections::BTreeMap;
 
 use chrono::{DateTime, Datelike, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::finance_contract::{Account, Snapshot, Transaction};
 use crate::numeric::{from_minor, minor_units};
@@ -97,14 +98,15 @@ pub struct AccountView {
     pub balance_fetched_at: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CardBenefits {
     pub account_id: String,
     /// The card product whose rule data produced these results.
     pub product: String,
     pub product_name: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub fee: Option<benefits::FeeRecovery>,
     pub activity: Vec<BenefitActivity>,
     /// Current windows as of now, including hidden benefits; the renderer filters them.
@@ -120,18 +122,20 @@ pub struct CardBenefits {
     pub review: Vec<BenefitReview>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Insights {
     pub today: NaiveDate,
     pub computed_at: String,
     pub expected: Vec<forecast::ExpectedEvent>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub statement: Option<statement::StatementCycle>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub benefits: Option<CardBenefits>,
     /// Benefits for other credit cards the user assigned a product to.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub other_card_benefits: Vec<CardBenefits>,
     /// Card products with rule data, for assigning one to a card.
     pub benefit_products: Vec<BenefitOption>,
@@ -156,7 +160,8 @@ pub struct Insights {
     pub recurring_check: recurring::RecurringCheck,
     /// Spending's scopes and their periods.
     pub spending: Vec<spending::SpendingScope>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub accounts_total: Option<totals::AccountsTotal>,
     /// Account totals from saved values; each market projection carries its own from live ones.
     pub rollup: rollup::Rollup,
@@ -173,9 +178,11 @@ pub struct Insights {
     /// returns beside the benchmark, the waterfall, and risk.
     pub periods: Vec<reconcile::Statement>,
     /// How concentrated the combined brokerages' holdings are now.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub exposure: Option<reconcile::Exposure>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub allocation: Option<allocation::Allocation>,
     /// Every security held, merged across accounts, for the holdings list.
     pub securities: Vec<allocation::SecurityHolding>,
@@ -199,7 +206,8 @@ pub struct Insights {
     pub taxes: tax::Taxes,
     /// Dividend pace, yield, and announced payments for the securities held.
     pub dividends: dividends::DividendOutlook,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub movers: Option<lots::Movers>,
     /// Dated items, for the Calendar page and the Brief calendar.
     pub agenda: Vec<agenda::AgendaItem>,

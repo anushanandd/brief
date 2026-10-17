@@ -16,6 +16,7 @@ use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::Sha256;
 use tokio_tungstenite::{connect_async, tungstenite::Message};
+use ts_rs::TS;
 use uuid::Uuid;
 
 pub mod alpaca;
@@ -68,6 +69,8 @@ const PLAID_ITEM_CONCURRENCY: usize = 4;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
 pub struct IntegrationStatus {
     pub plaid: bool,
     pub snaptrade: bool,
@@ -78,6 +81,7 @@ pub struct IntegrationStatus {
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct MarketSnapshot {
     pub symbol: String,
     pub price: f64,
@@ -92,6 +96,8 @@ pub struct MarketSnapshot {
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
 pub struct MarketSnapshots {
     pub snapshots: BTreeMap<String, MarketSnapshot>,
     pub session: String,
@@ -115,10 +121,15 @@ pub struct MarketStreamTick {
     pub market: MarketSnapshots,
     pub chart_as_of: Option<String>,
     pub chart_snapshots: Option<BTreeMap<String, MarketSnapshot>>,
+    /// False for each but the last of a run of past minutes sent together (the session's
+    /// backfill, or coalesced points): their changes would read the chart as of a minute
+    /// already gone, so only the last carries them.
+    pub latest: bool,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct MarketNewsArticle {
     pub headline: String,
     pub summary: String,
@@ -139,6 +150,7 @@ pub struct MarketNewsArticle {
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum NewsScope {
     /// About the requested company.
     #[default]
@@ -149,6 +161,7 @@ pub enum NewsScope {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum NewsTag {
     Earnings,
     Guidance,
@@ -163,6 +176,8 @@ pub enum NewsTag {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
 pub struct EarningsEvent {
     pub symbol: String,
     pub name: String,
@@ -174,27 +189,42 @@ pub struct EarningsEvent {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
 pub struct LinkSession {
     pub provider: String,
     pub session_id: String,
     pub url: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
+#[ts(export)]
 pub struct LinkStatus {
     pub status: String,
 }
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
+#[ts(export)]
 pub struct ProviderConnection {
     item_id: String,
     name: String,
-    provider: String,
+    provider: ConnectionProvider,
     error: Option<String>,
     /// For a Plaid bank connection, whether its statements were added.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     statements: Option<bool>,
+}
+
+/// Which provider holds a connection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
+#[serde(rename_all = "kebab-case")]
+pub enum ConnectionProvider {
+    Plaid,
+    PlaidInvestments,
+    Snaptrade,
 }
 
 impl From<&SnapTradeConnection> for ProviderConnection {
@@ -202,7 +232,7 @@ impl From<&SnapTradeConnection> for ProviderConnection {
         Self {
             item_id: connection.id.clone(),
             name: connection.name.clone(),
-            provider: "snaptrade".into(),
+            provider: ConnectionProvider::Snaptrade,
             error: connection.disabled.then(|| "Needs repair".into()),
             statements: None,
         }
@@ -219,7 +249,6 @@ pub struct PlaidRefreshProgress {
 
 #[derive(Clone, Debug)]
 pub struct ProviderSync {
-    pub sync_id: String,
     pub balances_fresh: bool,
     pub refreshed_account_ids: Vec<String>,
     pub previous_snapshot: crate::finance_contract::Snapshot,
@@ -500,19 +529,6 @@ struct PlaidItemCache {
 }
 
 impl PlaidCache {
-    /// Every saved Plaid transaction, as Plaid last reported it.
-    pub(crate) fn transactions(&self) -> impl Iterator<Item = &Value> {
-        self.items.values().flat_map(|item| &item.transactions)
-    }
-
-    /// Every saved Plaid account, as Plaid last reported it.
-    pub(crate) fn accounts(&self) -> impl Iterator<Item = &Value> {
-        self.items
-            .values()
-            .filter_map(|item| item.data.as_ref())
-            .flat_map(|data| data.accounts.iter().chain(&data.investment_accounts))
-    }
-
     pub(crate) fn clear_legacy_diagnostics(&mut self) {
         for item in self.items.values_mut() {
             item.error = None;

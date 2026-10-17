@@ -3,6 +3,7 @@
 //! accounts, and the totals without the cards. Computed from saved values for the snapshot and
 //! from live values for each market projection, so the renderer adds nothing up.
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::finance_contract::{Account, Holding};
 use crate::numeric::{from_minor, minor_units, round2};
@@ -11,7 +12,7 @@ use crate::settings::FinanceSettings;
 /// The account that stands for every account.
 const COMBINED: &str = "all";
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Rollup {
     /// Every account but the combined one, by type, largest first.
@@ -19,7 +20,8 @@ pub struct Rollup {
     /// The accounts the totals count, leaving out the spending cards, by type.
     pub listed: Vec<GroupValue>,
     /// The spending cards' total, when there are any.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub cards: Option<GroupValue>,
     /// What accounts with a positive balance hold, by type, with each type's share.
     pub shares: Vec<Share>,
@@ -38,7 +40,7 @@ pub struct Rollup {
 }
 
 /// One security's position across accounts. A sum is none while any account's part is unknown.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingTotal {
     pub ticker: String,
@@ -60,7 +62,7 @@ pub struct HoldingTotal {
     pub accounts: Vec<HoldingPart>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingPart {
     pub account_id: String,
@@ -161,7 +163,7 @@ fn holding_totals(holdings: &[Holding]) -> Vec<HoldingTotal> {
         .collect()
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupValue {
     #[serde(rename = "type")]
@@ -171,7 +173,7 @@ pub struct GroupValue {
     pub value: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Share {
     #[serde(rename = "type")]
@@ -180,7 +182,7 @@ pub struct Share {
     pub percent: f64,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Sheet {
     pub assets: f64,

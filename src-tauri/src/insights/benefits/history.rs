@@ -7,7 +7,7 @@ use super::windows::benefit_window;
 use super::*;
 
 /// What became of one period, or what it is now.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PeriodState {
     /// Closed and settled with nothing usable left.
@@ -31,7 +31,7 @@ pub enum PeriodState {
     NotTracked,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BenefitPeriod {
     pub start: NaiveDate,
@@ -44,23 +44,25 @@ pub struct BenefitPeriod {
     pub credited: f64,
     pub state: PeriodState,
     /// A settled period's usable allowance left unused, a range when credits can't be placed.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub unused: Option<AmountRange>,
     /// What an open period still has, from zero when the history starts inside it.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub left: Option<AmountRange>,
     /// The credits, reversals, and purchases behind it.
     pub activity_ids: Vec<String>,
     /// Credits still to come in an open or future period: posted purchases waiting for theirs,
     /// then the charges the forecast expects, each capped by what the period has left.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub planned: Vec<PlannedCredit>,
     /// The planned credits summed.
     pub planned_total: f64,
 }
 
 /// A year of benefit periods summed. A benefit whose use doesn't reach the card adds nothing.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BenefitYear {
     pub year: i32,
@@ -99,7 +101,7 @@ pub fn year_totals<'a>(
 
 /// A year of the card's shown benefits, and the part of what it captured that landed on
 /// purchases made for someone else.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CardBenefitYear {
     #[serde(flatten)]
@@ -181,7 +183,7 @@ pub struct PlannedCharge {
     pub title: String,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlannedSource {
     /// A posted qualifying purchase whose credit hasn't posted yet.
@@ -190,7 +192,7 @@ pub enum PlannedSource {
     Recurring,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PlannedCredit {
     pub title: String,
@@ -199,11 +201,12 @@ pub struct PlannedCredit {
     pub amount: f64,
     pub source: PlannedSource,
     /// The posted purchase, for a credit it is waiting for.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub transaction_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BenefitHistory {
     pub id: String,
@@ -218,7 +221,7 @@ pub struct BenefitHistory {
     pub years: Vec<BenefitYear>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum ReviewKind {
     /// A positive amount from a benefit's merchant without the issuer's credit wording: a
@@ -232,18 +235,21 @@ pub enum ReviewKind {
     NotEligible,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BenefitReview {
     pub kind: ReviewKind,
     pub transaction_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub benefit_id: Option<String>,
     /// The first day of the period it belongs to.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub period_start: Option<NaiveDate>,
     /// For a credit without a purchase: the card charge that most likely earned it.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub suggestion_id: Option<String>,
 }
 

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { emptyRollup, insights } from '../data/fixtures/insights'
+import { account as record, performance } from '../data/fixtures/records'
 import {
   accountValueChart,
   accountValueIncomplete,
@@ -8,31 +9,35 @@ import {
   dashboardAccountViews,
   withoutSpendingCard,
 } from './dashboard-account-views'
-import type { FinanceSnapshot } from './schema'
 
-type BrokeragePerformance = FinanceSnapshot['brokeragePerformance'][number]
+/** A history point as Rust sends one with no deposits, benchmark, or market change. */
+const point = (date: string, value: number) => ({
+  date,
+  value,
+  netDeposits: null,
+  sp500: null,
+  marketChange: null,
+  marketChangePct: null,
+})
 
 it('matches account selector changes to the selected chart range and available history', () => {
-  const account = { id: 'cash', name: 'Cash', institution: 'Example', type: 'cash', value: 120 }
+  const account = record({ id: 'cash', name: 'Cash', institution: 'Example', value: 120 })
   const now = Date.parse('2026-09-08T12:00:00Z') / 1000
-  const history = [
-    { date: '2026-08-09', value: 150, netDeposits: null, sp500: null },
-    { date: '2026-09-01', value: 100, netDeposits: null, sp500: null },
-    { date: '2026-09-08', value: 120, netDeposits: null, sp500: null },
-  ]
+  const history = [point('2026-08-09', 150), point('2026-09-01', 100), point('2026-09-08', 120)]
   const data = {
     accounts: [account],
     updatedAt: '2026-09-08T12:00:00Z',
+    netWorthIncomplete: false,
     netWorthHistory: history,
     brokeragePerformance: [],
     accountBalanceHistory: [
-      {
+      performance({
         accountId: 'cash',
         name: 'Cash',
         institution: 'Example',
         currentValue: 120,
         points: history,
-      },
+      }),
     ],
   }
   // Rust read each chart's change from the line it draws; the combined account is net worth.
@@ -77,16 +82,17 @@ it('matches account selector changes to the selected chart range and available h
 
 it('keeps a provisional combined balance out of the chart', () => {
   const now = Date.parse('2026-09-24T12:00:00Z') / 1000
-  const account = {
+  const account = record({
     id: 'all',
     name: 'All accounts',
     institution: 'Brief',
     type: 'combined',
     value: 9300,
-  }
+  })
   const chart = accountValueChart(
     {
       accounts: [account],
+      netWorthIncomplete: false,
       netWorthProvisional: true,
       updatedAt: '2026-09-24T12:00:00Z',
       netWorthHistory: [
@@ -105,13 +111,8 @@ it('keeps a provisional combined balance out of the chart', () => {
   expect(chart.chartData.at(-1)?.value).toBe(300)
 })
 
-const view = (accountId: string, name = accountId): BrokeragePerformance => ({
-  accountId,
-  name,
-  institution: 'Broker',
-  currentValue: 100,
-  points: [],
-})
+const view = (accountId: string, name = accountId) =>
+  performance({ accountId, name, institution: 'Broker', currentValue: 100 })
 
 describe('dashboard account views', () => {
   it('shows all six account graphs in the requested order', () => {
@@ -120,14 +121,20 @@ describe('dashboard account views', () => {
       netWorth: 500,
       netWorthHistory: [{ date: '2026-09-03', value: 500 }],
       accounts: [
-        { id: 'all', name: 'All accounts', institution: 'Brief', type: 'combined', value: 500 },
-        {
+        record({
+          id: 'all',
+          name: 'All accounts',
+          institution: 'Brief',
+          type: 'combined',
+          value: 500,
+        }),
+        record({
           id: 'plaid:stock-plan',
           name: 'Stock Plan',
           institution: 'E*TRADE',
           type: 'brokerage',
           value: 25,
-        },
+        }),
       ],
       brokeragePerformance: [
         view('total'),
@@ -160,13 +167,13 @@ describe('dashboard account views', () => {
 })
 
 it('uses complete USD coverage consistently for aggregate and individual values', () => {
-  const complete = {
+  const complete = record({
     id: 'complete',
     name: 'Complete',
     institution: 'Synthetic',
     type: 'brokerage',
     value: 100,
-  }
+  })
   const missing = { ...complete, id: 'missing', value: null }
   const data = { accounts: [complete, missing], netWorthIncomplete: true }
   expect(accountValueIncomplete(data, 'all')).toBe(true)
@@ -177,13 +184,13 @@ it('uses complete USD coverage consistently for aggregate and individual values'
 })
 
 it('requires two distinct supported history dates after the chosen start date', () => {
-  const point = { date: '2026-09-01', value: 100 }
+  const start = { date: '2026-09-01', value: 100 }
   expect(hasValueHistory([])).toBe(false)
-  expect(hasValueHistory([point])).toBe(false)
-  expect(hasValueHistory([point, point])).toBe(false)
-  expect(hasValueHistory([point, { date: '2026-99-99', value: 110 }])).toBe(false)
-  expect(hasValueHistory([point, { date: '2026-09-02', value: Number.NaN }])).toBe(false)
-  const points = [point, { date: '2026-09-02', value: 110 }]
+  expect(hasValueHistory([start])).toBe(false)
+  expect(hasValueHistory([start, start])).toBe(false)
+  expect(hasValueHistory([start, { date: '2026-99-99', value: 110 }])).toBe(false)
+  expect(hasValueHistory([start, { date: '2026-09-02', value: Number.NaN }])).toBe(false)
+  const points = [start, { date: '2026-09-02', value: 110 }]
   expect(hasValueHistory(points)).toBe(true)
   expect(hasValueHistory(points, '2026-09-02')).toBe(false)
 })
@@ -191,8 +198,14 @@ it('requires two distinct supported history dates after the chosen start date', 
 it('leaves the spending card out of the All accounts total and history, as Rust totaled them', () => {
   const data = {
     accounts: [
-      { id: 'all', name: 'All accounts', institution: 'Brief', type: 'combined', value: 900.1 },
-      { id: 'card', name: 'Card', institution: 'Example', type: 'credit', value: -300.2 },
+      record({
+        id: 'all',
+        name: 'All accounts',
+        institution: 'Brief',
+        type: 'combined',
+        value: 900.1,
+      }),
+      record({ id: 'card', name: 'Card', institution: 'Example', type: 'credit', value: -300.2 }),
     ],
     netWorthHistory: [{ date: '2026-09-01', value: 800 }],
     insights: insights({

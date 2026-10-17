@@ -546,16 +546,21 @@ pub(super) fn publish_market_backfill<F>(
 where
     F: FnMut(MarketStreamTick) -> Result<(), String>,
 {
+    let mut changed = Vec::new();
     for frame in backfill {
-        let changed = chart.frames.get(&frame.as_of) != Some(&frame.snapshots);
-        chart.frames.insert(frame.as_of.clone(), frame.snapshots);
-        if changed {
-            publish(MarketStreamTick {
-                market: market.clone(),
-                chart_snapshots: Some(chart.at(&frame.as_of)),
-                chart_as_of: Some(frame.as_of),
-            })?;
+        if chart.frames.get(&frame.as_of) != Some(&frame.snapshots) {
+            changed.push(frame.as_of.clone());
         }
+        chart.frames.insert(frame.as_of, frame.snapshots);
+    }
+    let last = changed.len().saturating_sub(1);
+    for (index, as_of) in changed.into_iter().enumerate() {
+        publish(MarketStreamTick {
+            market: market.clone(),
+            chart_snapshots: Some(chart.at(&as_of)),
+            chart_as_of: Some(as_of),
+            latest: index == last,
+        })?;
     }
     Ok(())
 }
@@ -578,13 +583,17 @@ where
             market: market.clone(),
             chart_as_of: None,
             chart_snapshots: None,
+            latest: true,
         })?;
     } else {
-        for as_of in std::mem::take(chart_times) {
+        let times = std::mem::take(chart_times);
+        let last = times.len().saturating_sub(1);
+        for (index, as_of) in times.into_iter().enumerate() {
             publish(MarketStreamTick {
                 market: market.clone(),
                 chart_snapshots: Some(chart.at(&as_of)),
                 chart_as_of: Some(as_of),
+                latest: index == last,
             })?;
         }
     }

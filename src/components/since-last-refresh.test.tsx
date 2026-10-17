@@ -1,6 +1,7 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
+import { account, emptySnapshot } from '../data/fixtures/records'
 import type { FinanceSnapshot, TransactionChange } from '../lib/schema'
 import { hasRefreshChanges, SinceLastRefresh } from './since-last-refresh'
 
@@ -23,24 +24,18 @@ const change = (
 })
 
 const snapshot = (lastChange?: FinanceSnapshot['lastChange']): FinanceSnapshot => ({
+  ...emptySnapshot(),
   updatedAt: '2026-10-11T15:00:00Z',
   netWorth: 0,
   accounts: [
-    { id: 'plaid:card', name: 'Synthetic Card', institution: 'Bank', type: 'credit', value: -49 },
+    account({
+      id: 'plaid:card',
+      name: 'Synthetic Card',
+      institution: 'Bank',
+      type: 'credit',
+      value: -49,
+    }),
   ],
-  holdings: [],
-  trades: [],
-  spending: { monthTotal: 0, categories: [] },
-  netWorthHistory: [],
-  netWorthHistoryEstimated: false,
-  benchmarkHistory: [],
-  accountBalanceHistory: [],
-  brokeragePerformance: [],
-  accountMovements: [],
-  transactionChanges: [],
-  possibleDuplicateAccounts: [],
-  accountLinks: {},
-  transactions: [],
   lastChange,
 })
 

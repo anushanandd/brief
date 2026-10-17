@@ -153,7 +153,7 @@ it('keeps incomplete aggregate balances qualified in the account overview', asyn
   const html = await renderRoute('/accounts')
   expect(html).toContain('known USD balances only')
   expect(html).toContain('Complete balance unavailable')
-  expect(html).not.toContain('live-performance-chart')
+  expect(html).not.toContain('value-chart')
 })
 
 it('treats one historical observation consistently in the account workspace', async () => {
@@ -161,7 +161,7 @@ it('treats one historical observation consistently in the account workspace', as
   scenario.singleHistory = true
   const html = await renderRoute('/accounts?account=selected', '')
   expect(html).toContain('No history yet')
-  expect(html).not.toContain('live-performance-chart')
+  expect(html).not.toContain('value-chart')
 })
 
 it('qualifies partial unrealized gain in the investment account workspace', async () => {
@@ -185,7 +185,7 @@ it('renders supported history with accessible range controls in the account work
     html.indexOf('home-balance-header'),
     html.indexOf('</header>', html.indexOf('home-balance-header')),
   )
-  expect(html).toContain('live-performance-chart')
+  expect(html).toContain('value-chart')
   expect(chartHeader).toContain('class="chart-summary-row"')
   expect(chartHeader).toContain('class="hero-change"')
   expect(chartHeader).toContain('ledger-select-trigger chart-range-select')

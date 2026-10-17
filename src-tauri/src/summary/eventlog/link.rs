@@ -3,7 +3,7 @@ use super::*;
 
 /// How each event relates to the others, worked out over a period: which stand for a fact
 /// reported twice, which belong to one chain or cluster, which are the first report.
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Links {
     /// The event that stands for this one's fact: a ledger credit for an expected dividend, an

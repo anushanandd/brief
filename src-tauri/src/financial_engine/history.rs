@@ -258,7 +258,7 @@ pub(super) fn history_check(
         };
         compared += 1;
         let gap = rounded(*estimate - seen);
-        if gap.abs() > Decimal::ONE_HUNDRED && gap.abs() * Decimal::from(50) > seen.abs() {
+        if diverges(*estimate, seen) {
             divergent += 1;
             if largest
                 .as_ref()
@@ -274,6 +274,12 @@ pub(super) fn history_check(
         largest_gap: largest.as_ref().map(|(_, gap)| money(*gap)),
         largest_gap_date: largest.map(|(date, _)| date),
     })
+}
+
+/// Whether an estimate is further from what Brief saw than both $100 and 2% of it.
+fn diverges(estimate: Decimal, seen: Decimal) -> bool {
+    let gap = (estimate - seen).abs();
+    gap > Decimal::ONE_HUNDRED && gap * Decimal::from(50) > seen.abs()
 }
 
 /// Each point with a valid date, as a decimal.
@@ -299,15 +305,26 @@ fn points(values: Vec<(String, Decimal)>) -> Vec<Point> {
         .collect()
 }
 
+/// The estimated history with what Brief saw at each refresh in place of the estimate. An
+/// observation that diverges from that day's estimate yields to it: a refresh can catch one
+/// side of a transfer before the other, while the estimate dates both legs. `history_check`
+/// still reports the gap.
 pub(super) fn merged_net_worth_history(
     estimated: Vec<(String, Decimal)>,
     observed: &[Point],
     in_transit: &BTreeMap<String, Decimal>,
 ) -> (Vec<Point>, bool) {
-    let observed = point_values(observed).collect::<BTreeMap<_, _>>();
-    let observed_dates = observed.keys().cloned().collect::<BTreeSet<_>>();
     let mut history = estimated.into_iter().collect::<BTreeMap<_, _>>();
-    history.extend(observed);
+    let mut observed_dates = BTreeSet::new();
+    for (date, seen) in point_values(observed) {
+        if history
+            .get(&date)
+            .is_none_or(|estimate| !diverges(*estimate, seen))
+        {
+            observed_dates.insert(date.clone());
+            history.insert(date, seen);
+        }
+    }
     let history = latest(history);
     let has_estimates = history
         .iter()

@@ -69,8 +69,9 @@ pub fn start(app: AppHandle) {
     });
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, ts_rs::TS)]
 #[serde(rename_all = "kebab-case")]
+#[ts(export)]
 pub enum LoginItem {
     Enabled,
     Disabled,

@@ -2,6 +2,7 @@
 
 import { expect, it } from 'vitest'
 
+import { document as record } from '../data/fixtures/records'
 import type { BriefDocument } from '../lib/schema'
 import { renderRoute } from './routes.harness'
 import { scenario } from './routes.scenario'
@@ -9,18 +10,13 @@ import { scenario } from './routes.scenario'
 const id = (letter: string) => letter.repeat(64)
 
 function document(overrides: Partial<BriefDocument>): BriefDocument {
-  return {
+  return record({
     id: id('a'),
     fileName: 'Payslip.pdf',
-    mediaType: 'application/pdf',
-    size: 1,
     importedAt: '2026-09-03T00:00:00Z',
     kind: 'payslip',
-    fields: [],
-    deposits: [],
-    checks: [],
     ...overrides,
-  }
+  })
 }
 
 it('lists a year’s documents beside what the year should bring', async () => {

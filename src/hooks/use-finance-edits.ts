@@ -6,7 +6,7 @@ import {
   saveTransactionAnnotations,
   type TransactionAnnotationChanges,
 } from '../lib/annotations'
-import { saveFinanceSettings } from '../lib/finance-settings'
+import { completeSettings, saveFinanceSettings, type Settings } from '../lib/finance-settings'
 import type { FinanceSettings, FinanceSnapshot } from '../lib/schema'
 import { rememberEdit, takeLastEdit, useUndoStack } from '../lib/undo'
 import { financeQueryKey, useFinance } from './use-finance'
@@ -56,10 +56,10 @@ export function useFinanceEdits() {
     [client],
   )
   const updateSettings = useCallback(
-    async (change: (current: FinanceSettings) => FinanceSettings) => {
+    async (change: (current: Settings) => FinanceSettings) => {
       const current = client.getQueryData<FinanceSnapshot>(financeQueryKey)?.settings
       if (!current) throw new Error('Finance settings are unavailable')
-      return commit(await saveFinanceSettings(change(current)))
+      return commit(await saveFinanceSettings(change(completeSettings(current))))
     },
     [client, commit],
   )

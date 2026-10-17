@@ -73,13 +73,14 @@ pub(crate) fn get_sync_runs(state: State<'_, AppState>) -> Result<Vec<database::
 pub(crate) async fn get_data_health(
     state: State<'_, AppState>,
 ) -> Result<health::HealthReport, String> {
-    let (view, sync_runs, calibration) = {
+    let (view, sync_runs, calibration, log) = {
         let storage = state.storage()?;
         // Rates are a check of their own; their absence never fails the report.
         (
             storage.read_view()?,
             storage.sync_runs()?,
             storage.calibration().ok(),
+            storage.log_check.clone(),
         )
     };
     let summary = state
@@ -91,8 +92,41 @@ pub(crate) async fn get_data_health(
         &sync_runs,
         view.insights.as_ref(),
         &summary,
+        log.as_ref(),
         Utc::now(),
     ))
+}
+
+/// What the change log holds and what the latest replay of it found.
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub(crate) struct ChangeLog {
+    summary: database::LogSummary,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    check: Option<crate::storage::change::LogCheck>,
+}
+
+#[tauri::command(async)]
+pub(crate) fn get_change_log(state: State<'_, AppState>) -> Result<ChangeLog, String> {
+    let storage = state.storage()?;
+    Ok(ChangeLog {
+        summary: storage.log_summary()?,
+        check: storage.log_check.clone(),
+    })
+}
+
+/// What an annotation edit returns: every annotation, those it changed as they were (so it can
+/// be undone; none after an undo), and the view.
+#[derive(serde::Serialize, ts_rs::TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export)]
+pub(crate) struct AnnotationsSaved {
+    annotations: BTreeMap<String, Annotation>,
+    previous: BTreeMap<String, Annotation>,
+    #[ts(type = "import('./FinanceSnapshot').FinanceSnapshot")]
+    snapshot: Value,
 }
 
 // Edits rebuild the whole view; as async commands they run off the main thread, so the
@@ -102,14 +136,14 @@ pub(crate) async fn transaction_annotations(
     changes: BTreeMap<String, Annotation>,
     importing: bool,
     state: State<'_, AppState>,
-) -> Result<Value, String> {
+) -> Result<AnnotationsSaved, String> {
     let mut storage = state.storage()?;
     let saved = storage.save_annotations(changes, importing)?;
-    Ok(serde_json::json!({
-        "annotations": saved.annotations,
-        "previous": saved.previous,
-        "snapshot": storage.snapshot()?,
-    }))
+    Ok(AnnotationsSaved {
+        annotations: saved.annotations,
+        previous: saved.previous,
+        snapshot: storage.snapshot()?,
+    })
 }
 
 /// Undoes an annotation save by putting back the annotations it returned as `previous`.
@@ -117,10 +151,14 @@ pub(crate) async fn transaction_annotations(
 pub(crate) async fn restore_transaction_annotations(
     previous: BTreeMap<String, Annotation>,
     state: State<'_, AppState>,
-) -> Result<Value, String> {
+) -> Result<AnnotationsSaved, String> {
     let mut storage = state.storage()?;
     let annotations = storage.restore_annotations(previous)?;
-    Ok(serde_json::json!({ "annotations": annotations, "snapshot": storage.snapshot()? }))
+    Ok(AnnotationsSaved {
+        annotations,
+        previous: BTreeMap::new(),
+        snapshot: storage.snapshot()?,
+    })
 }
 
 #[tauri::command(async)]

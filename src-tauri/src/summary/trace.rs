@@ -10,7 +10,7 @@ use crate::providers::http::ProviderDiagnostic;
 /// Runs kept for the Logs page.
 const KEPT_RUNS: usize = 40;
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SummaryStage {
     pub name: &'static str,
@@ -21,8 +21,9 @@ pub struct SummaryStage {
     pub detail: Option<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct SummaryRun {
     pub id: String,
     /// `summary`, `explanation` when the on-device model was asked, or `close` for the close

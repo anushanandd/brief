@@ -4,6 +4,7 @@
 //! accounts linked to it.
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use super::changes::{Window, WINDOWS};
@@ -14,7 +15,7 @@ use crate::transaction_policy::Mark;
 /// The account that stands for every account.
 const COMBINED: &str = "all";
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountFlows {
     pub account_id: String,
@@ -34,7 +35,7 @@ pub struct AccountFlows {
 }
 
 /// A day's or a month's spending and income across every account, for the calendar.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Totals {
     /// `YYYY-MM-DD` for a day, `YYYY-MM` for a month.

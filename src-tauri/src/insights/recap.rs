@@ -5,6 +5,7 @@ use std::collections::BTreeMap;
 
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar::{self};
 use super::changes::{Window, WINDOWS};
@@ -12,7 +13,7 @@ use crate::finance_contract::Transaction;
 use crate::numeric::{from_minor, minor_units};
 use crate::transaction_policy::Kind;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CategoryChange {
     pub category: String,
@@ -20,7 +21,7 @@ pub struct CategoryChange {
     pub previous: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodRecap {
     pub window: Window,
@@ -35,11 +36,14 @@ pub struct PeriodRecap {
     pub net: f64,
     /// Each measure's change from the period before, in percent of the earlier figure's size.
     /// Unavailable when history starts inside the period before, or its figure was zero.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub spending_change_pct: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub income_change_pct: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub net_change_pct: Option<f64>,
     /// The largest categories, each beside the period before.
     pub categories: Vec<CategoryChange>,

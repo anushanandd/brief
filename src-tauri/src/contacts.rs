@@ -3,9 +3,11 @@
 //! logged. Contacts is never written.
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
+use ts_rs::TS;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct Contact {
     pub identifier: String,
     pub name: String,
@@ -15,8 +17,9 @@ pub struct Contact {
 
 /// Whether Brief may read Contacts: `notAsked`, `restricted`, `denied`, `allowed`, or
 /// `unavailable` off macOS.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "ContactsAccess")]
 pub enum Access {
     NotAsked,
     Restricted,
@@ -144,8 +147,9 @@ pub(crate) async fn search_contacts(query: String) -> Result<Vec<Contact>, Strin
 }
 
 /// A Contacts card a name in payments could be, and how well it fits.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct ContactFit {
     pub identifier: String,
     pub name: String,

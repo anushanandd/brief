@@ -62,7 +62,7 @@ export function accountValueIncomplete(
   data: Pick<FinanceSnapshot, 'accounts' | 'netWorthIncomplete'>,
   accountId: string,
 ) {
-  if (accountId === 'all' || accountId === 'net-worth') return Boolean(data.netWorthIncomplete)
+  if (accountId === 'all' || accountId === 'net-worth') return data.netWorthIncomplete
   if (accountId === 'total') {
     return data.accounts.some(
       ({ type, value }) => (type === 'brokerage' || type === 'retirement') && value == null,
@@ -117,7 +117,13 @@ function totalNetWorthPoints(
   const history = data.netWorthHistory?.length
     ? data.netWorthHistory
     : [{ date: data.updatedAt.slice(0, 10), value: data.netWorth }]
-  return history.map((point) => ({ ...point, netDeposits: null, sp500: null }))
+  return history.map((point) => ({
+    ...point,
+    netDeposits: null,
+    sp500: null,
+    marketChange: null,
+    marketChangePct: null,
+  }))
 }
 
 function accountRank({ name }: BrokeragePerformance) {
@@ -158,6 +164,8 @@ export function dashboardAccountViews(
           value: account.value!,
           netDeposits: null,
           sp500: null,
+          marketChange: null,
+          marketChangePct: null,
         },
       ],
     }))
@@ -173,6 +181,7 @@ export function dashboardAccountViews(
       name: 'All accounts',
       institution: 'Total net worth',
       currentValue: data.netWorth,
+      historyStart: null,
       performanceMethod: 'value-only',
       points: totalNetWorthPoints(data),
     },

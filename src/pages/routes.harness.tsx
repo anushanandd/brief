@@ -10,6 +10,7 @@ import { afterEach, beforeEach, vi } from 'vitest'
 import { loadSettingsPanel } from '../components/settings-dialog'
 import { classification } from '../data/fixtures/classification'
 import { emptyInsightDetails } from '../data/fixtures/insights'
+import { account, holding, transaction as record } from '../data/fixtures/records'
 import { LiveMarketProvider } from '../hooks/live-market-provider'
 import { dayKey } from '../lib/dates'
 import { formatShortDay, setAmountsHidden } from '../lib/format'
@@ -653,7 +654,7 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
 }
 
 function scenarioTransactions(): ScenarioTransaction[] {
-  return [
+  const rows = [
     ...Array.from({ length: 7 }, (_, index) => ({
       id: `transaction-${index}`,
       ...(index === 0 && scenario.postingDate ? { postedOn: scenario.postingDate } : {}),
@@ -701,11 +702,12 @@ function scenarioTransactions(): ScenarioTransaction[] {
       classification: classification(scenario.otherKind),
       pending: false,
     },
-    ...scenario.extraTransactions.map((transaction) => ({
-      ...transaction,
-      recurringId: `series:${transaction.accountId}:${transaction.merchant}`,
+    ...scenario.extraTransactions.map((extra) => ({
+      ...extra,
+      recurringId: `series:${extra.accountId}:${extra.merchant}`,
     })),
   ]
+  return rows.map((row) => record(row))
 }
 
 vi.mock('../hooks/use-finance', () => ({ useFinance: () => scenarioFinance() }))
@@ -729,7 +731,15 @@ function scenarioFinance() {
       netWorthHistory: [{ date: '2026-09-03', value: scenario.snaptradeReference ? 300 : -2_100 }],
       spending: { monthTotal: 0, categories: [] },
       accounts: [
-        {
+        // Rust always sends the combined row first.
+        account({
+          id: 'all',
+          name: 'All accounts',
+          institution: 'Brief',
+          type: 'combined',
+          value: scenario.snaptradeReference ? 300 : -2_100,
+        }),
+        account({
           id: scenario.snaptradeReference ? 'snaptrade:selected' : 'selected',
           name: 'Selected card',
           institution: 'Test Bank',
@@ -747,14 +757,14 @@ function scenarioFinance() {
           costBasisCoverage: scenario.partialBasis ? 'partial' : 'unavailable',
           knownCostBasis: scenario.partialBasis ? 100 : null,
           knownUnrealizedGain: scenario.partialBasis ? 0 : null,
-        },
-        {
+        }),
+        account({
           id: 'other',
           name: 'Other card',
           institution: 'Other Bank',
           type: scenario.otherAccountType,
           value: -900,
-        },
+        }),
       ],
       transactions: scenarioTransactions(),
       trades: scenario.trades,
@@ -804,7 +814,7 @@ function scenarioFinance() {
             },
           ]
         : [],
-      holdings: scenario.holdings,
+      holdings: scenario.holdings.map((fields) => holding(fields)),
       settings: {
         spendingAccountId: scenario.spendingAccountId || undefined,
         hiddenBenefitIds: scenario.hiddenBenefits.split(',').filter(Boolean),

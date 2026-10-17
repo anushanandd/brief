@@ -28,7 +28,7 @@ impl ChartSelection {
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceBar {
     pub time: i64,
@@ -42,14 +42,14 @@ pub struct PriceBar {
     pub feed: String,
 }
 
-#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
 pub struct TradingDay {
     pub date: String,
     pub open: i64,
     pub close: i64,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceHistory {
     pub symbol: String,

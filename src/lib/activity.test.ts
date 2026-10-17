@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
+import { emptySnapshot, trade, transaction } from '../data/fixtures/records'
 import {
   activityMatchesSearch,
   activityPlace,
@@ -11,7 +12,6 @@ import {
   type ActivityItem,
   type ActivitySort,
 } from './activity'
-import { financeSnapshotSchema } from './schema'
 
 describe('financial activities', () => {
   it('searches descriptions and every Activity filter field', () => {
@@ -104,16 +104,12 @@ describe('financial activities', () => {
   })
 
   it('combines spending and trades without account balance changes', () => {
-    const snapshot = financeSnapshotSchema.parse({
+    const snapshot = {
+      ...emptySnapshot(),
       updatedAt: '2026-09-03T12:00:00Z',
       netWorth: 125,
-      accounts: [
-        { id: 'all', name: 'All accounts', institution: 'Brief', type: 'combined', value: 125 },
-      ],
-      netWorthHistory: [{ date: '2026-09-03', value: 125 }],
-      holdings: [],
       trades: [
-        {
+        trade({
           id: 'buy',
           type: 'BUY',
           date: '2026-09-02',
@@ -122,11 +118,10 @@ describe('financial activities', () => {
           accountId: 'brokerage',
           ticker: 'VTI',
           units: 2,
-        },
+        }),
       ],
-      spending: { monthTotal: 25, categories: [] },
       transactions: [
-        {
+        transaction({
           id: 'lunch',
           merchant: 'Lunch',
           category: 'Dining',
@@ -138,17 +133,9 @@ describe('financial activities', () => {
           classification: classification('expense'),
           pending: false,
           logoUrl: 'https://plaid-merchant-logos.plaid.com/lunch.png',
-        },
+        }),
       ],
-      lastChange: {
-        observedAt: '2026-09-03T12:00:00Z',
-        previousUpdatedAt: '2026-09-02T12:00:00Z',
-        previousNetWorth: 100,
-        netWorthChange: 25,
-        accountChanges: [{ accountId: 'cash', name: 'Checking', change: 25 }],
-        newTransactionIds: ['lunch'],
-      },
-    })
+    }
 
     expect(buildActivities(snapshot).map(({ kind }) => kind)).toEqual(['trade', 'spending'])
     expect(buildActivities(snapshot)[0]).toMatchObject({ title: 'Bought VTI', amount: -50 })
@@ -171,19 +158,12 @@ describe('financial activities', () => {
   })
 
   it('keeps a transfer after its one-refresh account delta clears', () => {
-    const snapshot = financeSnapshotSchema.parse({
+    const snapshot = {
+      ...emptySnapshot(),
       updatedAt: '2026-09-03T12:00:00Z',
       netWorth: 100,
-      accounts: [
-        { id: 'all', name: 'All accounts', institution: 'Brief', type: 'combined', value: 100 },
-        { id: 'savings', name: 'Savings', institution: 'Bank', type: 'cash', value: 100 },
-      ],
-      netWorthHistory: [{ date: '2026-09-03', value: 100 }],
-      holdings: [],
-      trades: [],
-      spending: { monthTotal: 0, categories: [] },
       transactions: [
-        {
+        transaction({
           id: 'transfer',
           merchant: 'Transfer to savings',
           category: 'Transfer In',
@@ -193,17 +173,9 @@ describe('financial activities', () => {
           accountId: 'savings',
           classification: classification('transfer'),
           pending: false,
-        },
+        }),
       ],
-      lastChange: {
-        observedAt: '2026-09-03T12:00:00Z',
-        previousUpdatedAt: '2026-09-02T12:00:00Z',
-        previousNetWorth: 100,
-        netWorthChange: 0,
-        accountChanges: [],
-        newTransactionIds: [],
-      },
-    })
+    }
 
     expect(buildActivities(snapshot)).toEqual([
       expect.objectContaining({
@@ -245,18 +217,12 @@ describe('financial activities', () => {
   })
 
   it('uses local display names without changing account IDs', () => {
-    const snapshot = financeSnapshotSchema.parse({
+    const snapshot = {
+      ...emptySnapshot(),
       updatedAt: '2026-09-03T12:00:00Z',
       netWorth: 100,
-      accounts: [
-        { id: 'all', name: 'All accounts', institution: 'Brief', type: 'combined', value: 100 },
-      ],
-      netWorthHistory: [{ date: '2026-09-03', value: 100 }],
-      holdings: [],
-      trades: [],
-      spending: { monthTotal: 0, categories: [] },
       transactions: [
-        {
+        transaction({
           id: 'purchase',
           merchant: 'Coffee',
           category: 'Dining',
@@ -267,9 +233,9 @@ describe('financial activities', () => {
           classification: classification('expense'),
           pending: false,
           website: 'https://coffee.example',
-        },
+        }),
       ],
-    })
+    }
 
     expect(buildActivities(snapshot, { amex: 'Everyday card' })[0]).toMatchObject({
       account: 'Everyday card',
@@ -314,17 +280,18 @@ it('describes where a purchase happened in one place, then adds the street, chan
   })
 })
 
-const leg = (id: string, accountId: string, account: string, date: string, amount: number) => ({
-  id,
-  accountId,
-  account,
-  merchant: 'Synthetic transfer',
-  category: 'Transfers',
-  date,
-  amount,
-  pending: false,
-  classification: classification('transfer'),
-})
+const leg = (id: string, accountId: string, account: string, date: string, amount: number) =>
+  transaction({
+    id,
+    accountId,
+    account,
+    merchant: 'Synthetic transfer',
+    category: 'Transfers',
+    date,
+    amount,
+    pending: false,
+    classification: classification('transfer'),
+  })
 
 it('links each leg of a paired transfer to the account on its other side', () => {
   const [sent, arrived, alone] = buildActivities(

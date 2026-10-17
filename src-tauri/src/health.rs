@@ -1,17 +1,20 @@
 use chrono::{DateTime, Duration, Utc};
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::{
     database::SyncRun,
     finance_contract::{Account, Holding, Snapshot},
     insights::Insights,
+    storage::change::{LogCheck, Outcome},
     transaction_policy::Kind,
 };
 
 mod ledger_checks;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct HealthReport {
     pub computed_at: String,
     pub revision: u64,
@@ -20,7 +23,7 @@ pub struct HealthReport {
     pub issues: Vec<HealthIssue>,
 }
 
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, TS)]
 pub struct HealthCounts {
     pub critical: usize,
     pub error: usize,
@@ -29,8 +32,9 @@ pub struct HealthCounts {
 }
 
 /// Most severe first, as the report lists issues.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename = "HealthSeverity")]
 pub enum Severity {
     Critical,
     Error,
@@ -49,7 +53,7 @@ impl Severity {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Category {
     Classification,
@@ -61,7 +65,7 @@ pub enum Category {
     Valuation,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HealthIssue {
     pub id: String,
@@ -74,13 +78,13 @@ pub struct HealthIssue {
     pub action: HealthAction,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 pub struct HealthItem {
     pub id: String,
     pub name: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 pub struct HealthAction {
     pub label: String,
     pub route: String,
@@ -88,7 +92,14 @@ pub struct HealthAction {
 
 #[cfg(test)]
 pub fn report(snapshot: &Snapshot, sync_runs: &[SyncRun], now: DateTime<Utc>) -> HealthReport {
-    report_with(snapshot, sync_runs, None, &SummaryHealth::default(), now)
+    report_with(
+        snapshot,
+        sync_runs,
+        None,
+        &SummaryHealth::default(),
+        None,
+        now,
+    )
 }
 
 /// What Data health knows about the investment summary: whether news is configured, when a
@@ -227,9 +238,11 @@ pub fn report_with(
     sync_runs: &[SyncRun],
     insights: Option<&Insights>,
     summary: &SummaryHealth,
+    log: Option<&LogCheck>,
     now: DateTime<Utc>,
 ) -> HealthReport {
     let mut issues = summary_issues(summary, now);
+    issues.extend(log_issues(log));
     issues.extend(recurring_issues(insights));
     issues.extend(valuation_issues(snapshot));
     issues.extend(freshness_issues(snapshot, now));
@@ -563,6 +576,29 @@ fn coverage_issues(snapshot: &Snapshot) -> Vec<HealthIssue> {
 }
 
 /// The latest refresh, when it failed.
+/// The change log should replay to the saved state; saved data is used either way.
+fn log_issues(log: Option<&LogCheck>) -> Vec<HealthIssue> {
+    let Some(log) = log.filter(|log| log.outcome != Outcome::Matches) else {
+        return Vec::new();
+    };
+    let (severity, title) = match log.outcome {
+        Outcome::Differs => (
+            Severity::Error,
+            "The change log doesn't replay to your saved data",
+        ),
+        _ => (Severity::Warning, "The change log couldn't be checked"),
+    };
+    vec![issue(
+        "change-log",
+        severity,
+        Category::Storage,
+        title,
+        "Saved data is unchanged; see Diagnostics",
+    )
+    .evidence(log.detail.iter().cloned().collect())
+    .action("Open diagnostics", "/logs")]
+}
+
 fn sync_issues(sync_runs: &[SyncRun]) -> Vec<HealthIssue> {
     let mut issues = Vec::new();
     if let Some(run) = sync_runs.first().filter(|run| run.outcome == "failed") {
@@ -712,7 +748,7 @@ mod tests {
             crate::summary::SummaryRun::synthetic(period, error, partial)
         };
         let ids = |summary: &SummaryHealth| {
-            report_with(&snapshot, &[], None, summary, now)
+            report_with(&snapshot, &[], None, summary, None, now)
                 .issues
                 .into_iter()
                 .map(|issue| issue.id)
@@ -741,7 +777,7 @@ mod tests {
         let found = ids(&stale);
         assert_eq!(found[0], "news-stale");
         assert!(found[1].starts_with("summary-failed:"));
-        let report = report_with(&snapshot, &[], None, &stale, now);
+        let report = report_with(&snapshot, &[], None, &stale, None, now);
         let failed = report
             .issues
             .iter()

@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest'
 
+import { completeSettings } from './finance-settings'
 import {
   identities,
   initials,
@@ -11,6 +12,8 @@ import {
   withoutPerson,
 } from './people'
 import { financeSettingsSchema } from './schema'
+
+const settingsOf = (value: unknown) => completeSettings(financeSettingsSchema.parse(value))
 
 const today = '2026-09-16'
 
@@ -58,7 +61,7 @@ it('offers who a name in payments could be, saved people and Contacts cards, lik
 })
 
 it('makes someone match a name in payments, adding them from Contacts when needed', () => {
-  const settings = financeSettingsSchema.parse({
+  const settings = settingsOf({
     people: [{ id: 'person:a', name: 'Example Person', matchNames: ['EXAMPLE PERSON'] }],
   })
   const known = withIdentity(settings, 'EXAMPLE', {
@@ -95,7 +98,7 @@ it('takes initials from the first and last names', () => {
 })
 
 it('replaces a trip’s companions wherever it shares a transaction, and removes people whole', () => {
-  const settings = financeSettingsSchema.parse({
+  const settings = settingsOf({
     people: [
       { id: 'person:a', name: 'A' },
       { id: 'person:b', name: 'B' },

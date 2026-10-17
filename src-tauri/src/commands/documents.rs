@@ -16,8 +16,9 @@ use crate::{
 /// A folder import reads at most this many files, so a wrong pick can't run away.
 const MAX_FILES: usize = 2_000;
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "DocumentImport")]
 pub(crate) struct ImportSummary {
     /// Ids of the documents added, in the order read.
     added: Vec<String>,
@@ -25,11 +26,13 @@ pub(crate) struct ImportSummary {
     already: Vec<String>,
     /// Files Brief couldn't keep, with why.
     failed: Vec<Failure>,
+    #[ts(type = "import('./FinanceSnapshot').FinanceSnapshot")]
     snapshot: Value,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "DocumentImportFailure")]
 pub(crate) struct Failure {
     name: String,
     reason: String,

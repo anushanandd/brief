@@ -16,7 +16,7 @@ pub struct StatementDraft {
     contents: Vec<u8>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountFit {
     pub account_id: String,
@@ -25,8 +25,9 @@ pub struct AccountFit {
     pub provider_start: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct StatementPreview {
     pub draft_id: String,
     pub file_name: String,
@@ -46,8 +47,9 @@ pub struct StatementPreview {
     pub accounts: Vec<AccountFit>,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct StatementSummary {
     pub id: String,
     pub file_name: String,

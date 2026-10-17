@@ -2,8 +2,9 @@
 //! the renderer only styles them.
 use super::*;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct InvestmentSummary {
     pub start: NaiveDate,
     /// The latest session that had opened when the summary was made.
@@ -54,7 +55,7 @@ pub struct InvestmentSummary {
 }
 
 /// A part of the summary that could not be loaded or was left out, never silently.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Unavailable {
     /// `prices` (no latest or start prices), `fundamentals`, or `history` (a year of daily
@@ -64,7 +65,7 @@ pub struct Unavailable {
     pub symbols: Vec<String>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TodayMove {
     /// When the prices were observed; a weekend shows the last session.
@@ -83,7 +84,7 @@ pub struct TodayMove {
     pub sectors: Vec<SectorToday>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SectorToday {
     pub name: String,
@@ -93,7 +94,7 @@ pub struct SectorToday {
     pub change_pct: f64,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TodayPosition {
     pub ticker: String,
@@ -103,7 +104,7 @@ pub struct TodayPosition {
     pub kind: Option<&'static str>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Coverage {
     pub ticker: String,
@@ -112,7 +113,7 @@ pub struct Coverage {
     pub top_relevance: Option<u8>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct NotableMove {
     pub ticker: String,
@@ -121,7 +122,7 @@ pub struct NotableMove {
     pub layers: HoldingPeriod,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodMove {
     pub change_pct: f64,
@@ -134,7 +135,7 @@ pub struct PeriodMove {
     pub kind: Option<&'static str>,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Activity {
     pub buys: usize,
@@ -148,7 +149,7 @@ pub struct Activity {
     pub dividend_payments: usize,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TradeFact {
     pub date: String,
@@ -161,7 +162,7 @@ pub struct TradeFact {
 }
 
 /// A market-wide event in the period.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct MarketDay {
     pub session: NaiveDate,
@@ -173,7 +174,7 @@ pub struct MarketDay {
 }
 
 /// Something scheduled ahead, with whether it is confirmed.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Upcoming {
     pub date: NaiveDate,

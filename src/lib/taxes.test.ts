@@ -2,6 +2,7 @@ import { expect, it } from 'vitest'
 
 import { bankDetails } from '../components/transaction-dialog'
 import { classification } from '../data/fixtures/classification'
+import { transaction } from '../data/fixtures/records'
 import { estimateRange, parseAmount, taxYear } from './taxes'
 
 const estimate = {
@@ -62,21 +63,23 @@ it('reads typed amounts and rates and rejects anything else', () => {
 })
 
 it('lists bank details with Plaid confidence in words', () => {
-  const rows = bankDetails({
-    id: 't',
-    merchant: 'Cafe',
-    category: 'Dining',
-    date: '2026-09-01',
-    amount: -5,
-    account: 'Card',
-    pending: false,
-    classification: classification('expense'),
-    originalDescription: 'SQ *CAFE 0412',
-    checkNumber: '1042',
-    categoryConfidence: 'VERY_HIGH',
-    counterparties: [{ name: 'Square', type: 'payment_app', confidence: 'HIGH' }],
-    location: { storeNumber: '0412' },
-  })
+  const rows = bankDetails(
+    transaction({
+      id: 't',
+      merchant: 'Cafe',
+      category: 'Dining',
+      date: '2026-09-01',
+      amount: -5,
+      account: 'Card',
+      pending: false,
+      classification: classification('expense'),
+      originalDescription: 'SQ *CAFE 0412',
+      checkNumber: '1042',
+      categoryConfidence: 'VERY_HIGH',
+      counterparties: [{ name: 'Square', type: 'payment_app', confidence: 'HIGH' }],
+      location: { storeNumber: '0412' },
+    }),
+  )
   expect(rows.map(({ label, value }) => `${label}: ${value}`)).toEqual([
     'Raw text: SQ *CAFE 0412',
     'Payment app: Square · high confidence',

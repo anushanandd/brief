@@ -4,11 +4,12 @@
 use std::collections::BTreeMap;
 
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::finance_contract::{Account, Holding};
 use crate::numeric::{from_minor, minor_units};
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Slice {
     pub key: String,
@@ -17,8 +18,9 @@ pub struct Slice {
     pub percent: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "PositionAllocation")]
 pub struct Allocation {
     /// Known USD positions plus uninvested cash in the accounts that hold them.
     pub total: f64,
@@ -34,13 +36,16 @@ pub struct Allocation {
     pub securities: Vec<Slice>,
     pub accounts: Vec<Slice>,
     /// The largest security's share of the total.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub largest_percent: Option<f64>,
     /// The five largest securities' share of the total.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub top_five_percent: Option<f64>,
     /// The largest security, when it alone is at least `CONCENTRATED_PERCENT` of the total.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub concentrated: Option<Slice>,
 }
 
@@ -60,22 +65,26 @@ const CASH: &str = "cash";
 
 /// One security merged across accounts, for the holdings list. Every security held appears,
 /// even without a USD value, so nothing silently drops out of the list.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SecurityHolding {
     pub ticker: String,
     pub name: String,
     pub accounts: usize,
     /// Known only when every position has a USD value.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub value: Option<f64>,
     /// Share of the allocation total, which includes uninvested cash.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub percent: Option<f64>,
     /// Value less cost basis, known only when every position has both.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub gain: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub gain_percent: Option<f64>,
 }
 

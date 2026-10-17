@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest'
 
-import seed from '../data/seed.json'
+import { seedSnapshot } from '../data/fixtures/records'
 import { activityLedger, activityRows, type LedgerSearch } from './activity-ledger'
-import { financeSnapshotSchema } from './schema'
 
-const data = financeSnapshotSchema.parse(seed)
+const data = seedSnapshot()
 const ledger = (search: LedgerSearch, draft = '') =>
   activityLedger({
     data,

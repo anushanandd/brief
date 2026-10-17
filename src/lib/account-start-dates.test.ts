@@ -1,23 +1,24 @@
 import { describe, expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
+import { account, trade, transaction } from '../data/fixtures/records'
 import { accountStartDate, parseAccountStartDates } from './account-start-dates'
 
 const data = {
   updatedAt: '2026-09-10T12:00:00Z',
   accounts: [
-    {
+    account({
       id: 'brokerage',
       name: 'Brokerage',
       institution: 'Broker',
       type: 'brokerage',
       value: 100,
-    },
-    { id: 'cash', name: 'Cash', institution: 'Bank', type: 'cash', value: 50 },
+    }),
+    account({ id: 'cash', name: 'Cash', institution: 'Bank', type: 'cash', value: 50 }),
   ],
   accountLinks: { bank: 'brokerage' },
   transactions: [
-    {
+    transaction({
       id: 'deposit',
       accountId: 'bank',
       account: 'Brokerage',
@@ -27,8 +28,8 @@ const data = {
       amount: 100,
       classification: classification('transfer'),
       pending: false,
-    },
-    {
+    }),
+    transaction({
       id: 'cash-deposit',
       accountId: 'cash',
       account: 'Cash',
@@ -38,17 +39,17 @@ const data = {
       amount: 50,
       classification: classification('transfer'),
       pending: false,
-    },
+    }),
   ],
   trades: [
-    {
+    trade({
       id: 'buy',
       type: 'BUY',
       accountId: 'brokerage',
       account: 'Brokerage',
       date: '2024-07-01',
       amount: -100,
-    },
+    }),
   ],
 } satisfies Parameters<typeof accountStartDate>[0]
 

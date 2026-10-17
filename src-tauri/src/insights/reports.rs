@@ -9,6 +9,7 @@ use std::sync::LazyLock;
 use chrono::{Datelike, Duration, NaiveDate};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use super::calendar::{self, Zone};
 use super::View;
@@ -17,7 +18,7 @@ use crate::numeric::{from_minor, minor_units, round2};
 use crate::transaction_policy::{Kind, Mark};
 
 /// A report.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum Chart {
     CashFlow,
@@ -42,7 +43,7 @@ impl Chart {
 }
 
 /// A chart period ending today.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum Range {
     Day,
@@ -83,7 +84,7 @@ pub struct ReportRequest {
     pub accounts: Option<Vec<String>>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportWindow {
     pub start: NaiveDate,
@@ -99,7 +100,7 @@ pub struct ReportWindow {
 }
 
 /// One report's total over the window, beside the window before.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ReportSummary {
     pub chart: Chart,
@@ -111,19 +112,20 @@ pub struct ReportSummary {
     pub percent: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Entry {
     /// `spending:` and a transaction ID, or `trade:` and a trade ID.
     pub id: String,
     pub date: NaiveDate,
     pub value: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub account_id: Option<String>,
     pub group: String,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct GroupTotal {
     pub label: String,
@@ -132,7 +134,7 @@ pub struct GroupTotal {
 }
 
 /// A day, month, or year of a report.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Bucket {
     pub from: NaiveDate,
@@ -149,7 +151,7 @@ pub struct Bucket {
     pub groups: Vec<BucketGroup>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BucketGroup {
     pub name: String,
@@ -158,7 +160,7 @@ pub struct BucketGroup {
     pub entry_ids: Vec<String>,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Unit {
     Day,
@@ -167,7 +169,7 @@ pub enum Unit {
 }
 
 /// One report in full over the window and accounts.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Report {
     #[serde(flatten)]
@@ -184,14 +186,14 @@ pub struct Report {
     pub unit: Unit,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountTotal {
     pub account_id: String,
     pub total: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct FlowItem {
     pub id: String,
@@ -201,7 +203,7 @@ pub struct FlowItem {
     pub children: Vec<FlowTransaction>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct FlowTransaction {
     pub id: String,
@@ -212,7 +214,7 @@ pub struct FlowTransaction {
 
 /// Where the window's money came from and went: sources by payer, purchases by category, fees,
 /// taxes, and what was left over or had to be found.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CashFlow {
     pub sources: Vec<FlowItem>,
@@ -227,26 +229,28 @@ pub struct CashFlow {
     pub retained: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct Reports {
     pub window: ReportWindow,
     /// Every report over the window and accounts.
     pub summaries: Vec<ReportSummary>,
     /// The requested report in full.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub report: Option<Report>,
     /// The requested report's total in each account, over every account.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub accounts: Vec<AccountTotal>,
     /// The requested report's groups across every account and day, so each keeps its color.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub groups: Vec<String>,
     /// The recurring series behind the requested report's entries on any day, in its accounts,
     /// so what they are expected to bring next can be listed.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub recurring_ids: Vec<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub flow: Option<CashFlow>,
 }
 

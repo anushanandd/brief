@@ -29,6 +29,8 @@ mod startup_market;
 mod statements;
 mod storage;
 mod summary;
+#[cfg(test)]
+mod synthetic;
 mod transaction_policy;
 mod window;
 
@@ -104,6 +106,38 @@ impl AppState {
     }
 }
 
+/// How long after launch the change log is replayed, so launch's own reads go first.
+const LOG_CHECK_DELAY: StdDuration = StdDuration::from_secs(60);
+
+/// Replays the change log once per launch, through its own connection, and keeps what it
+/// found for Diagnostics and Data health.
+fn check_log_in_background(app: tauri::AppHandle) {
+    std::thread::spawn(move || {
+        std::thread::sleep(LOG_CHECK_DELAY);
+        let state = app.state::<AppState>();
+        let Some(path) = state
+            .storage()
+            .ok()
+            .filter(|storage| !storage.is_recovering())
+            .map(|storage| storage.database_path().to_owned())
+        else {
+            return;
+        };
+        let check = match database::Database::open_read_only(&path) {
+            Ok(database) => storage::change::check(&database, chrono::Utc::now()),
+            Err(error) => storage::change::LogCheck {
+                checked_at: chrono::Utc::now().to_rfc3339(),
+                outcome: storage::change::Outcome::Failed,
+                replayed: 0,
+                detail: Some(error),
+            },
+        };
+        if let Ok(mut storage) = state.storage() {
+            storage.log_check = Some(check);
+        };
+    });
+}
+
 /// The system-wide key that summons the command palette: ⌘⇧B.
 fn palette_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
     use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
@@ -171,6 +205,7 @@ pub fn run() {
             document_summaries::start(app.handle().clone());
             calendar::start(app.handle().clone());
             close::start(app.handle().clone());
+            check_log_in_background(app.handle().clone());
             notify::sync_tray(app.handle(), background::enabled(app.handle()));
             Ok(())
         })
@@ -196,6 +231,7 @@ pub fn run() {
             finance::get_spending_period,
             finance::get_reports,
             finance::get_sync_runs,
+            finance::get_change_log,
             finance::get_data_health,
             finance::transaction_annotations,
             finance::restore_transaction_annotations,

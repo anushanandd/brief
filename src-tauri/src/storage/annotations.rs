@@ -1,39 +1,50 @@
 //! Edits to transactions, saved apart from provider data: category, review, tags, a note,
 //! splits, refund links, and whether the money is someone else's.
 use super::*;
+use ts_rs::TS;
 
-#[derive(Clone, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Default, Deserialize, Serialize, PartialEq, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Annotation {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) category: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) reviewed: Option<bool>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) benefit_confirmed: Option<bool>,
     /// Free-form labels. In a change, an empty list clears them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) tags: Option<Vec<String>>,
     /// Parts that divide the amount between categories. In a change, an empty list clears them.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) splits: Option<Vec<Split>>,
     /// The purchase this refund repays. In a change, an empty id clears the link.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) refund_of: Option<String>,
     /// Someone else's money: a purchase made for them, or what they paid you back. In a
     /// change, false clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) other: Option<bool>,
     /// The card benefit this transaction counts toward, chosen by hand. In a change, an empty
     /// id clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) benefit_id: Option<String>,
     /// A few words in the user's own hand. In a change, an empty note clears it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) note: Option<String>,
     /// The people chosen by hand, by id. Unlike tags, an empty list is a choice too: nobody,
     /// so matching by name no longer applies. Absent, matching decides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) people: Option<Vec<String>>,
     /// In a change only: forgets both benefit decisions, the confirmation and the assignment.
     #[serde(default, skip_serializing)]
@@ -44,15 +55,13 @@ const MAX_NOTE_CHARS: usize = 500;
 
 /// What a save returns: every annotation as saved, and the changed transactions' annotations
 /// as they were, so the edit can be undone.
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
 pub struct Saved {
     pub annotations: BTreeMap<String, Annotation>,
     pub previous: BTreeMap<String, Annotation>,
 }
 
 /// One part of a split transaction. Parts carry the transaction's sign and sum to its amount.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Split {
     pub category: String,
@@ -297,8 +306,7 @@ impl Storage {
         next.retain(|_, annotation| annotation != &Annotation::default());
         if next != self.data.annotations {
             self.backup_before_edit()?;
-            self.database.replace_annotations(&next)?;
-            self.data.annotations = next;
+            self.record(change::Change::annotations(&self.data.annotations, &next))?;
         }
         Ok(())
     }

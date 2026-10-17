@@ -15,7 +15,7 @@ const NET_INCOME_TAG: &str = "NetIncomeLoss";
 /// A quarter that ended longer ago than this is stale; a later tag may hold the current one.
 const RECENT_QUARTER_DAYS: i64 = 200;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Fundamentals {
     /// The calendar quarter EDGAR aligns the figures to, such as `CY2026Q2`.

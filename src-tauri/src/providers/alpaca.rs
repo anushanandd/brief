@@ -232,6 +232,7 @@ impl Providers {
                             market: market.clone(),
                             chart_snapshots: None,
                             chart_as_of: None,
+                            latest: true,
                         })?;
                     }
                     continue;
@@ -247,6 +248,7 @@ impl Providers {
                     market: market.clone(),
                     chart_snapshots: None,
                     chart_as_of: None,
+                    latest: true,
                 })?;
             }
             if let Ok(backfill) = self.market_history(&symbols, &market).await {
@@ -346,74 +348,18 @@ impl Providers {
             .await?;
         histories
             .remove("VOO")
+            .filter(|points| !points.is_empty())
             .map(Value::Array)
             .ok_or_else(|| "Alpaca returned no historical prices for VOO".to_string())
     }
 
-    /// Daily closes for Plaid stock-plan holdings and for shares a SnapTrade stock plan
-    /// allocated, which arrive without a price.
+    /// Daily closes for every symbol `security_history_symbols` names.
     pub async fn sync_security_history(
         &self,
         plaid: &PlaidData,
         snaptrade: Option<&SnapTradeData>,
     ) -> Result<BTreeMap<String, Vec<Value>>, String> {
-        let stock_plan_accounts = plaid
-            .investment_accounts
-            .iter()
-            .filter(|account| {
-                account
-                    .get("subtype")
-                    .and_then(Value::as_str)
-                    .is_some_and(|subtype| subtype.eq_ignore_ascii_case("stock plan"))
-            })
-            .filter_map(|account| account.get("account_id").and_then(Value::as_str))
-            .collect::<BTreeSet<_>>();
-        let security_ids = plaid
-            .holdings
-            .iter()
-            .filter(|holding| {
-                holding
-                    .get("account_id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| stock_plan_accounts.contains(id))
-            })
-            .filter_map(|holding| holding.get("security_id").and_then(Value::as_str))
-            .collect::<BTreeSet<_>>();
-        let symbols = plaid
-            .securities
-            .iter()
-            .filter(|security| {
-                security
-                    .get("security_id")
-                    .and_then(Value::as_str)
-                    .is_some_and(|id| security_ids.contains(id))
-            })
-            .filter_map(|security| security.get("ticker_symbol").and_then(Value::as_str))
-            .chain(
-                snaptrade
-                    .into_iter()
-                    .flat_map(|data| data.activities.values().flatten())
-                    .filter(|activity| {
-                        activity
-                            .get("description")
-                            .and_then(Value::as_str)
-                            .is_some_and(|text| {
-                                text.to_ascii_lowercase().contains("allocate shares")
-                            })
-                    })
-                    .filter_map(|activity| {
-                        let symbol = activity.get("symbol")?;
-                        symbol
-                            .get("raw_symbol")
-                            .or_else(|| symbol.get("symbol"))
-                            .and_then(Value::as_str)
-                    }),
-            )
-            .filter_map(|symbol| stock_symbol(symbol).ok())
-            .collect::<BTreeSet<_>>()
-            .into_iter()
-            .collect::<Vec<_>>();
-
+        let symbols = security_history_symbols(plaid, snaptrade);
         if symbols.is_empty() {
             return Ok(BTreeMap::new());
         }
@@ -470,6 +416,9 @@ impl Providers {
         Ok(corporate_actions::normalized(actions))
     }
 
+    /// Two years of daily closes for each symbol; a symbol Alpaca has none for maps to an empty
+    /// list. A symbol whose request fails is left out, and the whole call fails only when every
+    /// request did.
     pub(super) async fn sync_security_history_from_alpaca(
         &self,
         credentials: &AlpacaCredentials,
@@ -480,6 +429,7 @@ impl Providers {
             .format("%Y-%m-%d")
             .to_string();
         let mut histories = BTreeMap::new();
+        let mut failure = None;
         for symbol in symbols {
             let path = format!("/v2/stocks/{symbol}/bars");
             let payload = self
@@ -494,14 +444,18 @@ impl Providers {
                         ("adjustment", adjustment),
                     ],
                 )
-                .await?;
-            let points = parse_alpaca_history(&payload);
-            if points.is_empty() {
-                return Err(format!("Alpaca returned no historical prices for {symbol}"));
+                .await;
+            match payload {
+                Ok(payload) => {
+                    histories.insert(symbol.clone(), parse_alpaca_history(&payload));
+                }
+                Err(error) => failure = failure.or(Some(error)),
             }
-            histories.insert(symbol.clone(), points);
         }
-        Ok(histories)
+        match failure {
+            Some(error) if histories.is_empty() => Err(error),
+            _ => Ok(histories),
+        }
     }
 
     pub(super) async fn market_schedule(
@@ -629,6 +583,75 @@ pub fn normalize_stock_symbols(symbols: Vec<String>) -> Vec<String> {
 const CORPORATE_ACTIONS_AHEAD_DAYS: i64 = 120;
 const CORPORATE_ACTION_SYMBOLS_PER_REQUEST: usize = 50;
 const CORPORATE_ACTION_PAGES: usize = 20;
+
+/// The symbols whose daily closes price an account's past: Plaid stock-plan holdings, and every
+/// symbol a SnapTrade account holds or changed shares of, so its history can be rebuilt from
+/// its trades. Allocated stock-plan shares arrive without a price, so they need closes too.
+pub(crate) fn security_history_symbols(
+    plaid: &PlaidData,
+    snaptrade: Option<&SnapTradeData>,
+) -> Vec<String> {
+    let stock_plan_accounts = plaid
+        .investment_accounts
+        .iter()
+        .filter(|account| {
+            account
+                .get("subtype")
+                .and_then(Value::as_str)
+                .is_some_and(|subtype| subtype.eq_ignore_ascii_case("stock plan"))
+        })
+        .filter_map(|account| account.get("account_id").and_then(Value::as_str))
+        .collect::<BTreeSet<_>>();
+    let security_ids = plaid
+        .holdings
+        .iter()
+        .filter(|holding| {
+            holding
+                .get("account_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| stock_plan_accounts.contains(id))
+        })
+        .filter_map(|holding| holding.get("security_id").and_then(Value::as_str))
+        .collect::<BTreeSet<_>>();
+    let label = |label: &Value| {
+        label
+            .get("raw_symbol")
+            .or_else(|| label.get("symbol"))
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    };
+    let held = snaptrade
+        .into_iter()
+        .flat_map(|data| data.positions.values().flatten())
+        .filter_map(|position| label(position.get("instrument")?));
+    let traded = snaptrade
+        .into_iter()
+        .flat_map(|data| data.activities.values().flatten())
+        .filter(|activity| {
+            activity
+                .get("units")
+                .and_then(|units| units.as_f64().or_else(|| units.as_str()?.parse().ok()))
+                .is_some_and(|units: f64| units != 0.0)
+        })
+        .filter_map(|activity| label(activity.get("symbol")?));
+    plaid
+        .securities
+        .iter()
+        .filter(|security| {
+            security
+                .get("security_id")
+                .and_then(Value::as_str)
+                .is_some_and(|id| security_ids.contains(id))
+        })
+        .filter_map(|security| security.get("ticker_symbol").and_then(Value::as_str))
+        .map(str::to_owned)
+        .chain(held)
+        .chain(traded)
+        .filter_map(|symbol| stock_symbol(&symbol).ok())
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect()
+}
 
 pub(crate) fn stock_symbol(value: &str) -> Result<String, String> {
     let symbol = value.trim().to_ascii_uppercase();

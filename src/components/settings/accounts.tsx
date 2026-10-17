@@ -9,7 +9,7 @@ import { accountDisplayName } from '../../lib/account-names'
 import { accountStartDate } from '../../lib/account-start-dates'
 import { saveAccountLink } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
-import { defaultFinanceSettings, financeSettings } from '../../lib/finance-settings'
+import { defaultFinanceSettings, financeSettings, type Settings } from '../../lib/finance-settings'
 import { formatCurrency } from '../../lib/format'
 import { getExternalLogosEnabled } from '../../lib/logos'
 import { manualAccountKinds, type FinanceSettings, type FinanceSnapshot } from '../../lib/schema'
@@ -124,8 +124,8 @@ export function AccountsSection() {
   )
 }
 
-type SaveSettings = (change: (current: FinanceSettings) => FinanceSettings) => void
-type SectionProps = { data: FinanceSnapshot; settings: FinanceSettings; save: SaveSettings }
+type SaveSettings = (change: (current: Settings) => FinanceSettings) => void
+type SectionProps = { data: FinanceSnapshot; settings: Settings; save: SaveSettings }
 
 /** The spending card, other cards' benefit products, and which Platinum benefits are tracked. */
 function CardPreferences({ data, settings, save }: SectionProps) {
@@ -263,7 +263,7 @@ function CardPreferences({ data, settings, save }: SectionProps) {
   )
 }
 
-const manualKindLabels: Record<(typeof manualAccountKinds)[number], string> = {
+const manualKindLabels: Record<string, string> = {
   cash: 'Cash',
   brokerage: 'Investments',
   retirement: 'Retirement',
@@ -384,7 +384,7 @@ function ManualAccounts({ data, settings, save }: SectionProps) {
                 <span className="settings-list-copy">
                   <strong>{account.name}</strong>
                   <small>
-                    {manualKindLabels[account.kind]} ·{' '}
+                    {manualKindLabels[account.kind] ?? account.kind} ·{' '}
                     {latest ? (
                       <>
                         {account.kind === 'loan' ? 'owed ' : ''}

@@ -11,7 +11,7 @@ const MAX_SUMMARY_CHARS: usize = 1_200;
 const ROUNDUP_TICKERS: usize = 5;
 pub(crate) const MARKET_FUND: (&str, &str) = ("SPY", "S&P 500");
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Benchmark {
     pub symbol: String,
@@ -105,8 +105,9 @@ impl Providers {
 }
 
 /// The outcome of a portfolio news refresh.
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct PortfolioNews {
     /// `false` when one ran within the last ten minutes, so nothing was requested.
     pub refreshed: bool,

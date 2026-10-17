@@ -1,19 +1,27 @@
 import { expect, it } from 'vitest'
 
+import { transaction as record } from '../data/fixtures/records'
 import type { Transaction } from '../lib/schema'
 import { conflictNote, evidenceDetails, inspectorKey } from './transaction-dialog'
 
-const transaction = (patch: Partial<Transaction>): Transaction => ({
-  id: 't',
-  merchant: 'Synthetic Cafe',
-  category: 'Dining',
-  date: '2026-10-02',
-  amount: -40,
-  account: 'Card',
-  pending: false,
-  classification: { kind: 'expense', mark: 'initial', spending: true, credit: false, zelle: false },
-  ...patch,
-})
+const transaction = (patch: Partial<Transaction>): Transaction =>
+  record({
+    id: 't',
+    merchant: 'Synthetic Cafe',
+    category: 'Dining',
+    date: '2026-10-02',
+    amount: -40,
+    account: 'Card',
+    pending: false,
+    classification: {
+      kind: 'expense',
+      mark: 'initial',
+      spending: true,
+      credit: false,
+      zelle: false,
+    },
+    ...patch,
+  })
 
 it('names what each graded detail rests on and what disagreeing sources each say', () => {
   const disputed = transaction({

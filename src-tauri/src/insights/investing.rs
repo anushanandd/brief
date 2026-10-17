@@ -2,6 +2,7 @@
 //! so an empty list honestly reads as "nothing needs you".
 use chrono::NaiveDate;
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::allocation::{Allocation, SecurityHolding};
 use super::lots::LongTermSoon;
@@ -15,7 +16,7 @@ const HARVEST_LISTED: usize = 2;
 /// Earnings for a holding this large can move the whole portfolio.
 pub const EARNINGS_WATCH_PERCENT: f64 = 10.0;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum InvestmentFlag {
     #[serde(rename_all = "camelCase")]
@@ -39,7 +40,7 @@ pub enum InvestmentFlag {
     },
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct InvestmentAttention {
     pub flags: Vec<InvestmentFlag>,

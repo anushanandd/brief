@@ -1,8 +1,13 @@
 import { invoke } from '@tauri-apps/api/core'
-import { z } from 'zod'
 
 import type { ActivityItem } from './activity'
 import { isTauri } from './api'
+import type { CalendarAccess } from './bindings/CalendarAccess'
+import type { CalendarEvent } from './bindings/CalendarEvent'
+import type { CalendarInfo } from './bindings/CalendarInfo'
+import type { CalendarSource } from './bindings/CalendarSource'
+import type { CalendarStatus } from './bindings/CalendarStatus'
+import type { ListedCalendar } from './bindings/ListedCalendar'
 import { addDays, validDate } from './dates'
 import { displayCase } from './format'
 import { preference } from './preference'
@@ -13,65 +18,31 @@ import type { AgendaItem, EarningsEvent } from './schema'
  * user's other events, read for this page. Only the app can reach Calendar; the browser
  * preview reports it unavailable and shows the agenda alone.
  */
-export const calendarAccessSchema = z.enum([
-  'notAsked',
-  'restricted',
-  'denied',
-  'allowed',
-  'writeOnly',
-  'unavailable',
-])
-export type CalendarAccess = z.infer<typeof calendarAccessSchema>
-
-const calendarInfoSchema = z.object({ id: z.string(), title: z.string(), source: z.string() })
-export type CalendarInfo = z.infer<typeof calendarInfoSchema>
-
-const calendarStatusSchema = z.object({
-  access: calendarAccessSchema,
-  calendar: calendarInfoSchema.optional(),
-  /** Sync is on but its calendar was deleted in Calendar. */
-  missing: z.boolean(),
-  lastSync: z.object({ at: z.string(), error: z.string().optional() }).optional(),
-})
-export type CalendarStatus = z.infer<typeof calendarStatusSchema>
-
-const calendarSourceSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  kind: z.enum(['icloud', 'local', 'caldav', 'exchange', 'other']),
-})
-export type CalendarSource = z.infer<typeof calendarSourceSchema>
-
-const calendarEventSchema = z.object({
-  id: z.string(),
-  calendar: z.string(),
-  title: z.string(),
-  /** A date for an all-day event, otherwise a local instant. */
-  start: z.string(),
-  end: z.string(),
-  allDay: z.boolean(),
-  color: z.string().optional(),
-  location: z.string().optional(),
-  attendees: z.array(z.object({ name: z.string(), contactId: z.string().optional() })).default([]),
-})
-export type CalendarEvent = z.infer<typeof calendarEventSchema>
+export type {
+  CalendarAccess,
+  CalendarEvent,
+  CalendarInfo,
+  CalendarSource,
+  CalendarStatus,
+  ListedCalendar,
+}
 
 const unavailableStatus: CalendarStatus = { access: 'unavailable', missing: false }
 
 export async function calendarStatus(): Promise<CalendarStatus> {
   if (!isTauri()) return unavailableStatus
-  return calendarStatusSchema.parse(await invoke('calendar_status'))
+  return invoke<CalendarStatus>('calendar_status')
 }
 
 /** Shows macOS's prompt the first time; afterward macOS answers from the saved choice. */
 export async function requestCalendarAccess(): Promise<CalendarAccess> {
   if (!isTauri()) return 'unavailable'
-  return calendarAccessSchema.parse(await invoke('request_calendar_access'))
+  return invoke<CalendarAccess>('request_calendar_access')
 }
 
 export async function calendarSources(): Promise<CalendarSource[]> {
   if (!isTauri()) return []
-  return calendarSourceSchema.array().parse(await invoke('calendar_sources'))
+  return invoke<CalendarSource[]>('calendar_sources')
 }
 
 /**
@@ -79,7 +50,7 @@ export async function calendarSources(): Promise<CalendarSource[]> {
  * else a new one in `sourceId`.
  */
 export async function createBriefCalendar(sourceId: string): Promise<CalendarInfo> {
-  return calendarInfoSchema.parse(await invoke('create_brief_calendar', { sourceId }))
+  return invoke<CalendarInfo>('create_brief_calendar', { sourceId })
 }
 
 /** Removes the events Brief wrote; the calendar and the user's own events stay. */
@@ -87,18 +58,10 @@ export async function removeBriefEvents(): Promise<void> {
   await invoke('remove_brief_events')
 }
 
-const listedCalendarSchema = z.object({
-  id: z.string(),
-  title: z.string(),
-  source: z.string(),
-  color: z.string().optional(),
-})
-export type ListedCalendar = z.infer<typeof listedCalendarSchema>
-
 /** The user's calendars besides the Brief calendar. */
 export async function calendarList(): Promise<ListedCalendar[]> {
   if (!isTauri()) return []
-  return listedCalendarSchema.array().parse(await invoke('calendar_list'))
+  return invoke<ListedCalendar[]>('calendar_list')
 }
 
 /** The user's events in `calendarIds` from `start` through `end`. */
@@ -108,9 +71,7 @@ export async function calendarEvents(
   calendarIds: readonly string[],
 ): Promise<CalendarEvent[]> {
   if (!isTauri() || !calendarIds.length) return []
-  return calendarEventSchema
-    .array()
-    .parse(await invoke('calendar_events', { start, end, calendarIds }))
+  return invoke<CalendarEvent[]>('calendar_events', { start, end, calendarIds })
 }
 
 /**
@@ -281,7 +242,8 @@ export function attendingPeople<P extends { id: string; name: string; contactId?
   people: readonly P[],
   chosen: readonly string[],
 ): P[] {
-  const attendees = events.flatMap((event) => event.attendees)
+  // Rust leaves out an event's attendees when there are none.
+  const attendees = events.flatMap((event) => event.attendees ?? [])
   return people.filter(
     (person) =>
       !chosen.includes(person.id) &&

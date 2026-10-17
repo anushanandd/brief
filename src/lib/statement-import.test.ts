@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest'
 
-import { statementPreviewSchema, statementSummarySchema } from './schema'
 import {
   reconciliationSummary,
   reviewCount,
@@ -101,39 +100,5 @@ describe('statement import copy', () => {
     expect(statementDateRange('2026-01-16', '2026-08-25')).toBe('Jan 16, 2026 – Aug 25, 2026')
     expect(statementDateRange('2026-01-16', '2026-01-16')).toBe('Jan 16, 2026')
     expect(statementDateRange(null, null)).toBeUndefined()
-  })
-})
-
-describe('statement import payloads', () => {
-  it('accept the nulls Rust sends for absent values', () => {
-    const preview = statementPreviewSchema.parse({
-      draftId: 'a'.repeat(64),
-      fileName: 'statement.csv',
-      label: null,
-      firstDate: '2026-01-16',
-      lastDate: '2026-08-25',
-      rows: 3,
-      trades: 0,
-      moneyIn: 250,
-      moneyOut: 35.75,
-      check: { ...check, totalMatches: null, status: 'unverified' },
-      datesAssumed: true,
-      suggestedAccountId: null,
-      importedAccountId: null,
-      accounts: [{ accountId: 'plaid:cash', counts, providerStart: null }],
-    })
-    expect(preview.accounts[0].providerStart).toBeNull()
-    const summary = statementSummarySchema.parse({
-      id: 'a'.repeat(64),
-      fileName: 'statement.csv',
-      accountId: 'plaid:cash',
-      importedAt: '2026-09-09T11:00:00Z',
-      firstDate: null,
-      lastDate: null,
-      rows: 0,
-      counts,
-      check: null,
-    })
-    expect(summary.check).toBeNull()
   })
 })

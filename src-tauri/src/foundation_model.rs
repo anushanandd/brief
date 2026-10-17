@@ -109,8 +109,9 @@ mod macos {
         }
     }
 
-    #[derive(Serialize)]
+    #[derive(Serialize, ts_rs::TS)]
     #[serde(rename_all = "camelCase")]
+    #[ts(export)]
     pub struct FoundationModelStatus {
         pub state: &'static str,
         pub message: &'static str,
@@ -253,8 +254,9 @@ mod macos {
 mod fallback {
     use serde::Serialize;
 
-    #[derive(Serialize)]
+    #[derive(Serialize, ts_rs::TS)]
     #[serde(rename_all = "camelCase")]
+    #[ts(export)]
     pub struct FoundationModelStatus {
         pub state: &'static str,
         pub message: &'static str,
@@ -298,7 +300,7 @@ pub struct ToolHost {
 }
 
 /// One ledger query the model ran and the figures it returned: the evidence for an answer.
-#[derive(Clone, Debug, serde::Serialize, PartialEq)]
+#[derive(Clone, Debug, serde::Serialize, PartialEq, ts_rs::TS)]
 pub struct ToolCall {
     pub name: String,
     pub arguments: serde_json::Value,
@@ -321,8 +323,9 @@ pub fn figures_not_in(text: &str, source: &str) -> Vec<String> {
 
 /// Whether the queries returned what the question needed. Not having the figures is an answer,
 /// shown as such, not an error.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename = "AnswerOutcome")]
 pub enum Outcome {
     Answered,
     Unavailable,
@@ -330,7 +333,8 @@ pub enum Outcome {
 
 /// An answer with the queries behind it, so every figure can be checked and kept, and the
 /// figures it states that none of those queries returned.
-#[derive(Clone, Debug, serde::Serialize)]
+#[derive(Clone, Debug, serde::Serialize, ts_rs::TS)]
+#[ts(export, rename = "AssistantAnswer")]
 pub struct Answer {
     pub text: String,
     pub outcome: Outcome,

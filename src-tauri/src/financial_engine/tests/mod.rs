@@ -22,7 +22,6 @@ use crate::providers::{PlaidData, SnapTradeData};
 
 fn sync() -> ProviderSync {
     ProviderSync {
-        sync_id: "sync".into(),
         balances_fresh: true,
         refreshed_account_ids: vec!["plaid:cash".into(), "snaptrade:brokerage".into()],
         previous_snapshot: serde_json::from_str(include_str!("../../../../src/data/empty.json"))
@@ -541,7 +540,7 @@ fn possible_duplicates_are_never_silently_removed() {
 }
 
 #[test]
-fn complete_history_applies_off_date_cash_transfers_to_comparisons() {
+fn brokerage_history_is_rebuilt_from_its_cash_movements() {
     let mut sync = sync();
     sync.snaptrade.history_complete = true;
     sync.snaptrade.activity_complete = true;
@@ -565,12 +564,32 @@ fn complete_history_applies_off_date_cash_transfers_to_comparisons() {
             .with_timezone(&Utc),
     )
     .unwrap();
+    // Rebuilt from the records, the deposit lands on its own day, so cash that only moved
+    // shows no market change; the provider's rounder 190.00 gave way to the records.
     let account = &snapshot["brokeragePerformance"][1];
-    assert_eq!(account["performanceMethod"], "time-weighted");
-    assert_eq!(account["points"][1]["netDeposits"], 200.0);
-    assert_eq!(account["points"][1]["sp500"], 201.9);
-    assert_eq!(account["points"][1]["marketChange"], 0.11);
-    assert_eq!(account["points"][1]["marketChangePct"], 0.0579);
+    assert_eq!(account["historySource"], "estimated");
+    assert_eq!(account["performanceMethod"], "modified-dietz");
+    let points = account["points"].as_array().unwrap();
+    let values = points
+        .iter()
+        .map(|point| {
+            (
+                point["date"].as_str().unwrap(),
+                point["value"].as_f64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(
+        values,
+        [
+            ("2026-09-08", 190.11),
+            ("2026-09-09", 200.11),
+            ("2026-09-10", 200.11)
+        ]
+    );
+    assert_eq!(points[2]["netDeposits"], 200.11);
+    assert_eq!(points[2]["sp500"], 202.11);
+    assert_eq!(points[2]["marketChange"], 0.0);
     let transfer = snapshot["transactions"]
         .as_array()
         .unwrap()
@@ -580,6 +599,93 @@ fn complete_history_applies_off_date_cash_transfers_to_comparisons() {
     assert_eq!(transfer["merchant"], "Transfer in");
     assert_eq!(transfer["amount"], 10.0);
     assert_eq!(transfer["accountId"], "snaptrade:brokerage");
+}
+
+/// The fixture's brokerage after a deposit and a purchase on 2026-09-08, holding 100 TEST
+/// shares priced by daily closes, with a provider history that overstates it.
+fn rebuilt_brokerage() -> ProviderSync {
+    let mut sync = sync();
+    sync.snaptrade.activity_complete = true;
+    sync.snaptrade.positions.insert(
+        "brokerage".into(),
+        vec![json!({
+            "units": 100, "price": 19, "currency": "USD",
+            "instrument": { "kind": "stock", "symbol": "TEST", "description": "Test Security" }
+        })],
+    );
+    sync.snaptrade.activities.insert(
+        "brokerage".into(),
+        vec![
+            json!({ "id": "deposit", "type": "TRANSFER", "amount": 1800, "trade_date": "2026-09-08" }),
+            json!({
+                "id": "buy", "type": "BUY", "amount": -1800, "units": 100, "price": 18,
+                "trade_date": "2026-09-08", "symbol": { "symbol": "TEST" }
+            }),
+        ],
+    );
+    sync.snaptrade.balance_history.insert(
+        "brokerage".into(),
+        vec![
+            json!({ "date": "2026-09-06", "total_value": "4200" }),
+            json!({ "date": "2026-09-08", "total_value": "4300" }),
+        ],
+    );
+    sync.security_history.insert(
+        "TEST".into(),
+        vec![
+            json!({ "date": "2026-09-04", "value": 17 }),
+            json!({ "date": "2026-09-08", "value": 18 }),
+        ],
+    );
+    sync
+}
+
+#[test]
+fn brokerage_history_is_rebuilt_from_its_trades_and_closes() {
+    let snapshot = project_json(&rebuilt_brokerage(), &BTreeMap::new(), projection_time()).unwrap();
+    let account = &snapshot["brokeragePerformance"][1];
+    assert_eq!(account["historySource"], "estimated");
+    let values = account["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|point| {
+            (
+                point["date"].as_str().unwrap(),
+                point["value"].as_f64().unwrap(),
+            )
+        })
+        .collect::<Vec<_>>();
+    // Before the deposit only the cash was there; the provider's 4,200 never was.
+    assert_eq!(
+        values,
+        [
+            ("2026-09-06", 200.11),
+            ("2026-09-07", 200.11),
+            ("2026-09-08", 2000.11),
+            ("2026-09-09", 2100.11)
+        ]
+    );
+}
+
+#[test]
+fn shares_the_records_do_not_explain_keep_the_providers_history() {
+    let source = |sync: &ProviderSync| {
+        let snapshot = project_json(sync, &BTreeMap::new(), projection_time()).unwrap();
+        let account = &snapshot["brokeragePerformance"][1];
+        (
+            account["historySource"].as_str().unwrap().to_owned(),
+            account["points"][0]["value"].as_f64().unwrap(),
+        )
+    };
+    // Undoing the purchase would leave fewer than no shares: some shares left unrecorded.
+    let mut sync = rebuilt_brokerage();
+    sync.snaptrade.positions.get_mut("brokerage").unwrap()[0]["units"] = json!(80);
+    assert_eq!(source(&sync), ("provider-estimated".into(), 4200.0));
+    // Shares Alpaca can't price.
+    let mut sync = rebuilt_brokerage();
+    sync.security_history.clear();
+    assert_eq!(source(&sync), ("provider-estimated".into(), 4200.0));
 }
 
 #[test]

@@ -6,6 +6,7 @@ use std::{collections::HashMap, sync::LazyLock};
 use chrono::{Datelike, Duration, NaiveDate};
 use regex::Regex;
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::benefits::PLATINUM;
 use super::calendar;
@@ -66,7 +67,7 @@ impl Cadence {
     }
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum EventKind {
     Credit,
@@ -75,7 +76,7 @@ pub enum EventKind {
     Subscription,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum EventState {
     Expected,
@@ -90,7 +91,7 @@ pub const MISSED_DAYS: i64 = 45;
 /// Business days a bill may post late before it is missed rather than awaiting its post.
 const LATE_BUSINESS_DAYS: u32 = 5;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ExpectedEvent {
     pub id: String,
@@ -105,9 +106,11 @@ pub struct ExpectedEvent {
     pub observations: usize,
     pub last_seen: NaiveDate,
     pub state: EventState,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub account_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub matched_transaction_id: Option<String>,
     /// The latest posted transaction in the series, for its mark and account.
     pub source_transaction_id: String,

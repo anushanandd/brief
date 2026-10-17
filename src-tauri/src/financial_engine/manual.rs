@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::{decimal_f64, money, scaled};
 use crate::finance_contract::{
@@ -15,7 +16,7 @@ use crate::settings::{FinanceSettings, ManualAccount, ManualEntry};
 use rust_decimal::Decimal;
 
 /// What the renderer still needs to know about an account the user closed.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ClosedAccount {
     pub id: String,

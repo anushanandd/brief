@@ -693,7 +693,7 @@ function EntryRow({
   )
   if (entry.type === 'event') {
     const { event } = entry
-    const people = event.attendees.map(({ name }) => name).filter(Boolean)
+    const people = (event.attendees ?? []).map(({ name }) => name).filter(Boolean)
     return (
       <div className="calendar-entry">
         {body(
