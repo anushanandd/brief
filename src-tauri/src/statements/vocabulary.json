@@ -1,0 +1,103 @@
+{
+  "version": 1,
+  "columns": {
+    "posted": [
+      "activity/trade date",
+      "activity date",
+      "posting date",
+      "posted date",
+      "post date",
+      "posted",
+      "trade date",
+      "value date",
+      "date"
+    ],
+    "occurred": ["transaction date", "trans date", "trans. date", "valuation date"],
+    "settled": ["settlement date", "settle date"],
+    "amount": ["amount", "net amount", "transaction amount", "amount usd"],
+    "debit": [
+      "debit",
+      "debits",
+      "debit amount",
+      "withdrawal",
+      "withdrawals",
+      "money out",
+      "paid out"
+    ],
+    "credit": ["credit", "credits", "credit amount", "deposit", "deposits", "money in", "paid in"],
+    "balance": ["running balance", "balance", "running bal", "ledger balance", "available balance"],
+    "description": [
+      "description",
+      "transaction description",
+      "details",
+      "narrative",
+      "payee",
+      "merchant",
+      "name"
+    ],
+    "activity": ["activity type", "activity", "transaction type", "type", "action"],
+    "symbol": ["symbol", "ticker", "fund"],
+    "quantity": ["quantity", "shares", "qty", "units", "fund units"],
+    "price": ["price", "unit price", "share price", "fund nav/price", "nav"],
+    "fee": ["commission", "commissions", "fee", "fees", "fees & comm", "commission & fees"],
+    "pending": ["pending transaction", "pending", "status"],
+    "details": ["extended details", "additional details"],
+    "address": ["address", "merchant address", "street address"],
+    "locality": ["city/state", "city state", "merchant city", "city"],
+    "postalCode": ["zip code", "zip", "postal code", "postcode"],
+    "country": ["country", "merchant country"],
+    "issuerCategory": ["category", "merchant category"]
+  },
+  "pendingValues": ["p", "pending", "yes", "true", "y"],
+  "activities": {
+    "interest": [
+      "interest",
+      "interest income",
+      "interest payment",
+      "interest paid",
+      "credit interest"
+    ],
+    "dividend": [
+      "dividend",
+      "qualified dividend",
+      "non-qualified dividend",
+      "ordinary dividend",
+      "cash dividend"
+    ],
+    "wages": ["direct deposit", "payroll"],
+    "transfer": [
+      "transfer",
+      "transfer in",
+      "transfer out",
+      "online transfer",
+      "internal transfer",
+      "journal"
+    ],
+    "paymentApp": ["zelle payment", "zelle", "venmo"],
+    "cashWithdrawal": ["atm withdrawal", "atm"],
+    "fee": [
+      "fee",
+      "account fee",
+      "service fee",
+      "monthly fee",
+      "account fee adj",
+      "service fee adj"
+    ],
+    "contribution": [
+      "contribution",
+      "contributions",
+      "ira contribution",
+      "before-tax",
+      "pre-tax",
+      "roth",
+      "after-tax",
+      "employer match",
+      "employer contribution",
+      "safe harbor"
+    ],
+    "buy": ["bought", "buy", "purchase"],
+    "sell": ["sold", "sell", "sale"]
+  },
+  "accountLabels": ["account activity for", "account name", "account"],
+  "totalLabels": ["total", "totals"]
+}

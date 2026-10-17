@@ -3,6 +3,7 @@ import { renderToString } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 
 import empty from '../data/empty.json'
+import { emptyRollup } from '../data/fixtures/insights'
 import { financeSnapshotSchema, type MarketSnapshots } from '../lib/schema'
 import { LiveMarketProvider } from './live-market-provider'
 import { useLiveFinance } from './use-live-finance'
@@ -48,7 +49,13 @@ function renderSaved(revision: number) {
     pollIntervalMs: 300000,
     historyFeed: 'iex',
     historyDelayMinutes: 0,
-    projection: { ...base, revision, netWorth: 123, brokeragePerformance: [] },
+    projection: {
+      ...base,
+      revision,
+      netWorth: 123,
+      brokeragePerformance: [],
+      rollup: emptyRollup(),
+    },
   }
   const client = new QueryClient()
   client.setQueryData(['startup-market', 4, base.updatedAt], market)

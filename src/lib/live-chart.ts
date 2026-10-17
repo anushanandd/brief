@@ -1,6 +1,8 @@
 import type { LivelinePoint } from 'liveline'
 
 import { dayKey } from './dates'
+import { chartPeriod } from './graph-preferences'
+import type { ChartChanges } from './schema'
 
 const MAX_LIVE_POINTS = 7 * 24 * 60
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -56,32 +58,17 @@ export function chartPointAtOrAfter(points: LivelinePoint[], time: number) {
   return points.find((point) => point.time >= time) ?? points.at(-1)
 }
 
-export function chartRangeChange(points: LivelinePoint[], windowSeconds: number, now: number) {
-  const ordered = points
-    .filter(({ time, value }) => Number.isFinite(time) && Number.isFinite(value))
-    .toSorted((left, right) => left.time - right.time)
-  const first = ordered[0]
-  const last = ordered.at(-1)
-  if (!first || !last || !Number.isFinite(now)) return { change: 0, percent: 0 }
-
-  const boundary = windowSeconds ? now - windowSeconds : first.time
-  const afterIndex = ordered.findIndex(({ time }) => time >= boundary)
-  const after = afterIndex < 0 ? last : ordered[afterIndex]
-  const before = afterIndex > 0 ? ordered[afterIndex - 1] : after
-  const elapsed = after.time - before.time
-  const progress = elapsed ? (boundary - before.time) / elapsed : 0
-  const baseline =
-    boundary <= first.time
-      ? first.value
-      : boundary >= last.time
-        ? last.value
-        : before.value + (after.value - before.value) * progress
-  const change = last.value - baseline
-
-  return {
-    change,
-    percent: baseline ? (change / Math.abs(baseline)) * 100 : 0,
-  }
+/**
+ * A value chart's change over a window, as Rust read it from the same line: saved, or at the
+ * live points when the market stream is on. Nothing changed when Rust has no reading.
+ */
+export function chartRangeChange(changes: ChartChanges, series: string, windowSeconds: number) {
+  return (
+    changes.find((chart) => chart.series === series)?.windows[chartPeriod(windowSeconds)] ?? {
+      change: 0,
+      percent: 0,
+    }
+  )
 }
 
 export function chartPointsFromStartDate(points: LivelinePoint[], startDate?: string) {

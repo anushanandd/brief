@@ -5,8 +5,9 @@ import { preference } from './preference'
 const DAY_SECONDS = 24 * 60 * 60
 const DEFAULT_GRAPH_WINDOW = 7 * DAY_SECONDS
 
-/** The chart periods every W/M/Q/Y/A chart offers, each one of the windows Rust computes. */
+/** The chart periods every D/W/M/Q/Y/A chart offers, each one of the windows Rust computes. */
 export const graphWindows = [
+  { name: 'day', label: 'D', settingsLabel: 'Day', secs: DAY_SECONDS },
   { name: 'week', label: 'W', settingsLabel: 'Week', secs: 7 * DAY_SECONDS },
   { name: 'month', label: 'M', settingsLabel: 'Month', secs: 30 * DAY_SECONDS },
   { name: 'quarter', label: 'Q', settingsLabel: 'Quarter', secs: 90 * DAY_SECONDS },
@@ -25,7 +26,7 @@ export const chartPeriodSeconds = (period: ChartPeriod) =>
   graphWindows.find(({ name }) => name === period)!.secs
 
 export function graphWindowForKey(key: string) {
-  return graphWindows[['w', 'm', 'q', 'y', 'a'].indexOf(key.toLocaleLowerCase())]?.secs
+  return graphWindows[['d', 'w', 'm', 'q', 'y', 'a'].indexOf(key.toLocaleLowerCase())]?.secs
 }
 
 export function adjacentGraphWindow(current: number, direction: -1 | 1) {
@@ -46,7 +47,7 @@ export const getDefaultGraphWindow = defaultWindow.get
 export const saveDefaultGraphWindow = (seconds: number) =>
   defaultWindow.save(parseGraphWindow(seconds))
 
-// One range for this session, shared by every page with a W/M/Q/Y/A chart, so moving between
+// One range for this session, shared by every page with a D/W/M/Q/Y/A chart, so moving between
 // pages keeps the period in view. It starts from the saved default and is not persisted.
 let sessionWindow: number | undefined
 const listeners = new Set<() => void>()

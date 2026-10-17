@@ -8,8 +8,7 @@ import { benefitNote, benefitStatus, creditLagNote } from '../lib/benefit-copy'
 import {
   benefitRows,
   benefitYearTotals,
-  capturedForOthers,
-  plannedAmount,
+  cardYearTotals,
   benefitYears,
   gridCells,
   periodStateText,
@@ -64,7 +63,7 @@ function cellText(period: BenefitPeriod) {
     case 'open':
       return period.left ? `${formatProseCurrency(period.left.high)} left` : 'Open'
     case 'future':
-      return plannedAmount(period) > 0 ? formatProseCurrency(plannedAmount(period)) : ''
+      return period.plannedTotal > 0 ? formatProseCurrency(period.plannedTotal) : ''
     case 'likely-used':
       return 'Used'
     case 'before-history':
@@ -86,7 +85,7 @@ function GridCell({
   const share = (value: number) =>
     period.cap > 0 ? Math.min(1, Math.max(0, value / period.cap)) : 0
   const credited = period.state === 'likely-used' ? 1 : share(period.credited)
-  const planned = Math.min(1 - credited, share(plannedAmount(period)))
+  const planned = Math.min(1 - credited, share(period.plannedTotal))
   const text = cellText(period)
   const evidence = period.activityIds.flatMap((id) => activity.get(id) ?? [])
   return (
@@ -195,7 +194,7 @@ function GridRow({
   activity: Map<string, BenefitActivity>
   onOpen: (period?: string) => void
 }) {
-  const totals = benefitYearTotals([benefit], year)
+  const totals = benefitYearTotals(benefit, year)
   return (
     <tr data-keyboard-row tabIndex={-1} aria-label={benefit.name}>
       <RowName id={benefit.id} name={benefit.name} waiting={waiting} onOpen={() => onOpen()} />
@@ -649,7 +648,7 @@ function BenefitDetail({
   )
   const name = benefit?.name ?? current?.name ?? 'Benefit'
   const id = benefit?.id ?? current?.id ?? ''
-  const totals = benefitYearTotals(benefit ? [benefit] : [], year)
+  const totals = benefitYearTotals(benefit, year)
   const rows = (ids: string[]) =>
     ids.flatMap((activityId) => activities.get(`spending:${activityId}`) ?? [])
   const likelyUsed = periods.filter(({ state }) => state === 'likely-used').length
@@ -873,7 +872,7 @@ export function BenefitGrid({
             (cadence === 'renewal' || cadence === 'purchase') && !hidden.includes(id),
         )
       : []
-  const totals = benefitYearTotals(rows, year)
+  const totals = cardYearTotals(card, year)
   const review = benefitReviewItems(card, hidden)
   const [openTransaction, setOpenTransaction] = useState<string>()
   const transactions = useMemo(
@@ -884,10 +883,6 @@ export function BenefitGrid({
   const activity = useMemo(
     () => new Map((card?.activity ?? []).map((item) => [item.id, item])),
     [card?.activity],
-  )
-  const others = useMemo(
-    () => new Set(data.transactions.filter(({ other }) => other).map(({ id }) => id)),
-    [data.transactions],
   )
 
   useRegisterActions(
@@ -960,7 +955,7 @@ export function BenefitGrid({
     ) : null
 
   // Your share and theirs add up to the year's captured credits.
-  const forOthers = capturedForOthers(rows, year, activity, others)
+  const forOthers = totals.forOthers
 
   return (
     <>

@@ -2,10 +2,10 @@ import { useQuery } from '@tanstack/react-query'
 import { listen } from '@tauri-apps/api/event'
 import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
 
-import { loadTransactionAnnotations } from '../lib/annotations'
+import { hasLegacyAnnotations, loadTransactionAnnotations } from '../lib/annotations'
 import { getFinanceSnapshot, getIntegrationStatus, isTauri } from '../lib/api'
 import { localDateKey } from '../lib/dates'
-import { importLegacyFinanceSettings } from '../lib/finance-settings'
+import { hasLegacySettings, importLegacyFinanceSettings } from '../lib/finance-settings'
 import { formatUpdatedAt } from '../lib/format'
 import { FinanceContext, financeQueryKey } from './use-finance'
 
@@ -50,7 +50,10 @@ function useBaseFinanceState() {
     },
     [],
   )
-  // Import legacy renderer settings and annotations before reading the native view.
+  // Settings and annotations kept in renderer storage by older versions are imported into Rust.
+  // Only then does the native view include them, so the first read waits for the import, but
+  // only when there is something to import; otherwise both start at once.
+  const [legacyImport] = useState(() => hasLegacySettings() || hasLegacyAnnotations())
   const annotations = useQuery({
     queryKey: ['transaction-annotations'],
     queryFn: async () => {
@@ -64,7 +67,7 @@ function useBaseFinanceState() {
   const query = useQuery({
     queryKey: financeQueryKey,
     queryFn: getFinanceSnapshot,
-    enabled: annotations.isSuccess || annotations.isError,
+    enabled: !legacyImport || annotations.isSuccess || annotations.isError,
     staleTime: Number.POSITIVE_INFINITY,
   })
   const insightsDay = query.data?.insights?.today
@@ -148,14 +151,13 @@ function useBaseFinanceState() {
       const result = await query.refetch()
       return result
     },
-    isLoading: annotations.isLoading || query.isLoading,
+    isLoading: (legacyImport && annotations.isLoading) || query.isLoading,
     isError: query.isError,
     error: query.error,
     annotationWarning: annotations.isError
       ? 'Couldn’t load annotations'
       : annotations.data?.warning,
     data: query.data,
-    annotations: annotations.data?.annotations ?? {},
     integrationStatus: integration.data ?? {
       plaid: false,
       snaptrade: false,

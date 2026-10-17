@@ -31,6 +31,334 @@
       ],
       "value": 286999.89
     },
+    "activityDays": [
+      {
+        "income": 0.0,
+        "net": -2400.0,
+        "period": "2026-06-01",
+        "spent": 2400.0
+      },
+      {
+        "income": 0.0,
+        "net": -260.0,
+        "period": "2026-06-02",
+        "spent": 260.0
+      },
+      {
+        "income": 4821.75,
+        "net": 4821.75,
+        "period": "2026-06-05",
+        "spent": 0.0
+      },
+      {
+        "income": 0.0,
+        "net": -18.4,
+        "period": "2026-06-06",
+        "spent": 18.4
+      },
+      {
+        "income": 0.0,
+        "net": -92.14,
+        "period": "2026-06-07",
+        "spent": 92.14
+      },
+      {
+        "income": 0.0,
+        "net": -12.75,
+        "period": "2026-06-09",
+        "spent": 12.75
+      },
+      {
+        "income": 0.0,
+        "net": -15.49,
+        "period": "2026-06-12",
+        "spent": 15.49
+      },
+      {
+        "income": 0.0,
+        "net": -13.99,
+        "period": "2026-06-15",
+        "spent": 13.99
+      },
+      {
+        "income": 4821.75,
+        "net": 4821.75,
+        "period": "2026-06-19",
+        "spent": 0.0
+      },
+      {
+        "income": 0.0,
+        "net": -23.75,
+        "period": "2026-06-20",
+        "spent": 23.75
+      },
+      {
+        "income": 0.0,
+        "net": -71.38,
+        "period": "2026-06-21",
+        "spent": 71.38
+      },
+      {
+        "income": 0.0,
+        "net": -11.99,
+        "period": "2026-06-22",
+        "spent": 11.99
+      },
+      {
+        "income": 0.0,
+        "net": -12.75,
+        "period": "2026-06-23",
+        "spent": 12.75
+      },
+      {
+        "income": 0.0,
+        "net": -96.2,
+        "period": "2026-06-26",
+        "spent": 96.2
+      },
+      {
+        "income": 0.0,
+        "net": -2400.0,
+        "period": "2026-07-01",
+        "spent": 2400.0
+      },
+      {
+        "income": 0.0,
+        "net": -260.0,
+        "period": "2026-07-02",
+        "spent": 260.0
+      },
+      {
+        "income": 4821.75,
+        "net": 4821.75,
+        "period": "2026-07-03",
+        "spent": 0.0
+      },
+      {
+        "income": 0.0,
+        "net": -104.62,
+        "period": "2026-07-05",
+        "spent": 104.62
+      },
+      {
+        "income": 0.0,
+        "net": -180.4,
+        "period": "2026-07-08",
+        "spent": 180.4
+      },
+      {
+        "income": 0.0,
+        "net": -14.1,
+        "period": "2026-07-09",
+        "spent": 14.1
+      },
+      {
+        "income": 0.0,
+        "net": -15.49,
+        "period": "2026-07-12",
+        "spent": 15.49
+      },
+      {
+        "income": 0.0,
+        "net": -12.75,
+        "period": "2026-07-14",
+        "spent": 12.75
+      },
+      {
+        "income": 0.0,
+        "net": -13.99,
+        "period": "2026-07-15",
+        "spent": 13.99
+      },
+      {
+        "income": 4821.75,
+        "net": 4821.75,
+        "period": "2026-07-17",
+        "spent": 0.0
+      },
+      {
+        "income": 0.0,
+        "net": -88.03,
+        "period": "2026-07-19",
+        "spent": 88.03
+      },
+      {
+        "income": 0.0,
+        "net": -11.99,
+        "period": "2026-07-22",
+        "spent": 11.99
+      },
+      {
+        "income": 0.0,
+        "net": -31.2,
+        "period": "2026-07-25",
+        "spent": 31.2
+      },
+      {
+        "income": 0.0,
+        "net": -131.55,
+        "period": "2026-07-27",
+        "spent": 131.55
+      },
+      {
+        "income": 0.0,
+        "net": -12.75,
+        "period": "2026-07-28",
+        "spent": 12.75
+      },
+      {
+        "income": 4821.75,
+        "net": 4821.75,
+        "period": "2026-07-31",
+        "spent": 0.0
+      },
+      {
+        "income": 0.0,
+        "net": -97.45,
+        "period": "2026-08-02",
+        "spent": 97.45
+      },
+      {
+        "income": 0.0,
+        "net": -2660.0,
+        "period": "2026-08-03",
+        "spent": 2660.0
+      },
+      {
+        "income": 0.0,
+        "net": -19.85,
+        "period": "2026-08-08",
+        "spent": 19.85
+      },
+      {
+        "income": 0.0,
+        "net": -12.75,
+        "period": "2026-08-11",
+        "spent": 12.75
+      },
+      {
+        "income": 0.0,
+        "net": -15.49,
+        "period": "2026-08-12",
+        "spent": 15.49
+      },
+      {
+        "income": 0.0,
+        "net": -676.18,
+        "period": "2026-08-13",
+        "spent": 676.18
+      },
+      {
+        "income": 4855.78,
+        "net": 4543.38,
+        "period": "2026-08-14",
+        "spent": 312.4
+      },
+      {
+        "income": 0.0,
+        "net": -226.39,
+        "period": "2026-08-15",
+        "spent": 226.39
+      },
+      {
+        "income": 0.0,
+        "net": -79.9,
+        "period": "2026-08-16",
+        "spent": 79.9
+      },
+      {
+        "income": 0.0,
+        "net": -146.8,
+        "period": "2026-08-18",
+        "spent": 146.8
+      },
+      {
+        "income": 0.0,
+        "net": -24.65,
+        "period": "2026-08-20",
+        "spent": 24.65
+      },
+      {
+        "income": 94.16,
+        "net": 94.16,
+        "period": "2026-08-21",
+        "spent": 0.0
+      },
+      {
+        "income": 0.0,
+        "net": -12.99,
+        "period": "2026-08-22",
+        "spent": 12.99
+      },
+      {
+        "income": 0.0,
+        "net": -63.17,
+        "period": "2026-08-23",
+        "spent": 63.17
+      },
+      {
+        "income": 0.0,
+        "net": -642.2,
+        "period": "2026-08-24",
+        "spent": 642.2
+      },
+      {
+        "income": 0.0,
+        "net": -118.42,
+        "period": "2026-08-26",
+        "spent": 118.42
+      },
+      {
+        "income": 0.0,
+        "net": -237.4,
+        "period": "2026-08-27",
+        "spent": 237.4
+      },
+      {
+        "income": 0.0,
+        "net": -44.63,
+        "period": "2026-08-28",
+        "spent": 44.63
+      },
+      {
+        "income": 4821.75,
+        "net": 4757.75,
+        "period": "2026-08-29",
+        "spent": 64.0
+      },
+      {
+        "income": 0.0,
+        "net": -86.42,
+        "period": "2026-08-30",
+        "spent": 86.42
+      },
+      {
+        "income": 18.42,
+        "net": -409.74,
+        "period": "2026-08-31",
+        "spent": 428.16
+      }
+    ],
+    "activityMonths": [
+      {
+        "income": 9643.5,
+        "net": 6614.66,
+        "period": "2026-06",
+        "spent": 3028.84
+      },
+      {
+        "income": 14465.25,
+        "net": 11188.38,
+        "period": "2026-07",
+        "spent": 3276.87
+      },
+      {
+        "income": 9790.11,
+        "net": 3820.86,
+        "period": "2026-08",
+        "spent": 5969.25
+      }
+    ],
     "agenda": [
       {
         "amount": -1200.98,
@@ -392,6 +720,8 @@
           "value": 35010.64
         }
       ],
+      "cash": 0.0,
+      "cashPercent": 0.0,
       "cashUnknown": true,
       "concentrated": {
         "key": "VTI",
@@ -783,6 +1113,7 @@
         "basis": "card-history",
         "expected": 355.96,
         "forOthers": 0.0,
+        "gap": 753.03,
         "recovered": 141.97,
         "since": "2026-06-02",
         "through": "2026-12-31"
@@ -799,6 +1130,7 @@
               "credited": 0.0,
               "end": "2026-01-31",
               "label": "Jan",
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "before-history"
             },
@@ -808,6 +1140,7 @@
               "credited": 0.0,
               "end": "2026-02-28",
               "label": "Feb",
+              "plannedTotal": 0.0,
               "start": "2026-02-01",
               "state": "before-history"
             },
@@ -817,6 +1150,7 @@
               "credited": 0.0,
               "end": "2026-03-31",
               "label": "Mar",
+              "plannedTotal": 0.0,
               "start": "2026-03-01",
               "state": "before-history"
             },
@@ -826,6 +1160,7 @@
               "credited": 0.0,
               "end": "2026-04-30",
               "label": "Apr",
+              "plannedTotal": 0.0,
               "start": "2026-04-01",
               "state": "before-history"
             },
@@ -835,6 +1170,7 @@
               "credited": 0.0,
               "end": "2026-05-31",
               "label": "May",
+              "plannedTotal": 0.0,
               "start": "2026-05-01",
               "state": "before-history"
             },
@@ -844,6 +1180,7 @@
               "credited": 13.99,
               "end": "2026-06-30",
               "label": "Jun",
+              "plannedTotal": 0.0,
               "start": "2026-06-01",
               "state": "partial",
               "unused": {
@@ -857,6 +1194,7 @@
               "credited": 13.99,
               "end": "2026-07-31",
               "label": "Jul",
+              "plannedTotal": 0.0,
               "start": "2026-07-01",
               "state": "partial",
               "unused": {
@@ -874,6 +1212,7 @@
                 "high": 11.01,
                 "low": 11.01
               },
+              "plannedTotal": 0.0,
               "start": "2026-08-01",
               "state": "open"
             },
@@ -891,6 +1230,7 @@
                   "title": "Disney Plus"
                 }
               ],
+              "plannedTotal": 13.99,
               "start": "2026-09-01",
               "state": "future"
             },
@@ -908,6 +1248,7 @@
                   "title": "Disney Plus"
                 }
               ],
+              "plannedTotal": 13.99,
               "start": "2026-10-01",
               "state": "future"
             },
@@ -925,6 +1266,7 @@
                   "title": "Disney Plus"
                 }
               ],
+              "plannedTotal": 13.99,
               "start": "2026-11-01",
               "state": "future"
             },
@@ -942,12 +1284,28 @@
                   "title": "Disney Plus"
                 }
               ],
+              "plannedTotal": 13.99,
               "start": "2026-12-01",
               "state": "future"
             }
           ],
           "recurring": true,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 41.97,
+              "left": {
+                "high": 11.01,
+                "low": 11.01
+              },
+              "missed": {
+                "high": 22.02,
+                "low": 22.02
+              },
+              "planned": 55.96,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": true,
@@ -960,6 +1318,7 @@
               "credited": 0.0,
               "end": "2026-01-31",
               "label": "Jan",
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "before-history"
             },
@@ -969,6 +1328,7 @@
               "credited": 0.0,
               "end": "2026-02-28",
               "label": "Feb",
+              "plannedTotal": 0.0,
               "start": "2026-02-01",
               "state": "before-history"
             },
@@ -978,6 +1338,7 @@
               "credited": 0.0,
               "end": "2026-03-31",
               "label": "Mar",
+              "plannedTotal": 0.0,
               "start": "2026-03-01",
               "state": "before-history"
             },
@@ -987,6 +1348,7 @@
               "credited": 0.0,
               "end": "2026-04-30",
               "label": "Apr",
+              "plannedTotal": 0.0,
               "start": "2026-04-01",
               "state": "before-history"
             },
@@ -996,6 +1358,7 @@
               "credited": 0.0,
               "end": "2026-05-31",
               "label": "May",
+              "plannedTotal": 0.0,
               "start": "2026-05-01",
               "state": "before-history"
             },
@@ -1005,6 +1368,7 @@
               "credited": 0.0,
               "end": "2026-06-30",
               "label": "Jun",
+              "plannedTotal": 0.0,
               "start": "2026-06-01",
               "state": "likely-used"
             },
@@ -1014,6 +1378,7 @@
               "credited": 0.0,
               "end": "2026-07-31",
               "label": "Jul",
+              "plannedTotal": 0.0,
               "start": "2026-07-01",
               "state": "likely-used"
             },
@@ -1023,6 +1388,7 @@
               "credited": 0.0,
               "end": "2026-08-31",
               "label": "Aug",
+              "plannedTotal": 0.0,
               "start": "2026-08-01",
               "state": "likely-used"
             },
@@ -1032,6 +1398,7 @@
               "credited": 0.0,
               "end": "2026-09-30",
               "label": "Sep",
+              "plannedTotal": 0.0,
               "start": "2026-09-01",
               "state": "future"
             },
@@ -1041,6 +1408,7 @@
               "credited": 0.0,
               "end": "2026-10-31",
               "label": "Oct",
+              "plannedTotal": 0.0,
               "start": "2026-10-01",
               "state": "future"
             },
@@ -1050,6 +1418,7 @@
               "credited": 0.0,
               "end": "2026-11-30",
               "label": "Nov",
+              "plannedTotal": 0.0,
               "start": "2026-11-01",
               "state": "future"
             },
@@ -1059,12 +1428,28 @@
               "credited": 0.0,
               "end": "2026-12-31",
               "label": "Dec",
+              "plannedTotal": 0.0,
               "start": "2026-12-01",
               "state": "future"
             }
           ],
           "recurring": false,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1081,12 +1466,28 @@
                 "high": 120.0,
                 "low": 120.0
               },
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "open"
             }
           ],
           "recurring": true,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 120.0,
+                "low": 120.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1099,6 +1500,7 @@
               "credited": 0.0,
               "end": "2026-01-31",
               "label": "Jan",
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "before-history"
             },
@@ -1108,6 +1510,7 @@
               "credited": 0.0,
               "end": "2026-02-28",
               "label": "Feb",
+              "plannedTotal": 0.0,
               "start": "2026-02-01",
               "state": "before-history"
             },
@@ -1117,6 +1520,7 @@
               "credited": 0.0,
               "end": "2026-03-31",
               "label": "Mar",
+              "plannedTotal": 0.0,
               "start": "2026-03-01",
               "state": "before-history"
             },
@@ -1126,6 +1530,7 @@
               "credited": 0.0,
               "end": "2026-04-30",
               "label": "Apr",
+              "plannedTotal": 0.0,
               "start": "2026-04-01",
               "state": "before-history"
             },
@@ -1135,6 +1540,7 @@
               "credited": 0.0,
               "end": "2026-05-31",
               "label": "May",
+              "plannedTotal": 0.0,
               "start": "2026-05-01",
               "state": "before-history"
             },
@@ -1144,6 +1550,7 @@
               "credited": 0.0,
               "end": "2026-06-30",
               "label": "Jun",
+              "plannedTotal": 0.0,
               "start": "2026-06-01",
               "state": "before-history"
             },
@@ -1153,6 +1560,7 @@
               "credited": 0.0,
               "end": "2026-07-31",
               "label": "Jul",
+              "plannedTotal": 0.0,
               "start": "2026-07-01",
               "state": "not-tracked"
             },
@@ -1162,6 +1570,7 @@
               "credited": 0.0,
               "end": "2026-08-31",
               "label": "Aug",
+              "plannedTotal": 0.0,
               "start": "2026-08-01",
               "state": "open"
             },
@@ -1171,6 +1580,7 @@
               "credited": 0.0,
               "end": "2026-09-30",
               "label": "Sep",
+              "plannedTotal": 0.0,
               "start": "2026-09-01",
               "state": "future"
             },
@@ -1180,6 +1590,7 @@
               "credited": 0.0,
               "end": "2026-10-31",
               "label": "Oct",
+              "plannedTotal": 0.0,
               "start": "2026-10-01",
               "state": "future"
             },
@@ -1189,6 +1600,7 @@
               "credited": 0.0,
               "end": "2026-11-30",
               "label": "Nov",
+              "plannedTotal": 0.0,
               "start": "2026-11-01",
               "state": "future"
             },
@@ -1198,12 +1610,28 @@
               "credited": 0.0,
               "end": "2026-12-31",
               "label": "Dec",
+              "plannedTotal": 0.0,
               "start": "2026-12-01",
               "state": "future"
             }
           ],
           "recurring": true,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1216,6 +1644,7 @@
               "credited": 0.0,
               "end": "2026-03-31",
               "label": "Q1",
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "before-history"
             },
@@ -1225,6 +1654,7 @@
               "credited": 0.0,
               "end": "2026-06-30",
               "label": "Q2",
+              "plannedTotal": 0.0,
               "start": "2026-04-01",
               "state": "before-history"
             },
@@ -1238,6 +1668,7 @@
                 "high": 0.0,
                 "low": 0.0
               },
+              "plannedTotal": 0.0,
               "start": "2026-07-01",
               "state": "open"
             },
@@ -1247,12 +1678,28 @@
               "credited": 0.0,
               "end": "2026-12-31",
               "label": "Q4",
+              "plannedTotal": 0.0,
               "start": "2026-10-01",
               "state": "future"
             }
           ],
           "recurring": false,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 100.0,
+              "left": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1265,6 +1712,7 @@
               "credited": 0.0,
               "end": "2026-03-31",
               "label": "Q1",
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "before-history"
             },
@@ -1274,6 +1722,7 @@
               "credited": 0.0,
               "end": "2026-06-30",
               "label": "Q2",
+              "plannedTotal": 0.0,
               "start": "2026-04-01",
               "state": "before-history"
             },
@@ -1287,6 +1736,7 @@
                 "high": 75.0,
                 "low": 75.0
               },
+              "plannedTotal": 0.0,
               "start": "2026-07-01",
               "state": "open"
             },
@@ -1296,12 +1746,28 @@
               "credited": 0.0,
               "end": "2026-12-31",
               "label": "Q4",
+              "plannedTotal": 0.0,
               "start": "2026-10-01",
               "state": "future"
             }
           ],
           "recurring": false,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 75.0,
+                "low": 75.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1314,6 +1780,7 @@
               "credited": 0.0,
               "end": "2026-06-30",
               "label": "Jan – Jun",
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "before-history"
             },
@@ -1327,12 +1794,28 @@
                 "high": 300.0,
                 "low": 300.0
               },
+              "plannedTotal": 0.0,
               "start": "2026-07-01",
               "state": "open"
             }
           ],
           "recurring": false,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 300.0,
+                "low": 300.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1349,12 +1832,28 @@
                 "high": 200.0,
                 "low": 200.0
               },
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "open"
             }
           ],
           "recurring": false,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 200.0,
+                "low": 200.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1371,12 +1870,28 @@
                 "high": 219.0,
                 "low": 219.0
               },
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "open"
             }
           ],
           "recurring": false,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 219.0,
+                "low": 219.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1393,12 +1908,28 @@
                 "high": 200.0,
                 "low": 200.0
               },
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "open"
             }
           ],
           "recurring": false,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 200.0,
+                "low": 200.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1430,12 +1961,28 @@
                   "title": "Equinox"
                 }
               ],
+              "plannedTotal": 300.0,
               "start": "2026-01-01",
               "state": "open"
             }
           ],
           "recurring": false,
-          "retired": false
+          "retired": false,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 300.0,
+                "low": 300.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 300.0,
+              "year": 2026
+            }
+          ]
         },
         {
           "external": false,
@@ -1448,12 +1995,28 @@
               "credited": 0.0,
               "end": "2026-06-30",
               "label": "Jan – Jun",
+              "plannedTotal": 0.0,
               "start": "2026-01-01",
               "state": "before-history"
             }
           ],
           "recurring": false,
-          "retired": true
+          "retired": true,
+          "years": [
+            {
+              "captured": 0.0,
+              "left": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "missed": {
+                "high": 0.0,
+                "low": 0.0
+              },
+              "planned": 0.0,
+              "year": 2026
+            }
+          ]
         }
       ],
       "product": "amex-platinum",
@@ -2013,6 +2576,22 @@
           "windowLabel": "Jan 1 – Dec 31, 2026",
           "windowStart": "2026-01-01"
         }
+      ],
+      "years": [
+        {
+          "captured": 141.97,
+          "forOthers": 0.0,
+          "left": {
+            "high": 1425.01,
+            "low": 1425.01
+          },
+          "missed": {
+            "high": 22.02,
+            "low": 22.02
+          },
+          "planned": 355.96,
+          "year": 2026
+        }
       ]
     },
     "brief": {
@@ -2284,38 +2863,231 @@
     },
     "changes": [
       {
+        "accounts": [],
+        "cards": 0.0,
+        "end": "2026-08-31",
+        "groups": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": 0.0,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
+        "incomplete": false,
+        "listed": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": 0.0,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
+        "start": "2026-08-31",
+        "transactions": 1,
+        "window": "day"
+      },
+      {
         "accounts": [
           {
             "accountId": "amex",
             "change": -260.05
           }
         ],
+        "cards": -260.05,
         "end": "2026-08-31",
+        "groups": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": null,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "incomplete": true,
+        "listed": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": null,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "start": "2026-08-25",
         "transactions": 10,
         "window": "week"
       },
       {
         "accounts": [],
+        "cards": null,
         "end": "2026-08-31",
+        "groups": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": null,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "incomplete": true,
+        "listed": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": null,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "start": "2026-08-02",
         "transactions": 36,
         "window": "month"
       },
       {
         "accounts": [],
+        "cards": null,
         "end": "2026-08-31",
+        "groups": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": null,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "incomplete": true,
+        "listed": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": null,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "start": "2026-06-03",
         "transactions": 72,
         "window": "quarter"
       },
       {
         "accounts": [],
+        "cards": null,
         "end": "2026-08-31",
+        "groups": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": null,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "incomplete": true,
+        "listed": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": null,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "start": "2025-09-01",
         "transactions": 74,
         "window": "year"
@@ -2331,11 +3103,224 @@
             "change": -977.41
           }
         ],
+        "cards": -977.41,
         "end": "2026-08-31",
+        "groups": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": 4821.75,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "incomplete": false,
+        "listed": [
+          {
+            "change": null,
+            "type": "brokerage"
+          },
+          {
+            "change": null,
+            "type": "retirement"
+          },
+          {
+            "change": 4821.75,
+            "type": "cash"
+          },
+          {
+            "change": null,
+            "type": "credit"
+          }
+        ],
         "start": "2026-06-01",
         "transactions": 74,
         "window": "all"
+      }
+    ],
+    "chartChanges": [
+      {
+        "series": "net-worth",
+        "windows": {
+          "all": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "day": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "month": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "quarter": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "week": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "year": {
+            "change": 0.0,
+            "percent": 0.0
+          }
+        }
+      },
+      {
+        "series": "total",
+        "windows": {
+          "all": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "day": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "month": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "quarter": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "week": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "year": {
+            "change": 0.0,
+            "percent": 0.0
+          }
+        }
+      },
+      {
+        "series": "fidelity",
+        "windows": {
+          "all": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "day": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "month": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "quarter": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "week": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "year": {
+            "change": 0.0,
+            "percent": 0.0
+          }
+        }
+      },
+      {
+        "series": "schwab",
+        "windows": {
+          "all": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "day": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "month": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "quarter": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "week": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "year": {
+            "change": 0.0,
+            "percent": 0.0
+          }
+        }
+      },
+      {
+        "series": "chase",
+        "windows": {
+          "all": {
+            "change": 4821.75,
+            "percent": 10.86
+          },
+          "day": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "month": {
+            "change": 4821.75,
+            "percent": 10.86
+          },
+          "quarter": {
+            "change": 4821.75,
+            "percent": 10.86
+          },
+          "week": {
+            "change": 4821.75,
+            "percent": 10.86
+          },
+          "year": {
+            "change": 4821.75,
+            "percent": 10.86
+          }
+        }
+      },
+      {
+        "series": "amex",
+        "windows": {
+          "all": {
+            "change": -977.41,
+            "percent": -67.83
+          },
+          "day": {
+            "change": 0.0,
+            "percent": 0.0
+          },
+          "month": {
+            "change": -977.41,
+            "percent": -67.83
+          },
+          "quarter": {
+            "change": -977.41,
+            "percent": -67.83
+          },
+          "week": {
+            "change": -242.67,
+            "percent": -11.15
+          },
+          "year": {
+            "change": -977.41,
+            "percent": -67.83
+          }
+        }
       }
     ],
     "computedAt": "2026-08-31T21:42:00+00:00",
@@ -2594,12 +3579,487 @@
       "holdings": 6,
       "topFivePct": 95.1
     },
+    "flows": [
+      {
+        "accountId": "all",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 18.42,
+        "moneyOut": 86.42,
+        "netFlow": -68.0,
+        "start": "2026-08-30",
+        "window": "day"
+      },
+      {
+        "accountId": "all",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 4840.17,
+        "moneyOut": 1193.07,
+        "netFlow": 3647.1,
+        "start": "2026-08-24",
+        "window": "week"
+      },
+      {
+        "accountId": "all",
+        "contributions": null,
+        "dividends": 128.19,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 13922.76,
+        "moneyOut": 7687.86,
+        "netFlow": 6234.9,
+        "start": "2026-08-01",
+        "window": "month"
+      },
+      {
+        "accountId": "all",
+        "contributions": null,
+        "dividends": 128.19,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 43885.07,
+        "moneyOut": 15819.15,
+        "netFlow": 28065.92,
+        "start": "2026-06-02",
+        "window": "quarter"
+      },
+      {
+        "accountId": "all",
+        "contributions": null,
+        "dividends": 128.19,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 43885.07,
+        "moneyOut": 18219.15,
+        "netFlow": 25665.92,
+        "start": "2025-08-31",
+        "window": "year"
+      },
+      {
+        "accountId": "all",
+        "contributions": null,
+        "dividends": 128.19,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 43885.07,
+        "moneyOut": 18219.15,
+        "netFlow": 25665.92,
+        "start": null,
+        "window": "all"
+      },
+      {
+        "accountId": "fidelity",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 0.0,
+        "netFlow": 0.0,
+        "start": "2026-08-30",
+        "window": "day"
+      },
+      {
+        "accountId": "fidelity",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 0.0,
+        "netFlow": 0.0,
+        "start": "2026-08-24",
+        "window": "week"
+      },
+      {
+        "accountId": "fidelity",
+        "contributions": null,
+        "dividends": 128.19,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 128.19,
+        "moneyOut": 0.0,
+        "netFlow": 128.19,
+        "start": "2026-08-01",
+        "window": "month"
+      },
+      {
+        "accountId": "fidelity",
+        "contributions": null,
+        "dividends": 128.19,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 128.19,
+        "moneyOut": 0.0,
+        "netFlow": 128.19,
+        "start": "2026-06-02",
+        "window": "quarter"
+      },
+      {
+        "accountId": "fidelity",
+        "contributions": null,
+        "dividends": 128.19,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 128.19,
+        "moneyOut": 0.0,
+        "netFlow": 128.19,
+        "start": "2025-08-31",
+        "window": "year"
+      },
+      {
+        "accountId": "fidelity",
+        "contributions": null,
+        "dividends": 128.19,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 128.19,
+        "moneyOut": 0.0,
+        "netFlow": 128.19,
+        "start": null,
+        "window": "all"
+      },
+      {
+        "accountId": "schwab",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 0.0,
+        "netFlow": 0.0,
+        "start": "2026-08-30",
+        "window": "day"
+      },
+      {
+        "accountId": "schwab",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 0.0,
+        "netFlow": 0.0,
+        "start": "2026-08-24",
+        "window": "week"
+      },
+      {
+        "accountId": "schwab",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 2000.0,
+        "moneyOut": 0.0,
+        "netFlow": 2000.0,
+        "start": "2026-08-01",
+        "window": "month"
+      },
+      {
+        "accountId": "schwab",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 3500.0,
+        "moneyOut": 0.0,
+        "netFlow": 3500.0,
+        "start": "2026-06-02",
+        "window": "quarter"
+      },
+      {
+        "accountId": "schwab",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 3500.0,
+        "moneyOut": 0.0,
+        "netFlow": 3500.0,
+        "start": "2025-08-31",
+        "window": "year"
+      },
+      {
+        "accountId": "schwab",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 3500.0,
+        "moneyOut": 0.0,
+        "netFlow": 3500.0,
+        "start": null,
+        "window": "all"
+      },
+      {
+        "accountId": "chase",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 18.42,
+        "moneyOut": 0.0,
+        "netFlow": 18.42,
+        "start": "2026-08-30",
+        "window": "day"
+      },
+      {
+        "accountId": "chase",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 4840.17,
+        "moneyOut": 118.42,
+        "netFlow": 4721.75,
+        "start": "2026-08-24",
+        "window": "week"
+      },
+      {
+        "accountId": "chase",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 9661.92,
+        "moneyOut": 4637.08,
+        "netFlow": 5024.84,
+        "start": "2026-08-01",
+        "window": "month"
+      },
+      {
+        "accountId": "chase",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 33770.67,
+        "moneyOut": 11490.41,
+        "netFlow": 22280.26,
+        "start": "2026-06-02",
+        "window": "quarter"
+      },
+      {
+        "accountId": "chase",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 33770.67,
+        "moneyOut": 13890.41,
+        "netFlow": 19880.26,
+        "start": "2025-08-31",
+        "window": "year"
+      },
+      {
+        "accountId": "chase",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 18.42,
+        "marketChange": null,
+        "moneyIn": 33770.67,
+        "moneyOut": 13890.41,
+        "netFlow": 19880.26,
+        "start": null,
+        "window": "all"
+      },
+      {
+        "accountId": "amex",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 86.42,
+        "netFlow": -86.42,
+        "start": "2026-08-30",
+        "window": "day"
+      },
+      {
+        "accountId": "amex",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 1074.65,
+        "netFlow": -1074.65,
+        "start": "2026-08-24",
+        "window": "week"
+      },
+      {
+        "accountId": "amex",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 2132.65,
+        "moneyOut": 2875.87,
+        "netFlow": -743.22,
+        "start": "2026-08-01",
+        "window": "month"
+      },
+      {
+        "accountId": "amex",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 6486.21,
+        "moneyOut": 4153.83,
+        "netFlow": 2332.38,
+        "start": "2026-06-02",
+        "window": "quarter"
+      },
+      {
+        "accountId": "amex",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 6486.21,
+        "moneyOut": 4153.83,
+        "netFlow": 2332.38,
+        "start": "2025-08-31",
+        "window": "year"
+      },
+      {
+        "accountId": "amex",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 6486.21,
+        "moneyOut": 4153.83,
+        "netFlow": 2332.38,
+        "start": null,
+        "window": "all"
+      },
+      {
+        "accountId": "freedom",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 0.0,
+        "netFlow": 0.0,
+        "start": "2026-08-30",
+        "window": "day"
+      },
+      {
+        "accountId": "freedom",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 0.0,
+        "netFlow": 0.0,
+        "start": "2026-08-24",
+        "window": "week"
+      },
+      {
+        "accountId": "freedom",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 174.91,
+        "netFlow": -174.91,
+        "start": "2026-08-01",
+        "window": "month"
+      },
+      {
+        "accountId": "freedom",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 174.91,
+        "netFlow": -174.91,
+        "start": "2026-06-02",
+        "window": "quarter"
+      },
+      {
+        "accountId": "freedom",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 174.91,
+        "netFlow": -174.91,
+        "start": "2025-08-31",
+        "window": "year"
+      },
+      {
+        "accountId": "freedom",
+        "contributions": null,
+        "dividends": 0.0,
+        "end": "2026-08-31",
+        "interest": 0.0,
+        "marketChange": null,
+        "moneyIn": 0.0,
+        "moneyOut": 174.91,
+        "netFlow": -174.91,
+        "start": null,
+        "window": "all"
+      }
+    ],
     "interest": [
       {
         "accountId": "chase",
         "historyDays": 92,
         "monthlyNetFlow": 6577.1,
         "periods": [
+          {
+            "annualRate": 13.66,
+            "earned": 18.42,
+            "window": "day"
+          },
           {
             "annualRate": 1.95,
             "earned": 18.42,
@@ -2700,6 +4160,7 @@
     },
     "people": {
       "people": [],
+      "sent": 0.0,
       "suggestions": []
     },
     "periods": [],
@@ -2789,6 +4250,18 @@
       "spent": 5527.1
     },
     "recap": [
+      {
+        "categories": [],
+        "end": "2026-08-31",
+        "income": 18.42,
+        "net": 18.42,
+        "netChangePct": 121.31,
+        "partial": false,
+        "spending": 0.0,
+        "spendingChangePct": -100.0,
+        "start": "2026-08-31",
+        "window": "day"
+      },
       {
         "categories": [
           {
@@ -2998,6 +4471,191 @@
       "year": 2026
     },
     "returns": [],
+    "rollup": {
+      "cards": {
+        "type": "spending",
+        "value": -2418.33
+      },
+      "combined": 286999.89,
+      "groups": [
+        {
+          "type": "brokerage",
+          "value": 189830.14
+        },
+        {
+          "type": "retirement",
+          "value": 49780.3
+        },
+        {
+          "type": "cash",
+          "value": 49229.67
+        },
+        {
+          "type": "credit",
+          "value": -4258.55
+        }
+      ],
+      "holdings": [
+        {
+          "accounts": [
+            {
+              "accountId": "fidelity",
+              "shares": 248.0,
+              "value": 83853.76
+            }
+          ],
+          "averageBasis": 256.46237903225807,
+          "basis": 63602.67,
+          "dailyChangePct": 0.48,
+          "shares": 248.0,
+          "ticker": "VTI",
+          "totalChangePct": 31.84,
+          "value": 83853.76,
+          "vestedShares": null,
+          "weeklyChangePct": 1.82,
+          "weight": 43.69
+        },
+        {
+          "accounts": [
+            {
+              "accountId": "fidelity",
+              "shares": 430.0,
+              "value": 32176.9
+            }
+          ],
+          "averageBasis": 71.75183720930232,
+          "basis": 30853.29,
+          "dailyChangePct": 0.12,
+          "shares": 430.0,
+          "ticker": "BND",
+          "totalChangePct": 4.29,
+          "value": 32176.9,
+          "vestedShares": null,
+          "weeklyChangePct": 0.44,
+          "weight": 16.76
+        },
+        {
+          "accounts": [
+            {
+              "accountId": "schwab",
+              "shares": 360.0,
+              "value": 25639.2
+            }
+          ],
+          "averageBasis": 60.04047222222222,
+          "basis": 21614.57,
+          "dailyChangePct": -0.31,
+          "shares": 360.0,
+          "ticker": "VXUS",
+          "totalChangePct": 18.62,
+          "value": 25639.2,
+          "vestedShares": null,
+          "weeklyChangePct": -1.2,
+          "weight": 13.36
+        },
+        {
+          "accounts": [
+            {
+              "accountId": "fidelity",
+              "shares": 41.0,
+              "value": 20992.0
+            }
+          ],
+          "averageBasis": 355.3087804878049,
+          "basis": 14567.66,
+          "dailyChangePct": 1.04,
+          "shares": 41.0,
+          "ticker": "MSFT",
+          "totalChangePct": 44.1,
+          "value": 20992.0,
+          "vestedShares": null,
+          "weeklyChangePct": 3.14,
+          "weight": 10.94
+        },
+        {
+          "accounts": [
+            {
+              "accountId": "fidelity",
+              "shares": 86.0,
+              "value": 19909.86
+            }
+          ],
+          "averageBasis": 182.65093023255812,
+          "basis": 15707.98,
+          "dailyChangePct": -0.22,
+          "shares": 86.0,
+          "ticker": "AAPL",
+          "totalChangePct": 26.75,
+          "value": 19909.86,
+          "vestedShares": null,
+          "weeklyChangePct": -0.86,
+          "weight": 10.37
+        },
+        {
+          "accounts": [
+            {
+              "accountId": "schwab",
+              "shares": 52.0,
+              "value": 9371.44
+            }
+          ],
+          "averageBasis": 96.2046153846154,
+          "basis": 5002.64,
+          "dailyChangePct": 2.43,
+          "shares": 52.0,
+          "ticker": "NVDA",
+          "totalChangePct": 87.33,
+          "value": 9371.44,
+          "vestedShares": null,
+          "weeklyChangePct": 7.9,
+          "weight": 4.88
+        }
+      ],
+      "listed": [
+        {
+          "type": "brokerage",
+          "value": 189830.14
+        },
+        {
+          "type": "retirement",
+          "value": 49780.3
+        },
+        {
+          "type": "cash",
+          "value": 49229.67
+        },
+        {
+          "type": "credit",
+          "value": -1840.22
+        }
+      ],
+      "netWorth": 286999.89,
+      "realizedYtd": 307.55,
+      "retirement": 49780.3,
+      "shares": [
+        {
+          "percent": 65.72,
+          "type": "brokerage",
+          "value": 189830.14
+        },
+        {
+          "percent": 17.23,
+          "type": "retirement",
+          "value": 49780.3
+        },
+        {
+          "percent": 17.04,
+          "type": "cash",
+          "value": 49229.67
+        }
+      ],
+      "sheet": {
+        "assets": 288840.11,
+        "complete": true,
+        "liabilities": -1840.22
+      },
+      "unrealized": 40594.35
+    },
     "securities": [
       {
         "accounts": 1,
@@ -3056,113 +4714,133 @@
     ],
     "spending": [
       {
+        "months": [
+          {
+            "month": "2026-03",
+            "total": 0.0
+          },
+          {
+            "month": "2026-04",
+            "total": 0.0
+          },
+          {
+            "month": "2026-05",
+            "total": 0.0
+          },
+          {
+            "month": "2026-06",
+            "total": 2496.2
+          },
+          {
+            "month": "2026-07",
+            "total": 2531.55
+          },
+          {
+            "month": "2026-08",
+            "total": 2518.42
+          }
+        ],
         "owner": "me",
         "periods": [
           {
+            "categories": [
+              {
+                "aboveTypical": 118.42,
+                "change": 118.42,
+                "changePct": null,
+                "daily": 16.92,
+                "name": "Utilities",
+                "previous": 0.0,
+                "share": 100.0,
+                "total": 118.42,
+                "typical": 0.0
+              }
+            ],
+            "change": 118.42,
+            "changePct": null,
+            "daily": 16.92,
+            "end": "2026-08-31",
             "kind": "week",
+            "largest": "tx-7",
+            "pending": 0.0,
+            "previous": 0.0,
             "start": "2026-08-25",
+            "total": 118.42,
             "typical": {}
           },
           {
-            "kind": "week",
-            "start": "2026-08-18",
-            "typical": {
-              "Rent And Utilities": 800.0
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-08-11",
-            "typical": {
-              "Rent And Utilities": 800.0,
-              "Utilities": 43.85
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-08-04",
-            "typical": {
-              "Rent And Utilities": 800.0,
-              "Utilities": 43.85
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-28",
-            "typical": {
-              "Utilities": 43.85
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-21",
-            "typical": {
-              "Rent And Utilities": 800.0
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-14",
-            "typical": {
-              "Rent And Utilities": 800.0,
-              "Utilities": 32.07
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-07",
-            "typical": {
-              "Rent And Utilities": 800.0,
-              "Utilities": 32.07
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-30",
-            "typical": {
-              "Utilities": 32.07
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-23",
-            "typical": {}
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-16",
-            "typical": {}
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-09"
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-02"
-          },
-          {
-            "kind": "week",
-            "start": "2026-05-26"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": 0.0,
+                "change": 0.0,
+                "changePct": 0.0,
+                "daily": 77.42,
+                "name": "Rent And Utilities",
+                "previous": 2400.0,
+                "share": 95.3,
+                "total": 2400.0,
+                "typical": 2400.0
+              },
+              {
+                "aboveTypical": 4.54,
+                "change": -13.13,
+                "changePct": -9.98,
+                "daily": 3.82,
+                "name": "Utilities",
+                "previous": 131.55,
+                "share": 4.7,
+                "total": 118.42,
+                "typical": 113.88
+              }
+            ],
+            "change": -13.13,
+            "changePct": -0.52,
+            "daily": 81.24,
+            "end": "2026-08-31",
             "kind": "month",
+            "largest": "tx-109",
+            "pending": 0.0,
+            "previous": 2531.55,
             "start": "2026-08-01",
+            "total": 2518.42,
             "typical": {
               "Rent And Utilities": 2400.0,
               "Utilities": 113.88
             }
           },
           {
-            "kind": "month",
-            "start": "2026-07-01"
-          },
-          {
-            "kind": "month",
-            "start": "2026-06-01"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 2400.0,
+                "changePct": 100.0,
+                "daily": 77.42,
+                "name": "Rent And Utilities",
+                "previous": 2400.0,
+                "share": 95.05,
+                "total": 4800.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 249.97,
+                "changePct": null,
+                "daily": 4.03,
+                "name": "Utilities",
+                "previous": 0.0,
+                "share": 4.95,
+                "total": 249.97,
+                "typical": null
+              }
+            ],
+            "change": 2649.97,
+            "changePct": 110.42,
+            "daily": 81.45,
+            "end": "2026-08-31",
             "kind": "quarter",
+            "largest": "tx-108",
+            "pending": 0.0,
+            "previous": 2400.0,
             "projected": {
               "categories": {
                 "Rent And Utilities": 7122.58,
@@ -3170,14 +4848,42 @@
               },
               "total": 7493.5
             },
-            "start": "2026-07-01"
+            "start": "2026-07-01",
+            "total": 5049.97
           },
           {
-            "kind": "quarter",
-            "start": "2026-04-01"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 7200.0,
+                "changePct": null,
+                "daily": 29.63,
+                "name": "Rent And Utilities",
+                "previous": 0.0,
+                "share": 95.41,
+                "total": 7200.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 346.17,
+                "changePct": null,
+                "daily": 1.42,
+                "name": "Utilities",
+                "previous": 0.0,
+                "share": 4.59,
+                "total": 346.17,
+                "typical": null
+              }
+            ],
+            "change": 7546.17,
+            "changePct": null,
+            "daily": 31.05,
+            "end": "2026-08-31",
             "kind": "year",
+            "largest": "tx-107",
+            "pending": 0.0,
+            "previous": 0.0,
             "projected": {
               "categories": {
                 "Rent And Utilities": 10814.81,
@@ -3185,155 +4891,241 @@
               },
               "total": 11334.78
             },
-            "start": "2026-01-01"
+            "start": "2026-01-01",
+            "total": 7546.17
+          },
+          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 78.26,
+                "name": "Rent And Utilities",
+                "previous": null,
+                "share": 95.41,
+                "total": 7200.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 3.76,
+                "name": "Utilities",
+                "previous": null,
+                "share": 4.59,
+                "total": 346.17,
+                "typical": null
+              }
+            ],
+            "change": null,
+            "changePct": null,
+            "daily": 82.02,
+            "end": "2026-08-31",
+            "kind": "all",
+            "largest": "tx-107",
+            "pending": 0.0,
+            "previous": null,
+            "start": "2026-06-01",
+            "total": 7546.17
           }
         ],
         "scope": "chase"
       },
       {
+        "months": [
+          {
+            "month": "2026-03",
+            "total": 0.0
+          },
+          {
+            "month": "2026-04",
+            "total": 0.0
+          },
+          {
+            "month": "2026-05",
+            "total": 0.0
+          },
+          {
+            "month": "2026-06",
+            "total": 532.64
+          },
+          {
+            "month": "2026-07",
+            "total": 745.32
+          },
+          {
+            "month": "2026-08",
+            "total": 3304.03
+          }
+        ],
         "owner": "me",
         "periods": [
           {
+            "balance": 2418.33,
+            "categories": [
+              {
+                "aboveTypical": 428.16,
+                "change": 428.16,
+                "changePct": null,
+                "daily": 85.63,
+                "name": "Travel",
+                "previous": 0.0,
+                "share": 49.75,
+                "total": 428.16,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": 129.0,
+                "change": 129.0,
+                "changePct": null,
+                "daily": 25.8,
+                "name": "Shopping",
+                "previous": 0.0,
+                "share": 14.99,
+                "total": 129.0,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": 108.4,
+                "change": 108.4,
+                "changePct": null,
+                "daily": 21.68,
+                "name": "Home Improvement",
+                "previous": 0.0,
+                "share": 12.6,
+                "total": 108.4,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": 86.42,
+                "change": 86.42,
+                "changePct": null,
+                "daily": 17.28,
+                "name": "Groceries",
+                "previous": 0.0,
+                "share": 10.04,
+                "total": 86.42,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": 70.37,
+                "change": 64.0,
+                "changePct": 501.96,
+                "daily": 15.35,
+                "name": "Dining",
+                "previous": 12.75,
+                "share": 8.92,
+                "total": 76.75,
+                "typical": 6.38
+              },
+              {
+                "aboveTypical": 31.88,
+                "change": 31.88,
+                "changePct": null,
+                "daily": 6.38,
+                "name": "Transport",
+                "previous": 0.0,
+                "share": 3.7,
+                "total": 31.88,
+                "typical": 0.0
+              }
+            ],
+            "change": 847.86,
+            "changePct": 6649.88,
+            "daily": 172.12,
+            "end": "2026-08-31",
             "kind": "statement",
+            "largest": "tx-1",
             "opening": 1557.72,
+            "pending": 428.16,
+            "previous": 12.75,
             "start": "2026-08-27",
+            "total": 860.61,
             "typical": {
               "Dining": 6.38
             }
           },
           {
-            "kind": "statement",
-            "opening": 2118.66,
-            "start": "2026-07-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 2240.18,
-            "start": "2026-06-26"
-          },
-          {
-            "kind": "statement",
-            "opening": 1985.4,
-            "start": "2026-05-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2026-04-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2026-03-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2026-02-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2026-01-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-12-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-11-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-10-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-09-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-08-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-07-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-06-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-05-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-04-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-03-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-02-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2025-01-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2024-12-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2024-11-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2024-10-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2024-09-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2024-08-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2024-07-27"
-          },
-          {
-            "kind": "statement",
-            "opening": 0.0,
-            "start": "2024-06-27"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": 10.09,
+                "change": -214.04,
+                "changePct": -33.33,
+                "daily": 61.17,
+                "name": "Travel",
+                "previous": 642.2,
+                "share": 49.75,
+                "total": 428.16,
+                "typical": 418.07
+              },
+              {
+                "aboveTypical": 32.67,
+                "change": 129.0,
+                "changePct": null,
+                "daily": 18.43,
+                "name": "Shopping",
+                "previous": 0.0,
+                "share": 14.99,
+                "total": 129.0,
+                "typical": 96.33
+              },
+              {
+                "aboveTypical": 108.4,
+                "change": 108.4,
+                "changePct": null,
+                "daily": 15.49,
+                "name": "Home Improvement",
+                "previous": 0.0,
+                "share": 12.6,
+                "total": 108.4,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": 38.73,
+                "change": 23.25,
+                "changePct": 36.81,
+                "daily": 12.35,
+                "name": "Groceries",
+                "previous": 63.17,
+                "share": 10.04,
+                "total": 86.42,
+                "typical": 47.69
+              },
+              {
+                "aboveTypical": -27.91,
+                "change": 52.1,
+                "changePct": 211.36,
+                "daily": 10.96,
+                "name": "Dining",
+                "previous": 24.65,
+                "share": 8.92,
+                "total": 76.75,
+                "typical": 104.66
+              },
+              {
+                "aboveTypical": 17.46,
+                "change": 31.88,
+                "changePct": null,
+                "daily": 4.55,
+                "name": "Transport",
+                "previous": 0.0,
+                "share": 3.7,
+                "total": 31.88,
+                "typical": 14.42
+              }
+            ],
+            "change": 117.6,
+            "changePct": 15.83,
+            "daily": 122.94,
+            "end": "2026-08-31",
             "kind": "week",
+            "largest": "tx-1",
+            "pending": 428.16,
+            "previous": 743.01,
             "start": "2026-08-25",
+            "total": 860.61,
             "typical": {
               "Dining": 104.66,
               "Entertainment": 14.16,
@@ -3344,137 +5136,206 @@
             }
           },
           {
-            "kind": "week",
-            "start": "2026-08-18",
-            "typical": {
-              "Dining": 100.69,
-              "Entertainment": 9.83,
-              "Groceries": 59.12,
-              "Personal Care": 86.67,
-              "Shopping": 96.33,
-              "Transport": 14.42,
-              "Travel": 204.0
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-08-11",
-            "typical": {
-              "Dining": 4.25,
-              "Entertainment": 4.0,
-              "Groceries": 32.48,
-              "Personal Care": 86.67,
-              "Transport": 17.02
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-08-04",
-            "typical": {
-              "Dining": 8.5,
-              "Entertainment": 8.66,
-              "Groceries": 61.83,
-              "Personal Care": 86.67,
-              "Transport": 10.4
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-28",
-            "typical": {
-              "Dining": 64.38,
-              "Entertainment": 13.82,
-              "Groceries": 29.34,
-              "Transport": 15.1
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-21",
-            "typical": {
-              "Dining": 64.38,
-              "Entertainment": 9.83,
-              "Groceries": 64.22,
-              "Personal Care": 86.67,
-              "Transport": 4.7
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-14",
-            "typical": {
-              "Dining": 64.38,
-              "Entertainment": 5.16,
-              "Groceries": 34.87,
-              "Personal Care": 86.67,
-              "Transport": 4.7
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-07",
-            "typical": {
-              "Dining": 4.25,
-              "Entertainment": 4.0,
-              "Groceries": 58.67,
-              "Personal Care": 86.67,
-              "Transport": 7.92
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-30",
-            "typical": {
-              "Dining": 8.5,
-              "Entertainment": 13.82,
-              "Groceries": 23.79,
-              "Transport": 7.92
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-23",
-            "typical": {
-              "Dining": 4.25,
-              "Entertainment": 13.82,
-              "Groceries": 54.51,
-              "Personal Care": 86.67,
-              "Transport": 14.05
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-16",
-            "typical": {
-              "Dining": 6.38,
-              "Entertainment": 14.74,
-              "Groceries": 46.07,
-              "Personal Care": 130.0,
-              "Transport": 9.2
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-09"
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-02"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 1682.36,
+                "changePct": null,
+                "daily": 54.27,
+                "name": "Travel",
+                "previous": 0.0,
+                "share": 50.92,
+                "total": 1682.36,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 418.0,
+                "changePct": null,
+                "daily": 13.48,
+                "name": "Shopping",
+                "previous": 0.0,
+                "share": 12.65,
+                "total": 418.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 184.83,
+                "changePct": 89.77,
+                "daily": 12.6,
+                "name": "Dining",
+                "previous": 205.9,
+                "share": 11.83,
+                "total": 390.73,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 134.29,
+                "changePct": 69.71,
+                "daily": 10.55,
+                "name": "Groceries",
+                "previous": 192.65,
+                "share": 9.9,
+                "total": 326.94,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 0.0,
+                "changePct": 0.0,
+                "daily": 8.39,
+                "name": "Personal Care",
+                "previous": 260.0,
+                "share": 7.87,
+                "total": 260.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 108.4,
+                "changePct": null,
+                "daily": 3.5,
+                "name": "Home Improvement",
+                "previous": 0.0,
+                "share": 3.28,
+                "total": 108.4,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 29.83,
+                "changePct": 65.85,
+                "daily": 2.42,
+                "name": "Transport",
+                "previous": 45.3,
+                "share": 2.27,
+                "total": 75.13,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 1.0,
+                "changePct": 2.41,
+                "daily": 1.37,
+                "name": "Entertainment",
+                "previous": 41.47,
+                "share": 1.29,
+                "total": 42.47,
+                "typical": null
+              }
+            ],
+            "change": 2558.71,
+            "changePct": 343.3,
+            "daily": 106.58,
+            "end": "2026-08-31",
             "kind": "month",
-            "start": "2026-08-01"
+            "largest": "tx-8",
+            "pending": 428.16,
+            "previous": 745.32,
+            "start": "2026-08-01",
+            "total": 3304.03
           },
           {
-            "kind": "month",
-            "start": "2026-07-01"
-          },
-          {
-            "kind": "month",
-            "start": "2026-06-01"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 1682.36,
+                "changePct": null,
+                "daily": 27.13,
+                "name": "Travel",
+                "previous": 0.0,
+                "share": 41.55,
+                "total": 1682.36,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 596.63,
+                "changePct": null,
+                "daily": 9.62,
+                "name": "Dining",
+                "previous": 0.0,
+                "share": 14.73,
+                "total": 596.63,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 520.0,
+                "changePct": null,
+                "daily": 8.39,
+                "name": "Personal Care",
+                "previous": 0.0,
+                "share": 12.84,
+                "total": 520.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 519.59,
+                "changePct": null,
+                "daily": 8.38,
+                "name": "Groceries",
+                "previous": 0.0,
+                "share": 12.83,
+                "total": 519.59,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 418.0,
+                "changePct": null,
+                "daily": 6.74,
+                "name": "Shopping",
+                "previous": 0.0,
+                "share": 10.32,
+                "total": 418.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 120.43,
+                "changePct": null,
+                "daily": 1.94,
+                "name": "Transport",
+                "previous": 0.0,
+                "share": 2.97,
+                "total": 120.43,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 108.4,
+                "changePct": null,
+                "daily": 1.75,
+                "name": "Home Improvement",
+                "previous": 0.0,
+                "share": 2.68,
+                "total": 108.4,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 83.94,
+                "changePct": null,
+                "daily": 1.35,
+                "name": "Entertainment",
+                "previous": 0.0,
+                "share": 2.07,
+                "total": 83.94,
+                "typical": null
+              }
+            ],
+            "change": 4049.35,
+            "changePct": null,
+            "daily": 65.31,
+            "end": "2026-08-31",
             "kind": "quarter",
+            "largest": "tx-8",
+            "pending": 428.16,
+            "previous": 0.0,
             "projected": {
               "categories": {
                 "Dining": 885.32,
@@ -3488,14 +5349,108 @@
               },
               "total": 6008.71
             },
-            "start": "2026-07-01"
+            "start": "2026-07-01",
+            "total": 4049.35
           },
           {
-            "kind": "quarter",
-            "start": "2026-04-01"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 1682.36,
+                "changePct": null,
+                "daily": 6.92,
+                "name": "Travel",
+                "previous": 0.0,
+                "share": 36.72,
+                "total": 1682.36,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 780.0,
+                "changePct": null,
+                "daily": 3.21,
+                "name": "Personal Care",
+                "previous": 0.0,
+                "share": 17.02,
+                "total": 780.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 683.11,
+                "changePct": null,
+                "daily": 2.81,
+                "name": "Groceries",
+                "previous": 0.0,
+                "share": 14.91,
+                "total": 683.11,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 622.13,
+                "changePct": null,
+                "daily": 2.56,
+                "name": "Dining",
+                "previous": 0.0,
+                "share": 13.58,
+                "total": 622.13,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 418.0,
+                "changePct": null,
+                "daily": 1.72,
+                "name": "Shopping",
+                "previous": 0.0,
+                "share": 9.12,
+                "total": 418.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 162.58,
+                "changePct": null,
+                "daily": 0.67,
+                "name": "Transport",
+                "previous": 0.0,
+                "share": 3.55,
+                "total": 162.58,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 125.41,
+                "changePct": null,
+                "daily": 0.52,
+                "name": "Entertainment",
+                "previous": 0.0,
+                "share": 2.74,
+                "total": 125.41,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 108.4,
+                "changePct": null,
+                "daily": 0.45,
+                "name": "Home Improvement",
+                "previous": 0.0,
+                "share": 2.37,
+                "total": 108.4,
+                "typical": null
+              }
+            ],
+            "change": 4581.99,
+            "changePct": null,
+            "daily": 18.86,
+            "end": "2026-08-31",
             "kind": "year",
+            "largest": "tx-8",
+            "pending": 428.16,
+            "previous": 0.0,
             "projected": {
               "categories": {
                 "Dining": 934.48,
@@ -3509,44 +5464,227 @@
               },
               "total": 6882.41
             },
-            "start": "2026-01-01"
+            "start": "2026-01-01",
+            "total": 4581.99
+          },
+          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 18.49,
+                "name": "Travel",
+                "previous": null,
+                "share": 36.72,
+                "total": 1682.36,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 8.57,
+                "name": "Personal Care",
+                "previous": null,
+                "share": 17.02,
+                "total": 780.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 7.51,
+                "name": "Groceries",
+                "previous": null,
+                "share": 14.91,
+                "total": 683.11,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 6.84,
+                "name": "Dining",
+                "previous": null,
+                "share": 13.58,
+                "total": 622.13,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 4.59,
+                "name": "Shopping",
+                "previous": null,
+                "share": 9.12,
+                "total": 418.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 1.79,
+                "name": "Transport",
+                "previous": null,
+                "share": 3.55,
+                "total": 162.58,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 1.38,
+                "name": "Entertainment",
+                "previous": null,
+                "share": 2.74,
+                "total": 125.41,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 1.19,
+                "name": "Home Improvement",
+                "previous": null,
+                "share": 2.37,
+                "total": 108.4,
+                "typical": null
+              }
+            ],
+            "change": null,
+            "changePct": null,
+            "daily": 50.35,
+            "end": "2026-08-31",
+            "kind": "all",
+            "largest": "tx-8",
+            "pending": 428.16,
+            "previous": null,
+            "start": "2026-06-02",
+            "total": 4581.99
           }
         ],
         "scope": "amex"
       },
       {
+        "months": [
+          {
+            "month": "2026-03",
+            "total": 0.0
+          },
+          {
+            "month": "2026-04",
+            "total": 0.0
+          },
+          {
+            "month": "2026-05",
+            "total": 0.0
+          },
+          {
+            "month": "2026-06",
+            "total": 0.0
+          },
+          {
+            "month": "2026-07",
+            "total": 0.0
+          },
+          {
+            "month": "2026-08",
+            "total": 174.91
+          }
+        ],
         "owner": "me",
         "periods": [
           {
+            "categories": [],
+            "change": -146.8,
+            "changePct": -100.0,
+            "daily": 0.0,
+            "end": "2026-08-31",
             "kind": "week",
+            "pending": 0.0,
+            "previous": 146.8,
             "start": "2026-08-25",
+            "total": 0.0,
             "typical": {
               "Groceries": 48.93
             }
           },
           {
-            "kind": "week",
-            "start": "2026-08-18",
-            "typical": {}
-          },
-          {
-            "kind": "week",
-            "start": "2026-08-11"
-          },
-          {
-            "kind": "week",
-            "start": "2026-08-04"
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-28"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 146.8,
+                "changePct": null,
+                "daily": 4.74,
+                "name": "Groceries",
+                "previous": 0.0,
+                "share": 83.93,
+                "total": 146.8,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 28.11,
+                "changePct": null,
+                "daily": 0.91,
+                "name": "Fees",
+                "previous": 0.0,
+                "share": 16.07,
+                "total": 28.11,
+                "typical": null
+              }
+            ],
+            "change": 174.91,
+            "changePct": null,
+            "daily": 5.64,
+            "end": "2026-08-31",
             "kind": "month",
-            "start": "2026-08-01"
+            "largest": "tx-160",
+            "pending": 0.0,
+            "previous": 0.0,
+            "start": "2026-08-01",
+            "total": 174.91
           },
           {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 146.8,
+                "changePct": null,
+                "daily": 2.37,
+                "name": "Groceries",
+                "previous": 0.0,
+                "share": 83.93,
+                "total": 146.8,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 28.11,
+                "changePct": null,
+                "daily": 0.45,
+                "name": "Fees",
+                "previous": 0.0,
+                "share": 16.07,
+                "total": 28.11,
+                "typical": null
+              }
+            ],
+            "change": 174.91,
+            "changePct": null,
+            "daily": 2.82,
+            "end": "2026-08-31",
             "kind": "quarter",
+            "largest": "tx-160",
+            "pending": 0.0,
+            "previous": 0.0,
             "projected": {
               "categories": {
                 "Fees": 41.71,
@@ -3554,10 +5692,42 @@
               },
               "total": 259.54
             },
-            "start": "2026-07-01"
+            "start": "2026-07-01",
+            "total": 174.91
           },
           {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 146.8,
+                "changePct": null,
+                "daily": 0.6,
+                "name": "Groceries",
+                "previous": 0.0,
+                "share": 83.93,
+                "total": 146.8,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 28.11,
+                "changePct": null,
+                "daily": 0.12,
+                "name": "Fees",
+                "previous": 0.0,
+                "share": 16.07,
+                "total": 28.11,
+                "typical": null
+              }
+            ],
+            "change": 174.91,
+            "changePct": null,
+            "daily": 0.72,
+            "end": "2026-08-31",
             "kind": "year",
+            "largest": "tx-160",
+            "pending": 0.0,
+            "previous": 0.0,
             "projected": {
               "categories": {
                 "Fees": 42.22,
@@ -3565,17 +5735,167 @@
               },
               "total": 262.72
             },
-            "start": "2026-01-01"
+            "start": "2026-01-01",
+            "total": 174.91
+          },
+          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 5.06,
+                "name": "Groceries",
+                "previous": null,
+                "share": 83.93,
+                "total": 146.8,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 0.97,
+                "name": "Fees",
+                "previous": null,
+                "share": 16.07,
+                "total": 28.11,
+                "typical": null
+              }
+            ],
+            "change": null,
+            "changePct": null,
+            "daily": 6.03,
+            "end": "2026-08-31",
+            "kind": "all",
+            "largest": "tx-160",
+            "pending": 0.0,
+            "previous": null,
+            "start": "2026-08-03",
+            "total": 174.91
           }
         ],
         "scope": "freedom"
       },
       {
+        "months": [
+          {
+            "month": "2026-03",
+            "total": 0.0
+          },
+          {
+            "month": "2026-04",
+            "total": 0.0
+          },
+          {
+            "month": "2026-05",
+            "total": 0.0
+          },
+          {
+            "month": "2026-06",
+            "total": 3028.84
+          },
+          {
+            "month": "2026-07",
+            "total": 3276.87
+          },
+          {
+            "month": "2026-08",
+            "total": 5997.36
+          }
+        ],
         "owner": "me",
         "periods": [
           {
+            "categories": [
+              {
+                "aboveTypical": 10.09,
+                "change": -214.04,
+                "changePct": -33.33,
+                "daily": 61.17,
+                "name": "Travel",
+                "previous": 642.2,
+                "share": 43.73,
+                "total": 428.16,
+                "typical": 418.07
+              },
+              {
+                "aboveTypical": 32.67,
+                "change": 129.0,
+                "changePct": null,
+                "daily": 18.43,
+                "name": "Shopping",
+                "previous": 0.0,
+                "share": 13.18,
+                "total": 129.0,
+                "typical": 96.33
+              },
+              {
+                "aboveTypical": 118.42,
+                "change": 118.42,
+                "changePct": null,
+                "daily": 16.92,
+                "name": "Utilities",
+                "previous": 0.0,
+                "share": 12.1,
+                "total": 118.42,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": 108.4,
+                "change": 108.4,
+                "changePct": null,
+                "daily": 15.49,
+                "name": "Home Improvement",
+                "previous": 0.0,
+                "share": 11.07,
+                "total": 108.4,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": -10.2,
+                "change": -123.55,
+                "changePct": -58.84,
+                "daily": 12.35,
+                "name": "Groceries",
+                "previous": 209.97,
+                "share": 8.83,
+                "total": 86.42,
+                "typical": 96.62
+              },
+              {
+                "aboveTypical": -27.91,
+                "change": 52.1,
+                "changePct": 211.36,
+                "daily": 10.96,
+                "name": "Dining",
+                "previous": 24.65,
+                "share": 7.84,
+                "total": 76.75,
+                "typical": 104.66
+              },
+              {
+                "aboveTypical": 17.46,
+                "change": 31.88,
+                "changePct": null,
+                "daily": 4.55,
+                "name": "Transport",
+                "previous": 0.0,
+                "share": 3.26,
+                "total": 31.88,
+                "typical": 14.42
+              }
+            ],
+            "change": 89.22,
+            "changePct": 10.03,
+            "daily": 139.86,
+            "end": "2026-08-31",
             "kind": "week",
+            "largest": "tx-1",
+            "pending": 428.16,
+            "previous": 889.81,
             "start": "2026-08-25",
+            "total": 979.03,
             "typical": {
               "Dining": 104.66,
               "Entertainment": 14.16,
@@ -3586,145 +5906,139 @@
             }
           },
           {
-            "kind": "week",
-            "start": "2026-08-18",
-            "typical": {
-              "Dining": 100.69,
-              "Entertainment": 9.83,
-              "Fees": 9.37,
-              "Groceries": 59.12,
-              "Personal Care": 86.67,
-              "Rent And Utilities": 800.0,
-              "Shopping": 96.33,
-              "Transport": 14.42,
-              "Travel": 204.0
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-08-11",
-            "typical": {
-              "Dining": 4.25,
-              "Entertainment": 4.0,
-              "Fees": 9.37,
-              "Groceries": 32.48,
-              "Personal Care": 86.67,
-              "Rent And Utilities": 800.0,
-              "Transport": 17.02,
-              "Utilities": 43.85
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-08-04",
-            "typical": {
-              "Dining": 8.5,
-              "Entertainment": 8.66,
-              "Fees": 9.37,
-              "Groceries": 61.83,
-              "Personal Care": 86.67,
-              "Rent And Utilities": 800.0,
-              "Transport": 10.4,
-              "Utilities": 43.85
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-28",
-            "typical": {
-              "Dining": 64.38,
-              "Entertainment": 13.82,
-              "Groceries": 29.34,
-              "Transport": 15.1,
-              "Utilities": 43.85
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-21",
-            "typical": {
-              "Dining": 64.38,
-              "Entertainment": 9.83,
-              "Groceries": 64.22,
-              "Personal Care": 86.67,
-              "Rent And Utilities": 800.0,
-              "Transport": 4.7
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-14",
-            "typical": {
-              "Dining": 64.38,
-              "Entertainment": 5.16,
-              "Groceries": 34.87,
-              "Personal Care": 86.67,
-              "Rent And Utilities": 800.0,
-              "Transport": 4.7,
-              "Utilities": 32.07
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-07-07",
-            "typical": {
-              "Dining": 4.25,
-              "Entertainment": 4.0,
-              "Groceries": 58.67,
-              "Personal Care": 86.67,
-              "Rent And Utilities": 800.0,
-              "Transport": 7.92,
-              "Utilities": 32.07
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-30",
-            "typical": {
-              "Dining": 8.5,
-              "Entertainment": 13.82,
-              "Groceries": 23.79,
-              "Transport": 7.92,
-              "Utilities": 32.07
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-23",
-            "typical": {
-              "Dining": 4.25,
-              "Entertainment": 13.82,
-              "Groceries": 54.51,
-              "Personal Care": 86.67,
-              "Transport": 14.05
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-16",
-            "typical": {
-              "Dining": 6.38,
-              "Entertainment": 14.74,
-              "Groceries": 46.07,
-              "Personal Care": 130.0,
-              "Transport": 9.2
-            }
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-09"
-          },
-          {
-            "kind": "week",
-            "start": "2026-06-02"
-          },
-          {
-            "kind": "week",
-            "start": "2026-05-26"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": 0.0,
+                "change": 0.0,
+                "changePct": 0.0,
+                "daily": 77.42,
+                "name": "Rent And Utilities",
+                "previous": 2400.0,
+                "share": 40.02,
+                "total": 2400.0,
+                "typical": 2400.0
+              },
+              {
+                "aboveTypical": 1682.36,
+                "change": 1682.36,
+                "changePct": null,
+                "daily": 54.27,
+                "name": "Travel",
+                "previous": 0.0,
+                "share": 28.05,
+                "total": 1682.36,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": 295.65,
+                "change": 281.09,
+                "changePct": 145.91,
+                "daily": 15.28,
+                "name": "Groceries",
+                "previous": 192.65,
+                "share": 7.9,
+                "total": 473.74,
+                "typical": 178.09
+              },
+              {
+                "aboveTypical": 418.0,
+                "change": 418.0,
+                "changePct": null,
+                "daily": 13.48,
+                "name": "Shopping",
+                "previous": 0.0,
+                "share": 6.97,
+                "total": 418.0,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": 275.03,
+                "change": 184.83,
+                "changePct": 89.77,
+                "daily": 12.6,
+                "name": "Dining",
+                "previous": 205.9,
+                "share": 6.52,
+                "total": 390.73,
+                "typical": 115.7
+              },
+              {
+                "aboveTypical": 0.0,
+                "change": 0.0,
+                "changePct": 0.0,
+                "daily": 8.39,
+                "name": "Personal Care",
+                "previous": 260.0,
+                "share": 4.34,
+                "total": 260.0,
+                "typical": 260.0
+              },
+              {
+                "aboveTypical": 4.54,
+                "change": -13.13,
+                "changePct": -9.98,
+                "daily": 3.82,
+                "name": "Utilities",
+                "previous": 131.55,
+                "share": 1.97,
+                "total": 118.42,
+                "typical": 113.88
+              },
+              {
+                "aboveTypical": 108.4,
+                "change": 108.4,
+                "changePct": null,
+                "daily": 3.5,
+                "name": "Home Improvement",
+                "previous": 0.0,
+                "share": 1.81,
+                "total": 108.4,
+                "typical": 0.0
+              },
+              {
+                "aboveTypical": 31.4,
+                "change": 29.83,
+                "changePct": 65.85,
+                "daily": 2.42,
+                "name": "Transport",
+                "previous": 45.3,
+                "share": 1.25,
+                "total": 75.13,
+                "typical": 43.73
+              },
+              {
+                "aboveTypical": 1.0,
+                "change": 1.0,
+                "changePct": 2.41,
+                "daily": 1.37,
+                "name": "Entertainment",
+                "previous": 41.47,
+                "share": 0.71,
+                "total": 42.47,
+                "typical": 41.47
+              },
+              {
+                "aboveTypical": 28.11,
+                "change": 28.11,
+                "changePct": null,
+                "daily": 0.91,
+                "name": "Fees",
+                "previous": 0.0,
+                "share": 0.47,
+                "total": 28.11,
+                "typical": 0.0
+              }
+            ],
+            "change": 2720.49,
+            "changePct": 83.02,
+            "daily": 193.46,
+            "end": "2026-08-31",
             "kind": "month",
+            "largest": "tx-109",
+            "pending": 428.16,
+            "previous": 3276.87,
             "start": "2026-08-01",
+            "total": 5997.36,
             "typical": {
               "Dining": 115.7,
               "Entertainment": 41.47,
@@ -3736,15 +6050,137 @@
             }
           },
           {
-            "kind": "month",
-            "start": "2026-07-01"
-          },
-          {
-            "kind": "month",
-            "start": "2026-06-01"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 2400.0,
+                "changePct": 100.0,
+                "daily": 77.42,
+                "name": "Rent And Utilities",
+                "previous": 2400.0,
+                "share": 51.76,
+                "total": 4800.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 1682.36,
+                "changePct": null,
+                "daily": 27.13,
+                "name": "Travel",
+                "previous": 0.0,
+                "share": 18.14,
+                "total": 1682.36,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 666.39,
+                "changePct": null,
+                "daily": 10.75,
+                "name": "Groceries",
+                "previous": 0.0,
+                "share": 7.19,
+                "total": 666.39,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 596.63,
+                "changePct": null,
+                "daily": 9.62,
+                "name": "Dining",
+                "previous": 0.0,
+                "share": 6.43,
+                "total": 596.63,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 520.0,
+                "changePct": null,
+                "daily": 8.39,
+                "name": "Personal Care",
+                "previous": 0.0,
+                "share": 5.61,
+                "total": 520.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 418.0,
+                "changePct": null,
+                "daily": 6.74,
+                "name": "Shopping",
+                "previous": 0.0,
+                "share": 4.51,
+                "total": 418.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 249.97,
+                "changePct": null,
+                "daily": 4.03,
+                "name": "Utilities",
+                "previous": 0.0,
+                "share": 2.7,
+                "total": 249.97,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 120.43,
+                "changePct": null,
+                "daily": 1.94,
+                "name": "Transport",
+                "previous": 0.0,
+                "share": 1.3,
+                "total": 120.43,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 108.4,
+                "changePct": null,
+                "daily": 1.75,
+                "name": "Home Improvement",
+                "previous": 0.0,
+                "share": 1.17,
+                "total": 108.4,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 83.94,
+                "changePct": null,
+                "daily": 1.35,
+                "name": "Entertainment",
+                "previous": 0.0,
+                "share": 0.91,
+                "total": 83.94,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 28.11,
+                "changePct": null,
+                "daily": 0.45,
+                "name": "Fees",
+                "previous": 0.0,
+                "share": 0.3,
+                "total": 28.11,
+                "typical": null
+              }
+            ],
+            "change": 6874.23,
+            "changePct": 286.43,
+            "daily": 149.58,
+            "end": "2026-08-31",
             "kind": "quarter",
+            "largest": "tx-108",
+            "pending": 428.16,
+            "previous": 2400.0,
             "projected": {
               "categories": {
                 "Dining": 885.32,
@@ -3761,14 +6197,141 @@
               },
               "total": 13761.76
             },
-            "start": "2026-07-01"
+            "start": "2026-07-01",
+            "total": 9274.23
           },
           {
-            "kind": "quarter",
-            "start": "2026-04-01"
-          },
-          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": 7200.0,
+                "changePct": null,
+                "daily": 29.63,
+                "name": "Rent And Utilities",
+                "previous": 0.0,
+                "share": 58.52,
+                "total": 7200.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 1682.36,
+                "changePct": null,
+                "daily": 6.92,
+                "name": "Travel",
+                "previous": 0.0,
+                "share": 13.67,
+                "total": 1682.36,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 829.91,
+                "changePct": null,
+                "daily": 3.42,
+                "name": "Groceries",
+                "previous": 0.0,
+                "share": 6.75,
+                "total": 829.91,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 780.0,
+                "changePct": null,
+                "daily": 3.21,
+                "name": "Personal Care",
+                "previous": 0.0,
+                "share": 6.34,
+                "total": 780.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 622.13,
+                "changePct": null,
+                "daily": 2.56,
+                "name": "Dining",
+                "previous": 0.0,
+                "share": 5.06,
+                "total": 622.13,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 418.0,
+                "changePct": null,
+                "daily": 1.72,
+                "name": "Shopping",
+                "previous": 0.0,
+                "share": 3.4,
+                "total": 418.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 346.17,
+                "changePct": null,
+                "daily": 1.42,
+                "name": "Utilities",
+                "previous": 0.0,
+                "share": 2.81,
+                "total": 346.17,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 162.58,
+                "changePct": null,
+                "daily": 0.67,
+                "name": "Transport",
+                "previous": 0.0,
+                "share": 1.32,
+                "total": 162.58,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 125.41,
+                "changePct": null,
+                "daily": 0.52,
+                "name": "Entertainment",
+                "previous": 0.0,
+                "share": 1.02,
+                "total": 125.41,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 108.4,
+                "changePct": null,
+                "daily": 0.45,
+                "name": "Home Improvement",
+                "previous": 0.0,
+                "share": 0.88,
+                "total": 108.4,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": 28.11,
+                "changePct": null,
+                "daily": 0.12,
+                "name": "Fees",
+                "previous": 0.0,
+                "share": 0.23,
+                "total": 28.11,
+                "typical": null
+              }
+            ],
+            "change": 12303.07,
+            "changePct": null,
+            "daily": 50.63,
+            "end": "2026-08-31",
             "kind": "year",
+            "largest": "tx-107",
+            "pending": 428.16,
+            "previous": 0.0,
             "projected": {
               "categories": {
                 "Dining": 934.48,
@@ -3785,7 +6348,143 @@
               },
               "total": 18479.92
             },
-            "start": "2026-01-01"
+            "start": "2026-01-01",
+            "total": 12303.07
+          },
+          {
+            "categories": [
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 78.26,
+                "name": "Rent And Utilities",
+                "previous": null,
+                "share": 58.52,
+                "total": 7200.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 18.29,
+                "name": "Travel",
+                "previous": null,
+                "share": 13.67,
+                "total": 1682.36,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 9.02,
+                "name": "Groceries",
+                "previous": null,
+                "share": 6.75,
+                "total": 829.91,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 8.48,
+                "name": "Personal Care",
+                "previous": null,
+                "share": 6.34,
+                "total": 780.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 6.76,
+                "name": "Dining",
+                "previous": null,
+                "share": 5.06,
+                "total": 622.13,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 4.54,
+                "name": "Shopping",
+                "previous": null,
+                "share": 3.4,
+                "total": 418.0,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 3.76,
+                "name": "Utilities",
+                "previous": null,
+                "share": 2.81,
+                "total": 346.17,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 1.77,
+                "name": "Transport",
+                "previous": null,
+                "share": 1.32,
+                "total": 162.58,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 1.36,
+                "name": "Entertainment",
+                "previous": null,
+                "share": 1.02,
+                "total": 125.41,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 1.18,
+                "name": "Home Improvement",
+                "previous": null,
+                "share": 0.88,
+                "total": 108.4,
+                "typical": null
+              },
+              {
+                "aboveTypical": null,
+                "change": null,
+                "changePct": null,
+                "daily": 0.31,
+                "name": "Fees",
+                "previous": null,
+                "share": 0.23,
+                "total": 28.11,
+                "typical": null
+              }
+            ],
+            "change": null,
+            "changePct": null,
+            "daily": 133.73,
+            "end": "2026-08-31",
+            "kind": "all",
+            "largest": "tx-107",
+            "pending": 428.16,
+            "previous": null,
+            "start": "2026-06-01",
+            "total": 12303.07
           }
         ],
         "scope": "all"
@@ -3950,15 +6649,18 @@
           "categories": [
             {
               "amount": -612.0,
-              "name": "Travel"
+              "name": "Travel",
+              "share": 50.96
             },
             {
               "amount": -289.0,
-              "name": "Shopping"
+              "name": "Shopping",
+              "share": 24.06
             },
             {
               "amount": -276.58,
-              "name": "Dining"
+              "name": "Dining",
+              "share": 23.03
             }
           ],
           "days": [
@@ -3984,6 +6686,8 @@
           "id": "trip:2026-08-13:2026-08-15",
           "ongoing": false,
           "perDay": -400.33,
+          "rest": 23.4,
+          "restShare": 1.95,
           "start": "2026-08-13",
           "stops": [
             {
@@ -3998,6 +6702,17 @@
           ],
           "total": -1200.98,
           "transactionIds": ["tx-153", "tx-154", "tx-155", "tx-156", "tx-157"]
+        }
+      ],
+      "years": [
+        {
+          "abroad": 0,
+          "count": 1,
+          "days": 3,
+          "flown": 1,
+          "longest": "trip:2026-08-13:2026-08-15",
+          "spent": 1200.98,
+          "year": 2026
         }
       ]
     }

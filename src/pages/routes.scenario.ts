@@ -1,9 +1,16 @@
-import type { BriefDocument, FinanceSettings, Insights, Transaction } from '../lib/schema'
+import type {
+  BriefDocument,
+  FinanceSnapshot,
+  FinanceSettings,
+  Insights,
+  Reports,
+  Transaction,
+} from '../lib/schema'
 
 const initial = () => ({
   recovery: undefined as { message: string; canRestore: boolean } | undefined,
   annotationWarning: undefined as string | undefined,
-  holdings: [] as Array<Record<string, unknown>>,
+  holdings: [] as FinanceSnapshot['holdings'],
   trades: [] as Array<Record<string, unknown>>,
   extraTransactions: [] as Transaction[],
   incomplete: false,
@@ -21,6 +28,8 @@ const initial = () => ({
   hiddenBenefits: '',
   spendingAccountId: 'selected',
   insights: {} as Partial<Insights>,
+  /** Reports as Rust would read them, for the tests of a report page. */
+  reports: {} as Partial<Reports>,
   people: [] as FinanceSettings['people'],
   tripCompanions: [] as FinanceSettings['tripCompanions'],
   benefitAmount: 10,
@@ -30,6 +39,8 @@ const initial = () => ({
   activityMethod: undefined as string | undefined,
   snaptradeReference: false,
   documents: [] as BriefDocument[],
+  /** Opens with screen privacy on, as the hide-on-launch preference does. */
+  valuesHidden: false,
 })
 
 /** The synthetic finance scenario the route tests adjust; `routes.harness` serves it. */

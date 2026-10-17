@@ -20,6 +20,18 @@ pub(super) fn cache_connection(path: &Path) -> Result<Connection, String> {
     Ok(db)
 }
 
+/// Every symbol's saved history for a range, or nothing when any is missing.
+pub fn cached_histories(
+    path: &Path,
+    symbols: &[String],
+    range: u64,
+) -> Option<BTreeMap<String, PriceHistory>> {
+    symbols
+        .iter()
+        .map(|symbol| Some((symbol.clone(), cached_history(path, symbol, range)?)))
+        .collect()
+}
+
 pub fn cached_history(path: &Path, symbol: &str, range: u64) -> Option<PriceHistory> {
     let db = cache_connection(path).ok()?;
     let payload: String = db

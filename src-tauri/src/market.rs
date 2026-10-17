@@ -1,6 +1,8 @@
+mod intraday;
+
 use std::{collections::BTreeMap, time::Duration as StdDuration};
 
-use chrono::DateTime;
+use chrono::{DateTime, Utc};
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -19,8 +21,11 @@ pub(super) fn market_update_interval(milliseconds: Option<u64>) -> StdDuration {
     )
 }
 
-#[tauri::command]
-pub(crate) fn get_saved_market(state: State<'_, AppState>) -> Result<Option<Value>, String> {
+#[tauri::command(async)]
+pub(crate) fn get_saved_market(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> Result<Option<Value>, String> {
     let storage = state.storage()?;
     if storage.ensure_writable().is_err() {
         return Ok(None);
@@ -28,9 +33,67 @@ pub(crate) fn get_saved_market(state: State<'_, AppState>) -> Result<Option<Valu
     let Some(market) = state.startup_market.load(&storage.data.snapshot) else {
         return Ok(None);
     };
-    let mut response = market_payload(&storage.data.snapshot, &storage.data.settings, &market)?;
+    let snapshot = &storage.data.snapshot;
+    let settings = &storage.data.settings;
+    let mut response = market_payload(snapshot, settings, &market)?;
+    // The week drawn from saved bars, so launch shows the detail before the stream refreshes it.
+    if let Some(bars) = price_cache(&app).and_then(|cache| {
+        providers::holding_market::cached_histories(
+            &cache,
+            &quoted_symbols(snapshot),
+            intraday::WEEK_SECONDS,
+        )
+    }) {
+        with_week(&mut response, snapshot, settings, &market, &bars)?;
+    }
     response["cached"] = true.into();
     Ok(Some(response))
+}
+
+/// Where verified security history is saved.
+fn price_cache(app: &AppHandle) -> Option<std::path::PathBuf> {
+    Some(
+        app.path()
+            .app_data_dir()
+            .ok()?
+            .join("market-prices.sqlite3"),
+    )
+}
+
+/// The holdings live quotes price.
+fn quoted_symbols(snapshot: &Snapshot) -> Vec<String> {
+    let symbols: std::collections::BTreeSet<String> = snapshot
+        .holdings
+        .iter()
+        .filter(|holding| holding.quote_eligible == Some(true))
+        .map(|holding| holding.ticker.trim().to_ascii_uppercase())
+        .collect();
+    symbols.into_iter().collect()
+}
+
+/// The portfolio's intraday week in place of the frame's two points, when every holding's bars
+/// are at hand; otherwise the frame stays as it is.
+fn with_week(
+    response: &mut Value,
+    snapshot: &Snapshot,
+    settings: &crate::settings::FinanceSettings,
+    market: &providers::MarketSnapshots,
+    bars: &BTreeMap<String, providers::holding_market::PriceHistory>,
+) -> Result<(), String> {
+    let week = intraday::intraday_series(
+        snapshot,
+        settings,
+        &market.snapshots,
+        bars,
+        chrono::Local::now().date_naive(),
+        chrono::Utc::now(),
+    )?;
+    if week.is_empty() {
+        return Ok(());
+    }
+    let current = serde_json::from_value(response["chartSeries"].take()).unwrap_or_default();
+    response["chartSeries"] = json(intraday::with_intraday(current, week))?;
+    Ok(())
 }
 
 fn json(value: impl serde::Serialize) -> Result<Value, String> {
@@ -44,7 +107,10 @@ fn market_payload(
     market: &providers::MarketSnapshots,
 ) -> Result<Value, String> {
     let mut response = json(market)?;
-    response["projection"] = json(project(snapshot, settings, &market.snapshots, false)?)?;
+    response["projection"] = projection_json(
+        &project(snapshot, settings, &market.snapshots, false)?,
+        settings,
+    )?;
     response["chartSeries"] = json(market_chart_series(snapshot, settings, market)?)?;
     Ok(response)
 }
@@ -66,11 +132,134 @@ fn project(
     Ok(projection)
 }
 
-fn market_chart_values(projection: &MarketProjection, time: i64) -> BTreeMap<String, Value> {
+/// The live chart lines as the renderer holds them: the first frame's, then the week of bars
+/// with any points that followed it, then each update's point, one a minute.
+#[derive(Default)]
+struct LiveLines(BTreeMap<String, Vec<(i64, f64)>>);
+
+impl LiveLines {
+    fn parse(series: &Value) -> BTreeMap<String, Vec<(i64, f64)>> {
+        series
+            .as_object()
+            .into_iter()
+            .flatten()
+            .map(|(id, points)| {
+                let points = points
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .filter_map(|point| Some((point["time"].as_i64()?, point["value"].as_f64()?)))
+                    .collect();
+                (id.clone(), points)
+            })
+            .collect()
+    }
+
+    /// The first frame's lines.
+    fn replace(&mut self, series: &Value) {
+        self.0 = Self::parse(series);
+    }
+
+    /// The week of bars, then the points that came after it.
+    fn with_history(&mut self, series: &Value) {
+        for (id, mut week) in Self::parse(series) {
+            let last = week.last().map_or(i64::MIN, |(time, _)| *time);
+            let later = self
+                .0
+                .get(&id)
+                .into_iter()
+                .flatten()
+                .filter(|(time, _)| *time > last)
+                .copied()
+                .collect::<Vec<_>>();
+            week.extend(later);
+            self.0.insert(id, week);
+        }
+    }
+
+    /// An update's point on each line, replacing the one in the same minute.
+    fn upsert(&mut self, points: &BTreeMap<String, Value>) {
+        for (id, point) in points {
+            let (Some(time), Some(value)) = (point["time"].as_i64(), point["value"].as_f64())
+            else {
+                continue;
+            };
+            let time = time.div_euclid(60) * 60;
+            let line = self.0.entry(id.clone()).or_default();
+            match line
+                .iter_mut()
+                .find(|(at, _)| at.div_euclid(60) * 60 == time)
+            {
+                Some(existing) => *existing = (time, value),
+                None => {
+                    line.push((time, value));
+                    line.sort_by_key(|(at, _)| *at);
+                }
+            }
+        }
+    }
+
+    /// Each value chart's change over each window ending `now`, at these lines. Net worth
+    /// draws the accounts' line, which leaves out the spending cards.
+    fn changes(
+        &self,
+        view: &crate::insights::View,
+        settings: &crate::settings::FinanceSettings,
+        net_worth: f64,
+        now: i64,
+    ) -> Vec<crate::insights::chart_change::ChartChanges> {
+        use crate::insights::chart_change;
+        let history = view
+            .insights
+            .as_ref()
+            .and_then(|insights| insights.accounts_total.as_ref())
+            .map_or(&view.snapshot.net_worth_history, |total| &total.history);
+        let mut lines = self.0.clone();
+        if let Some(accounts) = lines.get("accounts").cloned() {
+            lines.insert(chart_change::NET_WORTH.into(), accounts);
+        }
+        chart_change::changes(
+            &chart_change::series(&view.snapshot, settings, history, net_worth),
+            &lines,
+            now,
+        )
+    }
+}
+
+/// The projection as the renderer reads it, with its account totals from the live values.
+fn projection_json(
+    projection: &MarketProjection,
+    settings: &crate::settings::FinanceSettings,
+) -> Result<Value, String> {
+    let mut value = json(projection)?;
+    value["rollup"] = json(crate::insights::rollup::rollup(
+        &projection.accounts,
+        &projection.holdings,
+        projection.net_worth,
+        settings,
+    ))?;
+    Ok(value)
+}
+
+/// Each chart's point at `time`: net worth, the accounts' total without the spending cards,
+/// and each brokerage.
+fn market_chart_values(
+    projection: &MarketProjection,
+    settings: &crate::settings::FinanceSettings,
+    time: i64,
+) -> BTreeMap<String, Value> {
     let point = |value: f64| serde_json::json!({ "time": time, "value": value });
     let mut values = BTreeMap::new();
     if !projection.net_worth_incomplete && projection.net_worth.is_finite() {
         values.insert("net-worth".into(), point(projection.net_worth));
+        values.insert(
+            "accounts".into(),
+            point(crate::insights::rollup::without_cards(
+                &projection.accounts,
+                projection.net_worth,
+                settings,
+            )),
+        );
     }
     let investments_incomplete = projection.accounts.iter().any(|account| {
         matches!(account.r#type.as_str(), "brokerage" | "retirement") && account.value.is_none()
@@ -115,7 +304,7 @@ fn market_chart_series(
             })
             .collect::<BTreeMap<_, _>>();
         let projection = project(snapshot, settings, &closes, true)?;
-        for (id, point) in market_chart_values(&projection, as_of.timestamp()) {
+        for (id, point) in market_chart_values(&projection, settings, as_of.timestamp()) {
             series.entry(id).or_default().push(point);
         }
     }
@@ -127,7 +316,7 @@ fn market_chart_series(
         .filter(|as_of| close_time.is_none_or(|close| *as_of > close))
     {
         let projection = project(snapshot, settings, &market.snapshots, false)?;
-        for (id, point) in market_chart_values(&projection, as_of.timestamp()) {
+        for (id, point) in market_chart_values(&projection, settings, as_of.timestamp()) {
             series.entry(id).or_default().push(point);
         }
     }
@@ -175,16 +364,94 @@ pub(crate) async fn start_market_stream(
     if *receiver.borrow() {
         return Ok(());
     }
+    // The lines as the renderer will hold them, so each message can carry the changes they show.
+    let lines = std::sync::Arc::new(std::sync::Mutex::new(LiveLines::default()));
     let response = {
         let storage = state.storage()?;
         state.startup_market.save(&storage.data.snapshot, &market);
-        market_payload(&storage.data.snapshot, &storage.data.settings, &market)?
+        let mut response = market_payload(&storage.data.snapshot, &storage.data.settings, &market)?;
+        let view = storage.read_view()?;
+        let mut held = lines.lock().map_err(|_| "Market chart state unavailable")?;
+        held.replace(&response["chartSeries"]);
+        let net_worth = response["projection"]["rollup"]["netWorth"]
+            .as_f64()
+            .unwrap_or(view.snapshot.net_worth);
+        response["chartChanges"] = json(held.changes(
+            &view,
+            &storage.data.settings,
+            net_worth,
+            Utc::now().timestamp(),
+        ))?;
+        response
     };
     updates
         .send(serde_json::json!({"kind": "update", "market": response}))
         .map_err(|error| error.to_string())?;
     if symbols.is_empty() {
         return Ok(());
+    }
+
+    // The week of five-minute bars arrives a moment after the first frame, as its own message,
+    // so it never rolls the live prices back to the first frame's.
+    if let Some(cache) = price_cache(&app) {
+        let app = app.clone();
+        let updates = updates.clone();
+        let symbols = symbols.clone();
+        let market = market.clone();
+        let lines = lines.clone();
+        let mut cancellation = receiver.clone();
+        tauri::async_runtime::spawn(async move {
+            let state = app.state::<AppState>();
+            let bars = tokio::select! {
+                _ = cancellation.changed() => return,
+                bars = state.providers.week_bars(&cache, &symbols) => bars,
+            };
+            if *cancellation.borrow() {
+                return;
+            }
+            let Ok(bars) = bars else {
+                return;
+            };
+            let message = (|| -> Result<Option<Value>, String> {
+                let storage = state.storage()?;
+                let mut payload = serde_json::json!({ "chartSeries": {} });
+                with_week(
+                    &mut payload,
+                    &storage.data.snapshot,
+                    &storage.data.settings,
+                    &market,
+                    &bars,
+                )?;
+                let series = payload["chartSeries"].take();
+                if series.as_object().is_none_or(|series| series.is_empty()) {
+                    return Ok(None);
+                }
+                // The changes the lines show once the week joins them.
+                let view = storage.read_view()?;
+                let mut held = lines.lock().map_err(|_| "Market chart state unavailable")?;
+                held.with_history(&series);
+                let net_worth = view
+                    .insights
+                    .as_ref()
+                    .map_or(view.snapshot.net_worth, |insights| {
+                        insights.rollup.net_worth
+                    });
+                let changes = held.changes(
+                    &view,
+                    &storage.data.settings,
+                    net_worth,
+                    Utc::now().timestamp(),
+                );
+                Ok(Some(serde_json::json!({
+                    "kind": "history",
+                    "chartSeries": series,
+                    "chartChanges": changes,
+                })))
+            })();
+            if let Ok(Some(message)) = message {
+                let _ = updates.send(message);
+            }
+        });
     }
 
     tauri::async_runtime::spawn(async move {
@@ -208,22 +475,51 @@ pub(crate) async fn start_market_stream(
                     (tick.chart_as_of, tick.chart_snapshots)
                 {
                     let chart_projection = project(committed, settings, &chart_snapshots, true)?;
-                    DateTime::parse_from_rfc3339(&as_of)
-                        .ok()
-                        .map(|time| market_chart_values(&chart_projection, time.timestamp()))
+                    DateTime::parse_from_rfc3339(&as_of).ok().map(|time| {
+                        market_chart_values(&chart_projection, settings, time.timestamp())
+                    })
                 } else {
                     tick.market
                         .as_of
                         .as_deref()
                         .and_then(|time| DateTime::parse_from_rfc3339(time).ok())
-                        .map(|time| market_chart_values(&projection, time.timestamp()))
+                        .map(|time| market_chart_values(&projection, settings, time.timestamp()))
                 };
                 state.startup_market.save(committed, &tick.market);
+                // The point joins the lines, and the changes they show go with it.
+                let chart_changes = match &chart_point {
+                    Some(point) => {
+                        let mut held =
+                            lines.lock().map_err(|_| "Market chart state unavailable")?;
+                        held.upsert(point);
+                        let now = point
+                            .values()
+                            .filter_map(|point| point["time"].as_i64())
+                            .max()
+                            .unwrap_or_else(|| Utc::now().timestamp());
+                        let net_worth = crate::insights::rollup::without_cards(
+                            &projection.accounts,
+                            projection.net_worth,
+                            settings,
+                        );
+                        Some(json(held.changes(
+                            &*storage.read_view()?,
+                            settings,
+                            net_worth,
+                            now,
+                        ))?)
+                    }
+                    None => None,
+                };
+                let projection = projection_json(&projection, settings)?;
                 drop(storage);
                 let mut payload = json(&tick.market)?;
-                payload["projection"] = json(projection)?;
+                payload["projection"] = projection;
                 if let Some(point) = chart_point {
                     payload["chartPoint"] = json(point)?;
+                }
+                if let Some(changes) = chart_changes {
+                    payload["chartChanges"] = changes;
                 }
                 updates
                     .send(serde_json::json!({"kind": "update", "market": payload}))
@@ -395,6 +691,32 @@ pub(crate) fn stop_holding_chart(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn live_lines_take_the_week_then_later_points_one_a_minute() {
+        let mut lines = LiveLines::default();
+        lines.replace(&serde_json::json!({
+            "accounts": [{ "time": 100, "value": 1.0 }, { "time": 9_000, "value": 9.0 }],
+        }));
+        // The week replaces what it covers and keeps the point that came after it.
+        lines.with_history(&serde_json::json!({
+            "accounts": [{ "time": 60, "value": 0.5 }, { "time": 6_000, "value": 6.0 }],
+        }));
+        assert_eq!(lines.0["accounts"], [(60, 0.5), (6_000, 6.0), (9_000, 9.0)]);
+        // An update replaces the point in its minute, or joins the line in order.
+        lines.upsert(&BTreeMap::from([(
+            "accounts".to_owned(),
+            serde_json::json!({ "time": 9_030, "value": 9.5 }),
+        )]));
+        lines.upsert(&BTreeMap::from([(
+            "accounts".to_owned(),
+            serde_json::json!({ "time": 7_000, "value": 7.0 }),
+        )]));
+        assert_eq!(
+            lines.0["accounts"],
+            [(60, 0.5), (6_000, 6.0), (6_960, 7.0), (9_000, 9.5)]
+        );
+    }
 
     #[test]
     fn old_cleanup_cannot_cancel_a_new_market_request() {

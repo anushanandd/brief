@@ -5,6 +5,7 @@ import type { ChangeWindow, FinanceSnapshot } from '../lib/schema'
 import { Metric } from './ui'
 
 const periodLabels: Record<ChangeWindow, string> = {
+  day: 'Today',
   week: 'Past week',
   month: 'Past month',
   quarter: 'Past 3 months',

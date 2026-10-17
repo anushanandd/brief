@@ -1,28 +1,15 @@
 import { expect, it } from 'vitest'
 
-import { benefitYearTotals, capturedForOthers } from './benefit-grid'
-import type { BenefitActivity, BenefitHistory, BenefitPeriod } from './schema'
+import { benefitYearTotals, cardYearTotals } from './benefit-grid'
+import type { BenefitHistory, CardBenefits } from './schema'
 
-const credit = (id: string, amount: number, pending = false): BenefitActivity => ({
-  id,
-  merchant: 'Synthetic credit',
-  amount,
-  pending,
-  date: '2026-08-20',
-  benefitId: 'resy',
-  benefitName: 'Resy',
-  kind: amount < 0 ? 'reversal' : 'credit',
-})
-
-const period = (start: string, credited: number, activityIds: string[]): BenefitPeriod => ({
-  start,
-  end: start,
-  label: 'Synthetic',
-  cap: 100,
-  credited,
-  state: 'partial',
-  activityIds,
-})
+const year = {
+  year: 2026,
+  captured: 60,
+  planned: 13.99,
+  missed: { low: 10, high: 20 },
+  left: { low: 0, high: 0 },
+}
 
 const resy: BenefitHistory = {
   id: 'resy',
@@ -30,27 +17,19 @@ const resy: BenefitHistory = {
   recurring: false,
   external: false,
   retired: false,
-  periods: [
-    period('2026-07-01', 60, ['mine', 'theirs', 'their-reversal', 'their-pending']),
-    // Last year's credits belong to last year.
-    period('2025-07-01', 50, ['theirs-before']),
-  ],
+  periods: [],
+  years: [year],
 }
 
-it('splits the year’s captured credits into yours and someone else’s', () => {
-  const activity = new Map(
-    [
-      credit('mine', 40),
-      credit('theirs', 30),
-      credit('their-reversal', -10),
-      credit('their-pending', 25, true),
-      credit('theirs-before', 50),
-    ].map((item) => [item.id, item]),
-  )
-  const others = new Set(['theirs', 'their-reversal', 'their-pending', 'theirs-before'])
-  // Posted credits net of reversals; a pending one hasn't landed yet.
-  expect(capturedForOthers([resy], 2026, activity, others)).toBe(20)
-  // Yours and theirs add up to what the year captured.
-  expect(benefitYearTotals([resy], 2026).captured - 20).toBe(40)
-  expect(capturedForOthers([resy], 2026, activity, new Set())).toBe(0)
+it("reads a benefit's year as Rust summed it, nothing for a year without periods", () => {
+  expect(benefitYearTotals(resy, 2026)).toBe(year)
+  expect(benefitYearTotals(resy, 2025)).toMatchObject({ captured: 0, missed: { low: 0, high: 0 } })
+  expect(benefitYearTotals(undefined, 2026).planned).toBe(0)
+})
+
+it("reads the card's year over the benefits shown, with what went to someone else", () => {
+  const card: Pick<CardBenefits, 'years'> = { years: [{ ...year, forOthers: 20 }] }
+  expect(cardYearTotals(card, 2026)).toMatchObject({ captured: 60, forOthers: 20 })
+  expect(cardYearTotals(card, 2025)).toMatchObject({ captured: 0, forOthers: 0 })
+  expect(cardYearTotals(undefined, 2026).forOthers).toBe(0)
 })

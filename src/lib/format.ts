@@ -52,29 +52,51 @@ const typographicMinus = (text: string) => text.replace(/^-/, MINUS)
 /** The ASCII form, for clipboards and files that parse numbers. */
 export const asciiMinus = (text: string) => text.replaceAll(MINUS, '-')
 
-export const formatCurrency = (value: number | null | undefined) =>
+/**
+ * Screen privacy (⌘H) masks personal amounts where they're formatted, so every amount hides,
+ * in text, labels, and chart axes alike, without each view opting in. The same placeholder
+ * stands for every value, so nothing about its size shows. Public market prices format with
+ * `formatPublicCurrency` and stay visible.
+ */
+let amountsMasked = false
+export const HIDDEN_AMOUNT = '$••••'
+/** Set by the app shell before it renders; views re-render whenever it changes. */
+export function setAmountsHidden(hidden: boolean) {
+  amountsMasked = hidden
+}
+export const amountsHidden = () => amountsMasked
+
+/** A public market price, which screen privacy leaves visible. */
+export const formatPublicCurrency = (value: number | null | undefined) =>
   value == null ? '—' : typographicMinus(currencyFormatter.format(value))
+
+export const formatCurrency = (value: number | null | undefined) =>
+  value == null ? '—' : amountsMasked ? HIDDEN_AMOUNT : formatPublicCurrency(value)
 
 /**
  * Sentences round: whole dollars and one-decimal percents. Figures in rows, metrics, and
  * selectors keep cents and two decimals. Both use the same minus.
  */
 export const formatProseCurrency = (value: number) =>
-  typographicMinus(wholeCurrencyFormatter.format(value))
+  amountsMasked ? HIDDEN_AMOUNT : typographicMinus(wholeCurrencyFormatter.format(value))
 export const formatProsePercent = (value: number) => `${Math.abs(value).toFixed(1)}%`
 
 /** A change at a glance: cents below $1,000, then compact ("+$12.3K"). */
 export const formatSignedCompactCurrency = (value: number | null | undefined) =>
   value == null || Math.abs(value) < 1000
     ? formatSignedCurrency(value)
-    : `${value > 0 ? '+' : ''}${formatCompactCurrency(value)}`
+    : amountsMasked
+      ? HIDDEN_AMOUNT
+      : `${value > 0 ? '+' : ''}${formatCompactCurrency(value)}`
 
 export const formatCompactCurrency = (value: number) =>
-  typographicMinus(compactCurrencyFormatter.format(value))
+  amountsMasked ? HIDDEN_AMOUNT : typographicMinus(compactCurrencyFormatter.format(value))
 
 /** One amount when the bounds agree, otherwise the bounded span. */
 export const formatCurrencyRange = ({ low, high }: { low: number; high: number }) =>
-  low === high ? formatCurrency(low) : `${formatCurrency(low)}–${formatCurrency(high)}`
+  low === high || amountsMasked
+    ? formatCurrency(low)
+    : `${formatCurrency(low)}–${formatCurrency(high)}`
 
 // A change carries its sign; no change carries none. Changes and returns keep two decimals.
 export const formatPercent = (value: number | null | undefined) =>
@@ -85,7 +107,11 @@ export const formatShare = (value: number | null | undefined, digits = 1) =>
   value == null ? '—' : `${Math.abs(value).toFixed(digits)}%`
 
 export const formatSignedCurrency = (value: number | null | undefined) =>
-  value == null ? '—' : `${value > 0 ? '+' : ''}${formatCurrency(value || 0)}`
+  value == null
+    ? '—'
+    : amountsMasked
+      ? HIDDEN_AMOUNT
+      : `${value > 0 ? '+' : ''}${formatCurrency(value || 0)}`
 
 export const formatUpdatedAt = (iso: string) => {
   const date = new Date(iso)

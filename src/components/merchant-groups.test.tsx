@@ -20,6 +20,14 @@ const purchase = (id: string, amount: number): ActivityItem => ({
   other: false,
 })
 
+/** A merchant's activity with the total Rust summed for it. */
+const group = (activities: ActivityItem[], total: number) => ({
+  key: 'example bistro',
+  name: 'Example bistro',
+  total,
+  activities,
+})
+
 it('shows a merchant with one purchase as that purchase', async () => {
   const container = document.createElement('div')
   document.body.append(container)
@@ -27,7 +35,7 @@ it('shows a merchant with one purchase as that purchase', async () => {
   await act(async () =>
     root.render(
       <MerchantGroups
-        activities={[purchase('one', -10)]}
+        groups={[group([purchase('one', -10)], -10)]}
         referenceIso="2026-09-10T12:00:00Z"
         emptyMessage="None"
       />,
@@ -48,7 +56,7 @@ it('collapses a merchant at once', async () => {
   await act(async () =>
     root.render(
       <MerchantGroups
-        activities={[purchase('one', -10), purchase('two', -20)]}
+        groups={[group([purchase('one', -10), purchase('two', -20)], -30)]}
         referenceIso="2026-09-10T12:00:00Z"
         emptyMessage="None"
       />,

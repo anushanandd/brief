@@ -1,8 +1,14 @@
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
+import { emptyRollup, insights } from '../data/fixtures/insights'
 import seed from '../data/seed.json'
 import { startMarketStream, stopMarketStream } from './api'
-import { applyLiveProjection, liveMarketSeries, subscribeLiveMarket } from './live-market'
+import {
+  applyLiveProjection,
+  liveMarketSeries,
+  subscribeLiveMarket,
+  withMarketHistory,
+} from './live-market'
 import { financeSnapshotSchema, marketSnapshotsSchema, type MarketProjection } from './schema'
 
 vi.mock('./api', () => ({
@@ -25,6 +31,7 @@ afterEach(() => {
 it('rejects stale revisions and timestamps and retains immutable history references', () => {
   const saved = { ...financeSnapshotSchema.parse(seed), revision: 4 }
   const projection: MarketProjection = {
+    rollup: emptyRollup(),
     ...saved,
     netWorth: 123,
     brokeragePerformance: saved.brokeragePerformance.map(({ accountId, currentValue }) => ({
@@ -41,6 +48,12 @@ it('rejects stale revisions and timestamps and retains immutable history referen
   saved.brokeragePerformance.forEach((account, index) =>
     expect(live.brokeragePerformance[index].points).toBe(account.points),
   )
+  // The account totals are Rust's at the live values, never the saved ones.
+  const totals = emptyRollup({ netWorth: 120 })
+  const withInsights = { ...saved, insights: insights() }
+  expect(
+    applyLiveProjection(withInsights, { ...projection, rollup: totals }).insights?.rollup,
+  ).toBe(totals)
   expect(saved.netWorth).not.toBe(123)
 })
 
@@ -79,6 +92,7 @@ it('atomically replaces every current valuation while retaining committed eviden
     value: holding.value == null ? null : holding.value + index + 20,
   }))
   const projection: MarketProjection = {
+    rollup: emptyRollup(),
     revision: 4,
     updatedAt: saved.updatedAt,
     netWorth: saved.netWorth + 100,
@@ -201,6 +215,7 @@ it('keeps annotation-aware account income and classified ledger evidence through
   const saved = { ...financeSnapshotSchema.parse(seed), revision: 4 }
   saved.accounts[0].investmentIncomeYtd = 12
   const projection: MarketProjection = {
+    rollup: emptyRollup(),
     ...saved,
     accounts: saved.accounts.map((account) => ({
       ...account,
@@ -213,4 +228,29 @@ it('keeps annotation-aware account income and classified ledger evidence through
   expect(live.accounts[0].investmentIncomeYtd).toBe(12)
   expect(live.transactions).toBe(saved.transactions)
   expect(live.spending).toBe(saved.spending)
+})
+
+it('replaces the frame with the intraday week and keeps ticks that arrived after it', () => {
+  const current = {
+    total: [
+      { time: 600, value: 1 },
+      { time: 4_200, value: 4 },
+    ],
+    'plaid:cash': [{ time: 600, value: 9 }],
+  }
+  const history = {
+    total: [
+      { time: 0, value: 2 },
+      { time: 3_600, value: 3 },
+    ],
+  }
+  const merged = withMarketHistory(current, history)
+  // The week leads; the tick after its last bar stays, and the frame's older point goes.
+  expect(merged.total).toEqual([
+    { time: 0, value: 2 },
+    { time: 3_600, value: 3 },
+    { time: 4_200, value: 4 },
+  ])
+  // A series the history doesn't cover is left as it was.
+  expect(merged['plaid:cash']).toEqual(current['plaid:cash'])
 })

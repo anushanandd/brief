@@ -186,7 +186,10 @@ fn statements_cover_each_window_the_history_reaches() {
         .into_iter()
         .map(|statement| statement.window)
         .collect();
-    assert_eq!(windows, [Some(Window::Week), Some(Window::All)]);
+    assert_eq!(
+        windows,
+        [Some(Window::Day), Some(Window::Week), Some(Window::All)]
+    );
     // Without flows there is no statement.
     let mut value_only = month();
     value_only[0].performance_method = Some("value-only".into());

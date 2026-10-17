@@ -9,7 +9,7 @@ Regenerate with `BRIEF_UPDATE_CONTRACT_FIXTURE=1`, running each test on its own 
 
 1. `native_finance_fixture_matches_typed_projection`
 2. `browser_seed_contains_native_transaction_policy` (only when transaction policy changed)
-3. `browser_seed_insights_match_native_insights`
+3. `browser_seed_insights_match_native_insights` (also writes the preview's on-request results, `seed-spending.json` and `seed-reports.json`, compact and left out of the formatter)
 4. `native_summary_contract_matches_the_renderer_fixture` (only when the summary contract changed)
 5. `native_news_contract_carries_tags_relevance_and_filings` (only when the news contract changed)
 

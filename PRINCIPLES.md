@@ -16,7 +16,7 @@ These principles decide what to build and how. When two of them pull apart, the 
 These hold without exception. Each is enforced by a test, or should be.
 
 - Credentials and provider tokens live only in macOS Keychain.
-- Rust computes every financial result. The interface formats values; it never sums, rounds, or classifies money.
+- Rust computes every financial result. The interface formats values; it never sums, rounds, or classifies money. Drawing Rust's figures (a chart's scale, positions, and stacking) is not a result, an edit form may check the amounts typed into it before Rust validates them, and a security's public price is not your money.
 - No billed provider call runs unless you turned it on.
 - A refresh commits completely or not at all, and a failure leaves the last good state in place.
 - Recorded history is appended, never rewritten.

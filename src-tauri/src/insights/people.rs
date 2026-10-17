@@ -8,7 +8,7 @@ use serde::Serialize;
 
 use super::trips::Trip;
 use crate::finance_contract::Transaction;
-use crate::numeric::minor_units;
+use crate::numeric::{from_minor, minor_units};
 use crate::settings::{match_text, Person, TripCompanions};
 use crate::transaction_policy::{PeopleSource, PEOPLE_CATEGORY};
 
@@ -39,6 +39,8 @@ pub struct People {
     /// Each person with anything tagged, most recent activity first; people with nothing
     /// tagged follow by name.
     pub people: Vec<PersonSummary>,
+    /// Everything sent to people through payment apps, positive.
+    pub sent: f64,
     /// Names Zelle descriptors carry that match nobody.
     pub suggestions: Vec<NameSuggestion>,
 }
@@ -410,6 +412,12 @@ pub fn people(transactions: &[Transaction], people: &[Person], trips: &[Trip]) -
     });
     suggestions.truncate(MAX_SUGGESTIONS);
     People {
+        sent: from_minor(
+            summaries
+                .iter()
+                .map(|person| minor_units(person.sent.abs()))
+                .sum(),
+        ),
         people: summaries,
         suggestions,
     }

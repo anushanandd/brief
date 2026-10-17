@@ -100,7 +100,7 @@ pub(crate) async fn erase_finance_state(
     state.storage()?.erase()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn export_settings_file(path: String, contents: String) -> Result<(), String> {
     if contents.len() > PREFERENCES_BYTES {
         return Err("Preferences file exceeds 256 KB".into());
@@ -112,7 +112,7 @@ pub(crate) fn export_settings_file(path: String, contents: String) -> Result<(),
     )
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn read_settings_file(path: String) -> Result<String, String> {
     let contents =
         files::read_bounded(&PathBuf::from(path), PREFERENCES_BYTES).map_err(|failure| {

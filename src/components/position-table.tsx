@@ -3,6 +3,7 @@ import type { ReactNode } from 'react'
 import {
   formatCurrency,
   formatPercent,
+  formatPublicCurrency,
   formatSecurityName,
   formatShares,
   valueTone,
@@ -88,7 +89,7 @@ export function PositionTable({
               {view === 'positions' ? (
                 <>
                   <td>{formatShares(holding.shares)}</td>
-                  <td className="public-market-value">{formatCurrency(holding.price)}</td>
+                  <td className="public-market-value">{formatPublicCurrency(holding.price)}</td>
                   <td>{formatCurrency(holding.costBasis)}</td>
                   <td>{formatCurrency(holding.value)}</td>
                   <td className={valueTone(holding.unrealizedGain)}>
@@ -98,7 +99,7 @@ export function PositionTable({
                 </>
               ) : view === 'market' ? (
                 <>
-                  <td className="public-market-value">{formatCurrency(holding.price)}</td>
+                  <td className="public-market-value">{formatPublicCurrency(holding.price)}</td>
                   <td className="public-market-value">
                     {marketLoading && holding.dailyChangePct == null ? (
                       <span className="muted" aria-label="Market change loading">

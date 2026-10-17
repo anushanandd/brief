@@ -4,7 +4,13 @@ import { expect, it } from 'vitest'
 
 import { expectedEvent } from '../data/fixtures/insights'
 import { settingsSections } from '../lib/settings-search'
-import { hasRoute, redirectOf, renderRoute, renderSettings } from './routes.harness'
+import {
+  hasRoute,
+  redirectOf,
+  renderEverySettingsSection,
+  renderRoute,
+  renderSettings,
+} from './routes.harness'
 import { scenario } from './routes.scenario'
 
 it('registers data health without the removed Performance workspace', () => {
@@ -28,23 +34,42 @@ it('shows unknown quote timestamps instead of the saved snapshot time', async ()
   expect(html).toContain('Source timestamps')
 })
 
-it('opens every Settings section in one searchable dialog over the current page', async () => {
+it('opens Settings as a page in place of the current one, one section at a time', async () => {
   scenario.annotationWarning = 'Transaction annotations could not be loaded.'
   const html = await renderSettings('/accounts#settings')
-  expect(html).toMatch(/<dialog class="settings-dialog" aria-labelledby="[^"]+"/)
+  expect(html).toMatch(/<div class="page settings-page" role="region" aria-labelledby="[^"]+"/)
+  // The page beneath gives way rather than sitting behind a modal.
+  expect(html).not.toContain('<dialog class="settings-dialog"')
+  expect(html).not.toContain('<h2>Balances</h2>')
   expect(html).toContain('aria-label="Close settings"')
-  expect(html).toContain('<h2>Balances</h2>')
   expect(html).toContain('Transaction annotations could not be loaded.')
   expect(html).toMatch(/type="text"[^>]*aria-label="Search settings"[^>]*autoComplete="off"/)
   expect(html).toContain('aria-label="Settings sections"')
+  // The first section opens by default, and only it renders.
+  expect(html).toContain(
+    'href="#settings/connections" class="settings-rail-link" aria-current="page"',
+  )
+  expect(html).toContain('id="connections"')
+  expect(html).not.toContain('id="advanced"')
+  for (const section of settingsSections) expect(html).toContain(`href="#settings/${section.id}"`)
+})
+
+it('reaches every Settings section and row by its address', async () => {
+  const html = await renderEverySettingsSection('/accounts')
   for (const section of settingsSections) {
     expect(html).toContain(`id="${section.id}"`)
-    expect(html).toContain(`href="#settings/${section.id}"`)
     for (const entry of section.entries) expect(html).toContain(`id="${entry.id}"`)
   }
   expect(html).toContain('Add credentials')
   expect(html).toContain('aria-label="Start date for Selected card"')
   expect(html).toContain('role="switch"')
+})
+
+it('opens the section holding a linked row', async () => {
+  const html = await renderSettings('/#settings/platinum-benefits')
+  expect(html).toContain('href="#settings/accounts" class="settings-rail-link" aria-current="page"')
+  expect(html).toContain('id="platinum-benefits"')
+  expect(html).not.toContain('id="connections"')
 })
 
 it('opens explicit recovery without showing a fabricated empty finance page', async () => {
@@ -156,6 +181,8 @@ it('splits holdings by ticker and assets by type under their previews', async ()
   scenario.insights = {
     allocation: {
       total: 1_200,
+      cash: 200,
+      cashPercent: 16.67,
       incomplete: false,
       cashUnknown: false,
       kinds: [],
@@ -212,7 +239,7 @@ it('keeps account details and utilities out of the organized sidebar', async () 
   ]) {
     expect(sidebar).toContain(`href="/analytics?chart=${chart}"`)
   }
-  const appearance = await renderSettings()
+  const appearance = await renderEverySettingsSection()
   expect(appearance).toMatch(/role="combobox"[^>]*aria-label="Theme"/)
   expect(appearance).toMatch(/role="combobox"[^>]*aria-label="Live price updates"/)
   expect(appearance).toContain('Live price updates')
@@ -237,7 +264,7 @@ it('points Diagnostics back to Settings', async () => {
 })
 
 it('opens the design reference from Advanced Settings with isolated sample controls', async () => {
-  const settings = await renderSettings()
+  const settings = await renderSettings('/#settings/advanced')
   expect(settings).toContain('href="/settings/design"')
   const html = await renderRoute('/settings/design')
   expect(html).toContain('aria-current="page">Design')

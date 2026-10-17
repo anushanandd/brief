@@ -4,8 +4,8 @@ import type { ReactNode } from 'react'
 
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { usePortfolioSectors } from '../hooks/use-portfolio-sectors'
+import { useReports } from '../hooks/use-reports'
 import { accountDisplayName } from '../lib/account-names'
-import { analyticsEntries, analyticsTotal } from '../lib/analytics'
 import { getEarningsCalendar, getPortfolioToday, isTauri } from '../lib/api'
 import { addDays, localDateKey } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
@@ -22,7 +22,7 @@ import {
 } from '../lib/format'
 import { useGraphWindow, type ChartPeriod, chartPeriodSeconds } from '../lib/graph-preferences'
 import { rangeDates } from '../lib/investment-range'
-import type { FinanceSnapshot, InvestmentSummary, Statement } from '../lib/schema'
+import type { FinanceSnapshot, InvestmentSummary, ReportSummary, Statement } from '../lib/schema'
 import { ChartRangeSelector } from './charts'
 import { ExternalLink } from './external-link'
 import { AlertCircle, ChevronRight } from './icons'
@@ -30,6 +30,7 @@ import { SecurityMark } from './security-mark'
 import { Card, ChartChange, EmptyState, Metric, SectionHeading } from './ui'
 
 const rangeNames: Record<ChartPeriod, string> = {
+  day: 'Today',
   week: 'The past week',
   month: 'The past month',
   quarter: 'The past three months',
@@ -64,7 +65,7 @@ export function InvestmentRangeSelect() {
   return <ChartRangeSelector value={graphWindow} onValueChange={setGraphWindow} />
 }
 
-/** W, M, Q, Y, and A choose the period, as on every page with a chart range. */
+/** D, W, M, Q, Y, and A choose the period, as on every page with a chart range. */
 export function useInvestmentRangeShortcuts() {
   const [, setGraphWindow] = useGraphWindow()
   useGraphWindowShortcuts(setGraphWindow)
@@ -96,30 +97,23 @@ const reports = [
 
 /** One report's total over the page's period, opening that report for the same days. */
 function ReportMetric({
-  data,
   chart,
   label,
+  summary,
   from,
   to,
   accountId,
 }: {
-  data: FinanceSnapshot
   chart: (typeof reports)[number]['chart']
   label: string
+  /** Rust's total for the same days; absent until it has one. */
+  summary?: ReportSummary
   from?: string
   to: string
   accountId?: string
 }) {
-  const settings = financeSettings(data)
-  const entries = analyticsEntries(
-    data,
-    chart,
-    settings.spendingAccountId ?? '',
-    accountId,
-    settings.accountNames,
-  ).filter(({ date }) => (!from || date >= from) && date <= to)
   // A sale without a known cost has no gain, so the total is unavailable rather than partial.
-  const total = analyticsTotal(entries)
+  const total = summary?.total ?? null
   const signed = chart === 'realized'
   return (
     <Link
@@ -131,7 +125,9 @@ function ReportMetric({
     >
       <span>{label}</span>
       <strong className={total == null ? 'muted' : signed ? valueTone(total) : undefined}>
-        {total == null ? (
+        {!summary ? (
+          '—'
+        ) : total == null ? (
           <span title="A sale in this period has no known cost">Unavailable</span>
         ) : (
           <span className="sensitive-value">
@@ -189,6 +185,11 @@ export function PeriodCard({
 }) {
   const day = data.insights?.today ?? localDateKey(Date.parse(data.updatedAt) / 1000)
   const { from, to } = rangeDates(range, day, span?.start)
+  // Rust sums the reports over the same days as the period's statement.
+  const summaries = useReports(data, {
+    ...(from ? { from, to } : { range: 'all' }),
+    ...(accountId ? { accounts: [accountId] } : {}),
+  }).data?.summaries
   return (
     <Card className="investments-side-card" aria-label={`${rangeNames[range]} in detail`}>
       <SectionHeading title={rangeNames[range]} />
@@ -226,9 +227,9 @@ export function PeriodCard({
         {reports.map(({ chart, label }) => (
           <ReportMetric
             key={chart}
-            data={data}
             chart={chart}
             label={label}
+            summary={summaries?.find((summary) => summary.chart === chart)}
             from={from}
             to={to}
             accountId={accountId}

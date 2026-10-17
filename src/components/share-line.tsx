@@ -6,9 +6,9 @@ export type ShareSegment = { key: string; label: string; value: number; percent:
 const dataColors = Array.from({ length: 7 }, (_, index) => `var(--data-${index + 1})`)
 
 /**
- * One line of a whole split into its largest parts, each with its own color; the rest fold into
- * a quiet "Other", and `rest` (such as cash) closes the line. Values and shares come from the
- * caller.
+ * One line of a whole split into its largest parts, each with its own color; the parts past the
+ * palette share one quiet color, and `rest` (such as cash) closes the line. Every value and
+ * share comes from the caller, so a folded part reads as itself rather than as a sum.
  */
 export function ShareLine({
   label,
@@ -16,24 +16,16 @@ export function ShareLine({
   rest,
 }: {
   label: string
-  /** Largest first; parts past the palette fold into `rest`. */
+  /** Largest first; parts past the palette share a quiet color. */
   segments: ShareSegment[]
   rest?: ShareSegment
 }) {
-  const shown = segments.slice(0, dataColors.length).map((segment, index) => ({
+  const colored = segments.map((segment, index) => ({
     ...segment,
-    color: dataColors[index],
+    color: dataColors[index] ?? 'var(--chart-secondary)',
   }))
-  const folded = segments.slice(dataColors.length)
-  const other = {
-    key: 'other',
-    label: 'Other',
-    value: folded.reduce((sum, { value }) => sum + value, 0),
-    percent: folded.reduce((sum, { percent }) => sum + percent, 0),
-    color: 'var(--chart-secondary)',
-  }
   const tail = rest ? [{ ...rest, color: 'var(--border-strong)' }] : []
-  const parts = [...shown, other, ...tail].filter(({ value }) => value > 0)
+  const parts = [...colored, ...tail].filter(({ value }) => value > 0)
   if (!parts.length) return null
   return (
     <figure className="share-line" aria-label={label}>

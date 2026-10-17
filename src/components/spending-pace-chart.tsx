@@ -9,7 +9,6 @@ import {
   formatCurrency,
   formatShortDay,
 } from '../lib/format'
-import { sumCents } from '../lib/money'
 import { ActivityMark } from './activity-list'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
@@ -22,8 +21,6 @@ function niceMaximum(value: number) {
   const step = [1, 2, 2.5, 5, 10].find((candidate) => candidate * magnitude >= value / 4)!
   return Math.ceil(value / (step * magnitude)) * step * magnitude
 }
-
-const sumAmounts = (items: Array<{ value: number }>) => sumCents(items.map(({ value }) => value))
 
 function DayTransactions({
   items,
@@ -98,7 +95,12 @@ export function SpendingPaceChart({
     current: number[]
     previous: number[]
     projected: number | null
-    days: Array<{ index: number; date: string; activities: Array<{ id: string; value: number }> }>
+    days: Array<{
+      index: number
+      date: string
+      total: number
+      activities: Array<{ id: string; value: number }>
+    }>
   }
   currentLabel: string
   previousLabel: string
@@ -279,7 +281,7 @@ export function SpendingPaceChart({
           const running = pace.current[day.index]
           if (running == null) return null
           const date = dateAt(day.index)
-          const dayTotal = sumAmounts(day.activities)
+          const dayTotal = day.total
           const count = day.activities.length
           return (
             <Tooltip key={day.date}>

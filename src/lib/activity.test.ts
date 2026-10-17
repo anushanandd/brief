@@ -10,7 +10,6 @@ import {
   sortActivities,
   type ActivityItem,
   type ActivitySort,
-  activityTotals,
 } from './activity'
 import { financeSnapshotSchema } from './schema'
 
@@ -315,16 +314,6 @@ it('describes where a purchase happened in one place, then adds the street, chan
   })
 })
 
-const item = (kind: ActivityItem['kind'], amount: number): ActivityItem => ({
-  id: `${kind}:${amount}`,
-  kind,
-  category: 'Example',
-  title: 'Example',
-  detail: '',
-  date: '2026-09-16',
-  amount,
-})
-
 const leg = (id: string, accountId: string, account: string, date: string, amount: number) => ({
   id,
   accountId,
@@ -365,19 +354,4 @@ it('links each leg of a paired transfer to the account on its other side', () =>
   expect(activityPlace(arrived).primary).toBe('From Checking')
   expect(alone.transfer).toBeUndefined()
   expect(activityPlace(alone).kind).not.toBe('transfer')
-})
-
-it('totals spending and income for a filtered list in cents, ignoring transfers and trades', () => {
-  expect(
-    activityTotals([
-      item('spending', -0.1),
-      item('spending', -0.2),
-      item('spending', 5),
-      item('income', 100.3),
-      item('transfer', -500),
-      item('trade', -1000),
-      item('credit', 20),
-    ]),
-  ).toEqual({ spent: 0.3, income: 100.3, net: 100 })
-  expect(activityTotals([])).toEqual({ spent: 0, income: 0, net: 0 })
 })

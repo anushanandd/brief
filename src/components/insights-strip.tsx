@@ -7,8 +7,7 @@ import { SelectorStrip, StripIconMark, type SelectorStripItem } from './selector
 
 /**
  * Insights' strip: each view as a card with its headline figure. Trips reports the year's
- * spending away; People, what was sent to people. Rust found every figure; this only adds a
- * list where a card needs one number.
+ * spending away; People, what was sent to people. Rust found and summed every figure.
  */
 export function InsightsStrip({
   data,
@@ -21,24 +20,18 @@ export function InsightsStrip({
 }) {
   const items = useMemo<SelectorStripItem[]>(() => {
     const insights = data.insights
-    const year = today.slice(0, 4)
+    const year = Number(today.slice(0, 4))
     const figures: Record<
       InsightsView,
       Pick<SelectorStripItem, 'value' | 'unavailable' | 'change' | 'favorable'>
     > = {
       trips: {
-        value: tripYearTotals(
-          (insights?.trips.trips ?? []).filter(({ start }) => start.startsWith(year)),
-        ).spent,
+        value: tripYearTotals(insights?.trips, year).spent,
         unavailable: !insights,
       },
-      // What went to people through payment apps, all time, summed in cents.
+      // What went to people through payment apps, all time.
       people: {
-        value:
-          (insights?.people.people ?? []).reduce(
-            (sum, { sent }) => sum + Math.round(Math.abs(sent) * 100),
-            0,
-          ) / 100,
+        value: insights?.people.sent ?? 0,
         unavailable: !insights,
       },
     }

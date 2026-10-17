@@ -14,7 +14,7 @@ import {
 import { financeSnapshotSchema, insightsSchema } from './schema'
 
 describe('finance snapshot migrations', () => {
-  it('derives cost basis for snapshots saved before the field existed', () => {
+  it('reads a cost basis saved before the field existed as unknown, never inventing one', () => {
     const holding = {
       ticker: 'TEST',
       name: 'Example',
@@ -31,11 +31,10 @@ describe('finance snapshot migrations', () => {
         ...empty,
         holdings: [{ ...holding, ...overrides }],
       }).holdings[0].costBasis
-    expect(parse({})).toBe(100)
+    // Rust always sends the field; a percent change is no evidence of what was paid.
+    expect(parse({})).toBeNull()
     expect(parse({ costBasis: 80 })).toBe(80)
     expect(parse({ costBasis: null })).toBeNull()
-    expect(parse({ totalChangePct: -100 })).toBeNull()
-    expect(parse({ value: null })).toBeNull()
   })
 })
 

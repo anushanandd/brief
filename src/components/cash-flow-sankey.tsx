@@ -6,20 +6,15 @@ import {
   formatShortDay,
   pluralize,
 } from '../lib/format'
-import type { CashFlowBreakdownItem } from '../lib/money'
+import type { CashFlow, CashFlowItem } from '../lib/schema'
 import { EmptyState } from './ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 type FlowTone = 'positive' | 'negative' | 'neutral' | 'warning'
 
-export type CashFlowSankeyValues = {
-  sources: CashFlowBreakdownItem[]
-  purchases: CashFlowBreakdownItem[]
-  fees: number
-  taxes: number
-}
+export type CashFlowSankeyValues = CashFlow
 
-type Flow = CashFlowBreakdownItem & { tone: FlowTone }
+type Flow = CashFlowItem & { tone: FlowTone }
 type PositionedFlow = Flow & { y: number; height: number; center: number }
 
 export function cashFlowSankeyModel(values: CashFlowSankeyValues) {
@@ -45,22 +40,21 @@ export function cashFlowSankeyModel(values: CashFlowSankeyValues) {
       tone: 'negative' as const,
     },
   ].filter(({ value }) => value > 0)
-  const inflow = sources.reduce((total, flow) => total + flow.value, 0)
-  const outflow = uses.reduce((total, flow) => total + flow.value, 0)
-  const total = Math.max(inflow, outflow)
-  if (outflow > inflow) {
+  // Rust found what came in, what went out, and the gap or remainder between them.
+  const total = Math.max(values.inflow, values.outflow)
+  if (values.gap > 0) {
     sources.push({
       id: 'gap',
       label: 'Funding gap',
-      value: outflow - inflow,
+      value: values.gap,
       children: [],
       tone: 'warning',
     })
-  } else if (inflow > outflow) {
+  } else if (values.retained > 0) {
     uses.push({
       id: 'retained',
       label: 'Cash retained',
-      value: inflow - outflow,
+      value: values.retained,
       children: [],
       tone: 'neutral',
     })

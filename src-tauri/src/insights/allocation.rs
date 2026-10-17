@@ -6,7 +6,7 @@ use std::collections::BTreeMap;
 use serde::Serialize;
 
 use crate::finance_contract::{Account, Holding};
-use crate::numeric::minor_units;
+use crate::numeric::{from_minor, minor_units};
 
 #[derive(Clone, Debug, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +22,9 @@ pub struct Slice {
 pub struct Allocation {
     /// Known USD positions plus uninvested cash in the accounts that hold them.
     pub total: f64,
+    /// The uninvested cash, and its share of the total.
+    pub cash: f64,
+    pub cash_percent: f64,
     /// A position's value is unknown or not in USD, so the shares are of a subtotal.
     pub incomplete: bool,
     /// An account's uninvested cash is unknown, so cash may be missing from the total.
@@ -249,6 +252,12 @@ pub fn allocation(holdings: &[Holding], accounts: &[Account]) -> Option<Allocati
         return None;
     }
     let securities = slices(securities, total);
+    // What the positions leave of the total: the accounts' uninvested cash.
+    let cash = total
+        - securities
+            .iter()
+            .map(|slice| minor_units(slice.value))
+            .sum::<i64>();
     let share = |count: usize| {
         (!securities.is_empty()).then(|| {
             let part = securities
@@ -261,6 +270,8 @@ pub fn allocation(holdings: &[Holding], accounts: &[Account]) -> Option<Allocati
     };
     Some(Allocation {
         total: total as f64 / 100.0,
+        cash: from_minor(cash.max(0)),
+        cash_percent: percent(cash.max(0), total),
         incomplete,
         cash_unknown,
         largest_percent: share(1),
@@ -324,6 +335,8 @@ mod tests {
         )
         .unwrap();
         assert_eq!(result.total, 10_000.0);
+        // The positions leave the held accounts' uninvested cash.
+        assert_eq!((result.cash, result.cash_percent), (1_000.0, 10.0));
         assert!(!result.incomplete);
         assert_eq!(result.securities[0].key, "VTI");
         assert_eq!(result.securities[0].percent, 70.0);

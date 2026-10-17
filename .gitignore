@@ -9,6 +9,4 @@ src-tauri/target/
 src-tauri/gen/
 src-tauri/.taurignore
 *.tsbuildinfo
-
-# Personal statement exports kept beside the repo for import testing; never committed.
-statements/
+notes/

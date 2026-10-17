@@ -27,12 +27,12 @@ import {
   settledActivityQuery,
   type ParsedActivityQuery,
 } from './activity-query'
-import { analyticsCharts, analyticsEntries, type AnalyticsChart } from './analytics'
+import { analyticsCharts, type AnalyticsChart } from './analytics'
 import { financeSettings } from './finance-settings'
 import { formatCurrency, formatDay } from './format'
 import { getExternalLogosEnabled } from './logos'
 import { placeLabel } from './places'
-import type { FinanceSnapshot } from './schema'
+import type { FinanceSnapshot, ReportEntry } from './schema'
 import { transactionDateKey } from './spending'
 
 /** Activity's address: every filter, the open transaction, and the view it came from. */
@@ -88,15 +88,15 @@ export type SectionPatches = {
  * and how many await review. Rebuilding activity is the costly part of the page, so it is
  * derived once per snapshot and scope, not on each keystroke.
  */
-export function activityRows(data: FinanceSnapshot, search: LedgerSearch) {
+export function activityRows(
+  data: FinanceSnapshot,
+  search: LedgerSearch,
+  /** The report's entries on any day, as Rust chose them, when a report scopes the page. */
+  reportEntries: readonly ReportEntry[] = [],
+) {
   const settings = financeSettings(data)
   const analyticEntries = search.analysis
-    ? new Map(
-        analyticsEntries(data, search.analysis, settings.spendingAccountId ?? '').map((entry) => [
-          entry.id,
-          entry,
-        ]),
-      )
+    ? new Map(reportEntries.map((entry) => [entry.id, entry]))
     : undefined
   const allActivities = buildActivities(data, settings.accountNames, getExternalLogosEnabled())
   const activities = allActivities

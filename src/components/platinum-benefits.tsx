@@ -418,7 +418,7 @@ export function FeeRecovery({
   fee: NonNullable<NonNullable<Insights['benefits']>['fee']>
 }) {
   const past = fee.recovered >= fee.annualFee
-  const gap = Math.abs(Math.round((fee.recovered - fee.annualFee) * 100)) / 100
+  const gap = fee.gap
   const money = formatProseCurrency
   return (
     <section className="benefit-fee-recovery" aria-label="Annual fee recovered">

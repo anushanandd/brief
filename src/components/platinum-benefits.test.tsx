@@ -6,6 +6,7 @@ import { FeeRecovery } from './platinum-benefits'
 const fee = {
   annualFee: 895,
   recovered: 539.69,
+  gap: 355.31,
   forOthers: 492.99,
   since: '2026-05-09',
   basis: 'card-history' as const,

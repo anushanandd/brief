@@ -7,30 +7,8 @@ import { ChevronDown } from './icons'
 import { EmptyState } from './ui'
 import { DisclosedPanel } from './ui/presence'
 
+/** A merchant's activity as Rust grouped and summed it, refunds netting out, newest first. */
 export type MerchantGroup = { key: string; name: string; total: number; activities: ActivityItem[] }
-
-/**
- * Activity grouped by merchant, summed in cents with refunds netting out, largest spending
- * first. Each group keeps its activities newest first.
- */
-export function groupByMerchant(activities: ActivityItem[]): MerchantGroup[] {
-  const groups = new Map<string, { name: string; cents: number; activities: ActivityItem[] }>()
-  for (const activity of activities) {
-    const key = activity.title.trim().toLocaleLowerCase()
-    const group = groups.get(key) ?? { name: activity.title, cents: 0, activities: [] }
-    group.cents += Math.round(activity.amount * 100)
-    group.activities.push(activity)
-    groups.set(key, group)
-  }
-  return [...groups]
-    .map(([key, { name, cents, activities: items }]) => ({
-      key,
-      name,
-      total: cents / 100,
-      activities: items,
-    }))
-    .toSorted((left, right) => left.total - right.total || left.name.localeCompare(right.name))
-}
 
 /** What a merchant's activities are: purchases when every one is spending. */
 const countLabel = (activities: ActivityItem[]) =>
@@ -41,12 +19,12 @@ const countLabel = (activities: ActivityItem[]) =>
 
 /** Where the money went: one row per merchant, largest first, opening to its activities. */
 export function MerchantGroups({
-  activities,
+  groups,
   referenceIso,
   emptyMessage,
   onOpen,
 }: {
-  activities: ActivityItem[]
+  groups: MerchantGroup[]
   referenceIso: string
   emptyMessage: string
   /** Opens an activity's details. */
@@ -60,7 +38,6 @@ export function MerchantGroups({
       if (!next.delete(key)) next.add(key)
       return next
     })
-  const groups = groupByMerchant(activities)
   if (!groups.length) return <EmptyState>{emptyMessage}</EmptyState>
 
   return (

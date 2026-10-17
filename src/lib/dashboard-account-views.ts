@@ -1,6 +1,5 @@
-import { buildLiveChartData, chartPointsFromStartDate, chartRangeChange } from './live-chart'
-import { cents } from './money'
-import type { Account, FinanceSnapshot } from './schema'
+import { buildLiveChartData, chartRangeChange } from './live-chart'
+import type { Account, ChartChanges, FinanceSnapshot } from './schema'
 
 export function accountValueChart(
   data: Pick<
@@ -17,7 +16,8 @@ export function accountValueChart(
   livePoints: Parameters<typeof buildLiveChartData>[1],
   valuationTime: number,
   windowSeconds: number,
-  now: number,
+  /** Rust's reading of each chart's change, saved or live. */
+  changes: ChartChanges,
   startDate?: string,
 ) {
   const combined = account.id === 'all' || account.type === 'combined'
@@ -48,11 +48,7 @@ export function accountValueChart(
   const incomplete = accountValueIncomplete(data, combined ? 'all' : account.id)
   return {
     chartData,
-    chartChange: chartRangeChange(
-      chartPointsFromStartDate(chartData, startDate),
-      windowSeconds,
-      now,
-    ),
+    chartChange: chartRangeChange(changes, combined ? 'net-worth' : account.id, windowSeconds),
     incomplete,
     historyIsAvailable: !incomplete && hasValueHistory(history, startDate),
   }
@@ -92,37 +88,27 @@ export function hasValueHistory(points: ValuePoint[], startDate?: string) {
 }
 
 /**
- * Spending presents the saved spending card, so the Accounts "All accounts" total and its
- * history leave that card out, using Rust's card-free history. Net worth is unchanged.
+ * Spending presents the spending cards, so Home's and the Accounts "All accounts" totals and
+ * history leave them out: Rust's card-free totals, at the values shown, and its card-free
+ * history. Net worth with the cards stays in the snapshot.
  */
 export function withoutSpendingCard<
   T extends Pick<FinanceSnapshot, 'accounts' | 'netWorthHistory'> &
     Partial<Pick<FinanceSnapshot, 'insights' | 'netWorth'>>,
 >(data: T): T {
   const total = data.insights?.accountsTotal
-  if (!total) return data
-  const without = (value: number) => (cents(value) - cents(total.excludedValue)) / 100
+  const rollup = data.insights?.rollup
+  if (!total || !rollup) return data
   return {
     ...data,
-    ...(data.netWorth != null && { netWorth: without(data.netWorth) }),
+    ...(data.netWorth != null && { netWorth: rollup.netWorth }),
     accounts: data.accounts.map((account) =>
       account.id === 'all' && account.value != null
-        ? { ...account, value: without(account.value) }
+        ? { ...account, value: rollup.combined }
         : account,
     ),
     netWorthHistory: total.history,
   }
-}
-
-/** Live net worth points without the spending card, whose balance is not market-driven. */
-export function withoutSpendingCardPoints<P extends { value: number }>(
-  data: Partial<Pick<FinanceSnapshot, 'insights'>>,
-  points: P[],
-): P[] {
-  const excluded = data.insights?.accountsTotal?.excludedValue
-  return excluded == null
-    ? points
-    : points.map((point) => ({ ...point, value: (cents(point.value) - cents(excluded)) / 100 }))
 }
 
 function totalNetWorthPoints(
@@ -139,31 +125,6 @@ function accountRank({ name }: BrokeragePerformance) {
   if (normalizedName.includes('roth')) return 0
   if (/stock\s*plan/.test(normalizedName)) return 2
   return 1
-}
-
-export function dashboardAssetBreakdown(data: Pick<FinanceSnapshot, 'accounts' | 'holdings'>) {
-  return data.accounts
-    .filter(({ id, value }) => id !== 'all' && value != null && value > 0)
-    .toSorted((left, right) => (right.value ?? 0) - (left.value ?? 0))
-    .map((account) => {
-      const holdings = data.holdings.filter(
-        ({ accountId, value }) => accountId === account.id && value != null && value > 0,
-      )
-      const holdingsValue = holdings.reduce((total, { value }) => total + (value ?? 0), 0)
-      const remainder = Math.max(0, (account.value ?? 0) - holdingsValue)
-      return {
-        id: account.id,
-        name: account.name,
-        type: account.type,
-        value: account.value ?? 0,
-        children: holdings.length
-          ? [
-              ...holdings.map(({ ticker, value }) => ({ name: ticker, value: value ?? 0 })),
-              ...(remainder >= 0.01 ? [{ name: 'Cash & other', value: remainder }] : []),
-            ]
-          : [],
-      }
-    })
 }
 
 export function dashboardAccountViews(

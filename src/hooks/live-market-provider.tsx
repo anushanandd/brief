@@ -8,9 +8,10 @@ import {
   compatibleMarketProjection,
   liveMarketSeries,
   subscribeLiveMarket,
+  withMarketHistory,
 } from '../lib/live-market'
 import { useMarketUpdateInterval } from '../lib/market-preferences'
-import type { MarketSnapshots } from '../lib/schema'
+import type { ChartChanges, MarketHistory, MarketSnapshots } from '../lib/schema'
 import { useFinance } from './use-finance'
 import { LiveFinanceContext } from './use-live-finance'
 
@@ -20,6 +21,8 @@ function useLiveMarketState() {
     market?: MarketSnapshots
     symbolKey?: string
     series: Record<string, LivelinePoint[]>
+    /** Each value chart's change at the live lines, as Rust read them. */
+    changes?: ChartChanges
     error?: string
   }>({ series: {} })
   const marketUpdateInterval = useMarketUpdateInterval()
@@ -34,8 +37,22 @@ function useLiveMarketState() {
         market,
         symbolKey,
         series: liveMarketSeries(current.series, market),
+        changes: market.chartChanges ?? current.changes,
       }))
     },
+    [symbolKey],
+  )
+  const acceptHistory = useCallback(
+    (history: MarketHistory, changes?: ChartChanges) =>
+      setState((current) =>
+        current.symbolKey === symbolKey
+          ? {
+              ...current,
+              series: withMarketHistory(current.series, history),
+              changes: changes ?? current.changes,
+            }
+          : current,
+      ),
     [symbolKey],
   )
   const rejectMarket = useCallback(
@@ -60,6 +77,7 @@ function useLiveMarketState() {
       marketUpdateInterval,
       acceptMarket,
       rejectMarket,
+      acceptHistory,
     )
   }, [
     enabled,
@@ -69,6 +87,7 @@ function useLiveMarketState() {
     base.data?.updatedAt,
     acceptMarket,
     rejectMarket,
+    acceptHistory,
   ])
   const saved = useQuery({
     queryKey: ['startup-market', base.data?.revision, base.data?.updatedAt],
@@ -117,6 +136,11 @@ function useLiveMarketState() {
       !base.integrationStatusLoading &&
       (!base.liveMarketEnabled || !symbolKey || !!state.market || !!state.error),
     marketSeries: market?.cached ? (market.chartSeries ?? {}) : market ? state.series : {},
+    // Live charts' changes from Rust, else the saved ones the snapshot carries.
+    chartChanges:
+      (market?.cached ? market.chartChanges : market ? state.changes : undefined) ??
+      data?.insights?.chartChanges ??
+      [],
     marketSession: market?.session,
     marketAsOf: market?.asOf ?? undefined,
     marketFeedLabel,

@@ -32,25 +32,22 @@ import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
-import { balanceSheet } from '../lib/account-groups'
 import { accountDisplayName } from '../lib/account-names'
 import { accountStartDate } from '../lib/account-start-dates'
-import { accountTransactionSummary, rangeInvestmentFlows, sumKnown } from '../lib/account-summary'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { buildActivities } from '../lib/activity'
 import { openExternalUrl } from '../lib/api'
 import { buildChartEventGroups } from '../lib/chart-events'
-import { accountValueChart, withoutSpendingCardPoints } from '../lib/dashboard-account-views'
+import { accountValueChart } from '../lib/dashboard-account-views'
 import { financeSettings } from '../lib/finance-settings'
 import { formatCurrency, formatShares, formatShortDay, valueTone } from '../lib/format'
 import { chartPeriod } from '../lib/graph-preferences'
 import { buildLiveChartData } from '../lib/live-chart'
 import { getExternalLogosEnabled } from '../lib/logos'
-import { sumCents } from '../lib/money'
 import type { Account, FinanceSnapshot } from '../lib/schema'
 import {
-  buildMonthlySpendingHistory,
-  buildSpendingView,
+  currentSpendingPeriod,
+  monthlySpendingHistory,
   sortTransactionsByRecency,
 } from '../lib/spending'
 import { reconciliationSummary, reviewCount } from '../lib/statement-import'
@@ -152,18 +149,25 @@ export function AccountOverview({
       transactions,
     ],
   )
-  const spending = useMemo(
-    () => buildSpendingView(transactions, data.updatedAt, 1),
-    [data.updatedAt, transactions],
-  )
+  const spending = currentSpendingPeriod(data.insights, account.id, 'month')
+  const largestSpend = data.transactions.find(({ id }) => id === spending?.largest)
   const monthlySpending = useMemo(
-    () => buildMonthlySpendingHistory(transactions, data.updatedAt),
-    [data.updatedAt, transactions],
+    () => monthlySpendingHistory(data.insights, account.id),
+    [account.id, data.insights],
   )
-  const transactionSummary = useMemo(
-    () => accountTransactionSummary(transactions, data.updatedAt, graphWindow),
-    [data.updatedAt, graphWindow, transactions],
-  )
+  const period = chartPeriod(graphWindow)
+  // What moved through the account over the period, as Rust summed it.
+  const transactionSummary = committed.insights?.flows.find(
+    (flows) => flows.accountId === (isCombined ? 'all' : account.id) && flows.window === period,
+  ) ?? {
+    moneyIn: 0,
+    moneyOut: 0,
+    netFlow: 0,
+    interest: 0,
+    dividends: 0,
+    contributions: null,
+    marketChange: null,
+  }
   const isInvestment = isCombined || account.type === 'brokerage' || account.type === 'retirement'
   const showExpectedActivity = isCombined || !isInvestment
   const previewLayoutClass = !showExpectedActivity
@@ -181,7 +185,7 @@ export function AccountOverview({
   const now = Date.now() / 1_000
   const safeChartNow = Number.isFinite(chartNow) ? chartNow : now
   const marketSeries = isCombined
-    ? withoutSpendingCardPoints(data, live.marketSeries['net-worth'] ?? [])
+    ? (live.marketSeries.accounts ?? [])
     : (live.marketSeries[account.id] ?? [])
   const { chartData, chartChange, incomplete, historyIsAvailable } = accountValueChart(
     data,
@@ -189,7 +193,7 @@ export function AccountOverview({
     marketSeries,
     safeChartNow,
     graphWindow,
-    now,
+    live.chartChanges,
     startDate,
   )
   const netDeposits =
@@ -220,42 +224,20 @@ export function AccountOverview({
         : [],
     [committed, isInvestment, isCombined, account.id, graphWindow],
   )
-  const investmentAccounts = isCombined
-    ? data.accounts.filter(({ type }) => type === 'brokerage' || type === 'retirement')
-    : []
-  const gain = isCombined
-    ? sumKnown(investmentAccounts.map(({ knownUnrealizedGain }) => knownUnrealizedGain))
-    : account.knownUnrealizedGain
-  const realizedGain = isCombined
-    ? sumKnown(investmentAccounts.map(({ estimatedRealizedGainYtd }) => estimatedRealizedGainYtd))
-    : account.estimatedRealizedGainYtd
+  // Across every account, the gains Rust summed at the values shown.
+  const rollup = data.insights?.rollup
+  const gain = isCombined ? (rollup?.unrealized ?? null) : account.knownUnrealizedGain
+  const realizedGain = isCombined ? (rollup?.realizedYtd ?? null) : account.estimatedRealizedGainYtd
   const unrealizedLabel =
     isCombined || account.costBasisCoverage === 'partial'
       ? 'Known unrealized P/L'
       : 'Unrealized P/L'
-  const period = chartPeriod(graphWindow)
-  const rangeMarketChanges =
-    performance?.performanceMethod === 'value-only'
-      ? []
-      : (performance?.points.flatMap(({ date, marketChange }) =>
-          marketChange != null &&
-          date <= transactionSummary.end &&
-          (!transactionSummary.start || date >= transactionSummary.start)
-            ? [marketChange]
-            : [],
-        ) ?? [])
-  const investmentFlows = rangeInvestmentFlows(
-    isCombined
-      ? data.brokeragePerformance.filter(({ accountId }) =>
-          investmentAccounts.some(({ id }) => id === accountId),
-        )
-      : performance && isInvestment
-        ? [performance]
-        : [],
-    transactionSummary.start,
-    transactionSummary.end,
-  )
-  const rangeUnrealizedGain = rangeMarketChanges.length ? sumCents(rangeMarketChanges) : null
+  const investmentFlows = {
+    contributions: transactionSummary.contributions,
+    marketChange: transactionSummary.marketChange,
+  }
+  // One account's own market movement over the period; across accounts it reads as one figure.
+  const rangeUnrealizedGain = isCombined ? null : transactionSummary.marketChange
   const holdingsLink = (
     <Link className="section-heading-link" to="/holdings" data-command="navigation.open./holdings">
       Holdings <ChevronRight size={14} aria-hidden="true" />
@@ -300,7 +282,7 @@ export function AccountOverview({
                 search: 'account details more figures apr limit interest',
                 group: 'View',
                 scope: 'page',
-                bindings: [{ sequence: ['d'], label: 'D' }],
+                bindings: [{ sequence: ['i'], label: 'I' }],
                 run: () => {
                   const details = detailsRef.current
                   if (details) details.open = !details.open
@@ -456,6 +438,7 @@ export function AccountOverview({
       ? creditMetrics({
           account,
           spending,
+          largest: largestSpend,
           transactionCount: transactions.length,
           card: data.insights?.credit.cards.find(({ accountId }) => accountId === account.id),
         })
@@ -524,7 +507,7 @@ export function AccountOverview({
   const spendingCards = isCombined
     ? data.accounts.filter(({ id }) => spendingAccountIds.includes(id))
     : []
-  const sheet = balanceSheet(listedAccounts)
+  const sheet = rollup?.sheet ?? { assets: 0, liabilities: 0, complete: false }
   // What the accounts own and owe, then investment and income figures across every account.
   // Group totals are in "Balances".
   const combinedDetails = isCombined ? (
@@ -543,13 +526,13 @@ export function AccountOverview({
         <ReportMetric
           chart="interest"
           label="Interest"
-          value={transactionSummary.range.interest}
+          value={transactionSummary.interest}
           range={period}
         />
         <ReportMetric
           chart="dividends"
           label="Dividends"
-          value={transactionSummary.range.dividends}
+          value={transactionSummary.dividends}
           range={period}
         />
         <Metric label={unrealizedLabel} value={formatCurrency(gain)} tone={valueTone(gain)} />

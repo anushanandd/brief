@@ -408,9 +408,7 @@ fn fit_result(mut result: serde_json::Value, max: usize) -> Option<(serde_json::
     let mut omitted = 0usize;
     loop {
         let rows = result.get_mut(&longest)?.as_array_mut()?;
-        if rows.pop().is_none() {
-            return None;
-        }
+        rows.pop()?;
         omitted += 1;
         result["omittedRows"] = serde_json::json!(omitted);
         let text = result.to_string();

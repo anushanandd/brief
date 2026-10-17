@@ -35,7 +35,7 @@ Every command is reachable from the palette (⌘K), the menu bar, and a shortcut
 
 ## Color and type
 
-Green and red appear only beside a signed value. Data colors identify series, never judge them. Financial values use tabular figures and come from `src/lib/format.ts`.
+Green and red appear only beside a signed value. Data colors identify series, never judge them. Financial values use tabular figures and come from `src/lib/format.ts`, whose formatters mask every personal amount while screen privacy (⌘H) is on; public market prices use `formatPublicCurrency`. `routes-privacy.test.tsx` fails if any page shows an amount while values are hidden.
 
 ## References
 

@@ -84,7 +84,7 @@ pub(crate) async fn get_investment_summary(
 }
 
 /// How often the layered model's group and own-move thresholds fired over saved sessions.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_calibration(
     state: State<'_, AppState>,
 ) -> Result<summary::CalibrationSummary, String> {

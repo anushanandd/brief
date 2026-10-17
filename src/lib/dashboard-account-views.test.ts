@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest'
 
-import { insights } from '../data/fixtures/insights'
+import { emptyRollup, insights } from '../data/fixtures/insights'
 import {
   accountValueChart,
   accountValueIncomplete,
   hasValueHistory,
   dashboardAccountViews,
-  dashboardAssetBreakdown,
   withoutSpendingCard,
-  withoutSpendingCardPoints,
 } from './dashboard-account-views'
 import type { FinanceSnapshot } from './schema'
 
@@ -37,27 +35,34 @@ it('matches account selector changes to the selected chart range and available h
       },
     ],
   }
-  const week = accountValueChart(data, account, [], now, 7 * 86400, now)
+  // Rust read each chart's change from the line it draws; the combined account is net worth.
+  const changes = [
+    { series: 'cash', windows: { week: { change: 20, percent: 20 } } },
+    { series: 'net-worth', windows: { week: { change: 5, percent: 5 } } },
+  ]
+  const week = accountValueChart(data, account, [], now, 7 * 86400, changes)
   expect(week.historyIsAvailable).toBe(true)
-  expect(week.chartChange.percent).toBe(20)
-  expect(accountValueChart(data, account, [], now, 30 * 86400, now).chartChange.percent).toBe(-20)
-  expect(accountValueChart(data, account, [], now, 0, now).chartChange.percent).toBe(-20)
-  expect(accountValueChart(data, account, [], now, 0, now, '2026-09-01').chartChange.percent).toBe(
-    20,
-  )
+  expect(week.chartChange).toEqual({ change: 20, percent: 20 })
   expect(
-    accountValueChart(data, { ...account, id: 'all', type: 'combined' }, [], now, 7 * 86400, now)
-      .chartChange.percent,
-  ).toBe(20)
+    accountValueChart(
+      data,
+      { ...account, id: 'all', type: 'combined' },
+      [],
+      now,
+      7 * 86400,
+      changes,
+    ).chartChange.percent,
+  ).toBe(5)
+  // A window Rust has no reading for changed nothing.
+  expect(accountValueChart(data, account, [], now, 30 * 86400, changes).chartChange).toEqual({
+    change: 0,
+    percent: 0,
+  })
   expect(
-    accountValueChart(data, account, [{ time: now, value: 110 }], now, 7 * 86400, now).chartChange
-      .percent,
-  ).toBe(10)
-  expect(
-    accountValueChart(data, { ...account, value: null }, [], now, 0, now).historyIsAvailable,
+    accountValueChart(data, { ...account, value: null }, [], now, 0, []).historyIsAvailable,
   ).toBe(false)
   expect(
-    accountValueChart({ ...data, accountBalanceHistory: [] }, account, [], now, 0, now)
+    accountValueChart({ ...data, accountBalanceHistory: [] }, account, [], now, 0, [])
       .historyIsAvailable,
   ).toBe(false)
   // A manual retirement account has no performance history, only its balance history.
@@ -67,7 +72,7 @@ it('matches account selector changes to the selected chart range and available h
     accounts: [manual],
     accountBalanceHistory: [{ ...data.accountBalanceHistory[0], accountId: 'manual:plan' }],
   }
-  expect(accountValueChart(manualData, manual, [], now, 0, now).historyIsAvailable).toBe(true)
+  expect(accountValueChart(manualData, manual, [], now, 0, []).historyIsAvailable).toBe(true)
 })
 
 it('keeps a provisional combined balance out of the chart', () => {
@@ -95,7 +100,7 @@ it('keeps a provisional combined balance out of the chart', () => {
     [{ time: now, value: 9300 }],
     now,
     0,
-    now,
+    [],
   )
   expect(chart.chartData.at(-1)?.value).toBe(300)
 })
@@ -109,53 +114,6 @@ const view = (accountId: string, name = accountId): BrokeragePerformance => ({
 })
 
 describe('dashboard account views', () => {
-  it('keeps investment accounts while breaking them into holdings', () => {
-    expect(
-      dashboardAssetBreakdown({
-        accounts: [
-          { id: 'all', name: 'All accounts', institution: 'Brief', type: 'combined', value: 130 },
-          { id: 'cash', name: 'Checking', institution: 'Bank', type: 'cash', value: 30 },
-          {
-            id: 'brokerage',
-            name: 'Brokerage',
-            institution: 'Broker',
-            type: 'brokerage',
-            value: 100,
-          },
-        ],
-        holdings: [
-          {
-            ticker: 'VTI',
-            name: 'Vanguard Total Stock Market ETF',
-            accountId: 'brokerage',
-            shares: 1,
-            price: 80,
-            value: 80,
-            dailyChangePct: null,
-            weeklyChangePct: null,
-            weeklyReferencePrice: null,
-            weeklyReferenceDate: null,
-            totalChangePct: null,
-            color: '#fff',
-            costBasis: null,
-          },
-        ],
-      }),
-    ).toEqual([
-      {
-        id: 'brokerage',
-        name: 'Brokerage',
-        type: 'brokerage',
-        value: 100,
-        children: [
-          { name: 'VTI', value: 80 },
-          { name: 'Cash & other', value: 20 },
-        ],
-      },
-      { id: 'cash', name: 'Checking', type: 'cash', value: 30, children: [] },
-    ])
-  })
-
   it('shows all six account graphs in the requested order', () => {
     const views = dashboardAccountViews({
       updatedAt: '2026-09-03T12:00:00Z',
@@ -230,7 +188,7 @@ it('requires two distinct supported history dates after the chosen start date', 
   expect(hasValueHistory(points, '2026-09-02')).toBe(false)
 })
 
-it('leaves the spending card out of the All accounts total, history, and live points', () => {
+it('leaves the spending card out of the All accounts total and history, as Rust totaled them', () => {
   const data = {
     accounts: [
       { id: 'all', name: 'All accounts', institution: 'Brief', type: 'combined', value: 900.1 },
@@ -244,15 +202,14 @@ it('leaves the spending card out of the All accounts total, history, and live po
         value: 1200.3,
         history: [{ date: '2026-09-01', value: 950 }],
       },
+      rollup: emptyRollup({ netWorth: 1200.3, combined: 1200.3 }),
     }),
   }
-  const scoped = withoutSpendingCard(data)
+  const scoped = withoutSpendingCard({ ...data, netWorth: 900.1 })
   expect(scoped.accounts.find(({ id }) => id === 'all')?.value).toBe(1200.3)
   expect(scoped.accounts.find(({ id }) => id === 'card')?.value).toBe(-300.2)
+  expect(scoped.netWorth).toBe(1200.3)
   expect(scoped.netWorthHistory).toEqual([{ date: '2026-09-01', value: 950 }])
-  expect(withoutSpendingCardPoints(data, [{ time: 1, value: 905.1 }])).toEqual([
-    { time: 1, value: 1205.3 },
-  ])
   const unscoped = { ...data, insights: undefined }
   expect(withoutSpendingCard(unscoped)).toBe(unscoped)
 })

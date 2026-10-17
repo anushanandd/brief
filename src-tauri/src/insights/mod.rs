@@ -9,9 +9,11 @@ pub mod benefits;
 pub mod calendar;
 pub mod cashline;
 pub mod changes;
+pub mod chart_change;
 pub mod credit;
 pub mod dividends;
 pub mod documents;
+pub mod flows;
 pub mod forecast;
 pub mod interest;
 pub mod investing;
@@ -23,8 +25,10 @@ pub mod recap;
 pub mod reconcile;
 pub mod recurring;
 pub mod refunds;
+pub mod reports;
 pub mod retirement;
 pub mod returns;
+pub mod rollup;
 pub mod spending;
 pub mod statement;
 pub mod subscriptions;
@@ -54,6 +58,8 @@ pub struct View {
     pub snapshot: Snapshot,
     pub insights: Option<Insights>,
     pub account_names: BTreeMap<String, String>,
+    /// The saved spending card, whose statements and benefits Spending and Benefits read.
+    pub spending_account_id: Option<String>,
 }
 
 impl View {
@@ -77,6 +83,7 @@ impl View {
             snapshot: serde_json::from_value(snapshot).unwrap(),
             insights: None,
             account_names: BTreeMap::new(),
+            spending_account_id: None,
         })
     }
 }
@@ -107,6 +114,8 @@ pub struct CardBenefits {
     /// Each calendar benefit's periods from the history's first year through this one,
     /// including hidden benefits; the renderer filters them.
     pub history: Vec<BenefitHistory>,
+    /// Each year's periods summed over the benefits shown, oldest first.
+    pub years: Vec<benefits::CardBenefitYear>,
     /// Matches that need a decision, including hidden benefits'.
     pub review: Vec<BenefitReview>,
 }
@@ -149,6 +158,16 @@ pub struct Insights {
     pub spending: Vec<spending::SpendingScope>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub accounts_total: Option<totals::AccountsTotal>,
+    /// Account totals from saved values; each market projection carries its own from live ones.
+    pub rollup: rollup::Rollup,
+    /// Each value chart's change over each window at its saved values; the market stream sends
+    /// its own at live ones.
+    pub chart_changes: Vec<chart_change::ChartChanges>,
+    /// What moved through each account over each chart period.
+    pub flows: Vec<flows::AccountFlows>,
+    /// Each day's and month's spending and income across every account, for the calendar.
+    pub activity_days: Vec<flows::Totals>,
+    pub activity_months: Vec<flows::Totals>,
     pub returns: Vec<returns::AccountReturns>,
     /// The combined brokerages' statement for each chart window: the identity, two labeled
     /// returns beside the benchmark, the waterfall, and risk.
@@ -434,6 +453,29 @@ pub fn derive_with_documents(
         .needs
         .extend(documents::needs(&document_insights, documents, today));
     brief.needs.sort_by_key(|item| item.severity);
+    // The spending cards stay out of the totals and their history.
+    let cards = rollup::spending_cards(accounts, settings);
+    let accounts_total = (!cards.is_empty())
+        .then(|| totals::accounts_total(snapshot, &cards))
+        .flatten();
+    let card_ids = cards
+        .iter()
+        .map(|card| card.id.as_str())
+        .collect::<Vec<_>>();
+    let rollup = rollup::rollup(accounts, holdings, snapshot.net_worth, settings);
+    let (activity_days, activity_months) = flows::calendar_totals(snapshot);
+    let chart_changes = chart_change::changes(
+        &chart_change::series(
+            snapshot,
+            settings,
+            accounts_total
+                .as_ref()
+                .map_or(&snapshot.net_worth_history, |total| &total.history),
+            rollup.net_worth,
+        ),
+        &BTreeMap::new(),
+        now.timestamp(),
+    );
     let mut insights = Insights {
         today,
         computed_at: now.to_rfc3339(),
@@ -463,18 +505,12 @@ pub fn derive_with_documents(
         people,
         recurring_check,
         spending,
-        accounts_total: {
-            let cards = accounts
-                .iter()
-                .filter(|account| {
-                    account.r#type == "credit"
-                        && settings.spending_account_ids().any(|id| id == account.id)
-                })
-                .collect::<Vec<_>>();
-            (!cards.is_empty())
-                .then(|| totals::accounts_total(snapshot, &cards))
-                .flatten()
-        },
+        accounts_total,
+        rollup,
+        chart_changes,
+        flows: flows::flows(snapshot),
+        activity_days,
+        activity_months,
         returns: returns::returns(performance),
         periods: reconcile::statements(performance, trades, transactions),
         exposure: reconcile::exposure(performance, holdings),
@@ -490,6 +526,8 @@ pub fn derive_with_documents(
             &snapshot.account_balance_history,
             performance,
             transactions,
+            accounts,
+            &card_ids,
             today,
         ),
         interest,
@@ -666,7 +704,19 @@ fn cashflow(
             .flatten()
             .collect::<Vec<_>>();
         let history = rules.history(&activity, history_start, today, &charges);
+        let others = own
+            .iter()
+            .filter(|transaction| transaction.other)
+            .map(|transaction| transaction.id.as_str())
+            .collect();
         CardBenefits {
+            years: benefits::card_years(
+                &history,
+                &activity,
+                &others,
+                &settings.hidden_benefit_ids,
+                today,
+            ),
             use_first: benefits::use_first(&windows),
             account_id: card.id.clone(),
             product: rules.product.clone(),
@@ -839,11 +889,44 @@ fn credits_follow_purchases(
 
 /// Spending and benefits use only the explicitly saved credit account, never ordering.
 fn spending_card<'a>(accounts: &'a [Account], settings: &FinanceSettings) -> Option<&'a Account> {
-    settings.spending_account_id.as_deref().and_then(|id| {
+    saved_card(accounts, settings.spending_account_id.as_deref())
+}
+
+fn saved_card<'a>(accounts: &'a [Account], id: Option<&str>) -> Option<&'a Account> {
+    id.and_then(|id| {
         accounts
             .iter()
             .find(|account| account.id == id && account.r#type == "credit")
     })
+}
+
+/// One spending period in full, from the view as it was derived: statements belong to the
+/// saved card once its benefits say it is that card, as in `derive`.
+pub fn spending_period(
+    view: &View,
+    request: &spending::PeriodRequest,
+    zone: &dyn Zone,
+) -> Option<spending::PeriodDetail> {
+    let (snapshot, insights) = (&view.snapshot, view.insights.as_ref()?);
+    let today = calendar::calendar_date(&snapshot.updated_at, zone)?;
+    let card = saved_card(&snapshot.accounts, view.spending_account_id.as_deref());
+    let statement = insights.statement.as_ref().filter(|_| {
+        insights
+            .benefits
+            .as_ref()
+            .zip(card)
+            .is_some_and(|(benefits, card)| benefits.account_id == card.id)
+    });
+    spending::scope_list(
+        &snapshot.transactions,
+        &snapshot.accounts,
+        card,
+        statement,
+        today,
+    )
+    .into_iter()
+    .find(|scope| scope.id == request.scope && scope.owner == request.owner)?
+    .detail(request.kind, request.offset)
 }
 
 #[cfg(test)]

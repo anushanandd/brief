@@ -17,7 +17,9 @@ const trip = (id: string, start: string, end: string, flew: boolean) => ({
   destination: `Example ${id}`,
   abroad: true,
   total: -120,
-  categories: [{ name: 'Dining', amount: -120 }],
+  categories: [{ name: 'Dining', amount: -120, share: 100 }],
+  rest: 0,
+  restShare: 0,
   transactionIds: ['transaction-0'],
   ongoing: false,
   flew,
@@ -34,6 +36,7 @@ it('opens Trips as a year: its calendar, a row per trip, and places', async () =
         trip('a', '2026-08-10', '2026-08-12', true),
         trip('b', '2026-06-01', '2026-06-02', false),
       ],
+      years: [{ year: 2026, count: 2, days: 5, spent: 240, abroad: 2, flown: 1, longest: 'a' }],
       home: ['CA, US'],
     },
   }
@@ -71,6 +74,7 @@ it('opens one trip: its money day by day, purchases, route, and split, stepping 
         trip('a', '2026-08-10', '2026-08-12', true),
         trip('b', '2026-06-01', '2026-06-02', false),
       ],
+      years: [{ year: 2026, count: 2, days: 5, spent: 240, abroad: 2, flown: 1, longest: 'a' }],
       home: ['CA, US'],
     },
   }
@@ -99,6 +103,7 @@ it('shows the trip under way ahead of the year', async () => {
   scenario.insights = {
     trips: {
       trips: [{ ...trip('now', '2026-09-28', '2026-09-30', false), ongoing: true }],
+      years: [{ year: 2026, count: 1, days: 3, spent: 120, abroad: 1, flown: 0, longest: 'now' }],
       home: ['CA, US'],
     },
   }
@@ -144,6 +149,7 @@ it('lists people with what was sent and received, and names payments carry', asy
         },
         { id: 'person:b', transactionCount: 0, sent: 0, received: 0, tripIds: [] },
       ],
+      sent: 40.1,
       suggestions: [
         {
           name: 'Example',
@@ -204,6 +210,7 @@ it('opens a person: their figures, tagged activity, trips, and details behind a 
   scenario.insights = {
     trips: {
       trips: [{ ...trip('a', '2026-08-10', '2026-08-12', true), companions: ['person:a'] }],
+      years: [],
       home: ['CA, US'],
     },
     people: {
@@ -218,6 +225,7 @@ it('opens a person: their figures, tagged activity, trips, and details behind a 
           tripIds: ['a'],
         },
       ],
+      sent: 40.1,
       suggestions: [],
     },
   }
@@ -241,6 +249,7 @@ it('shows who went on a trip, with P to change them', async () => {
   scenario.insights = {
     trips: {
       trips: [{ ...trip('a', '2026-08-10', '2026-08-12', true), companions: ['person:a'] }],
+      years: [],
       home: ['CA, US'],
     },
   }

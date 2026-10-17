@@ -70,7 +70,10 @@ export function RankedBars({
       else next.add(name)
       return next
     })
-  const cells = ({ name, value, color, change, mark }: RankedBar, expandable: boolean) => (
+  const cells = (
+    { name, value, color, change, mark }: Omit<RankedBar, 'value'> & { value: number | null },
+    expandable: boolean,
+  ) => (
     <>
       <span className="ranked-bars-name">
         {expandable ? <ChevronRight className="ranked-bars-chevron" size={14} /> : null}
@@ -78,7 +81,9 @@ export function RankedBars({
         <span>{name}</span>
       </span>
       <span className="ranked-bars-track" aria-hidden="true">
-        <span style={{ width: `${(Math.abs(value) / maximum) * 100}%`, background: color }} />
+        {value == null ? null : (
+          <span style={{ width: `${(Math.abs(value) / maximum) * 100}%`, background: color }} />
+        )}
         {mark != null ? (
           <i
             className="ranked-bars-mark"
@@ -87,7 +92,7 @@ export function RankedBars({
         ) : null}
       </span>
       <strong className="sensitive-value">
-        {formatCurrency(value)}
+        {value == null ? null : formatCurrency(value)}
         {mark != null ? (
           <span className="sr-only">{`, ${markLabel} ${formatCurrency(mark)}`}</span>
         ) : null}
@@ -153,10 +158,11 @@ export function RankedBars({
             aria-expanded={false}
             onClick={() => setShowAll(true)}
           >
+            {/* The folded rows read as themselves once shown, never as a sum made here. */}
             {cells(
               {
                 name: `${rest.length} more`,
-                value: rest.reduce((sum, { value }) => sum + value, 0),
+                value: null,
                 color: 'var(--text-tertiary)',
                 change: comparable ? null : undefined,
               },

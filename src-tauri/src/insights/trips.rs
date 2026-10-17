@@ -8,13 +8,13 @@
 //! Amounts are summed in whole cents.
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{Duration, NaiveDate};
+use chrono::{Datelike, Duration, NaiveDate};
 use serde::Serialize;
 
 use super::calendar;
 use crate::finance_contract::Transaction;
 use crate::merchants;
-use crate::numeric::{median, minor_units};
+use crate::numeric::{from_minor, median, minor_units, round2};
 use crate::places::{self, Place};
 use crate::transaction_policy::Kind;
 
@@ -40,6 +40,24 @@ pub struct TripCategory {
     pub name: String,
     /// Negative for spending.
     pub amount: f64,
+    /// Its share of the trip's spending, in percent.
+    pub share: f64,
+}
+
+/// A year's trips at a glance, by the year each began.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TripYear {
+    pub year: i32,
+    pub count: usize,
+    /// Calendar days away, counting both ends of each trip.
+    pub days: i64,
+    /// What the trips spent, positive.
+    pub spent: f64,
+    pub abroad: usize,
+    pub flown: usize,
+    /// The longest trip's ID; the newest when tied.
+    pub longest: String,
 }
 
 /// One calendar day of a trip, including the days without a purchase.
@@ -67,7 +85,11 @@ pub struct Trip {
     pub abroad: bool,
     /// Net spending, negative.
     pub total: f64,
+    /// The top categories, largest first.
     pub categories: Vec<TripCategory>,
+    /// The spending outside the top categories, positive, and its share in percent.
+    pub rest: f64,
+    pub rest_share: f64,
     pub transaction_ids: Vec<String>,
     /// The latest located purchase is still away from home.
     pub ongoing: bool,
@@ -103,8 +125,45 @@ pub struct TripStop {
 pub struct Trips {
     /// Newest first.
     pub trips: Vec<Trip>,
+    /// Each year with a trip, newest first.
+    pub years: Vec<TripYear>,
     /// The home regions, as `region, country`, when there was enough to find them.
     pub home: Vec<String>,
+}
+
+/// How many calendar days a trip covered, counting both ends.
+fn day_count(trip: &Trip) -> i64 {
+    (trip.end - trip.start).num_days() + 1
+}
+
+/// Each year's trips summed, from trips newest first.
+fn years(trips: &[Trip]) -> Vec<TripYear> {
+    let mut years: Vec<TripYear> = Vec::new();
+    for trip in trips {
+        let year = trip.start.year();
+        if years.last().is_none_or(|last| last.year != year) {
+            years.push(TripYear {
+                year,
+                count: 0,
+                days: 0,
+                spent: 0.0,
+                abroad: 0,
+                flown: 0,
+                longest: trip.id.clone(),
+            });
+        }
+        let entry = years.last_mut().expect("pushed above");
+        let longest = trips.iter().find(|other| other.id == entry.longest);
+        if longest.is_some_and(|longest| day_count(trip) > day_count(longest)) {
+            entry.longest = trip.id.clone();
+        }
+        entry.count += 1;
+        entry.days += day_count(trip);
+        entry.spent = from_minor(minor_units(entry.spent) + minor_units(trip.total.abs()));
+        entry.abroad += usize::from(trip.abroad);
+        entry.flown += usize::from(trip.flew);
+    }
+    years
 }
 
 fn region_key(place: &Place) -> Option<String> {
@@ -213,6 +272,7 @@ pub fn trips(transactions: &[Transaction], today: NaiveDate) -> Trips {
         .collect::<Vec<_>>();
     trips.reverse();
     Trips {
+        years: years(&trips),
         trips,
         home: home.regions.into_iter().collect(),
     }
@@ -376,6 +436,19 @@ fn trip(
         .filter(|(_, amount)| *amount < 0)
         .collect::<Vec<_>>();
     categories.sort_by(|left, right| left.1.cmp(&right.1).then(left.0.cmp(&right.0)));
+    let top = categories
+        .into_iter()
+        .take(TOP_CATEGORIES)
+        .collect::<Vec<_>>();
+    // What the top categories leave of the trip's net spending, never below nothing.
+    let rest = (total.abs() - top.iter().map(|(_, amount)| amount.abs()).sum::<i64>()).max(0);
+    let share = |cents: i64| {
+        if total == 0 {
+            0.0
+        } else {
+            round2(cents.abs() as f64 / total.abs() as f64 * 100.0)
+        }
+    };
     let abroad = run
         .iter()
         .any(|(_, _, place)| place.country != home.country);
@@ -457,14 +530,16 @@ fn trip(
         destination,
         abroad,
         total: total as f64 / 100.0,
-        categories: categories
+        categories: top
             .into_iter()
-            .take(TOP_CATEGORIES)
             .map(|(name, amount)| TripCategory {
                 name,
                 amount: amount as f64 / 100.0,
+                share: share(amount),
             })
             .collect(),
+        rest: from_minor(rest),
+        rest_share: share(rest),
         transaction_ids: ids.into_iter().collect(),
         ongoing,
         flew,
@@ -580,8 +655,29 @@ mod tests {
             trip.categories[0],
             TripCategory {
                 name: "Travel".into(),
-                amount: -600.0
+                amount: -600.0,
+                share: 64.03,
             }
+        );
+        // Whatever the top categories leave closes the split.
+        let ranked = trip
+            .categories
+            .iter()
+            .map(|category| minor_units(category.amount.abs()))
+            .sum::<i64>();
+        assert_eq!(minor_units(trip.rest) + ranked, 93_700);
+        // The year adds its trips.
+        assert_eq!(
+            result.years,
+            [TripYear {
+                year: 2026,
+                count: 1,
+                days: 4,
+                spent: 937.0,
+                abroad: 0,
+                flown: 1,
+                longest: trip.id.clone(),
+            }]
         );
         assert!(!trip.ongoing && !trip.abroad);
         // Austin is over 800 km from Oakland, so the trip was most likely flown.

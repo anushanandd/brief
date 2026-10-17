@@ -1,5 +1,5 @@
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
 import { useFocusRegion } from '../hooks/use-focus-region'
@@ -11,6 +11,7 @@ import { useAutoRefreshFinance } from '../hooks/use-refresh-finance'
 import { useRegisterActions, useRegisteredActions } from '../lib/action-system'
 import { analyticsChart, analyticsCharts, analyticsGroup } from '../lib/analytics'
 import { isTauri } from '../lib/api'
+import { setAmountsHidden } from '../lib/format'
 import { reportsGroupOpen, useOrderedNavigation } from '../lib/navigation-preferences'
 import { getPrivacyPreferences, usePrivacyPreferences } from '../lib/privacy-preferences'
 import { useSettingsDialog } from '../lib/settings-dialog'
@@ -18,7 +19,7 @@ import { CommandMenu } from './command-menu'
 import { FocusHints } from './focus-hints'
 import { KeyGuide } from './key-guide'
 import { RecoveryNotice } from './recovery-notice'
-import { SettingsDialog } from './settings-dialog'
+import { SettingsView } from './settings-dialog'
 import { ShortcutsDialog } from './shortcuts-dialog'
 import { Sidebar } from './sidebar'
 
@@ -49,6 +50,9 @@ export function AppShell() {
   const [focusHintsOpen, setFocusHintsOpen] = useState(false)
   const privacyPreferences = usePrivacyPreferences()
   const [valuesHidden, setValuesHidden] = useState(() => getPrivacyPreferences().hideOnLaunch)
+  // Formatters read this as they run, so it's set before anything below renders; the keyed
+  // page then renders again with every amount masked or shown.
+  setAmountsHidden(valuesHidden)
   const reportsOpen = reportsGroupOpen.use()
   const toggleReports = useCallback(() => reportsGroupOpen.save(!reportsGroupOpen.get()), [])
   useAutoRefreshFinance(
@@ -126,8 +130,6 @@ export function AppShell() {
         onOpenSettings={settings.show}
       />
 
-      <SettingsDialog />
-
       <main className="main-content" ref={mainContentRef}>
         {finance.data?.recovery ? <RecoveryNotice recovery={finance.data.recovery} /> : null}
         {finance.data?.syncWarnings?.length ? (
@@ -140,7 +142,14 @@ export function AppShell() {
             {finance.annotationWarning}
           </p>
         ) : null}
-        {finance.data?.recovery && !finance.data.recovery.canRestore ? null : <Outlet />}
+        {/* Settings takes the page's place and stays usable when the snapshot can't load. */}
+        <Fragment key={valuesHidden ? 'amounts-hidden' : 'amounts-shown'}>
+          {settings.open ? (
+            <SettingsView />
+          ) : finance.data?.recovery && !finance.data.recovery.canRestore ? null : (
+            <Outlet />
+          )}
+        </Fragment>
       </main>
 
       {commandOpen ? (

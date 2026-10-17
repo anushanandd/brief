@@ -7,9 +7,18 @@ import {
 } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { expect, it } from 'vitest'
+import { expect, it, vi } from 'vitest'
 
 import { insights } from '../data/fixtures/insights'
+import { scenarioReports } from '../pages/routes.reports'
+
+// Server rendering never runs a query; Rust's reports follow the same rules over the data.
+vi.mock('../hooks/use-reports', () => ({
+  useReports: (
+    data: import('../lib/schema').FinanceSnapshot,
+    request: import('../lib/api').ReportRequest,
+  ) => ({ data: scenarioReports(data, request), isLoading: false, isError: false }),
+}))
 import seedInsights from '../data/seed-insights.json'
 import seed from '../data/seed.json'
 import {
@@ -63,6 +72,8 @@ it('ranks exposure by holding and notes what the total leaves out', async () => 
   const html = await render((data) => <PortfolioExposure data={data} />, {
     allocation: {
       total: 10000,
+      cash: 0,
+      cashPercent: 0,
       incomplete: true,
       cashUnknown: true,
       kinds: [slice('etf', 'ETFs', 7000, 70), slice('equity', 'Stocks', 3000, 30)],

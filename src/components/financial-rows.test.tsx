@@ -202,6 +202,7 @@ it('notes native benefit credits on purchase and credit rows and marks linked ro
         windows: [],
         useFirst: [],
         history: [],
+        years: [],
         review: [],
         activity: [
           benefitActivity({

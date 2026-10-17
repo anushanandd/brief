@@ -7,7 +7,7 @@ import {
 } from './graph-preferences'
 
 /**
- * Investments follows the app's chart period (W, M, Q, Y, A), shared with Home and Accounts for
+ * Investments follows the app's chart period (D, W, M, Q, Y, A), shared with Home and Accounts for
  * the session. Each period is one of the returns windows Rust computes.
  */
 const DAY = 86_400
@@ -33,6 +33,6 @@ export function holdingHistoryRange(range: ChartPeriod) {
 export function rangeDates(range: ChartPeriod, today: string, windowStart?: string) {
   if (windowStart) return { from: addDays(windowStart, 1), to: today }
   if (range === 'all') return { from: undefined, to: today }
-  const days = { week: 7, month: 30, quarter: 91, year: 365 }[range]
+  const days = { day: 1, week: 7, month: 30, quarter: 91, year: 365 }[range]
   return { from: addDays(today, 1 - days), to: today }
 }

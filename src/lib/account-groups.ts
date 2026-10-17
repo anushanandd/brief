@@ -1,5 +1,4 @@
-import { cents, sumCents } from './money'
-import type { Account } from './schema'
+import type { Account, Rollup } from './schema'
 
 export type AccountGroup = {
   type: string
@@ -18,54 +17,37 @@ const groupLabels: Record<string, string> = {
   brokerage: 'Brokerage',
   retirement: 'Retirement',
   credit: 'Credit cards',
+  spending: 'Spending cards',
 }
 
-// Presentation totals over the native account values; values are summed in minor units.
-function total(values: Array<number | null | undefined>) {
-  return values.some((value) => value == null)
-    ? null
-    : values.reduce<number>((sum, value) => sum + cents(value!), 0) / 100
-}
+/** What an account type is called in a list of groups. */
+export const groupLabel = (type: string) =>
+  groupLabels[type] ?? type.charAt(0).toLocaleUpperCase() + type.slice(1)
 
 const byValue = (left: { value: number | null }, right: { value: number | null }) =>
   (right.value ?? -Infinity) - (left.value ?? -Infinity)
 
-/** Accounts grouped by type, largest total first, each group's accounts largest first. */
+/**
+ * Accounts grouped by type in the order Rust ranked the types, each with the total and the
+ * period's change Rust summed for it; each group's accounts largest first.
+ */
 export function accountGroups(
   accounts: Account[],
-  changes: Array<{ accountId: string; change: number }> = [],
+  totals: Rollup['groups'],
+  changes: Array<{ type: string; change: number | null }> = [],
 ): AccountGroup[] {
-  const byType = new Map<string, Account[]>()
-  for (const account of accounts) {
-    byType.set(account.type, [...(byType.get(account.type) ?? []), account])
-  }
-  return [...byType]
-    .map(([type, members]) => ({
-      type,
-      label: groupLabels[type] ?? type.charAt(0).toLocaleUpperCase() + type.slice(1),
-      accounts: members.toSorted(byValue),
-      // A manual account awaiting its first balance has nothing to add yet.
-      value: total(
-        members
-          .filter(({ id, value }) => value != null || !id.startsWith('manual:'))
-          .map(({ value }) => value),
-      ),
-      change: total(
-        members.map(({ id }) => changes.find(({ accountId }) => accountId === id)?.change),
-      ),
-    }))
-    .toSorted((left, right) => byValue(left, right) || left.label.localeCompare(right.label))
-}
-
-/**
- * What the accounts own and owe, by each account's sign. Accounts without a value are left out
- * and flagged, so the totals read as known amounts.
- */
-export function balanceSheet(accounts: Account[]) {
-  const values = accounts.flatMap(({ value }) => (value == null ? [] : [value]))
-  return {
-    assets: sumCents(values.filter((value) => value > 0)),
-    liabilities: sumCents(values.filter((value) => value < 0)),
-    complete: values.length === accounts.length,
-  }
+  return totals.flatMap(({ type, value }) => {
+    const members = accounts.filter((account) => account.type === type)
+    return members.length
+      ? [
+          {
+            type,
+            label: groupLabel(type),
+            accounts: members.toSorted(byValue),
+            value,
+            change: changes.find((change) => change.type === type)?.change ?? null,
+          },
+        ]
+      : []
+  })
 }
