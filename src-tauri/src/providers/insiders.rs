@@ -9,7 +9,7 @@ use std::sync::LazyLock;
 const INSIDER_FILINGS: usize = 12;
 const MAX_FORM4_BYTES: usize = 2 * 1024 * 1024;
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct InsiderTrade {
     pub date: String,
@@ -29,7 +29,7 @@ pub struct InsiderTrade {
 }
 
 /// A Form 4 in a company's submissions: its XML for parsing and its rendered page for people.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct InsiderFiling {
     pub filed_at: String,

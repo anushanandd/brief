@@ -7,6 +7,7 @@
 //! Holidays and early closes follow the NYSE's published rules, computed rather than fetched.
 use chrono::{DateTime, Datelike, Duration, NaiveDate, NaiveDateTime, NaiveTime, Utc, Weekday};
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::insights::calendar::{last_weekday, nth_weekday, NamedZone};
 
@@ -127,7 +128,7 @@ pub struct Session {
 }
 
 /// Where the clock stands relative to the regular session.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum MarketState {
     /// 4:00 to 9:30 on a trading day: trades print, but the session hasn't opened.
@@ -243,7 +244,7 @@ impl Session {
 }
 
 /// The clock a summary was made at: the session it describes and where the market stands.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SessionClock {
     /// The latest session that has opened.

@@ -133,11 +133,11 @@ function Contributions({ retirement, name }: { retirement: Retirement; name: Nam
   )
 }
 
-const flowLabels = {
+const flowLabels: Record<string, string> = {
   contribution: 'Contribution',
   deposit: 'Deposit',
   transfer: 'Transfer in',
-} as const
+}
 
 /**
  * IRA deposits and where each counts. One Brief can't place waits for a choice; any can be
@@ -188,8 +188,8 @@ function Deposits({ retirement, name }: { retirement: Retirement; name: Names })
                       ? `Can count for ${deposit.years.join(' or ')}`
                       : 'A contribution, or a rollover?'
                     : deposit.stated
-                      ? `${flowLabels[deposit.flow]} · the statement says ${deposit.countsFor}`
-                      : flowLabels[deposit.flow]}
+                      ? `${flowLabels[deposit.flow] ?? deposit.flow} · the statement says ${deposit.countsFor}`
+                      : (flowLabels[deposit.flow] ?? deposit.flow)}
                 </small>
               </span>
               <span className="sensitive-value" data-copy-amount>

@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
+import { transaction } from '../data/fixtures/records'
 import { renderRoute } from './routes.harness'
 import { scenario } from './routes.scenario'
 
@@ -119,7 +120,7 @@ const people = [
   { id: 'person:b', name: 'Example Person B' },
 ]
 
-const tagged = {
+const tagged = transaction({
   id: 'zelle-a',
   merchant: 'Zelle payment to EXAMPLE PERSON A',
   category: 'Payments To People',
@@ -131,7 +132,7 @@ const tagged = {
   peopleSource: 'matched' as const,
   classification: classification('expense', { zelle: true }),
   pending: false,
-}
+})
 
 it('lists people with what was sent and received, and names payments carry', async () => {
   scenario.people = people

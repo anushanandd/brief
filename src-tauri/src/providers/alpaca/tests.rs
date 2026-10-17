@@ -210,12 +210,54 @@ fn groups_minute_bars_and_preserves_price_references() {
     let mut chart = ChartFrames::new(seed);
     let mut published = Vec::new();
     let mut publish = |tick: MarketStreamTick| {
-        published.push(tick.chart_as_of.unwrap());
+        published.push((tick.chart_as_of.unwrap(), tick.latest));
         Ok(())
     };
     publish_market_backfill(&market, frames.clone(), &mut chart, &mut publish).unwrap();
     publish_market_backfill(&market, frames, &mut chart, &mut publish).unwrap();
-    assert_eq!(published, ["2026-09-08T01:00:00Z", "2026-09-08T01:01:00Z"]);
+    // Only the run's last minute reads the changes, so they never step through the session.
+    assert_eq!(
+        published,
+        [
+            ("2026-09-08T01:00:00Z".to_owned(), false),
+            ("2026-09-08T01:01:00Z".to_owned(), true)
+        ]
+    );
     assert_eq!(AlpacaMarketSession::Overnight.history_feed(), "boats");
     assert_eq!(AlpacaMarketSession::Overnight.history_delay_minutes(), 15);
+}
+
+#[test]
+fn history_covers_every_symbol_a_brokerage_held_or_traded() {
+    let plaid = PlaidData {
+        investment_accounts: vec![json!({ "account_id": "plan", "subtype": "stock plan" })],
+        holdings: vec![
+            json!({ "account_id": "plan", "security_id": "granted" }),
+            json!({ "account_id": "other", "security_id": "elsewhere" }),
+        ],
+        securities: vec![
+            json!({ "security_id": "granted", "ticker_symbol": "PLAN" }),
+            json!({ "security_id": "elsewhere", "ticker_symbol": "SKIP" }),
+        ],
+        ..PlaidData::default()
+    };
+    let snaptrade = SnapTradeData {
+        positions: BTreeMap::from([(
+            "brokerage".into(),
+            vec![json!({ "instrument": { "symbol": "held" } })],
+        )]),
+        activities: BTreeMap::from([(
+            "brokerage".into(),
+            vec![
+                json!({ "type": "SELL", "units": "-2", "symbol": { "raw_symbol": "SOLD" } }),
+                json!({ "type": "DIVIDEND", "units": 0, "symbol": { "symbol": "CASH" } }),
+                json!({ "type": "BUY", "units": 1, "symbol": { "symbol": "bad,symbol" } }),
+            ],
+        )]),
+        ..SnapTradeData::default()
+    };
+    assert_eq!(
+        security_history_symbols(&plaid, Some(&snaptrade)),
+        ["HELD", "PLAN", "SOLD"]
+    );
 }

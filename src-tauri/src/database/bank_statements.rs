@@ -9,8 +9,9 @@ use super::{db_error, Database};
 const MAX_BYTES: i64 = 25 * 1024 * 1024;
 
 /// One saved statement, without its contents.
-#[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct BankStatement {
     pub id: String,
     pub item_id: String,
@@ -18,7 +19,8 @@ pub struct BankStatement {
     pub account_name: String,
     pub year: i32,
     pub month: u32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub date_posted: Option<String>,
     pub fetched_at: String,
     pub bytes: u64,

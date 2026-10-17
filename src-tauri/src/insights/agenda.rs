@@ -4,6 +4,7 @@
 //! closing, and trips. Each item reuses a result derived elsewhere; nothing here estimates.
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::attention::payment_owed;
 use super::benefits::BenefitWindow;
@@ -18,7 +19,7 @@ use crate::finance_contract::Account;
 /// How far ahead dated items are listed: the cash forecast's horizon.
 pub const HORIZON_DAYS: i64 = super::cashline::HORIZON_DAYS;
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
 pub enum AgendaKind {
     PaymentDue,
@@ -33,7 +34,7 @@ pub enum AgendaKind {
     Trip,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AgendaItem {
     /// Its kind, subject, and date, so it stays the same across refreshes while it means the
@@ -42,31 +43,40 @@ pub struct AgendaItem {
     pub kind: AgendaKind,
     pub date: NaiveDate,
     /// The last day of an item that spans days: a trip.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub end: Option<NaiveDate>,
     /// The series, benefit, or destination it concerns; accounts and tickers are named by the
     /// renderer.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub title: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub account_id: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub ticker: Option<String>,
     /// As cash moves: negative for money out. Absent when unknown, never zero instead.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub amount: Option<f64>,
     /// Brief inferred the date or amount; the institution didn't report it.
     pub estimated: bool,
     /// How often a forecast series recurs: `monthly`, `biweekly`, and so on.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub frequency: Option<&'static str>,
     /// The range a forecast amount has posted in, when it isn't one amount.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub amount_low: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub amount_high: Option<f64>,
     /// A payment due's minimum, as the issuer reported it.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub minimum_payment: Option<f64>,
 }
 

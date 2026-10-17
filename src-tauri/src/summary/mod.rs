@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use ts_rs::TS;
 
 use crate::finance_contract::{Snapshot, Trade};
 use crate::insights::reconcile::{self, PeriodReport, Shares};

@@ -29,8 +29,9 @@ const SAVED_STORIES: usize = 120;
 /// Stories from CNBC's market feeds are kept this many days.
 const MARKET_NEWS_DAYS: i64 = 3;
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "MarketNewsResult")]
 pub struct NewsResult {
     pub articles: Vec<MarketNewsArticle>,
     pub saved_at: Option<String>,

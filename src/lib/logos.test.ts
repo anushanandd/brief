@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
+import { transaction as record } from '../data/fixtures/records'
 import {
   institutionLogoUrl,
   brandLogoUrl,
@@ -14,17 +15,18 @@ import {
 } from './logos'
 import type { Transaction } from './schema'
 
-const transaction = (overrides: Partial<Transaction> = {}): Transaction => ({
-  id: 'transaction',
-  merchant: 'Raw bank descriptor',
-  category: 'Other',
-  date: '2026-08-31',
-  amount: -10,
-  account: 'Card',
-  classification: classification('expense'),
-  pending: false,
-  ...overrides,
-})
+const transaction = (overrides: Partial<Transaction> = {}): Transaction =>
+  record({
+    id: 'transaction',
+    merchant: 'Raw bank descriptor',
+    category: 'Other',
+    date: '2026-08-31',
+    amount: -10,
+    account: 'Card',
+    classification: classification('expense'),
+    pending: false,
+    ...overrides,
+  })
 
 describe('logo resolution', () => {
   it('keeps external logos off without generating transaction initials', () => {

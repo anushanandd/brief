@@ -2,6 +2,7 @@
 //! them. A suggestion is made only when exactly one earlier purchase fits.
 use chrono::NaiveDate;
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar::{self};
 use crate::finance_contract::Transaction;
@@ -11,7 +12,7 @@ use crate::transaction_policy::Kind;
 const WINDOW_DAYS: i64 = 90;
 
 /// A refund and the one earlier purchase it most plausibly repays.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct RefundSuggestion {
     pub refund_id: String,

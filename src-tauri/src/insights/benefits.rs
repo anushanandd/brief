@@ -14,6 +14,7 @@ use std::{collections::BTreeMap, sync::LazyLock};
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use super::calendar::{self, NamedZone, Zone};
 use crate::finance_contract::Transaction;
@@ -26,7 +27,7 @@ use windows::benefit_window;
 /// full. The cents still count as missed, so totals stay exact.
 const NEGLIGIBLE_CENTS: i64 = 100;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum Cadence {
     Monthly,
@@ -248,7 +249,7 @@ pub struct RuleSet {
 }
 
 /// Issuer-posted credits set against the card's annual fee for the current membership year.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct FeeRecovery {
     pub annual_fee: f64,
@@ -330,7 +331,7 @@ fn merchant_amount(entries: &[MerchantAmount], transaction: &Transaction) -> boo
     })
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum ActivityKind {
     Credit,
@@ -340,7 +341,7 @@ pub enum ActivityKind {
 }
 
 /// What became of a qualifying purchase's credit, as of the snapshot day.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(tag = "state", rename_all = "kebab-case")]
 pub enum PurchaseCredit {
     /// A posted credit was paired with this purchase.
@@ -355,16 +356,18 @@ pub enum PurchaseCredit {
     OverAllowance,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BenefitActivity {
     pub id: String,
     pub merchant: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub description: Option<String>,
     pub amount: f64,
     pub pending: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub account_id: Option<String>,
     /// The transaction date: the issuer counts a purchase, and the credit it earns, toward the
     /// window the merchant processed it in, even when it posts in the next one.
@@ -382,16 +385,20 @@ pub struct BenefitActivity {
     pub kind: ActivityKind,
     /// The purchase a credit offsets, the credit a reversal undoes, or, on a purchase, the
     /// credit that offset it.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub paired_id: Option<String>,
     /// For a posted credit or reversal, the first day of the window it counts toward.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub credit_window: Option<NaiveDate>,
     /// When the feed can't establish the window, the earlier window it may count toward.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub alternate_credit_window: Option<NaiveDate>,
     /// For a posted qualifying purchase on an issuer-credit benefit.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub credit: Option<PurchaseCredit>,
 }
 
@@ -409,27 +416,27 @@ impl BenefitActivity {
 }
 
 /// An amount the evidence bounds but can't pin down. Equal bounds mean it is known.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS)]
 pub struct AmountRange {
     pub low: f64,
     pub high: f64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BenefitOption {
     pub id: String,
     pub name: String,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct LastCredit {
     pub amount: f64,
     pub date: String,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BenefitWindow {
     pub id: String,
@@ -439,7 +446,8 @@ pub struct BenefitWindow {
     pub cadence: Cadence,
     pub instruction: String,
     pub url: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub deadline_note: Option<String>,
     /// Some credits may belong to this window or the previous one.
     pub period_uncertain: bool,
@@ -449,14 +457,16 @@ pub struct BenefitWindow {
     /// is enough evidence, otherwise the usual delay from the rule data.
     pub credit_lag_days: i64,
     pub credit_lag_learned: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub renewal_check: Option<String>,
     pub status: &'static str,
     /// A subscription spends it automatically; the only thing to check is that it posted.
     pub recurring: bool,
     /// The saved card history starts after this window began, so credits before this day are
     /// missing and the remaining range runs from zero.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub history_from: Option<NaiveDate>,
     /// Credits, net of reversals, placed in this window: by purchase date when paired,
     /// otherwise by posting date.
@@ -469,17 +479,20 @@ pub struct BenefitWindow {
     /// The usable unused allowance when it is known exactly.
     pub remaining_amount: Option<f64>,
     /// The usable unused allowance, bounded, whenever it is tracked.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub remaining_range: Option<AmountRange>,
     /// Unused allowance smaller than the smallest qualifying charge.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub unusable_remainder: Option<f64>,
     pub activity: Vec<BenefitActivity>,
     pub window_start: NaiveDate,
     pub window_end: NaiveDate,
     pub window_label: String,
     pub days_remaining: i64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub last_credit: Option<LastCredit>,
     pub reset: String,
 }

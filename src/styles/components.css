@@ -463,6 +463,30 @@
 .live-performance-chart > div:not(.liveline-chart-canvas) {
   display: none !important;
 }
+/* Value history (Recharts) fills the chart's height, as the live chart's canvas does. */
+.value-chart {
+  position: relative;
+  display: flex;
+  box-sizing: border-box;
+  flex-direction: column;
+}
+.value-chart > .recharts-responsive-container {
+  flex: 1;
+  min-height: 0;
+}
+.value-chart .recharts-surface {
+  overflow: visible;
+}
+.value-chart-tooltip {
+  display: grid;
+  min-width: 160px;
+  gap: 4px;
+  padding: 8px 10px;
+}
+.value-chart-tooltip p {
+  margin: 0;
+  color: var(--text-tertiary);
+}
 .brokerage-holdings-card {
   min-width: 0;
   padding: var(--card-padding) var(--card-padding) var(--card-padding-end);

@@ -1,12 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
-import seedInsights from '../data/seed-insights.json'
-import { investmentSummarySchema } from '../lib/schema'
+import { seedSummary } from '../data/fixtures/records'
 import { AsOf, Headlines } from './investment-summary-parts'
 
 // The browser preview's summary, made by Rust from the synthetic seed.
-const summary = investmentSummarySchema.parse(seedInsights.summary)
+const summary = seedSummary()
 
 it('says when the prices are from', () => {
   expect(renderToStaticMarkup(<AsOf summary={summary} />)).toContain(

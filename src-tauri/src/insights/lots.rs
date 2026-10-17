@@ -5,20 +5,23 @@ use std::collections::BTreeMap;
 
 use chrono::{Months, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::finance_contract::{Holding, Trade};
 use crate::numeric::{from_minor, minor_units};
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Lot {
     pub acquired: NaiveDate,
     pub units: f64,
     pub cost: f64,
     /// Units at the position's saved price.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub value: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub gain: Option<f64>,
     /// Held more than one year as of today.
     pub long_term: bool,
@@ -26,11 +29,12 @@ pub struct Lot {
     pub long_term_on: NaiveDate,
     /// Tax a sale today would add (negative: save) at this year's marginal rates, in a
     /// taxable account with a tax profile.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub estimated_tax: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PositionLots {
     pub account_id: String,
@@ -41,13 +45,16 @@ pub struct PositionLots {
     pub untracked_units: f64,
     pub lots: Vec<Lot>,
     /// Unrealized gain on the tracked lots, when the position has a saved price.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub short_term_gain: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub long_term_gain: Option<f64>,
     /// What the money in this position earned since `since`, given when it went in and came
     /// out. Only when the saved trades explain every share and the position has a value.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub money_weighted_pct: Option<f64>,
     /// The first saved trade.
     pub since: NaiveDate,
@@ -56,7 +63,7 @@ pub struct PositionLots {
 }
 
 /// Shares in one position that turn long-term on one day.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct LongTermSoon {
     pub ticker: String,
@@ -64,7 +71,8 @@ pub struct LongTermSoon {
     pub date: NaiveDate,
     pub units: f64,
     /// Unrealized gain on those shares, when every merged lot has one.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub gain: Option<f64>,
 }
 
@@ -245,7 +253,7 @@ pub fn lots(holdings: &[Holding], trades: &[Trade], today: NaiveDate) -> Vec<Pos
         .collect()
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Mover {
     pub ticker: String,
@@ -255,11 +263,12 @@ pub struct Mover {
     pub change: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Movers {
     /// The latest observation among the positions counted, when the prices carry one.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub as_of: Option<String>,
     /// The change across every position with a saved daily change.
     pub change: f64,

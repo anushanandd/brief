@@ -10,7 +10,7 @@ const QUIET_PCT: f64 = 0.25;
 const LEADERS: usize = 3;
 const LEADER_SHARE: f64 = 0.15;
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum Tone {
     Up,
@@ -19,7 +19,7 @@ pub enum Tone {
 }
 
 /// One piece of a line. React styles each and adds no words of its own.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Span {
     Text {
@@ -135,8 +135,9 @@ fn joined(spans: Vec<Vec<Span>>) -> Vec<Span> {
 }
 
 /// The day's figures and headlines.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "DayBrief")]
 pub struct Brief {
     pub lines: Vec<Vec<Span>>,
     pub headlines: Vec<Headline>,

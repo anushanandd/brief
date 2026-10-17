@@ -12,11 +12,12 @@ use std::{collections::BTreeMap, sync::LazyLock};
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::{finance_contract::Transaction, places};
 
 /// Whether the cardholder was where the merchant is.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum Presence {
     InPerson,

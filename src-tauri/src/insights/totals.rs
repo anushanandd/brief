@@ -5,8 +5,9 @@ use std::collections::BTreeMap;
 use crate::finance_contract::{Account, Point, Snapshot};
 use crate::numeric::minor_units;
 use serde::Serialize;
+use ts_rs::TS;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountsTotal {
     pub excluded_account_ids: Vec<String>,

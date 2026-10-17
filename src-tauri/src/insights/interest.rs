@@ -3,6 +3,7 @@
 //! of its posted history.
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar::{self};
 use super::changes::{Window, WINDOWS};
@@ -14,7 +15,7 @@ use crate::transaction_policy::Mark;
 const PACE_DAYS: i64 = 60;
 const DAYS_PER_MONTH: f64 = 365.2425 / 12.0;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodInterest {
     pub window: Window,
@@ -24,7 +25,7 @@ pub struct PeriodInterest {
     pub annual_rate: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountInterest {
     pub account_id: String,
@@ -32,13 +33,14 @@ pub struct AccountInterest {
     /// months.
     pub monthly_net_flow: Option<f64>,
     /// Days from the first posted transaction through today; absent without any.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub history_days: Option<i64>,
     pub periods: Vec<PeriodInterest>,
 }
 
 /// Cash that earns little while another of the user's cash accounts pays more.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct IdleCash {
     pub account_id: String,

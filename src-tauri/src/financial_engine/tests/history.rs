@@ -535,6 +535,35 @@ fn history_check_counts_only_material_gaps_between_estimates_and_observations() 
 }
 
 #[test]
+fn an_observation_that_diverges_from_the_estimate_yields_to_it() {
+    // A refresh saw the brokerage receive a transfer the bank hadn't yet sent.
+    let estimated = vec![
+        ("2026-09-01".to_owned(), Decimal::from(10_000)),
+        ("2026-09-02".to_owned(), Decimal::from(10_000)),
+        ("2026-09-03".to_owned(), Decimal::from(10_000)),
+    ];
+    let observed = [
+        point("2026-09-01", 10_050.0),
+        point("2026-09-02", 28_000.0),
+        point("2026-09-04", 10_020.0),
+    ];
+    let (history, estimated) = merged_net_worth_history(estimated, &observed, &BTreeMap::new());
+    assert_eq!(
+        history
+            .iter()
+            .map(|point| (point.date.as_str(), point.value))
+            .collect::<Vec<_>>(),
+        [
+            ("2026-09-01", 10_050.0),
+            ("2026-09-02", 10_000.0),
+            ("2026-09-03", 10_000.0),
+            ("2026-09-04", 10_020.0),
+        ]
+    );
+    assert!(estimated);
+}
+
+#[test]
 fn an_issuers_merchant_details_reach_the_transactions_its_rows_describe() {
     let mut input = sync();
     input.statements = vec![statement_file(

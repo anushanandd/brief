@@ -7,6 +7,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::{
     finance_contract::{Snapshot, Transaction},
@@ -16,7 +17,7 @@ use crate::{
 };
 
 /// Ordered from weakest to strongest.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, TS, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "camelCase")]
 pub enum Grade {
     /// Sources disagree.
@@ -30,7 +31,7 @@ pub enum Grade {
 }
 
 /// What a detail rests on.
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "camelCase")]
 pub enum Basis {
     /// A statement row matches Plaid's transaction.
@@ -68,7 +69,7 @@ pub enum Basis {
     PlaceMatched,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Evidence {
     pub grade: Grade,
@@ -79,20 +80,23 @@ const fn evidence(grade: Grade, basis: Basis) -> Evidence {
     Evidence { grade, basis }
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Quality {
     /// The weakest detail's grade.
     pub grade: Grade,
     pub amount: Evidence,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub merchant: Option<Evidence>,
     pub category: Evidence,
     /// Graded for in-store purchases only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub location: Option<Evidence>,
     /// What a statement says the amount is, when it disagrees.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub statement_amount: Option<f64>,
 }
 

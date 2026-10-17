@@ -42,18 +42,15 @@ it('imports legacy annotations into Rust when renderer storage still holds them'
 })
 
 it('returns the native annotation-aware snapshot without interpreting its transactions', async () => {
-  const result = { annotations: { synthetic: { category: 'Travel' } }, snapshot: native }
+  const result = {
+    annotations: { synthetic: { category: 'Travel' } },
+    previous: {},
+    snapshot: native,
+  }
   vi.mocked(invoke).mockResolvedValue(result)
-  expect(await saveTransactionCategory('synthetic', 'Travel')).toEqual({ ...result, previous: {} })
+  expect(await saveTransactionCategory('synthetic', 'Travel')).toEqual(result)
   expect(invoke).toHaveBeenCalledWith('transaction_annotations', {
     changes: { synthetic: { category: 'Travel' } },
     importing: false,
   })
-})
-
-it('rejects a native response missing financial classification instead of guessing', async () => {
-  const snapshot = structuredClone(native)
-  Reflect.deleteProperty(snapshot.transactions[0], 'classification')
-  vi.mocked(invoke).mockResolvedValue({ annotations: {}, snapshot })
-  await expect(saveTransactionCategory('synthetic', 'Travel')).rejects.toThrow()
 })

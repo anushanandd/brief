@@ -8,6 +8,8 @@ patches/liveline@0.0.7.patch
 
 The patch modifies both runtime formats and both declaration outputs. Keep those copies synchronized.
 
+Liveline draws only the streaming Holdings chart (`src/components/holding-chart.tsx`). Value histories moved to Recharts, so the patch's multi-series parts (series `dash`, the primary series' badge in multi-series mode) no longer serve Brief; drop them at the next upgrade rather than rebasing them.
+
 ## Behavior Brief relies on
 
 - `breakBefore` prevents interpolation and drawing across known gaps or feed boundaries.

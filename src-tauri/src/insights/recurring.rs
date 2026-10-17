@@ -5,26 +5,29 @@
 use std::collections::BTreeSet;
 
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::forecast::{recurring_key, ExpectedEvent};
 use crate::finance_contract::RecurringStream;
 use crate::finance_contract::Transaction;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct UnforecastStream {
     pub stream_id: String,
     pub account_id: String,
     pub name: String,
     pub frequency: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub predicted_next_date: Option<String>,
     /// Brief's sign: negative for money out.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub average_amount: Option<f64>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct RecurringCheck {
     /// Whether any Plaid streams were saved to compare.

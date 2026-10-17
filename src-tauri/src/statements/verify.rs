@@ -7,8 +7,9 @@ use serde::Serialize;
 
 use super::StatementRow;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, ts_rs::TS)]
 #[serde(rename_all = "lowercase")]
+#[ts(rename = "VerificationStatus")]
 pub enum Status {
     /// The printed total and every running balance agree with the rows.
     Verified,
@@ -21,8 +22,9 @@ pub enum Status {
     Failed,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "StatementVerification")]
 pub struct Check {
     pub status: Status,
     pub total_matches: Option<bool>,

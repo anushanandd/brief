@@ -27,8 +27,9 @@ pub struct ProviderActivity {
     pub description: String,
 }
 
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "StatementCounts")]
 pub struct Counts {
     /// Rows this statement adds to the account's history.
     pub added: usize,

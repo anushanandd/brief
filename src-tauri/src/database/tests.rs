@@ -9,7 +9,7 @@ fn version_one_migration_preserves_data_and_the_unique_constraint() {
     state
         .account_links
         .insert("plaid:one".into(), "snaptrade:one".into());
-    db.replace(&state).unwrap();
+    db.checkpoint(&state, Reason::Start).unwrap();
     db.connection.execute_batch("CREATE UNIQUE INDEX account_links_snaptrade_unique ON account_links(snaptrade_account_id); PRAGMA user_version = 1;").unwrap();
     drop(db);
     let db = Database::open(&path).unwrap();
@@ -42,7 +42,8 @@ fn version_six_migration_adds_annotation_fields_and_keeps_existing_annotations()
     let path =
         std::env::temp_dir().join(format!("brief-migration-{}.sqlite3", uuid::Uuid::new_v4()));
     let mut db = Database::open(&path).unwrap();
-    db.replace(&crate::storage::empty_state().unwrap()).unwrap();
+    db.checkpoint(&crate::storage::empty_state().unwrap(), Reason::Start)
+        .unwrap();
     // Rebuild the annotations table as version 6 created it, holding one saved annotation.
     db.connection
         .execute_batch(
@@ -95,7 +96,10 @@ fn version_six_migration_adds_annotation_fields_and_keeps_existing_annotations()
             ..Default::default()
         },
     );
-    db.replace_annotations(&annotations).unwrap();
+    let mut annotated = db.load().unwrap().unwrap();
+    let change = Change::annotations(&annotated.annotations, &annotations);
+    annotated.annotations = annotations.clone();
+    db.commit(&annotated, &change).unwrap();
     drop(db);
     let db = Database::open(&path).unwrap();
     assert_eq!(version(&db), DATABASE_SCHEMA_VERSION);
@@ -139,7 +143,7 @@ fn version_three_migration_adds_details_and_scrubs_legacy_provider_messages() {
             error: Some("raw account message".into()),
         },
     );
-    db.replace(&state).unwrap();
+    db.checkpoint(&state, Reason::Start).unwrap();
     db.connection
         .execute_batch(
             "DROP INDEX sync_runs_finished_at;
@@ -213,7 +217,7 @@ fn normalized_store_round_trips_and_rejects_duplicate_entity_ids() {
     crate::finance_contract::edit_json(&mut state.snapshot, |snapshot| {
         snapshot["transactions"] = serde_json::json!([transaction("one")]);
     });
-    database.replace(&state).unwrap();
+    database.checkpoint(&state, Reason::Start).unwrap();
     let loaded = serde_json::to_value(database.load().unwrap().unwrap().snapshot).unwrap();
     let saved = serde_json::to_value(&state.snapshot).unwrap();
     assert_eq!(loaded["transactions"], saved["transactions"]);
@@ -223,7 +227,7 @@ fn normalized_store_round_trips_and_rejects_duplicate_entity_ids() {
     crate::finance_contract::edit_json(&mut state.snapshot, |snapshot| {
         snapshot["transactions"] = serde_json::json!([transaction("same"), transaction("same")]);
     });
-    assert!(database.replace(&state).is_err());
+    assert!(database.checkpoint(&state, Reason::Start).is_err());
     assert_eq!(
         serde_json::to_value(database.load().unwrap().unwrap().snapshot).unwrap(),
         loaded
@@ -234,5 +238,5 @@ fn normalized_store_round_trips_and_rejects_duplicate_entity_ids() {
         ("plaid:one".into(), "snaptrade:same".into()),
         ("plaid:two".into(), "snaptrade:same".into()),
     ]);
-    assert!(database.replace(&state).is_err());
+    assert!(database.checkpoint(&state, Reason::Start).is_err());
 }

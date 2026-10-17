@@ -4,6 +4,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
 use serde::{de::IgnoredAny, Deserialize, Serialize};
+use ts_rs::TS;
 
 const MAX_ACCOUNTS: usize = 500;
 const MAX_ID_LENGTH: usize = 220;
@@ -13,18 +14,19 @@ const MAX_MANUAL_ACCOUNTS: usize = 50;
 const MAX_MANUAL_ENTRIES: usize = 1_000;
 const MAX_MANUAL_VALUE: f64 = 1_000_000_000_000.0;
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct FinanceSettings {
     /// The saved credit account used by Spending and card benefits. Never inferred.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub spending_account_id: Option<String>,
     /// More credit accounts used for spending. Like the saved spending card, Money presents
     /// them, so the accounts total leaves their balances out.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub spending_cards: Vec<String>,
     /// What the user records about an account that no provider reports, keyed by account ID.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_details: BTreeMap<String, AccountDetails>,
     /// Display names keyed by account ID. Provider names remain the fallback.
     pub account_names: BTreeMap<String, String>,
@@ -32,14 +34,15 @@ pub struct FinanceSettings {
     pub account_start_dates: BTreeMap<String, String>,
     /// The day an account was closed, keyed by account ID. A closed account leaves today's
     /// accounts and totals; its history and activity stay.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_closed_dates: BTreeMap<String, String>,
     /// Accounts no provider reports, valued by hand: a 401(k), a car, a mortgage.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub manual_accounts: Vec<ManualAccount>,
     pub hidden_benefit_ids: Vec<String>,
     /// Monthly targets were retired; settings saved with them still load and drop the key.
     #[serde(rename = "categoryTargets", skip_serializing)]
+    #[ts(skip)]
     pub retired_category_targets: Option<IgnoredAny>,
     /// Request card statement details from Plaid Liabilities, a separately billed product.
     pub plaid_liabilities: bool,
@@ -51,21 +54,24 @@ pub struct FinanceSettings {
     pub calendar_sync: bool,
     /// The Brief calendar's EventKit identifier, kept while sync is off so turning it back on
     /// reuses the calendar.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub calendar_id: Option<String>,
     /// Card products tracked for benefits, keyed by credit account ID. The spending card is
     /// tracked without an entry.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub benefit_cards: BTreeMap<String, String>,
     /// How an account is taxed when its provider subtype says otherwise or nothing:
     /// `taxable`, `taxDeferred`, or `taxFree`, keyed by account ID.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub account_tax_treatments: BTreeMap<String, String>,
     /// What tax estimates stack on. Without it Brief reports amounts but no tax.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub tax_profile: Option<TaxProfile>,
     /// What retirement figures need beyond the accounts: age, planned costs, and IRA decisions.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub retirement: Option<RetirementProfile>,
     /// Request Plaid Investments Transactions, a separately billed subscription per connection.
     pub plaid_investment_transactions: bool,
@@ -74,19 +80,20 @@ pub struct FinanceSettings {
     /// The on-device summary wording choice was retired with the model's phrases; settings
     /// saved with it still load and drop the key.
     #[serde(rename = "templateWording", skip_serializing)]
+    #[ts(skip)]
     pub retired_template_wording: Option<IgnoredAny>,
     /// The people transactions and trips can be tagged with.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub people: Vec<Person>,
     /// Who went on each trip. Trip ids move as a trip grows, so each entry names the trip by
     /// its transactions when saved, and joins any trip that shares one.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trip_companions: Vec<TripCompanions>,
 }
 
 /// Someone transactions and trips can be tagged with. Tagging never changes an amount or a
 /// category.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct Person {
     /// `person:` followed by an identifier the renderer chose.
@@ -94,6 +101,7 @@ pub struct Person {
     pub name: String,
     /// The Mac Contacts card this person was added from, read only for its photo.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub contact_id: Option<String>,
     /// Names a bank prints for this person, such as `JANE DOE`. A payment to or from a person
     /// whose descriptor contains one is tagged with them; without any, never automatically.
@@ -101,7 +109,7 @@ pub struct Person {
     pub match_names: Vec<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TripCompanions {
     /// The trip's transactions when the companions were saved.
@@ -172,7 +180,7 @@ pub const FILING_STATUSES: [&str; 4] = [
 const MAX_INCOME: f64 = 100_000_000.0;
 const MAX_STATE_RATE: f64 = 20.0;
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct TaxProfile {
     pub filing_status: String,
@@ -181,6 +189,7 @@ pub struct TaxProfile {
     pub taxable_income: f64,
     /// A flat state income tax rate in percent, when the user wants state tax included.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub state_rate: Option<f64>,
 }
 
@@ -188,22 +197,24 @@ pub const TAX_TREATMENTS: [&str; 3] = ["taxable", "taxDeferred", "taxFree"];
 
 const MAX_CONTRIBUTION_CHOICES: usize = 2_000;
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
 #[serde(default, deny_unknown_fields, rename_all = "camelCase")]
 pub struct RetirementProfile {
     /// Only decides catch-up eligibility, which follows age at the end of the year.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub birth_year: Option<i32>,
     /// Monthly costs the user expects to add to today's spending, such as rent once they
     /// move out, or health coverage.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub planned_monthly: Option<f64>,
     /// Roth IRA contributions made before the account's history in Brief, by account ID.
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub earlier_contributions: BTreeMap<String, f64>,
     /// IRA inflows the user decided, by transaction ID: the tax year a contribution counts
     /// toward, or `null` when it isn't one (a rollover, or a move between IRAs).
-    #[serde(skip_serializing_if = "BTreeMap::is_empty")]
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub contribution_years: BTreeMap<String, Option<i32>>,
 }
 
@@ -218,14 +229,16 @@ pub const MANUAL_ACCOUNT_KINDS: [&str; 6] = [
 ];
 
 /// Details the user keeps about an account: where to manage it and the rate it advertises.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct AccountDetails {
     /// The institution's page for the account, `https://` only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub website: Option<String>,
     /// The annual percentage yield the institution states, in percent.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub apy: Option<f64>,
 }
 
@@ -256,7 +269,7 @@ impl AccountDetails {
 }
 
 /// An account valued by hand. Its balance on any day is the latest entry on or before it.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ManualAccount {
     /// `manual:` followed by an identifier the renderer chose.
@@ -272,7 +285,7 @@ pub struct ManualAccount {
     pub tracks_sp500: bool,
 }
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
 pub struct ManualEntry {
     /// `YYYY-MM-DD`.

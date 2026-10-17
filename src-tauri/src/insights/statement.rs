@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, sync::LazyLock};
 use chrono::{Datelike, Duration, NaiveDate};
 use regex::Regex;
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use crate::finance_contract::CreditLiability;
@@ -16,14 +17,14 @@ static AUTOPAY: LazyLock<Regex> = LazyLock::new(|| {
 /// Amex autopay posts about fifteen days after the statement closes.
 const CLOSE_LEAD_DAYS: i64 = 15;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Autopay {
     pub date: NaiveDate,
     pub amount: f64,
 }
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum StatementSource {
     /// Statement dates reported by the card issuer through Plaid Liabilities.
@@ -32,18 +33,21 @@ pub enum StatementSource {
     Autopay,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct StatementCycle {
     pub source: StatementSource,
     /// One closing date per month, oldest first.
     pub boundaries: Vec<NaiveDate>,
     pub autopays: Vec<Autopay>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub last_close: Option<NaiveDate>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub next_close: Option<NaiveDate>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub liability: Option<CreditLiability>,
 }
 

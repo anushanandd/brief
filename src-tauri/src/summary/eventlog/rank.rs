@@ -3,7 +3,7 @@ use super::*;
 
 /// The visible components an event is ranked by, compared in order and shown as labels;
 /// never collapsed into a score.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Rank {
     /// The event's dollars on the portfolio, in tenths of a percent of it: 0 under 0.1%, then

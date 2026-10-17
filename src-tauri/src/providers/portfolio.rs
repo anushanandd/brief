@@ -66,8 +66,9 @@ pub(crate) fn fund_or_other(kind: Option<&str>) -> bool {
     })
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct PortfolioToday {
     /// The day's change across the positions with a live price and previous close.
     pub change: f64,
@@ -84,7 +85,7 @@ pub struct PortfolioToday {
     pub as_of: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PositionToday {
     pub ticker: String,
@@ -162,7 +163,7 @@ pub(crate) fn portfolio_today(
     }
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SectorSlice {
     pub fund: String,
@@ -171,8 +172,9 @@ pub struct SectorSlice {
     pub percent: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct SectorExposure {
     /// Every held security with a known value; cash is not included.
     pub total: f64,

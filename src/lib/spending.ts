@@ -257,9 +257,12 @@ export function spendingChartPace(pace: SpendingPeriodView['pace']) {
   }
 }
 
-/** Rust's bars as the bar chart draws them; a focus keeps only its own category. */
-export function spendingChartBars(bars: SpendingPeriodDetail['bars'], focus?: string) {
-  return bars.map(({ from, to, value, categories }): SpendingBar => {
+/**
+ * Rust's bars as the bar chart draws them; a focus keeps only its own category. Rust leaves out
+ * empty bars, zero values, and empty category lists.
+ */
+export function spendingChartBars(bars: SpendingPeriodDetail['bars'] = [], focus?: string) {
+  return bars.map(({ from, to, value = 0, categories = [] }): SpendingBar => {
     const shown = categories
       .filter(({ name }) => !focus || name === focus)
       .map(({ name, value: amount, purchases }) => ({

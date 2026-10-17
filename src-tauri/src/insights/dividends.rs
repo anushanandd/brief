@@ -6,15 +6,17 @@ use std::collections::BTreeMap;
 
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::finance_contract::{DividendRecord, Holding};
 use crate::numeric::minor_units;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct NextDividend {
     pub ex_date: NaiveDate,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub payable_date: Option<NaiveDate>,
     pub rate: f64,
     /// At the shares held now.
@@ -22,7 +24,7 @@ pub struct NextDividend {
     pub special: bool,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SecurityDividends {
     pub ticker: String,
@@ -31,15 +33,17 @@ pub struct SecurityDividends {
     pub trailing_rate: f64,
     pub payments: usize,
     /// The trailing rate against the saved price, in percent.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub yield_percent: Option<f64>,
     /// The trailing rate on the shares held now.
     pub annual_income: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub next: Option<NextDividend>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct UpcomingDividend {
     pub ticker: String,
@@ -47,7 +51,7 @@ pub struct UpcomingDividend {
     pub dividend: NextDividend,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct DividendOutlook {
     /// Largest annual income first.

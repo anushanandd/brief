@@ -9,6 +9,7 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
 import { insights } from '../data/fixtures/insights'
+import { emptySnapshot } from '../data/fixtures/records'
 import type { FinanceSnapshot } from '../lib/schema'
 import { SubscriptionsCard } from './subscriptions-card'
 
@@ -23,22 +24,10 @@ async function render(element: ReactNode) {
 }
 
 const snapshot = (subscriptions?: FinanceSnapshot['insights']): FinanceSnapshot => ({
+  ...emptySnapshot(),
   updatedAt: '2026-09-18T12:00:00Z',
   netWorth: 0,
   accounts: [],
-  holdings: [],
-  trades: [],
-  spending: { monthTotal: 0, categories: [] },
-  netWorthHistory: [],
-  netWorthHistoryEstimated: false,
-  benchmarkHistory: [],
-  accountBalanceHistory: [],
-  brokeragePerformance: [],
-  accountMovements: [],
-  transactionChanges: [],
-  possibleDuplicateAccounts: [],
-  accountLinks: {},
-  transactions: [],
   insights: subscriptions,
 })
 

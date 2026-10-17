@@ -14,6 +14,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::returns::{
     days, money_weighted_flows, time_weighted, window_start, Day, Window, WINDOWS,
@@ -34,7 +35,7 @@ const LISTED: usize = 3;
 pub const CASH: &str = "cash";
 
 /// The period's statement for the combined brokerages.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Statement {
     /// The chart window this statement covers, or `None` for a summary's own start.
@@ -63,7 +64,7 @@ pub struct Statement {
     pub risk: Risk,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Annualized {
     pub time_weighted_pct: f64,
@@ -71,7 +72,7 @@ pub struct Annualized {
 }
 
 /// Start, flows, and what the investments earned, line by line, adding to the end to the cent.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Waterfall {
     pub start: f64,
@@ -92,7 +93,7 @@ pub struct Waterfall {
     pub end: f64,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Risk {
     /// The deepest fall from a high in the time-weighted index, so a withdrawal never reads as
@@ -104,7 +105,7 @@ pub struct Risk {
     pub beta: Option<BetaFit>,
 }
 
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BetaFit {
     pub beta: f64,
@@ -114,7 +115,7 @@ pub struct BetaFit {
 }
 
 /// How spread out the holdings are now.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Exposure {
     pub holdings: usize,
@@ -127,7 +128,7 @@ pub struct Exposure {
 
 /// One period, reconciled: the statement, how concentrated the holdings are, and the return
 /// split among them when daily closes are known.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodReport {
     /// `None` when the combined brokerages' history doesn't record flows or reach the start.
@@ -523,7 +524,7 @@ pub fn exposure(performance: &[Performance], holdings: &[Holding]) -> Option<Exp
 }
 
 /// One holding's part in the period, or the cash and unpriced row.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Contribution {
     /// A ticker, or `cash` for cash and every holding without prices.
@@ -549,7 +550,7 @@ pub struct Contribution {
 }
 
 /// The period's return split among the holdings.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Attribution {
     /// Every priced holding and the cash row, largest dollars either way first.

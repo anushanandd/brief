@@ -1,6 +1,16 @@
-import { Liveline, type LivelinePoint, type LivelineSeries } from 'liveline'
+import type { LivelinePoint } from 'liveline'
 import { useTheme } from 'next-themes'
-import { useLayoutEffect, useState, useSyncExternalStore } from 'react'
+import { useLayoutEffect, useState } from 'react'
+import {
+  CartesianGrid,
+  ComposedChart,
+  Line,
+  ReferenceDot,
+  ResponsiveContainer,
+  Tooltip as ChartTooltip,
+  XAxis,
+  YAxis,
+} from 'recharts'
 
 import type { ActivityItem } from '../lib/activity'
 import { type ChartEventGroup, chartEventGroupLabel } from '../lib/chart-events'
@@ -15,7 +25,6 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 const DAY_SECONDS = 24 * 60 * 60
 const WEEK_SECONDS = 7 * DAY_SECONDS
 const YEAR_SECONDS = 365 * DAY_SECONDS
-const reducedMotionQuery = '(prefers-reduced-motion: reduce)'
 // Axis labels read in the user's own time zone. Session boundaries are the exception: the
 // holding chart marks them in Eastern time and says so.
 const timeFormatter = new Intl.DateTimeFormat('en-US', {
@@ -37,18 +46,6 @@ const monthFormatter = new Intl.DateTimeFormat('en-US', {
 const spendingCategoryAmount = (name: string, value: number) =>
   formatCurrency(name === 'Credits' ? Math.abs(value) : value)
 
-function useReducedMotion() {
-  return useSyncExternalStore(
-    (onChange) => {
-      const media = window.matchMedia(reducedMotionQuery)
-      media.addEventListener('change', onChange)
-      return () => media.removeEventListener('change', onChange)
-    },
-    () => window.matchMedia(reducedMotionQuery).matches,
-    () => false,
-  )
-}
-
 // Canvas needs resolved colors; CSS custom-property strings are not canvas colors.
 export function useChartColors() {
   const { resolvedTheme } = useTheme()
@@ -58,6 +55,8 @@ export function useChartColors() {
     benchmark: 'transparent',
     positive: 'transparent',
     negative: 'transparent',
+    grid: 'transparent',
+    label: 'transparent',
   })
   useLayoutEffect(() => {
     const style = getComputedStyle(document.documentElement)
@@ -67,6 +66,8 @@ export function useChartColors() {
       benchmark: style.getPropertyValue('--chart-benchmark').trim(),
       positive: style.getPropertyValue('--positive').trim(),
       negative: style.getPropertyValue('--negative').trim(),
+      grid: style.getPropertyValue('--border-subtle').trim(),
+      label: style.getPropertyValue('--text-tertiary').trim(),
     })
   }, [resolvedTheme])
   return { ...colors, theme: 'dark' as const }
@@ -278,6 +279,62 @@ export function ChartRangeSelector({
   )
 }
 
+/** One instant on the value chart, with each line's value there. */
+type ValueRow = {
+  time: number
+  value?: number
+  estimated?: number
+  deposits?: number
+  benchmark?: number
+}
+type ValueLine = Exclude<keyof ValueRow, 'time'>
+const valueLines: ValueLine[] = ['value', 'estimated', 'deposits', 'benchmark']
+const valueLineNames: Record<ValueLine, string> = {
+  value: 'Value',
+  estimated: 'Estimated',
+  deposits: 'Net deposits',
+  benchmark: 'S&P 500',
+}
+
+/**
+ * The lines as rows by time, from the last point before `start` (so each line enters at the
+ * left edge) through the end. Lines that skip a time are joined across it.
+ */
+export function valueRows(lines: Partial<Record<ValueLine, LivelinePoint[]>>, start: number) {
+  const rows = new Map<number, ValueRow>()
+  for (const line of valueLines) {
+    const points = lines[line] ?? []
+    const first = Math.max(
+      0,
+      points.findLastIndex((point) => point.time <= start),
+    )
+    for (const point of points.slice(first)) {
+      const row = rows.get(point.time) ?? { time: point.time }
+      row[line] = point.value
+      rows.set(point.time, row)
+    }
+  }
+  return [...rows.values()].toSorted((left, right) => left.time - right.time)
+}
+
+/** The value axis over what the window shows, at least `minimum` tall, with room around it. */
+export function valueDomain(rows: ValueRow[], start: number, minimum: number): [number, number] {
+  const values = rows
+    .filter(({ time }) => time >= start)
+    .flatMap(({ value, estimated, deposits, benchmark }) => [value, estimated, deposits, benchmark])
+    .filter((value): value is number => value !== undefined)
+  if (!values.length) return [0, 1]
+  const low = Math.min(...values)
+  const high = Math.max(...values)
+  const middle = (low + high) / 2
+  const half = Math.max(high - low, minimum) / 2
+  return [middle - half * 1.15, middle + half * 1.15]
+}
+
+/**
+ * A value's history beside its deposits and the S&P 500, drawn settled: the line appears
+ * whole, and new values, range changes, and scrubbing redraw it without animation.
+ */
 export function PerformanceChart({
   data,
   netDeposits,
@@ -303,21 +360,13 @@ export function PerformanceChart({
   /** The last observed day of a value estimated since; the line after it is dashed. */
   estimatedAfter?: string
 }) {
-  const reduceMotion = useReducedMotion()
   const colors = useChartColors()
   const chartData = chartPointsFromStartDate(data, startDate)
-  const plottedValue = chartData.at(-1)?.value ?? value
-  const minValueRange = Math.max(1, Math.abs(value) * 0.05)
   const firstTime = chartData[0]?.time ?? 0
   const lastTime = chartData.at(-1)?.time ?? firstTime
-  const historyWindow = Math.max(DAY_SECONDS + 1, (lastTime - firstTime) / 0.935)
-  const visibleSeries = (points: LivelinePoint[]) => {
-    const startedPoints = chartPointsFromStartDate(points, startDate)
-    return selectedWindow === 0
-      ? startedPoints.filter((point) => point.time >= firstTime)
-      : startedPoints
-  }
-  const windowSeconds = selectedWindow || historyWindow
+  // The whole history, or the chosen window ending at the latest value.
+  const start = selectedWindow ? Math.max(firstTime, lastTime - selectedWindow) : firstTime
+  const windowSeconds = selectedWindow || Math.max(DAY_SECONDS + 1, lastTime - firstTime)
   const eventColors = { in: colors.positive, out: colors.negative, none: colors.benchmark }
   const referenceTime = Date.parse(referenceIso) / 1_000
   const eventMarkers = events.flatMap((group) => {
@@ -359,54 +408,35 @@ export function PerformanceChart({
     chartData,
     estimatedAfter,
   )
-  const markers = [...observationMarkers, ...eventMarkers]
-  const series: LivelineSeries[] = [
+  const markers = [...observationMarkers, ...eventMarkers].filter(
+    ({ time }) => time >= start && time <= lastTime,
+  )
+  const startedSeries = (points?: LivelinePoint[]) =>
+    points?.length ? chartPointsFromStartDate(points, startDate) : undefined
+  const rows = valueRows(
     {
-      id: 'Value',
-      data: observedData,
-      value: observedData.at(-1)?.value ?? plottedValue,
-      color: colors.value,
+      value: observedData,
+      ...(estimatedData.length >= 2 ? { estimated: estimatedData } : {}),
+      ...(netDeposits?.length ? { deposits: startedSeries(netDeposits) } : {}),
+      ...(benchmark?.length ? { benchmark: startedSeries(benchmark) } : {}),
     },
-    ...(estimatedData.length >= 2
-      ? [
-          {
-            id: 'Estimated',
-            label: 'Estimated · S&P 500',
-            data: estimatedData,
-            value: plottedValue,
-            color: colors.value,
-            dash: [4, 4],
-          },
-        ]
-      : []),
-    ...(netDeposits?.length
-      ? [
-          {
-            id: 'Net deposits',
-            data: visibleSeries(netDeposits),
-            value: netDeposits.at(-1)?.value ?? 0,
-            color: colors.deposits,
-            dash: [1, 5],
-          },
-        ]
-      : []),
-    ...(benchmark?.length
-      ? [
-          {
-            id: 'S&P 500',
-            data: visibleSeries(benchmark),
-            value: benchmark.at(-1)?.value ?? 0,
-            color: colors.benchmark,
-            dash: [1, 5],
-          },
-        ]
-      : []),
+    start,
+  )
+  const domain = valueDomain(rows, start, Math.max(1, Math.abs(value) * 0.05))
+  const lines: Array<{ line: ValueLine; color: string; dash?: string }> = [
+    { line: 'value', color: colors.value },
+    { line: 'estimated', color: colors.value, dash: '4 4' },
+    { line: 'deposits', color: colors.deposits, dash: '1 5' },
+    { line: 'benchmark', color: colors.benchmark, dash: '1 5' },
   ]
-  const comparisonSeries = series.length > 1 ? series : undefined
+  const ticks = Array.from(
+    { length: 4 },
+    (_, index) => start + ((lastTime - start) * (index + 0.5)) / 4,
+  )
 
   return (
     <div
-      className="chart-container performance-chart live-performance-chart"
+      className="chart-container performance-chart value-chart"
       data-range-focus-region
       role="group"
       tabIndex={0}
@@ -419,32 +449,87 @@ export function PerformanceChart({
       {netDeposits?.length ? (
         <span className="sr-only">Net deposits shows the starting value plus net cash flows.</span>
       ) : null}
-      <Liveline
-        className="liveline-chart-canvas"
-        data={chartData}
-        value={plottedValue}
-        series={comparisonSeries}
-        theme={colors.theme}
-        color={colors.value}
-        window={windowSeconds}
-        badge
-        badgeVariant="minimal"
-        currentLine={false}
-        grid
-        minValueRange={minValueRange}
-        markers={markers}
-        scrub
-        formatValue={formatCurrency}
-        formatTime={(time) => formatLiveTime(time, windowSeconds)}
-        pulse={false}
-        // Settled charts stop drawing; new values, range changes and scrubbing still redraw.
-        // The shortest range is a week, where the clock moves the axis about a pixel in 13 min.
-        continuous={false}
-        momentum={false}
-        lerpSpeed={reduceMotion ? 1 : 0.25}
-        lineWidth={1.75}
-        style={{ flex: 1, minHeight: 0, height: 'auto' }}
-      />
+      <ResponsiveContainer width="100%" height="100%" minWidth={0}>
+        <ComposedChart data={rows} margin={{ top: 8, right: 0, bottom: 0, left: 0 }}>
+          <CartesianGrid vertical={false} stroke={colors.grid} />
+          <XAxis
+            dataKey="time"
+            type="number"
+            domain={[start, lastTime]}
+            allowDataOverflow
+            ticks={ticks}
+            tickFormatter={(time: number) => formatLiveTime(time, windowSeconds)}
+            tick={{ fill: colors.label, fontSize: 11 }}
+            axisLine={false}
+            tickLine={false}
+          />
+          <YAxis
+            orientation="right"
+            domain={domain}
+            allowDataOverflow
+            tickCount={4}
+            tickFormatter={(amount: number) => formatCompactCurrency(amount)}
+            tick={{ fill: colors.label, fontSize: 11 }}
+            axisLine={false}
+            tickLine={false}
+            width={56}
+          />
+          <ChartTooltip
+            isAnimationActive={false}
+            cursor={{ stroke: colors.label, strokeDasharray: '2 3' }}
+            content={({ active, payload, label }) => {
+              const time = Number(label)
+              if (!active || !payload.length || !Number.isFinite(time)) return null
+              const marked = markers.filter((marker) => marker.time === time)
+              return (
+                <div className="tooltip-content treemap-tooltip value-chart-tooltip">
+                  <strong>{formatLiveTime(time, windowSeconds)}</strong>
+                  {payload
+                    .filter((item) => item.value != null)
+                    .map((item) => (
+                      <div className="treemap-tooltip-heading" key={String(item.dataKey)}>
+                        <span>{item.name}</span>
+                        <strong>{formatCurrency(Number(item.value))}</strong>
+                      </div>
+                    ))}
+                  {marked.map((marker) => (
+                    <p key={marker.id}>{marker.label}</p>
+                  ))}
+                </div>
+              )
+            }}
+          />
+          {lines.map(({ line, color, dash }) =>
+            rows.some((row) => row[line] !== undefined) ? (
+              <Line
+                key={line}
+                dataKey={line}
+                name={valueLineNames[line]}
+                type="linear"
+                stroke={color}
+                strokeWidth={line === 'value' || line === 'estimated' ? 1.75 : 1.5}
+                strokeDasharray={dash}
+                strokeLinecap="round"
+                dot={false}
+                activeDot={line === 'value' || line === 'estimated' ? { r: 3 } : false}
+                connectNulls
+                isAnimationActive={false}
+              />
+            ) : null,
+          )}
+          {markers.map((marker) => (
+            <ReferenceDot
+              key={marker.id}
+              x={marker.time}
+              y={marker.value}
+              r={3.5}
+              fill={marker.color}
+              stroke="none"
+              aria-label={marker.label}
+            />
+          ))}
+        </ComposedChart>
+      </ResponsiveContainer>
     </div>
   )
 }

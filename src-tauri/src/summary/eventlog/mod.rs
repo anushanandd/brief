@@ -30,7 +30,7 @@ use sha2::{Digest, Sha256};
 use std::sync::LazyLock;
 
 /// A story or filing to open beside an event.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct StoryLink {
     pub title: String,
@@ -59,7 +59,7 @@ const SAME_STORY: f64 = 0.6;
 pub(super) const QUIET_Z: f64 = 1.5;
 const QUIET_VOLUME: f64 = 1.5;
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum Family {
     Ledger,
@@ -85,15 +85,16 @@ impl Family {
 }
 
 /// Where a fact came from: a record of it, a measurement, or a report about it.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "EventProvenance")]
 pub enum Provenance {
     Sourced,
     Observed,
     Reported,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum Status {
     Scheduled,
@@ -103,7 +104,7 @@ pub enum Status {
     Retracted,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum Precision {
     Exact,
@@ -113,7 +114,7 @@ pub enum Precision {
 
 /// What a source may contribute to the on-device model: green may be read, amber only typed
 /// by its headline, red never.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub enum InputClass {
     Green,
@@ -146,22 +147,27 @@ pub fn input_class(publisher: &str) -> InputClass {
     }
 }
 
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EventDates {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub announced: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub ex: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub payable: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub effective: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub filed: Option<String>,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct EventSource {
     /// `alpaca`, `cnbc`, `sec`, `snapshot`, `federalReserve`, `bls`, `nyse`, `spdji`, or
@@ -177,8 +183,9 @@ pub struct EventSource {
     pub input_class: InputClass,
 }
 
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "LoggedEvent")]
 pub struct Event {
     /// Stable for its fact: an accession number, a provider's id, a transaction's id, or the
     /// symbol, kind, and session of a measurement, so building a session again changes nothing.
@@ -309,7 +316,7 @@ pub(super) fn session_events(
 
 /// An event as the summary lists it: what happened, where it came from, when (its own time,
 /// its source's, and Brief's first save), and the components it ranks by.
-#[derive(Clone, Debug, PartialEq, Serialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct ListedEvent {
     pub id: String,
@@ -503,7 +510,7 @@ pub(super) fn listed(
 /// Whether the session was quiet for the portfolio and for each holding: no holding flagged
 /// and the day's dollars within one of the portfolio's typical days; a holding quiet with no
 /// sourced event, its own move under `QUIET_Z` of its typical days, and ordinary volume.
-#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Quiet {
     pub portfolio: bool,

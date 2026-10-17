@@ -1,23 +1,19 @@
 import { describe, expect, it } from 'vitest'
 
 import { insights } from '../data/fixtures/insights'
+import { document } from '../data/fixtures/records'
 import { documentTitle, transactionDocuments } from './documents'
 import type { BriefDocument, FinanceSnapshot } from './schema'
 
-const statement: BriefDocument = {
+const statement: BriefDocument = document({
   id: 'a'.repeat(64),
   fileName: 'statement.pdf',
-  mediaType: 'application/pdf',
-  size: 1,
   importedAt: '2026-09-03T00:00:00Z',
   kind: 'statement',
   issuer: 'EXAMPLE BANK',
   periodStart: '2026-08-01',
   periodEnd: '2026-08-31',
-  fields: [],
-  deposits: [],
-  checks: [],
-}
+})
 
 describe('documents', () => {
   it('names a document by what it is and who issued it', () => {

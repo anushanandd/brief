@@ -14,6 +14,7 @@ use std::sync::LazyLock;
 
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use super::attention::{AttentionItem, Item, Severity};
 use super::calendar;
@@ -24,7 +25,7 @@ use crate::finance_contract::{Account, ContributionYear, Transaction};
 use crate::numeric::{from_minor, minor_units, round2};
 use crate::settings::FinanceSettings;
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 struct YearLimits {
     elective_deferral: f64,
@@ -105,12 +106,13 @@ pub fn ira_deadline(year: i32) -> NaiveDate {
     deadline
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Retirement {
     pub year: i32,
     /// This year's deferrals across workplace plans; absent when no account is one.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub workplace: Option<Workplace>,
     /// IRA contributions for this tax year, and for last year until its deadline passes.
     pub ira: Vec<IraYear>,
@@ -122,18 +124,20 @@ pub struct Retirement {
     pub roth_basis: Vec<RothBasis>,
     /// This year so far, and last year once history covers all of it.
     pub savings: Vec<SavingsYear>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub coverage: Option<Coverage>,
     /// Retirement accounts whose names say no plan Brief knows a limit for.
     pub uncounted: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Workplace {
     pub account_ids: Vec<String>,
     /// Absent when this year's limits aren't in the table yet.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub limit: Option<f64>,
     /// The employee's own deferrals, pre-tax and Roth.
     pub deferred: f64,
@@ -145,30 +149,35 @@ pub struct Workplace {
     /// Matching and other employer money, which doesn't count against the limit.
     pub employer: f64,
     /// The last day an export shows a contribution this year.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub through: Option<NaiveDate>,
     /// Paychecks left this year at the cadence deferrals arrive; absent until three show it.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub paychecks_left: Option<u32>,
     /// Deferrals by year end if the latest one repeats each paycheck left.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub projected: Option<f64>,
     /// What each paycheck left would need to defer to reach the limit.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub per_paycheck_to_max: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct IraYear {
     pub tax_year: i32,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub limit: Option<f64>,
     pub contributed: f64,
     pub deadline: NaiveDate,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Deposit {
     pub transaction_id: String,
@@ -179,7 +188,8 @@ pub struct Deposit {
     /// The tax years a contribution on this day could count toward.
     pub years: Vec<i32>,
     /// Absent when it isn't a contribution, or waits.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub counts_for: Option<i32>,
     /// The user placed it, rather than Brief.
     pub chosen: bool,
@@ -190,7 +200,7 @@ pub struct Deposit {
     pub waiting: bool,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Buckets {
     /// Traditional 401(k)s and IRAs: taxed as income when withdrawn.
@@ -202,15 +212,17 @@ pub struct Buckets {
     pub complete: bool,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct RothBasis {
     pub account_id: String,
     /// The first day of the account's activity in Brief.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub since: Option<NaiveDate>,
     /// What the user entered for contributions before `since`; absent until they do.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub earlier: Option<f64>,
     pub contributed: f64,
     pub withdrawn: f64,
@@ -218,7 +230,7 @@ pub struct RothBasis {
     pub basis: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct SavingsYear {
     pub year: i32,
@@ -234,12 +246,14 @@ pub struct SavingsYear {
     /// Employee stock purchases taken out before the pay arrived.
     pub espp: f64,
     /// Saved over take-home pay plus deferrals, in percent; absent without income.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub rate: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "RetirementCoverage")]
 pub struct Coverage {
     /// Brokerage and retirement accounts.
     pub invested: f64,

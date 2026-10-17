@@ -10,13 +10,14 @@ import type { ReactNode } from 'react'
 import { createRoot } from 'react-dom/client'
 import { expect, it } from 'vitest'
 
+import { account } from '../data/fixtures/records'
 import { accountGroups } from '../lib/account-groups'
 import { AccountGroups, AccountRows } from './account-groups'
 
 const changes = [{ accountId: 'checking', change: 1 }]
 const accounts = [
-  { id: 'savings', name: 'Savings', institution: 'Example', type: 'cash', value: 20 },
-  { id: 'checking', name: 'Checking', institution: 'Example', type: 'cash', value: 10 },
+  account({ id: 'savings', name: 'Savings', institution: 'Example', type: 'cash', value: 20 }),
+  account({ id: 'checking', name: 'Checking', institution: 'Example', type: 'cash', value: 10 }),
 ]
 const accountNames = { savings: 'Reserve' }
 

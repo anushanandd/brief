@@ -3,6 +3,7 @@
 //! Only these are read; the details' other lines (items bought, travel and passenger records)
 //! are never kept.
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use super::table::{blank, collapsed};
 
@@ -18,29 +19,37 @@ pub(super) struct Columns {
 }
 
 /// The merchant as the card issuer records it.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct IssuerDetail {
     /// The fuller name in the issuer's details, which statement text truncates.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub name: Option<String>,
     /// The street address, as printed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub address: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub city: Option<String>,
     /// The US state, or the region printed abroad.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub region: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub postal_code: Option<String>,
     /// ISO 3166 code, when the printed country is recognized.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub country: Option<String>,
     /// The issuer's own category, such as "Restaurant-Bar & Café".
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub category: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub phone: Option<String>,
 }
 

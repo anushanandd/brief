@@ -84,6 +84,7 @@ it('shows a compact provider failure without exposing raw provider payloads', ()
             retryAt: '2026-09-18T21:00:00Z',
           },
         ],
+        stages: {},
       },
     },
   ])

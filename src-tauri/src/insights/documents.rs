@@ -6,6 +6,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use crate::documents::{Document, Kind};
@@ -13,7 +14,7 @@ use crate::finance_contract::{Account, Transaction};
 use crate::numeric::{from_minor, minor_units, round2};
 use crate::transaction_policy::Kind as TransactionKind;
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Documents {
     /// This tax year and last, newest first.
@@ -32,8 +33,9 @@ pub struct Documents {
 
 /// A transaction a document states: the same amount, in the account the document names,
 /// within days of the date it gives.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "DocumentEvidence")]
 pub struct Evidence {
     pub transaction_id: String,
     pub document_id: String,
@@ -41,16 +43,18 @@ pub struct Evidence {
     pub kind: &'static str,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "DocumentTaxYear")]
 pub struct TaxYear {
     pub year: i32,
     pub predictions: Vec<W2Prediction>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub income: Option<Income>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct W2Prediction {
     pub employer: String,
@@ -59,49 +63,55 @@ pub struct W2Prediction {
     pub from_date: NaiveDate,
     pub boxes: Vec<PredictedBox>,
     /// The W-2 it was checked against, once the user has one.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub w2: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PredictedBox {
     pub key: String,
     pub label: String,
     pub predicted: f64,
     /// What the W-2 says, when it is in and states this box.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub actual: Option<f64>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PayLink {
     pub document_id: String,
     pub date: NaiveDate,
     pub amount: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub mask: Option<String>,
     /// The transaction the deposit arrived as.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub transaction_id: Option<String>,
     /// The account the statement names, when Brief tracks it.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub account_id: Option<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Keep {
     pub document_id: String,
     /// Safe to discard after this day; absent while it stays needed.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub until: Option<NaiveDate>,
     pub reason: String,
 }
 
 /// The year's income as its documents state it, and what it suggests for the tax profile.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Income {
     /// W-2 box 1, or the pay statements' prediction of it.
@@ -113,7 +123,8 @@ pub struct Income {
     pub self_employment_tax: f64,
     /// Wages and self-employment less half that tax and the standard deduction; absent
     /// without a filing status or the year's tables.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub taxable_income: Option<f64>,
 }
 

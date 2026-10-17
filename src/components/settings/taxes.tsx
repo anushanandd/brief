@@ -24,6 +24,8 @@ type FilingStatus = NonNullable<FinanceSettings['taxProfile']>['filingStatus']
 type TaxTreatment = keyof typeof taxTreatmentLabels
 
 const treatments: TaxTreatment[] = ['taxable', 'taxDeferred', 'taxFree']
+const isTreatment = (value: string | undefined): value is TaxTreatment =>
+  treatments.some((treatment) => treatment === value)
 
 const filingStatuses: { value: FilingStatus; label: string }[] = [
   { value: 'single', label: 'Single' },
@@ -187,9 +189,11 @@ export function TaxesSection() {
               {investmentAccounts.map((account) => {
                 const name = accountDisplayName(account.id, account.name, settings.accountNames)
                 const chosen = settings.accountTaxTreatments?.[account.id]
-                const derived: TaxTreatment =
-                  account.taxTreatment ??
-                  (account.type === 'retirement' ? 'taxDeferred' : 'taxable')
+                const derived: TaxTreatment = isTreatment(account.taxTreatment)
+                  ? account.taxTreatment
+                  : account.type === 'retirement'
+                    ? 'taxDeferred'
+                    : 'taxable'
                 return (
                   <li className="settings-list-row" key={account.id}>
                     <span className="settings-list-copy settings-list-copy-inline">

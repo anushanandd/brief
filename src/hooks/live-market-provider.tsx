@@ -1,14 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
-import type { LivelinePoint } from 'liveline'
 import { useCallback, useEffect, useMemo, useState, type PropsWithChildren } from 'react'
 
 import { getSavedMarket, isTauri } from '../lib/api'
 import {
   applyLiveProjection,
   compatibleMarketProjection,
-  liveMarketSeries,
   subscribeLiveMarket,
-  withMarketHistory,
+  withMarketFrame,
+  withMarketWeek,
+  type LiveMarketState,
 } from '../lib/live-market'
 import { useMarketUpdateInterval } from '../lib/market-preferences'
 import type { ChartChanges, MarketHistory, MarketSnapshots } from '../lib/schema'
@@ -17,42 +17,22 @@ import { LiveFinanceContext } from './use-live-finance'
 
 function useLiveMarketState() {
   const base = useFinance()
-  const [state, setState] = useState<{
-    market?: MarketSnapshots
-    symbolKey?: string
-    series: Record<string, LivelinePoint[]>
-    /** Each value chart's change at the live lines, as Rust read them. */
-    changes?: ChartChanges
-    error?: string
-  }>({ series: {} })
+  const [state, setState] = useState<LiveMarketState>({ series: {} })
   const marketUpdateInterval = useMarketUpdateInterval()
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
   const symbolKey = base.marketSymbols.join(',')
   const enabled = visible && base.liveMarketEnabled && isTauri() && !!symbolKey
   const acceptMarket = useCallback(
-    (market: MarketSnapshots) => {
+    (market: MarketSnapshots, first = false) => {
       if (!performance.getEntriesByName('brief:first-market-frame').length)
         performance.mark('brief:first-market-frame')
-      setState((current) => ({
-        market,
-        symbolKey,
-        series: liveMarketSeries(current.series, market),
-        changes: market.chartChanges ?? current.changes,
-      }))
+      setState((current) => withMarketFrame(current, market, symbolKey, first))
     },
     [symbolKey],
   )
   const acceptHistory = useCallback(
     (history: MarketHistory, changes?: ChartChanges) =>
-      setState((current) =>
-        current.symbolKey === symbolKey
-          ? {
-              ...current,
-              series: withMarketHistory(current.series, history),
-              changes: changes ?? current.changes,
-            }
-          : current,
-      ),
+      setState((current) => withMarketWeek(current, history, changes, symbolKey)),
     [symbolKey],
   )
   const rejectMarket = useCallback(
@@ -110,6 +90,12 @@ function useLiveMarketState() {
     compatibleMarketProjection(base.data, candidate?.projection)
       ? candidate
       : undefined
+  const savedMarket =
+    base.liveMarketEnabled &&
+    base.data &&
+    compatibleMarketProjection(base.data, saved.data?.projection)
+      ? saved.data
+      : undefined
   const data = useMemo(
     () => (base.data ? applyLiveProjection(base.data, market?.projection) : undefined),
     [base.data, market?.projection],
@@ -136,9 +122,11 @@ function useLiveMarketState() {
       !base.integrationStatusLoading &&
       (!base.liveMarketEnabled || !symbolKey || !!state.market || !!state.error),
     marketSeries: market?.cached ? (market.chartSeries ?? {}) : market ? state.series : {},
-    // Live charts' changes from Rust, else the saved ones the snapshot carries.
+    // Live charts' changes from Rust once their lines are whole; until then the saved frame's,
+    // else the ones the snapshot carries.
     chartChanges:
       (market?.cached ? market.chartChanges : market ? state.changes : undefined) ??
+      (savedMarket ? savedMarket.chartChanges : undefined) ??
       data?.insights?.chartChanges ??
       [],
     marketSession: market?.session,

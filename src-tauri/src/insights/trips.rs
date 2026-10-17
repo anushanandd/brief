@@ -10,6 +10,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use crate::finance_contract::Transaction;
@@ -34,7 +35,7 @@ const HISTORY_DAYS: i64 = 730;
 const FLIGHT_KM: f64 = 800.0;
 const TOP_CATEGORIES: usize = 3;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TripCategory {
     pub name: String,
@@ -45,7 +46,7 @@ pub struct TripCategory {
 }
 
 /// A year's trips at a glance, by the year each began.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TripYear {
     pub year: i32,
@@ -61,7 +62,7 @@ pub struct TripYear {
 }
 
 /// One calendar day of a trip, including the days without a purchase.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TripDay {
     pub date: NaiveDate,
@@ -70,7 +71,7 @@ pub struct TripDay {
     pub purchases: u32,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Trip {
     pub id: String,
@@ -99,28 +100,32 @@ pub struct Trip {
     /// first visit when tied.
     pub stops: Vec<TripStop>,
     /// Who went, by person id, as saved by hand.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub companions: Vec<String>,
 }
 
 /// A city a trip's purchases were made in, at its centre or the bank's coordinates.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TripStop {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub city: Option<String>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub region: Option<String>,
     pub country: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub lat: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub lon: Option<f64>,
     pub purchases: u32,
     pub first: NaiveDate,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Trips {
     /// Newest first.

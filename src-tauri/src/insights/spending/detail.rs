@@ -4,8 +4,9 @@
 //! its bars are its share of each month.
 use super::*;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export, rename = "SpendingPeriodDetail")]
 pub struct PeriodDetail {
     #[serde(flatten)]
     pub period: SpendingPeriod,
@@ -14,14 +15,14 @@ pub struct PeriodDetail {
     #[serde(flatten)]
     pub view: PeriodView,
     /// All time's bars by month; other periods draw their pace.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub bars: Vec<Bar>,
     /// The view narrowed to each category with spending, by name.
     pub focus: BTreeMap<String, PeriodView>,
 }
 
 /// What a period lists and paces, for all of it or one category.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodView {
     /// The transactions listed, newest first: someone else's only when counting theirs, and
@@ -32,7 +33,7 @@ pub struct PeriodView {
     pub pace: Pace,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Merchant {
     pub key: String,
@@ -44,7 +45,7 @@ pub struct Merchant {
 }
 
 /// Spending accumulated day by day, beside the whole period before.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Pace {
     pub start: NaiveDate,
@@ -60,7 +61,7 @@ pub struct Pace {
     pub days: Vec<PaceDay>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PaceDay {
     /// Days from the period's start.
@@ -71,7 +72,7 @@ pub struct PaceDay {
     pub purchases: Vec<Purchase>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Purchase {
     pub id: String,
@@ -80,15 +81,15 @@ pub struct Purchase {
 }
 
 /// A day, week, or month of spending by category; credits count against it as `Credits`.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Bar {
     pub from: NaiveDate,
     pub to: NaiveDate,
-    #[serde(skip_serializing_if = "is_zero")]
+    #[serde(default, skip_serializing_if = "is_zero")]
     pub value: f64,
     /// By name.
-    #[serde(skip_serializing_if = "Vec::is_empty")]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub categories: Vec<BarCategory>,
 }
 
@@ -96,7 +97,7 @@ fn is_zero(value: &f64) -> bool {
     *value == 0.0
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct BarCategory {
     pub name: String,

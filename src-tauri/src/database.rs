@@ -11,15 +11,23 @@ use crate::{
     providers::http::ProviderDiagnostic,
     settings::FinanceSettings,
     statements::StatementFile,
-    storage::{Annotation, FinanceState},
+    storage::{
+        change::{self, Change, Checkpoint, Reason},
+        Annotation, FinanceState,
+    },
     summary::{Closed, Event, SessionRecord},
 };
 
 mod bank_statements;
+mod blobs;
+mod changesets;
 mod journal;
 mod migrations;
 
 pub use bank_statements::{BankStatement, StatementCheck};
+pub(crate) use blobs::sha256;
+pub use changesets::LogSummary;
+pub(crate) use changesets::{Changeset, CHECKPOINT};
 
 const COLLECTIONS: [&str; 11] = [
     "accounts",
@@ -34,14 +42,14 @@ const COLLECTIONS: [&str; 11] = [
     "brokeragePerformance",
     "possibleDuplicateAccounts",
 ];
-const DATABASE_SCHEMA_VERSION: u32 = 19;
+const DATABASE_SCHEMA_VERSION: u32 = 20;
 const DATABASE_APPLICATION_ID: u32 = 0x4252_4946; // BRIF
 
 pub struct Database {
     connection: Connection,
 }
 
-#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, ts_rs::TS)]
 #[serde(default, rename_all = "camelCase")]
 pub struct SyncDiagnostics {
     pub(crate) phase: String,
@@ -56,14 +64,16 @@ pub struct SyncDiagnostics {
     pub(crate) stages: StageTimes,
     /// The size of the snapshot the renderer received, in bytes of JSON.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) snapshot_bytes: Option<u64>,
     /// How many saved transactions the refresh added, settled, removed, or amended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) changes: Option<ChangeCounts>,
 }
 
 /// Counts of what a refresh changed in saved transactions.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, ts_rs::TS)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ChangeCounts {
     pub(crate) added: u32,
@@ -94,26 +104,30 @@ impl ChangeCounts {
 }
 
 /// What one provider used during a refresh.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, ts_rs::TS)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ProviderRun {
     pub(crate) provider: String,
     pub(crate) requests: u32,
     pub(crate) retries: u32,
     pub(crate) bytes: u64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) duration_ms: Option<u64>,
 }
 
 /// How long each stage of a refresh took, in milliseconds.
-#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, ts_rs::TS)]
 #[serde(default, rename_all = "camelCase")]
 pub struct StageTimes {
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) fetch_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) project_ms: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub(crate) commit_ms: Option<u64>,
 }
 
@@ -158,7 +172,8 @@ impl SyncDiagnostics {
     }
 }
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, ts_rs::TS)]
+#[ts(export)]
 #[serde(rename_all = "camelCase")]
 pub struct SyncRun {
     pub(crate) id: String,
@@ -214,6 +229,59 @@ fn write_documents(
                 serde_json::to_string(document).map_err(json_error)?
             ])
             .map_err(db_error)?;
+    }
+    Ok(())
+}
+
+fn write_annotations(
+    transaction: &Transaction<'_>,
+    annotations: &BTreeMap<String, Annotation>,
+) -> Result<(), String> {
+    transaction
+        .execute("DELETE FROM annotations", [])
+        .map_err(db_error)?;
+    for (id, annotation) in annotations {
+        write_annotation(transaction, id, annotation)?;
+    }
+    Ok(())
+}
+
+fn write_account_links(
+    transaction: &Transaction<'_>,
+    links: &BTreeMap<String, String>,
+) -> Result<(), String> {
+    transaction
+        .execute("DELETE FROM account_links", [])
+        .map_err(db_error)?;
+    for (plaid, snaptrade) in links {
+        transaction
+            .prepare_cached(
+                "INSERT INTO account_links(plaid_account_id, snaptrade_account_id) VALUES (?1, ?2)",
+            )
+            .map_err(db_error)?
+            .execute(params![plaid, snaptrade])
+            .map_err(db_error)?;
+    }
+    Ok(())
+}
+
+/// Appends `change` and the hash of the state it produced, then a periodic checkpoint when
+/// replay would otherwise grow long.
+fn record(
+    transaction: &Transaction<'_>,
+    next: &FinanceState,
+    change: &Change,
+) -> Result<(), String> {
+    let state = change::state_hash(next)?;
+    changesets::append(transaction, change.kind(), &change.body()?, &state)?;
+    if !matches!(change, Change::Checkpoint(_))
+        && changesets::since_checkpoint_count(transaction)? >= change::CHECKPOINT_INTERVAL
+    {
+        let checkpoint = Change::Checkpoint(Checkpoint {
+            reason: Reason::Periodic,
+            state: Box::new(next.clone()),
+        });
+        changesets::append(transaction, checkpoint.kind(), &checkpoint.body()?, &state)?;
     }
     Ok(())
 }
@@ -274,12 +342,6 @@ impl Database {
         migrations::migrate_schema(&connection, version)?;
         if version < 5 {
             migrations::scrub_legacy_diagnostics(&mut connection)?;
-        }
-        // Version 17 adds the change log, starting from what the database already holds.
-        if version < 17 {
-            let transaction = connection.transaction().map_err(db_error)?;
-            journal::baseline(&transaction)?;
-            transaction.commit().map_err(db_error)?;
         }
         if version < DATABASE_SCHEMA_VERSION {
             connection
@@ -378,11 +440,67 @@ impl Database {
         }))
     }
 
-    pub fn replace(&mut self, state: &FinanceState) -> Result<(), String> {
+    /// Saves `next`, the state `change` produced, and appends the change to the log, in one
+    /// transaction: a failure saves neither.
+    pub fn commit(&mut self, next: &FinanceState, change: &Change) -> Result<(), String> {
         let transaction = self.connection.transaction().map_err(db_error)?;
-        journal::record_state(&transaction, state)?;
-        write_state(&transaction, state)?;
+        record(&transaction, next, change)?;
+        match change {
+            Change::Annotations { .. } => write_annotations(&transaction, &next.annotations)?,
+            Change::Settings(_) => write_settings(&transaction, &next.settings)?,
+            Change::AccountLinks(_) => write_account_links(&transaction, &next.account_links)?,
+            Change::Documents(_) => write_documents(&transaction, &next.documents)?,
+            Change::Checkpoint(_) | Change::Refresh(_) | Change::Statements(_) => {
+                write_state(&transaction, next)?
+            }
+        }
         transaction.commit().map_err(db_error)
+    }
+
+    /// Saves a whole state, which the log records as a checkpoint.
+    pub fn checkpoint(&mut self, state: &FinanceState, reason: Reason) -> Result<(), String> {
+        let change = Change::Checkpoint(Checkpoint {
+            reason,
+            state: Box::new(state.clone()),
+        });
+        self.commit(state, &change)
+    }
+
+    /// Whether the log has begun.
+    pub fn has_log(&self) -> Result<bool, String> {
+        Ok(changesets::latest(&self.connection)?.is_some())
+    }
+
+    /// The hash of the state the latest changeset produced.
+    pub fn logged_state(&self) -> Result<Option<String>, String> {
+        Ok(changesets::latest(&self.connection)?.map(|changeset| changeset.state))
+    }
+
+    /// The latest checkpoint and every changeset since, oldest first, for replay.
+    pub(crate) fn since_checkpoint(&self) -> Result<Vec<Changeset>, String> {
+        changesets::since_checkpoint(&self.connection)
+    }
+
+    /// The change a changeset carried.
+    pub(crate) fn change(&self, changeset: &Changeset) -> Result<Change, String> {
+        if changeset.format > changesets::FORMAT {
+            return Err("The change log was written by a newer version of Brief".into());
+        }
+        Change::from_stored(
+            &changeset.kind,
+            changesets::body(&self.connection, changeset)?,
+        )
+    }
+
+    pub fn log_summary(&self) -> Result<LogSummary, String> {
+        changesets::summary(&self.connection)
+    }
+
+    /// Opens the finance database to read the log beside the open connection.
+    pub fn open_read_only(path: &Path) -> Result<Self, String> {
+        let connection = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(db_error)?;
+        Ok(Self { connection })
     }
 
     pub fn erase(&mut self, state: &FinanceState) -> Result<(), String> {
@@ -390,6 +508,15 @@ impl Database {
             .pragma_update(None, "secure_delete", true)
             .map_err(db_error)?;
         let transaction = self.connection.transaction().map_err(db_error)?;
+        changesets::clear(&transaction)?;
+        record(
+            &transaction,
+            state,
+            &Change::Checkpoint(Checkpoint {
+                reason: Reason::Erase,
+                state: Box::new(state.clone()),
+            }),
+        )?;
         write_state(&transaction, state)?;
         transaction
             .execute("DELETE FROM sync_runs", [])
@@ -411,44 +538,6 @@ impl Database {
         self.connection
             .execute_batch("PRAGMA wal_checkpoint(TRUNCATE); VACUUM; PRAGMA secure_delete = OFF;")
             .map_err(db_error)
-    }
-
-    pub fn replace_annotations(
-        &mut self,
-        annotations: &BTreeMap<String, Annotation>,
-    ) -> Result<(), String> {
-        let transaction = self.connection.transaction().map_err(db_error)?;
-        journal::record_annotations(&transaction, annotations)?;
-        transaction
-            .execute("DELETE FROM annotations", [])
-            .map_err(db_error)?;
-        for (id, annotation) in annotations {
-            write_annotation(&transaction, id, annotation)?;
-        }
-        transaction.commit().map_err(db_error)
-    }
-
-    pub fn replace_account_links(
-        &mut self,
-        links: &BTreeMap<String, String>,
-    ) -> Result<(), String> {
-        let transaction = self.connection.transaction().map_err(db_error)?;
-        transaction
-            .execute("DELETE FROM account_links", [])
-            .map_err(db_error)?;
-        for (plaid, snaptrade) in links {
-            transaction
-                .prepare_cached("INSERT INTO account_links(plaid_account_id, snaptrade_account_id) VALUES (?1, ?2)").map_err(db_error)?.execute(params![plaid, snaptrade],
-                )
-                .map_err(db_error)?;
-        }
-        transaction.commit().map_err(db_error)
-    }
-
-    pub fn replace_settings(&mut self, settings: &FinanceSettings) -> Result<(), String> {
-        let transaction = self.connection.transaction().map_err(db_error)?;
-        write_settings(&transaction, settings)?;
-        transaction.commit().map_err(db_error)
     }
 
     pub fn record_sync_run(&mut self, run: &SyncRun) -> Result<(), String> {
@@ -673,16 +762,6 @@ impl Database {
         Ok(documents)
     }
 
-    /// Saves what Brief read from documents; the originals live in their own database.
-    pub fn replace_documents(
-        &mut self,
-        documents: &[crate::documents::Document],
-    ) -> Result<(), String> {
-        let transaction = self.connection.transaction().map_err(db_error)?;
-        write_documents(&transaction, documents)?;
-        transaction.commit().map_err(db_error)
-    }
-
     fn load_statements(&self) -> Result<Vec<StatementFile>, String> {
         let mut statement = self
             .connection
@@ -865,12 +944,7 @@ fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<()
                 .map_err(db_error)?;
         }
     }
-    transaction
-        .execute("DELETE FROM annotations", [])
-        .map_err(db_error)?;
-    for (id, annotation) in &state.annotations {
-        write_annotation(transaction, id, annotation)?;
-    }
+    write_annotations(transaction, &state.annotations)?;
     transaction
         .execute("DELETE FROM statement_files", [])
         .map_err(db_error)?;
@@ -891,19 +965,7 @@ fn write_state(transaction: &Transaction<'_>, state: &FinanceState) -> Result<()
             .map_err(db_error)?;
     }
     write_documents(transaction, &state.documents)?;
-    transaction
-        .execute("DELETE FROM account_links", [])
-        .map_err(db_error)?;
-    for (plaid, snaptrade) in &state.account_links {
-        transaction
-            .prepare_cached(
-                "INSERT INTO account_links(plaid_account_id, snaptrade_account_id) VALUES (?1, ?2)",
-            )
-            .map_err(db_error)?
-            .execute(params![plaid, snaptrade])
-            .map_err(db_error)?;
-    }
-    Ok(())
+    write_account_links(transaction, &state.account_links)
 }
 
 fn entity_id(section: &str, value: &Value, ordinal: usize) -> String {

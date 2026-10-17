@@ -9,8 +9,8 @@ use std::{
 use serde_json::Value;
 
 use super::{
-    empty_state, legacy::LEGACY_FINANCE_FILES, validate_state, BackupInfo, FinanceState, Storage,
-    EDIT_BACKUP_INTERVAL,
+    change::Reason, empty_state, legacy::LEGACY_FINANCE_FILES, validate_state, BackupInfo,
+    FinanceState, Storage, EDIT_BACKUP_INTERVAL,
 };
 use crate::database::Database;
 use crate::documents::{crypto::DocumentKey, files::DocumentFiles};
@@ -72,7 +72,14 @@ impl Storage {
                 .with_extension(format!("{}.tmp", uuid::Uuid::new_v4())),
         );
         let mut database = Database::open(temporary.path())?;
-        database.replace(&next)?;
+        database.checkpoint(
+            &next,
+            if restore {
+                Reason::Restore
+            } else {
+                Reason::Start
+            },
+        )?;
         drop(database);
         fs::rename(temporary.path(), &self.path).map_err(|error| error.to_string())?;
         self.database = Database::open(&self.path)?;
@@ -267,7 +274,8 @@ impl Storage {
             .checked_add(1)
             .ok_or("Revision overflow")?;
         next.snapshot.revision = Some(next.revision);
-        database.replace(&next)?;
+        // The backup's log comes with it; replay starts from the state as restored.
+        database.checkpoint(&next, Reason::Restore)?;
         Database::validate_backup(temporary.path())?;
         let retained = self
             .path

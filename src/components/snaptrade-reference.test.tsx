@@ -1,11 +1,11 @@
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
-import type { Account } from '../lib/schema'
+import { account as record } from '../data/fixtures/records'
 import { SnapTradeReference } from './snaptrade-reference'
 
 it('shows a dated reported value for individual SnapTrade accounts only', () => {
-  const account: Account = {
+  const account = record({
     id: 'snaptrade:broker',
     name: 'Brokerage',
     institution: 'Broker',
@@ -13,7 +13,7 @@ it('shows a dated reported value for individual SnapTrade accounts only', () => 
     value: 200,
     reportedBalance: 190,
     balanceAsOf: '2026-09-23T20:00:00Z',
-  }
+  })
   expect(renderToStaticMarkup(<SnapTradeReference account={account} />)).toContain(
     'SnapTrade: $190.00 <time dateTime="2026-09-23T20:00:00Z">(Sep 23, 2026)</time>',
   )

@@ -1,13 +1,13 @@
 import { expect, it } from 'vitest'
 
-import empty from '../data/empty.json'
 import { classification } from '../data/fixtures/classification'
+import { emptySnapshot, transaction as record } from '../data/fixtures/records'
 import { buildActivities } from './activity'
-import { financeSnapshotSchema, type Transaction } from './schema'
+import type { Transaction } from './schema'
 import { moneyKind, transactionMarkKind } from './transaction-kind'
 
 it('uses the same positive Zelle income policy in Money, Overview, and Activity', () => {
-  const transaction: Transaction = {
+  const transaction = record({
     id: 'synthetic',
     account: 'Example',
     accountId: 'example',
@@ -17,11 +17,11 @@ it('uses the same positive Zelle income policy in Money, Overview, and Activity'
     classification: classification('income', { zelle: true }),
     pending: false,
     date: '2026-09-18',
-  }
+  })
   expect(transactionMarkKind(transaction)).toBe('income')
   expect(moneyKind(transaction)).toBe('income')
   const data = {
-    ...financeSnapshotSchema.parse(empty),
+    ...emptySnapshot(),
     updatedAt: '2026-09-18T12:00:00Z',
     transactions: [transaction],
   }
@@ -41,7 +41,7 @@ it.each([
   ['Example payroll', 'Income', 'income'],
   ['Example transfer', 'Transfer', 'transfer'],
 ] as const)('classifies %s consistently for marks and Money', (merchant, category, expected) => {
-  const transaction: Transaction = {
+  const transaction = record({
     id: 'synthetic',
     merchant,
     category,
@@ -50,13 +50,13 @@ it.each([
     account: 'Example',
     classification: classification(expected),
     pending: false,
-  }
+  })
   expect(transactionMarkKind(transaction)).toBe(expected)
   expect(moneyKind(transaction)).toBe(expected)
 })
 
 it('treats airline fee reimbursements as credits despite a provider fee category', () => {
-  const transaction: Transaction = {
+  const transaction = record({
     id: 'synthetic-credit',
     merchant: 'Example Airline Fee Reimbursement',
     category: 'Bank Fees',
@@ -65,10 +65,10 @@ it('treats airline fee reimbursements as credits despite a provider fee category
     classification: classification('reimbursement'),
     pending: false,
     date: '2026-09-18',
-  }
+  })
   expect(transactionMarkKind(transaction)).toBe('refund')
   expect(moneyKind(transaction)).toBe('reimbursement')
-  const data = { ...financeSnapshotSchema.parse(empty), transactions: [transaction] }
+  const data = { ...emptySnapshot(), transactions: [transaction] }
   expect(buildActivities(data)[0]).toMatchObject({
     kind: 'credit',
     category: 'Credit',
@@ -85,9 +85,9 @@ it('treats airline fee reimbursements as credits despite a provider fee category
 })
 
 it('uses native financial meaning even when display text resembles a different kind', () => {
-  const data = financeSnapshotSchema.parse(empty)
+  const data = emptySnapshot()
   data.transactions = [
-    {
+    record({
       id: 'synthetic',
       merchant: 'Transfer',
       category: 'Transfer',
@@ -96,24 +96,25 @@ it('uses native financial meaning even when display text resembles a different k
       account: 'Example',
       pending: false,
       classification: classification('income'),
-    },
+    }),
   ]
   expect(moneyKind(data.transactions[0])).toBe('income')
   expect(buildActivities(data)[0].kind).toBe('income')
 })
 
-const purchase = (id: string, category: string, amount: number): Transaction => ({
-  id,
-  account: 'Card',
-  accountId: 'card',
-  merchant: 'Example Market',
-  category,
-  amount,
-  classification: classification('expense'),
-  pending: false,
-  date: '2026-09-10',
-  postedOn: '2026-09-10',
-})
+const purchase = (id: string, category: string, amount: number): Transaction =>
+  record({
+    id,
+    account: 'Card',
+    accountId: 'card',
+    merchant: 'Example Market',
+    category,
+    amount,
+    classification: classification('expense'),
+    pending: false,
+    date: '2026-09-10',
+    postedOn: '2026-09-10',
+  })
 
 it('divides a split into its parts, each keeping the transaction', async () => {
   const { splitParts } = await import('./transaction-kind')

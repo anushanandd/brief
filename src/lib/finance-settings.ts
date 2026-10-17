@@ -3,12 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { parseAccountDisplayNames } from './account-names'
 import { parseAccountStartDates } from './account-start-dates'
 import { getFinanceSnapshot, isTauri } from './api'
-import {
-  financeSettingsSchema,
-  financeSnapshotSchema,
-  type FinanceSettings,
-  type FinanceSnapshot,
-} from './schema'
+import { financeSettingsSchema, type FinanceSettings, type FinanceSnapshot } from './schema'
 
 /** Renderer keys that older builds used before these settings moved into the finance store. */
 export const legacyFinanceSettingKeys = {
@@ -23,8 +18,27 @@ const previewSettingsKey = 'brief.preview.financeSettings'
 
 export const defaultFinanceSettings: FinanceSettings = financeSettingsSchema.parse({})
 
-export function financeSettings(data: Pick<FinanceSnapshot, 'settings'> | undefined) {
-  return data?.settings ?? defaultFinanceSettings
+/**
+ * Settings as the renderer reads and edits them. Rust leaves these collections out while
+ * empty, so a settings file older builds wrote stays readable by them; here they are present.
+ */
+export type Settings = FinanceSettings & {
+  manualAccounts: NonNullable<FinanceSettings['manualAccounts']>
+  accountClosedDates: NonNullable<FinanceSettings['accountClosedDates']>
+  people: NonNullable<FinanceSettings['people']>
+  tripCompanions: NonNullable<FinanceSettings['tripCompanions']>
+}
+
+export const completeSettings = (settings: FinanceSettings): Settings => ({
+  ...settings,
+  manualAccounts: settings.manualAccounts ?? [],
+  accountClosedDates: settings.accountClosedDates ?? {},
+  people: settings.people ?? [],
+  tripCompanions: settings.tripCompanions ?? [],
+})
+
+export function financeSettings(data: Pick<FinanceSnapshot, 'settings'> | undefined): Settings {
+  return completeSettings(data?.settings ?? defaultFinanceSettings)
 }
 
 /** Every card the user spends from: the saved spending card, then the others. */
@@ -117,7 +131,5 @@ export async function saveFinanceSettings(settings: FinanceSettings): Promise<Fi
     window.localStorage.setItem(previewSettingsKey, JSON.stringify(parsed))
     return getFinanceSnapshot()
   }
-  return financeSnapshotSchema.parse(
-    await invoke('save_finance_settings', { settings: parsed, importing: false }),
-  )
+  return invoke<FinanceSnapshot>('save_finance_settings', { settings: parsed, importing: false })
 }

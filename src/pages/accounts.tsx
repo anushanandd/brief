@@ -12,7 +12,7 @@ import { accountDisplayName } from '../lib/account-names'
 import { withoutSpendingCard } from '../lib/dashboard-account-views'
 import { financeSettings, spendingAccountIds } from '../lib/finance-settings'
 import { useGraphWindow } from '../lib/graph-preferences'
-import type { Account, FinanceSnapshot } from '../lib/schema'
+import type { FinanceSnapshot } from '../lib/schema'
 import { AccountOverview } from './account-overview'
 
 function useAccountsPage() {
@@ -45,15 +45,10 @@ function AccountsWorkspace({
   const spendingIds = spendingAccountIds(financeSettings(data))
   // Spending cards are listed with every other account; only the totals leave them out.
   const accounts = useMemo(() => {
-    const allAccount: Account = data.accounts.find(({ id }) => id === 'all') ?? {
-      id: 'all',
-      name: 'All accounts',
-      institution: 'Brief',
-      type: 'combined',
-      value: data.netWorth,
-    }
+    // Rust always sends the combined row as `all`.
+    const allAccount = data.accounts.find(({ id }) => id === 'all')
     return [
-      allAccount,
+      ...(allAccount ? [allAccount] : []),
       ...data.accounts
         .filter(({ id }) => id !== 'all')
         .toSorted((left, right) => {
@@ -62,7 +57,7 @@ function AccountsWorkspace({
           return right.value - left.value
         }),
     ]
-  }, [data.accounts, data.netWorth])
+  }, [data.accounts])
   const [graphWindow, setGraphWindow] = useGraphWindow()
   useGraphWindowShortcuts(setGraphWindow)
   const selectedAccount =

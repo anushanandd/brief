@@ -5,6 +5,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::NaiveDate;
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::trips::Trip;
 use crate::finance_contract::Transaction;
@@ -33,7 +34,7 @@ const NAME_STOPS: &[&str] = &[
     "ZELLE",
 ];
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct People {
     /// Each person with anything tagged, most recent activity first; people with nothing
@@ -45,7 +46,7 @@ pub struct People {
     pub suggestions: Vec<NameSuggestion>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonSummary {
     pub id: String,
@@ -54,15 +55,17 @@ pub struct PersonSummary {
     pub sent: f64,
     /// Money received from them through a payment app (positive).
     pub received: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub first: Option<NaiveDate>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub last: Option<NaiveDate>,
     /// Trips they went on, newest first.
     pub trip_ids: Vec<String>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct NameSuggestion {
     /// The name as people write it, such as `Jane Doe`.
@@ -75,7 +78,7 @@ pub struct NameSuggestion {
     pub matches: Vec<PersonFit>,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PersonFit {
     pub id: String,
@@ -220,7 +223,7 @@ pub fn zelle_name(descriptors: &str) -> Option<String> {
 }
 
 /// How well a name a payment carries fits someone's full name.
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum Fit {
     /// Only part of it: a first name alone, or a last name with a first name that starts

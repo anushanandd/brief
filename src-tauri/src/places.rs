@@ -14,6 +14,7 @@ use std::{
 
 use regex::Regex;
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use crate::finance_contract::{Transaction, TransactionLocation};
 
@@ -382,7 +383,7 @@ pub fn lookup(city: &str, country: &str, region: Option<&str>) -> Option<&'stati
         .max_by_key(|candidate| candidate.population)
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlaceSource {
     /// The card issuer's export gave the street address.
@@ -393,7 +394,7 @@ pub enum PlaceSource {
     Bank,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlacePrecision {
     /// The spot itself: a matched business, or the provider's coordinates for a city or street
@@ -408,24 +409,30 @@ pub enum PlacePrecision {
 }
 
 /// Where a transaction was made, as best known.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Place {
     /// The street address, as the issuer printed it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub address: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub postal_code: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub city: Option<String>,
     /// The US state, or the region code used abroad.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub region: Option<String>,
     /// ISO 3166 code.
     pub country: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub lat: Option<f64>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub lon: Option<f64>,
     pub source: PlaceSource,
     pub precision: PlacePrecision,
@@ -438,7 +445,7 @@ impl Place {
 }
 
 /// The business a purchase was made at, from Brief's place data (Overture Maps).
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Business {
     /// Overture's place id.
@@ -446,12 +453,16 @@ pub struct Business {
     pub name: String,
     /// Overture's category, such as `sporting_goods_store`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub category: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub address: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub phone: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub website: Option<String>,
     pub lat: f64,
     pub lon: f64,

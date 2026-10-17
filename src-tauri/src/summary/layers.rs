@@ -97,7 +97,7 @@ pub(super) struct Fit {
 }
 
 /// What a layer figure was measured with, so the surface can say how much to trust it.
-#[derive(Clone, Debug, Deserialize, PartialEq, Serialize)]
+#[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct FitMeta {
     pub market_beta: f64,

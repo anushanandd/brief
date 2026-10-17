@@ -13,6 +13,7 @@ use std::sync::LazyLock;
 
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::{Deserialize, Serialize};
+use ts_rs::TS;
 
 use super::calendar;
 use super::lots::PositionLots;
@@ -70,7 +71,7 @@ static TABLES: LazyLock<Tables> = LazyLock::new(|| {
     serde_json::from_str(include_str!("tax-tables.json")).expect("tax tables are valid")
 });
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Dividends {
     pub total: f64,
@@ -80,7 +81,7 @@ pub struct Dividends {
     pub unclassified: f64,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Realized {
     /// After wash-sale adjustments.
@@ -94,7 +95,7 @@ pub struct Realized {
     pub unestimated_proceeds: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct WashSale {
     pub sale_id: String,
@@ -110,7 +111,7 @@ pub struct WashSale {
     pub permanent: bool,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TaxEstimate {
     /// Federal and state tax on what Brief sees: `low` treats unclassified dividends as
@@ -130,7 +131,7 @@ pub struct TaxEstimate {
     pub loss_carryover: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TaxYear {
     pub year: i32,
@@ -138,7 +139,8 @@ pub struct TaxYear {
     pub dividends: Dividends,
     pub realized: Realized,
     pub wash_sales: Vec<WashSale>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub estimate: Option<TaxEstimate>,
     pub tables_available: bool,
     /// Saved activity starts after January 1, so the year's amounts are incomplete.
@@ -146,7 +148,7 @@ pub struct TaxYear {
 }
 
 /// A taxable position below cost, with what selling it might save.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HarvestEstimate {
     pub ticker: String,
@@ -155,16 +157,18 @@ pub struct HarvestEstimate {
     pub short_term_loss: f64,
     pub long_term_loss: f64,
     /// At this year's marginal rates, when there is a tax profile.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub tax_savings: Option<f64>,
     /// A purchase in the last 30 days would make a sale before this day a wash sale.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub wash_until: Option<NaiveDate>,
 }
 
 /// A recent loss sale whose window is still open: buying the ticker on or before `until`
 /// would disallow the loss.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct WashWindow {
     pub sale_id: String,
@@ -175,7 +179,7 @@ pub struct WashWindow {
     pub loss: f64,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Taxes {
     /// This year first.

@@ -8,17 +8,19 @@ use std::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use ts_rs::TS;
 
 use crate::{
     database::{Database, SyncDiagnostics, SyncRun},
     finance_contract::{PerformancePoint, Point, Recovery, Snapshot},
-    providers::{PlaidCache, ProviderDataCache, ProviderSync},
+    providers::{PlaidCache, ProviderDataCache},
     summary::{CalibrationSummary, Closed, Kept},
 };
 
 mod annotations;
 mod backup;
 mod bank_statements;
+pub mod change;
 pub mod documents;
 mod legacy;
 mod statements;
@@ -54,9 +56,7 @@ pub struct FinanceState {
 
 /// What a refresh fetched and noticed, waiting for its projection to commit.
 pub struct Staged {
-    pub plaid_cache: PlaidCache,
-    pub provider_data: ProviderDataCache,
-    pub warnings: Vec<String>,
+    pub refresh: change::Refresh,
     pub diagnostics: SyncDiagnostics,
 }
 
@@ -65,9 +65,7 @@ struct PendingRefresh {
     started_at: String,
     revision: u64,
     expires: Instant,
-    plaid_cache: PlaidCache,
-    provider_data: ProviderDataCache,
-    warnings: Vec<String>,
+    refresh: change::Refresh,
     diagnostics: SyncDiagnostics,
 }
 
@@ -106,15 +104,17 @@ pub struct Storage {
     view: std::cell::RefCell<Option<CachedView>>,
     /// `places.sqlite3`, the disposable cache of Overture searches; see `places::cache`.
     pub places_path: PathBuf,
+    /// What the latest replay of the change log found, once a launch has checked.
+    pub log_check: Option<change::LogCheck>,
 }
 
-/// Insights depend on the clock as well as saved data (benefit windows roll over in their own
-/// time zones), so a derived view is reused only briefly.
-const VIEW_LIFETIME: Duration = Duration::from_secs(30);
+/// Insights depend on the clock as well as saved data: benefit windows roll over at midnight in
+/// their own time zones. Every zone's offset is a whole number of quarter hours, so a view
+/// built in one quarter hour holds until the next.
+const VIEW_CLOCK_STEP_SECONDS: i64 = 15 * 60;
 
 struct CachedView {
     key: u64,
-    built: Instant,
     /// The view as Rust reads it.
     view: std::sync::Arc<crate::insights::View>,
     /// The same view as the renderer receives it.
@@ -123,15 +123,18 @@ struct CachedView {
 
 /// The view as the renderer receives it: the snapshot with the edits and insights it was
 /// read with.
-#[derive(Serialize)]
+#[derive(Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+#[ts(export, rename = "FinanceSnapshot")]
 struct RendererView<'a> {
     #[serde(flatten)]
     snapshot: &'a Snapshot,
     settings: &'a crate::settings::FinanceSettings,
     /// Accounts the user closed, which the snapshot above no longer lists.
-    #[serde(skip_serializing_if = "<[_]>::is_empty")]
+    #[serde(default, skip_serializing_if = "<[_]>::is_empty")]
     closed_accounts: &'a [crate::financial_engine::manual::ClosedAccount],
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     insights: Option<&'a crate::insights::Insights>,
     places: &'a crate::places::matching::Status,
     documents: &'a [crate::documents::Document],
@@ -141,8 +144,9 @@ struct RendererView<'a> {
 /// long, so a review session does not rewrite the whole database for every keystroke.
 const EDIT_BACKUP_INTERVAL: Duration = Duration::from_secs(5 * 60);
 
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct BackupInfo {
     pub updated_at: String,
     pub revision: u64,
@@ -211,6 +215,58 @@ fn validate_state(data: FinanceState) -> Result<FinanceState, String> {
     }
     validate_snapshot(&data.snapshot)?;
     Ok(data)
+}
+
+/// The committed snapshot with saved edits applied, places matched, evidence graded, and its
+/// insights derived: the view as Rust reads it, and as the renderer receives it. The browser
+/// preview's seed view is made by the same function.
+pub(crate) fn derive_view(
+    data: &FinanceState,
+    recovery: Option<Recovery>,
+    searches: &BTreeMap<String, Vec<crate::places::overture::OverturePlace>>,
+    now: chrono::DateTime<chrono::Utc>,
+    zone: &dyn crate::insights::calendar::Zone,
+) -> Result<(crate::insights::View, Value), String> {
+    let mut snapshot = data.snapshot.clone();
+    snapshot.recovery = recovery;
+    let closed_accounts =
+        crate::financial_engine::manual::adjust_snapshot(&mut snapshot, &data.settings);
+    crate::financial_engine::apply_annotations(&mut snapshot, &data.annotations)?;
+    crate::places::matching::apply(&mut snapshot.transactions, searches);
+    let places = crate::places::matching::status(&snapshot.transactions, searches);
+    crate::quality::apply(&mut snapshot);
+    // Insights are a view of saved data; failing to derive them never hides the snapshot.
+    let insights = crate::insights::derive_with_documents(
+        &mut snapshot,
+        &data.settings,
+        &data.documents,
+        now,
+        zone,
+    )
+    .inspect_err(|_| {
+        snapshot
+            .sync_warnings
+            .push("Expected activity is unavailable for this snapshot.".into())
+    })
+    .ok();
+    let view = serde_json::to_value(RendererView {
+        snapshot: &snapshot,
+        settings: &data.settings,
+        closed_accounts: &closed_accounts,
+        insights: insights.as_ref(),
+        places: &places,
+        documents: &data.documents,
+    })
+    .map_err(|error| error.to_string())?;
+    Ok((
+        crate::insights::View {
+            snapshot,
+            insights,
+            account_names: data.settings.account_names.clone(),
+            spending_account_id: data.settings.spending_account_id.clone(),
+        },
+        view,
+    ))
 }
 
 fn load_database(path: &Path) -> Result<(Database, FinanceState), String> {
@@ -284,19 +340,18 @@ impl Storage {
     }
 
     /// Deriving the view is the expensive part of every read, so it is reused until saved
-    /// data, the calendar day, or its lifetime changes.
+    /// data or the quarter hour changes.
     fn view<T>(&self, read: impl FnOnce(&CachedView) -> T) -> Result<T, String> {
         let key = self.view_key()?;
         let fresh = self
             .view
             .borrow()
             .as_ref()
-            .is_some_and(|view| view.key == key && view.built.elapsed() < VIEW_LIFETIME);
+            .is_some_and(|view| view.key == key);
         if !fresh {
             let (view, json) = self.derive_snapshot()?;
             *self.view.borrow_mut() = Some(CachedView {
                 key,
-                built: Instant::now(),
                 view: std::sync::Arc::new(view),
                 json,
             });
@@ -307,7 +362,7 @@ impl Storage {
         ))
     }
 
-    /// Identifies everything a derived view is computed from except the time of day.
+    /// Identifies everything a derived view is computed from, with the clock to the quarter hour.
     fn view_key(&self) -> Result<u64, String> {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
@@ -316,6 +371,7 @@ impl Storage {
         self.data.snapshot.transactions.len().hash(&mut hasher);
         self.recovery.is_some().hash(&mut hasher);
         chrono::Local::now().date_naive().hash(&mut hasher);
+        (chrono::Utc::now().timestamp() / VIEW_CLOCK_STEP_SECONDS).hash(&mut hasher);
         // Saved place searches change matches without changing saved data.
         fs::metadata(&self.places_path)
             .and_then(|metadata| metadata.modified())
@@ -335,47 +391,14 @@ impl Storage {
     /// The committed snapshot with saved edits applied and its insights derived, as the
     /// renderer reads it.
     fn derive_snapshot(&self) -> Result<(crate::insights::View, Value), String> {
-        let mut snapshot = self.data.snapshot.clone();
-        snapshot.recovery = self.recovery.clone();
-        let closed_accounts =
-            crate::financial_engine::manual::adjust_snapshot(&mut snapshot, &self.data.settings);
-        crate::financial_engine::apply_annotations(&mut snapshot, &self.data.annotations)?;
         let searches = crate::places::cache::read(&self.places_path);
-        crate::places::matching::apply(&mut snapshot.transactions, &searches);
-        let places = crate::places::matching::status(&snapshot.transactions, &searches);
-        crate::quality::apply(&mut snapshot);
-        // Insights are a view of saved data; failing to derive them never hides the snapshot.
-        let insights = crate::insights::derive_with_documents(
-            &mut snapshot,
-            &self.data.settings,
-            &self.data.documents,
+        derive_view(
+            &self.data,
+            self.recovery.clone(),
+            &searches,
             chrono::Utc::now(),
             &crate::insights::calendar::LocalZone,
         )
-        .inspect_err(|_| {
-            snapshot
-                .sync_warnings
-                .push("Expected activity is unavailable for this snapshot.".into())
-        })
-        .ok();
-        let view = serde_json::to_value(RendererView {
-            snapshot: &snapshot,
-            settings: &self.data.settings,
-            closed_accounts: &closed_accounts,
-            insights: insights.as_ref(),
-            places: &places,
-            documents: &self.data.documents,
-        })
-        .map_err(|error| error.to_string())?;
-        Ok((
-            crate::insights::View {
-                snapshot,
-                insights,
-                account_names: self.data.settings.account_names.clone(),
-                spending_account_id: self.data.settings.spending_account_id.clone(),
-            },
-            view,
-        ))
     }
 
     /// Replaces durable finance settings. An import only fills values that are still unset.
@@ -396,10 +419,18 @@ impl Storage {
         };
         if next != self.data.settings {
             self.backup_before_edit()?;
-            self.database.replace_settings(&next)?;
-            self.data.settings = next;
+            self.record(change::Change::Settings(Box::new(next)))?;
         }
         self.snapshot()
+    }
+
+    /// Applies `change`, saves the result, and appends the change to the log.
+    fn record(&mut self, change: change::Change) -> Result<(), String> {
+        self.begin_log()?;
+        let next = change::apply(&self.data, &change)?;
+        self.database.commit(&next, &change)?;
+        self.data = next;
+        Ok(())
     }
 
     pub fn upgrade_projection(&mut self) -> Result<bool, String> {
@@ -415,7 +446,12 @@ impl Storage {
         {
             return Ok(false);
         }
-        self.reproject_cached(self.data.statements.clone())?;
+        // Replay starts from here: earlier changes would project differently under this code.
+        let next = change::reproject(&self.data, self.data.statements.clone())?;
+        self.database.backup(&self.backup_path())?;
+        self.database.checkpoint(&next, change::Reason::Upgrade)?;
+        self.data = next;
+        self.pending = None;
         Ok(true)
     }
 
@@ -424,81 +460,23 @@ impl Storage {
         &mut self,
         statements: Vec<crate::statements::StatementFile>,
     ) -> Result<(), String> {
-        let previous = &self.data.snapshot;
-        let updated_at = chrono::DateTime::parse_from_rfc3339(&previous.updated_at).ok();
-        let now = updated_at
-            .map(|value| value.with_timezone(&chrono::Utc))
-            .unwrap_or_else(chrono::Utc::now);
-        let calendar_date = previous
-            .calendar_date
-            .as_deref()
-            .and_then(|value| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
-            .or_else(|| updated_at.map(|value| value.date_naive()))
-            .unwrap_or_else(|| now.date_naive());
-        let json =
-            |value: Result<Value, serde_json::Error>| value.map_err(|error| error.to_string());
-        let sync = ProviderSync {
-            sync_id: "cached-projection-upgrade".into(),
-            balances_fresh: false,
-            refreshed_account_ids: Vec::new(),
-            previous_snapshot: previous.clone(),
-            plaid: self.data.provider_data.plaid.clone().unwrap_or_default(),
-            snaptrade: self
-                .data
-                .provider_data
-                .snaptrade
-                .clone()
-                .unwrap_or_default(),
-            benchmark_history: json(serde_json::to_value(&previous.benchmark_history))?,
-            security_history: self.data.provider_data.security_history.clone(),
-            corporate_actions: self.data.provider_data.corporate_actions.clone(),
-            statements: statements.clone(),
-        };
-        let mut snapshot =
-            crate::financial_engine::project(&sync, &self.data.account_links, now, calendar_date)?;
-        let revision = self
-            .data
-            .revision
-            .checked_add(1)
-            .ok_or("Snapshot revision overflow")?;
-        snapshot.revision = Some(revision);
-        snapshot.provider_status = Some(self.data.provider_data.sync_status.clone());
-        if snapshot.last_change.is_none() {
-            snapshot.last_change = previous.last_change.clone();
-        }
-        // Statement warnings come from this projection; earlier ones may no longer apply.
-        let mut warnings = previous
-            .sync_warnings
-            .iter()
-            .filter(|warning| !warning.starts_with("Statement"))
-            .cloned()
-            .chain(std::mem::take(&mut snapshot.sync_warnings))
-            .collect::<Vec<_>>();
-        warnings.sort();
-        warnings.dedup();
-        snapshot.sync_warnings = warnings;
-
-        let next = validate_state(FinanceState {
-            schema_version: self.data.schema_version,
-            revision,
-            snapshot,
-            plaid_cache: self.data.plaid_cache.clone(),
-            provider_data: self.data.provider_data.clone(),
-            annotations: self.data.annotations.clone(),
-            account_links: self.data.account_links.clone(),
-            settings: self.data.settings.clone(),
-            statements,
-            documents: self.data.documents.clone(),
-        })?;
         self.database.backup(&self.backup_path())?;
-        self.database.replace(&next)?;
-        self.data = next;
+        self.record(change::Change::Statements(statements))?;
         self.pending = None;
         Ok(())
     }
 
     pub fn is_recovering(&self) -> bool {
         self.recovery.is_some()
+    }
+
+    /// The finance database's file, which the replay check reads through its own connection.
+    pub fn database_path(&self) -> &Path {
+        &self.path
+    }
+
+    pub fn log_summary(&self) -> Result<crate::database::LogSummary, String> {
+        self.database.log_summary()
     }
 
     pub fn ensure_writable(&self) -> Result<(), String> {
@@ -539,7 +517,7 @@ impl Storage {
                 .and_then(validate_state)
                 .and_then(|data| {
                     let mut database = Database::open(&path)?;
-                    database.replace(&data)?;
+                    database.checkpoint(&data, change::Reason::Start)?;
                     let _ = database.backup(&backup_path);
                     Ok((database, data))
                 })
@@ -577,7 +555,7 @@ impl Storage {
         if recovery.is_none() && legacy_present && database.backup(&backup_path).is_ok() {
             remove_migrated_legacy_files(&directory);
         }
-        Ok(Self {
+        let mut storage = Self {
             _process_lock: process_lock,
             path,
             database,
@@ -587,7 +565,21 @@ impl Storage {
             edit_backup: None,
             view: std::cell::RefCell::new(None),
             places_path: directory.join("places.sqlite3"),
-        })
+            log_check: None,
+        };
+        // A failure here is retried before the next write.
+        let _ = storage.begin_log();
+        Ok(storage)
+    }
+
+    /// Starts the log from the saved state when it hasn't begun: a database saved before the
+    /// log existed, or one whose first checkpoint failed.
+    fn begin_log(&mut self) -> Result<(), String> {
+        if self.recovery.is_none() && !self.database.has_log()? {
+            self.database
+                .checkpoint(&self.data, change::Reason::Start)?;
+        }
+        Ok(())
     }
 
     #[cfg(test)]
@@ -600,14 +592,24 @@ impl Storage {
         provider_data: ProviderDataCache,
         warnings: Vec<String>,
     ) -> Result<String, String> {
+        let committed_at = chrono::DateTime::parse_from_rfc3339(started_at)
+            .map(|time| time.with_timezone(&chrono::Utc))
+            .unwrap_or_default();
         self.stage_refresh(
             id,
             started_at,
             revision,
             Staged {
-                plaid_cache,
-                provider_data,
-                warnings,
+                refresh: change::Refresh {
+                    committed_at,
+                    calendar_date: committed_at.date_naive(),
+                    balances_fresh: true,
+                    refreshed_account_ids: Vec::new(),
+                    benchmark: Value::Array(Vec::new()),
+                    warnings,
+                    plaid_cache,
+                    provider_data,
+                },
                 diagnostics: SyncDiagnostics::default(),
             },
         )
@@ -624,9 +626,7 @@ impl Storage {
     ) -> Result<String, String> {
         self.ensure_writable()?;
         let Staged {
-            plaid_cache,
-            provider_data,
-            warnings,
+            refresh,
             diagnostics,
         } = staged;
         if revision != self.data.revision {
@@ -636,17 +636,17 @@ impl Storage {
             id: id.into(),
             started_at: started_at.into(),
             revision,
-            plaid_cache,
-            provider_data,
-            warnings,
+            refresh,
             diagnostics,
             expires: Instant::now() + Duration::from_secs(120),
         });
         Ok(id.into())
     }
 
-    pub fn commit(&mut self, id: &str, mut snapshot: Snapshot) -> Result<Value, CommitError> {
+    /// Commits a staged refresh with the snapshot `change::project_refresh` made from it.
+    pub fn commit(&mut self, id: &str, snapshot: Snapshot) -> Result<Value, CommitError> {
         self.ensure_writable().map_err(CommitError::Validation)?;
+        self.begin_log().map_err(CommitError::Persistence)?;
         let pending = self
             .pending
             .as_ref()
@@ -658,42 +658,23 @@ impl Storage {
             .ok_or_else(|| {
                 CommitError::Validation("Refresh expired or was superseded; refresh again".into())
             })?;
-        validate_snapshot(&snapshot).map_err(CommitError::Validation)?;
-        let revision = self
-            .data
-            .revision
-            .checked_add(1)
-            .ok_or_else(|| CommitError::Validation("Snapshot revision overflow".into()))?;
-        snapshot.revision = Some(revision);
-        let mut warnings = pending.warnings.clone();
-        warnings.extend(snapshot.sync_warnings);
-        warnings.sort();
-        warnings.dedup();
-        snapshot.sync_warnings = warnings.clone();
-        snapshot.provider_status = Some(pending.provider_data.sync_status.clone());
-        let next = FinanceState {
-            schema_version: 1,
-            revision,
-            snapshot,
-            plaid_cache: pending.plaid_cache.clone(),
-            provider_data: pending.provider_data.clone(),
-            annotations: self.data.annotations.clone(),
-            account_links: self.data.account_links.clone(),
-            settings: self.data.settings.clone(),
-            statements: self.data.statements.clone(),
-            documents: self.data.documents.clone(),
-        };
+        let next = change::finish_refresh(&self.data, &pending.refresh, snapshot)
+            .map_err(CommitError::Validation)?;
         let committing = Instant::now();
         let backup_path = self.backup_path();
         self.database
             .backup(&backup_path)
             .map_err(CommitError::Persistence)?;
         self.database
-            .replace(&next)
+            .commit(
+                &next,
+                &change::Change::Refresh(Box::new(pending.refresh.clone())),
+            )
             .map_err(CommitError::Persistence)?;
+        let warnings = next.snapshot.sync_warnings.len();
         let mut details = SyncDiagnostics {
             phase: "committed".into(),
-            warning_count: warnings.len().min(999),
+            warning_count: warnings.min(999),
             changes: next
                 .snapshot
                 .last_change
@@ -715,7 +696,7 @@ impl Storage {
             &id,
             &started_at,
             "committed",
-            warnings.len(),
+            warnings,
             None,
             details,
         ));
@@ -757,13 +738,13 @@ impl Storage {
         let details = SyncDiagnostics::new(
             error_code.trim_end_matches("_failed"),
             pending.diagnostics.providers.clone(),
-            pending.warnings.len(),
+            pending.refresh.warnings.len(),
         );
         let _ = self.database.record_sync_run(&SyncRun::ended(
             id,
             &pending.started_at,
             "failed",
-            pending.warnings.len(),
+            pending.refresh.warnings.len(),
             Some(error_code),
             details,
         ));
@@ -816,8 +797,7 @@ impl Storage {
         }
         if next != self.data.account_links {
             self.backup_before_edit()?;
-            self.database.replace_account_links(&next)?;
-            self.data.account_links = next;
+            self.record(change::Change::AccountLinks(next))?;
             self.pending = None;
         }
         Ok(())

@@ -26,11 +26,10 @@ impl Providers {
                     .institution_name
                     .unwrap_or_else(|| "Plaid connection".into()),
                 provider: if item.investments {
-                    "plaid-investments"
+                    super::ConnectionProvider::PlaidInvestments
                 } else {
-                    "plaid"
-                }
-                .into(),
+                    super::ConnectionProvider::Plaid
+                },
             })
             .collect::<Vec<_>>();
         connections.extend(snaptrade.iter().map(ProviderConnection::from));

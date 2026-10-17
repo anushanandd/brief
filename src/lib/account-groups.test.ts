@@ -1,15 +1,11 @@
 import { expect, it } from 'vitest'
 
+import { account as record } from '../data/fixtures/records'
 import { accountGroups, groupLabel } from './account-groups'
 import type { Account } from './schema'
 
-const account = (id: string, type: string, value: number | null): Account => ({
-  id,
-  name: id,
-  institution: 'Example',
-  type,
-  value,
-})
+const account = (id: string, type: string, value: number | null): Account =>
+  record({ id, name: id, institution: 'Example', type, value })
 
 it("groups accounts under Rust's totals in its order, each group's accounts largest first", () => {
   const groups = accountGroups(

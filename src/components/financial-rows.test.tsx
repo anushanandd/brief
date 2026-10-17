@@ -10,13 +10,14 @@ import { expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
 import { benefitActivity, insights } from '../data/fixtures/insights'
+import { holding, trade, transaction } from '../data/fixtures/records'
 import { buildActivities } from '../lib/activity'
 import type { FinanceSnapshot } from '../lib/schema'
 import { ActivityList } from './activity-list'
 import { PositionTable } from './position-table'
 import { SalesTable } from './sales-table'
 
-const position: FinanceSnapshot['holdings'][number] = {
+const position: FinanceSnapshot['holdings'][number] = holding({
   accountId: 'synthetic',
   ticker: 'TEST',
   name: 'Synthetic security',
@@ -32,7 +33,7 @@ const position: FinanceSnapshot['holdings'][number] = {
   totalChangePct: 0,
   color: '#fff',
   valuationNote: 'USD valuation unavailable',
-}
+})
 
 /** Security links are router links, so tables render inside a router. */
 async function renderWithRouter(view: ReactNode) {
@@ -61,7 +62,7 @@ it.each(['positions', 'market', 'summary'] as const)(
 )
 
 it('marks public security prices and market changes separately from position values', async () => {
-  const holding = {
+  const priced = {
     ...position,
     price: 25,
     value: 53.13,
@@ -69,10 +70,10 @@ it('marks public security prices and market changes separately from position val
     weeklyChangePct: 2,
   }
   const market = await renderWithRouter(
-    <PositionTable positions={[holding]} view="market" externalLogosEnabled={false} />,
+    <PositionTable positions={[priced]} view="market" externalLogosEnabled={false} />,
   )
   const positions = await renderWithRouter(
-    <PositionTable positions={[holding]} view="positions" externalLogosEnabled={false} />,
+    <PositionTable positions={[priced]} view="positions" externalLogosEnabled={false} />,
   )
   expect(market.match(/class="public-market-value"/g)).toHaveLength(3)
   expect(market).toContain('class="public-market-value">$25.00</td>')
@@ -86,7 +87,7 @@ it('keeps unmatched sales visible without inventing profit or a current-year dat
       externalLogosEnabled={false}
       referenceIso="2026-09-03T12:00:00Z"
       sales={[
-        {
+        trade({
           id: 'sale',
           accountId: 'synthetic',
           account: 'Synthetic account',
@@ -96,10 +97,7 @@ it('keeps unmatched sales visible without inventing profit or a current-year dat
           amount: 100,
           units: 2.125,
           price: 40,
-          realizedCostBasis: null,
-          estimatedRealizedGain: null,
-          estimatedRealizedGainPct: null,
-        },
+        }),
       ]}
     />,
   )
@@ -117,7 +115,7 @@ it('preserves pending status, merchant links, categories and descriptions across
     updatedAt: referenceIso,
     trades: [],
     transactions: [
-      {
+      transaction({
         id: 'pending',
         merchant: 'Synthetic merchant',
         category: 'Dining',
@@ -129,7 +127,7 @@ it('preserves pending status, merchant links, categories and descriptions across
         pending: true,
         website: 'https://example.com/',
         description: 'Original provider description',
-      },
+      }),
     ],
   })
   const html = renderToStaticMarkup(
@@ -177,22 +175,22 @@ it('notes native benefit credits on purchase and credit rows and marks linked ro
     updatedAt: referenceIso,
     trades: [],
     transactions: [
-      {
+      transaction({
         ...row,
         id: 'purchase',
         merchant: 'Synthetic stream',
         date: '2026-08-15',
         amount: -13.99,
         classification: classification('expense'),
-      },
-      {
+      }),
+      transaction({
         ...row,
         id: 'credit',
         merchant: 'Synthetic credit',
         date: '2026-08-17',
         amount: 13.99,
         classification: classification('other', { credit: true }),
-      },
+      }),
     ],
     insights: insights({
       benefits: {

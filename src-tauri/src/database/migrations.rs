@@ -103,6 +103,8 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
             .and_then(|()| connection.execute_batch(super::bank_statements::SCHEMA))
             .and_then(|()| connection.execute_batch(super::journal::SCHEMA))
             .and_then(|()| connection.execute_batch(DOCUMENTS_SCHEMA))
+            .and_then(|()| connection.execute_batch(super::blobs::SCHEMA))
+            .and_then(|()| connection.execute_batch(super::changesets::SCHEMA))
             .map_err(db_error);
     }
 
@@ -263,7 +265,7 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
     connection
         .execute_batch(super::bank_statements::SCHEMA)
         .map_err(db_error)?;
-    // Version 17 keeps the change log.
+    // Version 17 kept a per-record change log, superseded by version 20's; its rows stay.
     connection
         .execute_batch(super::journal::SCHEMA)
         .map_err(db_error)?;
@@ -271,6 +273,12 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
     // encrypted beside this database.
     connection
         .execute_batch(DOCUMENTS_SCHEMA)
+        .map_err(db_error)?;
+    // Version 20 keeps the log of changesets the state is replayed from; `Storage` checkpoints
+    // what the database already holds as its first entry.
+    connection
+        .execute_batch(super::blobs::SCHEMA)
+        .and_then(|()| connection.execute_batch(super::changesets::SCHEMA))
         .map_err(db_error)?;
     connection
         .execute_batch(&format!(

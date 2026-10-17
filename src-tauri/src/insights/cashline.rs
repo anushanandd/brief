@@ -10,6 +10,7 @@ use std::collections::BTreeMap;
 
 use chrono::{Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::forecast::{EventState, ExpectedEvent};
 use crate::finance_contract::Account;
@@ -17,7 +18,7 @@ use crate::numeric::{from_minor, minor_units};
 
 pub const HORIZON_DAYS: i64 = 90;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CashDay {
     pub date: NaiveDate,
@@ -28,7 +29,7 @@ pub struct CashDay {
     pub high: f64,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CashEvent {
     pub date: NaiveDate,
@@ -39,7 +40,7 @@ pub struct CashEvent {
     pub next: bool,
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CashTimeline {
     pub horizon_days: i64,
@@ -54,7 +55,8 @@ pub struct CashTimeline {
     pub days: Vec<CashDay>,
     pub events: Vec<CashEvent>,
     /// The day the expected balance is lowest, when it falls below today's.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub lowest: Option<CashDay>,
 }
 

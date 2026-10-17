@@ -1,27 +1,28 @@
 import { expect, it } from 'vitest'
 
-import empty from '../data/empty.json'
 import { classification } from '../data/fixtures/classification'
 import { benefitActivity, insights } from '../data/fixtures/insights'
-import { financeSnapshotSchema, type Transaction } from './schema'
+import { emptySnapshot, transaction as record } from '../data/fixtures/records'
+import type { Transaction } from './schema'
 import { mapsUrl, transactionDetail } from './transaction-detail'
 
-const transaction = (id: string, patch: Partial<Transaction> = {}): Transaction => ({
-  id,
-  amount: -15.49,
-  merchant: 'Example streaming',
-  category: 'Entertainment',
-  date: '2026-09-12',
-  accountId: 'card',
-  account: 'Card',
-  classification: classification('expense'),
-  pending: false,
-  ...patch,
-})
+const transaction = (id: string, patch: Partial<Transaction> = {}): Transaction =>
+  record({
+    id,
+    amount: -15.49,
+    merchant: 'Example streaming',
+    category: 'Entertainment',
+    date: '2026-09-12',
+    accountId: 'card',
+    account: 'Card',
+    classification: classification('expense'),
+    pending: false,
+    ...patch,
+  })
 
 it('gathers merchant history, the expected schedule, benefit evidence, and the category origin', () => {
   const data = {
-    ...financeSnapshotSchema.parse(empty),
+    ...emptySnapshot(),
     transactions: [
       transaction('sep', { recurringId: 'series:stream', categorySource: 'manual' }),
       transaction('aug', { recurringId: 'series:stream', date: '2026-08-12' }),
@@ -83,7 +84,7 @@ it('builds a Google Maps link only from the address it is given', () => {
 
 it('finds what Rust flagged about a transaction and opens Maps at its coordinates', () => {
   const data = {
-    ...financeSnapshotSchema.parse(empty),
+    ...emptySnapshot(),
     transactions: [transaction('a'), transaction('b'), transaction('trip-dinner')],
     insights: insights({
       anomalies: {

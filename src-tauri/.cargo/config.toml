@@ -1,0 +1,5 @@
+# The renderer's types are generated from Rust's by `cargo test` (ts-rs), into src/lib/bindings.
+[env]
+TS_RS_EXPORT_DIR = { value = "../src/lib/bindings", relative = true }
+# JSON numbers, not bigint: no amount or count Brief sends is beyond 2^53.
+TS_RS_LARGE_INT = "number"

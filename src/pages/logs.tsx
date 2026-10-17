@@ -8,7 +8,7 @@ import { useFinance } from '../hooks/use-finance'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { useFinanceRefreshState } from '../hooks/use-refresh-finance'
 import { accountDisplayName } from '../lib/account-names'
-import { getCalibration, getSummaryRuns, getSyncRuns } from '../lib/api'
+import { getCalibration, getChangeLog, getSummaryRuns, getSyncRuns } from '../lib/api'
 import { financeSettings } from '../lib/finance-settings'
 import { countOf } from '../lib/format'
 import { providerCatalog } from '../lib/providers'
@@ -46,7 +46,7 @@ const size = (bytes: number) =>
 // Each provider's time, requests, retries, and download size, then the stages and the snapshot
 // the app received. Counts and timings only.
 const syncRunDetail = (run: SyncRun) => {
-  const { runs = [], stages = {}, snapshotBytes, changes } = run.details
+  const { runs = [], stages, snapshotBytes, changes } = run.details
   const changed = changes
     ? [
         changes.added ? `${changes.added} new` : null,
@@ -107,6 +107,7 @@ export function LogsPage() {
   const syncRuns = useQuery({ queryKey: ['sync-runs', data?.revision], queryFn: getSyncRuns })
   const summaryRuns = useQuery({ queryKey: ['summary-runs'], queryFn: getSummaryRuns })
   const calibration = useQuery({ queryKey: ['calibration'], queryFn: getCalibration })
+  const changeLog = useQuery({ queryKey: ['change-log', data?.revision], queryFn: getChangeLog })
 
   if (query.isLoading) return <PageLoading />
   if (query.isError || !data) return <PageError />
@@ -391,6 +392,83 @@ export function LogsPage() {
             )}
           </div>
         </ScrollCueCard>
+        <Card className="logs-card">
+          <SectionHeading
+            title="Change log"
+            action={
+              changeLog.data ? (
+                <span className="logs-count">
+                  {countOf(changeLog.data.summary.changesets, 'change')}
+                </span>
+              ) : undefined
+            }
+          />
+          <div className="activity-log">
+            {changeLog.data ? (
+              <>
+                <div className="activity-log-row">
+                  <StatusDot
+                    tone={
+                      !changeLog.data.check
+                        ? 'neutral'
+                        : changeLog.data.check.outcome === 'matches'
+                          ? 'positive'
+                          : 'negative'
+                    }
+                  />
+                  <div>
+                    <strong>
+                      {!changeLog.data.check
+                        ? 'Replay not checked yet'
+                        : changeLog.data.check.outcome === 'matches'
+                          ? 'Replays to your saved data'
+                          : changeLog.data.check.outcome === 'differs'
+                            ? 'Replay differs from your saved data'
+                            : 'Replay could not run'}
+                    </strong>
+                    <small>
+                      {changeLog.data.check?.detail ??
+                        (changeLog.data.check
+                          ? `${countOf(changeLog.data.check.replayed, 'change')} replayed`
+                          : 'Checked a minute after launch')}
+                    </small>
+                  </div>
+                  {changeLog.data.check ? (
+                    <time dateTime={changeLog.data.check.checkedAt}>
+                      {formatTime(changeLog.data.check.checkedAt)}
+                    </time>
+                  ) : null}
+                </div>
+                <div className="activity-log-row">
+                  <StatusDot tone="neutral" />
+                  <div>
+                    <strong>Stored</strong>
+                    <small>
+                      {`${countOf(changeLog.data.summary.checkpoints, 'checkpoint')} · ${countOf(changeLog.data.summary.sinceCheckpoint, 'change')} since the latest`}
+                    </small>
+                  </div>
+                  <span>{size(changeLog.data.summary.storedBytes)}</span>
+                </div>
+                {changeLog.data.summary.firstRecordedAt ? (
+                  <div className="activity-log-row">
+                    <StatusDot tone="neutral" />
+                    <div>
+                      <strong>Kept since</strong>
+                      <small>Every refresh, import, and edit since then</small>
+                    </div>
+                    <time dateTime={changeLog.data.summary.firstRecordedAt}>
+                      {formatTime(changeLog.data.summary.firstRecordedAt)}
+                    </time>
+                  </div>
+                ) : null}
+              </>
+            ) : changeLog.isError ? (
+              <EmptyState>The change log is unavailable.</EmptyState>
+            ) : (
+              <EmptyState>The change log is kept in the app.</EmptyState>
+            )}
+          </div>
+        </Card>
         <ScrollCueCard className="logs-card" scrollSelector=".activity-log">
           <SectionHeading title="Runtime activity" />
           <div className="activity-log" aria-live="polite">

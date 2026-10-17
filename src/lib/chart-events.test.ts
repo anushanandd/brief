@@ -1,17 +1,16 @@
 import { describe, expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
-import seed from '../data/seed.json'
+import { performance, seedSnapshot, trade, transaction } from '../data/fixtures/records'
 import { buildChartEventGroups, chartEventGroupLabel } from './chart-events'
-import { financeSnapshotSchema } from './schema'
 
 describe('buildChartEventGroups', () => {
   it('keeps external money transfers directional on the all-accounts chart', () => {
-    const data = financeSnapshotSchema.parse(seed)
+    const data = seedSnapshot()
     data.updatedAt = '2026-09-10T20:00:00Z'
     data.netWorth = 100_000
     data.transactions = [
-      {
+      transaction({
         id: 'external-in',
         merchant: 'External deposit',
         category: 'Transfer',
@@ -21,8 +20,8 @@ describe('buildChartEventGroups', () => {
         accountId: 'plaid:checking',
         classification: classification('transfer'),
         pending: false,
-      },
-      {
+      }),
+      transaction({
         id: 'external-out',
         merchant: 'External withdrawal',
         category: 'Transfer',
@@ -32,7 +31,7 @@ describe('buildChartEventGroups', () => {
         accountId: 'plaid:checking',
         classification: classification('transfer'),
         pending: false,
-      },
+      }),
     ]
     data.trades = []
 
@@ -44,12 +43,12 @@ describe('buildChartEventGroups', () => {
   })
 
   it('includes small directional trades and deduplicates internal transfers', () => {
-    const data = financeSnapshotSchema.parse(seed)
+    const data = seedSnapshot()
     data.updatedAt = '2026-09-10T20:00:00Z'
     data.netWorth = 100_000
     data.spending.monthTotal = 2_000
     data.transactions = [
-      {
+      transaction({
         id: 'salary',
         merchant: 'Payroll',
         category: 'Income',
@@ -60,8 +59,8 @@ describe('buildChartEventGroups', () => {
         accountId: 'plaid:checking',
         classification: classification('income'),
         pending: false,
-      },
-      {
+      }),
+      transaction({
         id: 'transfer-out',
         merchant: 'Transfer out',
         category: 'Transfer',
@@ -71,8 +70,8 @@ describe('buildChartEventGroups', () => {
         accountId: 'snaptrade:brokerage',
         classification: classification('transfer'),
         pending: false,
-      },
-      {
+      }),
+      transaction({
         id: 'transfer-in',
         merchant: 'Transfer in',
         category: 'Transfer',
@@ -82,10 +81,10 @@ describe('buildChartEventGroups', () => {
         accountId: 'plaid:checking',
         classification: classification('transfer'),
         pending: false,
-      },
+      }),
     ]
     data.trades = [
-      {
+      trade({
         id: 'buy',
         type: 'BUY',
         date: '2026-09-06',
@@ -93,8 +92,8 @@ describe('buildChartEventGroups', () => {
         account: 'Brokerage',
         accountId: 'snaptrade:brokerage',
         ticker: 'VXUS',
-      },
-      {
+      }),
+      trade({
         id: 'sale',
         type: 'SELL',
         date: '2026-09-07',
@@ -103,10 +102,10 @@ describe('buildChartEventGroups', () => {
         accountId: 'snaptrade:brokerage',
         ticker: 'VTI',
         estimatedRealizedGainPct: -12.5,
-      },
+      }),
     ]
     data.brokeragePerformance = [
-      {
+      performance({
         accountId: 'snaptrade:brokerage',
         name: 'Brokerage',
         institution: 'Broker',
@@ -114,7 +113,14 @@ describe('buildChartEventGroups', () => {
         historySource: 'provider-estimated',
         performanceMethod: 'value-with-comparisons',
         points: [
-          { date: '2026-09-07', value: 8_000, netDeposits: 8_000, sp500: 8_000 },
+          {
+            date: '2026-09-07',
+            value: 8_000,
+            netDeposits: 8_000,
+            sp500: 8_000,
+            marketChange: null,
+            marketChangePct: null,
+          },
           {
             date: '2026-09-09',
             value: 6_500,
@@ -124,7 +130,7 @@ describe('buildChartEventGroups', () => {
             marketChangePct: 6.25,
           },
         ],
-      },
+      }),
     ]
 
     const allAccounts = buildChartEventGroups(data, 'net-worth', 0)

@@ -6,10 +6,20 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use crate::{
     database::SyncDiagnostics,
-    financial_engine,
-    providers::{self, PlaidData, PlaidRefreshProgress, ProviderSync},
+    finance_contract::Snapshot,
+    providers::{self, PlaidData, PlaidRefreshProgress},
+    statements::StatementFile,
+    storage::change::{self, Refresh},
     AppState,
 };
+
+/// A staged refresh: what it fetched, and the saved state it projects over.
+struct Prepared {
+    sync_id: String,
+    refresh: Refresh,
+    previous: Snapshot,
+    statements: Vec<StatementFile>,
+}
 
 const HISTORY_CACHE_HOURS: i64 = 12;
 
@@ -20,7 +30,7 @@ pub(super) fn history_cache_is_fresh(refreshed_at: Option<&str>, now: DateTime<U
         .is_some_and(|age| age >= Duration::zero() && age < Duration::hours(HISTORY_CACHE_HOURS))
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 struct FinanceRefreshTask {
     id: String,
@@ -29,7 +39,7 @@ struct FinanceRefreshTask {
     state: &'static str,
 }
 
-#[derive(Clone, serde::Serialize)]
+#[derive(Clone, serde::Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
 struct FinanceRefreshProgress {
     title: &'static str,
@@ -157,8 +167,8 @@ pub(crate) async fn refresh_finance_snapshot(
     ))
     .await;
     let fetch_ms = crate::database::millis(fetching.elapsed());
-    let sync = match prepared {
-        Ok(Ok(sync)) => sync,
+    let prepared = match prepared {
+        Ok(Ok(prepared)) => prepared,
         failed => {
             let (code, failure) = match failed {
                 Ok(Err(failure)) => ("provider_refresh_failed", failure),
@@ -177,14 +187,17 @@ pub(crate) async fn refresh_finance_snapshot(
             return Err(failure.message);
         }
     };
-    state.storage()?.note_usage(&sync.sync_id, usage, fetch_ms);
+    let Prepared {
+        sync_id,
+        refresh,
+        previous,
+        statements,
+    } = prepared;
+    state.storage()?.note_usage(&sync_id, usage, fetch_ms);
     let account_links = state.storage()?.data.account_links.clone();
-    let sync_id = sync.sync_id.clone();
-    let projection_now = Utc::now();
-    let calendar_date = projection_now.with_timezone(&chrono::Local).date_naive();
     let projecting = Instant::now();
     let projection = tauri::async_runtime::spawn_blocking(move || {
-        financial_engine::project(&sync, &account_links, projection_now, calendar_date)
+        change::project_refresh(&previous, &statements, &account_links, &refresh)
     });
     let projected = tokio::time::timeout_at(deadline, projection).await;
     state
@@ -244,7 +257,7 @@ async fn prepare_refresh(
     started_at: &str,
     run_id: &str,
     live_balances: bool,
-) -> Result<ProviderSync, PrepareFailure> {
+) -> Result<Prepared, PrepareFailure> {
     state.storage()?.ensure_writable()?;
     state.providers.unlock_credentials()?;
     let integrations = state.providers.integration_status()?;
@@ -296,7 +309,18 @@ async fn prepare_refresh(
         provider_data.security_history_adjustment = None;
         provider_data.market_history_refreshed_at = None;
     }
+    // A symbol first held or traded since the last fetch needs its closes now, not tomorrow.
+    let security_history_covered = providers::alpaca::security_history_symbols(
+        provider_data
+            .plaid
+            .as_ref()
+            .unwrap_or(&PlaidData::default()),
+        provider_data.snaptrade.as_ref(),
+    )
+    .iter()
+    .all(|symbol| provider_data.security_history.contains_key(symbol));
     let refresh_market_history = !market_cache_compatible
+        || !security_history_covered
         || !history_cache_is_fresh(provider_data.market_history_refreshed_at.as_deref(), now);
     let mut next_plaid_cache = plaid_cache.clone();
     if integrations.plaid {
@@ -432,7 +456,21 @@ async fn prepare_refresh(
     let (security_history, corporate_actions) = tokio::join!(security_sync, corporate_sync);
     let security_history = fetched(security_history, &mut warnings);
     let security_history_refreshed = security_history.is_some();
-    if let Some(history) = security_history {
+    if let Some(mut history) = security_history {
+        // A symbol whose request failed keeps its saved closes, or none, so it isn't asked
+        // for again until the daily fetch.
+        for symbol in providers::alpaca::security_history_symbols(
+            provider_data.plaid.as_ref().unwrap_or(&empty_plaid),
+            provider_data.snaptrade.as_ref(),
+        ) {
+            if let std::collections::btree_map::Entry::Vacant(entry) = history.entry(symbol) {
+                let saved = provider_data
+                    .security_history
+                    .remove(entry.key())
+                    .unwrap_or_default();
+                entry.insert(saved);
+            }
+        }
         provider_data.security_history = history;
         provider_data.security_history_adjustment = Some("split".into());
     }
@@ -444,34 +482,38 @@ async fn prepare_refresh(
         provider_data.corporate_actions_refreshed_at = Some(now.to_rfc3339());
     }
 
+    let committed_at = Utc::now();
+    let refresh = Refresh {
+        committed_at,
+        calendar_date: committed_at.with_timezone(&chrono::Local).date_naive(),
+        balances_fresh: (!integrations.plaid || plaid_complete)
+            && (!integrations.snaptrade || snaptrade_updated),
+        refreshed_account_ids,
+        benchmark,
+        warnings,
+        plaid_cache: next_plaid_cache,
+        provider_data,
+    };
     let mut storage = state.storage()?;
+    let diagnostics =
+        SyncDiagnostics::new("provider", provider_diagnostics, refresh.warnings.len());
     let sync_id = storage.stage_refresh(
         run_id,
         started_at,
         revision,
         crate::storage::Staged {
-            plaid_cache: next_plaid_cache,
-            provider_data: provider_data.clone(),
-            warnings: warnings.clone(),
-            diagnostics: SyncDiagnostics::new("provider", provider_diagnostics, warnings.len()),
+            refresh: refresh.clone(),
+            diagnostics,
         },
     )?;
-
     // Statement imports wait for the refresh lock, so these can't change before the commit.
     let statements = storage.data.statements.clone();
     drop(storage);
-    Ok(ProviderSync {
+    Ok(Prepared {
         sync_id,
-        balances_fresh: (!integrations.plaid || plaid_complete)
-            && (!integrations.snaptrade || snaptrade_updated),
-        refreshed_account_ids,
-        previous_snapshot: previous,
-        plaid: provider_data.plaid.unwrap_or_default(),
-        snaptrade: provider_data.snaptrade.unwrap_or_default(),
-        benchmark_history: benchmark,
-        security_history: provider_data.security_history,
+        refresh,
+        previous,
         statements,
-        corporate_actions: provider_data.corporate_actions,
     })
 }
 

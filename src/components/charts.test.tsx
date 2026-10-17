@@ -2,7 +2,14 @@ import { Liveline } from 'liveline'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { ChartRangeSelector, formatLiveTime, PerformanceChart, SpendingBarChart } from './charts'
+import {
+  ChartRangeSelector,
+  formatLiveTime,
+  PerformanceChart,
+  SpendingBarChart,
+  valueDomain,
+  valueRows,
+} from './charts'
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
@@ -197,6 +204,34 @@ it('uses the same badge-buffered marker window for single and comparison charts'
     expect(html).toContain('aria-label="Inside plot"')
     expect(html).not.toContain('aria-label="Outside plot"')
   }
+})
+
+it('joins each line by time from the last point before the window', () => {
+  const rows = valueRows(
+    {
+      value: [
+        { time: 0, value: 10 },
+        { time: 100, value: 11 },
+        { time: 200, value: 12 },
+      ],
+      benchmark: [
+        { time: 50, value: 9 },
+        { time: 150, value: 13 },
+      ],
+    },
+    120,
+  )
+  // Each line enters at the window's edge from its last point before it.
+  expect(rows).toEqual([
+    { time: 50, benchmark: 9 },
+    { time: 100, value: 11 },
+    { time: 150, benchmark: 13 },
+    { time: 200, value: 12 },
+  ])
+  // The axis covers only what the window shows, every line's values, with room around them.
+  expect(valueDomain(rows, 120, 1)).toEqual([11.925, 13.075])
+  // A flat line still gets the minimum span, centered on it.
+  expect(valueDomain([{ time: 0, value: 100 }], 0, 10)).toEqual([94.25, 105.75])
 })
 
 it('names the year on axis labels once a range repeats months', () => {

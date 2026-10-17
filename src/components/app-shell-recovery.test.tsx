@@ -5,12 +5,12 @@ import { act, type ReactNode } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import empty from '../data/empty.json'
+import empty from '../data/empty-view.json'
+import { emptySnapshot } from '../data/fixtures/records'
 import { recoverFinanceState } from '../lib/api'
-import { financeSnapshotSchema } from '../lib/schema'
 import { AppShell } from './app-shell'
 
-const snapshot = financeSnapshotSchema.parse(empty)
+const snapshot = emptySnapshot()
 
 vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,

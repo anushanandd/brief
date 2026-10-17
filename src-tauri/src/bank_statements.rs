@@ -24,8 +24,9 @@ const MAX_DOWNLOADS: usize = 40;
 const MAX_FAILURES: usize = 5;
 
 /// What one check found.
-#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize)]
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(export)]
 pub struct StatementSync {
     /// Statements Plaid listed across the checked connections.
     pub available: usize,

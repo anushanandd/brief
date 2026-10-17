@@ -4,6 +4,7 @@ use std::collections::BTreeMap;
 
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use super::forecast::{EventState, ExpectedEvent};
@@ -12,7 +13,7 @@ use crate::finance_contract::Transaction;
 use crate::numeric::{from_minor, minor_units};
 use crate::transaction_policy::Kind;
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CategoryPlan {
     pub category: String,
@@ -23,8 +24,9 @@ pub struct CategoryPlan {
     pub typical: f64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
+#[ts(rename = "PlanCoverage")]
 pub struct Coverage {
     /// Known USD cash available in checking and savings accounts: the available balance
     /// where the bank reports one, so pending holds count.
@@ -37,7 +39,7 @@ pub struct Coverage {
     pub horizon_days: i64,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Plan {
     pub month_start: NaiveDate,
@@ -49,10 +51,12 @@ pub struct Plan {
     pub categories: Vec<CategoryPlan>,
     pub coverage: Coverage,
     /// Average monthly personal spending over the last three complete months.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub monthly_spending: Option<f64>,
     /// Months of that spending known cash would cover.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub runway_months: Option<f64>,
 }
 

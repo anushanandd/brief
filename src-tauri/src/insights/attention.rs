@@ -4,6 +4,7 @@
 //! every personal number.
 use chrono::NaiveDate;
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::anomalies::Anomalies;
 use super::benefits::{BenefitReview, BenefitWindow, Cadence};
@@ -16,14 +17,14 @@ use crate::finance_contract::CreditLiability;
 const MAX_ITEMS: usize = 3;
 const PAYMENT_DUE_DAYS: i64 = 7;
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "lowercase")]
 pub enum Severity {
     Urgent,
     Attention,
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "kebab-case", tag = "kind")]
 pub enum Item {
     #[serde(rename_all = "camelCase")]
@@ -32,9 +33,11 @@ pub enum Item {
         due: NaiveDate,
         days: i64,
         overdue: bool,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         statement_balance: Option<f64>,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         minimum_payment: Option<f64>,
     },
     #[serde(rename_all = "camelCase")]
@@ -102,7 +105,8 @@ pub enum Item {
     MissedBill {
         recurring_id: String,
         title: String,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         account_id: Option<String>,
         expected: NaiveDate,
         days: i64,
@@ -136,7 +140,8 @@ pub enum Item {
         employer: String,
         date: NaiveDate,
         amount: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         account_id: Option<String>,
     },
     /// A W-2 states boxes the year's pay statements don't add up to.
@@ -152,14 +157,15 @@ pub enum Item {
     IdleCash {
         account_id: String,
         balance: f64,
-        #[serde(skip_serializing_if = "Option::is_none")]
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        #[ts(optional)]
         annual_rate: Option<f64>,
         better_account_id: String,
         better_rate: f64,
     },
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AttentionItem {
     pub id: String,
@@ -178,7 +184,7 @@ pub struct Context<'a> {
 
 /// What the Today page leads with: everything that needs action, most urgent first. Unlike
 /// `attention`, the list is not capped.
-#[derive(Clone, Debug, Default, Serialize)]
+#[derive(Clone, Debug, Default, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Brief {
     pub needs: Vec<AttentionItem>,

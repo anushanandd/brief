@@ -1,41 +1,19 @@
 import { getVersion } from '@tauri-apps/api/app'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
-import { z } from 'zod'
 
-import seedInsights from '../data/seed-insights.json'
-import seed from '../data/seed.json'
+import seedView from '../data/seed-view.json'
+import type { AssistantAnswer } from './bindings/AssistantAnswer'
+import type { DocumentImport as NativeDocumentImport } from './bindings/DocumentImport'
+import type { PortfolioNews } from './bindings/PortfolioNews'
 import { previewFinanceSettings } from './finance-settings'
-import { ledgerCallSchema } from './ledger-view'
+import { ledgerCallSchema, type LedgerCall } from './ledger-view'
+import { fromRust } from './rust-json'
 import {
-  backupInfoSchema,
-  bankStatementSchema,
-  calibrationSchema,
-  earningsEventSchema,
-  foundationModelStatusSchema,
-  integrationStatusSchema,
-  loginItemStateSchema,
-  providerConnectionSchema,
-  providerLinkSessionSchema,
-  providerLinkStatusSchema,
-  financeSnapshotSchema,
-  healthReportSchema,
-  investmentSummarySchema,
-  portfolioNewsSchema,
-  portfolioTodaySchema,
-  sectorExposureSchema,
-  statementPreviewSchema,
-  statementSummarySchema,
-  statementSyncSchema,
   marketHistorySchema,
-  marketNewsResultSchema,
   marketSnapshotsSchema,
-  chartChangesSchema,
-  reportsSchema,
-  spendingPeriodDetailSchema,
-  summaryRunSchema,
-  syncRunSchema,
   type Calibration,
+  type ChangeLog,
   type FinanceSnapshot,
   type EarningsEvent,
   type HealthReport,
@@ -52,6 +30,7 @@ import {
   type ChartChanges,
   type Reports,
   type SpendingOwner,
+  type SpendingPeriodDetail,
   type SpendingPeriodJudgment,
   type SummaryRun,
   type SyncRun,
@@ -65,6 +44,10 @@ import {
   type ProviderLinkSession,
   type ProviderLinkStatus,
 } from './schema'
+
+// Native results are typed by Rust's own types (src/lib/bindings), so they are read as they
+// arrive; only what Rust leaves as raw JSON (the market stream, an answer's ledger evidence) is
+// checked at runtime.
 
 export const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window
 
@@ -91,44 +74,46 @@ export type CredentialProvider = 'plaid' | 'snaptrade' | 'alpaca' | 'alphavantag
 
 export async function getSyncRuns(): Promise<SyncRun[]> {
   if (!isTauri()) return []
-  return syncRunSchema.array().parse(await invoke<unknown>('get_sync_runs'))
+  return invoke<SyncRun[]>('get_sync_runs')
+}
+
+/** The change log's size and the latest check that it replays to the saved state. */
+export async function getChangeLog(): Promise<ChangeLog | null> {
+  if (!isTauri()) return null
+  return invoke<ChangeLog>('get_change_log')
 }
 
 /** How often the layered model's thresholds fired over saved sessions. */
 export async function getCalibration(): Promise<Calibration | null> {
   if (!isTauri()) return null
-  return calibrationSchema.parse(await invoke<unknown>('get_calibration'))
+  return invoke<Calibration>('get_calibration')
 }
 
 /** This launch's investment summary runs, newest first. */
 export async function getSummaryRuns(): Promise<SummaryRun[]> {
   if (!isTauri()) return []
-  return summaryRunSchema.array().parse(await invoke<unknown>('get_summary_runs'))
+  return invoke<SummaryRun[]>('get_summary_runs')
 }
 
-// The preview has no native runtime; its insights were computed by Rust from the same seed.
+// The preview has no native runtime; its view was made by Rust from the synthetic seed. A card
+// other than the seed's own leaves the benefits and statement it was computed for.
 const browserSnapshot = (): FinanceSnapshot => {
+  const view = fromRust<FinanceSnapshot>(structuredClone(seedView.view))
   const settings = previewFinanceSettings()
-  const sameCard = settings.spendingAccountId === seedInsights.spendingAccountId
-  return financeSnapshotSchema.parse({
-    ...seed,
+  const sameCard = settings.spendingAccountId === seedView.spendingAccountId
+  return {
+    ...view,
     settings,
-    transactions: seed.transactions.map((transaction) => ({
-      ...transaction,
-      recurringId: (seedInsights.recurringIds as Record<string, string>)[transaction.id],
-    })),
-    insights: {
-      ...seedInsights.insights,
-      ...(sameCard ? {} : { benefits: undefined, statement: undefined }),
-    },
-  })
+    insights:
+      view.insights && !sameCard
+        ? { ...view.insights, benefits: undefined, statement: undefined }
+        : view.insights,
+  }
 }
 
 export async function getFinanceSnapshot(): Promise<FinanceSnapshot> {
   if (!isTauri()) return browserSnapshot()
-
-  const result = await invoke<unknown>('get_finance_snapshot')
-  return financeSnapshotSchema.parse(result)
+  return invoke<FinanceSnapshot>('get_finance_snapshot')
 }
 
 /** Which Spending period to read: whose spending, over which scope, and how many back. */
@@ -143,16 +128,15 @@ export type SpendingPeriodRequest = {
  * One Spending period in full, computed by Rust; null when the scope or period doesn't exist.
  * The preview reads the seed's periods, computed by the same code.
  */
-export async function getSpendingPeriod(request: SpendingPeriodRequest) {
+export async function getSpendingPeriod(
+  request: SpendingPeriodRequest,
+): Promise<SpendingPeriodDetail | null> {
   if (!isTauri()) {
     const { default: periods } = await import('../data/seed-spending.json')
     const key = `${request.scope}|${request.owner}|${request.kind}|${request.offset}`
-    const period = (periods as Record<string, unknown>)[key]
-    return period ? spendingPeriodDetailSchema.parse(period) : null
+    return fromRust<Record<string, SpendingPeriodDetail>>(periods)[key] ?? null
   }
-  return spendingPeriodDetailSchema
-    .nullable()
-    .parse(await invoke<unknown>('get_spending_period', { request }))
+  return invoke<SpendingPeriodDetail | null>('get_spending_period', { request })
 }
 
 /** Which reports to read: over which window and accounts, and the one to read in full. */
@@ -170,7 +154,7 @@ export type ReportRequest = {
  * The preview reads the seed's reports for each chart period and Investments' periods; any other
  * window is null there.
  */
-export async function getReports(request: ReportRequest) {
+export async function getReports(request: ReportRequest): Promise<Reports | null> {
   if (!isTauri()) {
     const { default: reports } = await import('../data/seed-reports.json')
     const key = [
@@ -180,14 +164,13 @@ export async function getReports(request: ReportRequest) {
       request.to ?? '',
       request.accounts ? request.accounts.join(',') : '*',
     ].join('|')
-    const found = (reports as Record<string, unknown>)[key]
-    return found ? reportsSchema.parse(found) : null
+    return fromRust<Record<string, Reports>>(reports)[key] ?? null
   }
-  return reportsSchema.nullable().parse(await invoke<unknown>('get_reports', { request }))
+  return invoke<Reports | null>('get_reports', { request })
 }
 
 export async function recoverFinanceState(restore: boolean): Promise<FinanceSnapshot> {
-  return financeSnapshotSchema.parse(await invoke('recover_finance_state', { restore }))
+  return invoke<FinanceSnapshot>('recover_finance_state', { restore })
 }
 
 /** A passphrase seals the documents' key into the backup, so another Mac can open them. */
@@ -198,7 +181,7 @@ export async function exportFinanceBackup(path: string, passphrase?: string): Pr
 
 export async function inspectFinanceBackup(path: string): Promise<BackupInfo> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return backupInfoSchema.parse(await invoke('inspect_finance_backup', { path }))
+  return invoke<BackupInfo>('inspect_finance_backup', { path })
 }
 
 export async function restoreFinanceBackup(
@@ -206,23 +189,16 @@ export async function restoreFinanceBackup(
   passphrase?: string,
 ): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(
-    await invoke('restore_finance_backup', { path, passphrase: passphrase || null }),
-  )
+  return invoke<FinanceSnapshot>('restore_finance_backup', { path, passphrase: passphrase || null })
 }
 
-const documentImportSchema = z.object({
-  added: z.array(z.string()),
-  already: z.array(z.string()),
-  failed: z.array(z.object({ name: z.string(), reason: z.string() })),
-  snapshot: financeSnapshotSchema,
-})
-export type DocumentImport = z.infer<typeof documentImportSchema>
+/** What a document import added, already had, and couldn't keep, with the view after it. */
+export type DocumentImport = Omit<NativeDocumentImport, 'snapshot'> & { snapshot: FinanceSnapshot }
 
 /** Reads files and folders into documents on this Mac, reporting `documents-progress`. */
 export async function importDocuments(paths: string[]): Promise<DocumentImport> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return documentImportSchema.parse(await invoke('import_documents', { paths }))
+  return invoke<DocumentImport>('import_documents', { paths })
 }
 
 export type DocumentChange = {
@@ -240,12 +216,12 @@ export type DocumentChange = {
 
 export async function updateDocument(id: string, change: DocumentChange): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(await invoke('update_document', { id, change }))
+  return invoke<FinanceSnapshot>('update_document', { id, change })
 }
 
 export async function deleteDocuments(ids: string[]): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(await invoke('delete_documents', { ids }))
+  return invoke<FinanceSnapshot>('delete_documents', { ids })
 }
 
 /** Opens the original in the Mac's own viewer, from a private decrypted copy. */
@@ -262,7 +238,7 @@ export async function documentFile(id: string): Promise<ArrayBuffer> {
 
 export async function rereadDocument(id: string): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(await invoke('reread_document', { id }))
+  return invoke<FinanceSnapshot>('reread_document', { id })
 }
 
 export async function addDocumentHistory(
@@ -270,7 +246,7 @@ export async function addDocumentHistory(
   accountId: string,
 ): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(await invoke('add_document_history', { ids, accountId }))
+  return invoke<FinanceSnapshot>('add_document_history', { ids, accountId })
 }
 
 /**
@@ -285,7 +261,7 @@ export async function findPlaces(): Promise<void> {
 /** Reads and checks a statement file. Rust keeps the bytes until `importStatement`. */
 export async function previewStatementImport(path: string): Promise<StatementPreview> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return statementPreviewSchema.parse(await invoke('preview_statement_import', { path }))
+  return invoke<StatementPreview>('preview_statement_import', { path })
 }
 
 export async function importStatement(
@@ -293,17 +269,17 @@ export async function importStatement(
   accountId: string,
 ): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(await invoke('import_statement', { draftId, accountId }))
+  return invoke<FinanceSnapshot>('import_statement', { draftId, accountId })
 }
 
 export async function getStatementImports(): Promise<StatementSummary[]> {
   if (!isTauri()) return []
-  return statementSummarySchema.array().parse(await invoke('get_statement_imports'))
+  return invoke<StatementSummary[]>('get_statement_imports')
 }
 
 export async function removeStatementImport(id: string): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(await invoke('remove_statement_import', { id }))
+  return invoke<FinanceSnapshot>('remove_statement_import', { id })
 }
 
 /** Confirms, or withdraws, a statement row Plaid never reported; a confirmed row fills history. */
@@ -313,14 +289,12 @@ export async function confirmStatementRow(
   confirmed: boolean,
 ): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(
-    await invoke('confirm_statement_row', { fileId, rowId, confirmed }),
-  )
+  return invoke<FinanceSnapshot>('confirm_statement_row', { fileId, rowId, confirmed })
 }
 
 export async function eraseFinanceState(): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return financeSnapshotSchema.parse(await invoke('erase_finance_state'))
+  return invoke<FinanceSnapshot>('erase_finance_state')
 }
 
 export async function exportSettingsFile(path: string, contents: string): Promise<void> {
@@ -330,7 +304,7 @@ export async function exportSettingsFile(path: string, contents: string): Promis
 
 export async function readSettingsFile(path: string): Promise<string> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return z.string().parse(await invoke('read_settings_file', { path }))
+  return invoke<string>('read_settings_file', { path })
 }
 
 export async function getAppVersion(): Promise<string> {
@@ -339,7 +313,7 @@ export async function getAppVersion(): Promise<string> {
 
 export async function getDataHealth(): Promise<HealthReport> {
   if (!isTauri()) {
-    return healthReportSchema.parse({
+    return {
       computedAt: new Date().toISOString(),
       revision: browserSnapshot().revision ?? 0,
       overallStatus: 'info',
@@ -348,7 +322,7 @@ export async function getDataHealth(): Promise<HealthReport> {
         {
           id: 'browser-preview',
           severity: 'info',
-          category: 'environment',
+          category: 'storage',
           title: 'Synthetic browser preview',
           explanation: 'Storage and provider checks run in the desktop app',
           evidence: [],
@@ -356,9 +330,9 @@ export async function getDataHealth(): Promise<HealthReport> {
           action: { label: 'Open settings', route: '/settings' },
         },
       ],
-    })
+    }
   }
-  return healthReportSchema.parse(await invoke('get_data_health'))
+  return invoke<HealthReport>('get_data_health')
 }
 
 /**
@@ -378,10 +352,8 @@ export async function refreshFinanceSnapshot({
     }
   }
 
-  const snapshot = financeSnapshotSchema.parse(
-    await invoke('refresh_finance_snapshot', { liveBalances }),
-  )
-  return { snapshot, warnings: snapshot.syncWarnings ?? [] }
+  const snapshot = await invoke<FinanceSnapshot>('refresh_finance_snapshot', { liveBalances })
+  return { snapshot, warnings: snapshot.syncWarnings }
 }
 
 export async function saveAccountLink(
@@ -392,14 +364,15 @@ export async function saveAccountLink(
   await invoke('save_account_link', { plaidAccountId, snaptradeAccountId })
 }
 
+/** A connection's provider, or adding statements to a saved Plaid bank connection. */
+export type LinkProvider = 'plaid' | 'plaid-investments' | 'snaptrade' | 'plaid-statements'
+
 export async function beginProviderLink(
-  provider: ProviderLinkSession['provider'],
+  provider: LinkProvider,
   itemId?: string,
 ): Promise<ProviderLinkSession> {
   if (!isTauri()) throw new Error('Desktop app only')
-  const session = providerLinkSessionSchema.parse(
-    await invoke('begin_provider_link', { provider, itemId }),
-  )
+  const session = await invoke<ProviderLinkSession>('begin_provider_link', { provider, itemId })
   try {
     await openExternalUrl(session.url)
   } catch (error) {
@@ -411,13 +384,13 @@ export async function beginProviderLink(
 
 /** Saved bank statements, newest first. The browser preview has none. */
 export async function getBankStatements(): Promise<BankStatement[]> {
-  return isTauri() ? bankStatementSchema.array().parse(await invoke('get_bank_statements')) : []
+  return isTauri() ? invoke<BankStatement[]>('get_bank_statements') : []
 }
 
 /** Checks every connection with statements now and saves new ones. */
 export async function syncBankStatements(): Promise<StatementSync> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return statementSyncSchema.parse(await invoke('sync_bank_statements'))
+  return invoke<StatementSync>('sync_bank_statements')
 }
 
 /** Opens a saved statement in the Mac's PDF viewer. */
@@ -434,31 +407,25 @@ export async function pollProviderLink(
   session: ProviderLinkSession,
   browserCompleted = false,
 ): Promise<ProviderLinkStatus> {
-  return providerLinkStatusSchema.parse(
-    await invoke('poll_provider_link', {
-      browserCompleted,
-      provider: session.provider,
-      sessionId: session.sessionId,
-    }),
-  )
+  return invoke<ProviderLinkStatus>('poll_provider_link', {
+    browserCompleted,
+    provider: session.provider,
+    sessionId: session.sessionId,
+  })
 }
 
 export async function getIntegrationStatus(): Promise<IntegrationStatus> {
   if (!isTauri())
     return { plaid: false, snaptrade: false, alpaca: false, alphaVantage: false, sec: false }
-  return integrationStatusSchema.parse(await invoke('get_integration_status'))
+  return invoke<IntegrationStatus>('get_integration_status')
 }
 
 export async function getProviderConnections(): Promise<ProviderConnection[]> {
-  return isTauri()
-    ? providerConnectionSchema.array().parse(await invoke('get_provider_connections'))
-    : []
+  return isTauri() ? invoke<ProviderConnection[]>('get_provider_connections') : []
 }
 /** Asks SnapTrade, so it can be slow; `getProviderConnections` has the saved list. */
 export async function getSnapTradeConnections(): Promise<ProviderConnection[]> {
-  return isTauri()
-    ? providerConnectionSchema.array().parse(await invoke('get_snaptrade_connections'))
-    : []
+  return isTauri() ? invoke<ProviderConnection[]>('get_snaptrade_connections') : []
 }
 export async function forgetProviderConnection(itemId: string): Promise<void> {
   await invoke('forget_provider_connection', { itemId })
@@ -473,7 +440,7 @@ export async function removeIntegrationCredentials(
   provider: CredentialProvider,
 ): Promise<IntegrationStatus> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return integrationStatusSchema.parse(await invoke('remove_integration_credentials', { provider }))
+  return invoke<IntegrationStatus>('remove_integration_credentials', { provider })
 }
 
 export async function saveIntegrationCredentials(
@@ -481,14 +448,12 @@ export async function saveIntegrationCredentials(
   credentials: { clientId: string; secret?: string; consumerKey?: string },
 ): Promise<IntegrationStatus> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return integrationStatusSchema.parse(
-    await invoke('save_integration_credentials', {
-      provider,
-      clientId: credentials.clientId,
-      secret: credentials.secret,
-      consumerKey: credentials.consumerKey,
-    }),
-  )
+  return invoke<IntegrationStatus>('save_integration_credentials', {
+    provider,
+    clientId: credentials.clientId,
+    secret: credentials.secret,
+    consumerKey: credentials.consumerKey,
+  })
 }
 
 export async function startMarketStream(
@@ -506,11 +471,16 @@ export async function startMarketStream(
       if (parsed.success) onUpdate(parsed.data)
       else onError('Invalid market update received')
     } else if ('kind' in payload && payload.kind === 'history' && 'chartSeries' in payload) {
-      // A malformed history only costs the detail; the live frame stays.
+      // A malformed history only costs the detail; the live frame stays. Rust always sends
+      // one, empty when it has no week, so its arrival settles the changes.
       const parsed = marketHistorySchema.safeParse(payload.chartSeries)
       const changes =
-        'chartChanges' in payload ? chartChangesSchema.safeParse(payload.chartChanges) : undefined
-      if (parsed.success) onHistory(parsed.data, changes?.success ? changes.data : undefined)
+        'chartChanges' in payload &&
+        payload.chartChanges &&
+        typeof payload.chartChanges === 'object'
+          ? fromRust<ChartChanges>(payload.chartChanges)
+          : undefined
+      onHistory(parsed.success ? parsed.data : {}, changes)
     } else if (
       'kind' in payload &&
       payload.kind === 'error' &&
@@ -560,16 +530,14 @@ const emptyNews: MarketNewsResult = {
 
 export async function getMarketNews(symbols: string[], refresh = false): Promise<MarketNewsResult> {
   if (!isTauri()) return emptyNews
-  return marketNewsResultSchema.parse(await invoke('get_market_news', { symbols, refresh }))
+  return invoke<MarketNewsResult>('get_market_news', { symbols, refresh })
 }
 
 /** The portfolio's move today at live prices, with each position's dollar effect. */
 export async function getPortfolioToday(): Promise<PortfolioToday> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return portfolioTodaySchema.parse(await invoke('get_portfolio_today'))
+  return invoke<PortfolioToday>('get_portfolio_today')
 }
-
-/** Each holding's market gain since `start` (a returns window's first day). */
 
 /**
  * The portfolio's, or one holding's, period since `start`: moves against benchmarks, your
@@ -580,11 +548,9 @@ export async function getInvestmentSummary(
   ticker?: string,
 ): Promise<InvestmentSummary> {
   // The preview shows the portfolio's summary Rust made from the synthetic seed.
-  if (!isTauri() && !ticker) return investmentSummarySchema.parse(seedInsights.summary)
+  if (!isTauri() && !ticker) return fromRust<InvestmentSummary>(seedView.summary)
   if (!isTauri()) throw new Error('Desktop app only')
-  return investmentSummarySchema.parse(
-    await invoke('get_investment_summary', { start, ticker: ticker ?? null }),
-  )
+  return invoke<InvestmentSummary>('get_investment_summary', { start, ticker: ticker ?? null })
 }
 
 /**
@@ -592,46 +558,39 @@ export async function getInvestmentSummary(
  * stalest holdings, so summaries and the holdings list are ready before they're opened. Runs at
  * most every ten minutes; `refreshed` is false when it was skipped.
  */
-export async function refreshPortfolioNews(): Promise<z.infer<typeof portfolioNewsSchema>> {
+export async function refreshPortfolioNews(): Promise<PortfolioNews> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return portfolioNewsSchema.parse(await invoke('refresh_portfolio_news'))
+  return invoke<PortfolioNews>('refresh_portfolio_news')
 }
 
 /** Held stocks by sector; looks up unclassified stocks in EDGAR once. */
 export async function getPortfolioSectors(): Promise<SectorExposure> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return sectorExposureSchema.parse(await invoke('get_portfolio_sectors'))
+  return invoke<SectorExposure>('get_portfolio_sectors')
 }
 
 export async function getEarningsCalendar(symbols: string[]): Promise<EarningsEvent[]> {
   if (!isTauri()) return []
-  return earningsEventSchema.array().parse(await invoke('get_earnings_calendar', { symbols }))
+  return invoke<EarningsEvent[]>('get_earnings_calendar', { symbols })
 }
 
 export async function getFoundationModelStatus(): Promise<FoundationModelStatus> {
   if (!isTauri()) {
     return { state: 'unavailable', message: 'Apple Intelligence requires the desktop app' }
   }
-  return foundationModelStatusSchema.parse(await invoke('get_foundation_model_status'))
+  return invoke<FoundationModelStatus>('get_foundation_model_status')
 }
 
-const foundationAnswerSchema = z.object({
-  text: z.string(),
-  /** `unavailable` when the queries didn't return what the question needed. */
-  outcome: z.enum(['answered', 'unavailable']).default('answered'),
-  evidence: z.array(ledgerCallSchema),
-  /** Figures the answer states that none of its queries returned, as written. */
-  unverified: z.array(z.string()).default([]),
-})
 /** An answer, the native ledger queries whose figures it may cite, and any it couldn't. */
-export type FoundationAnswer = z.infer<typeof foundationAnswerSchema>
+export type FoundationAnswer = Omit<AssistantAnswer, 'evidence'> & { evidence: LedgerCall[] }
 
 /** Reruns one read-only ledger query over the saved snapshot, without the language model. */
-export async function ledgerQuery(name: string, args: Record<string, unknown>) {
+export async function ledgerQuery(
+  name: string,
+  args: Record<string, unknown>,
+): Promise<Record<string, unknown>> {
   if (!isTauri()) throw new Error('Saved queries need the Brief desktop app')
-  return z
-    .record(z.string(), z.unknown())
-    .parse(await invoke('ledger_query', { name, arguments: args }))
+  return invoke<Record<string, unknown>>('ledger_query', { name, arguments: args })
 }
 
 let explanationQueue: Promise<unknown> = Promise.resolve()
@@ -658,14 +617,19 @@ export async function generateFoundationExplanation(
     })
     signal?.addEventListener('abort', cancel, { once: true })
     try {
-      const response = await invoke('generate_foundation_explanation', {
+      const response = await invoke<AssistantAnswer>('generate_foundation_explanation', {
         question: question.slice(0, 1_000),
         requestId,
         started,
       })
       // An abandoned answer is discarded before it is read.
       signal?.throwIfAborted()
-      return foundationAnswerSchema.parse(response)
+      // Evidence is a ledger query's arguments and result, which are JSON objects.
+      const evidence = response.evidence.flatMap((call) => {
+        const parsed = ledgerCallSchema.safeParse(call)
+        return parsed.success ? [parsed.data] : []
+      })
+      return { ...response, evidence }
     } finally {
       signal?.removeEventListener('abort', cancel)
     }
@@ -680,12 +644,12 @@ export async function getSavedMarket() {
 }
 
 export async function getLoginItem(): Promise<LoginItemState> {
-  return isTauri() ? loginItemStateSchema.parse(await invoke('get_login_item')) : 'unavailable'
+  return isTauri() ? invoke<LoginItemState>('get_login_item') : 'unavailable'
 }
 
 export async function setLoginItem(enabled: boolean): Promise<LoginItemState> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return loginItemStateSchema.parse(await invoke('set_login_item', { enabled }))
+  return invoke<LoginItemState>('set_login_item', { enabled })
 }
 
 export async function revealMainWindow() {

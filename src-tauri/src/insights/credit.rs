@@ -5,6 +5,7 @@
 //! counted, never assumed.
 use chrono::{Datelike, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use super::statement::StatementCycle;
@@ -17,43 +18,51 @@ pub const HIGH_UTILIZATION: f64 = 30.0;
 /// How far ahead of a statement closing a high balance is worth raising.
 pub const CLOSING_NOTICE_DAYS: i64 = 7;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CardCredit {
     pub account_id: String,
     /// What is owed now, positive.
     pub balance: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub limit: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub available: Option<f64>,
     /// Percent of the limit in use now.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub utilization: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub statement_utilization: Option<f64>,
     /// The next statement closing date: the issuer's cycle for the spending card, otherwise a
     /// month after the last reported statement.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub closes_on: Option<NaiveDate>,
     pub closes_estimated: bool,
     /// Interest the issuer charged on the last statement, across every rate.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub interest_charged: Option<f64>,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Credit {
     pub cards: Vec<CardCredit>,
     /// Across cards with a reported limit.
     pub balance: f64,
     pub limit: f64,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub utilization: Option<f64>,
     /// Cards whose issuer reports no limit, left out of the overall figure.
     pub cards_without_limit: usize,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub interest_charged: Option<f64>,
 }
 

@@ -1,7 +1,7 @@
 use super::*;
 
 /// A service whose credentials Brief keeps in the Keychain vault.
-#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum Integration {
     Plaid,

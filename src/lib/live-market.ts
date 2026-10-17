@@ -118,11 +118,70 @@ export function withMarketHistory(
   return next
 }
 
+/** The live stream as the renderer holds it, for one set of symbols. */
+export type LiveMarketState = {
+  market?: MarketSnapshots
+  symbolKey?: string
+  series: Record<string, LivelinePoint[]>
+  /** Each value chart's change at the live lines, as Rust read them. */
+  changes?: ChartChanges
+  /**
+   * Until a stream's week of bars joins its lines, frames read changes from a partial line;
+   * they wait here, so the shown change settles once instead of stepping toward its value.
+   */
+  pendingChanges?: ChartChanges
+  settled?: boolean
+  error?: string
+}
+
+/** A frame joins the lines. A stream's `first` frame waits for its week again. */
+export function withMarketFrame(
+  current: LiveMarketState,
+  market: MarketSnapshots,
+  symbolKey: string,
+  first: boolean,
+): LiveMarketState {
+  const same = current.symbolKey === symbolKey
+  const settled = !first && same && Boolean(current.settled)
+  // A restarted stream keeps showing the changes it had until its own week arrives.
+  const shown = same ? current.changes : undefined
+  return {
+    market,
+    symbolKey,
+    series: liveMarketSeries(current.series, market),
+    settled,
+    ...(settled
+      ? { changes: market.chartChanges ?? shown }
+      : {
+          changes: shown,
+          pendingChanges: market.chartChanges ?? (first ? undefined : current.pendingChanges),
+        }),
+  }
+}
+
+/** The week joins the lines and settles the changes they show. */
+export function withMarketWeek(
+  current: LiveMarketState,
+  history: MarketHistory,
+  changes: ChartChanges | undefined,
+  symbolKey: string,
+): LiveMarketState {
+  if (current.symbolKey !== symbolKey) return current
+  return {
+    ...current,
+    series: withMarketHistory(current.series, history),
+    changes: changes ?? current.pendingChanges ?? current.changes,
+    pendingChanges: undefined,
+    settled: true,
+  }
+}
+
 // One app-level owner. Each restart gets scoped cancellation.
 export function subscribeLiveMarket(
   symbols: string[],
   interval: number,
-  onUpdate: (market: MarketSnapshots) => void,
+  /** `first` marks each stream's first frame, which a history message then completes. */
+  onUpdate: (market: MarketSnapshots, first: boolean) => void,
   onError: (message: string) => void,
   onHistory: (series: MarketHistory, changes?: ChartChanges) => void = () => undefined,
 ) {
@@ -152,7 +211,7 @@ export function subscribeLiveMarket(
       id,
       (market) => {
         if (disposed || active !== id) return
-        onUpdate(market)
+        onUpdate(market, !received)
         if (received) return
         received = true
         const transition = Date.parse(market.nextTransitionAt ?? '') - Date.now() + 1_000

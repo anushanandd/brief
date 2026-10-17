@@ -4,12 +4,14 @@
 //! an account without known flows has no return, never an estimated one.
 use chrono::{Datelike, Duration, NaiveDate};
 use serde::Serialize;
+use ts_rs::TS;
 
 use crate::finance_contract::{Performance, PerformancePoint};
 use crate::numeric::round2;
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[ts(rename = "ReturnWindow")]
 pub enum Window {
     Day,
     Week,
@@ -30,7 +32,7 @@ pub(super) const WINDOWS: [Window; 7] = [
     Window::All,
 ];
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct WindowReturn {
     pub window: Window,
@@ -40,17 +42,20 @@ pub struct WindowReturn {
     pub time_weighted_pct: f64,
     /// Percent over the window that, applied to every deposit from its date, reaches the
     /// ending value. Unavailable when no single rate explains the flows.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub money_weighted_pct: Option<f64>,
     /// The benchmark's time-weighted percent over the same days.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub benchmark_pct: Option<f64>,
     /// Deposits less withdrawals during the window.
     pub net_deposits: f64,
     /// Ending value less starting value and net deposits.
     pub market_gain: f64,
     /// `ahead`, `behind`, or `inline` (within 0.05 points) of the benchmark.
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub vs_benchmark: Option<&'static str>,
 }
 
@@ -65,7 +70,7 @@ pub fn compare(you: f64, benchmark: f64) -> &'static str {
     }
 }
 
-#[derive(Clone, Debug, Serialize)]
+#[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountReturns {
     pub account_id: String,

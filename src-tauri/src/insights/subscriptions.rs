@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 use serde::Serialize;
+use ts_rs::TS;
 
 use super::calendar;
 use super::forecast::{recurring_key, EventKind, EventState, ExpectedEvent};
@@ -16,7 +17,7 @@ use crate::numeric::minor_units;
 /// Long enough for a yearly charge to be next.
 pub const HORIZON_DAYS: i64 = 366;
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Subscription {
     pub recurring_id: String,
@@ -27,15 +28,17 @@ pub struct Subscription {
     pub frequency: &'static str,
     pub next_date: NaiveDate,
     pub pending: bool,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub account_id: Option<String>,
     pub source_transaction_id: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub price_change: Option<PriceChange>,
 }
 
 /// The latest posted charge against the price the subscription held before it.
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PriceChange {
     /// Both negative, like the charges.
@@ -45,7 +48,7 @@ pub struct PriceChange {
     pub transaction_id: String,
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Subscriptions {
     /// Sum of monthly costs, negative.
