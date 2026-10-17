@@ -444,8 +444,15 @@ fn settings_and_annotations_persist_apply_at_read_time_and_are_erased() {
 
     let directory = directory();
     let mut storage = Storage::new(directory.clone()).unwrap();
-    storage.data.snapshot =
-        serde_json::from_str(include_str!("../../../../src/data/seed.json")).unwrap();
+    storage.data.snapshot = serde_json::from_str(include_str!(
+        "../../../../src/data/fixtures/native-finance.json"
+    ))
+    .unwrap();
+    // The log holds what Brief reads, so the projected snapshot is saved as a checkpoint.
+    storage
+        .database
+        .checkpoint(&storage.data, change::Reason::Start)
+        .unwrap();
     let transaction = storage.data.snapshot.transactions[0].clone();
     let id = transaction.id.clone();
 

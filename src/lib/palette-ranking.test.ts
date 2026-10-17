@@ -67,6 +67,6 @@ it('toggles and reorders favorites without leaving the list', () => {
 
 it('reads a leading prefix as a jump to its tab', () => {
   expect(paletteTabPrefix('> dark')).toMatchObject({ tab: { id: 'commands' }, term: 'dark' })
-  expect(paletteTabPrefix('@chase')).toMatchObject({ tab: { id: 'accounts' }, term: 'chase' })
+  expect(paletteTabPrefix('@doc w-2')).toMatchObject({ tab: { id: 'objects' }, term: 'doc w-2' })
   expect(paletteTabPrefix('dark')).toBeUndefined()
 })

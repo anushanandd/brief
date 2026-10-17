@@ -27,6 +27,7 @@ mod statements;
 mod validate;
 
 pub use annotations::{splits_divide, Annotation, Split};
+pub(crate) use bank_statements::OPENED_DIRECTORY as OPENED_STATEMENTS;
 use legacy::*;
 pub use statements::{StatementDraft, StatementPreview, StatementSummary};
 use validate::*;
@@ -119,6 +120,8 @@ struct CachedView {
     view: std::sync::Arc<crate::insights::View>,
     /// The same view as the renderer receives it.
     json: Value,
+    /// The object graph of this view, built on the first read that needs it.
+    graph: Option<std::sync::Arc<crate::objects::Graph>>,
 }
 
 /// The view as the renderer receives it: the snapshot with the edits and insights it was
@@ -269,12 +272,25 @@ pub(crate) fn derive_view(
     ))
 }
 
+/// Opens a finance database at the state its change log holds (`change::authoritative`),
+/// bringing its tables back to the log when they strayed.
 fn load_database(path: &Path) -> Result<(Database, FinanceState), String> {
-    let database = Database::open(path)?;
-    let data = database
-        .load()?
-        .ok_or_else(|| "The finance database has no committed state".to_string())?;
-    Ok((database, validate_state(data)?))
+    let mut database = Database::open(path)?;
+    let (data, tables) = change::authoritative(&database)?;
+    let data = validate_state(data)?;
+    match tables {
+        change::Tables::Current => {}
+        change::Tables::Rebuild => database.rebuild_tables(&data)?,
+        change::Tables::Checkpoint => database.checkpoint(&data, change::Reason::Upgrade)?,
+    }
+    Ok((database, data))
+}
+
+/// A backup's state as its change log holds it. Opening brings an older backup's schema up
+/// to date, as before; its tables are left as they are.
+fn read_backup(path: &Path) -> Result<FinanceState, String> {
+    let (data, _) = change::authoritative(&Database::open(path)?)?;
+    validate_state(data)
 }
 
 impl Storage {
@@ -354,12 +370,52 @@ impl Storage {
                 key,
                 view: std::sync::Arc::new(view),
                 json,
+                graph: None,
             });
         }
         let view = self.view.borrow();
         Ok(read(
             view.as_ref().ok_or("The derived view is unavailable")?,
         ))
+    }
+
+    /// The object graph of the current view. Building it also saves it to the graph's tables,
+    /// which the readers of single objects use.
+    pub fn graph(&self) -> Result<std::sync::Arc<crate::objects::Graph>, String> {
+        if let Some(graph) = self.view(|cached| cached.graph.clone())? {
+            return Ok(graph);
+        }
+        let view = self.read_view()?;
+        let graph = std::sync::Arc::new(crate::objects::graph(&self.data, &view));
+        let hash = graph.hash()?;
+        // A failed save leaves the tables as they were; the next read compares and retries.
+        if self.database.graph_hash().ok().flatten() != Some(hash.clone()) {
+            let _ = self.database.write_graph(&graph, &hash);
+        }
+        if let Some(cached) = self.view.borrow_mut().as_mut() {
+            cached.graph = Some(graph.clone());
+        }
+        Ok(graph)
+    }
+
+    /// One object with its links and facts, read from the graph's tables. Every read compares
+    /// the object with the graph built from the view; tables that differ (a save that failed)
+    /// are rewritten first, so a reader never sees them drift.
+    pub fn object(&self, id: &str) -> Result<Option<crate::objects::Detail>, String> {
+        let graph = self.graph()?;
+        let built = graph.objects.iter().find(|candidate| candidate.id == id);
+        if self.database.graph_object(id)?.as_ref() != built {
+            self.database.write_graph(&graph, &graph.hash()?)?;
+        }
+        let Some(object) = self.database.graph_object(id)? else {
+            return Ok(None);
+        };
+        Ok(Some(crate::objects::Detail {
+            links: self.database.graph_links(id)?,
+            facts: self.database.graph_facts(Some(id))?,
+            provider: crate::objects::provider_record(&self.data, &object),
+            object,
+        }))
     }
 
     /// Identifies everything a derived view is computed from, with the clock to the quarter hour.
@@ -526,7 +582,7 @@ impl Storage {
             Ok((database, data)) => (database, data, None),
             Err(_) => {
                 let backup = if backup_path.exists() {
-                    load_database(&backup_path).ok().map(|(_, data)| data)
+                    read_backup(&backup_path).ok()
                 } else {
                     read(&directory.join("finance-state.backup.json"))
                         .and_then(validate_state)

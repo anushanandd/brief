@@ -32,6 +32,22 @@ it('adds one chip per field, switching to Activity, and steps back one level at 
   expect(paletteReducer(filtered, { type: 'back' }).chips).toEqual([])
 })
 
+it('asks a verb which object it acts on, searching as typed, and steps back', () => {
+  const asking = run({ type: 'chooseVerb', verb: 'holding.taxes' }, { type: 'type', query: '/' })
+  // Inside the question, `/` and prefixes are just text.
+  expect(asking).toMatchObject({ verbStep: 'holding.taxes', query: '/', filterStep: undefined })
+  expect(paletteReducer(asking, { type: 'clear' })).toMatchObject({
+    verbStep: 'holding.taxes',
+    query: '',
+  })
+  expect(run({ type: 'chooseVerb', verb: 'holding.taxes' }, { type: 'clear' }).verbStep).toBe(
+    undefined,
+  )
+  expect(run({ type: 'chooseVerb', verb: 'holding.taxes' }, { type: 'back' }).verbStep).toBe(
+    undefined,
+  )
+})
+
 it('keeps the selection while asking and clears it whenever the results change', () => {
   const selected = run({ type: 'select', id: 'row' })
   expect(paletteReducer(selected, { type: 'type', query: 'x' }).selected).toBe('')

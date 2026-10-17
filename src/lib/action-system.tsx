@@ -52,6 +52,16 @@ const emptyRegistry: ActionRegistry = {
 
 const ActionRegistryContext = createContext<ActionRegistry>(emptyRegistry)
 const RegisteredActionsContext = createContext<readonly AppAction[]>([])
+const QueueActionContext = createContext<(id: string) => void>(() => undefined)
+
+/** How long a queued action waits for its page to register it. */
+const QUEUE_WAIT_MS = 10_000
+
+/**
+ * Runs an action once a page registers it, enabled: how a verb opens its page from anywhere
+ * and then does its work. A newer request replaces an older one; one never registered lapses.
+ */
+export const useQueueAction = () => useContext(QueueActionContext)
 
 export function ActionProvider({ children }: { children: ReactNode }) {
   const [registrations, setRegistrations] = useState<ReadonlyMap<string, readonly AppAction[]>>(
@@ -75,17 +85,37 @@ export function ActionProvider({ children }: { children: ReactNode }) {
   }, [])
   const actions = useMemo(() => [...registrations.values()].flat(), [registrations])
   const value = useMemo(() => ({ register, unregister }), [register, unregister])
+  const [queued, setQueued] = useState<string | null>(null)
+  useEffect(() => {
+    if (!queued) return undefined
+    const action = actions.find(({ id, disabled }) => id === queued && !disabled)
+    if (action) {
+      setQueued(null)
+      void Promise.resolve(action.run()).catch(() => undefined)
+      return undefined
+    }
+    const timer = setTimeout(() => setQueued(null), QUEUE_WAIT_MS)
+    return () => clearTimeout(timer)
+  }, [actions, queued])
   return (
     <ActionRegistryContext.Provider value={value}>
       <RegisteredActionsContext.Provider value={actions}>
-        {children}
+        <QueueActionContext.Provider value={setQueued}>{children}</QueueActionContext.Provider>
       </RegisteredActionsContext.Provider>
     </ActionRegistryContext.Provider>
   )
 }
 
+/**
+ * Tests only: collects every action id a render registers. Rendering to a string runs no
+ * effects, so this is how a route test reads the registry its page would fill.
+ */
+export const ActionCollectorContext = createContext<Set<string> | null>(null)
+
 export function useRegisterActions(actions: readonly AppAction[]) {
   const id = useId()
+  const collector = useContext(ActionCollectorContext)
+  if (collector) for (const action of actions) collector.add(action.id)
   const { register, unregister } = useContext(ActionRegistryContext)
   useEffect(() => {
     register({ id, actions })

@@ -5,6 +5,7 @@ mod calendar;
 mod close;
 mod commands;
 mod contacts;
+mod data_folder;
 mod database;
 mod document_summaries;
 mod documents;
@@ -14,15 +15,18 @@ mod financial_engine;
 mod foundation_model;
 mod health;
 mod insights;
+mod inventory;
 mod market;
 mod merchants;
 mod native_menu;
 mod notify;
 mod numeric;
+mod objects;
 mod places;
 mod providers;
 mod quality;
 mod refresh;
+mod search;
 mod session;
 mod settings;
 mod startup_market;
@@ -38,7 +42,7 @@ use std::{sync::Mutex, time::Duration as StdDuration};
 
 use commands::{
     assistant, backups, documents as document_commands, finance, integrations, investments,
-    places as place_commands,
+    objects as object_commands, places as place_commands,
 };
 use providers::Providers;
 use storage::Storage;
@@ -62,6 +66,10 @@ struct AppState {
     statement_draft: Mutex<Option<storage::StatementDraft>>,
     /// Held while Brief finds places, so only one search runs.
     places: tokio::sync::Mutex<()>,
+    /// The search index over the current graph, rebuilt when the graph changes.
+    search: Mutex<Option<search::Index>>,
+    /// What the readable folder last wrote.
+    written: Mutex<commands::data_folder::Written>,
 }
 
 impl AppState {
@@ -70,6 +78,12 @@ impl AppState {
         self.storage
             .lock()
             .map_err(|_| "The local data store is unavailable".to_string())
+    }
+
+    fn written(&self) -> Result<std::sync::MutexGuard<'_, commands::data_folder::Written>, String> {
+        self.written
+            .lock()
+            .map_err(|_| "The data folder is unavailable".to_string())
     }
 
     /// The statement awaiting import, or an error once a panic has poisoned its lock.
@@ -138,6 +152,18 @@ fn check_log_in_background(app: tauri::AppHandle) {
     });
 }
 
+/// How often the readable folder checks for changes to write.
+const DATA_FOLDER_INTERVAL: StdDuration = StdDuration::from_secs(30);
+
+/// Keeps the readable folder current: after a change, or a new day, it is written again in
+/// the background, never in a commit's way. Off until the user chooses a folder.
+fn write_data_folder_in_background(app: tauri::AppHandle) {
+    std::thread::spawn(move || loop {
+        std::thread::sleep(DATA_FOLDER_INTERVAL);
+        let _ = commands::data_folder::sync_data_folder(&app, false);
+    });
+}
+
 /// The system-wide key that summons the command palette: ⌘⇧B.
 fn palette_shortcut() -> tauri_plugin_global_shortcut::Shortcut {
     use tauri_plugin_global_shortcut::{Code, Modifiers, Shortcut};
@@ -190,6 +216,8 @@ pub fn run() {
                 holding_selection: Mutex::new(None),
                 statement_draft: Mutex::new(None),
                 places: tokio::sync::Mutex::new(()),
+                search: Mutex::new(None),
+                written: Mutex::default(),
             });
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -206,6 +234,7 @@ pub fn run() {
             calendar::start(app.handle().clone());
             close::start(app.handle().clone());
             check_log_in_background(app.handle().clone());
+            write_data_folder_in_background(app.handle().clone());
             notify::sync_tray(app.handle(), background::enabled(app.handle()));
             Ok(())
         })
@@ -232,6 +261,13 @@ pub fn run() {
             finance::get_reports,
             finance::get_sync_runs,
             finance::get_change_log,
+            object_commands::search_objects,
+            object_commands::get_object,
+            object_commands::get_stored_files,
+            object_commands::get_stored_rows,
+            commands::data_folder::get_data_folder_status,
+            commands::data_folder::write_data_folder,
+            commands::data_folder::export_data_folder,
             finance::get_data_health,
             finance::transaction_annotations,
             finance::restore_transaction_annotations,

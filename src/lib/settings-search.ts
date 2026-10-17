@@ -260,9 +260,19 @@ export const settingsSections: readonly SettingsSection[] = [
         keywords: 'calendar ics bills dividends statement dates lots csv tax accountant',
       },
       {
+        id: 'data-folder',
+        title: 'Readable folder',
+        keywords: 'csv markdown obsidian mirror copy export zip plain files',
+      },
+      {
+        id: 'data-folder-masked',
+        title: 'Mask amounts in the folder',
+        keywords: 'hide amounts masked readable folder',
+      },
+      {
         id: 'local-storage',
         title: 'Local storage',
-        keywords: 'database keychain caches where stored disk',
+        keywords: 'database keychain caches where stored disk files tables rows storage',
       },
       {
         id: 'erase-data',

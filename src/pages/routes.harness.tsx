@@ -12,6 +12,7 @@ import { classification } from '../data/fixtures/classification'
 import { emptyInsightDetails } from '../data/fixtures/insights'
 import { account, holding, transaction as record } from '../data/fixtures/records'
 import { LiveMarketProvider } from '../hooks/live-market-provider'
+import { ActionCollectorContext } from '../lib/action-system'
 import { dayKey } from '../lib/dates'
 import { formatShortDay, setAmountsHidden } from '../lib/format'
 import { settingsSections } from '../lib/settings-search'
@@ -909,7 +910,12 @@ afterEach(() => {
   setAmountsHidden(false)
 })
 
-export async function renderRoute(path: string, selectedAccount = 'selected') {
+/** Renders a route; `registered`, when given, collects the action ids its page registers. */
+export async function renderRoute(
+  path: string,
+  selectedAccount = 'selected',
+  registered?: Set<string>,
+) {
   scenario.spendingAccountId = selectedAccount
   const storage = {
     getItem: (key: string) =>
@@ -927,11 +933,13 @@ export async function renderRoute(path: string, selectedAccount = 'selected') {
   })
   try {
     return renderToString(
-      <QueryClientProvider client={client}>
-        <LiveMarketProvider>
-          <RouterProvider router={testRouter} />
-        </LiveMarketProvider>
-      </QueryClientProvider>,
+      <ActionCollectorContext.Provider value={registered ?? null}>
+        <QueryClientProvider client={client}>
+          <LiveMarketProvider>
+            <RouterProvider router={testRouter} />
+          </LiveMarketProvider>
+        </QueryClientProvider>
+      </ActionCollectorContext.Provider>,
     )
   } finally {
     client.clear()

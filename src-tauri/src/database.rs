@@ -21,6 +21,7 @@ use crate::{
 mod bank_statements;
 mod blobs;
 mod changesets;
+mod graph;
 mod journal;
 mod migrations;
 
@@ -42,7 +43,7 @@ const COLLECTIONS: [&str; 11] = [
     "brokeragePerformance",
     "possibleDuplicateAccounts",
 ];
-const DATABASE_SCHEMA_VERSION: u32 = 20;
+const DATABASE_SCHEMA_VERSION: u32 = 21;
 const DATABASE_APPLICATION_ID: u32 = 0x4252_4946; // BRIF
 
 pub struct Database {
@@ -466,6 +467,14 @@ impl Database {
         self.commit(state, &change)
     }
 
+    /// Rewrites the tables from the state the log replays to. The tables are the log's cache,
+    /// so nothing is appended: the log already holds this state.
+    pub fn rebuild_tables(&mut self, state: &FinanceState) -> Result<(), String> {
+        let transaction = self.connection.transaction().map_err(db_error)?;
+        write_state(&transaction, state)?;
+        transaction.commit().map_err(db_error)
+    }
+
     /// Whether the log has begun.
     pub fn has_log(&self) -> Result<bool, String> {
         Ok(changesets::latest(&self.connection)?.is_some())
@@ -527,6 +536,7 @@ impl Database {
         transaction
             .execute("DELETE FROM market_events", [])
             .map_err(db_error)?;
+        Self::clear_graph(&transaction)?;
         transaction
             .execute("DELETE FROM bank_statements", [])
             .map_err(db_error)?;

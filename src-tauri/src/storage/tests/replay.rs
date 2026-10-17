@@ -249,6 +249,87 @@ fn replay_names_the_change_whose_result_differs() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// A few weeks of the synthetic life, saved and closed, with the state the log holds.
+fn closed_life(seed: u64) -> (PathBuf, String) {
+    let directory = directory();
+    let mut storage = Storage::new(directory.clone()).unwrap();
+    let life = Life::new(seed);
+    for day in life.refresh_days().into_iter().take(4) {
+        refresh(&mut storage, life.refresh(day));
+    }
+    let logged = change::state_hash(&storage.data).unwrap();
+    drop(storage);
+    (directory, logged)
+}
+
+fn tables(directory: &Path) -> rusqlite::Connection {
+    rusqlite::Connection::open(directory.join("finance-state.sqlite3")).unwrap()
+}
+
+#[test]
+fn the_log_rebuilds_tables_that_stray_from_it() {
+    let (directory, logged) = closed_life(11);
+    tables(&directory)
+        .execute(
+            "UPDATE snapshot_scalar SET value_json = '1' WHERE key = 'netWorth'",
+            [],
+        )
+        .unwrap();
+    let storage = Storage::new(directory.clone()).unwrap();
+    assert!(!storage.is_recovering());
+    assert_eq!(change::state_hash(&storage.data).unwrap(), logged);
+    // The tables were rebuilt, so the next open needs no replay.
+    let saved = storage.database.load().unwrap().unwrap();
+    assert_eq!(change::state_hash(&saved).unwrap(), logged);
+    assert_replays(&storage);
+    drop(storage);
+
+    // Tables lost entirely come back from the log too.
+    tables(&directory)
+        .execute("DELETE FROM state_meta", [])
+        .unwrap();
+    let storage = Storage::new(directory.clone()).unwrap();
+    assert!(!storage.is_recovering());
+    assert_eq!(change::state_hash(&storage.data).unwrap(), logged);
+    drop(storage);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_log_this_code_reads_differently_opens_at_its_replay_and_checkpoints_it() {
+    let (directory, _) = closed_life(13);
+    // A log whose latest change records a state this code doesn't produce, as after an
+    // update that changed how a state is saved or computed.
+    let mut storage = Storage::new(directory.clone()).unwrap();
+    let settings = storage.data.settings.clone();
+    let replayed =
+        change::apply(&storage.data, &Change::Settings(Box::new(settings.clone()))).unwrap();
+    let mut wrong = replayed.clone();
+    wrong.snapshot.net_worth += 1.0;
+    storage
+        .database
+        .commit(&wrong, &Change::Settings(Box::new(settings)))
+        .unwrap();
+    drop(storage);
+    tables(&directory)
+        .execute(
+            "UPDATE snapshot_scalar SET value_json = '1' WHERE key = 'netWorth'",
+            [],
+        )
+        .unwrap();
+    let storage = Storage::new(directory.clone()).unwrap();
+    assert!(!storage.is_recovering());
+    // Neither the strayed tables nor the recorded result: the log's changes under this code.
+    assert_eq!(
+        change::state_hash(&storage.data).unwrap(),
+        change::state_hash(&replayed).unwrap()
+    );
+    // The new checkpoint makes the log and tables agree, so later opens need no replay.
+    assert_replays(&storage);
+    drop(storage);
+    fs::remove_dir_all(directory).unwrap();
+}
+
 #[test]
 fn erasure_starts_the_log_over_from_the_erased_state() {
     let directory = directory();

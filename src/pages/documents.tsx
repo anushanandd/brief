@@ -23,6 +23,7 @@ import {
   Trash2,
   X,
 } from '../components/icons'
+import { useObjectDetailsAction } from '../components/object-details'
 import { SelectorStrip } from '../components/selector-strip'
 import { SettingsLink } from '../components/settings-dialog'
 import { Button, Card, EmptyState, SectionHeading } from '../components/ui'
@@ -374,6 +375,7 @@ export function DocumentsPage() {
 
   // A different document closes the one being viewed.
   useEffect(() => setViewing(false), [open])
+  useObjectDetailsAction(search.document ? `document:${search.document}` : undefined)
 
   if (query.isLoading) return <PageLoading />
   if (query.isError || !query.data) return <PageError />

@@ -105,6 +105,7 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
             .and_then(|()| connection.execute_batch(DOCUMENTS_SCHEMA))
             .and_then(|()| connection.execute_batch(super::blobs::SCHEMA))
             .and_then(|()| connection.execute_batch(super::changesets::SCHEMA))
+            .and_then(|()| connection.execute_batch(super::graph::SCHEMA))
             .map_err(db_error);
     }
 
@@ -279,6 +280,10 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
     connection
         .execute_batch(super::blobs::SCHEMA)
         .and_then(|()| connection.execute_batch(super::changesets::SCHEMA))
+        .map_err(db_error)?;
+    // Version 21 keeps the object graph read from the view, for search and the raw view.
+    connection
+        .execute_batch(super::graph::SCHEMA)
         .map_err(db_error)?;
     connection
         .execute_batch(&format!(

@@ -9,6 +9,7 @@ fn main() {
         build_swift_bridge("ContactsBridge", "BriefContacts");
         build_swift_bridge("CalendarBridge", "BriefCalendar");
         build_swift_bridge("DocumentBridge", "BriefDocuments");
+        build_swift_bridge("EmbeddingBridge", "BriefEmbeddings");
         println!("cargo:rustc-link-arg=-Wl,-weak_framework,FoundationModels");
         println!("cargo:rustc-link-arg=-Wl,-rpath,/usr/lib/swift");
         println!("cargo:rustc-link-lib=framework=Foundation");
@@ -16,6 +17,7 @@ fn main() {
         println!("cargo:rustc-link-lib=framework=EventKit");
         println!("cargo:rustc-link-lib=framework=PDFKit");
         println!("cargo:rustc-link-lib=framework=Vision");
+        println!("cargo:rustc-link-lib=framework=NaturalLanguage");
         println!("cargo:rustc-link-lib=dylib=swiftCore");
         println!("cargo:rustc-link-lib=dylib=swift_Concurrency");
     }

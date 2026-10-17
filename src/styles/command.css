@@ -498,6 +498,89 @@ kbd.keycap {
   font-size: var(--type-meta);
 }
 
+/* Details (⌘I): one object's stored record as a tree, in the shortcuts dialog's frame. */
+.object-details-dialog {
+  width: min(720px, calc(100vw - 48px));
+}
+.object-details-id {
+  margin: 0 0 8px;
+  color: var(--text-tertiary);
+  font-family: var(--font-mono);
+  font-size: var(--type-meta);
+  overflow-wrap: anywhere;
+}
+.object-details-body section + section {
+  margin-top: 16px;
+}
+.object-details-body h3 {
+  margin: 0;
+  padding: 8px 0;
+  font-size: var(--type-body);
+  font-weight: 600;
+}
+.object-facts,
+.object-links {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.object-facts li,
+.object-links li {
+  display: grid;
+  grid-template-columns: minmax(120px, 30%) minmax(0, 1fr);
+  gap: 2px 16px;
+  padding: 6px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-size: var(--type-body);
+}
+.object-facts small {
+  grid-column: 2;
+  color: var(--text-tertiary);
+}
+.object-facts li > span:first-child,
+.object-links li > span:first-child,
+.raw-tree dt {
+  color: var(--text-secondary);
+}
+.raw-tree {
+  display: grid;
+  margin: 0;
+  gap: 2px;
+}
+.raw-tree > div {
+  display: grid;
+  grid-template-columns: minmax(120px, 30%) minmax(0, 1fr);
+  gap: 16px;
+}
+.raw-tree dd {
+  min-width: 0;
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+.raw-tree .raw-tree > div {
+  grid-template-columns: minmax(96px, 30%) minmax(0, 1fr);
+}
+.raw-list {
+  margin: 0;
+  padding-left: 20px;
+}
+.raw-null {
+  color: var(--text-tertiary);
+}
+.object-link {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  overflow-wrap: anywhere;
+  cursor: pointer;
+}
+.object-link:hover {
+  text-decoration: underline;
+}
+
 /* Contextual key guide: a compact panel centred over the content, styled like the
    Keyboard shortcuts dialog. It appears on every prefix key, so it does not animate. */
 .key-guide {

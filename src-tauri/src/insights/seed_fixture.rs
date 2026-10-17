@@ -94,6 +94,13 @@ fn browser_seed_insights_match_native_insights() {
         "summary": crate::summary::preview::summary(),
     });
     matches_fixture("seed-view.json", &fixture, false);
+    // The seed's object graph, which the preview searches and shows raw.
+    let graph = crate::objects::graph(&state, &read);
+    matches_fixture(
+        "seed-objects.json",
+        &json!({ "objects": graph.objects, "links": graph.links, "facts": graph.facts }),
+        false,
+    );
     // A view of no saved data, which renderer tests start from.
     let empty = crate::storage::empty_state().unwrap();
     let (_, view) =

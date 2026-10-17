@@ -89,6 +89,22 @@ pub struct FinanceSettings {
     /// its transactions when saved, and joins any trip that shares one.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub trip_companions: Vec<TripCompanions>,
+    /// Where Brief writes a readable copy of what it knows, as plain CSV and Markdown; off when
+    /// absent. Brief writes it after changes and never reads it back.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub data_folder: Option<DataFolder>,
+}
+
+/// The readable copy's place: Brief writes `Brief Data` inside the chosen folder.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct DataFolder {
+    /// The chosen folder, an absolute path.
+    pub path: String,
+    /// Write every amount as `•••`.
+    #[serde(default)]
+    pub masked: bool,
 }
 
 /// Someone transactions and trips can be tagged with. Tagging never changes an amount or a
@@ -539,6 +555,17 @@ impl FinanceSettings {
             Some(_) => return Err(invalid("calendar")),
             None => None,
         };
+        let data_folder = match self.data_folder {
+            Some(folder)
+                if folder.path.len() <= 1_024
+                    && std::path::Path::new(&folder.path).is_absolute()
+                    && !folder.path.chars().any(char::is_control) =>
+            {
+                Some(folder)
+            }
+            Some(_) => return Err(invalid("data folder")),
+            None => None,
+        };
         Ok(Self {
             spending_account_id,
             spending_cards,
@@ -574,6 +601,7 @@ impl FinanceSettings {
             retired_template_wording: None,
             people,
             trip_companions,
+            data_folder,
         })
     }
 

@@ -22,6 +22,7 @@ import { AccountMark } from './account-mark'
 import { ActivityList } from './activity-list'
 import { HoldingEarnings } from './holding-earnings'
 import { ChevronRight, ReceiptText, X } from './icons'
+import { useObjectDetailsAction } from './object-details'
 import { SecurityMark } from './security-mark'
 import { SettingsLink } from './settings-dialog'
 import { Button, Card, EmptyState, Metric, ScrollCueCard, SectionHeading } from './ui'
@@ -84,6 +85,8 @@ export function PositionCard({
     [],
   )
   useRegisterActions(taxActions)
+  // ⌘I shows the first account's position; each account's is its own object.
+  useObjectDetailsAction(held[0] ? `holding:${held[0].accountId}:${ticker}` : undefined)
   return (
     <Card className="investments-side-card position-card" aria-label={`Your ${ticker} position`}>
       <SectionHeading title="Your position" />
