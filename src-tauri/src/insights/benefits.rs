@@ -142,6 +142,11 @@ struct RuleFile {
     /// The Basic Card's annual fee and the descriptor its charge posts under.
     annual_fee: Option<f64>,
     annual_fee_matches: Option<String>,
+    /// The issuer's name for the product as Plaid reports it in `official_name`, which
+    /// recognizes the card without the user assigning it, and the names of other products
+    /// that would otherwise match.
+    official_names: Option<String>,
+    official_name_excludes: Option<String>,
     benefits: Vec<RuleData>,
 }
 
@@ -245,7 +250,22 @@ pub struct RuleSet {
     pub terms_reviewed: String,
     annual_fee: Option<f64>,
     annual_fee_matches: Option<Regex>,
+    official_names: Option<Regex>,
+    official_name_excludes: Option<Regex>,
     rules: Vec<Rule>,
+}
+
+impl RuleSet {
+    /// Whether the issuer's official name for a card names this product.
+    pub fn names(&self, official_name: &str) -> bool {
+        self.official_names
+            .as_ref()
+            .is_some_and(|names| names.is_match(official_name.trim()))
+            && !self
+                .official_name_excludes
+                .as_ref()
+                .is_some_and(|excludes| excludes.is_match(official_name))
+    }
 }
 
 /// Issuer-posted credits set against the card's annual fee for the current membership year.
@@ -256,7 +276,12 @@ pub struct FeeRecovery {
     /// Posted credits net of reversals since `since` on purchases that were yours, hidden
     /// benefits included: hiding a benefit stops reminders, not the money it returned.
     pub recovered: f64,
-    /// How far `recovered` is from the fee, short of it or past it.
+    /// Money from elsewhere filed as repaying the fee charge since `since`: a bank's
+    /// engagement bonus a program explains, or a refund link you made.
+    pub offsets: f64,
+    /// Whether `recovered` and `offsets` together reach the fee.
+    pub covered: bool,
+    /// How far `recovered` and `offsets` together are from the fee, short of it or past it.
     pub gap: f64,
     /// Credits in the same period on purchases made for someone else: the allowance was used,
     /// but the saving went to them.
@@ -284,6 +309,8 @@ pub static PLATINUM: LazyLock<RuleSet> = LazyLock::new(|| {
         terms_reviewed: file.terms_reviewed,
         annual_fee: file.annual_fee,
         annual_fee_matches: file.annual_fee_matches.as_deref().map(pattern),
+        official_names: file.official_names.as_deref().map(pattern),
+        official_name_excludes: file.official_name_excludes.as_deref().map(pattern),
         rules: file
             .benefits
             .into_iter()
@@ -313,6 +340,16 @@ pub fn products() -> Vec<&'static RuleSet> {
 /// The rule data for a product id, or none when the id names no known card.
 pub fn product(id: &str) -> Option<&'static RuleSet> {
     products().into_iter().find(|rules| rules.product == id)
+}
+
+/// The product whose official name the issuer reports for a card, when exactly one does.
+pub fn named_product(official_name: Option<&str>) -> Option<&'static RuleSet> {
+    let official_name = official_name?;
+    let mut named = products()
+        .into_iter()
+        .filter(|rules| rules.names(official_name));
+    let first = named.next()?;
+    named.next().is_none().then_some(first)
 }
 
 /// The product a card is tracked as before the user assigns one.

@@ -13,13 +13,15 @@ import { getExternalLogosEnabled } from '../lib/logos'
 import { personFromSearch } from '../lib/people'
 import type { FinanceSnapshot } from '../lib/schema'
 import { tripTitle } from '../lib/trips'
+import { ChaptersView } from './chapters'
 import { PeopleView } from './people'
+import { RulesView } from './rules'
 import { tripFromSearch, TripsView } from './trips'
 
 /**
  * Insights: what Rust worked out from the saved activity that no ledger shows directly. One
  * strip of cards heads it, as Money's does; each card is a view: Trips, the default, then
- * People. Everything here is derived natively; this page only lays it out.
+ * People, Chapters, and Rules. Everything here is derived natively; this page only lays it out.
  */
 export function InsightsPage() {
   const query = useFinance()
@@ -59,6 +61,16 @@ function Insights({ data }: { data: FinanceSnapshot }) {
       to: '/insights',
       search: { view: 'people', person: person.id },
     })
+  const chapter =
+    view === 'chapters'
+      ? data.insights?.evidence.chapters.find((candidate) => candidate.id === search.chapter)
+      : undefined
+  if (chapter)
+    breadcrumbs.push({
+      label: chapter.title,
+      to: '/insights',
+      search: { view: 'chapters', chapter: chapter.id },
+    })
 
   useRegisterActions(
     useMemo<AppAction[]>(
@@ -83,6 +95,8 @@ function Insights({ data }: { data: FinanceSnapshot }) {
       <InsightsStrip data={data} current={view} today={today} />
       {view === 'trips' ? <TripsView data={data} activities={activities} /> : null}
       {view === 'people' ? <PeopleView data={data} activities={activities} /> : null}
+      {view === 'chapters' ? <ChaptersView data={data} /> : null}
+      {view === 'rules' ? <RulesView data={data} /> : null}
     </div>
   )
 }

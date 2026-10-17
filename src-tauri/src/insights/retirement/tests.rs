@@ -485,6 +485,44 @@ fn coverage_needs_a_full_year_of_spending_and_adds_planned_costs() {
     assert!(coverage.complete);
     assert_eq!((coverage.spending, coverage.planned), (6_000.0, 6_000.0));
     assert_eq!(coverage.years, 1.46);
+
+    // A planned chapter still to come adds its monthly costs; one already over doesn't.
+    let chapter = |id: &str, end: Option<&str>, monthly: f64| crate::settings::PlannedChapter {
+        id: format!("planned:{id}"),
+        title: id.into(),
+        start: day("2026-11-01"),
+        end: end.map(day),
+        costs: vec![crate::settings::PlannedCost {
+            label: "Rent".into(),
+            monthly,
+        }],
+    };
+    let settings = FinanceSettings {
+        retirement: Some(RetirementProfile {
+            planned_monthly: Some(500.0),
+            ..RetirementProfile::default()
+        }),
+        planned_chapters: vec![
+            chapter("move", None, 1_000.0),
+            chapter("past", Some("2026-01-31"), 4_000.0),
+        ],
+        ..FinanceSettings::default()
+    };
+    let recap = recap::recap(&year, day("2026-10-15"));
+    let planned = retirement(
+        Inputs {
+            transactions: &year,
+            accounts: &accounts,
+            settings: &settings,
+            recap: &recap,
+            stated: &[],
+            documents: &[],
+        },
+        day("2026-10-15"),
+    )
+    .coverage
+    .unwrap();
+    assert_eq!(planned.planned, 18_000.0);
 }
 
 #[test]

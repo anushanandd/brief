@@ -3,4 +3,4 @@
 /**
  * How one object relates to another.
  */
-export type LinkRelation = "account" | "counterparty" | "place" | "person" | "transferPair" | "refundOf" | "institution" | "issuer" | "occurrence" | "benefit" | "trip";
+export type LinkRelation = "account" | "counterparty" | "place" | "person" | "transferPair" | "refundOf" | "institution" | "issuer" | "occurrence" | "benefit" | "trip" | "chapter" | "anchor" | "program";

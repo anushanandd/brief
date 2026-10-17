@@ -32,6 +32,8 @@ const titles: Record<string, string> = {
   trips: 'Trips',
   subscriptions: 'Subscriptions',
   dividendIncome: 'Dividend income',
+  explanations: 'Explained by rules',
+  chapters: 'Chapters',
 }
 const money =
   /amount|spending|income|balance|fees|taxes|cash|flow|value|spent|projected|typical|outflows|inflows|total|limit|interest|dividends|gains|disallowed|loss|tax(low|high)/i
@@ -70,7 +72,7 @@ export function ledgerView({ name, arguments: args, result }: LedgerCall): Ledge
   const text = (key: string) => (typeof result[key] === 'string' ? result[key] : undefined)
   const start = text('start') ?? text('from')
   const end = text('end') ?? text('throughDate')
-  const subject = [args.merchant, args.text, args.category].find(
+  const subject = [args.merchant, args.text, args.category, args.name].find(
     (value): value is string => typeof value === 'string' && value.trim().length > 0,
   )
   const facts = Object.entries(result).flatMap(([key, value]) => {

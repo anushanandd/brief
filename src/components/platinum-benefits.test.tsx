@@ -6,6 +6,8 @@ import { FeeRecovery } from './platinum-benefits'
 const fee = {
   annualFee: 895,
   recovered: 539.69,
+  offsets: 0,
+  covered: false,
   gap: 355.31,
   forOthers: 492.99,
   since: '2026-05-09',
@@ -28,4 +30,10 @@ it('gives the fee year and its estimate under the meter, in whole dollars', () =
   expect(renderToStaticMarkup(<FeeRecovery fee={{ ...fee, expected: 0 }} />)).not.toContain(
     'more estimated',
   )
+  // A bonus filed as repaying the fee is named, and Rust says when the two cover the fee.
+  const repaid = renderToStaticMarkup(
+    <FeeRecovery fee={{ ...fee, offsets: 895, covered: true, gap: 539.69 }} />,
+  )
+  expect(repaid).toContain(' · $895 repaid by an offset')
+  expect(repaid).toContain('$540 past break-even')
 })

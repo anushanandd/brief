@@ -9,26 +9,35 @@ impl RuleSet {
     pub fn fee_recovery(
         &self,
         transactions: &[&Transaction],
+        everything: &[Transaction],
         activity: &[BenefitActivity],
         history: &[BenefitHistory],
         today: NaiveDate,
     ) -> Option<FeeRecovery> {
         let annual_fee = self.annual_fee?;
-        let charged = self.annual_fee_matches.as_ref().and_then(|matches| {
-            transactions
-                .iter()
-                .filter(|transaction| !transaction.pending && transaction.amount < 0.0)
-                .filter(|transaction| {
-                    matches.is_match(&format!(
-                        "{} {}",
-                        transaction.merchant,
-                        transaction.description.as_deref().unwrap_or("")
-                    ))
-                })
-                .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
-                .filter(|date| *date <= today && (today - *date).num_days() <= 366)
-                .max()
-        });
+        let fees = self
+            .annual_fee_matches
+            .as_ref()
+            .map(|matches| {
+                transactions
+                    .iter()
+                    .filter(|transaction| !transaction.pending && transaction.amount < 0.0)
+                    .filter(|transaction| {
+                        matches.is_match(&format!(
+                            "{} {}",
+                            transaction.merchant,
+                            transaction.description.as_deref().unwrap_or("")
+                        ))
+                    })
+                    .filter_map(|transaction| {
+                        calendar::transaction_date(transaction.posted_date())
+                            .map(|date| (transaction.id.as_str(), date))
+                    })
+                    .filter(|(_, date)| *date <= today && (today - *date).num_days() <= 366)
+                    .collect::<Vec<_>>()
+            })
+            .unwrap_or_default();
+        let charged = fees.iter().map(|(_, date)| *date).max();
         let history_start = transactions
             .iter()
             .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
@@ -55,6 +64,19 @@ impl RuleSet {
                 recovered += minor_units(item.amount);
             }
         }
+        // Money from anywhere filed as repaying this year's fee charge: an engagement bonus a
+        // program explains, or a link you made.
+        let offsets = everything
+            .iter()
+            .filter(|transaction| !transaction.pending && transaction.amount > 0.0)
+            .filter(|transaction| {
+                transaction
+                    .refund_of
+                    .as_deref()
+                    .is_some_and(|fee| fees.iter().any(|(id, date)| *id == fee && *date >= since))
+            })
+            .map(|transaction| minor_units(transaction.amount))
+            .sum::<i64>();
         // A year after the fee posted; without one, the anniversary is unknown, so the calendar
         // year's end stands in for it.
         let through = match basis {
@@ -80,7 +102,9 @@ impl RuleSet {
         Some(FeeRecovery {
             annual_fee,
             recovered: from_minor(recovered.max(0)),
-            gap: from_minor((recovered.max(0) - minor_units(annual_fee)).abs()),
+            offsets: from_minor(offsets),
+            covered: recovered.max(0) + offsets >= minor_units(annual_fee),
+            gap: from_minor((recovered.max(0) + offsets - minor_units(annual_fee)).abs()),
             for_others: from_minor(for_others.max(0)),
             since,
             basis,

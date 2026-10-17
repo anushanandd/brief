@@ -14,4 +14,8 @@ plan: string, taxYear: number, limit: number, amount: number,
 /**
  * `amount` is where this year's deferrals are on pace to end, not where they are.
  */
-onPace: boolean, } | { "kind": "pay-missing", documentId: string, employer: string, date: string, amount: number, accountId?: string, } | { "kind": "w2-differs", documentId: string, employer: string, taxYear: number, boxes: number, } | { "kind": "idle-cash", accountId: string, balance: number, annualRate?: number, betterAccountId: string, betterRate: number, });
+onPace: boolean, } | { "kind": "pay-missing", documentId: string, employer: string, date: string, amount: number, accountId?: string, } | { "kind": "w2-differs", documentId: string, employer: string, taxYear: number, boxes: number, } | { "kind": "idle-cash", accountId: string, balance: number, annualRate?: number, betterAccountId: string, betterRate: number, } | { "kind": "program-note", program: string, says: string, 
+/**
+ * The object it's about.
+ */
+subject: string, });

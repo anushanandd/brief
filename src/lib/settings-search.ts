@@ -60,6 +60,16 @@ export const settingsSections: readonly SettingsSection[] = [
         keywords: 'filings 8-k 6-k sec edgar contact email news events sector industry',
       },
       {
+        id: 'connection-exa',
+        title: 'Exa',
+        keywords: 'research web search rules terms api key keychain',
+      },
+      {
+        id: 'research',
+        title: 'Research rules online',
+        keywords: 'research exa web search bank employer terms programs rules log queries',
+      },
+      {
         id: 'plaid-live-balances',
         title: 'Live bank balances',
         keywords: 'plaid real-time balance refresh now billed cost',

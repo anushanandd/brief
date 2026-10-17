@@ -10,6 +10,7 @@ export const providerCatalog = [
   { id: 'alpaca', name: 'Alpaca', status: 'alpaca' },
   { id: 'alphavantage', name: 'Alpha Vantage', status: 'alphaVantage' },
   { id: 'sec', name: 'SEC EDGAR', status: 'sec' },
+  { id: 'exa', name: 'Exa', status: 'exa' },
 ] as const satisfies ReadonlyArray<{ id: string; name: string; status: keyof IntegrationStatus }>
 
 export type ProviderId = (typeof providerCatalog)[number]['id']

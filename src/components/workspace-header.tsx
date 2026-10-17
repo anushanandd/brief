@@ -50,6 +50,7 @@ export type WorkspaceBreadcrumb = {
     year?: number
     trip?: string
     person?: string
+    chapter?: string
     window?: ChangeWindow
   }
 }

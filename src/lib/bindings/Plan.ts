@@ -8,6 +8,11 @@ export type Plan = { monthStart: string, daysElapsed: number, daysInMonth: numbe
  */
 projected: number, categories: Array<CategoryPlan>, coverage: PlanCoverage, 
 /**
+ * Where typical spending starts: the latest confirmed chapter's start, when one began
+ * within the last three months.
+ */
+baselineSince?: string, 
+/**
  * Average monthly personal spending over the last three complete months.
  */
 monthlySpending?: number, 

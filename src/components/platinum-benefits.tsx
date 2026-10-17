@@ -417,7 +417,8 @@ export function FeeRecovery({
 }: {
   fee: NonNullable<NonNullable<Insights['benefits']>['fee']>
 }) {
-  const past = fee.recovered >= fee.annualFee
+  // Credits and offsets (a bank's bonus filed as repaying the fee) together, as Rust judged.
+  const past = fee.covered
   const gap = fee.gap
   const money = formatProseCurrency
   return (
@@ -431,6 +432,7 @@ export function FeeRecovery({
               ? ` · ${money(gap)} past break-even`
               : ' · break-even'
             : ` · ${money(gap)} to go`}
+          {fee.offsets ? ` · ${money(fee.offsets)} repaid by an offset` : ''}
           {fee.forOthers ? ` · ${money(fee.forOthers)} for others` : ''}
         </small>
       </p>

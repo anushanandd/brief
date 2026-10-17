@@ -73,7 +73,7 @@ Uber applies Uber Cash before charging the card, so a card charge means the mont
 
 ## Other cards
 
-Each rule file names its card product. `benefits::products()` lists the files that exist; adding a card is adding its rule file there, with its own verified terms. The saved spending card is tracked under the default product without any setting. Any other credit card is tracked only after the user assigns it a product in Settings, and its credits, windows, and fee recovery are computed from that card's own transactions.
+Each rule file names its card product. `benefits::products()` lists the files that exist; adding a card is adding its rule file there, with its own verified terms. The saved spending card is tracked under the default product without any setting. Any other credit card is tracked once the user assigns it a product in Settings, or when the official name Plaid reports for it matches exactly one product's `officialNames` and none of its `officialNameExcludes` ("Morgan Stanley Platinum Card®" is the Platinum Card; "The Business Platinum Card®" and a credit union's "Visa Platinum Card" are not). Its credits, windows, and fee recovery are computed from that card's own transactions; fee recovery adds offsets, deposits anywhere that a refund link files as repaying the year's fee charge.
 
 ## Annual fee
 

@@ -14,6 +14,250 @@ use crate::transaction_policy::Kind;
 
 const MAX_ROWS: usize = 25;
 
+/// Every tool, with words a question that needs it is likely to use. The on-device model
+/// reads about 4,096 tokens per question, and every tool's definition takes some of them, so
+/// a question is offered only the tools its words point to.
+pub const TOOLS: [(&str, &[&str]); 15] = [
+    (
+        "listAccounts",
+        &[
+            "account",
+            "accounts",
+            "balance",
+            "checking",
+            "savings",
+            "cashplus",
+            "brokerage",
+            "worth",
+            "bank",
+            "issue",
+            "issues",
+            "institution",
+        ],
+    ),
+    (
+        "spendingByCategory",
+        &[
+            "category",
+            "categories",
+            "on",
+            "food",
+            "dining",
+            "groceries",
+            "rent",
+            "transportation",
+            "drink",
+            "shopping",
+        ],
+    ),
+    (
+        "cashFlow",
+        &[
+            "earn", "earned", "income", "net", "spend", "spent", "flow", "made", "salary", "save",
+            "saved",
+        ],
+    ),
+    (
+        "searchTransactions",
+        &[
+            "when",
+            "transaction",
+            "charge",
+            "charged",
+            "purchase",
+            "bought",
+            "pay",
+            "paid",
+            "bonus",
+            "fee",
+            "flight",
+            "furniture",
+            "post",
+            "posted",
+        ],
+    ),
+    (
+        "merchantHistory",
+        &["paid", "merchant", "history", "every", "monthly", "much"],
+    ),
+    (
+        "upcomingActivity",
+        &[
+            "next", "upcoming", "due", "expected", "paycheck", "bill", "bills", "coming",
+        ],
+    ),
+    (
+        "monthPlan",
+        &[
+            "month", "cash", "runway", "typical", "budget", "far", "cover", "covers",
+        ],
+    ),
+    (
+        "topHoldings",
+        &[
+            "holding",
+            "holdings",
+            "stock",
+            "stocks",
+            "portfolio",
+            "invested",
+            "position",
+        ],
+    ),
+    (
+        "creditCards",
+        &[
+            "card",
+            "cards",
+            "owe",
+            "utilization",
+            "limit",
+            "statement",
+            "credit",
+        ],
+    ),
+    (
+        "taxSummary",
+        &["tax", "taxes", "gains", "wash", "taxable", "interest"],
+    ),
+    (
+        "trips",
+        &["trip", "trips", "travel", "traveled", "vacation", "away"],
+    ),
+    (
+        "subscriptions",
+        &["subscription", "subscriptions", "streaming"],
+    ),
+    ("dividendIncome", &["dividend", "dividends"]),
+    (
+        "explanations",
+        &[
+            "why",
+            "waive",
+            "waived",
+            "waiver",
+            "bonus",
+            "rule",
+            "rules",
+            "source",
+            "offset",
+            "conditions",
+            "confirm",
+            "requirement",
+            "wrong",
+            "deposits",
+        ],
+    ),
+    (
+        "chapters",
+        &[
+            "live",
+            "lived",
+            "work",
+            "job",
+            "move",
+            "moved",
+            "joined",
+            "join",
+            "start",
+            "started",
+            "leave",
+            "left",
+            "state",
+            "states",
+            "residency",
+            "chapter",
+            "since",
+            "change",
+            "opened",
+            "open",
+        ],
+    ),
+];
+
+fn words_of(text: &str) -> Vec<String> {
+    text.to_lowercase()
+        .split(|c: char| !c.is_alphanumeric())
+        .filter(|word| word.len() > 2)
+        .map(str::to_owned)
+        .collect()
+}
+
+/// The tools offered for a question: those its words point to most, at most four. Names the
+/// saved data holds point too: a trip's city to trips, a chapter's title to chapters, an
+/// account's name to accounts. A question that points to none gets the general ones.
+pub fn tools_for(question: &str, view: &View) -> Vec<&'static str> {
+    let words = words_of(question);
+    let named = |names: Vec<String>| {
+        let known = names
+            .iter()
+            .flat_map(|name| words_of(name))
+            .collect::<Vec<_>>();
+        words.iter().filter(|word| known.contains(word)).count()
+    };
+    let insights = view.insights.as_ref();
+    let data = [
+        (
+            "trips",
+            named(insights.map_or_else(Vec::new, |insights| {
+                insights
+                    .trips
+                    .trips
+                    .iter()
+                    .map(|trip| trip.destination.clone())
+                    .collect()
+            })),
+        ),
+        (
+            "chapters",
+            named(insights.map_or_else(Vec::new, |insights| {
+                insights
+                    .evidence
+                    .chapters
+                    .iter()
+                    .map(|chapter| chapter.title.clone())
+                    .collect()
+            })),
+        ),
+        (
+            "listAccounts",
+            named(
+                view.snapshot
+                    .accounts
+                    .iter()
+                    .map(|account| account.name.clone())
+                    .collect(),
+            ),
+        ),
+    ];
+    let mut scored = TOOLS
+        .iter()
+        .enumerate()
+        .map(|(order, (name, hints))| {
+            let hinted = words
+                .iter()
+                .filter(|word| hints.contains(&word.as_str()))
+                .count();
+            let from_data = data
+                .iter()
+                .find(|(tool, _)| tool == name)
+                .map_or(0, |(_, count)| *count * 2);
+            (hinted + from_data, order, *name)
+        })
+        .filter(|(score, _, _)| *score > 0)
+        .collect::<Vec<_>>();
+    scored.sort_by_key(|(score, order, _)| (std::cmp::Reverse(*score), *order));
+    let mut tools = scored
+        .into_iter()
+        .take(4)
+        .map(|(_, _, name)| name)
+        .collect::<Vec<_>>();
+    if tools.is_empty() {
+        tools = vec!["listAccounts", "cashFlow", "searchTransactions", "chapters"];
+    }
+    tools
+}
+
 fn to_json(value: &impl serde::Serialize) -> Result<Value, String> {
     serde_json::to_value(value).map_err(|error| error.to_string())
 }
@@ -108,6 +352,9 @@ impl<'a> Ledger<'a> {
             "trips" => self.trips(arguments),
             "subscriptions" => self.subscriptions(),
             "dividendIncome" => self.dividend_income(),
+            "explanations" => self.explanations(),
+            "chapters" if arguments["name"].is_string() => self.chapter_span(arguments),
+            "chapters" => self.chapters(),
             _ => Err(format!("Unknown tool {name}")),
         };
         result.unwrap_or_else(|error| json!({ "error": error }))
@@ -189,16 +436,37 @@ impl<'a> Ledger<'a> {
     }
 
     fn search_transactions(&self, arguments: &Value) -> Result<Value, String> {
-        let (start, end) = if arguments.get("start").is_some() || arguments.get("end").is_some() {
-            self.range(arguments)?
-        } else {
-            (self.today - Duration::days(366), self.today)
-        };
         let text = arguments["text"]
             .as_str()
             .map(str::to_lowercase)
             .filter(|text| !text.is_empty());
-        let category = arguments["category"].as_str().map(str::to_lowercase);
+        // Without a start, the search covers the year to its end, as the tool says. Today alone with
+        // words to find is the model filling both dates with today, which finds nothing; it
+        // widens to the last year too, and the result says so.
+        let year_back = self.today - Duration::days(366);
+        let (mut start, end) = match parse_date(arguments["start"].as_str()) {
+            Some(_) => self.range(arguments)?,
+            None => {
+                let end = parse_date(arguments["end"].as_str())
+                    .unwrap_or(self.today)
+                    .min(self.today);
+                (end - Duration::days(366), end)
+            }
+        };
+        let widened = text.is_some() && start == self.today && end == self.today;
+        if widened {
+            start = year_back;
+        }
+        // A category no saved transaction has (the model guesses names like "Bonus") would
+        // find nothing; it is left out, and the result says so.
+        let asked = arguments["category"].as_str().map(str::to_lowercase);
+        let category = asked.clone().filter(|category| {
+            self.view
+                .snapshot
+                .transactions
+                .iter()
+                .any(|transaction| transaction.category.to_lowercase() == *category)
+        });
         let limit = arguments["limit"]
             .as_u64()
             .map_or(10, |limit| limit as usize)
@@ -229,7 +497,7 @@ impl<'a> Ledger<'a> {
             .collect::<Vec<_>>();
         matches.sort_by_key(|(date, _)| std::cmp::Reverse(*date));
         let total = matches.len();
-        Ok(json!({
+        let mut result = json!({
             "matches": total,
             "shown": total.min(limit),
             "transactions": matches.into_iter().take(limit).map(|(date, transaction)| json!({
@@ -240,7 +508,14 @@ impl<'a> Ledger<'a> {
                 "account": self.account_name(transaction.account_id.as_deref()),
                 "pending": transaction.pending,
             })).collect::<Vec<_>>(),
-        }))
+        });
+        if let Some(asked) = asked.filter(|_| category.is_none()) {
+            result["ignoredCategory"] = json!(asked);
+        }
+        if widened {
+            result["searchedFrom"] = json!(calendar::iso(start));
+        }
+        Ok(result)
     }
 
     fn merchant_history(&self, arguments: &Value) -> Result<Value, String> {
@@ -393,6 +668,141 @@ impl<'a> Ledger<'a> {
         }))
     }
 
+    /// What published rules explain, each with its tier, its conditions, and its source, and
+    /// the notes rules raise. A Suggested conclusion is a possibility, never a fact.
+    fn explanations(&self) -> Result<Value, String> {
+        let evidence = &self.insights()?.evidence;
+        Ok(json!({
+            "explanations": evidence.explanations.iter().take(MAX_ROWS).map(|explanation| json!({
+                "title": explanation.title,
+                "says": explanation.says,
+                "tier": explanation.tier,
+                "from": explanation.from,
+                "to": explanation.to,
+                "rule": explanation.proof.name,
+                "source": explanation.proof.source.url,
+                "conditions": explanation.proof.steps.iter().map(|step| json!({
+                    "says": step.says,
+                    "met": step.met,
+                    "detail": step.detail,
+                })).collect::<Vec<_>>(),
+                "unchecked": explanation.proof.unchecked,
+            })).collect::<Vec<_>>(),
+            "notes": evidence.alerts.iter().map(|alert| &alert.says).collect::<Vec<_>>(),
+        }))
+    }
+
+    /// Life chapters, where you are now, and where you lived each tax year.
+    fn chapters(&self) -> Result<Value, String> {
+        let evidence = &self.insights()?.evidence;
+        let effect = |chapter: &crate::evidence::chapters::Chapter, measure: &str| {
+            chapter
+                .effects
+                .iter()
+                .find(|effect| effect.measure == measure)
+                .map(|effect| json!({ "before": effect.before, "after": effect.after }))
+        };
+        Ok(json!({
+            "now": evidence.now,
+            "chapters": evidence.chapters.iter().rev().take(MAX_ROWS).map(|chapter| json!({
+                "title": chapter.title,
+                "kind": chapter.kind,
+                "start": chapter.start,
+                "end": chapter.end,
+                "tier": chapter.tier,
+                "state": chapter.state,
+                "programs": chapter.programs,
+                "checklist": chapter.checklist,
+                "monthlyIncome": effect(chapter, "income"),
+                "monthlySpending": effect(chapter, "spending"),
+            })).collect::<Vec<_>>(),
+            "residency": evidence.residency.iter().map(|span| json!({
+                "year": span.year,
+                "state": span.state,
+                "from": span.from,
+                "to": span.to,
+                "days": span.days,
+            })).collect::<Vec<_>>(),
+        }))
+    }
+
+    /// `chapters` given a name: the dates a phrase like "since I moved" or "since joining
+    /// Morgan Stanley" means, kept small for the on-device model's context. A
+    /// move or home is the latest home chapter, a job the latest work chapter, and anything
+    /// else the chapter whose title or state names it.
+    fn chapter_span(&self, arguments: &Value) -> Result<Value, String> {
+        use crate::evidence::chapters::{state_name, ChapterKind};
+        let evidence = &self.insights()?.evidence;
+        let name = arguments["name"]
+            .as_str()
+            .map(str::trim)
+            .filter(|name| !name.is_empty() && name.len() <= 100)
+            .ok_or("Name the chapter, such as a move, a job, or an employer")?
+            .to_lowercase();
+        let words = name
+            .split(|c: char| !c.is_alphanumeric())
+            .filter(|word| word.len() > 1)
+            .collect::<Vec<_>>();
+        let has = |options: &[&str]| words.iter().any(|word| options.contains(word));
+        let latest = |kind: ChapterKind| {
+            evidence
+                .chapters
+                .iter()
+                .filter(|chapter| chapter.kind == kind)
+                .max_by_key(|chapter| chapter.start)
+        };
+        // The chapter naming the most of the phrase's words, the latest when tied.
+        let named = evidence
+            .chapters
+            .iter()
+            .map(|chapter| {
+                let title = chapter.title.to_lowercase();
+                let state = chapter
+                    .state
+                    .as_deref()
+                    .and_then(state_name)
+                    .unwrap_or_default()
+                    .to_lowercase();
+                let score = words
+                    .iter()
+                    .filter(|word| {
+                        ![
+                            "the", "of", "at", "in", "since", "my", "job", "work", "joined",
+                            "joining",
+                        ]
+                        .contains(*word)
+                            && (title
+                                .split_whitespace()
+                                .any(|part| part.starts_with(**word))
+                                || state.split_whitespace().any(|part| part == **word))
+                    })
+                    .count();
+                (score, chapter.start, chapter)
+            })
+            .filter(|(score, _, _)| *score > 0)
+            .max_by_key(|(score, start, _)| (*score, *start))
+            .map(|(_, _, chapter)| chapter);
+        let chapter = named
+            .or_else(|| {
+                has(&["move", "moved", "moving", "home", "lived", "live"])
+                    .then(|| latest(ChapterKind::Home))
+                    .flatten()
+            })
+            .or_else(|| {
+                has(&["job", "work", "joined", "joining", "started", "employer"])
+                    .then(|| latest(ChapterKind::Work))
+                    .flatten()
+            })
+            .ok_or("No chapter matches that name")?;
+        Ok(json!({
+            "title": chapter.title,
+            "kind": chapter.kind,
+            "start": chapter.start,
+            "end": chapter.end,
+            "tier": chapter.tier,
+        }))
+    }
+
     fn top_holdings(&self, arguments: &Value) -> Value {
         let limit = arguments["limit"]
             .as_u64()
@@ -478,6 +888,33 @@ mod tests {
         );
         assert_eq!(search["matches"], 3);
         assert_eq!(search["shown"], 2);
+        // A category no transaction has is left out rather than finding nothing.
+        let guessed = ledger.call(
+            "searchTransactions",
+            &json!({ "text": "netflix", "category": "Streaming Bonus" }),
+        );
+        assert_eq!(guessed["matches"], 3);
+        assert_eq!(guessed["ignoredCategory"], "streaming bonus");
+        assert!(search.get("ignoredCategory").is_none());
+        // Without a start, the year before the end; today alone, with words, the last year.
+        let ended = ledger.call(
+            "searchTransactions",
+            &json!({ "text": "netflix", "end": "2026-08-31" }),
+        );
+        assert_eq!(ended["matches"], 3);
+        let today = ledger.call(
+            "searchTransactions",
+            &json!({ "text": "netflix", "start": "2026-08-31", "end": "2026-08-31" }),
+        );
+        assert_eq!(
+            (today["matches"].as_u64(), today["searchedFrom"].as_str()),
+            (Some(3), Some("2025-08-30"))
+        );
+        let day = ledger.call(
+            "searchTransactions",
+            &json!({ "start": "2026-08-12", "end": "2026-08-12" }),
+        );
+        assert!(day.get("searchedFrom").is_none());
         assert_eq!(search["transactions"][0]["date"], "2026-08-12");
         let accounts = ledger.call("listAccounts", &json!({}));
         assert!(accounts["accounts"]

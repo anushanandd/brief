@@ -9,9 +9,10 @@ import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
+import { evidenceOf, tierLabels } from '../lib/evidence'
 import { financeSettings } from '../lib/finance-settings'
 import { formatCurrency, formatSignedCurrency, valueTone } from '../lib/format'
-import type { TaxYear } from '../lib/schema'
+import type { FinanceSnapshot, TaxYear } from '../lib/schema'
 import { formatActivityDate, formatListDate } from '../lib/spending'
 import { estimateRange, taxYear } from '../lib/taxes'
 
@@ -166,9 +167,43 @@ export function TaxesPage() {
             <EstimateCard year={selected} hasProfile={taxes.hasProfile} />
             <FormsCard year={selected} />
           </div>
+          <ResidencyCard year={selected.year} data={query.data} />
         </>
       )}
     </div>
+  )
+}
+
+/**
+ * Where you lived during the year, by home chapters: two states make a part-year return. A
+ * home Brief only suggests reads as possible until you confirm it in Chapters.
+ */
+function ResidencyCard({ year, data }: { year: number; data: FinanceSnapshot | undefined }) {
+  const spans = evidenceOf(data).residency.filter((span) => span.year === year)
+  if (!spans.length) return null
+  return (
+    <Card className="taxes-card">
+      <SectionHeading
+        title={`Residency · ${year}`}
+        detail={
+          new Set(spans.map((span) => span.state)).size > 1 ? 'Part-year in each state' : undefined
+        }
+      />
+      <ul className="chapter-facts">
+        {spans.map((span) => (
+          <li key={`${span.state}-${span.from}`} data-keyboard-row>
+            <Link
+              to="/insights"
+              search={{ view: 'chapters', chapter: span.chapter }}
+              className="object-link"
+            >
+              {span.state} · {span.from} to {span.to} · {span.days} days
+            </Link>
+            <span className={`tier-label tier-${span.tier}`}>{tierLabels[span.tier].label}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
   )
 }
 

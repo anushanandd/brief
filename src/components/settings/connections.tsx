@@ -89,6 +89,10 @@ const providerDetails: Record<
     description: 'Sector comparison and company filings; the SEC requires a contact email',
     fields: [{ key: 'clientId', label: 'Contact email', placeholder: 'you@example.com' }],
   },
+  exa: {
+    description: 'Research: published bank and employer terms, only when research is on',
+    fields: [{ key: 'clientId', label: 'API key', placeholder: 'Exa API key', secret: true }],
+  },
 }
 
 const providers: ProviderDefinition[] = providerCatalog.map((provider) => ({
@@ -310,7 +314,39 @@ export function ConnectionsSection() {
         })}
       </SettingsCard>
       <PlaidOptions configured={configured('plaid')} />
+      <ResearchOption />
     </SettingsSection>
+  )
+}
+
+/**
+ * Opt-in research, off by default: even a generic query reveals something, such as where you
+ * work. Every query is logged in Insights › Rules before and after it runs.
+ */
+function ResearchOption() {
+  const finance = useFinance()
+  const { updateSettings } = useFinanceEdits()
+  const settings = financeSettings(finance.data)
+  return (
+    <SettingsCard>
+      <SettingsRow
+        id="research"
+        title="Research rules online"
+        description="Looks up bank and employer terms through Exa, by public names only. Each query is logged."
+      >
+        <SettingsSwitch
+          labelledBy="research-title"
+          describedBy="research-description"
+          checked={settings.research}
+          disabled={!isTauri() || Boolean(finance.data?.recovery)}
+          onCheckedChange={(checked) =>
+            void updateSettings((current) => ({ ...current, research: checked })).catch((error) =>
+              toast.error('Could not save research', { description: errorMessage(error) }),
+            )
+          }
+        />
+      </SettingsRow>
+    </SettingsCard>
   )
 }
 

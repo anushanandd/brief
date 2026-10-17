@@ -260,7 +260,7 @@ pub struct Coverage {
     pub complete: bool,
     /// The last 365 days.
     pub spending: f64,
-    /// The planned monthly additions, for a year.
+    /// The planned monthly costs, yours and those of planned chapters not yet over, for a year.
     pub planned: f64,
     /// `invested` over a year of `spending` and `planned`.
     pub years: f64,
@@ -633,10 +633,16 @@ pub fn retirement(inputs: Inputs<'_>, today: NaiveDate) -> Retirement {
         None => Vec::new(),
     };
 
-    let planned = profile
-        .planned_monthly
-        .map(|monthly| minor_units(monthly) * 12)
-        .unwrap_or_default();
+    // The monthly costs you entered here, and those of planned chapters that haven't ended,
+    // such as rent after moving out.
+    let chapters = settings
+        .planned_chapters
+        .iter()
+        .filter(|chapter| chapter.end.is_none_or(|end| end >= today))
+        .flat_map(|chapter| &chapter.costs)
+        .map(|cost| minor_units(cost.monthly))
+        .sum::<i64>();
+    let planned = (profile.planned_monthly.map(minor_units).unwrap_or_default() + chapters) * 12;
     let coverage = recap
         .iter()
         .find(|period| period.window == Window::Year && !period.partial)

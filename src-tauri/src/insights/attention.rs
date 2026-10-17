@@ -163,6 +163,14 @@ pub enum Item {
         better_account_id: String,
         better_rate: f64,
     },
+    /// A program rule's note: a monthly condition fell short, or what should follow hasn't.
+    #[serde(rename_all = "camelCase")]
+    ProgramNote {
+        program: String,
+        says: String,
+        /// The object it's about.
+        subject: String,
+    },
 }
 
 #[derive(Clone, Debug, Serialize, TS)]

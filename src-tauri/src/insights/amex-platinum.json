@@ -5,6 +5,8 @@
   "termsReviewed": "Sep 20, 2026",
   "annualFee": 895,
   "annualFeeMatches": "annual membership fee|annual fee",
+  "officialNames": "^(?:the\\s+)?(?:[a-z ]+\\s)?platinum card\\b",
+  "officialNameExcludes": "business|corporate|delta|hilton|marriott|visa|mastercard|signature|world|secured|bank|credit union",
   "benefits": [
     {
       "id": "digital-entertainment",

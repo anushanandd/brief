@@ -32,6 +32,7 @@ mod macos {
             request: *const c_char,
             question: *const c_char,
             context: *const c_char,
+            tool_names: *const c_char,
             tool_host: *mut c_void,
             tool_callback: extern "C" fn(*mut c_void, *const c_char, *const c_char) -> *mut c_char,
             tool_free: extern "C" fn(*mut c_char),
@@ -177,6 +178,10 @@ mod macos {
         if question.chars().count() > 1_000 || context.chars().count() > 2_000 {
             return Err("The question is too long".into());
         }
+        // Only the tools the question points to, so their definitions fit the context.
+        let tool_names =
+            CString::new(crate::insights::ledger::tools_for(question, &tools.view).join(","))
+                .map_err(|_| "Invalid tool names".to_string())?;
         let question = CString::new(question)
             .map_err(|_| "The question contains unsupported text".to_string())?;
         let context =
@@ -205,6 +210,7 @@ mod macos {
                 request.0.as_ptr(),
                 question.as_ptr(),
                 context.as_ptr(),
+                tool_names.as_ptr(),
                 tool_host,
                 tool_call,
                 tool_free,
@@ -461,6 +467,21 @@ impl ToolHost {
             .ok()
             .filter(serde_json::Value::is_object)
             .unwrap_or_else(|| serde_json::json!({}));
+        // The on-device model can call one query again and again until its context overflows;
+        // a repeat gets a few words pointing back, not the result again.
+        let repeated = self.evidence.lock().is_ok_and(|calls| {
+            calls
+                .iter()
+                .any(|call| call.name == name && call.arguments == arguments)
+        });
+        if repeated {
+            #[cfg(test)]
+            eprintln!("  tool {name} {arguments} repeated");
+            return serde_json::json!({
+                "note": "This query already ran and its result is above. Answer from it now."
+            })
+            .to_string();
+        }
         let result = match self.query(name, &arguments) {
             Ok(result) => result,
             Err(error) => return serde_json::json!({ "error": error }).to_string(),
@@ -471,6 +492,9 @@ impl ToolHost {
             })
             .to_string();
         };
+        // The eval set's run shows each call the model made, to diagnose context use.
+        #[cfg(test)]
+        eprintln!("  tool {name} {arguments} -> {} chars", text.len());
         // Only figures the model actually received count as evidence.
         if let Ok(mut evidence) = self.evidence.lock() {
             evidence.push(ToolCall {
@@ -507,8 +531,9 @@ mod tool_tests {
         assert!(wide["shown"].as_u64().unwrap() <= 25);
         assert!(host.call("searchTransactions", "{}").len() <= MAX_TOOL_RESULT);
 
-        // Successful queries are kept as evidence once each; failed ones are not.
-        host.call("listAccounts", "{}");
+        // A repeat points back to the result it already has; successful queries are kept as
+        // evidence once each, and failed ones are not.
+        assert!(host.call("listAccounts", "{}").contains("already ran"));
         host.call("noSuchTool", "{}");
         let evidence = take_evidence(&host.evidence());
         assert_eq!(

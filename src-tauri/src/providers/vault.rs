@@ -9,15 +9,17 @@ pub enum Integration {
     Alpaca,
     Alphavantage,
     Sec,
+    Exa,
 }
 
 impl Integration {
-    pub const ALL: [Self; 5] = [
+    pub const ALL: [Self; 6] = [
         Self::Plaid,
         Self::Snaptrade,
         Self::Alpaca,
         Self::Alphavantage,
         Self::Sec,
+        Self::Exa,
     ];
 
     /// The name diagnostics and the renderer use for it.
@@ -34,6 +36,7 @@ impl Integration {
             Self::Alpaca => "alpaca",
             Self::Alphavantage => "alphavantage",
             Self::Sec => "sec",
+            Self::Exa => "exa",
         }
     }
 
@@ -44,6 +47,7 @@ impl Integration {
             Self::Alpaca => "Alpaca",
             Self::Alphavantage => "Alpha Vantage",
             Self::Sec => "SEC EDGAR",
+            Self::Exa => "Exa",
         }
     }
 
@@ -55,6 +59,7 @@ impl Integration {
             Self::Alpaca => ALPACA_CREDENTIALS_KEY,
             Self::Alphavantage => ALPHA_VANTAGE_CREDENTIALS_KEY,
             Self::Sec => SEC_CONTACT_KEY,
+            Self::Exa => EXA_CREDENTIALS_KEY,
         }
     }
 
@@ -66,6 +71,7 @@ impl Integration {
             Self::Alpaca => &[ALPACA_CREDENTIALS_KEY],
             Self::Alphavantage => &[ALPHA_VANTAGE_CREDENTIALS_KEY],
             Self::Sec => &[SEC_CONTACT_KEY],
+            Self::Exa => &[EXA_CREDENTIALS_KEY],
         }
     }
 
@@ -73,7 +79,7 @@ impl Integration {
     fn identifier(self) -> &'static str {
         match self {
             Self::Alpaca => "API key ID",
-            Self::Alphavantage => "API key",
+            Self::Alphavantage | Self::Exa => "API key",
             Self::Sec => "Contact email",
             Self::Plaid | Self::Snaptrade => "Client ID",
         }
@@ -88,6 +94,7 @@ impl IntegrationStatus {
             Integration::Alpaca => self.alpaca,
             Integration::Alphavantage => self.alpha_vantage,
             Integration::Sec => self.sec,
+            Integration::Exa => self.exa,
         }
     }
 }
@@ -135,6 +142,7 @@ impl Providers {
             alpaca: connected(Integration::Alpaca),
             alpha_vantage: connected(Integration::Alphavantage),
             sec: connected(Integration::Sec),
+            exa: connected(Integration::Exa),
         })
     }
 
@@ -294,6 +302,11 @@ impl Providers {
                 // Loading the ticker map proves EDGAR accepts this contact, and caches it.
                 self.sec_ticker_map(&contact, true).await?;
                 self.write_secret(SEC_CONTACT_KEY, &contact)?;
+            }
+            Integration::Exa => {
+                let credentials = exa::ExaCredentials { api_key: client_id };
+                self.exa_check(&credentials).await?;
+                self.write_secret(EXA_CREDENTIALS_KEY, &credentials)?;
             }
         }
         Ok(())

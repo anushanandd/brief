@@ -24,6 +24,7 @@ export type NeedView = {
     | { to: '/spending'; search: Record<string, never> }
     | { to: '/holdings/retirement'; search: Record<string, never> }
     | { to: '/documents'; search: { document: string } }
+    | { to: '/insights'; search: { view: 'rules' } }
     | {
         to: '/analytics'
         search: { chart: 'amex-credits'; benefit?: string; review?: true }
@@ -202,6 +203,17 @@ export function needView(need: AttentionItem, data: FinanceSnapshot): NeedView {
         detail: `${accountName(need.betterAccountId)} pays ${formatProsePercent(need.betterRate)} · balance below`,
         amount: need.balance,
         link: { to: '/accounts', search: { account: need.accountId } },
+        urgent,
+      }
+    // A rule's own words; its figures are the rule's published terms, not your amounts.
+    case 'program-note':
+      return {
+        id: need.id,
+        title: need.says,
+        detail:
+          data.insights?.evidence.programs.find((program) => program.id === need.program)?.name ??
+          'A rule Brief knows',
+        link: { to: '/insights', search: { view: 'rules' } },
         urgent,
       }
     default: {

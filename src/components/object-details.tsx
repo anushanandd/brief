@@ -11,6 +11,7 @@ import {
 } from 'react'
 
 import { useRegisterActions, type AppAction } from '../lib/action-system'
+import { tierLabels } from '../lib/evidence'
 import { amountsHidden } from '../lib/format'
 import { getObject, objectKinds, type ObjectDetail } from '../lib/objects'
 import { X } from './icons'
@@ -123,15 +124,56 @@ export function ObjectDetailsBody({
                 <span>{fact.predicate}</span>
                 <RawTree value={fact.value} />
                 <small>
+                  <span
+                    className={`tier-label tier-${fact.tier}`}
+                    title={tierLabels[fact.tier].detail}
+                  >
+                    {tierLabels[fact.tier].label}
+                  </span>{' '}
                   {[
                     fact.sources.join(', '),
-                    fact.tier,
                     fact.grade,
                     fact.from && fact.to ? `${fact.from} to ${fact.to}` : fact.from,
                   ]
                     .filter(Boolean)
                     .join(' · ')}
                 </small>
+                {fact.proof ? (
+                  <details className="rules-why">
+                    <summary>Why</summary>
+                    <ol>
+                      {fact.proof.steps.map((step) => (
+                        <li key={step.says} className={step.met ? 'is-met' : undefined}>
+                          <span aria-label={step.met ? 'Met' : 'Not met'}>
+                            {step.met ? '✓' : '–'}
+                          </span>
+                          <span>
+                            {step.says}
+                            {step.detail ? <small>{step.detail}</small> : null}
+                          </span>
+                          {step.evidence[0] ? (
+                            <button
+                              type="button"
+                              className="object-link"
+                              onClick={() => onShow(step.evidence[0])}
+                            >
+                              {step.evidence[0]}
+                            </button>
+                          ) : null}
+                        </li>
+                      ))}
+                      {fact.proof.unchecked.map((says) => (
+                        <li key={says}>
+                          <span aria-label="No record shows this">?</span>
+                          <span>{says}</span>
+                        </li>
+                      ))}
+                    </ol>
+                    <p className="rules-source">
+                      {fact.proof.name} · {fact.proof.source.url} · read {fact.proof.reviewed}
+                    </p>
+                  </details>
+                ) : null}
               </li>
             ))}
           </ul>

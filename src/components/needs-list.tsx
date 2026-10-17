@@ -55,6 +55,12 @@ export function NeedsList({ data }: { data: FinanceSnapshot }) {
         return <AccountMark type="cash" />
       case 'missed-bill':
         return need.accountId ? accountMark(need.accountId) : <AccountMark type="cash" />
+      case 'program-note':
+        return need.subject.startsWith('account:') ? (
+          accountMark(need.subject.slice('account:'.length), 'cash')
+        ) : (
+          <AccountMark type="cash" />
+        )
       default:
         return accountMark(need.accountId)
     }

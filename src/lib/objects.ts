@@ -32,6 +32,8 @@ export const objectKinds: Record<ObjectKind, { label: string; plural: string; pr
   bill: { label: 'Bill', plural: 'Bills', prefix: 'bill' },
   benefit: { label: 'Benefit', plural: 'Benefits', prefix: 'benefit' },
   story: { label: 'Story', plural: 'News', prefix: 'news' },
+  chapter: { label: 'Chapter', plural: 'Chapters', prefix: 'chapter' },
+  program: { label: 'Rule', plural: 'Rules', prefix: 'rule' },
 }
 
 const isKind = (name: string): name is ObjectKind => name in objectKinds
@@ -181,5 +183,9 @@ export function openObject(
       const url = text(object.record?.url)
       return url ? openExternalUrl(url) : showDetails(object.id)
     }
+    case 'chapter':
+      return navigate({ to: '/insights', search: { view: 'chapters', chapter: key } })
+    case 'program':
+      return navigate({ to: '/insights', search: { view: 'rules' } })
   }
 }

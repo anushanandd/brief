@@ -38,10 +38,14 @@ pub enum Kind {
     /// A news story about a holding. Search finds stories in the news cache; they are not
     /// part of the finance graph.
     Story,
+    /// A span of your life with a cause: a job, a home, accounts opened together.
+    Chapter,
+    /// A published rule, such as a bank's engagement bonus, with its source.
+    Program,
 }
 
 impl Kind {
-    pub const ALL: [Kind; 13] = [
+    pub const ALL: [Kind; 15] = [
         Kind::Account,
         Kind::Transaction,
         Kind::Holding,
@@ -55,6 +59,8 @@ impl Kind {
         Kind::Bill,
         Kind::Benefit,
         Kind::Story,
+        Kind::Chapter,
+        Kind::Program,
     ];
 
     pub fn name(self) -> &'static str {
@@ -72,6 +78,8 @@ impl Kind {
             Kind::Bill => "bill",
             Kind::Benefit => "benefit",
             Kind::Story => "story",
+            Kind::Chapter => "chapter",
+            Kind::Program => "program",
         }
     }
 
@@ -144,6 +152,12 @@ pub enum Relation {
     Benefit,
     /// A transaction on a trip's days.
     Trip,
+    /// A chapter a record belongs to, by a record that ties it there.
+    Chapter,
+    /// A record that defines a chapter.
+    Anchor,
+    /// A rule a chapter enables.
+    Program,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord, TS)]
@@ -155,7 +169,7 @@ pub struct Link {
     pub to: String,
 }
 
-/// How a fact is known. Explained and Suggested facts arrive with rules (phase 4).
+/// How a fact is known; the four are never mixed.
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export, rename = "FactTier")]
@@ -164,6 +178,11 @@ pub enum Tier {
     Observed,
     /// Arithmetic or a date read from observed facts.
     Derived,
+    /// A cited rule whose every condition observed records meet; it carries its proof.
+    Explained,
+    /// A pattern no rule settles, or a rule with a condition no record shows; yours to
+    /// confirm or dismiss.
+    Suggested,
 }
 
 /// One dated statement about an object, with where it came from.
@@ -190,6 +209,10 @@ pub struct Fact {
     #[ts(optional)]
     pub grade: Option<Grade>,
     pub tier: Tier,
+    /// Why a rule's conclusion holds, for an Explained or Suggested fact a rule reached.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub proof: Option<crate::evidence::Proof>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize)]
@@ -516,6 +539,50 @@ pub fn graph(state: &FinanceState, view: &View) -> Graph {
             }
             for person in &trip.companions {
                 builder.link(&id, Relation::Person, person.clone());
+            }
+        }
+        for program in &insights.evidence.programs {
+            builder.add(Object {
+                id: Kind::Program.id(&program.id),
+                kind: Kind::Program,
+                title: program.name.clone(),
+                subtitle: Some(program.organization.clone()),
+                date: Some(program.reviewed.to_string()),
+                amount: None,
+                text: program.summary.clone(),
+                record: record(program),
+            });
+        }
+        for chapter in &insights.evidence.chapters {
+            let id = Kind::Chapter.id(&chapter.id);
+            builder.add(Object {
+                id: id.clone(),
+                kind: Kind::Chapter,
+                title: chapter.title.clone(),
+                subtitle: Some(match chapter.end {
+                    Some(end) => format!("{} to {end}", chapter.start),
+                    None => format!("Since {}", chapter.start),
+                }),
+                date: Some(chapter.start.to_string()),
+                amount: None,
+                text: format!("{:?}", chapter.kind).to_lowercase(),
+                record: record(chapter),
+            });
+            for anchor in &chapter.anchors {
+                for evidence in &anchor.evidence {
+                    builder.link(&id, Relation::Anchor, evidence.clone());
+                }
+            }
+            // A member only timing suggests stays in the chapter's record, not a link.
+            for member in chapter
+                .members
+                .iter()
+                .filter(|member| member.tier == Tier::Observed)
+            {
+                builder.link(&member.id, Relation::Chapter, id.clone());
+            }
+            for program in &chapter.programs {
+                builder.link(&id, Relation::Program, Kind::Program.id(program));
             }
         }
         let mut bills = BTreeSet::new();

@@ -9,6 +9,7 @@ pub(crate) mod integrations;
 pub(crate) mod investments;
 pub(crate) mod objects;
 pub(crate) mod places;
+pub(crate) mod research;
 
 use tauri::State;
 

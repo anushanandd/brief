@@ -192,13 +192,28 @@ fn distance_km(left: (f64, f64), right: (f64, f64)) -> f64 {
 struct Home {
     regions: BTreeSet<String>,
     country: String,
-    centre: Option<(f64, f64)>,
+    /// Each home region's centre, where enough of its purchases carry coordinates. After a
+    /// move there are two homes, and near either one is home.
+    centres: Vec<(String, (f64, f64))>,
 }
 
 impl Home {
+    /// How far a place is from the nearest home centre.
+    fn distance(&self, here: (f64, f64)) -> Option<f64> {
+        self.centres
+            .iter()
+            .map(|(_, centre)| distance_km(here, *centre))
+            .min_by(f64::total_cmp)
+    }
+
     fn away(&self, place: &Place) -> Option<bool> {
-        if let (Some(here), Some(centre)) = (coordinates(place), self.centre) {
-            return Some(distance_km(here, centre) > AWAY_KM);
+        if let Some(distance) = coordinates(place).and_then(|here| self.distance(here)) {
+            // A home region too thinly located for a centre still counts by name.
+            let named = region_key(place).is_some_and(|region| {
+                self.regions.contains(&region)
+                    && !self.centres.iter().any(|(home, _)| *home == region)
+            });
+            return Some(distance > AWAY_KM && !named);
         }
         if place.country != self.country {
             return Some(true);
@@ -287,7 +302,8 @@ pub fn trips(transactions: &[Transaction], today: NaiveDate) -> Trips {
 type Located<'a> = (NaiveDate, &'a Transaction, &'a Place);
 
 /// Home from recent in-store purchases: the region with the most purchase days, and any other
-/// region visited often enough over enough months, with the main region's country and centre.
+/// region visited often enough over enough months, with the main region's country and each
+/// region's centre.
 fn infer_home(located: &[Located<'_>], today: NaiveDate) -> Option<Home> {
     let recent = located
         .iter()
@@ -333,17 +349,24 @@ fn infer_home(located: &[Located<'_>], today: NaiveDate) -> Option<Home> {
         .find(|(_, region, _)| region == main)
         .map(|(_, _, place)| place.country.clone())
         .unwrap_or_else(|| "US".into());
-    let (mut lats, mut lons): (Vec<f64>, Vec<f64>) = recent
+    let centres = regions
         .iter()
-        .filter(|(_, region, _)| region == main)
-        .filter_map(|(_, _, location)| coordinates(location))
-        .unzip();
+        .filter_map(|home| {
+            let (mut lats, mut lons): (Vec<f64>, Vec<f64>) = recent
+                .iter()
+                .filter(|(_, region, _)| region == home)
+                .filter_map(|(_, _, location)| coordinates(location))
+                .unzip();
+            (lats.len() >= HOME_MINIMUM / 2)
+                .then(|| median(&mut lats).zip(median(&mut lons)))
+                .flatten()
+                .map(|centre| (home.clone(), centre))
+        })
+        .collect();
     Some(Home {
         regions,
         country: main_country,
-        centre: (lats.len() >= HOME_MINIMUM / 2)
-            .then(|| median(&mut lats).zip(median(&mut lons)))
-            .flatten(),
+        centres,
     })
 }
 
@@ -457,11 +480,13 @@ fn trip(
     let abroad = run
         .iter()
         .any(|(_, _, place)| place.country != home.country);
-    let far = home.centre.is_some_and(|centre| {
-        run.iter()
-            .filter_map(|(_, _, location)| coordinates(location))
-            .any(|place| distance_km(place, centre) > FLIGHT_KM)
-    });
+    let far = run
+        .iter()
+        .filter_map(|(_, _, location)| coordinates(location))
+        .any(|place| {
+            home.distance(place)
+                .is_some_and(|distance| distance > FLIGHT_KM)
+        });
     // Bag and seat fees post on the travel days; tickets, bought weeks ahead, don't count.
     let airline = dated.iter().any(|(date, transaction)| {
         *date >= start - Duration::days(1)
@@ -842,5 +867,40 @@ mod tests {
         transactions.push(purchase("ny-2", "2026-09-26", -30.0, "Dining", Some(nyc)));
         let far = trips(&transactions, day("2026-09-26"));
         assert!(far.trips[0].flew);
+    }
+
+    #[test]
+    fn after_a_move_both_homes_are_home() {
+        // Six months in Denver, then six in San Francisco, with a weekend in Chicago.
+        let mut transactions = Vec::new();
+        for month in 1..=12 {
+            for day in [3, 9, 15, 21, 27] {
+                let (city, region) = if month <= 6 {
+                    ("Denver", "CO")
+                } else {
+                    ("San Francisco", "CA")
+                };
+                transactions.push(purchase(
+                    &format!("home-{month}-{day}"),
+                    &format!("2026-{month:02}-{day:02}"),
+                    -20.0,
+                    "Groceries",
+                    at(city, region),
+                ));
+            }
+        }
+        for (id, date) in [("chicago-1", "2026-05-11"), ("chicago-2", "2026-05-12")] {
+            transactions.push(purchase(id, date, -40.0, "Dining", at("Chicago", "IL")));
+        }
+        let result = trips(&transactions, day("2026-12-31"));
+        assert_eq!(result.home, ["CA, US", "CO, US"]);
+        assert_eq!(
+            result
+                .trips
+                .iter()
+                .map(|trip| trip.destination.as_str())
+                .collect::<Vec<_>>(),
+            ["Chicago, IL"]
+        );
     }
 }

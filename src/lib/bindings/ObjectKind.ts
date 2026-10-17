@@ -3,4 +3,4 @@
 /**
  * What an object is. An id is `kind:key`, so the kind is always readable from the id.
  */
-export type ObjectKind = "account" | "transaction" | "holding" | "trade" | "document" | "statement" | "person" | "organization" | "place" | "trip" | "bill" | "benefit" | "story";
+export type ObjectKind = "account" | "transaction" | "holding" | "trade" | "document" | "statement" | "person" | "organization" | "place" | "trip" | "bill" | "benefit" | "story" | "chapter" | "program";

@@ -2,6 +2,7 @@
 
 import { expect, it } from 'vitest'
 
+import { evidenceFixture } from '../data/fixtures/evidence'
 import { expectedEvent } from '../data/fixtures/insights'
 import { settingsSections } from '../lib/settings-search'
 import {
@@ -344,6 +345,8 @@ it('maps every control to a registered command', async () => {
       color: '#fff',
     },
   ]
+  // Chapters and Rules have controls of their own.
+  scenario.insights = { evidence: evidenceFixture }
   const voids = new Set([
     'area',
     'br',
@@ -370,6 +373,9 @@ it('maps every control to a registered command', async () => {
     '/insights',
     '/insights?view=people',
     '/insights?view=people&person=person:a',
+    '/insights?view=chapters',
+    '/insights?view=chapters&chapter=work:example',
+    '/insights?view=rules',
     '/analytics?chart=amex-credits',
     '/taxes',
     '/calendar',

@@ -7,8 +7,8 @@ use serde_json::{json, Value};
 
 use super::{Fact, Kind, Object, Tier};
 use crate::{
-    documents, insights::View, quality::Grade, storage::FinanceState,
-    transaction_policy::CategorySource,
+    documents, evidence::chapters::ChapterKind, insights::View, quality::Grade,
+    storage::FinanceState, transaction_policy::CategorySource,
 };
 
 /// Who you are in facts about you, such as your employer.
@@ -46,6 +46,7 @@ impl Facts {
             sources,
             grade,
             tier,
+            proof: None,
         });
     }
 
@@ -225,6 +226,66 @@ pub(super) fn facts(state: &FinanceState, view: &View, objects: &[Object]) -> Ve
                 json!(trip.destination),
             );
             facts.spanning(Some(trip.start.to_string()), Some(trip.end.to_string()));
+        }
+        // A rule's conclusion, sourced by the records that met it and the rule, with its proof.
+        // One you confirmed is yours.
+        for explanation in &insights.evidence.explanations {
+            let mut sources = vec![Kind::Program.id(&explanation.program)];
+            for id in explanation
+                .proof
+                .steps
+                .iter()
+                .flat_map(|step| &step.evidence)
+            {
+                if !sources.contains(id) {
+                    sources.push(id.clone());
+                }
+            }
+            let confirmed = explanation.tier == Tier::Observed;
+            if confirmed {
+                sources.insert(0, "you".into());
+            }
+            facts.add(
+                &explanation.subject,
+                &explanation.predicate,
+                explanation
+                    .object
+                    .as_ref()
+                    .map_or(json!(true), |object| json!(object)),
+                sources,
+                confirmed.then_some(Grade::Confirmed),
+                explanation.tier,
+            );
+            facts.spanning(
+                explanation.from.map(|date| date.to_string()),
+                explanation.to.map(|date| date.to_string()),
+            );
+            if let Some(fact) = facts.0.last_mut() {
+                fact.proof = Some(explanation.proof.clone());
+            }
+        }
+        for chapter in &insights.evidence.chapters {
+            let mut sources = chapter
+                .anchors
+                .iter()
+                .flat_map(|anchor| anchor.evidence.iter().cloned())
+                .collect::<Vec<_>>();
+            sources.dedup();
+            if chapter.confirmed || chapter.kind == ChapterKind::Planned {
+                sources.insert(0, "you".into());
+            }
+            facts.add(
+                &Kind::Chapter.id(&chapter.id),
+                "span",
+                json!(chapter.title),
+                sources,
+                None,
+                chapter.tier,
+            );
+            facts.spanning(
+                Some(chapter.start.to_string()),
+                chapter.end.map(|date| date.to_string()),
+            );
         }
     }
     for object in objects.iter().filter(|object| object.kind == Kind::Bill) {

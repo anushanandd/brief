@@ -211,6 +211,8 @@ pub struct Insights {
     pub movers: Option<lots::Movers>,
     /// Dated items, for the Calendar page and the Brief calendar.
     pub agenda: Vec<agenda::AgendaItem>,
+    /// What program rules explain or suggest, with proofs, and life chapters.
+    pub evidence: crate::evidence::Evidence,
 }
 
 /// Derives insights for an annotation-aware snapshot. The snapshot takes the saved tax
@@ -249,6 +251,15 @@ pub fn derive_with_documents(
         transaction.recurring_id = Some(forecast::recurring_key(transaction));
     }
     people::assign(&mut snapshot.transactions, &settings.people);
+    // Rules run before any total, so an Explained offset already counts as a refund.
+    let explained = crate::evidence::explain(
+        &snapshot.transactions,
+        &snapshot.accounts,
+        documents,
+        settings,
+        zone.date(now),
+    );
+    crate::evidence::apply(&mut snapshot.transactions, &explained.explanations);
     let snapshot = &*snapshot;
     let (transactions, accounts, updated_at) = (
         &snapshot.transactions,
@@ -256,6 +267,21 @@ pub fn derive_with_documents(
         &snapshot.updated_at,
     );
     let ended = recurring::ended(&snapshot.recurring_streams, transactions);
+    let today = zone.date(now);
+    let mut trips = trips::trips(transactions, today);
+    // Purchases on trips say nothing about where home is.
+    let away = trips
+        .trips
+        .iter()
+        .flat_map(|trip| trip.transaction_ids.iter().cloned())
+        .collect();
+    let evidence =
+        crate::evidence::evidence(explained, transactions, accounts, &away, settings, today);
+    people::trip_companions(
+        &mut trips.trips,
+        &settings.trip_companions,
+        &settings.people,
+    );
     let Cashflow {
         today,
         expected,
@@ -270,7 +296,7 @@ pub fn derive_with_documents(
         subscriptions,
         credit,
         anomalies,
-        mut trips,
+        trips,
         horizon,
     } = cashflow(
         transactions,
@@ -280,13 +306,24 @@ pub fn derive_with_documents(
         now,
         zone,
         &ended,
-    );
-    people::trip_companions(
-        &mut trips.trips,
-        &settings.trip_companions,
-        &settings.people,
+        trips,
+        crate::evidence::chapters::baseline(&evidence.chapters, today),
     );
     let people = people::people(transactions, &settings.people, &trips.trips);
+    brief.needs.extend(
+        evidence
+            .alerts
+            .iter()
+            .map(|alert| attention::AttentionItem {
+                id: format!("program:{}", alert.id),
+                severity: attention::Severity::Attention,
+                item: attention::Item::ProgramNote {
+                    program: alert.program.clone(),
+                    says: alert.says.clone(),
+                    subject: alert.subject.clone(),
+                },
+            }),
+    );
     let recurring_check = recurring::check(&snapshot.recurring_streams, &expected, transactions);
     // Statements belong to the saved card, and only once its benefits say it is that card.
     let card = spending_card(accounts, settings);
@@ -548,6 +585,7 @@ pub fn derive_with_documents(
         },
         movers: lots::movers(holdings),
         agenda: Vec::new(),
+        evidence,
     };
     insights.agenda = agenda::agenda(agenda::Inputs {
         today,
@@ -624,10 +662,14 @@ fn compute(
         now,
         zone,
         &std::collections::BTreeSet::new(),
+        trips::trips(transactions, zone.date(now)),
+        None,
     )
 }
 
-/// `ended` holds recurring series Plaid reports cancelled; they are not forecast.
+/// `ended` holds recurring series Plaid reports cancelled; they are not forecast. `baseline`
+/// is where a confirmed chapter starts a new normal for typical spending and usual amounts.
+#[allow(clippy::too_many_arguments)]
 fn cashflow(
     transactions: &[Transaction],
     accounts: &[Account],
@@ -636,6 +678,8 @@ fn cashflow(
     now: DateTime<Utc>,
     zone: &dyn Zone,
     ended: &std::collections::BTreeSet<String>,
+    trips: trips::Trips,
+    baseline: Option<NaiveDate>,
 ) -> Cashflow {
     let today = zone.date(now);
     let live = |mut events: Vec<forecast::ExpectedEvent>| {
@@ -729,7 +773,7 @@ fn cashflow(
             account_id: card.id.clone(),
             product: rules.product.clone(),
             product_name: rules.name.clone(),
-            fee: rules.fee_recovery(&own, &activity, &history, today),
+            fee: rules.fee_recovery(&own, transactions, &activity, &history, today),
             windows,
             history,
             review: rules.review(&own, &activity),
@@ -747,7 +791,7 @@ fn cashflow(
         .filter(|(account, _)| !is_spending_card(account))
         .map(|(account, rules)| card_benefits(account, rules))
         .collect::<Vec<_>>();
-    let plan = plan::plan(transactions, accounts, &expected, today);
+    let plan = plan::plan(transactions, accounts, &expected, baseline, today);
     let context = attention::Context {
         today,
         spending_account_id: card.map(|card| card.id.as_str()),
@@ -762,7 +806,7 @@ fn cashflow(
         today,
         cashline::HORIZON_DAYS,
     ));
-    let cash = cashline::timeline(accounts, &horizon, today);
+    let cash = cashline::timeline(accounts, &horizon, &settings.planned_chapters, today);
     let subscriptions = subscriptions::subscriptions(
         &live(forecast::forecast_within(
             transactions,
@@ -779,7 +823,7 @@ fn cashflow(
             .map(|(card, cycle)| (card.id.as_str(), cycle)),
         today,
     );
-    let anomalies = anomalies::anomalies(transactions, today);
+    let anomalies = anomalies::anomalies(transactions, baseline, today);
     let brief = attention::Brief {
         needs: attention::needs(
             context,
@@ -814,13 +858,14 @@ fn cashflow(
         subscriptions,
         credit,
         anomalies,
-        trips: trips::trips(transactions, today),
+        trips,
         horizon,
     }
 }
 
-/// Credit cards whose benefits are tracked, with their product's rules: the spending card under
-/// its assigned product or the default one, and any other card only once assigned a product.
+/// Credit cards whose benefits are tracked, with their product's rules: the product the user
+/// assigned, else the one the issuer's official name names, else, for the spending card only,
+/// the default product.
 fn tracked_cards<'a>(
     accounts: &'a [Account],
     settings: &FinanceSettings,
@@ -833,7 +878,8 @@ fn tracked_cards<'a>(
             let assigned = settings
                 .benefit_cards
                 .get(&account.id)
-                .and_then(|product| benefits::product(product));
+                .and_then(|product| benefits::product(product))
+                .or_else(|| benefits::named_product(account.official_name.as_deref()));
             let spending = card.is_some_and(|card| card.id == account.id);
             let rules = if spending {
                 assigned.or_else(|| benefits::product(benefits::DEFAULT_PRODUCT))
@@ -942,3 +988,6 @@ mod tests;
 
 #[cfg(test)]
 mod seed_fixture;
+
+#[cfg(test)]
+mod evals;

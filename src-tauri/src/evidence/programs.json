@@ -1,0 +1,123 @@
+{
+  "version": "2026-10-17",
+  "programs": [
+    {
+      "id": "ms-cashplus-engagement-bonus",
+      "name": "CashPlus Annual Engagement Bonus",
+      "organization": "Morgan Stanley",
+      "summary": "Morgan Stanley deposits a bonus into a Platinum CashPlus account whose holder is the Basic Card Member of the Platinum Card exclusively for Morgan Stanley, after the card opens and after each renewal.",
+      "source": {
+        "url": "https://www.morganstanley.com/what-we-do/wealth-management/cashplus",
+        "title": "CashPlus: Cash Management Account | Morgan Stanley"
+      },
+      "reviewed": "2026-10-17",
+      "terms": [
+        { "from": "2026-01-02", "values": { "bonus": [895] } },
+        { "from": "2025-09-18", "to": "2026-01-01", "values": { "bonus": [695, 895] } }
+      ],
+      "conditions": [
+        {
+          "kind": "account",
+          "as": "cashplus",
+          "says": "A Platinum CashPlus account at Morgan Stanley",
+          "name": "platinum cashplus",
+          "institution": "morgan stanley"
+        },
+        {
+          "kind": "card",
+          "as": "card",
+          "says": "The Platinum Card exclusively for Morgan Stanley, by the name the issuer reports",
+          "officialName": "morgan stanley platinum card|platinum card.*morgan stanley"
+        },
+        {
+          "kind": "transaction",
+          "as": "bonus",
+          "says": "A deposit to that account named an engagement bonus, of the amount the terms give",
+          "account": "cashplus",
+          "description": "engagement bonus",
+          "direction": "in",
+          "amountTerm": "bonus"
+        },
+        {
+          "kind": "transaction",
+          "as": "fee",
+          "says": "The card's annual membership fee, charged in the 13 months before the bonus",
+          "account": "card",
+          "description": "membership fee|annual fee",
+          "direction": "out",
+          "before": { "of": "bonus", "days": 396 }
+        }
+      ],
+      "conclusion": {
+        "subject": "bonus",
+        "predicate": "offsets",
+        "object": "fee",
+        "title": "Card fee offset",
+        "says": "The {bonus} engagement bonus offsets the card's {fee} annual fee"
+      },
+      "notes": [
+        "Morgan Stanley may report the bonus as income; look for a tax form from them at year end."
+      ],
+      "expect": {
+        "missing": "bonus",
+        "after": "fee",
+        "days": 60,
+        "says": "The engagement bonus usually posts in the month after the card's annual fee; none has since the fee on {fee.date}."
+      }
+    },
+    {
+      "id": "ms-cashplus-employee-fee-waiver",
+      "name": "Platinum CashPlus employee fee waiver",
+      "organization": "Morgan Stanley",
+      "summary": "For Morgan Stanley employees, the Platinum CashPlus $55 monthly fee is avoided with $5,000 in monthly deposits and enrollment in Morgan Stanley Online, with no average balance or investment account required.",
+      "source": {
+        "url": "https://morgan-stanley-benefits.s3.us-east-2.amazonaws.com/Firm-Resources-for-You-and-Your-Family-My-Benefits.pdf",
+        "title": "Be In the Know About Your Benefits | Morgan Stanley"
+      },
+      "reviewed": "2026-10-17",
+      "terms": [{ "from": "2025-01-01", "values": { "deposits": [5000], "fee": [55] } }],
+      "conditions": [
+        {
+          "kind": "account",
+          "as": "cashplus",
+          "says": "A Platinum CashPlus account at Morgan Stanley",
+          "name": "platinum cashplus",
+          "institution": "morgan stanley"
+        },
+        {
+          "kind": "employment",
+          "as": "job",
+          "says": "You work at Morgan Stanley, by your pay statements or payroll",
+          "organization": "morgan stanley"
+        },
+        {
+          "kind": "monthlyDeposits",
+          "as": "months",
+          "says": "At least the terms' deposits reached the account in the month, while you worked there",
+          "account": "cashplus",
+          "atLeastTerm": "deposits",
+          "during": "job"
+        },
+        {
+          "kind": "unobservable",
+          "says": "Enrollment in Morgan Stanley Online, which no record Brief reads shows"
+        }
+      ],
+      "conclusion": {
+        "subject": "cashplus",
+        "predicate": "feeWaived",
+        "title": "Monthly fee waived",
+        "says": "The $55 monthly fee is waived under the employee criteria",
+        "spans": "months"
+      },
+      "watch": {
+        "condition": "months",
+        "says": "Deposits to Platinum CashPlus were under {deposits} in {month}; the $55 monthly fee may apply."
+      },
+      "ends": {
+        "with": "job",
+        "says": "When work at Morgan Stanley ends, the employee waiver lapses: the standard criteria ($5,000 in monthly deposits, a $25,000 average daily balance, and another Morgan Stanley investment account) apply, or the $55 monthly fee."
+      }
+    }
+  ]
+}
