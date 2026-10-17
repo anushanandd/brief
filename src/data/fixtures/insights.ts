@@ -1,11 +1,17 @@
-import type { BenefitActivity, BenefitWindow, ExpectedEvent, Insights } from '../../lib/schema'
+import type {
+  BenefitActivity,
+  BenefitWindow,
+  ExpectedEvent,
+  Insights,
+  Rollup,
+} from '../../lib/schema'
 
 /** Empty results for the insights a scenario doesn't exercise. */
 export const emptyInsightDetails = {
   credit: { cards: [], balance: 0, limit: 0, cardsWithoutLimit: 0 },
   anomalies: { duplicates: [], unusual: [] },
-  trips: { trips: [], home: [] },
-  people: { people: [], suggestions: [] },
+  trips: { trips: [], years: [], home: [] },
+  people: { people: [], sent: 0, suggestions: [] },
   recurringCheck: { available: false, ended: [], unforecast: [] },
   taxes: {
     years: [],
@@ -27,7 +33,29 @@ export const emptyInsightDetails = {
   },
   documents: { years: [], pay: [], keep: [], toReview: 0, outdated: [], evidence: [] },
   agenda: [],
+  flows: [],
+  activityDays: [],
+  activityMonths: [],
+  rollup: emptyRollup(),
+  chartChanges: [],
 } satisfies Partial<Insights>
+
+/** Account totals with nothing in them; a test names the ones it exercises. */
+export function emptyRollup(overrides: Partial<Rollup> = {}): Rollup {
+  return {
+    groups: [],
+    listed: [],
+    shares: [],
+    sheet: { assets: 0, liabilities: 0, complete: true },
+    unrealized: null,
+    realizedYtd: null,
+    retirement: null,
+    netWorth: 0,
+    combined: null,
+    holdings: [],
+    ...overrides,
+  }
+}
 
 /** A native insights payload for renderer tests. Rust computes these in the app. */
 export function insights(overrides: Partial<Insights> = {}): Insights {

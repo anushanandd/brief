@@ -27,8 +27,12 @@ import {
   statementPreviewSchema,
   statementSummarySchema,
   statementSyncSchema,
+  marketHistorySchema,
   marketNewsResultSchema,
   marketSnapshotsSchema,
+  chartChangesSchema,
+  reportsSchema,
+  spendingPeriodDetailSchema,
   summaryRunSchema,
   syncRunSchema,
   type Calibration,
@@ -42,8 +46,13 @@ import {
   type StatementSummary,
   type StatementSync,
   type BankStatement,
+  type MarketHistory,
   type MarketNewsResult,
   type MarketSnapshots,
+  type ChartChanges,
+  type Reports,
+  type SpendingOwner,
+  type SpendingPeriodJudgment,
   type SummaryRun,
   type SyncRun,
   type BackupInfo,
@@ -120,6 +129,61 @@ export async function getFinanceSnapshot(): Promise<FinanceSnapshot> {
 
   const result = await invoke<unknown>('get_finance_snapshot')
   return financeSnapshotSchema.parse(result)
+}
+
+/** Which Spending period to read: whose spending, over which scope, and how many back. */
+export type SpendingPeriodRequest = {
+  scope: string
+  owner: SpendingOwner
+  kind: SpendingPeriodJudgment['kind']
+  offset: number
+}
+
+/**
+ * One Spending period in full, computed by Rust; null when the scope or period doesn't exist.
+ * The preview reads the seed's periods, computed by the same code.
+ */
+export async function getSpendingPeriod(request: SpendingPeriodRequest) {
+  if (!isTauri()) {
+    const { default: periods } = await import('../data/seed-spending.json')
+    const key = `${request.scope}|${request.owner}|${request.kind}|${request.offset}`
+    const period = (periods as Record<string, unknown>)[key]
+    return period ? spendingPeriodDetailSchema.parse(period) : null
+  }
+  return spendingPeriodDetailSchema
+    .nullable()
+    .parse(await invoke<unknown>('get_spending_period', { request }))
+}
+
+/** Which reports to read: over which window and accounts, and the one to read in full. */
+export type ReportRequest = {
+  chart?: Reports['summaries'][number]['chart']
+  range?: Reports['window']['range']
+  from?: string
+  to?: string
+  /** Every account when absent; none when empty. */
+  accounts?: string[]
+}
+
+/**
+ * Every report over a window and accounts, and the requested one in full, computed by Rust.
+ * The preview reads the seed's reports for each chart period and Investments' periods; any other
+ * window is null there.
+ */
+export async function getReports(request: ReportRequest) {
+  if (!isTauri()) {
+    const { default: reports } = await import('../data/seed-reports.json')
+    const key = [
+      request.chart ?? '',
+      request.range ?? '',
+      request.from ?? '',
+      request.to ?? '',
+      request.accounts ? request.accounts.join(',') : '*',
+    ].join('|')
+    const found = (reports as Record<string, unknown>)[key]
+    return found ? reportsSchema.parse(found) : null
+  }
+  return reportsSchema.nullable().parse(await invoke<unknown>('get_reports', { request }))
 }
 
 export async function recoverFinanceState(restore: boolean): Promise<FinanceSnapshot> {
@@ -433,6 +497,7 @@ export async function startMarketStream(
   requestId: string,
   onUpdate: (market: MarketSnapshots) => void,
   onError: (message: string) => void,
+  onHistory: (series: MarketHistory, changes?: ChartChanges) => void = () => undefined,
 ): Promise<void> {
   const updates = new Channel<unknown>((payload) => {
     if (!payload || typeof payload !== 'object') return
@@ -440,6 +505,12 @@ export async function startMarketStream(
       const parsed = marketSnapshotsSchema.safeParse(payload.market)
       if (parsed.success) onUpdate(parsed.data)
       else onError('Invalid market update received')
+    } else if ('kind' in payload && payload.kind === 'history' && 'chartSeries' in payload) {
+      // A malformed history only costs the detail; the live frame stays.
+      const parsed = marketHistorySchema.safeParse(payload.chartSeries)
+      const changes =
+        'chartChanges' in payload ? chartChangesSchema.safeParse(payload.chartChanges) : undefined
+      if (parsed.success) onHistory(parsed.data, changes?.success ? changes.data : undefined)
     } else if (
       'kind' in payload &&
       payload.kind === 'error' &&

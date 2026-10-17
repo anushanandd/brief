@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RefObject } from 'react'
+import type { ReactNode } from 'react'
 
 import { acceptAutofill, AutofillField, autofillCompletion } from '../components/autofill'
 import {
@@ -129,31 +129,35 @@ function TrustSummary({ onShow }: { onShow: (id: string) => void }) {
   )
 }
 
-/** Tracks the section nearest the top of the scrolling pane for the section list. */
-function useActiveSection(content: RefObject<HTMLElement | null>, dependency: unknown) {
-  const [active, setActive] = useState<string>(settingsSections[0].id)
-  useEffect(() => {
-    const root = content.current
-    const sections = [
-      ...(root?.querySelectorAll<HTMLElement>('[data-settings-section]') ?? []),
-    ].filter((section) => !section.hidden)
-    if (!root || !sections.length || typeof IntersectionObserver === 'undefined') return undefined
-    const visible = new Map<string, boolean>()
-    const observer = new IntersectionObserver(
-      (entries) => {
-        for (const entry of entries) visible.set(entry.target.id, entry.isIntersecting)
-        const first = sections.find((section) => visible.get(section.id))
-        if (first) setActive(first.id)
-      },
-      { root, rootMargin: '-24px 0px -60% 0px' },
-    )
-    for (const section of sections) observer.observe(section)
-    return () => observer.disconnect()
-  }, [content, dependency])
-  return [active, setActive] as const
+const sectionViews: Record<SettingsSectionId, () => ReactNode> = {
+  connections: ConnectionsSection,
+  accounts: AccountsSection,
+  taxes: TaxesSection,
+  appearance: AppearanceSection,
+  charts: ChartsSection,
+  navigation: NavigationSection,
+  privacy: PrivacySection,
+  market: MarketSection,
+  data: DataSection,
+  advanced: AdvancedSection,
 }
 
-/** The Settings dialog body: section list and search on the left, every section on the right. */
+/**
+ * The section a link opens: the section itself, or the one holding the row. A row the index
+ * doesn't list opens every section, so the link still finds it.
+ */
+export function settingsSectionFor(id: string | undefined): SettingsSectionId | 'all' {
+  if (!id) return settingsSections[0].id
+  const section = settingsSections.find(
+    (candidate) => candidate.id === id || candidate.entries.some((entry) => entry.id === id),
+  )
+  return section?.id ?? 'all'
+}
+
+/**
+ * The Settings page: section list and search on the left, one section on the right. Only the
+ * open section renders, so Settings opens at once; a search shows matches from every section.
+ */
 export function SettingsPanel({
   target,
   titleId,
@@ -171,26 +175,21 @@ export function SettingsPanel({
   const searchRef = useRef(search)
   searchRef.current = search
   const inputRef = useRef<HTMLInputElement>(null)
-  const contentRef = useRef<HTMLDivElement>(null)
-  const [active, setActive] = useActiveSection(contentRef, search)
+  const targetId = target ? settingsHashForPath(`/settings#${target}`) : undefined
+  const current = settingsSectionFor(targetId)
 
-  const scrollToTarget = useCallback(
-    (id: string) => {
-      const element = document.getElementById(id)
-      if (!element) return
-      element.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' })
-      element.focus({ preventScroll: true })
-      const section = element.closest<HTMLElement>('[data-settings-section]')
-      if (section) setActive(section.id)
-      if (!element.matches('[data-settings-item]')) return
-      element.dataset.flash = ''
-      window.setTimeout(() => delete element.dataset.flash, 1600)
-    },
-    [setActive],
-  )
+  const scrollToTarget = useCallback((id: string) => {
+    const element = document.getElementById(id)
+    if (!element) return
+    element.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' })
+    element.focus({ preventScroll: true })
+    if (!element.matches('[data-settings-item]')) return
+    element.dataset.flash = ''
+    window.setTimeout(() => delete element.dataset.flash, 1600)
+  }, [])
 
   useEffect(() => {
-    const id = target ? settingsHashForPath(`/settings#${target}`) : undefined
+    const id = targetId
     if (!id) {
       // Opening Settings without a destination starts in search, ready to type.
       inputRef.current?.focus({ preventScroll: true })
@@ -203,7 +202,7 @@ export function SettingsPanel({
     if (hiddenBySearch) setQuery('')
     const timer = window.setTimeout(() => scrollToTarget(id), hiddenBySearch ? 60 : 0)
     return () => window.clearTimeout(timer)
-  }, [target, scrollToTarget])
+  }, [targetId, scrollToTarget])
 
   const firstResult = search
     ? settingsSections.flatMap(({ entries }) => entries).find(({ id }) => search.entryIds.has(id))
@@ -279,7 +278,7 @@ export function SettingsPanel({
                   <a
                     href={`#settings/${section.id}`}
                     className="settings-rail-link"
-                    aria-current={!search && active === section.id ? 'location' : undefined}
+                    aria-current={!search && current === section.id ? 'page' : undefined}
                     aria-disabled={dimmed || undefined}
                     tabIndex={dimmed ? -1 : undefined}
                     onClick={(event) => {
@@ -300,7 +299,7 @@ export function SettingsPanel({
         </nav>
       </aside>
 
-      <div className="settings-panel-content" ref={contentRef}>
+      <div className="settings-panel-content">
         <Button
           icon={X}
           size="icon"
@@ -316,22 +315,17 @@ export function SettingsPanel({
           </p>
         ) : null}
         <SettingsSearchProvider value={search}>
-          {search ? null : <TrustSummary onShow={onShow} />}
+          {search || target ? null : <TrustSummary onShow={onShow} />}
           {search && !search.total ? (
             <EmptyState title={`No settings match “${query.trim()}”`}>
               Try theme, backup, or credentials.
             </EmptyState>
           ) : null}
-          <ConnectionsSection />
-          <AccountsSection />
-          <TaxesSection />
-          <AppearanceSection />
-          <ChartsSection />
-          <NavigationSection />
-          <PrivacySection />
-          <MarketSection />
-          <DataSection />
-          <AdvancedSection />
+          {settingsSections.map(({ id }) => {
+            if (!search && current !== 'all' && current !== id) return null
+            const Section = sectionViews[id]
+            return <Section key={id} />
+          })}
         </SettingsSearchProvider>
       </div>
     </div>

@@ -227,7 +227,7 @@ pub(crate) async fn refresh_finance_snapshot(
     committed
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn save_account_link(
     plaid_account_id: String,
     snaptrade_account_id: Option<String>,

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFinance } from '../hooks/use-finance'
 import { useHoldingPrices } from '../hooks/use-holding-prices'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { formatCurrency, formatSecurityName, pluralize } from '../lib/format'
+import { formatPublicCurrency, formatSecurityName, pluralize } from '../lib/format'
 import { type ChartPeriod, chartPeriodSeconds } from '../lib/graph-preferences'
 import { holdingNewsDigest, rankHoldingNews } from '../lib/holding-news'
 import {
@@ -196,7 +196,7 @@ export function HoldingChart({
             )}
           </h2>
           <div className="home-balance-value">
-            <AnimatedCurrency key={ticker} className="hero-number" value={price} />
+            <AnimatedCurrency key={ticker} className="hero-number" value={price} publicValue />
           </div>
         </div>
         <div className="holding-chart-controls">
@@ -363,7 +363,7 @@ export function HoldingChart({
                         time: timeline.toDisplay(quote.time),
                         value: quote.price,
                         color: colors.deposits,
-                        label: [ticker, latestLabel, formatCurrency(quote.price)]
+                        label: [ticker, latestLabel, formatPublicCurrency(quote.price)]
                           .filter(Boolean)
                           .join(' · '),
                       },
@@ -371,7 +371,7 @@ export function HoldingChart({
                   : []),
               ]}
               scrub
-              formatValue={formatCurrency}
+              formatValue={formatPublicCurrency}
               formatTime={(time) =>
                 range === 86400
                   ? new Date(timeline.toActual(time) * 1000).toLocaleTimeString(undefined, {

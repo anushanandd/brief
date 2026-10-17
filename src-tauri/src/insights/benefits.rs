@@ -19,7 +19,7 @@ use super::calendar::{self, NamedZone, Zone};
 use crate::finance_contract::Transaction;
 use crate::numeric::{from_minor, minor_units};
 use attribution::CreditLag;
-pub use history::{BenefitHistory, BenefitReview, PlannedCharge};
+pub use history::{card_years, BenefitHistory, BenefitReview, CardBenefitYear, PlannedCharge};
 use windows::benefit_window;
 
 /// A leftover under a dollar buys nothing, so a window that leaves only cents was used in
@@ -255,6 +255,8 @@ pub struct FeeRecovery {
     /// Posted credits net of reversals since `since` on purchases that were yours, hidden
     /// benefits included: hiding a benefit stops reminders, not the money it returned.
     pub recovered: f64,
+    /// How far `recovered` is from the fee, short of it or past it.
+    pub gap: f64,
     /// Credits in the same period on purchases made for someone else: the allowance was used,
     /// but the saving went to them.
     pub for_others: f64,
@@ -491,7 +493,7 @@ pub fn use_first(windows: &[BenefitWindow]) -> Vec<String> {
     let left =
         |window: &BenefitWindow| match (&window.remaining_range, window.estimated_credit_amount) {
             (Some(range), _) => range.high,
-            (None, Some(estimated)) if estimated == 0.0 => window.cap,
+            (None, Some(0.0)) => window.cap,
             _ => 0.0,
         };
     let mut open: Vec<&BenefitWindow> = windows

@@ -410,7 +410,7 @@ export function PerformanceChart({
       data-range-focus-region
       role="group"
       tabIndex={0}
-      aria-keyshortcuts="W M Q Y A"
+      aria-keyshortcuts="D W M Q Y A"
       aria-label={`Account value over time${benchmark?.length ? ' compared with VOO' : ''}${events.length ? ` with ${events.length} key event markers` : ''}`}
     >
       <span className="sr-only" role="status">

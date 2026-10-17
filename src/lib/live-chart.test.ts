@@ -100,29 +100,17 @@ describe('live chart points', () => {
     expect(chartPointsFromStartDate(points)).toBe(points)
   })
 
-  it('calculates change from the interpolated selected-range boundary', () => {
-    const points = [
-      { time: 0, value: 100 },
-      { time: 10, value: 120 },
-      { time: 20, value: 130 },
+  it("reads a chart's change for the window from Rust, nothing for one it has no reading of", () => {
+    const changes = [
+      {
+        series: 'broker',
+        windows: { week: { change: 20, percent: 18.18 }, all: { change: 5, percent: 1 } },
+      },
     ]
-
-    const change = chartRangeChange(points, 15, 20)
-    expect(change.change).toBe(20)
-    expect(change.percent).toBeCloseTo(20 / 1.1)
-  })
-
-  it('calculates all-time change from the first plotted value', () => {
-    expect(
-      chartRangeChange(
-        [
-          { time: 10, value: 80 },
-          { time: 20, value: 100 },
-        ],
-        0,
-        20,
-      ),
-    ).toEqual({ change: 20, percent: 25 })
+    expect(chartRangeChange(changes, 'broker', 7 * 86_400)).toEqual({ change: 20, percent: 18.18 })
+    expect(chartRangeChange(changes, 'broker', 0)).toEqual({ change: 5, percent: 1 })
+    expect(chartRangeChange(changes, 'broker', 86_400)).toEqual({ change: 0, percent: 0 })
+    expect(chartRangeChange([], 'cash', 0)).toEqual({ change: 0, percent: 0 })
   })
 
   it('preserves zero and negative historical balances', () => {

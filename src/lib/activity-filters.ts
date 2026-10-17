@@ -54,8 +54,8 @@ export const filterValue = (values: string[]) => values.join(',') || undefined
 export const selectedFilterValues = (query: string | undefined, options: string[]) =>
   (query ?? '').split(',').filter((value) => options.includes(value))
 
-export type ActivityDateRange = 'w' | 'm' | 'q' | 'y' | 'a' | 'custom'
-const activityDateRangeKeys = ['w', 'm', 'q', 'y', 'a'] as const
+export type ActivityDateRange = 'd' | 'w' | 'm' | 'q' | 'y' | 'a' | 'custom'
+const activityDateRangeKeys = ['d', 'w', 'm', 'q', 'y', 'a'] as const
 export const activityDateRangeOptions = [
   ...graphWindows.map(({ label, settingsLabel }, index) => ({
     value: activityDateRangeKeys[index],

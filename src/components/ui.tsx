@@ -2,7 +2,13 @@ import NumberFlow from '@number-flow/react'
 import { useLayoutEffect, useRef, useState } from 'react'
 import type { ComponentPropsWithRef, ReactNode } from 'react'
 
-import { formatCurrency, formatPercent, formatSignedCurrency, valueTone } from '../lib/format'
+import {
+  amountsHidden,
+  formatCurrency,
+  formatPercent,
+  formatSignedCurrency,
+  valueTone,
+} from '../lib/format'
 import { FilterSelect } from './filter-select'
 import { ChevronDown } from './icons'
 import type { IconComponent } from './icons'
@@ -10,11 +16,16 @@ import type { IconComponent } from './icons'
 export function AnimatedCurrency({
   value,
   className,
+  publicValue = false,
 }: {
   value: number | null | undefined
   className?: string
+  /** A public market price, which screen privacy leaves visible. */
+  publicValue?: boolean
 }) {
-  if (value == null) return <span className={className}>{formatCurrency(value)}</span>
+  // NumberFlow draws its own digits, so a hidden amount never reaches it.
+  if (value == null || (amountsHidden() && !publicValue))
+    return <span className={className}>{formatCurrency(value)}</span>
 
   // Values change when data arrives or a key steps through rows, never by a gesture worth
   // animating, so digits update in place rather than rolling.

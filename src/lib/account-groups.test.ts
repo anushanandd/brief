@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { accountGroups, balanceSheet } from './account-groups'
+import { accountGroups, groupLabel } from './account-groups'
 import type { Account } from './schema'
 
 const account = (id: string, type: string, value: number | null): Account => ({
@@ -11,7 +11,7 @@ const account = (id: string, type: string, value: number | null): Account => ({
   value,
 })
 
-it('totals accounts by type in minor units, largest group first', () => {
+it("groups accounts under Rust's totals in its order, each group's accounts largest first", () => {
   const groups = accountGroups(
     [
       account('card', 'credit', -20.1),
@@ -20,40 +20,26 @@ it('totals accounts by type in minor units, largest group first', () => {
       account('broker', 'brokerage', 0.25),
     ],
     [
-      { accountId: 'checking', change: 0.1 },
-      { accountId: 'savings', change: 0.2 },
-      { accountId: 'card', change: -5 },
+      { type: 'cash', value: 0.3 },
+      { type: 'brokerage', value: 0.25 },
+      { type: 'credit', value: -20.1 },
+      // A type with no account here is left out.
+      { type: 'loan', value: -1 },
+    ],
+    [
+      { type: 'cash', change: 0.3 },
+      { type: 'credit', change: null },
     ],
   )
-  expect(groups.map(({ type, label, value }) => [type, label, value])).toEqual([
-    ['cash', 'Cash', 0.3],
-    ['brokerage', 'Brokerage', 0.25],
-    ['credit', 'Credit cards', -20.1],
+  expect(groups.map(({ type, label, value, change }) => [type, label, value, change])).toEqual([
+    ['cash', 'Cash', 0.3, 0.3],
+    ['brokerage', 'Brokerage', 0.25, null],
+    ['credit', 'Credit cards', -20.1, null],
   ])
   expect(groups[0].accounts.map(({ id }) => id)).toEqual(['savings', 'checking'])
-  expect(groups[0].change).toBe(0.3)
-  expect(groups[2].change).toBe(-5)
 })
 
-it('leaves a total unavailable when any account in the group is unknown', () => {
-  const [group] = accountGroups(
-    [account('known', 'loan', 100), account('unknown', 'loan', null)],
-    [{ accountId: 'known', change: 4 }],
-  )
-  expect(group.label).toBe('Loan')
-  expect(group.value).toBeNull()
-  expect(group.change).toBeNull()
-})
-
-it('splits assets from liabilities in minor units and flags accounts without a value', () => {
-  expect(
-    balanceSheet([
-      account('checking', 'cash', 0.1),
-      account('savings', 'cash', 0.2),
-      account('card', 'credit', -20.1),
-    ]),
-  ).toEqual({ assets: 0.3, liabilities: -20.1, complete: true })
-  expect(
-    balanceSheet([account('checking', 'cash', 0.1), account('broker', 'brokerage', null)]),
-  ).toEqual({ assets: 0.1, liabilities: 0, complete: false })
+it('names each account type, and the spending cards apart', () => {
+  expect(groupLabel('loan')).toBe('Loan')
+  expect(groupLabel('spending')).toBe('Spending cards')
 })

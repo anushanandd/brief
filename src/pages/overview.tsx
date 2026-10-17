@@ -19,7 +19,7 @@ import { MarketStatus, WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
-import { accountGroups } from '../lib/account-groups'
+import { accountGroups, groupLabel } from '../lib/account-groups'
 import type { AccountDisplayNames } from '../lib/account-names'
 import { accountStartDate } from '../lib/account-start-dates'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
@@ -30,7 +30,6 @@ import {
   hasValueHistory,
   dashboardAccountViews,
   withoutSpendingCard,
-  withoutSpendingCardPoints,
 } from '../lib/dashboard-account-views'
 import { financeSettings } from '../lib/finance-settings'
 import { countOf } from '../lib/format'
@@ -42,7 +41,7 @@ import {
 } from '../lib/home-preferences'
 import { buildLiveChartData, chartPointsFromStartDate, chartRangeChange } from '../lib/live-chart'
 import { getExternalLogosEnabled } from '../lib/logos'
-import type { FinanceSnapshot } from '../lib/schema'
+import type { FinanceSnapshot, Rollup } from '../lib/schema'
 
 // Home previews the largest holdings; Investments lists them all.
 const holdingsPreviewRows = 8
@@ -50,19 +49,14 @@ const holdingsPreviewRows = 8
 export function OverviewPage() {
   const live = useLiveFinance()
   // Spending presents the spending card; Home's totals leave it out, like Accounts.
-  const query = useMemo(
-    () => ({
-      ...live,
-      data: live.data && withoutSpendingCard(live.data),
-      marketSeries: live.data
-        ? {
-            ...live.marketSeries,
-            'net-worth': withoutSpendingCardPoints(live.data, live.marketSeries['net-worth'] ?? []),
-          }
-        : live.marketSeries,
-    }),
-    [live],
-  )
+  const query = useMemo(() => {
+    // Rust's live total without the cards, whose balances are not market-driven.
+    const marketSeries: typeof live.marketSeries = {
+      ...live.marketSeries,
+      'net-worth': live.marketSeries.accounts ?? [],
+    }
+    return { ...live, data: live.data && withoutSpendingCard(live.data), marketSeries }
+  }, [live])
   const finance = useFinance()
   const navigate = useNavigate()
   const committed = finance.data
@@ -135,11 +129,7 @@ export function OverviewPage() {
     provisionalNetWorth ? (points.at(-1)?.value ?? latestValue) : latestValue,
     chartNow,
   )
-  const rangeChange = chartRangeChange(
-    chartPointsFromStartDate(chartData, startDate),
-    graphWindow,
-    chartNow,
-  )
+  const rangeChange = chartRangeChange(query.chartChanges, account.accountId, graphWindow)
   const netDepositsData =
     account.accountId === 'net-worth' || account.performanceMethod === 'value-only'
       ? undefined
@@ -170,7 +160,8 @@ export function OverviewPage() {
   const accounts = data.accounts
     .filter(({ id }) => id !== 'all')
     .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
-  const groups = accountGroups(accounts, periodChanges?.accounts)
+  const rollup = data.insights?.rollup
+  const groups = accountGroups(accounts, rollup?.groups ?? [], periodChanges?.groups)
   const holdings = data.holdings
     .filter(
       ({ accountId }) =>
@@ -187,7 +178,7 @@ export function OverviewPage() {
   )
   const allocation = committed.insights?.allocation
   const holdingShares = allocation ? securityShares(allocation) : undefined
-  const accountShares = assetShares(accounts)
+  const accountShares = assetShares(rollup)
 
   return (
     <div className="page overview-page">
@@ -390,28 +381,19 @@ function securityShares(allocation: Allocation) {
     value,
     percent,
   }))
-  const invested = segments.reduce((sum, { value }) => sum + value, 0)
-  const cash = Math.round((allocation.total - invested) * 100) / 100
   const rest =
-    cash > 0
-      ? {
-          key: 'cash',
-          label: 'Cash',
-          value: cash,
-          percent: Math.max(0, 100 - segments.reduce((sum, { percent }) => sum + percent, 0)),
-        }
+    allocation.cash > 0
+      ? { key: 'cash', label: 'Cash', value: allocation.cash, percent: allocation.cashPercent }
       : undefined
   return { segments, rest }
 }
 
-/** What accounts with a positive balance hold, by type (cash, brokerage, retirement…). */
-function assetShares(accounts: FinanceSnapshot['accounts']): ShareSegment[] {
-  const groups = accountGroups(accounts.filter(({ value }) => value != null && value > 0))
-  const total = groups.reduce((sum, { value }) => sum + value!, 0)
-  return groups.map(({ type, label, value }) => ({
+/** What accounts with a positive balance hold, by type, as Rust shared them out. */
+function assetShares(rollup: Rollup | undefined): ShareSegment[] {
+  return (rollup?.shares ?? []).map(({ type, value, percent }) => ({
     key: type,
-    label,
-    value: value!,
-    percent: (value! / total) * 100,
+    label: groupLabel(type),
+    value,
+    percent,
   }))
 }

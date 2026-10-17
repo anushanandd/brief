@@ -1,6 +1,7 @@
 /** Live market data: quotes, the valuation projection they update, price history, and holding chart events. */
 import { z } from 'zod'
 
+import { chartChangesSchema, rollupSchema } from './insights'
 import { financeSnapshotSchema, performanceSchema } from './snapshot'
 
 const marketSnapshotSchema = z.object({
@@ -27,6 +28,8 @@ export const marketProjectionSchema = financeSnapshotSchema
   .extend({
     revision: z.number().int().nonnegative(),
     brokeragePerformance: z.array(performanceSchema.pick({ accountId: true, currentValue: true })),
+    /** Account totals at these live values. */
+    rollup: rollupSchema,
   })
 export type MarketProjection = z.infer<typeof marketProjectionSchema>
 const marketPointSchema = z.object({ time: z.number().int(), value: z.number() })
@@ -45,8 +48,13 @@ export const marketSnapshotsSchema = z.object({
   chartSeries: z.record(z.string(), z.array(marketPointSchema)).optional(),
   chartPoint: z.record(z.string(), marketPointSchema).optional(),
   projection: marketProjectionSchema.optional(),
+  /** Each value chart's change at these live values. */
+  chartChanges: chartChangesSchema.optional(),
 })
 export type MarketSnapshots = z.infer<typeof marketSnapshotsSchema>
+/** The portfolio's intraday week, sent once the stream's bars arrive. */
+export const marketHistorySchema = z.record(z.string(), z.array(marketPointSchema))
+export type MarketHistory = z.infer<typeof marketHistorySchema>
 
 export const priceBarSchema = z.object({
   time: z.number().int(),

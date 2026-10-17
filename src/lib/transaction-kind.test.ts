@@ -115,10 +115,8 @@ const purchase = (id: string, category: string, amount: number): Transaction => 
   postedOn: '2026-09-10',
 })
 
-it('totals a split under each part and keeps the whole in merchant and period totals', async () => {
+it('divides a split into its parts, each keeping the transaction', async () => {
   const { splitParts } = await import('./transaction-kind')
-  const { buildSpendingView } = await import('./spending')
-  const { cashFlowBreakdown } = await import('./money')
   const split: Transaction = {
     ...purchase('split', 'Groceries', -100),
     splits: [
@@ -131,19 +129,5 @@ it('totals a split under each part and keeps the whole in merchant and period to
   expect(splitParts(split).map(({ id, category, amount }) => [id, category, amount])).toEqual([
     ['split', 'Groceries', -70],
     ['split', 'Gifts', -30],
-  ])
-
-  const view = buildSpendingView([split, whole], '2026-09-18T12:00:00Z', 1)
-  expect(view.total).toBe(120)
-  expect(view.categories.map(({ name, value }) => [name, value])).toEqual([
-    ['Groceries', 90],
-    ['Gifts', 30],
-  ])
-  expect(view.merchants.map(({ name, value }) => [name, value])).toEqual([['Example Market', 120]])
-  expect(
-    cashFlowBreakdown([split, whole]).purchases.map(({ label, value }) => [label, value]),
-  ).toEqual([
-    ['Groceries', 90],
-    ['Gifts', 30],
   ])
 })

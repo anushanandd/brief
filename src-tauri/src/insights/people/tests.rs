@@ -266,6 +266,8 @@ fn summarizes_people_and_offers_unmatched_zelle_names() {
     assert_eq!(a.first, NaiveDate::from_ymd_opt(2026, 9, 1));
     assert_eq!(a.last, NaiveDate::from_ymd_opt(2026, 9, 5));
     assert_eq!(summary.people[1].transaction_count, 0);
+    // Only what went to people they know adds up.
+    assert_eq!(summary.sent, 40.10);
     assert_eq!(
         summary.suggestions,
         [NameSuggestion {
@@ -347,6 +349,8 @@ fn companions_follow_a_trip_as_it_grows_or_splits() {
         abroad: false,
         total: 0.0,
         categories: Vec::new(),
+        rest: 0.0,
+        rest_share: 0.0,
         transaction_ids: transactions.iter().map(|id| (*id).into()).collect(),
         ongoing: false,
         flew: false,

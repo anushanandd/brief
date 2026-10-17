@@ -193,6 +193,8 @@ pub fn run() {
             market::start_holding_chart,
             market::stop_holding_chart,
             finance::get_finance_snapshot,
+            finance::get_spending_period,
+            finance::get_reports,
             finance::get_sync_runs,
             finance::get_data_health,
             finance::transaction_annotations,

@@ -2,23 +2,31 @@ import { describe, expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
 import { benefitWindow } from '../data/fixtures/insights'
-import type { Account, BenefitWindow, Transaction } from './schema'
+import type {
+  Account,
+  BenefitWindow,
+  SpendingPeriodDetail,
+  SpendingPeriodJudgment,
+  Transaction,
+} from './schema'
 import {
   allSpendingAccounts,
-  buildMonthlySpendingHistory,
-  buildSpendingBars,
   benefitsToUseFirst,
-  buildSpendingView,
+  currentSpendingPeriod,
   formatActivityDate,
+  monthlySpendingHistory,
   resolveSpendingAccount,
   sortTransactionsByRecency,
   spendingCategoryColor,
-  spendingScope,
-  spendingMonthReference,
+  spendingChartBars,
+  spendingChartPace,
+  spendingFigures,
+  spendingHeadline,
+  spendingPeriodKind,
   spendingPeriodLabel,
-  spendingPeriodReference,
+  spendingScope,
+  spendingView,
   transactionDateKey,
-  weeklySpendingCategoryPerformance,
 } from './spending'
 
 const transaction = (overrides: Partial<Transaction>): Transaction => ({
@@ -33,35 +41,72 @@ const transaction = (overrides: Partial<Transaction>): Transaction => ({
   ...overrides,
 })
 
-const judged = (opening: number) => [
-  {
-    kind: 'statement' as const,
-    start: '2026-08-24',
-    opening,
-    projected: { total: 35.23, categories: { Shopping: 35.23 } },
-  },
-]
+/** A period as Rust sums and judges it; only the fields a test names matter. */
+const rustPeriod = (overrides: Partial<SpendingPeriodJudgment>): SpendingPeriodJudgment => ({
+  kind: 'month',
+  start: '2026-09-01',
+  end: '2026-09-03',
+  total: 0,
+  previous: null,
+  change: null,
+  changePct: null,
+  daily: 0,
+  pending: 0,
+  categories: [],
+  ...overrides,
+})
 
-describe('spending view', () => {
-  it('maps spending ranges and moves through calendar months', () => {
-    expect(spendingMonthReference('2026-09-03T12:00:00Z', 0)).toBe('2026-09-03T12:00:00Z')
-    expect(spendingMonthReference('2026-09-03T12:00:00Z', -1)).toBe('2026-08-31T12:00:00Z')
-    expect(spendingMonthReference('2026-09-03T12:00:00Z', -9)).toBe('2025-12-31T12:00:00Z')
-    expect(spendingPeriodReference(undefined, '2026-09-03T12:00:00Z', -1, 'week')).toBe(
-      '2026-08-27T12:00:00Z',
-    )
-    expect(spendingPeriodReference(undefined, '2026-09-03T12:00:00Z', -1, 1)).toBe(
-      '2026-08-31T12:00:00Z',
-    )
-    expect(spendingPeriodReference(undefined, '2026-09-03T12:00:00Z', -1, 3)).toBe(
-      '2026-06-30T12:00:00Z',
-    )
-    expect(spendingPeriodReference(undefined, '2026-09-03T12:00:00Z', -1, 12)).toBe(
-      '2025-12-31T12:00:00Z',
-    )
-    expect(spendingPeriodReference(undefined, '2026-09-03T12:00:00Z', -1, 0)).toBe(
-      '2026-09-03T12:00:00Z',
-    )
+const dining = {
+  name: 'Dining',
+  total: 25,
+  previous: 20,
+  change: 5,
+  changePct: 25,
+  daily: 2.5,
+  share: 80,
+  typical: 20,
+  aboveTypical: 5,
+}
+
+const pace = {
+  start: '2026-09-01',
+  end: '2026-09-30',
+  current: [10, 35],
+  previous: [5, 5, 40],
+  projected: 400,
+  days: [
+    {
+      index: 1,
+      date: '2026-09-02',
+      total: 25,
+      purchases: [
+        { id: 'dinner', value: 20 },
+        { id: 'coffee', value: 5 },
+      ],
+    },
+  ],
+}
+
+/** A period in full as Rust reads it on demand. */
+const detail = (overrides: Partial<SpendingPeriodDetail> = {}): SpendingPeriodDetail => ({
+  ...rustPeriod({ total: 35, categories: [dining] }),
+  earlier: true,
+  transactionIds: ['dinner', 'coffee', 'book'],
+  merchants: [],
+  pace,
+  bars: [],
+  focus: {
+    Dining: {
+      transactionIds: ['dinner', 'coffee'],
+      merchants: [],
+      pace: { ...pace, current: [0, 25] },
+    },
+  },
+  ...overrides,
+})
+
+describe('spending periods', () => {
+  it('names each period and maps each choice to the period Rust computes', () => {
     expect(
       (['week', 1, 3, 12, 0] as const).map((period) =>
         spendingPeriodLabel(period, 0, 'September 2026'),
@@ -78,219 +123,129 @@ describe('spending view', () => {
     expect(spendingPeriodLabel(1, -1, 'August 2026')).toBe('August 2026')
     expect(spendingPeriodLabel(3, -1, 'August 2026')).toBe('Quarter through August 2026')
     expect(spendingPeriodLabel(12, -1, 'August 2026')).toBe('Year through August 2026')
-    expect(spendingPeriodLabel(0, -1, 'August 2026')).toBe('All time through August 2026')
-  })
-
-  it('aligns month, quarter, and year views to calendar boundaries', () => {
-    const transactions = [
-      transaction({ id: 'january', date: '2026-01-15', amount: -10 }),
-      transaction({ id: 'march', date: '2026-03-31', amount: -20 }),
-      transaction({ id: 'april', date: '2026-04-01', amount: -30 }),
-      transaction({ id: 'may', date: '2026-05-15', amount: -40 }),
-    ]
-    const reference = '2026-05-15T12:00:00Z'
-
-    expect(buildSpendingView(transactions, reference, 1)).toMatchObject({
-      start: '2026-05-01',
-      total: 40,
-    })
-    expect(buildSpendingView(transactions, reference, 3)).toMatchObject({
-      start: '2026-04-01',
-      total: 70,
-    })
-    expect(buildSpendingView(transactions, reference, 12)).toMatchObject({
-      start: '2026-01-01',
-      total: 100,
-    })
-  })
-
-  it('keeps all-time anchored to the snapshot', () => {
-    const transactions = [
-      transaction({ id: 'january', date: '2026-01-15', amount: -10 }),
-      transaction({ id: 'august', date: '2026-08-15', amount: -20 }),
-      transaction({ id: 'september', date: '2026-09-01', amount: -30 }),
-    ]
-
-    expect(buildSpendingView(transactions, '2026-09-03T12:00:00Z', 0).total).toBe(60)
-  })
-
-  it('builds a seven-day view with the matching prior-week comparison', () => {
-    const view = buildSpendingView(
-      [
-        transaction({ id: 'current', date: '2026-09-03', amount: -30 }),
-        transaction({ id: 'prior', date: '2026-08-27', amount: -20 }),
-        transaction({ id: 'outside', date: '2026-08-20', amount: -100 }),
-      ],
-      '2026-09-03T12:00:00Z',
+    expect((['statement', 'week', 1, 3, 12, 0] as const).map(spendingPeriodKind)).toEqual([
+      'statement',
       'week',
-    )
-    expect(view).toMatchObject({
-      start: '2026-08-28',
-      end: '2026-09-03',
-      total: 30,
-      previousTotal: 20,
-      periodBasis: 'calendar',
+      'month',
+      'quarter',
+      'year',
+      'all',
+    ])
+  })
+
+  it("shows Rust's figures for the period, or for the one category in focus", () => {
+    const period = rustPeriod({ total: 30, previous: 40, change: -10, categories: [dining] })
+    expect(spendingFigures(period)).toBe(period)
+    expect(spendingFigures(period, 'Dining')).toBe(dining)
+    // A category without spending this period, or a period Rust lacks, spent nothing.
+    expect(spendingFigures(period, 'Travel')).toMatchObject({ total: 0, change: null })
+    expect(spendingFigures(undefined)).toMatchObject({ total: 0, changePct: null })
+  })
+
+  it("lists and paces a category from Rust's view of it, and nothing for one without spending", () => {
+    const period = detail()
+    expect(spendingView(period)).toBe(period)
+    expect(spendingView(period, 'Dining').transactionIds).toEqual(['dinner', 'coffee'])
+    expect(spendingView(period, 'Travel')).toMatchObject({
+      transactionIds: [],
+      merchants: [],
+      pace: { start: '2026-09-01', end: '2026-09-30', current: [], projected: null },
     })
-    expect(view.transactions.map(({ id }) => id)).toEqual(['current'])
   })
 
-  it('compares category spending across adjacent seven-day windows', () => {
-    const performance = weeklySpendingCategoryPerformance(
-      [
-        transaction({ id: 'current-shopping', date: '2026-09-18', amount: -50 }),
-        transaction({ id: 'previous-shopping', date: '2026-09-11', amount: -100 }),
-        transaction({
-          id: 'new-food',
-          date: '2026-09-17',
-          category: 'Food',
-          amount: -20,
-          classification: classification('expense'),
-        }),
+  it("draws Rust's pace and bars, naming purchases as the page's lists do", () => {
+    const chart = spendingChartPace(pace)
+    expect(chart.days[0]).toEqual({
+      index: 1,
+      date: '2026-09-02',
+      total: 25,
+      activities: [
+        { id: 'spending:dinner', value: 20 },
+        { id: 'spending:coffee', value: 5 },
       ],
-      '2026-09-18T12:00:00Z',
-    )
-    expect(performance.get('Shopping')).toBe(50)
-    expect(performance.get('Food')).toBe(-100)
+    })
+    const bars = [
+      {
+        from: '2026-08-01',
+        to: '2026-08-31',
+        value: 20,
+        categories: [
+          { name: 'Credits', value: -10, purchases: [{ id: 'credit', value: 10 }] },
+          { name: 'Dining', value: 30, purchases: [{ id: 'dinner', value: 30 }] },
+        ],
+      },
+      { from: '2026-09-01', to: '2026-09-03', value: 0, categories: [] },
+    ]
+    expect(spendingChartBars(bars)[0]).toMatchObject({
+      value: 20,
+      categories: [
+        { name: 'Credits', activities: [{ id: 'spending:credit', value: 10 }] },
+        { name: 'Dining', activities: [{ id: 'spending:dinner', value: 30 }] },
+      ],
+    })
+    // A focus keeps its own category, whose value Rust already summed.
+    expect(
+      spendingChartBars(bars, 'Dining').map(({ value, categories }) => [value, categories.length]),
+    ).toEqual([
+      [30, 1],
+      [0, 0],
+    ])
   })
 
-  it('uses native statement boundaries and autopay evidence for statement views', () => {
-    // Native statement evidence for monthly autopays posted Jul 7, Aug 7 and Sep 7.
-    const statement = {
-      boundaries: ['2026-06-22', '2026-07-23', '2026-08-23', '2026-09-23', '2026-10-23'],
-      autopays: [
-        { date: '2026-07-07', amount: 90 },
-        { date: '2026-08-07', amount: 100 },
-        { date: '2026-09-07', amount: 110 },
+  it("reads a scope's current period and recent months from the snapshot", () => {
+    const insights = {
+      spending: [
+        {
+          scope: 'card',
+          owner: 'me' as const,
+          periods: [
+            rustPeriod({ total: 10 }),
+            rustPeriod({ kind: 'week', start: '2026-08-28', total: 99 }),
+          ],
+          months: [
+            { month: '2026-08', total: 20 },
+            { month: '2026-09', total: 10 },
+          ],
+        },
       ],
     }
-    const transactions = [
-      transaction({
-        id: 'july-pay',
-        date: '2026-07-07',
-        merchant: 'AUTOPAY PAYMENT RECEIVED - THANK YOU',
-        amount: 90,
-        classification: classification('transfer', { mark: 'payment' }),
-      }),
-      transaction({ id: 'july-spend', date: '2026-07-02', amount: -40 }),
-      transaction({
-        id: 'august-pay',
-        date: '2026-08-06',
-        postedOn: '2026-08-07',
-        merchant: 'AUTOPAY PAYMENT RECEIVED - THANK YOU',
-        amount: 100,
-        classification: classification('transfer', { mark: 'payment' }),
-      }),
-      transaction({ id: 'august-spend', date: '2026-08-03', amount: -60 }),
-      transaction({
-        id: 'september-pay',
-        date: '2026-09-07',
-        merchant: 'AUTOPAY PAYMENT RECEIVED - THANK YOU',
-        amount: 110,
-        classification: classification('transfer', { mark: 'payment' }),
-      }),
-      transaction({ id: 'current-spend', date: '2026-09-12', amount: -25 }),
-    ]
-
-    // Rust judges the cycle: where it opened and where it is heading.
-    const current = buildSpendingView(
-      transactions,
-      '2026-09-14T12:00:00Z',
-      'statement',
-      '2026-09-14T12:00:00Z',
-      judged(110),
-      statement,
-    )
-    expect(current).toMatchObject({
-      start: '2026-08-24',
-      end: '2026-09-14',
-      total: 25,
-      startingBalance: 110,
-      statementBalance: 25,
-      periodBasis: 'statement',
-    })
-    expect(current.trend.at(-1)?.current).toBe(25)
-    expect(current.pace).toMatchObject({ start: '2026-08-24', end: '2026-09-23' })
-    expect(current.pace.current).toHaveLength(22)
-    expect(current.pace.current.at(-1)).toBe(25)
-    expect(current.pace.previous).toHaveLength(31)
-    expect(current.pace.previous.at(-1)).toBe(60)
-    expect(current.pace.projected).toBe(35.23)
-    // Payments are not spending, so only the purchase is marked on the pace line.
-    expect(current.pace.days).toEqual([
-      {
-        index: 19,
-        date: '2026-09-12',
-        activities: [{ id: 'spending:current-spend', value: 25 }],
-      },
+    expect(currentSpendingPeriod(insights, 'card', 'month')?.total).toBe(10)
+    // A statement without closing dates is the month.
+    expect(currentSpendingPeriod(insights, 'card', 'statement')?.total).toBe(10)
+    expect(currentSpendingPeriod(insights, 'card', 'year')).toBeUndefined()
+    expect(monthlySpendingHistory(insights, 'card')).toEqual([
+      { month: '2026-08', value: 20 },
+      { month: '2026-09', value: 10 },
     ])
-    const anchored = buildSpendingView(
-      transactions,
-      '2026-09-14T12:00:00Z',
-      'statement',
-      '2026-09-14T12:00:00Z',
-      judged(127),
-      statement,
-    )
-    expect(anchored).toMatchObject({ startingBalance: 127, statementBalance: 42 })
-    expect(anchored.trend.at(-1)?.current).toBe(42)
-
-    const calendarMonth = buildSpendingView(
-      transactions,
-      '2026-09-14T12:00:00Z',
-      1,
-      '2026-09-14T12:00:00Z',
-    )
-    expect(calendarMonth).toMatchObject({ start: '2026-09-01', periodBasis: 'calendar' })
-    expect(spendingPeriodReference(statement, '2026-09-14T12:00:00Z', -1, 1)).toBe(
-      '2026-08-31T12:00:00Z',
-    )
-
-    const priorReference = spendingPeriodReference(
-      statement,
-      '2026-09-14T12:00:00Z',
-      -1,
-      'statement',
-    )
-    expect(priorReference).toBe('2026-08-23T12:00:00Z')
-    expect(
-      buildSpendingView(
-        transactions,
-        '2026-09-14T12:00:00Z',
-        'statement',
-        priorReference,
-        [],
-        statement,
-      ),
-    ).toMatchObject({
-      start: '2026-07-24',
-      end: '2026-08-23',
-      total: 60,
-      periodBasis: 'statement',
-    })
+    expect(monthlySpendingHistory(insights, 'cash')).toEqual([])
   })
 
-  it('falls back to calendar periods without native statement evidence', () => {
-    const transactions = [
-      transaction({ id: 'spend', date: '2026-08-03', amount: -60 }),
-      transaction({
-        id: 'single-pay',
-        date: '2026-08-07',
-        merchant: 'AUTOPAY PAYMENT RECEIVED - THANK YOU',
-        amount: 60,
-        classification: classification('transfer', { mark: 'payment' }),
-      }),
+  it("heads Money with the statement balance, or the period's spending and its change", () => {
+    const accounts: Account[] = [
+      { id: 'card', name: 'Card', institution: 'Bank', type: 'credit', value: -50 },
     ]
-    const view = buildSpendingView(
-      transactions,
-      '2026-08-14T12:00:00Z',
-      'statement',
-      '2026-08-14T12:00:00Z',
-    )
-
-    expect(view).toMatchObject({ start: '2026-08-01', periodBasis: 'calendar', total: 60 })
-    expect(spendingPeriodReference(undefined, '2026-08-14T12:00:00Z', -1, 'statement')).toBe(
-      '2026-07-31T12:00:00Z',
-    )
+    const insights = {
+      spending: [
+        {
+          scope: 'card',
+          owner: 'me' as const,
+          periods: [
+            rustPeriod({ kind: 'statement', total: 30, balance: 50, change: 4 }),
+            rustPeriod({ total: 20, change: -6 }),
+          ],
+          months: [],
+        },
+      ],
+    }
+    const data = { accounts, transactions: [transaction({ accountId: 'card' })], insights }
+    expect(spendingHeadline(data, 'card', 'statement')).toEqual({
+      hasScope: true,
+      value: 50,
+      change: 4,
+    })
+    expect(spendingHeadline(data, 'card', 1)).toEqual({ hasScope: true, value: 20, change: -6 })
+    // All time has nothing to change from.
+    expect(spendingHeadline(data, 'card', 0).change).toBeNull()
   })
 
   it('keeps category colors stable across ranking changes', () => {
@@ -303,22 +258,6 @@ describe('spending view', () => {
     )
   })
 
-  it('clamps previous-month comparisons before the current month, including leap years', () => {
-    for (const year of [2024, 2025, 2026]) {
-      const result = buildSpendingView(
-        [
-          transaction({ id: 'feb', date: `${year}-02-28`, amount: -100 }),
-          transaction({ id: 'march', date: `${year}-03-01`, amount: -50 }),
-        ],
-        `${year}-03-31T12:00:00Z`,
-        1,
-      )
-      expect(result.previousTotal).toBe(100)
-      expect(result.total).toBe(50)
-      expect(result.dailyAverage).toBeCloseTo(50 / 31)
-    }
-  })
-
   it('uses only the explicitly selected credit account', () => {
     const accounts: Account[] = [
       { id: 'cash', name: 'Checking', institution: 'Bank', type: 'cash', value: 100 },
@@ -329,161 +268,6 @@ describe('spending view', () => {
     expect(resolveSpendingAccount(accounts, 'card-2')?.id).toBe('card-2')
     expect(resolveSpendingAccount(accounts, '')).toBeUndefined()
     expect(resolveSpendingAccount(accounts.slice(0, 2), '')).toBeUndefined()
-  })
-
-  it('compares matching elapsed periods and excludes transfers', () => {
-    const view = buildSpendingView(
-      [
-        transaction({ id: 'current', amount: -100 }),
-        transaction({
-          id: 'pending',
-          date: '2026-09-02',
-          category: 'Dining',
-          amount: -25,
-          pending: true,
-        }),
-        transaction({
-          id: 'payment',
-          date: '2026-09-03',
-          category: 'Loan Payments',
-          amount: 40,
-          classification: classification('transfer', { mark: 'payment' }),
-        }),
-        transaction({
-          id: 'transfer',
-          category: 'Transfer Out',
-          amount: -500,
-          classification: classification('transfer'),
-        }),
-        transaction({ id: 'previous', date: '2026-08-01', amount: -50 }),
-        transaction({ id: 'outside-comparison', date: '2026-08-20', amount: -900 }),
-      ],
-      '2026-09-03T12:00:00Z',
-      1,
-    )
-
-    expect(view.total).toBe(125)
-    expect(view.pendingTotal).toBe(25)
-    expect(view.previousTotal).toBe(50)
-    expect(view.percentChange).toBe(150)
-    expect(view.trend.map(({ current }) => current)).toEqual([100, 125, 85])
-    expect(buildSpendingBars(view.transactions, view.start, view.end, 1).slice(0, 3)).toEqual([
-      {
-        from: '2026-09-01',
-        to: '2026-09-01',
-        value: 100,
-        categories: [
-          {
-            name: 'Shopping',
-            value: 100,
-            activities: [{ id: 'spending:current', value: 100 }],
-          },
-        ],
-      },
-      {
-        from: '2026-09-02',
-        to: '2026-09-02',
-        value: 25,
-        categories: [
-          {
-            name: 'Dining',
-            value: 25,
-            activities: [{ id: 'spending:pending', value: 25 }],
-          },
-        ],
-      },
-      { from: '2026-09-03', to: '2026-09-03', value: 0, categories: [] },
-    ])
-    expect(view.trend.at(-1)).toMatchObject({ date: '2026-09-03', previous: 50 })
-  })
-
-  it('plots credits below spending without adding them to spending totals', () => {
-    const view = buildSpendingView(
-      [
-        transaction({ id: 'spend', date: '2026-09-01', amount: -30 }),
-        transaction({
-          id: 'credit',
-          merchant: 'Synthetic credit',
-          category: 'Credit',
-          date: '2026-09-01',
-          amount: 10,
-          classification: classification('reimbursement'),
-        }),
-      ],
-      '2026-09-03T12:00:00Z',
-      1,
-    )
-
-    expect(view.total).toBe(30)
-    expect(buildSpendingBars(view.transactions, view.start, view.end, 1)[0]).toMatchObject({
-      value: 20,
-      categories: [
-        { name: 'Credits', value: -10, activities: [{ id: 'spending:credit', value: 10 }] },
-        { name: 'Shopping', value: 30, activities: [{ id: 'spending:spend', value: 30 }] },
-      ],
-    })
-  })
-
-  it('groups posted card spending into recent calendar months', () => {
-    expect(
-      buildMonthlySpendingHistory(
-        [
-          transaction({ id: 'july', date: '2026-07-30', amount: -30 }),
-          transaction({ id: 'august', date: '2026-09-01', postedOn: '2026-08-31', amount: -20 }),
-          transaction({ id: 'september', date: '2026-09-02', amount: -10 }),
-          transaction({
-            id: 'payment',
-            category: 'Payment',
-            amount: -500,
-            classification: classification('other'),
-          }),
-        ],
-        '2026-09-03T12:00:00Z',
-        3,
-      ),
-    ).toEqual([
-      { month: '2026-07', value: 30 },
-      { month: '2026-08', value: 20 },
-      { month: '2026-09', value: 10 },
-    ])
-  })
-
-  it("shows Rust's usual spending for the categories in view, zero for the new ones", () => {
-    const dining = (id: string, date: string, amount: number) =>
-      transaction({ id, date, amount: -amount, category: 'Dining' })
-    const history = [
-      transaction({ id: 'start', date: '2026-06-01', amount: -1, category: 'Shopping' }),
-      dining('june', '2026-06-05', 30),
-      dining('july', '2026-07-05', 10),
-      dining('august', '2026-08-05', 20),
-      // Later in August than the selected month has reached.
-      dining('late', '2026-08-20', 50),
-      dining('now', '2026-09-03', 25),
-      transaction({ id: 'new', date: '2026-09-04', amount: -5, category: 'Travel' }),
-    ]
-    const view = buildSpendingView(history, '2026-09-10T12:00:00Z', 1, undefined, [
-      { kind: 'month', start: '2026-09-01', typical: { Dining: 20, Shopping: 0.33 } },
-      { kind: 'month', start: '2026-08-01', typical: { Dining: 99 } },
-    ])
-    const typicalByName = Object.fromEntries(
-      view.categories.map(({ name, typical }) => [name, typical]),
-    )
-    expect(typicalByName).toEqual({ Dining: 20, Travel: 0 })
-
-    // A period Rust has nothing usual for shows none.
-    const unjudged = buildSpendingView(history, '2026-09-10T12:00:00Z', 1)
-    expect(unjudged.categories.every(({ typical }) => typical === null)).toBe(true)
-  })
-
-  it('uses the computer calendar day instead of UTC month boundaries', () => {
-    const localReference = new Date(2026, 8, 1, 0, 30).toISOString()
-    const view = buildSpendingView(
-      [transaction({ date: '2026-09-01', amount: -25 })],
-      localReference,
-      1,
-    )
-    expect(view.end).toBe('2026-09-01')
-    expect(view.total).toBe(25)
   })
 
   it('keys a transaction by its ISO date, or an instant by its UTC day', () => {
@@ -534,8 +318,6 @@ describe('benefits to use first', () => {
   })
 })
 
-const ids = (scope: { transactions: Transaction[] }) => scope.transactions.map(({ id }) => id)
-
 const account = (id: string, type: string, currency = 'USD') => ({
   id,
   name: id,
@@ -576,21 +358,16 @@ it('scopes spending to the saved card by default, one chosen account, or every U
 
   const saved = spendingScope(accounts, transactions, 'card')
   expect(saved.selected?.id).toBe('card')
-  expect(ids(saved)).toEqual(['a'])
   expect(saved.options.map(({ id }) => id)).toEqual(['card', 'other-card', 'checking'])
-
-  expect(ids(spendingScope(accounts, transactions, 'card', 'checking'))).toEqual(['c'])
-  expect(ids(spendingScope(accounts, transactions, 'card', allSpendingAccounts))).toEqual([
-    'a',
-    'b',
-    'c',
-  ])
+  expect(spendingScope(accounts, transactions, 'card', 'checking').selected?.id).toBe('checking')
+  expect(
+    spendingScope(accounts, transactions, 'card', allSpendingAccounts).selected,
+  ).toBeUndefined()
 
   // Without a saved card the view is every account; no other card stands in for it.
   const unsaved = spendingScope(accounts, transactions, '')
   expect(unsaved.card).toBeUndefined()
   expect(unsaved.selected).toBeUndefined()
-  expect(ids(unsaved)).toEqual(['a', 'b', 'c'])
   // An unknown or non-USD request falls back to the saved card.
   expect(spendingScope(accounts, transactions, 'card', 'euro').selected?.id).toBe('card')
 })

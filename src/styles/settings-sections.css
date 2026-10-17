@@ -268,10 +268,6 @@
   font-weight: 500;
 }
 @media (max-width: 1000px) {
-  .settings-dialog {
-    width: calc(100vw - 48px);
-    height: calc(100dvh - 48px);
-  }
   .settings-panel {
     grid-template-columns: 188px minmax(0, 1fr);
   }

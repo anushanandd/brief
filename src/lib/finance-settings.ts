@@ -51,6 +51,16 @@ function readLegacySettings(): Partial<FinanceSettings> | undefined {
   }
 }
 
+/** Whether renderer storage still holds settings from before they moved to Rust. */
+export function hasLegacySettings() {
+  try {
+    return readLegacySettings() !== undefined
+  } catch {
+    // Unreadable legacy settings still go through the import, which reports them.
+    return true
+  }
+}
+
 function removeLegacySettings() {
   for (const key of Object.values(legacyFinanceSettingKeys)) window.localStorage.removeItem(key)
 }

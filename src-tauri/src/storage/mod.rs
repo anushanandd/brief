@@ -372,6 +372,7 @@ impl Storage {
                 snapshot,
                 insights,
                 account_names: self.data.settings.account_names.clone(),
+                spending_account_id: self.data.settings.spending_account_id.clone(),
             },
             view,
         ))

@@ -9,6 +9,7 @@ import { financeSettings } from '../lib/finance-settings'
 import {
   formatCurrency,
   formatPercent,
+  formatPublicCurrency,
   formatShare,
   formatShares,
   formatSignedCurrency,
@@ -43,16 +44,14 @@ export function PositionCard({
   ticker: string
   earningsConnected: boolean
 }) {
-  const detail = holdingDetail(data.holdings, ticker)
+  const detail = holdingDetail(data, ticker)
   const security = data.insights?.securities.find((item) => item.ticker === ticker)
   const lots = (data.insights?.lots ?? []).filter((position) => position.ticker === ticker)
-  const held = data.holdings.filter((holding) => holding.ticker === ticker)
+  const held = detail.positions
   const dividends = data.insights?.dividends.securities.find(
     (item) => item.ticker.toUpperCase() === ticker.toUpperCase(),
   )
-  const vested = held.some(({ vestedShares }) => vestedShares != null)
-    ? held.reduce((sum, holding) => sum + (holding.vestedShares ?? holding.shares ?? 0), 0)
-    : undefined
+  const vested = detail.vestedShares
   const bond = held.find(({ fixedIncome }) => fixedIncome)?.fixedIncome
   const option = held.find((holding) => holding.option)?.option
   const described = held.find(
@@ -188,7 +187,7 @@ export function PositionCard({
             label={option.contractType === 'put' ? 'Put' : 'Call'}
             value={
               <>
-                {option.strikePrice != null ? formatCurrency(option.strikePrice) : '—'}
+                {option.strikePrice != null ? formatPublicCurrency(option.strikePrice) : '—'}
                 {option.expirationDate ? (
                   <small className="metric-detail">{`expires ${formatDay(option.expirationDate)}`}</small>
                 ) : null}
@@ -227,9 +226,9 @@ export function PositionCard({
 
 /** Where one security is held, each account with its part of the position. */
 export function HoldingAccounts({ data, ticker }: { data: FinanceSnapshot; ticker: string }) {
-  const detail = holdingDetail(data.holdings, ticker)
+  const detail = holdingDetail(data, ticker)
   const names = financeSettings(data).accountNames
-  const accountIds = [...new Set(detail.positions.map(({ accountId }) => accountId))]
+  const accountIds = detail.accounts.map(({ accountId }) => accountId)
   return (
     <Card className="holding-detail-card holding-accounts-card">
       <SectionHeading title="Held in" />
@@ -241,10 +240,7 @@ export function HoldingAccounts({ data, ticker }: { data: FinanceSnapshot; ticke
         >
           {accountIds.map((id) => {
             const account = data.accounts.find((candidate) => candidate.id === id)
-            const position = holdingDetail(
-              detail.positions.filter(({ accountId }) => accountId === id),
-              ticker,
-            )
+            const position = detail.accounts.find(({ accountId }) => accountId === id)
             return (
               <Link
                 key={id}
@@ -265,9 +261,9 @@ export function HoldingAccounts({ data, ticker }: { data: FinanceSnapshot; ticke
                 </span>
                 <span className="account-row-values">
                   <strong className="sensitive-value" data-copy-amount>
-                    {formatCurrency(position.value)}
+                    {formatCurrency(position?.value)}
                   </strong>
-                  <small>{formatShares(position.shares)} shares</small>
+                  <small>{formatShares(position?.shares)} shares</small>
                 </span>
                 <ChevronRight size={15} aria-hidden="true" />
               </Link>

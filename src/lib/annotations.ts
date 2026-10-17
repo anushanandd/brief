@@ -78,6 +78,17 @@ export async function saveTransactionAnnotations(changes: TransactionAnnotationC
   throw new Error('Transaction edits require the Brief desktop app')
 }
 
+const legacyAnnotationKeys = ['brief:transaction-categories', 'brief:reviewed-transactions']
+
+/** Whether renderer storage still holds annotations from before they moved to Rust. */
+export function hasLegacyAnnotations() {
+  try {
+    return legacyAnnotationKeys.some((key) => localStorage.getItem(key) != null)
+  } catch {
+    return false
+  }
+}
+
 function legacyAnnotations(warnings: string[]): TransactionAnnotations {
   const result: TransactionAnnotations = {}
   for (const [key, field] of [
@@ -116,7 +127,10 @@ export async function loadTransactionAnnotations(): Promise<{
   const warnings: string[] = []
   const changes = legacyAnnotations(warnings)
   let annotations: TransactionAnnotations
-  if (isTauri()) {
+  if (isTauri() && !Object.keys(changes).length) {
+    // Nothing to import, so no native write: annotations already live in Rust.
+    annotations = {}
+  } else if (isTauri()) {
     annotations = annotationResultSchema.parse(
       await invoke('transaction_annotations', { changes, importing: true }),
     ).annotations

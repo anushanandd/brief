@@ -1,14 +1,16 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactElement } from 'react'
 
-import type { accountTransactionSummary } from '../lib/account-summary'
 import { formatCurrency, formatShare, valueTone, formatShortDay } from '../lib/format'
 import { type ChartPeriod } from '../lib/graph-preferences'
-import type { Account, Insights } from '../lib/schema'
-import type { buildSpendingView } from '../lib/spending'
+import type { Account, Insights, SpendingPeriodJudgment, Transaction } from '../lib/schema'
 import { Metric } from './ui'
 
-type TransactionSummary = ReturnType<typeof accountTransactionSummary>
+/** What moved through the account over the period, as Rust summed it. */
+type TransactionSummary = Pick<
+  Insights['flows'][number],
+  'moneyIn' | 'moneyOut' | 'netFlow' | 'interest' | 'dividends'
+>
 
 const aprLabels: Record<string, string> = {
   balance_transfer_apr: 'transfers',
@@ -90,7 +92,7 @@ export function investmentMetrics({
       key="dividends"
       chart="dividends"
       label="Dividends"
-      value={summary.range.dividends}
+      value={summary.dividends}
       range={range}
       accountId={account.id}
     />,
@@ -98,7 +100,7 @@ export function investmentMetrics({
       key="interest"
       chart="interest"
       label="Interest"
-      value={summary.range.interest}
+      value={summary.interest}
       range={range}
       accountId={account.id}
     />,
@@ -109,11 +111,13 @@ export function investmentMetrics({
 export function creditMetrics({
   account,
   spending,
+  largest,
   transactionCount,
   card,
 }: {
   account: Account
-  spending: ReturnType<typeof buildSpendingView>
+  spending: SpendingPeriodJudgment | undefined
+  largest: Transaction | undefined
   transactionCount: number
   card: Insights['credit']['cards'][number] | undefined
 }): ReactElement[] {
@@ -125,12 +129,12 @@ export function creditMetrics({
     .join(' · ')
   const liability = account.liability
   return [
-    <Metric key="spent" label="Spent this month" value={formatCurrency(spending.total)} />,
-    <Metric key="pending" label="Pending" value={formatCurrency(spending.pendingTotal)} />,
+    <Metric key="spent" label="Spent this month" value={formatCurrency(spending?.total ?? 0)} />,
+    <Metric key="pending" label="Pending" value={formatCurrency(spending?.pending ?? 0)} />,
     <Metric
       key="largest"
       label="Largest expense"
-      value={formatCurrency(spending.biggest ? Math.abs(spending.biggest.amount) : null)}
+      value={formatCurrency(largest ? Math.abs(largest.amount) : null)}
     />,
     <Metric key="transactions" label="Transactions" value={transactionCount} />,
     <Metric
@@ -257,13 +261,13 @@ export function cashMetrics({
           />,
         ]
       : []),
-    <Metric key="in" label="Money in" value={formatCurrency(summary.range.moneyIn)} />,
-    <Metric key="out" label="Money out" value={formatCurrency(summary.range.moneyOut)} />,
+    <Metric key="in" label="Money in" value={formatCurrency(summary.moneyIn)} />,
+    <Metric key="out" label="Money out" value={formatCurrency(summary.moneyOut)} />,
     <ReportMetric
       key="interest"
       chart="interest"
       label="Interest"
-      value={summary.range.interest}
+      value={summary.interest}
       range={range}
       accountId={account.id}
     />,
@@ -287,8 +291,8 @@ export function cashMetrics({
     <Metric
       key="net"
       label="Net flow"
-      value={formatCurrency(summary.range.netFlow)}
-      tone={valueTone(summary.range.netFlow)}
+      value={formatCurrency(summary.netFlow)}
+      tone={valueTone(summary.netFlow)}
     />,
     <Metric
       key="average"

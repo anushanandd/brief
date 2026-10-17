@@ -11,6 +11,7 @@ use crate::numeric::round2;
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
 pub enum Window {
+    Day,
     Week,
     Month,
     Quarter,
@@ -19,7 +20,8 @@ pub enum Window {
     All,
 }
 
-pub(super) const WINDOWS: [Window; 6] = [
+pub(super) const WINDOWS: [Window; 7] = [
+    Window::Day,
     Window::Week,
     Window::Month,
     Window::Quarter,
@@ -168,6 +170,8 @@ pub fn money_weighted_flows(flows: &[(i64, f64)], span: i64, ending: f64) -> Opt
 
 pub(super) fn window_start(window: Window, end: NaiveDate) -> Option<NaiveDate> {
     Some(match window {
+        // The latest close before the last day: the day's move.
+        Window::Day => end - Duration::days(1),
         Window::Week => end - Duration::days(7),
         Window::Month => end - Duration::days(30),
         Window::Quarter => end - Duration::days(91),
@@ -313,14 +317,14 @@ mod tests {
             ("2026-01-01", 1_000.0, Some(1_000.0), None),
             ("2026-01-10", 1_100.0, Some(1_000.0), None),
         ])]);
-        // Nine days of history state a week's return, but not a month's or a year's.
+        // Nine days of history state a day's and a week's return, but not a month's or a year's.
         assert_eq!(
             short[0]
                 .windows
                 .iter()
                 .map(|window| window.window)
                 .collect::<Vec<_>>(),
-            vec![Window::Week, Window::All]
+            vec![Window::Day, Window::Week, Window::All]
         );
         let mut value_only = account(&[
             ("2026-01-01", 1_000.0, Some(1_000.0), None),

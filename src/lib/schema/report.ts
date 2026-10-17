@@ -4,7 +4,7 @@ import { z } from 'zod'
 import { isoDate } from './common'
 
 export const statementSchema = z.object({
-  window: z.enum(['week', 'month', 'quarter', 'year-to-date', 'year', 'all']).nullable(),
+  window: z.enum(['day', 'week', 'month', 'quarter', 'year-to-date', 'year', 'all']).nullable(),
   start: isoDate,
   end: isoDate,
   startValue: z.number(),

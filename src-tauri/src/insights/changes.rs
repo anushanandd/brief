@@ -1,5 +1,5 @@
-//! How each account's balance moved over the chart periods (a week, a month, a quarter, a year,
-//! and all saved history), and how much activity posted in each. Balances come from the
+//! How each account's balance moved over the chart periods (a day, a week, a month, a quarter,
+//! a year, and all saved history), and how much activity posted in each. Balances come from the
 //! committed daily histories; an account whose history does not reach back to a period's start
 //! has no change for it, and the period says so.
 use std::collections::BTreeMap;
@@ -8,13 +8,14 @@ use chrono::{Duration, NaiveDate};
 use serde::Serialize;
 
 use super::calendar;
-use crate::finance_contract::Performance;
 use crate::finance_contract::Transaction;
+use crate::finance_contract::{Account, Performance};
 use crate::numeric::{from_minor, minor_units};
 
-#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename_all = "kebab-case")]
 pub enum Window {
+    Day,
     Week,
     Month,
     Quarter,
@@ -23,7 +24,8 @@ pub enum Window {
 }
 
 /// Each chart period and its length in days; `All` is every saved day.
-pub const WINDOWS: [(Window, Option<i64>); 5] = [
+pub const WINDOWS: [(Window, Option<i64>); 6] = [
+    (Window::Day, Some(1)),
     (Window::Week, Some(7)),
     (Window::Month, Some(30)),
     (Window::Quarter, Some(90)),
@@ -51,6 +53,42 @@ pub struct PeriodChange {
     pub incomplete: bool,
     /// Posted transactions dated in the period.
     pub transactions: usize,
+    /// Each account type's change across every account but the combined one, and across the
+    /// accounts the totals count, with the spending cards' apart. A type with an account whose
+    /// history doesn't reach the period has none; an unchanged account adds nothing.
+    pub groups: Vec<TypeChange>,
+    pub listed: Vec<TypeChange>,
+    pub cards: Option<f64>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct TypeChange {
+    #[serde(rename = "type")]
+    pub account_type: String,
+    pub change: Option<f64>,
+}
+
+/// Each type's change over `accounts`, from the changes known in whole cents.
+fn type_changes<'a>(
+    accounts: impl IntoIterator<Item = &'a Account>,
+    known: &BTreeMap<&str, i64>,
+) -> Vec<TypeChange> {
+    let mut by_type: Vec<(String, Option<i64>)> = Vec::new();
+    for account in accounts {
+        let change = known.get(account.id.as_str()).copied();
+        match by_type.iter_mut().find(|(kind, _)| *kind == account.r#type) {
+            Some((_, total)) => *total = total.zip(change).map(|(total, change)| total + change),
+            None => by_type.push((account.r#type.clone(), change)),
+        }
+    }
+    by_type
+        .into_iter()
+        .map(|(account_type, change)| TypeChange {
+            account_type,
+            change: change.map(from_minor),
+        })
+        .collect()
 }
 
 /// Daily balances per account from the balance and brokerage histories; the balance history
@@ -82,10 +120,14 @@ fn histories(
     by_account
 }
 
+/// Each period's changes. `accounts` give the types to total by, and `cards` the spending cards
+/// the totals leave out.
 pub fn changes(
     balances: &[Performance],
     brokerages: &[Performance],
     transactions: &[Transaction],
+    accounts: &[Account],
+    cards: &[&str],
     today: NaiveDate,
 ) -> Vec<PeriodChange> {
     let histories = histories(balances, brokerages);
@@ -108,7 +150,9 @@ pub fn changes(
                 None => earliest?,
             };
             let mut incomplete = false;
-            let mut accounts = histories
+            // Each account's change in cents, unchanged ones included, when its history covers
+            // the period.
+            let known = histories
                 .iter()
                 .filter_map(|(account_id, points)| {
                     // The balance at the close of the day before the period, and the latest.
@@ -122,27 +166,48 @@ pub fn changes(
                         return None;
                     };
                     let (_, latest) = points.last()?;
-                    let change = latest - opening;
-                    (change != 0).then(|| AccountChange {
-                        account_id: account_id.clone(),
-                        change: from_minor(change),
-                    })
+                    Some((account_id.as_str(), latest - opening))
+                })
+                .collect::<BTreeMap<_, _>>();
+            let mut changed = known
+                .iter()
+                .filter(|(_, change)| **change != 0)
+                .map(|(account_id, change)| AccountChange {
+                    account_id: (*account_id).to_owned(),
+                    change: from_minor(*change),
                 })
                 .collect::<Vec<_>>();
-            accounts.sort_by(|left, right| {
+            changed.sort_by(|left, right| {
                 right
                     .change
                     .abs()
                     .total_cmp(&left.change.abs())
                     .then_with(|| left.account_id.cmp(&right.account_id))
             });
+            let every = accounts.iter().filter(|account| account.id != "all");
+            let is_card = |account: &&Account| cards.contains(&account.id.as_str());
+            let card_changes = every
+                .clone()
+                .filter(is_card)
+                .map(|card| known.get(card.id.as_str()).copied())
+                .collect::<Vec<_>>();
             Some(PeriodChange {
                 window: *window,
                 start,
                 end: today,
-                accounts,
+                accounts: changed,
                 incomplete,
                 transactions: posted.iter().filter(|date| **date >= start).count(),
+                groups: type_changes(every.clone(), &known),
+                listed: type_changes(every.filter(|account| !is_card(account)), &known),
+                cards: (!card_changes.is_empty())
+                    .then(|| {
+                        card_changes
+                            .into_iter()
+                            .sum::<Option<i64>>()
+                            .map(from_minor)
+                    })
+                    .flatten(),
             })
         })
         .collect()
@@ -204,8 +269,34 @@ mod tests {
             txn("c", "2026-09-16", true),
             txn("d", "2026-05-20", false),
         ];
-        let result = changes(&balances, &brokerage, &transactions, day("2026-09-16"));
+        let account = |id: &str, kind: &str| -> Account {
+            serde_json::from_value(json!({
+                "id": id, "name": id, "institution": "Bank", "type": kind, "value": 0.0,
+            }))
+            .unwrap()
+        };
+        let accounts = [
+            account("all", "combined"),
+            account("checking", "cash"),
+            account("flat", "cash"),
+            account("card", "credit"),
+            account("broker", "brokerage"),
+        ];
+        let result = changes(
+            &balances,
+            &brokerage,
+            &transactions,
+            &accounts,
+            &["card"],
+            day("2026-09-16"),
+        );
         let window = |window: Window| result.iter().find(|item| item.window == window).unwrap();
+        let types = |changes: &[TypeChange]| {
+            changes
+                .iter()
+                .map(|change| (change.account_type.clone(), change.change))
+                .collect::<Vec<_>>()
+        };
         let summary = |window: Window| {
             result
                 .iter()
@@ -233,6 +324,22 @@ mod tests {
             week.transactions, 1,
             "pending and older activity are not counted"
         );
+        // Each type totals its accounts, an unchanged one adding nothing; the spending card is
+        // left out of what the totals count, and totaled apart.
+        let owned = |kind: &str, change: Option<f64>| (kind.to_owned(), change);
+        assert_eq!(
+            types(&week.groups),
+            [
+                owned("cash", Some(-249.5)),
+                owned("credit", Some(-300.0)),
+                owned("brokerage", Some(100.0)),
+            ]
+        );
+        assert_eq!(
+            types(&week.listed),
+            [owned("cash", Some(-249.5)), owned("brokerage", Some(100.0))]
+        );
+        assert_eq!(week.cards, Some(-300.0));
 
         // A quarter reaches before the card and brokerage histories begin.
         let quarter = window(Window::Quarter);
@@ -242,6 +349,16 @@ mod tests {
         );
         assert!(quarter.incomplete);
         assert_eq!(quarter.transactions, 2);
+        // A type whose account's history starts later has no change for the period.
+        assert_eq!(
+            types(&quarter.groups),
+            [
+                owned("cash", Some(250.5)),
+                owned("credit", None),
+                owned("brokerage", None),
+            ]
+        );
+        assert_eq!(quarter.cards, None);
 
         // All history starts each account at its first balance, from the earliest record.
         let all = window(Window::All);
@@ -257,8 +374,9 @@ mod tests {
 
     #[test]
     fn without_history_or_activity_there_is_no_all_time_period() {
-        let result = changes(&[], &[], &[], day("2026-09-16"));
-        assert_eq!(result.len(), 4);
+        let result = changes(&[], &[], &[], &[], &[], day("2026-09-16"));
+        // Every period but all time, which has no first day to start from.
+        assert_eq!(result.len(), WINDOWS.len() - 1);
         assert!(result
             .iter()
             .all(|period| period.accounts.is_empty() && period.transactions == 0));

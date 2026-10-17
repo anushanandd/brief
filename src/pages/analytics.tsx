@@ -29,6 +29,7 @@ import {
   useGraphAccountShortcuts,
   useGraphWindowShortcuts,
 } from '../hooks/use-graph-window-shortcuts'
+import { useReports } from '../hooks/use-reports'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
@@ -37,13 +38,10 @@ import {
   analyticsCharts,
   analyticsDefinition,
   analyticsGroup,
-  analyticsBarStack,
   analyticsGroupColors,
-  analyticsEntries,
-  analyticsReport,
-  analyticsTotal,
-  analyticsWindow,
   analyticsAccountMatches,
+  emptyReport,
+  reportRequest,
   toggleAnalyticsAccount,
   noAnalyticsAccounts,
   withoutReportView,
@@ -70,8 +68,7 @@ import {
 } from '../lib/graph-preferences'
 import { briefMerchant } from '../lib/insights'
 import { getExternalLogosEnabled } from '../lib/logos'
-import { cashFlowBreakdown } from '../lib/money'
-import type { FinanceSnapshot } from '../lib/schema'
+import type { FinanceSnapshot, Report } from '../lib/schema'
 import { resolveSpendingAccount } from '../lib/spending'
 
 // One fixed order everywhere a chart is listed.
@@ -166,28 +163,20 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
   const spendingAccount = resolveSpendingAccount(data.accounts, spendingAccountId)
   const names = settings.accountNames
   const externalLogosEnabled = getExternalLogosEnabled()
-  const reportWindow = useMemo(
-    () => analyticsWindow(data, pageSearch, today),
-    [data, pageSearch, today],
-  )
-  const reports = useMemo(
-    () =>
-      orderedCharts.map((id) => {
-        const chart = analyticsCharts.find((item) => item.id === id)!
-        return {
-          ...chart,
-          ...analyticsReport(
-            analyticsEntries(data, chart.id, spendingAccountId, search.account, names),
-            reportWindow,
-          ),
-        }
-      }),
-    [data, search, spendingAccountId, reportWindow, names],
-  )
-  const report = reports.find(({ id }) => id === selected)!
+  // Rust reads every report over the window and accounts, and this one in full.
+  const reportsQuery = useReports(data, reportRequest(pageSearch, selected))
+  const reports = reportsQuery.data ?? undefined
+  const reportWindow = reports?.window ?? {
+    start: today,
+    end: today,
+    range: pageSearch.range ?? 'month',
+    custom: Boolean(pageSearch.from || pageSearch.to),
+    valid: true,
+  }
+  const report = { label: definition.label, ...(reports?.report ?? emptyReport(selected)) }
   // Reports sit under Money or Investments; the switcher and arrows stay within one.
   const group = analyticsGroup(selected)
-  const groupReports = reports.filter(({ id }) => analyticsGroup(id) === group)
+  const groupReports = orderedCharts.filter((id) => analyticsGroup(id) === group)
   const home =
     group === 'money'
       ? ({ label: 'Money', to: '/spending' } as const)
@@ -205,33 +194,22 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
     definition.benefits &&
     search.account !== undefined &&
     !analyticsAccountMatches(search.account, spendingAccountId)
+  // Without reports (a window the preview has none for), nothing reads as a figure.
   const unavailable =
-    needsSpendingAccount || missingAccount || incompatibleBenefitAccount || !reportWindow.valid
+    needsSpendingAccount ||
+    missingAccount ||
+    incompatibleBenefitAccount ||
+    !reportWindow.valid ||
+    !reports
   const activities = useMemo(
     () =>
       new Map(buildActivities(data, names, externalLogosEnabled).map((item) => [item.id, item])),
     [data, names, externalLogosEnabled],
   )
-  const groupColors = useMemo(
-    () =>
-      analyticsGroupColors(
-        analyticsEntries(data, selected, spendingAccountId, undefined, names).map(
-          (entry) => entry.group,
-        ),
-      ),
-    [data, selected, spendingAccountId, names],
-  )
-  const accountReport = useMemo(
-    () =>
-      analyticsReport(
-        analyticsEntries(data, selected, spendingAccountId, undefined, names),
-        reportWindow,
-      ),
-    [data, selected, spendingAccountId, reportWindow, names],
-  )
-  const accountRows = accounts.flatMap(({ id, name, type, institution, domain }) => {
-    const entries = accountReport.entries.filter(({ accountId }) => accountId === id)
-    return entries.length
+  const groupColors = useMemo(() => analyticsGroupColors(reports?.groups ?? []), [reports])
+  const accountTotals = new Map(reports?.accounts.map(({ accountId, total }) => [accountId, total]))
+  const accountRows = accounts.flatMap(({ id, name, type, institution, domain }) =>
+    accountTotals.has(id)
       ? [
           {
             id,
@@ -239,37 +217,22 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
             institution,
             domain,
             label: accountDisplayName(id, name, names),
-            value: analyticsTotal(entries),
+            value: accountTotals.get(id) ?? null,
           },
         ]
-      : []
-  })
-  const expectedRecurringIds = useMemo(() => {
-    const entryIds = new Set(
-      analyticsEntries(data, selected, spendingAccountId, search.account, names).map(
-        ({ id }) => id,
-      ),
-    )
-    return new Set(
-      data.transactions.flatMap(({ id, recurringId }) =>
-        recurringId && entryIds.has(`spending:${id}`) ? [recurringId] : [],
-      ),
-    )
-  }, [data, names, search.account, selected, spendingAccountId])
-  const periodChange =
-    !unavailable && report.total != null && report.previous != null
-      ? (Math.round(report.total * 100) - Math.round(report.previous * 100)) / 100
-      : null
+      : [],
+  )
+  const expectedRecurringIds = useMemo(() => new Set(reports?.recurringIds), [reports])
+  const periodChange = unavailable ? null : report.change
   const activitySearch = {
     analysis: selected,
     account: search.account,
     from: reportWindow.start,
     to: reportWindow.end,
   }
-  const flowIds = new Set(report.entries.map(({ id }) => id))
-  const flow = definition.flow
-    ? cashFlowBreakdown(data.transactions.filter(({ id }) => flowIds.has(`spending:${id}`)))
-    : null
+  const flow = definition.flow ? (reports?.flow ?? null) : null
+  if (reportsQuery.isLoading) return <PageLoading />
+  if (reportsQuery.isError) return <PageError />
   const expectedActivityCard = (
     <ExpectedActivity
       data={data}
@@ -339,9 +302,9 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
       {/* Money's reports share its strip. Investments reports open from the portfolio's period
           card and lead back through the breadcrumb, since its page is headed by holdings. */}
       {group === 'money' ? (
-        <MoneyStrip data={data} current={selected} search={pageSearch} today={today} />
+        <MoneyStrip data={data} current={selected} search={pageSearch} />
       ) : (
-        <ReportStepper reports={groupReports.map(({ id }) => id)} selected={selected} />
+        <ReportStepper reports={groupReports} selected={selected} />
       )}
       {definition.benefits &&
       spendingAccount &&
@@ -442,8 +405,10 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                       </>
                     ) : missingAccount ? (
                       'This account is unavailable. Select another account.'
-                    ) : (
+                    ) : !reportWindow.valid ? (
                       'The start date must be on or before the end date.'
+                    ) : (
+                      'This report is unavailable for these dates.'
                     )}
                   </EmptyState>
                 ) : !report.entries.length ? (
@@ -608,12 +573,13 @@ function AnalyticsBars({
 }: {
   groupColors: Map<string, string>
   activities: Map<string, ReturnType<typeof buildActivities>[number]>
-  report: ReturnType<typeof analyticsReport>
+  report: Report
   search: { analysis: AnalyticsChart; account?: string; from: string; to: string }
 }) {
-  const stacks = report.buckets.map(({ entries }) => analyticsBarStack(entries))
-  const max = Math.max(0, ...stacks.map(({ positive }) => positive))
-  const min = Math.min(0, ...stacks.map(({ negative }) => negative))
+  const entries = new Map(report.entries.map((entry) => [entry.id, entry]))
+  // Rust summed each bucket's gains and losses apart; the tallest of each sets the scale.
+  const max = Math.max(0, ...report.buckets.map(({ positive }) => positive))
+  const min = Math.min(0, ...report.buckets.map(({ negative }) => negative))
   const span = max - min || 1
   const zero = max === 0 && min === 0 ? 100 : (max / span) * 100
   const dense = report.buckets.length > 12
@@ -640,97 +606,93 @@ function AnalyticsBars({
                     ? ({ year: 'numeric' } as const)
                     : ({ month: 'short', year: '2-digit' } as const)),
               })
+              // Where each group's bar starts: drawing positions above and below zero, stacked
+              // from Rust's totals in the order Rust gives them.
+              let above = 0
+              let below = 0
               return (
                 <div key={bucket.from} className="monthly-bar-column analytics-bar-column">
                   <div className="analytics-bar-track">
                     <span className="analytics-bar-zero" style={{ top: `${zero}%` }} />
-                    {[...new Set(stacks[index].segments.map(({ group }) => group))].flatMap(
-                      (group) =>
-                        [false, true].map((negative) => {
-                          const entries = stacks[index].segments.filter(
-                            (entry) =>
-                              entry.group === group &&
-                              entry.value! < 0 === negative &&
-                              entry.value !== 0,
-                          )
-                          if (!entries.length) return null
-                          const low = Math.min(...entries.flatMap(({ start, end }) => [start, end]))
-                          const high = Math.max(
-                            ...entries.flatMap(({ start, end }) => [start, end]),
-                          )
-                          const total =
-                            entries.reduce(
-                              (sum, entry) => sum + Math.round(entry.value! * 100),
-                              0,
-                            ) / 100
-                          return (
-                            <Tooltip key={`${group}:${negative}`}>
-                              <TooltipTrigger
-                                render={
-                                  <Link
-                                    className="analytics-bar-category"
-                                    data-command="navigation.open./activities"
-                                    to="/activities"
-                                    search={{ ...search, from: bucket.from, to: bucket.to }}
-                                    aria-label={`${group}, ${formatDay(bucket.from)} through ${formatDay(bucket.to)}: ${formatCurrency(total)}. View period activity`}
-                                    style={{
-                                      top: `${((max - high) / span) * 100}%`,
-                                      height: `${((high - low) / span) * 100}%`,
-                                    }}
-                                  >
-                                    {entries.map((entry) => (
-                                      <span
-                                        key={entry.id}
-                                        aria-hidden="true"
-                                        className={`analytics-bar-fill ${negative ? 'is-negative' : ''}`}
-                                        style={{
-                                          top: `${((high - Math.max(entry.start, entry.end)) / (high - low)) * 100}%`,
-                                          height: `${(Math.abs(entry.end - entry.start) / (high - low)) * 100}%`,
-                                          background: groupColors.get(group),
-                                        }}
-                                      />
-                                    ))}
-                                  </Link>
-                                }
-                              />
-                              <TooltipContent
-                                className="treemap-tooltip sankey-tooltip"
-                                sideOffset={8}
+                    {bucket.groups.map(({ name: group, negative, total, entryIds }) => {
+                      const start = negative ? below : above
+                      const finish = start + total
+                      if (negative) below = finish
+                      else above = finish
+                      const low = Math.min(start, finish)
+                      const high = Math.max(start, finish)
+                      let offset = start
+                      const segments = entryIds.flatMap((id) => {
+                        const entry = entries.get(id)
+                        if (!entry?.value) return []
+                        const from = offset
+                        offset += entry.value
+                        return [{ ...entry, start: from, end: offset }]
+                      })
+                      return (
+                        <Tooltip key={`${group}:${negative}`}>
+                          <TooltipTrigger
+                            render={
+                              <Link
+                                className="analytics-bar-category"
+                                data-command="navigation.open./activities"
+                                to="/activities"
+                                search={{ ...search, from: bucket.from, to: bucket.to }}
+                                aria-label={`${group}, ${formatDay(bucket.from)} through ${formatDay(bucket.to)}: ${formatCurrency(total)}. View period activity`}
+                                style={{
+                                  top: `${((max - high) / span) * 100}%`,
+                                  height: `${((high - low) / span) * 100}%`,
+                                }}
                               >
-                                <div className="treemap-tooltip-heading">
-                                  <strong>
-                                    {formatActivityName(group)} · {label}
-                                  </strong>
-                                  <span>{formatCurrency(total)}</span>
-                                </div>
-                                <div className="treemap-tooltip-composition">
-                                  <ul>
-                                    {entries.slice(0, 8).map((entry) => {
-                                      const activity = activities.get(entry.id)
-                                      const merchant = formatActivityName(
-                                        briefMerchant(activity?.title ?? entry.group),
-                                      )
-                                      return (
-                                        <li key={entry.id}>
-                                          <span>
-                                            {merchant} · {formatDay(entry.date)}
-                                          </span>
-                                          <strong>{formatCurrency(entry.value)}</strong>
-                                        </li>
-                                      )
-                                    })}
-                                    {entries.length > 8 ? (
-                                      <li className="muted">
-                                        +{entries.length - 8} more · Open activity to view all
-                                      </li>
-                                    ) : null}
-                                  </ul>
-                                </div>
-                              </TooltipContent>
-                            </Tooltip>
-                          )
-                        }),
-                    )}
+                                {segments.map((entry) => (
+                                  <span
+                                    key={entry.id}
+                                    aria-hidden="true"
+                                    className={`analytics-bar-fill ${negative ? 'is-negative' : ''}`}
+                                    style={{
+                                      top: `${((high - Math.max(entry.start, entry.end)) / (high - low)) * 100}%`,
+                                      height: `${(Math.abs(entry.end - entry.start) / (high - low)) * 100}%`,
+                                      background: groupColors.get(group),
+                                    }}
+                                  />
+                                ))}
+                              </Link>
+                            }
+                          />
+                          <TooltipContent className="treemap-tooltip sankey-tooltip" sideOffset={8}>
+                            <div className="treemap-tooltip-heading">
+                              <strong>
+                                {formatActivityName(group)} · {label}
+                              </strong>
+                              <span>{formatCurrency(total)}</span>
+                            </div>
+                            <div className="treemap-tooltip-composition">
+                              <ul>
+                                {segments.slice(0, 8).map((entry) => {
+                                  const activity = activities.get(entry.id)
+                                  const merchant = formatActivityName(
+                                    briefMerchant(activity?.title ?? entry.group),
+                                  )
+                                  return (
+                                    <li key={entry.id}>
+                                      <span>
+                                        {merchant} · {formatDay(entry.date)}
+                                      </span>
+                                      <strong>{formatCurrency(entry.value)}</strong>
+                                    </li>
+                                  )
+                                })}
+                                {segments.length > 8 ? (
+                                  <li className="muted">
+                                    +{segments.length - 8} more · Open activity to view all
+                                  </li>
+                                ) : null}
+                              </ul>
+                            </div>
+                          </TooltipContent>
+                        </Tooltip>
+                      )
+                    })}
                     {bucket.value == null ? (
                       <span className="analytics-bar-missing" aria-label="Amount unavailable">
                         —
@@ -812,7 +774,7 @@ function ReportBreakdown({
   group?: string
   /** The view and group live in the URL, so a report reopens, and links, as it was left. */
   onChange: (view: ReportView, group?: string) => void
-  report: ReturnType<typeof analyticsReport> & { label: string }
+  report: Report & { label: string }
   colors: ReadonlyMap<string, string>
   activities: ReadonlyMap<string, ActivityItem>
   unavailable: boolean

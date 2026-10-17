@@ -38,10 +38,8 @@ export function InvestmentsRail({
       ...data.holdings.map((holding) => holding.ticker),
     ]),
   ]
-  const retirementAccounts = data.accounts.filter(({ type }) => type === 'retirement')
-  const retirementValue = retirementAccounts.every((account) => account.value != null)
-    ? retirementAccounts.reduce((total, account) => total + (account.value ?? 0), 0)
-    : null
+  // Every retirement account's value, as Rust summed it at the values shown.
+  const retirementValue = data.insights?.rollup.retirement ?? null
   return (
     <SelectorStrip
       label="Holdings"
@@ -71,7 +69,7 @@ export function InvestmentsRail({
             mark: <SecurityMark ticker={ticker} name={security?.name} />,
             link: { to: '/holdings/$ticker' as const, params: { ticker } },
             current: selected === ticker,
-            value: security?.value ?? holdingDetail(data.holdings, ticker).value ?? null,
+            value: security?.value ?? holdingDetail(data, ticker).value ?? null,
             change: contributions.find((item) => item.key === ticker)?.dollars ?? null,
           }
         }),

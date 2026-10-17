@@ -7,6 +7,7 @@ const DAY = 86_400
 
 it('follows the shared chart periods, each one a returns window', () => {
   expect(graphWindows.map(({ secs }) => chartPeriod(secs))).toEqual([
+    'day',
     'week',
     'month',
     'quarter',
@@ -19,6 +20,7 @@ it('follows the shared chart periods, each one a returns window', () => {
 })
 
 it('requests only history ranges the native chart supports, cropping the year for a quarter', () => {
+  expect(holdingHistoryRange('day')).toBe(DAY)
   expect(holdingHistoryRange('week')).toBe(7 * DAY)
   expect(holdingHistoryRange('month')).toBe(30 * DAY)
   expect(holdingHistoryRange('quarter')).toBe(365 * DAY)

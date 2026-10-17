@@ -17,6 +17,7 @@ import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
 import { useFinanceEdits } from '../hooks/use-finance-edits'
 import { useLatest } from '../hooks/use-latest'
+import { useReports } from '../hooks/use-reports'
 import { useSearchShortcuts } from '../hooks/use-search-shortcuts'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { ActivityItem, ActivitySort } from '../lib/activity'
@@ -122,9 +123,15 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
   const [checked, setChecked] = useState<ReadonlySet<string>>(() => new Set())
   const [bulkPending, setBulkPending] = useState(false)
 
+  // A report scopes the page to its entries on any day, as Rust chose them.
+  const reportEntries = useReports(
+    data,
+    { chart: search.analysis, range: 'all' },
+    Boolean(search.analysis),
+  ).data?.report?.entries
   const rows = useMemo(
-    () => activityRows(data, { analysis: search.analysis, review: search.review }),
-    [data, search.analysis, search.review],
+    () => activityRows(data, { analysis: search.analysis, review: search.review }, reportEntries),
+    [data, reportEntries, search.analysis, search.review],
   )
   const today = localDateKey(Date.now() / 1000)
   const ledger = activityLedger({ data, rows, search, draft, sort, today })

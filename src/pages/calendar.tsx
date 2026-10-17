@@ -14,7 +14,7 @@ import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { activityTotals, buildActivities, type ActivityItem } from '../lib/activity'
+import { buildActivities, type ActivityItem } from '../lib/activity'
 import { getEarningsCalendar, isTauri } from '../lib/api'
 import {
   agendaDetail,
@@ -278,13 +278,16 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
   )
 
   const dayActivities = spentByDay.get(day) ?? []
-  const totals = activityTotals(dayActivities)
+  // Each day's and month's spending and income, as Rust summed them.
+  const nothing = { spent: 0, income: 0, net: 0 }
+  const totalsOn = (date: string) =>
+    data.insights?.activityDays.find(({ period }) => period === date) ?? nothing
+  const totals = totalsOn(day)
   const dayScheduled = entries(day).filter(({ type }) => type !== 'activity')
-  const monthTotals = activityTotals(
-    days.filter((date) => monthOf(date) === month).flatMap((date) => spentByDay.get(date) ?? []),
-  )
+  const monthTotals =
+    data.insights?.activityMonths.find(({ period }) => period === month) ?? nothing
   // Each day's spending against the busiest day shown, for the cells' tint.
-  const spentOn = (date: string) => activityTotals(spentByDay.get(date) ?? []).spent
+  const spentOn = (date: string) => totalsOn(date).spent
   const busiest = Math.max(0, ...days.map(spentOn))
   const tripOn = (date: string) =>
     agenda.find(

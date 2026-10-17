@@ -1,19 +1,17 @@
 import { useMemo } from 'react'
 
+import { useReports } from '../hooks/use-reports'
 import {
   analyticsAccountMatches,
   analyticsCharts,
   analyticsDefinition,
-  analyticsEntries,
   analyticsGroup,
-  analyticsReport,
-  analyticsWindow,
   noAnalyticsAccounts,
+  reportRequest,
   withoutReportView,
   type AnalyticsChart,
   type AnalyticsSearch,
 } from '../lib/analytics'
-import { localDateKey } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import { type ChartPeriod } from '../lib/graph-preferences'
 import { analyticsIconColors, analyticsIcons, destinationPages } from '../lib/navigation'
@@ -42,7 +40,6 @@ export function MoneyStrip({
   period,
   search = {},
   spendingAccount,
-  today,
 }: {
   data: FinanceSnapshot
   current: '/spending' | AnalyticsChart
@@ -52,17 +49,18 @@ export function MoneyStrip({
   search?: AnalyticsSearch
   /** Spending's account scope, on Spending. */
   spendingAccount?: string
-  today?: string
 }) {
-  // Reports run through today, as the report pages do.
-  const day = today ?? localDateKey(Date.now() / 1000)
   const settings = financeSettings(data)
   const spendingAccountId = settings.spendingAccountId ?? ''
   const range = period == null ? (search.range ?? 'month') : reportRange(period)
   const spendingPeriod = period ?? spendingPeriodForRange(range) ?? 1
+  const reportSearch = useMemo(
+    () => (period == null ? withoutReportView(search) : { range }),
+    [period, range, search],
+  )
+  // Rust sums every report over the strip's window, through today as the report pages do.
+  const reports = useReports(data, reportRequest(reportSearch)).data ?? undefined
   const items = useMemo<SelectorStripItem[]>(() => {
-    const reportSearch = period == null ? withoutReportView(search) : { range }
-    const reportWindow = analyticsWindow(data, reportSearch, day)
     const missingAccount = Boolean(
       reportSearch.account &&
       reportSearch.account !== noAnalyticsAccounts &&
@@ -94,19 +92,11 @@ export function MoneyStrip({
         .filter(({ id }) => analyticsGroup(id) === 'money')
         .map(({ id, label }): SelectorStripItem => {
           const Icon = analyticsIcons[id]
-          const report = analyticsReport(
-            analyticsEntries(
-              data,
-              id,
-              spendingAccountId,
-              reportSearch.account,
-              settings.accountNames,
-            ),
-            reportWindow,
-          )
+          const report = reports?.summaries.find(({ chart }) => chart === id)
           const unavailable =
+            !report ||
             missingAccount ||
-            !reportWindow.valid ||
+            !reports?.window.valid ||
             (analyticsDefinition(id).benefits &&
               !data.accounts.some(
                 ({ id: accountId, type }) => accountId === spendingAccountId && type === 'credit',
@@ -122,27 +112,13 @@ export function MoneyStrip({
             ),
             link: { to: '/analytics', search: { ...reportSearch, chart: id } },
             current: current === id,
-            value: report.total,
-            change:
-              report.total != null && report.previous != null
-                ? (Math.round(report.total * 100) - Math.round(report.previous * 100)) / 100
-                : null,
+            value: report?.total ?? null,
+            change: report?.change ?? null,
             favorable: id === 'fees' ? 'decrease' : 'increase',
             unavailable,
           }
         }),
     ]
-  }, [
-    current,
-    data,
-    period,
-    range,
-    search,
-    settings.accountNames,
-    spendingAccount,
-    spendingAccountId,
-    spendingPeriod,
-    today,
-  ])
+  }, [current, data, reportSearch, reports, spendingAccount, spendingAccountId, spendingPeriod])
   return <SelectorStrip label="Money" items={items} />
 }

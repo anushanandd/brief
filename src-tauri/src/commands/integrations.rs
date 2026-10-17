@@ -18,14 +18,14 @@ fn no_refresh_running<'a>(
         .map_err(|_| "Wait for the current account refresh before changing credentials".into())
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_integration_status(
     state: State<'_, AppState>,
 ) -> Result<IntegrationStatus, String> {
     state.providers.integration_status()
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_provider_connections(
     state: State<'_, AppState>,
 ) -> Result<Vec<providers::ProviderConnection>, String> {
@@ -151,7 +151,7 @@ pub(crate) fn cancel_provider_link(
 }
 
 /// Saved bank statements, newest first, without their contents.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_bank_statements(
     state: State<'_, AppState>,
 ) -> Result<Vec<crate::database::BankStatement>, String> {
@@ -167,7 +167,7 @@ pub(crate) async fn sync_bank_statements(
 }
 
 /// Opens one saved statement in the Mac's PDF viewer, from a private copy.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn open_bank_statement(
     id: String,
     app: tauri::AppHandle,

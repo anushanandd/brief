@@ -1,5 +1,5 @@
 import { countryFlag, countryName, placeLabel } from './places'
-import type { Trip } from './schema'
+import type { Trip, Trips } from './schema'
 import { formatListDate } from './spending'
 
 const dayMs = 86_400_000
@@ -18,18 +18,16 @@ export function tripYears(trips: Trip[], today: string) {
 export const tripDayCount = (trip: Pick<Trip, 'start' | 'end'>) =>
   Math.round((parseDay(trip.end) - parseDay(trip.start)) / dayMs) + 1
 
-/** A year's trips at a glance; Rust found each trip and its spending, this only adds them. */
-export function tripYearTotals(trips: Trip[]) {
+/** A year's trips at a glance, as Rust summed them; nothing for a year without trips. */
+export function tripYearTotals(trips: Pick<Trips, 'trips' | 'years'> | undefined, year: number) {
+  const totals = trips?.years.find((entry) => entry.year === year)
   return {
-    count: trips.length,
-    days: trips.reduce((sum, trip) => sum + tripDayCount(trip), 0),
-    spent: trips.reduce((sum, { total }) => sum + Math.round(Math.abs(total) * 100), 0) / 100,
-    abroad: trips.filter(({ abroad }) => abroad).length,
-    flown: trips.filter(({ flew }) => flew).length,
-    longest: trips.reduce<Trip | undefined>(
-      (longest, trip) => (!longest || tripDayCount(trip) > tripDayCount(longest) ? trip : longest),
-      undefined,
-    ),
+    count: totals?.count ?? 0,
+    days: totals?.days ?? 0,
+    spent: totals?.spent ?? 0,
+    abroad: totals?.abroad ?? 0,
+    flown: totals?.flown ?? 0,
+    longest: trips?.trips.find(({ id }) => id === totals?.longest),
   }
 }
 

@@ -108,10 +108,8 @@ pub(super) fn transaction_diff(
                     .pending_transaction_id
                     .as_deref()
                     .and_then(|pending| before.get(pending));
-                if !transaction.pending {
-                    if recent(transaction) || settled.is_some() {
-                        explain(transaction, amount);
-                    }
+                if !transaction.pending && (recent(transaction) || settled.is_some()) {
+                    explain(transaction, amount);
                 }
                 match settled {
                     Some(pending) => {

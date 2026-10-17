@@ -4,7 +4,7 @@ use tauri::State;
 
 use crate::{foundation_model, AppState};
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_foundation_model_status() -> foundation_model::FoundationModelStatus {
     foundation_model::status()
 }
@@ -29,7 +29,7 @@ pub(crate) async fn generate_foundation_explanation(
 
 /// Runs one read-only ledger query over the saved snapshot: the same figures an answer cited,
 /// recomputed for today, so a pinned query stays current without the model.
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn ledger_query(
     name: String,
     arguments: Value,

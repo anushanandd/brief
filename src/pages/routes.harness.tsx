@@ -12,8 +12,11 @@ import { classification } from '../data/fixtures/classification'
 import { emptyInsightDetails } from '../data/fixtures/insights'
 import { LiveMarketProvider } from '../hooks/live-market-provider'
 import { dayKey } from '../lib/dates'
-import { formatShortDay } from '../lib/format'
+import { formatShortDay, setAmountsHidden } from '../lib/format'
+import { settingsSections } from '../lib/settings-search'
+import { splitParts } from '../lib/transaction-kind'
 import { router } from '../router'
+import { scenarioReports, scenarioRollup } from './routes.reports'
 import { resetScenario, scenario } from './routes.scenario'
 
 // Native insights for the synthetic scenarios below, written out as fixtures. In the app
@@ -34,8 +37,256 @@ const scenarioPeriod = (
   cap,
   credited: 0,
   activityIds: [],
+  plannedTotal: scenarioCents((rest.planned ?? []).map(({ amount }) => amount)),
   ...rest,
 })
+const scenarioCents = (amounts: number[]) =>
+  amounts.reduce((total, amount) => total + Math.round(amount * 100), 0) / 100
+
+type ScenarioHistory = Omit<import('../lib/schema').BenefitHistory, 'years'>
+/** A year of benefit periods summed as Rust sums them; estimated benefits add nothing. */
+const scenarioBenefitYear = (benefits: ScenarioHistory[], year: number) => {
+  const periods = benefits
+    .filter(({ external }) => !external)
+    .flatMap((benefit) => benefit.periods.filter(({ start }) => start.startsWith(String(year))))
+  const range = (pick: (period: ScenarioPeriod) => { low: number; high: number } | undefined) => {
+    const ranges = periods.flatMap((period) => pick(period) ?? [])
+    return {
+      low: scenarioCents(ranges.map(({ low }) => low)),
+      high: scenarioCents(ranges.map(({ high }) => high)),
+    }
+  }
+  return {
+    year,
+    captured: scenarioCents(periods.map(({ credited }) => credited)),
+    planned: scenarioCents(periods.map(({ plannedTotal }) => plannedTotal)),
+    missed: range(({ unused }) => unused),
+    left: range(({ left }) => left),
+  }
+}
+/** The card's years over the benefits shown, with what went to purchases for someone else. */
+const scenarioCardYears = (
+  history: ScenarioHistory[],
+  activity: ScenarioActivity[],
+  others: Set<string>,
+  hidden: string[],
+  today: string,
+) =>
+  [
+    ...new Set(
+      [today, ...history.flatMap(({ periods }) => periods.map(({ start }) => start))].map((date) =>
+        Number(date.slice(0, 4)),
+      ),
+    ),
+  ]
+    .toSorted((left, right) => left - right)
+    .map((year) => {
+      const inYear = ({ periods }: ScenarioHistory) =>
+        periods.filter(({ start }) => start.startsWith(String(year)))
+      const rows = history.filter(
+        (benefit) =>
+          !hidden.includes(benefit.id) &&
+          inYear(benefit).length > 0 &&
+          (!benefit.retired || inYear(benefit).some(({ credited }) => credited !== 0)),
+      )
+      const forOthers = rows
+        .filter(({ external }) => !external)
+        .flatMap(inYear)
+        .flatMap(({ activityIds }) => activityIds)
+        .flatMap((id) => activity.filter((item) => item.id === id && others.has(id)))
+        .filter(({ pending, kind }) => !pending && (kind === 'credit' || kind === 'reversal'))
+      return {
+        ...scenarioBenefitYear(rows, year),
+        forOthers: scenarioCents(forOthers.map(({ amount }) => amount)),
+      }
+    })
+// When the scenario's snapshot was saved; Rust dates Spending's periods from it.
+const scenarioUpdatedAt = '2026-09-03T12:00:00Z'
+type ScenarioSpendingPeriod = import('../lib/schema').SpendingPeriodJudgment
+type ScenarioOwner = 'me' | 'other' | 'all'
+const scenarioCounts = ({ classification: kind }: ScenarioTransaction, owner: ScenarioOwner) =>
+  owner === 'me'
+    ? kind.spending
+    : owner === 'other'
+      ? kind.othersSpending === true
+      : kind.spending || kind.othersSpending === true
+const sumValues = (values: Map<string, number>) => [...values.values()].reduce((a, b) => a + b, 0)
+const nextDay = (date: string) => dayKey(new Date(Date.parse(`${date}T00:00:00Z`) + 86_400_000))
+
+/**
+ * Spending as Rust sums it for the scenario: this month beside last month to the same day, and
+ * the open statement when there is one, for each scope and owner, each in full.
+ */
+function scenarioSpending(
+  transactions: ScenarioTransaction[],
+  today: string,
+  statement?: { boundaries: string[] },
+) {
+  // Every account with spending, and the saved card whether or not it has any.
+  const scopes = new Set([
+    ...(scenario.spendingAccountId ? [scenario.spendingAccountId] : []),
+    ...transactions
+      .filter((transaction) => scenarioCounts(transaction, 'all'))
+      .flatMap(({ accountId }) => (accountId ? [accountId] : [])),
+  ])
+  const owners: ScenarioOwner[] = transactions.some((transaction) =>
+    scenarioCounts(transaction, 'other'),
+  )
+    ? ['me', 'other', 'all']
+    : ['me']
+  const monthStart = `${today.slice(0, 8)}01`
+  const lastMonth = new Date(`${monthStart}T00:00:00Z`)
+  lastMonth.setUTCMonth(lastMonth.getUTCMonth() - 1)
+  const days = (Date.parse(today) - Date.parse(monthStart)) / 86_400_000
+  const lastClose = statement?.boundaries.filter((date) => date < today).at(-1)
+  return ['all', ...scopes].flatMap((scope) =>
+    owners.map((owner) => {
+      const counted = transactions.filter(
+        (transaction) =>
+          (scope === 'all' || transaction.accountId === scope) &&
+          scenarioCounts(transaction, owner),
+      )
+      const spentBetween = (from: string, through: string, only?: string[]) => {
+        const byCategory = new Map<string, number>()
+        for (const part of counted.flatMap(splitParts)) {
+          const date = (part.postedOn ?? part.date).slice(0, 10)
+          if (date < from || date > through || (only && !only.includes(part.category))) continue
+          const value = Math.round(Math.abs(part.amount) * 100)
+          byCategory.set(part.category, (byCategory.get(part.category) ?? 0) + value)
+        }
+        return byCategory
+      }
+      // What a period lists and paces, for all of it or one category, as Rust reads it.
+      const view = (start: string, end: string, focus?: string) => {
+        const inPeriod = transactions.filter((transaction) => {
+          const date = (transaction.postedOn ?? transaction.date).slice(0, 10)
+          return (
+            (scope === 'all' || transaction.accountId === scope) &&
+            date >= start &&
+            date <= today &&
+            (owner === 'all' || (owner === 'other') === Boolean(transaction.other))
+          )
+        })
+        const listed = inPeriod
+          .filter(
+            (transaction) =>
+              !focus ||
+              (scenarioCounts(transaction, owner) &&
+                splitParts(transaction).some(({ category }) => category === focus)),
+          )
+          .toSorted(
+            (left, right) =>
+              right.date.localeCompare(left.date) || Math.abs(right.amount) - Math.abs(left.amount),
+          )
+        const merchants = new Map<
+          string,
+          { key: string; name: string; cents: number; transactionIds: string[] }
+        >()
+        for (const transaction of listed) {
+          const key = transaction.merchant.trim().toLocaleLowerCase()
+          const group = merchants.get(key) ?? {
+            key,
+            name: transaction.merchant,
+            cents: 0,
+            transactionIds: [],
+          }
+          group.cents += Math.round(transaction.amount * 100)
+          group.transactionIds.push(transaction.id)
+          merchants.set(key, group)
+        }
+        const spentOn = (date: string) =>
+          spentBetween(date, date, focus === undefined ? undefined : [focus])
+        const dates = Array.from(
+          { length: (Date.parse(today) - Date.parse(start)) / 86_400_000 + 1 },
+          (_, index) => dayKey(new Date(Date.parse(`${start}T00:00:00Z`) + index * 86_400_000)),
+        )
+        let running = 0
+        return {
+          transactionIds: listed.map(({ id }) => id),
+          merchants: [...merchants.values()]
+            .toSorted((left, right) => left.cents - right.cents)
+            .map(({ cents, ...group }) => ({ ...group, total: cents / 100 })),
+          pace: {
+            start,
+            end,
+            current: dates.map((date) => (running += sumValues(spentOn(date))) / 100),
+            previous: [],
+            projected: null,
+            days: [],
+          },
+        }
+      }
+      const period = (
+        kind: ScenarioSpendingPeriod['kind'],
+        start: string,
+        end: string,
+        before?: [string, string],
+      ) => {
+        const current = spentBetween(start, today)
+        const previous = before ? spentBetween(...before) : undefined
+        const total = sumValues(current)
+        const earlier = previous && sumValues(previous)
+        return {
+          ...view(start, end),
+          earlier: false,
+          bars: [],
+          focus: Object.fromEntries(
+            [...current.keys()].map((name) => [name, view(start, end, name)]),
+          ),
+          kind,
+          start,
+          end: today,
+          total: total / 100,
+          previous: earlier == null ? null : earlier / 100,
+          change: earlier == null ? null : (total - earlier) / 100,
+          changePct: earlier ? Math.round(((total - earlier) / earlier) * 10_000) / 100 : null,
+          daily: 0,
+          pending: 0,
+          categories: [...current]
+            .toSorted(([, left], [, right]) => right - left)
+            .map(([name, value]) => ({
+              name,
+              total: value / 100,
+              previous: previous ? (previous.get(name) ?? 0) / 100 : null,
+              change: previous ? (value - (previous.get(name) ?? 0)) / 100 : null,
+              changePct: null,
+              daily: 0,
+              share: total ? Math.round((value / total) * 10_000) / 100 : 0,
+              typical: null,
+              aboveTypical: null,
+            })),
+          ...(kind === 'statement' && owner !== 'other'
+            ? { opening: 0, balance: total / 100 }
+            : {}),
+        }
+      }
+      const lastMonthStart = dayKey(lastMonth)
+      const lastMonthThrough = dayKey(
+        new Date(
+          Math.min(
+            Date.parse(`${lastMonthStart}T00:00:00Z`) + days * 86_400_000,
+            Date.parse(`${monthStart}T00:00:00Z`) - 86_400_000,
+          ),
+        ),
+      )
+      const nextClose = statement?.boundaries.find((date) => date >= today) ?? today
+      const monthEnd = dayKey(
+        new Date(Date.UTC(lastMonth.getUTCFullYear(), lastMonth.getUTCMonth() + 2, 0)),
+      )
+      return {
+        scope,
+        owner,
+        // Each current period in full, as `useSpendingPeriod` reads it.
+        periods: [
+          ...(lastClose ? [period('statement', nextDay(lastClose), nextClose)] : []),
+          period('month', monthStart, monthEnd, [lastMonthStart, lastMonthThrough]),
+        ],
+        months: [],
+      }
+    }),
+  )
+}
+
 function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/schema').Insights {
   const now = new Date()
   const today = now.toISOString().slice(0, 10)
@@ -324,7 +575,6 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
     today,
     computedAt: now.toISOString(),
     expected,
-    spending: [],
     benefits: card
       ? {
           accountId: card,
@@ -335,7 +585,19 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
           useFirst: windows
             .filter(({ remainingRange }) => (remainingRange?.high ?? 0) > 0)
             .map(({ id }) => id),
-          history,
+          history: history.map((entry) => ({
+            ...entry,
+            years: [...new Set(entry.periods.map(({ start }) => Number(start.slice(0, 4))))].map(
+              (periodYear) => scenarioBenefitYear([entry], periodYear),
+            ),
+          })),
+          years: scenarioCardYears(
+            history,
+            activity,
+            new Set(transactions.filter(({ other }) => other).map(({ id }) => id)),
+            scenario.hiddenBenefits.split(',').filter(Boolean),
+            today,
+          ),
           review,
         }
       : undefined,
@@ -381,6 +643,11 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
     longTermSoon: [],
     investmentAttention: { flags: [], earningsWatch: [] },
     securities: [],
+    spending: scenarioSpending(
+      transactions,
+      scenarioUpdatedAt.slice(0, 10),
+      scenario.insights.statement ?? undefined,
+    ),
     ...scenario.insights,
   }
 }
@@ -441,8 +708,11 @@ function scenarioTransactions(): ScenarioTransaction[] {
   ]
 }
 
-vi.mock('../hooks/use-finance', () => ({
-  useFinance: () => ({
+vi.mock('../hooks/use-finance', () => ({ useFinance: () => scenarioFinance() }))
+
+/** The scenario's finance as `useFinance` serves it, with Rust's totals over its accounts. */
+function scenarioFinance() {
+  const finance = {
     integrationStatus: { plaid: false, snaptrade: false, alpaca: false },
     marketSymbols: ['SYNTH'],
     runtimeLog: [],
@@ -453,7 +723,7 @@ vi.mock('../hooks/use-finance', () => ({
       providerStatus: scenario.providerError
         ? { plaid: { updatedAt: null, error: 'Synthetic provider error' } }
         : {},
-      updatedAt: '2026-09-03T12:00:00Z',
+      updatedAt: scenarioUpdatedAt,
       netWorth: scenario.snaptradeReference ? 300 : -2_100,
       benchmarkHistory: [],
       netWorthHistory: [{ date: '2026-09-03', value: scenario.snaptradeReference ? 300 : -2_100 }],
@@ -548,6 +818,66 @@ vi.mock('../hooks/use-finance', () => ({
       insights: scenarioInsights(scenarioTransactions()),
       documents: scenario.documents,
     },
+  }
+  const { data } = finance
+  return {
+    ...finance,
+    data: {
+      ...data,
+      insights: {
+        ...data.insights,
+        rollup:
+          scenario.insights.rollup ??
+          scenarioRollup(data.accounts, data.holdings, data.netWorth, data.settings),
+      },
+    },
+  }
+}
+// Rust reads a Spending period on demand; here the scenario's current periods carry it in full.
+vi.mock('../hooks/use-spending-period', () => ({
+  useSpendingPeriod: (
+    data: import('../lib/schema').FinanceSnapshot | undefined,
+    request: import('../lib/api').SpendingPeriodRequest,
+  ) => {
+    const periods =
+      data?.insights?.spending.find(
+        ({ scope, owner }) => scope === request.scope && owner === request.owner,
+      )?.periods ?? []
+    const period =
+      request.offset === 0
+        ? (periods.find(({ kind }) => kind === request.kind) ??
+          (request.kind === 'statement' ? periods.find(({ kind }) => kind === 'month') : undefined))
+        : undefined
+    const empty = { start: period?.start ?? '', end: period?.end ?? '' }
+    return {
+      data: period
+        ? {
+            earlier: false,
+            transactionIds: [],
+            merchants: [],
+            pace: { ...empty, current: [], previous: [], projected: null, days: [] },
+            bars: [],
+            focus: {},
+            ...period,
+          }
+        : null,
+      isLoading: false,
+      isError: false,
+      isPlaceholderData: false,
+    }
+  },
+}))
+// Rust reads reports on demand; here they follow the same rules over the scenario.
+vi.mock('../hooks/use-reports', () => ({
+  useReports: (
+    data: import('../lib/schema').FinanceSnapshot | undefined,
+    request: import('../lib/api').ReportRequest,
+    enabled = true,
+  ) => ({
+    data: enabled && data ? { ...scenarioReports(data, request), ...scenario.reports } : undefined,
+    isLoading: false,
+    isError: false,
+    isPlaceholderData: false,
   }),
 }))
 vi.mock('../hooks/use-refresh-finance', () => ({
@@ -566,11 +896,15 @@ afterEach(() => {
   vi.useRealTimers()
   vi.unstubAllGlobals()
   resetScenario()
+  setAmountsHidden(false)
 })
 
 export async function renderRoute(path: string, selectedAccount = 'selected') {
   scenario.spendingAccountId = selectedAccount
-  const storage = { getItem: () => '' }
+  const storage = {
+    getItem: (key: string) =>
+      key === 'brief:hide-values-on-launch' && scenario.valuesHidden ? 'true' : '',
+  }
   vi.stubGlobal('window', { localStorage: storage })
   vi.stubGlobal('localStorage', storage)
   const testRouter = createRouter({
@@ -600,6 +934,14 @@ export async function renderSettings(path = '/#settings') {
   await loadSettingsPanel()
   await new Promise((resolve) => setTimeout(resolve, 0))
   return renderRoute(path)
+}
+
+/** Settings renders one section at a time, so this opens each section by its address. */
+export async function renderEverySettingsSection(page = '/') {
+  const sections: string[] = []
+  for (const { id } of settingsSections)
+    sections.push(await renderSettings(`${page}#settings/${id}`))
+  return sections.join('\n')
 }
 
 /** Whether the app has a route at `path`. */

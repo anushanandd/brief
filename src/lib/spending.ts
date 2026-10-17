@@ -1,29 +1,38 @@
-import { dayKey, dayMs, daysBetween } from './dates'
+import { dayKey } from './dates'
 import { formatDay } from './format'
-import { cents } from './money'
 import type {
   Account,
   FinanceSnapshot,
   Insights,
   SpendingOwner,
+  SpendingFigures,
+  SpendingPeriodDetail,
   SpendingPeriodJudgment,
+  SpendingPeriodView,
   Transaction,
 } from './schema'
-import { isSpendingFor, isSpendingTransaction, splitParts } from './transaction-kind'
+import { isSpendingTransaction } from './transaction-kind'
 
 export type SpendingPeriod = 'statement' | 'week' | 0 | 1 | 3 | 12
 
 /**
  * Spending's periods, each with the range Money's links carry (so every card in its strip opens
- * on the same period), its name, and its key.
+ * on the same period), its name, its key, and the kind of period Rust computes for it.
  */
 export const spendingPeriodOptions = [
-  { range: 'statement', value: 'statement', label: 'Statement', key: 's', unit: 'statement' },
-  { range: 'week', value: 'week', label: 'Week', key: 'w', unit: 'week' },
-  { range: 'month', value: 1, label: 'Month', key: 'm', unit: 'month' },
-  { range: 'quarter', value: 3, label: 'Quarter', key: 'q', unit: 'quarter' },
-  { range: 'year', value: 12, label: 'Year', key: 'y', unit: 'year' },
-  { range: 'all', value: 0, label: 'All time', key: 'a', unit: 'year' },
+  {
+    range: 'statement',
+    value: 'statement',
+    label: 'Statement',
+    key: 's',
+    unit: 'statement',
+    kind: 'statement',
+  },
+  { range: 'week', value: 'week', label: 'Week', key: 'w', unit: 'week', kind: 'week' },
+  { range: 'month', value: 1, label: 'Month', key: 'm', unit: 'month', kind: 'month' },
+  { range: 'quarter', value: 3, label: 'Quarter', key: 'q', unit: 'quarter', kind: 'quarter' },
+  { range: 'year', value: 12, label: 'Year', key: 'y', unit: 'year', kind: 'year' },
+  { range: 'all', value: 0, label: 'All time', key: 'a', unit: 'year', kind: 'all' },
 ] as const satisfies ReadonlyArray<{
   range: string
   value: SpendingPeriod
@@ -31,6 +40,7 @@ export const spendingPeriodOptions = [
   key: string
   /** What the period is called in "This month" and "vs last month". */
   unit: string
+  kind: SpendingPeriodJudgment['kind']
 }>
 export type SpendingRange = (typeof spendingPeriodOptions)[number]['range']
 export const spendingRanges = spendingPeriodOptions.map(({ range }) => range)
@@ -38,6 +48,9 @@ export const spendingPeriodForRange = (range: unknown): SpendingPeriod | undefin
   spendingPeriodOptions.find((option) => option.range === range)?.value
 export const spendingRangeForPeriod = (period: SpendingPeriod): SpendingRange =>
   spendingPeriodOptions.find((option) => option.value === period)!.range
+/** The kind of period Rust computes for a choice; a statement without dates is the month. */
+export const spendingPeriodKind = (period: SpendingPeriod): SpendingPeriodJudgment['kind'] =>
+  spendingPeriodOptions.find((option) => option.value === period)!.kind
 export type SpendingPeriodBasis = 'calendar' | 'statement'
 /** One bar of the spending chart: the days it covers and its spending by category. */
 export type SpendingBar = {
@@ -50,35 +63,8 @@ export type SpendingBar = {
     activities: Array<{ id: string; value: number }>
   }>
 }
-type RankedSpend = {
-  name: string
-  value: number
-  previousValue: number
-  change: number
-  percent: number
-}
 
 const isoDate = /^\d{4}-\d{2}-\d{2}/
-const shiftDate = (date: Date, days: number) => new Date(date.getTime() + days * dayMs)
-const monthStart = (date: Date, offset = 0) =>
-  new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth() + offset, 1))
-
-function calendarDate(referenceIso: string, timeZone?: string) {
-  const parsed = new Date(referenceIso)
-  if (Number.isNaN(parsed.getTime())) return new Date()
-  const parts = new Intl.DateTimeFormat('en-US', {
-    year: 'numeric',
-    month: 'numeric',
-    day: 'numeric',
-    ...(timeZone ? { timeZone } : {}),
-  })
-    .formatToParts(parsed)
-    .reduce<Record<string, number>>((values, part) => {
-      if (part.type !== 'literal') values[part.type] = Number(part.value)
-      return values
-    }, {})
-  return new Date(Date.UTC(parts.year, (parts.month ?? 1) - 1, parts.day ?? 1))
-}
 
 /** A transaction's calendar day: an ISO date as written, or an instant's UTC day. */
 export function transactionDateKey(value: string) {
@@ -99,8 +85,6 @@ export function formatListDate(value: string, referenceIso: string) {
   return year && date.endsWith(`, ${year}`) ? date.slice(0, -`, ${year}`.length) : date
 }
 
-const isSpend = isSpendingTransaction
-
 export function resolveSpendingAccount(accounts: Account[], preferredId: string) {
   return accounts.find(({ id, type }) => type === 'credit' && id === preferredId)
 }
@@ -120,7 +104,9 @@ export function spendingScope(
 ) {
   const card = resolveSpendingAccount(accounts, savedCardId)
   const spenders = new Set(
-    transactions.filter(isSpend).flatMap(({ accountId }) => (accountId ? [accountId] : [])),
+    transactions
+      .filter(isSpendingTransaction)
+      .flatMap(({ accountId }) => (accountId ? [accountId] : [])),
   )
   const options = accounts.filter(
     ({ id, currency }) =>
@@ -130,15 +116,7 @@ export function spendingScope(
     requested === allSpendingAccounts
       ? undefined
       : (options.find(({ id }) => id === requested) ?? card)
-  const ids = new Set(options.map(({ id }) => id))
-  return {
-    card,
-    options,
-    selected,
-    transactions: transactions.filter(({ accountId }) =>
-      selected ? accountId === selected.id : accountId != null && ids.has(accountId),
-    ),
-  }
+  return { card, options, selected }
 }
 
 export const spendingCategoryColor = (name: string) => {
@@ -157,93 +135,6 @@ export const spendingCategoryColor = (name: string) => {
   if (/tax/.test(category)) return 'var(--data-3)'
   if (/government/.test(category)) return 'var(--data-6)'
   return 'var(--spending-other)'
-}
-
-export function weeklySpendingCategoryPerformance(
-  transactions: Transaction[],
-  referenceIso: string,
-) {
-  const end = calendarDate(referenceIso)
-  const currentStart = shiftDate(end, -6)
-  const previousEnd = shiftDate(currentStart, -1)
-  const previousStart = shiftDate(previousEnd, -6)
-  const totals = (start: Date, through: Date) => {
-    const values = new Map<string, number>()
-    for (const transaction of transactions.flatMap(splitParts)) {
-      const day = transactionDateKey(transaction.postedOn ?? transaction.date)
-      if (
-        transaction.pending ||
-        !isSpend(transaction) ||
-        day < dayKey(start) ||
-        day > dayKey(through)
-      )
-        continue
-      values.set(
-        transaction.category,
-        (values.get(transaction.category) ?? 0) + cents(Math.abs(transaction.amount)),
-      )
-    }
-    return values
-  }
-  const current = totals(currentStart, end)
-  const previous = totals(previousStart, previousEnd)
-  return new Map(
-    [...new Set([...current.keys(), ...previous.keys()])].map((category) => {
-      const currentValue = current.get(category) ?? 0
-      const previousValue = previous.get(category) ?? 0
-      const performance = previousValue
-        ? ((previousValue - currentValue) / previousValue) * 100
-        : currentValue
-          ? -100
-          : null
-      return [category, performance]
-    }),
-  )
-}
-
-export function buildMonthlySpendingHistory(
-  transactions: Transaction[],
-  referenceIso: string,
-  count = 6,
-) {
-  const reference = calendarDate(referenceIso)
-  const totals = new Map<string, number>()
-  for (const transaction of transactions.filter(isSpend)) {
-    const month = transactionDateKey(transaction.postedOn ?? transaction.date).slice(0, 7)
-    if (month) totals.set(month, (totals.get(month) ?? 0) + cents(Math.abs(transaction.amount)))
-  }
-  return Array.from({ length: count }, (_, index) => {
-    const month = dayKey(monthStart(reference, index - count + 1)).slice(0, 7)
-    return { month, value: (totals.get(month) ?? 0) / 100 }
-  })
-}
-
-function rank(
-  current: Transaction[],
-  previous: Transaction[],
-  key: (transaction: Transaction) => string,
-  total: number,
-): RankedSpend[] {
-  const sum = (transactions: Transaction[]) => {
-    const values = new Map<string, number>()
-    for (const transaction of transactions.filter(isSpend)) {
-      const name = key(transaction)
-      values.set(name, (values.get(name) ?? 0) + cents(Math.abs(transaction.amount)))
-    }
-    return values
-  }
-  const currentValues = sum(current)
-  const previousValues = sum(previous)
-
-  return [...currentValues]
-    .map(([name, value]) => ({
-      name,
-      value: value / 100,
-      previousValue: (previousValues.get(name) ?? 0) / 100,
-      change: (value - (previousValues.get(name) ?? 0)) / 100,
-      percent: total ? (value / 100 / total) * 100 : 0,
-    }))
-    .toSorted((left, right) => right.value - left.value)
 }
 
 export function spendingPeriodLabel(
@@ -270,96 +161,7 @@ export function spendingPeriodLabel(
   return `All time through ${selectedPeriod}`
 }
 
-export function spendingMonthReference(referenceIso: string, monthOffset: number) {
-  if (monthOffset === 0) return referenceIso
-  const reference = calendarDate(referenceIso)
-  const date = dayKey(
-    new Date(Date.UTC(reference.getUTCFullYear(), reference.getUTCMonth() + monthOffset + 1, 0)),
-  )
-  return `${date}T12:00:00Z`
-}
-
-/**
- * What Spending's headline shows for a period: the statement balance when the period is a real
- * statement, otherwise the period's spending, with its change from the same point last period.
- */
-export function spendingHeadline(
-  data: Pick<FinanceSnapshot, 'accounts' | 'transactions' | 'updatedAt' | 'insights'>,
-  spendingAccountId: string,
-  period: SpendingPeriod,
-  requested?: string,
-) {
-  const scope = spendingScope(data.accounts, data.transactions, spendingAccountId, requested)
-  const account = scope.selected
-  const statement =
-    account && data.insights?.benefits?.accountId === account.id
-      ? (data.insights.statement ?? undefined)
-      : undefined
-  const view = buildSpendingView(
-    scope.transactions,
-    data.updatedAt,
-    period,
-    spendingPeriodReference(statement, data.updatedAt, 0, period),
-    spendingJudgments(data.insights, account?.id ?? allSpendingAccounts),
-    statement,
-  )
-  return {
-    hasScope: scope.options.length > 0,
-    value:
-      view.periodBasis === 'statement' && period === 'statement'
-        ? view.statementBalance
-        : view.total,
-    change: period ? view.total - view.previousTotal : null,
-  }
-}
-
-function calendarPeriodStart(date: Date, period: 1 | 3 | 12) {
-  const month =
-    period === 12 ? 0 : period === 3 ? Math.floor(date.getUTCMonth() / 3) * 3 : date.getUTCMonth()
-  return new Date(Date.UTC(date.getUTCFullYear(), month, 1))
-}
-
-/** Native statement evidence for the saved spending card; see `insights.statement`. */
-export type StatementEvidence = {
-  boundaries: string[]
-  autopays: Array<{ date: string; amount: number }>
-}
-
-export function spendingPeriodReference(
-  statement: StatementEvidence | undefined,
-  referenceIso: string,
-  periodOffset: number,
-  period: SpendingPeriod,
-) {
-  if (periodOffset === 0 || period === 0) return referenceIso
-  if (period === 'week')
-    return `${dayKey(shiftDate(calendarDate(referenceIso), periodOffset * 7))}T12:00:00Z`
-  if (typeof period === 'number') {
-    const start = calendarPeriodStart(calendarDate(referenceIso), period)
-    const end = new Date(
-      Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + (periodOffset + 1) * period, 0),
-    )
-    return `${dayKey(end)}T12:00:00Z`
-  }
-  const referenceDay = transactionDateKey(referenceIso)
-  const boundaries = (statement?.boundaries ?? []).filter((date) => date <= referenceDay)
-  if (!boundaries.length) return spendingMonthReference(referenceIso, periodOffset)
-  const endsOnBoundary = boundaries.at(-1) === referenceDay
-  const latestCompletedIndex = boundaries.length - 1 - (endsOnBoundary ? 1 : 0)
-  const selected = boundaries[latestCompletedIndex + periodOffset + 1]
-  return selected ? `${selected}T12:00:00Z` : spendingMonthReference(referenceIso, periodOffset)
-}
-
-function statementPeriodStart(boundaries: string[], end: Date) {
-  const endDay = dayKey(end)
-  const priorBoundaries = boundaries.filter((date) => date <= endDay)
-  const endsOnBoundary = priorBoundaries.at(-1) === endDay
-  const index = priorBoundaries.length - 1 - (endsOnBoundary ? 1 : 0)
-  const boundary = priorBoundaries[index]
-  return boundary ? shiftDate(new Date(`${boundary}T00:00:00Z`), 1) : null
-}
-
-/** Rust's judgments about one scope's periods; see `insights.spending`. */
+/** Rust's current periods of one scope, counted for one owner; see `insights.spending`. */
 export function spendingJudgments(
   insights: Pick<Insights, 'spending'> | undefined,
   scope: string,
@@ -371,6 +173,44 @@ export function spendingJudgments(
   )
 }
 
+/** A scope's current period of one kind; a statement without dates is the month. */
+export function currentSpendingPeriod(
+  insights: Pick<Insights, 'spending'> | undefined,
+  scope: string,
+  kind: SpendingPeriodJudgment['kind'],
+) {
+  const periods = spendingJudgments(insights, scope)
+  return (
+    periods.find((period) => period.kind === kind) ??
+    (kind === 'statement' ? periods.find((period) => period.kind === 'month') : undefined)
+  )
+}
+
+/**
+ * What Spending's headline shows for a period: the statement balance when the period is a real
+ * statement, otherwise the period's spending, with its change from the same point last period.
+ */
+export function spendingHeadline(
+  data: Pick<FinanceSnapshot, 'accounts' | 'transactions'> & {
+    insights?: Pick<Insights, 'spending'>
+  },
+  spendingAccountId: string,
+  period: SpendingPeriod,
+  requested?: string,
+) {
+  const scope = spendingScope(data.accounts, data.transactions, spendingAccountId, requested)
+  const current = currentSpendingPeriod(
+    data.insights,
+    scope.selected?.id ?? allSpendingAccounts,
+    spendingPeriodKind(period),
+  )
+  return {
+    hasScope: scope.options.length > 0,
+    value: current?.kind === 'statement' ? (current.balance ?? 0) : (current?.total ?? 0),
+    change: period ? (current?.change ?? null) : null,
+  }
+}
+
 /** Whose spending the page counts, in the order F cycles through them. */
 export const spendingOwnerOptions = [
   { value: 'me', label: 'For me' },
@@ -378,298 +218,67 @@ export const spendingOwnerOptions = [
   { value: 'all', label: 'All spending' },
 ] as const satisfies ReadonlyArray<{ value: SpendingOwner; label: string }>
 
-/**
- * Transactions as `owner`'s spending sees them: what native policy counts as theirs is marked
- * spending. Someone else's spending keeps only the transactions that are theirs.
- */
-export function spendingFor(transactions: Transaction[], owner: SpendingOwner) {
-  if (owner === 'me') return transactions
-  return transactions
-    .filter((transaction) => owner === 'all' || transaction.other)
-    .map((transaction) => ({
-      ...transaction,
-      classification: {
-        ...transaction.classification,
-        spending: isSpendingFor(transaction, owner),
-      },
-    }))
+const nothingSpent: SpendingFigures = {
+  total: 0,
+  previous: null,
+  change: null,
+  changePct: null,
+  daily: 0,
 }
 
-/** Whether a day key falls on or between two dates' days. */
-const withinDays = (date: string, from: Date, to: Date) =>
-  date >= dayKey(from) && date <= dayKey(to)
+/** Rust's figures for a period, or for one of its categories; nothing when Rust has none. */
+export function spendingFigures(period: SpendingPeriodJudgment | undefined, focus?: string) {
+  return (focus ? period?.categories.find(({ name }) => name === focus) : period) ?? nothingSpent
+}
 
-/**
- * A period's spending, beside the same point in the period before. React sums the period's
- * activity; Rust's judgments for the scope supply what a statement opened at, what is usual by
- * this point, and where the current period is heading. `focus` names the one category the
- * transactions were narrowed to, so its own projection applies.
- */
-export function buildSpendingView(
-  transactions: Transaction[],
-  referenceIso: string,
-  period: SpendingPeriod,
-  periodReferenceIso = referenceIso,
-  judgments: SpendingPeriodJudgment[] = [],
-  statement?: StatementEvidence,
-  focus?: string,
-) {
-  const end = calendarDate(periodReferenceIso)
-  const parsed = transactions.flatMap((transaction) => {
-    const date = transactionDateKey(transaction.postedOn ?? transaction.date)
-    return date ? [{ transaction, date }] : []
-  })
-  const statementBoundaries = period === 'statement' ? (statement?.boundaries ?? []) : []
-  const statementStart = statementBoundaries.length
-    ? statementPeriodStart(statementBoundaries, end)
-    : null
-  const basis: SpendingPeriodBasis = statementStart ? 'statement' : 'calendar'
-  const calendarPeriod = typeof period === 'number' && period !== 0 ? period : null
-  const start =
-    period === 'week'
-      ? shiftDate(end, -6)
-      : calendarPeriod
-        ? calendarPeriodStart(end, calendarPeriod)
-        : statementStart
-          ? statementStart
-          : period === 'statement'
-            ? monthStart(end)
-            : new Date(
-                `${
-                  parsed
-                    .map(({ date }) => date)
-                    .filter((date) => date <= dayKey(end))
-                    .toSorted()[0] ?? dayKey(end)
-                }T00:00:00Z`,
-              )
-  // The start of the comparable period before one that starts on `from`.
-  const priorStart = (from: Date) =>
-    period === 'week'
-      ? shiftDate(from, -7)
-      : calendarPeriod
-        ? monthStart(from, -calendarPeriod)
-        : period === 'statement'
-          ? basis === 'statement'
-            ? (statementPeriodStart(statementBoundaries, shiftDate(from, -1)) ??
-              monthStart(from, -1))
-            : monthStart(from, -1)
-          : from
-  const previousStart = priorStart(start)
-  const kind: SpendingPeriodJudgment['kind'] | undefined =
-    basis === 'statement'
-      ? 'statement'
-      : period === 'week'
-        ? 'week'
-        : period === 3
-          ? 'quarter'
-          : period === 12
-            ? 'year'
-            : period === 0
-              ? undefined
-              : 'month'
-  const judged = kind
-    ? judgments.find((entry) => entry.kind === kind && entry.start === dayKey(start))
-    : undefined
-  const elapsedDays = Math.floor((end.getTime() - start.getTime()) / dayMs) + 1
-  // The same number of days into a prior period, never running into the next one.
-  const samePointEnd = (from: Date, next: Date) =>
-    new Date(Math.min(shiftDate(from, elapsedDays - 1).getTime(), next.getTime() - dayMs))
-  const previousEnd = period ? samePointEnd(previousStart, start) : shiftDate(start, -1)
-  const currentEntries = parsed.filter(({ date }) => withinDays(date, start, end))
-  const current = currentEntries.map(({ transaction }) => transaction)
-  const previous = parsed
-    .filter(({ date }) => withinDays(date, previousStart, previousEnd))
-    .map(({ transaction }) => transaction)
-  const expenses = current.filter(isSpend)
-  const previousExpenses = previous.filter(isSpend)
-  const total =
-    expenses.reduce((sum, transaction) => sum + cents(Math.abs(transaction.amount)), 0) / 100
-  const previousTotal =
-    previousExpenses.reduce((sum, transaction) => sum + cents(Math.abs(transaction.amount)), 0) /
-    100
-  const pendingTotal =
-    expenses
-      .filter(({ pending }) => pending)
-      .reduce((sum, transaction) => sum + cents(Math.abs(transaction.amount)), 0) / 100
-  const activityAmount = (transaction: Transaction) =>
-    isSpend(transaction)
-      ? cents(Math.abs(transaction.amount))
-      : transaction.amount > 0
-        ? -cents(transaction.amount)
-        : 0
-  const activityByDate = (items: typeof parsed) => {
-    const totals = new Map<string, number>()
-    for (const entry of items) {
-      const amount = activityAmount(entry.transaction)
-      if (!amount) continue
-      totals.set(entry.date, (totals.get(entry.date) ?? 0) + amount)
+/** A period's view for all of it, or for the category in focus; nothing listed when it has none. */
+export function spendingView(detail: SpendingPeriodDetail, focus?: string): SpendingPeriodView {
+  if (!focus) return detail
+  return (
+    detail.focus[focus] ?? {
+      transactionIds: [],
+      merchants: [],
+      pace: { ...detail.pace, current: [], previous: [], projected: null, days: [] },
     }
-    return totals
-  }
-  const startingBalance = basis === 'statement' ? (judged?.opening ?? 0) : 0
-  const currentByDate = activityByDate(currentEntries)
-  const previousByDate = activityByDate(
-    parsed.filter(({ date }) => withinDays(date, previousStart, previousEnd)),
   )
-  let currentCumulative = cents(startingBalance)
-  let previousCumulative = 0
-  const trend = Array.from({ length: elapsedDays }, (_, index) => {
-    const currentDate = shiftDate(start, index)
-    const currentDateKey = dayKey(currentDate)
-    const priorDate = shiftDate(previousStart, index)
-    currentCumulative += currentByDate.get(currentDateKey) ?? 0
-    previousCumulative += previousByDate.get(dayKey(priorDate)) ?? 0
-    return {
-      date: currentDateKey,
-      current: currentCumulative / 100,
-      previous: previousCumulative / 100,
-    }
-  })
-  const dailyAverage = elapsedDays ? total / elapsedDays : 0
-  const closingBoundary =
-    basis === 'statement' ? statementBoundaries.find((date) => date >= dayKey(end)) : undefined
-  // The whole selected period, so the chart can show how far into it today is.
-  const periodEnd =
-    period === 'week' || period === 0
-      ? end
-      : calendarPeriod
-        ? new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + calendarPeriod, 0))
-        : closingBoundary
-          ? new Date(`${closingBoundary}T00:00:00Z`)
-          : basis === 'statement'
-            ? end
-            : new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 0))
-  const cumulativeSpend = (from: Date, to: Date) => {
-    const byDate = new Map<string, number>()
-    for (const { transaction, date } of parsed) {
-      if (!isSpend(transaction) || !withinDays(date, from, to)) continue
-      byDate.set(date, (byDate.get(date) ?? 0) + cents(Math.abs(transaction.amount)))
-    }
-    const days = Math.floor((to.getTime() - from.getTime()) / dayMs) + 1
-    let running = 0
-    return Array.from({ length: Math.max(0, days) }, (_, index) => {
-      running += byDate.get(dayKey(shiftDate(from, index))) ?? 0
-      return running / 100
-    })
-  }
-  // Each day of observed spending, so the chart can mark it and list what was bought.
-  const spendDays = new Map<
-    string,
-    { index: number; date: string; activities: Array<{ id: string; value: number }> }
-  >()
-  for (const { transaction, date } of currentEntries) {
-    if (!isSpend(transaction)) continue
-    const day = spendDays.get(date) ?? {
-      index: Math.floor((Date.parse(`${date}T00:00:00Z`) - start.getTime()) / dayMs),
-      date,
-      activities: [],
-    }
-    day.activities.push({ id: `spending:${transaction.id}`, value: Math.abs(transaction.amount) })
-    spendDays.set(date, day)
-  }
+}
+
+/** Activity IDs as the page's lists and charts name transactions. */
+const activityId = (id: string) => `spending:${id}`
+
+/** Rust's pace as the pace chart draws it. */
+export function spendingChartPace(pace: SpendingPeriodView['pace']) {
   return {
-    start: dayKey(start),
-    end: dayKey(end),
-    periodBasis: basis,
-    startingBalance,
-    statementBalance: currentCumulative / 100,
-    transactions: sortTransactionsByRecency(current),
-    total,
-    previousTotal,
-    pendingTotal,
-    percentChange: previousTotal ? ((total - previousTotal) / previousTotal) * 100 : null,
-    dailyAverage,
-    pace: {
-      start: dayKey(start),
-      end: dayKey(periodEnd),
-      current: cumulativeSpend(start, end),
-      previous: period === 0 ? [] : cumulativeSpend(previousStart, shiftDate(start, -1)),
-      days: [...spendDays.values()]
-        .map((day) => ({
-          ...day,
-          activities: day.activities.toSorted((left, right) => right.value - left.value),
-        }))
-        .toSorted((left, right) => left.index - right.index),
-      projected: (focus ? judged?.projected?.categories[focus] : judged?.projected?.total) ?? null,
-    },
-    biggest: expenses.toSorted((left, right) => Math.abs(right.amount) - Math.abs(left.amount))[0],
-    categories: rank(
-      current.flatMap(splitParts),
-      previous.flatMap(splitParts),
-      ({ category }) => category,
-      total,
-    ).map((category) => ({
-      ...category,
-      typical: judged?.typical ? (judged.typical[category.name] ?? 0) : null,
+    ...pace,
+    days: pace.days.map(({ purchases, ...day }) => ({
+      ...day,
+      activities: purchases.map(({ id, value }) => ({ id: activityId(id), value })),
     })),
-    merchants: rank(current, previous, ({ merchant }) => merchant, total),
-    trend,
   }
 }
 
-export function buildSpendingBars(
-  transactions: Transaction[],
-  start: string,
-  end: string,
-  period: SpendingPeriod,
-) {
-  const totals = new Map<
-    string,
-    Map<string, { value: number; activities: Array<{ id: string; value: number }> }>
-  >()
-  transactions
-    .filter((transaction) => isSpend(transaction) || transaction.classification.credit)
-    .flatMap(splitParts)
-    .forEach((transaction) => {
-      const date = transactionDateKey(transaction.postedOn ?? transaction.date)
-      const name = transaction.classification.credit ? 'Credits' : transaction.category
-      const categories = totals.get(date) ?? new Map()
-      const category = categories.get(name) ?? { value: 0, activities: [] }
-      const value = cents(Math.abs(transaction.amount)) * (name === 'Credits' ? -1 : 1)
-      category.value += value
-      category.activities.push({
-        id: `spending:${transaction.id}`,
-        value: Math.abs(transaction.amount),
-      })
-      categories.set(name, category)
-      totals.set(date, categories)
-    })
-  const startDate = new Date(`${start}T00:00:00Z`)
-  const days = daysBetween(start, end) + 1
-  const bars: SpendingBar[] = []
-  Array.from({ length: Math.max(1, days) }, (_, index) =>
-    dayKey(shiftDate(startDate, index)),
-  ).forEach((date, index) => {
-    const categories = [...(totals.get(date) ?? new Map()).entries()]
-      .map(([name, category]) => ({
+/** Rust's bars as the bar chart draws them; a focus keeps only its own category. */
+export function spendingChartBars(bars: SpendingPeriodDetail['bars'], focus?: string) {
+  return bars.map(({ from, to, value, categories }): SpendingBar => {
+    const shown = categories
+      .filter(({ name }) => !focus || name === focus)
+      .map(({ name, value: amount, purchases }) => ({
         name,
-        value: category.value / 100,
-        activities: category.activities,
+        value: amount,
+        activities: purchases.map(({ id, value: spent }) => ({ id: activityId(id), value: spent })),
       }))
-      .toSorted((left, right) => left.name.localeCompare(right.name))
-    const value = categories.reduce((sum, category) => sum + category.value, 0)
-    const bar = bars.at(-1)
-    const sameBucket =
-      period === 3
-        ? index % 7 !== 0
-        : (period === 12 || period === 0) && bar?.from.slice(0, 7) === date.slice(0, 7)
-    if (bar && sameBucket) {
-      bar.to = date
-      bar.value = (Math.round(bar.value * 100) + Math.round(value * 100)) / 100
-      categories.forEach((category) => {
-        const existing = bar.categories.find(({ name }) => name === category.name)
-        if (existing) {
-          existing.value =
-            (Math.round(existing.value * 100) + Math.round(category.value * 100)) / 100
-          existing.activities.push(...category.activities)
-        } else bar.categories.push(category)
-      })
-      bar.categories.sort((left, right) => left.name.localeCompare(right.name))
-    } else {
-      bars.push({ from: date, to: date, value, categories })
-    }
+    return { from, to, value: focus ? (shown[0]?.value ?? 0) : value, categories: shown }
   })
-  return bars
+}
+
+/** A scope's spending in each of its recent calendar months, as the monthly chart reads it. */
+export function monthlySpendingHistory(
+  insights: Pick<Insights, 'spending'> | undefined,
+  scope: string,
+) {
+  return (
+    insights?.spending.find((entry) => entry.scope === scope && entry.owner === 'me')?.months ?? []
+  ).map(({ month, total }) => ({ month, value: total }))
 }
 
 export function sortTransactionsByRecency(transactions: Transaction[]) {

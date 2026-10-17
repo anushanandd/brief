@@ -150,6 +150,8 @@ mod tests {
     fn flags_only_decisions_and_keeps_retirement_losses_out() {
         let allocation = Allocation {
             total: 10_000.0,
+            cash: 0.0,
+            cash_percent: 0.0,
             incomplete: false,
             cash_unknown: false,
             kinds: vec![],

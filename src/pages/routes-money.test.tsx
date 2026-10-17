@@ -3,7 +3,7 @@
 import { expect, it, vi } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
-import { renderRoute, renderSettings } from './routes.harness'
+import { renderEverySettingsSection, renderRoute, renderSettings } from './routes.harness'
 import { scenario } from './routes.scenario'
 
 it('keeps a short Platinum preview on Spending and links to Benefits', async () => {
@@ -108,9 +108,25 @@ it('compares spending categories with the last period or the average', async () 
   expect(withoutAverage).toMatch(/, by this point last month \$[\d,.]+/)
   expect(withoutAverage).not.toContain('aria-label="Compare categories with"')
 
-  const periods = [{ kind: 'month' as const, start: '2026-09-01', typical: { Travel: 5 } }]
+  const spent = { total: 5, previous: 0, change: 5, changePct: null, daily: 1.67 }
+  const periods = [
+    {
+      kind: 'month' as const,
+      start: '2026-09-01',
+      end: '2026-09-03',
+      ...spent,
+      pending: 0,
+      categories: [{ name: 'Travel', ...spent, share: 100, typical: 5, aboveTypical: 0 }],
+      typical: { Travel: 5 },
+    },
+  ]
   scenario.insights = {
-    spending: ['all', 'selected'].map((scope) => ({ scope, owner: 'me' as const, periods })),
+    spending: ['all', 'selected'].map((scope) => ({
+      scope,
+      owner: 'me' as const,
+      periods,
+      months: [],
+    })),
   }
   const html = await renderRoute('/spending')
   const tabs = html.slice(
@@ -368,7 +384,7 @@ it('opens Cash flow by default and lists charts in one fixed order', async () =>
   const analytics = await renderRoute('/analytics')
   expect(analytics).toContain('aria-current="page">Cash flow')
   expect(analytics).not.toContain('Reorder analytics')
-  const settings = await renderSettings()
+  const settings = await renderEverySettingsSection()
   expect(settings).toContain('Page order')
   expect(settings).not.toContain('Analytics order')
   expect(settings).not.toContain('Overview accounts')

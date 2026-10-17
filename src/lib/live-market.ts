@@ -3,7 +3,13 @@ import type { LivelinePoint } from 'liveline'
 import { startMarketStream, stopMarketStream } from './api'
 import { errorMessage } from './errors'
 import { upsertLiveChartPoint } from './live-chart'
-import type { FinanceSnapshot, MarketProjection, MarketSnapshots } from './schema'
+import type {
+  ChartChanges,
+  FinanceSnapshot,
+  MarketHistory,
+  MarketProjection,
+  MarketSnapshots,
+} from './schema'
 
 const MARKET_CHART_INTERVAL = 5 * 60
 const MAX_MARKET_CHART_POINTS = 7 * 24 * 12 + 1
@@ -47,6 +53,8 @@ export function applyLiveProjection(
   const accounts = new Map(projection.accounts.map((account) => [account.id, account]))
   return {
     ...saved,
+    // Account totals at the live values, as Rust summed them.
+    insights: saved.insights && { ...saved.insights, rollup: projection.rollup },
     netWorth: projection.netWorth,
     netWorthIncomplete: projection.netWorthIncomplete,
     accounts: saved.accounts.map((account) => {
@@ -93,12 +101,30 @@ export function liveMarketSeries(
   )
 }
 
+/**
+ * The intraday week Rust built from price bars, then any points the stream added after it, so
+ * history arriving a moment after the first frame never drops the ticks received meanwhile.
+ */
+export function withMarketHistory(
+  current: Record<string, LivelinePoint[]>,
+  history: MarketHistory,
+) {
+  const next = { ...current }
+  for (const [id, points] of Object.entries(history)) {
+    const last = points.at(-1)?.time ?? -Infinity
+    const later = (current[id] ?? []).filter((point) => point.time > last)
+    next[id] = downsampleMarketSeries([...points, ...later])
+  }
+  return next
+}
+
 // One app-level owner. Each restart gets scoped cancellation.
 export function subscribeLiveMarket(
   symbols: string[],
   interval: number,
   onUpdate: (market: MarketSnapshots) => void,
   onError: (message: string) => void,
+  onHistory: (series: MarketHistory, changes?: ChartChanges) => void = () => undefined,
 ) {
   let disposed = false
   let active = ''
@@ -134,6 +160,10 @@ export function subscribeLiveMarket(
         if (Number.isFinite(delay)) schedule(delay)
       },
       failed,
+      (series, changes) => {
+        if (disposed || active !== id) return
+        onHistory(series, changes)
+      },
     )
       .then(() => {
         if (disposed || active !== id) void stopMarketStream(id).catch(() => undefined)

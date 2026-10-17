@@ -55,6 +55,120 @@ pub struct BenefitPeriod {
     /// then the charges the forecast expects, each capped by what the period has left.
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub planned: Vec<PlannedCredit>,
+    /// The planned credits summed.
+    pub planned_total: f64,
+}
+
+/// A year of benefit periods summed. A benefit whose use doesn't reach the card adds nothing.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BenefitYear {
+    pub year: i32,
+    pub captured: f64,
+    /// Credits still to come from waiting purchases and expected charges.
+    pub planned: f64,
+    pub missed: AmountRange,
+    pub left: AmountRange,
+}
+
+/// `year`'s periods of `benefits` summed in cents.
+pub fn year_totals<'a>(
+    benefits: impl IntoIterator<Item = &'a BenefitHistory>,
+    year: i32,
+) -> BenefitYear {
+    let periods = benefits
+        .into_iter()
+        .filter(|benefit| !benefit.external)
+        .flat_map(|benefit| benefit.periods_in(year))
+        .collect::<Vec<_>>();
+    let range = |pick: fn(&BenefitPeriod) -> Option<AmountRange>| {
+        let ranges = periods.iter().filter_map(|period| pick(period));
+        AmountRange {
+            low: sum_cents(ranges.clone().map(|range| range.low)),
+            high: sum_cents(ranges.map(|range| range.high)),
+        }
+    };
+    BenefitYear {
+        year,
+        captured: sum_cents(periods.iter().map(|period| period.credited)),
+        planned: sum_cents(periods.iter().map(|period| period.planned_total)),
+        missed: range(|period| period.unused),
+        left: range(|period| period.left),
+    }
+}
+
+/// A year of the card's shown benefits, and the part of what it captured that landed on
+/// purchases made for someone else.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CardBenefitYear {
+    #[serde(flatten)]
+    pub totals: BenefitYear,
+    pub for_others: f64,
+}
+
+/// Each year from the first period through this one, over the benefits shown that year: not
+/// hidden, with periods in it, and retired ones only while they have credits. `others` holds the
+/// transactions made for someone else.
+pub fn card_years(
+    history: &[BenefitHistory],
+    activity: &[BenefitActivity],
+    others: &HashSet<&str>,
+    hidden: &[String],
+    today: NaiveDate,
+) -> Vec<CardBenefitYear> {
+    let years = history
+        .iter()
+        .flat_map(|benefit| benefit.periods.iter().map(|period| period.start.year()))
+        .chain([today.year()])
+        .collect::<std::collections::BTreeSet<_>>();
+    years
+        .into_iter()
+        .map(|year| {
+            let rows = history
+                .iter()
+                .filter(|benefit| {
+                    !hidden.contains(&benefit.id)
+                        && benefit.periods_in(year).next().is_some()
+                        && (!benefit.retired
+                            || benefit
+                                .periods_in(year)
+                                .any(|period| period.credited != 0.0))
+                })
+                .collect::<Vec<_>>();
+            let for_others = sum_cents(
+                rows.iter()
+                    .filter(|benefit| !benefit.external)
+                    .flat_map(|benefit| benefit.periods_in(year))
+                    .flat_map(|period| &period.activity_ids)
+                    .filter(|id| others.contains(id.as_str()))
+                    .filter_map(|id| activity.iter().find(|item| &item.id == id))
+                    .filter(|item| {
+                        !item.pending
+                            && matches!(item.kind, ActivityKind::Credit | ActivityKind::Reversal)
+                    })
+                    .map(|item| item.amount),
+            );
+            CardBenefitYear {
+                totals: year_totals(rows, year),
+                for_others,
+            }
+        })
+        .collect()
+}
+
+/// Dollar amounts summed in whole cents.
+pub fn sum_cents(amounts: impl Iterator<Item = f64>) -> f64 {
+    from_minor(amounts.map(minor_units).sum())
+}
+
+impl BenefitHistory {
+    /// Its periods that start in `year`.
+    pub fn periods_in(&self, year: i32) -> impl Iterator<Item = &BenefitPeriod> {
+        self.periods
+            .iter()
+            .filter(move |period| period.start.year() == year)
+    }
 }
 
 /// A charge the forecast expects on the card, already tied to the benefit its series earns.
@@ -100,6 +214,8 @@ pub struct BenefitHistory {
     /// The benefit ended before today; its periods remain as history.
     pub retired: bool,
     pub periods: Vec<BenefitPeriod>,
+    /// Each year with periods, oldest first.
+    pub years: Vec<BenefitYear>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq)]
@@ -271,10 +387,12 @@ impl RuleSet {
                     let mut record =
                         self.period_record(rule, &period, matched, history_start, today, lag.days);
                     record.planned = planned(rule, &period, matched, today, charges);
+                    record.planned_total =
+                        sum_cents(record.planned.iter().map(|credit| credit.amount));
                     periods.push(record);
                     cursor = period.end + Duration::days(1);
                 }
-                BenefitHistory {
+                let mut history = BenefitHistory {
                     id: definition.id.clone(),
                     name: definition.name.clone(),
                     recurring: definition.recurring,
@@ -283,7 +401,18 @@ impl RuleSet {
                         .effective_until
                         .is_some_and(|until| until < today),
                     periods,
-                }
+                    years: Vec::new(),
+                };
+                let years = history
+                    .periods
+                    .iter()
+                    .map(|period| period.start.year())
+                    .collect::<std::collections::BTreeSet<_>>();
+                history.years = years
+                    .into_iter()
+                    .map(|year| year_totals([&history], year))
+                    .collect();
+                history
             })
             .collect()
     }
@@ -365,6 +494,7 @@ impl RuleSet {
                 .map(|item| item.id.clone())
                 .collect(),
             planned: Vec::new(),
+            planned_total: 0.0,
         }
     }
 

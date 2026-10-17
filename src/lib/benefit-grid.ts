@@ -1,11 +1,8 @@
 import type { AnalyticsSearch } from './analytics'
 import { formatCurrency, formatCurrencyRange, formatShortDay } from './format'
-import type { BenefitActivity, BenefitHistory, BenefitPeriod, CardBenefits } from './schema'
+import type { BenefitHistory, BenefitPeriod, CardBenefits } from './schema'
 
 type AmountRange = { low: number; high: number }
-
-const cents = (value: number) => Math.round(value * 100)
-const sum = (values: number[]) => values.reduce((total, value) => total + cents(value), 0) / 100
 
 /**
  * The calendar year Benefits shows: a custom window that spans exactly one year, otherwise this
@@ -80,59 +77,20 @@ export function benefitRows(
   )
 }
 
-/** Credits a period should still receive, summed in cents. */
-export const plannedAmount = (period: BenefitPeriod) =>
-  sum((period.planned ?? []).map(({ amount }) => amount))
+const nothing: AmountRange = { low: 0, high: 0 }
+const emptyYear = { captured: 0, planned: 0, missed: nothing, left: nothing }
 
-/** Totals over the year's periods, summed in cents. Uber Cash, estimated from charges, adds nothing. */
-export function benefitYearTotals(benefits: BenefitHistory[], year: number) {
-  const periods = benefits
-    .filter(({ external }) => !external)
-    .flatMap((benefit) => periodsIn(benefit, year))
-  const missed = periods.flatMap(({ unused }) => (unused ? [unused] : []))
-  const open = periods.flatMap(({ left }) => (left ? [left] : []))
-  return {
-    captured: sum(periods.map(({ credited }) => credited)),
-    /** Credits still to come from waiting purchases and expected charges. */
-    planned: sum(periods.map(plannedAmount)),
-    missed: {
-      low: sum(missed.map(({ low }) => low)),
-      high: sum(missed.map(({ high }) => high)),
-    } satisfies AmountRange,
-    left: {
-      low: sum(open.map(({ low }) => low)),
-      high: sum(open.map(({ high }) => high)),
-    } satisfies AmountRange,
-  }
-}
+/** One benefit's year as Rust summed it; Uber Cash, estimated from charges, adds nothing. */
+export const benefitYearTotals = (benefit: BenefitHistory | undefined, year: number) =>
+  benefit?.years.find((entry) => entry.year === year) ?? emptyYear
 
 /**
- * The share of the year's captured credits that landed on purchases made for someone else: the
- * allowance was used, but the saving went to them. Summed from the same periods as
- * `benefitYearTotals`, so what is yours and theirs add up to what was captured.
+ * The card's year over the benefits shown, as Rust summed it, with the part of what it captured
+ * that landed on purchases made for someone else: the allowance was used, but the saving went
+ * to them.
  */
-export function capturedForOthers(
-  benefits: BenefitHistory[],
-  year: number,
-  activity: ReadonlyMap<string, BenefitActivity>,
-  others: ReadonlySet<string>,
-) {
-  return sum(
-    benefits
-      .filter(({ external }) => !external)
-      .flatMap((benefit) => periodsIn(benefit, year))
-      .flatMap(({ activityIds }) => activityIds)
-      .flatMap((id) => {
-        const item = activity.get(id)
-        return item &&
-          others.has(id) &&
-          !item.pending &&
-          (item.kind === 'credit' || item.kind === 'reversal')
-          ? [item.amount]
-          : []
-      }),
-  )
-}
+export const cardYearTotals = (card: Pick<CardBenefits, 'years'> | undefined, year: number) =>
+  card?.years.find((entry) => entry.year === year) ?? { ...emptyYear, forOthers: 0 }
 
 export const periodStateText: Record<BenefitPeriod['state'], string> = {
   full: 'Used in full',
@@ -148,7 +106,7 @@ export const periodStateText: Record<BenefitPeriod['state'], string> = {
 }
 
 const planned = (period: BenefitPeriod) => {
-  const amount = plannedAmount(period)
+  const amount = period.plannedTotal
   return amount > 0 ? ` · ${formatCurrency(amount)} estimated` : ''
 }
 

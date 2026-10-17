@@ -80,6 +80,7 @@ impl RuleSet {
         Some(FeeRecovery {
             annual_fee,
             recovered: from_minor(recovered.max(0)),
+            gap: from_minor((recovered.max(0) - minor_units(annual_fee)).abs()),
             for_others: from_minor(for_others.max(0)),
             since,
             basis,

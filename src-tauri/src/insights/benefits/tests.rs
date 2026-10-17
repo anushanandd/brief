@@ -590,6 +590,7 @@ fn credits_count_against_the_fee_from_its_posting_or_from_january_without_one() 
         FeeRecovery {
             annual_fee: 895.0,
             recovered: 63.99,
+            gap: 831.01,
             for_others: 0.0,
             since: day("2026-03-01"),
             basis: "fee-charge",
@@ -622,6 +623,7 @@ fn credits_count_against_the_fee_from_its_posting_or_from_january_without_one() 
         FeeRecovery {
             annual_fee: 895.0,
             recovered: 83.99,
+            gap: 811.01,
             for_others: 0.0,
             since: day("2026-02-10"),
             basis: "card-history",
@@ -647,7 +649,7 @@ fn the_fee_year_expects_the_credits_its_periods_plan_before_it_ends() {
     let fee = txn("fee", "2026-03-01", "Annual Membership Fee", -895.0);
     let mut theirs = txn("theirs", "2026-09-10", "Resy Example Bistro", -40.0);
     theirs.other = true;
-    let transactions = vec![fee, theirs];
+    let transactions = [fee, theirs];
     let refs = transactions.iter().collect::<Vec<_>>();
     let credit =
         |title: &str, date: &str, amount: f64, transaction_id: Option<&str>| PlannedCredit {
@@ -671,6 +673,7 @@ fn the_fee_year_expects_the_credits_its_periods_plan_before_it_ends() {
         unused: None,
         left: None,
         activity_ids: Vec::new(),
+        planned_total: 0.0,
         planned,
     };
     let history = vec![BenefitHistory {
@@ -688,6 +691,7 @@ fn the_fee_year_expects_the_credits_its_periods_plan_before_it_ends() {
             // After the fee year ends, so it belongs to the next one.
             period(vec![credit("Example streaming", "2027-03-05", 25.0, None)]),
         ],
+        years: Vec::new(),
     }];
     let recovery = PLATINUM
         .fee_recovery(&refs, &[], &history, day("2026-09-16"))
@@ -971,4 +975,134 @@ fn planned_credits_fill_open_and_future_periods_from_waiting_purchases_then_subs
     assert_eq!(month("2026-11-01")[0].amount, 13.99);
     // A closed month plans nothing.
     assert!(month("2026-09-01").is_empty());
+}
+
+#[test]
+fn each_year_sums_the_benefits_shown_and_what_went_to_others() {
+    use super::history::{card_years, BenefitYear, CardBenefitYear};
+    let period = |start: &str, credited: f64, ids: &[&str]| BenefitPeriod {
+        start: day(start),
+        end: day(start),
+        label: start.into(),
+        cap: 100.0,
+        credited,
+        state: PeriodState::Partial,
+        unused: Some(AmountRange {
+            low: 10.0,
+            high: 20.0,
+        }),
+        left: None,
+        activity_ids: ids.iter().map(|id| (*id).into()).collect(),
+        planned: Vec::new(),
+        planned_total: 2.5,
+    };
+    let benefit =
+        |id: &str, external: bool, retired: bool, periods: Vec<BenefitPeriod>| BenefitHistory {
+            id: id.into(),
+            name: id.into(),
+            recurring: false,
+            external,
+            retired,
+            periods,
+            years: Vec::new(),
+        };
+    let history = [
+        benefit(
+            "resy",
+            false,
+            false,
+            vec![period(
+                "2026-07-01",
+                50.0,
+                &["theirs", "mine", "undone", "waiting"],
+            )],
+        ),
+        // Estimated from charges, so it adds nothing.
+        benefit("uber", true, false, vec![period("2026-07-01", 15.0, &[])]),
+        benefit(
+            "hidden",
+            false,
+            false,
+            vec![period("2026-07-01", 12.95, &[])],
+        ),
+        // Retired: shown in a year with credits, not in one without.
+        benefit(
+            "retired",
+            false,
+            true,
+            vec![
+                period("2025-07-01", 30.0, &[]),
+                period("2026-01-01", 0.0, &[]),
+            ],
+        ),
+    ];
+    let credit = |id: &str, amount: f64, pending: bool| BenefitActivity {
+        id: id.into(),
+        merchant: "Resy".into(),
+        description: None,
+        amount,
+        pending,
+        account_id: None,
+        date: day("2026-07-02"),
+        posted: day("2026-07-02"),
+        dated: false,
+        benefit_id: "resy".into(),
+        benefit_name: "Resy".into(),
+        kind: ActivityKind::Credit,
+        paired_id: None,
+        credit_window: None,
+        alternate_credit_window: None,
+        credit: None,
+    };
+    let activity = [
+        credit("theirs", 30.0, false),
+        credit("mine", 20.0, false),
+        credit("waiting", 5.0, true),
+        BenefitActivity {
+            kind: ActivityKind::Reversal,
+            ..credit("undone", -10.0, false)
+        },
+    ];
+    let others = ["theirs", "undone", "waiting"].into_iter().collect();
+    let years = card_years(
+        &history,
+        &activity,
+        &others,
+        &["hidden".to_string()],
+        day("2026-09-16"),
+    );
+    let missed = AmountRange {
+        low: 10.0,
+        high: 20.0,
+    };
+    let none = AmountRange {
+        low: 0.0,
+        high: 0.0,
+    };
+    assert_eq!(
+        years,
+        [
+            CardBenefitYear {
+                totals: BenefitYear {
+                    year: 2025,
+                    captured: 30.0,
+                    planned: 2.5,
+                    missed,
+                    left: none,
+                },
+                for_others: 0.0,
+            },
+            CardBenefitYear {
+                totals: BenefitYear {
+                    year: 2026,
+                    captured: 50.0,
+                    planned: 2.5,
+                    missed,
+                    left: none,
+                },
+                // Net of the reversal; a pending credit isn't counted yet.
+                for_others: 20.0,
+            },
+        ]
+    );
 }

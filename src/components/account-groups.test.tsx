@@ -41,7 +41,7 @@ async function render(view: ReactNode) {
 it('expands a category total to its accounts', async () => {
   const { container, unmount } = await render(
     <AccountGroups
-      groups={accountGroups(accounts, changes)}
+      groups={accountGroups(accounts, [{ type: 'cash', value: 30 }], [{ type: 'cash', change: 1 }])}
       changes={changes}
       accountNames={accountNames}
     />,
@@ -68,7 +68,10 @@ it('expands a category total to its accounts', async () => {
 
 it('shows a category of one account as that account, with nothing to expand', async () => {
   const { container, unmount } = await render(
-    <AccountGroups groups={accountGroups(accounts.slice(0, 1))} accountNames={accountNames} />,
+    <AccountGroups
+      groups={accountGroups(accounts.slice(0, 1), [{ type: 'cash', value: 20 }])}
+      accountNames={accountNames}
+    />,
   )
   expect(container.querySelector('button[aria-expanded]')).toBeNull()
   const rows = [...container.querySelectorAll('a.account-row')]

@@ -3,7 +3,6 @@ import { activityBenefitNote, type ActivityBenefitNote } from './benefit-copy'
 import { daysBetween } from './dates'
 import { asciiMinus, displayCase, formatCurrency } from './format'
 import { stockLogoUrl, transactionLogoUrl } from './logos'
-import { cents } from './money'
 import { placeLabel } from './places'
 import type { FinanceSnapshot, Transaction } from './schema'
 import { transactionDateKey } from './spending'
@@ -443,16 +442,4 @@ export function groupActivitiesByDate(activities: ActivityItem[], referenceIso: 
     else groups.push({ label, activities: [activity] })
   }
   return groups
-}
-
-/** Running totals for a filtered list, in whole cents. Transfers and trades are neither. */
-export function activityTotals(activities: ActivityItem[]) {
-  let spent = 0
-  let income = 0
-  for (const { kind, amount } of activities) {
-    const value = cents(Math.abs(amount))
-    if (kind === 'spending' && amount < 0) spent += value
-    else if (kind === 'income' && amount > 0) income += value
-  }
-  return { spent: spent / 100, income: income / 100, net: (income - spent) / 100 }
 }

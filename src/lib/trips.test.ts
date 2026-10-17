@@ -22,6 +22,8 @@ const trip = (id: string, start: string, end: string, extra: Partial<Trip> = {})
   abroad: false,
   total: -100,
   categories: [],
+  rest: 0,
+  restShare: 0,
   transactionIds: [],
   ongoing: false,
   flew: false,
@@ -51,13 +53,22 @@ describe('trip days', () => {
 })
 
 describe('trip year', () => {
-  it('sums days and cents, and names the longest trip', () => {
-    const totals = tripYearTotals([
-      trip('a', '2026-03-01', '2026-03-04', { total: -10.1, flew: true, abroad: true }),
-      trip('b', '2026-05-01', '2026-05-02', { total: -20.2 }),
-    ])
-    expect(totals).toMatchObject({ count: 2, days: 6, spent: 30.3, abroad: 1, flown: 1 })
-    expect(totals.longest?.id).toBe('a')
+  it("reads Rust's year totals and its longest trip, nothing for a year without trips", () => {
+    const longest = trip('a', '2026-03-01', '2026-03-04')
+    const trips = {
+      trips: [trip('b', '2026-05-01', '2026-05-02'), longest],
+      years: [{ year: 2026, count: 2, days: 6, spent: 30.3, abroad: 1, flown: 1, longest: 'a' }],
+    }
+    expect(tripYearTotals(trips, 2026)).toEqual({
+      count: 2,
+      days: 6,
+      spent: 30.3,
+      abroad: 1,
+      flown: 1,
+      longest,
+    })
+    expect(tripYearTotals(trips, 2025)).toMatchObject({ count: 0, spent: 0, longest: undefined })
+    expect(tripYearTotals(undefined, 2026).count).toBe(0)
   })
 
   it('colors trips in date order so neighbours differ', () => {

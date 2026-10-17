@@ -22,6 +22,7 @@ type Column = 'holding' | 'today' | 'period' | 'value' | 'weight' | 'gain' | 'ne
 type Sort = { column: Column; direction: 'asc' | 'desc' }
 
 const periodLabels: Record<ChartPeriod, string> = {
+  day: 'Day',
   week: 'Week',
   month: 'Month',
   quarter: '3 months',

@@ -18,6 +18,7 @@ export function useSpendingActions({
   focus,
   period,
   periodOffset,
+  hasEarlier,
   choosePeriod,
   setPeriodOffset,
   clearFocus,
@@ -33,6 +34,8 @@ export function useSpendingActions({
   focus: string | null
   period: SpendingPeriod
   periodOffset: number
+  /** The saved history reaches a period before the one shown. */
+  hasEarlier: boolean
   /** Shows a period from its latest instance. */
   choosePeriod: (period: SpendingPeriod) => void
   setPeriodOffset: (update: (current: number) => number) => void
@@ -136,8 +139,13 @@ export function useSpendingActions({
           { sequence: ['ArrowLeft'], label: '←' },
           { sequence: ['['], label: '[' },
         ],
-        disabled: period === 0,
-        disabledReason: period === 0 ? 'All time has no earlier period' : undefined,
+        disabled: period === 0 || !hasEarlier,
+        disabledReason:
+          period === 0
+            ? 'All time has no earlier period'
+            : hasEarlier
+              ? undefined
+              : 'No earlier period in the saved history',
         repeatable: true,
         run: () => setPeriodOffset((current) => current - 1),
       },
@@ -163,6 +171,7 @@ export function useSpendingActions({
       comparison,
       focus,
       hasOthers,
+      hasEarlier,
       hasStatements,
       owner,
       period,

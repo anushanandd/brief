@@ -1,16 +1,21 @@
 //! Spending's periods and the judgments made about them. Spending covers the saved card, every
 //! USD account with spending, or one of them, over a statement, a rolling week, or a calendar
-//! month, quarter, or year, counting your spending, someone else's, or both. The renderer sums each period's activity; this module decides what a
+//! month, quarter, or year, or all of it, counting your spending, someone else's, or both. This
+//! module sums each period and its categories beside the period before, and decides what a
 //! statement opened at, where the current period is heading, and what is usual by this point.
+//! The renderer only draws the period's activity.
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Datelike, Duration, NaiveDate};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 
 use super::calendar::{self, Zone};
 use super::statement::StatementCycle;
 use crate::finance_contract::{Account, Transaction};
-use crate::numeric::{js_round, minor_units, round2};
+use crate::numeric::{from_minor, js_round, minor_units, round2};
+
+mod detail;
+pub use detail::PeriodDetail;
 
 /// Earlier periods averaged for what is usual by this point.
 const TYPICAL_PERIODS: usize = 3;
@@ -18,8 +23,10 @@ const TYPICAL_PERIODS: usize = 3;
 const PROJECTION_DAYS: i64 = 7;
 /// What Spending covers when the user picks every account.
 pub const ALL_ACCOUNTS: &str = "all";
+/// The months an account's spending chart shows.
+const RECENT_MONTHS: i64 = 6;
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum PeriodKind {
     Statement,
@@ -27,6 +34,8 @@ pub enum PeriodKind {
     Month,
     Quarter,
     Year,
+    /// Everything from the first saved activity; it has no period before it.
+    All,
 }
 
 impl PeriodKind {
@@ -35,9 +44,37 @@ impl PeriodKind {
             Self::Month => Some(1),
             Self::Quarter => Some(3),
             Self::Year => Some(12),
-            Self::Statement | Self::Week => None,
+            Self::Statement | Self::Week | Self::All => None,
         }
     }
+}
+
+/// What a period spent, beside the period before to the same day.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct Spent {
+    pub total: f64,
+    /// None for all time, which has no period before it.
+    pub previous: Option<f64>,
+    pub change: Option<f64>,
+    /// None when nothing was spent the period before.
+    pub change_pct: Option<f64>,
+    /// The total over the period's days so far.
+    pub daily: f64,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct CategorySpent {
+    pub name: String,
+    #[serde(flatten)]
+    pub spent: Spent,
+    /// Its share of the period's spending, in percent.
+    pub share: f64,
+    /// Usual spending by this point (zero for a category new to the period) and how far above
+    /// it this period is; none without enough history.
+    pub typical: Option<f64>,
+    pub above_typical: Option<f64>,
 }
 
 /// Where a period's spending is heading at its pace so far.
@@ -54,6 +91,21 @@ pub struct Projection {
 pub struct SpendingPeriod {
     pub kind: PeriodKind,
     pub start: NaiveDate,
+    /// Today for the current period, otherwise its last day.
+    pub end: NaiveDate,
+    #[serde(flatten)]
+    pub spent: Spent,
+    /// Spending still pending.
+    pub pending: f64,
+    /// The largest purchase's transaction ID.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub largest: Option<String>,
+    /// Categories with spending, largest first; a split part counts under its own category.
+    pub categories: Vec<CategorySpent>,
+    /// The statement balance at the period's end: the opening plus purchases, less credits and
+    /// payments.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub balance: Option<f64>,
     /// Usual spending by this point in the period, by category: the average of up to three
     /// earlier periods cut at the same day, when the saved history covers at least two.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -67,8 +119,19 @@ pub struct SpendingPeriod {
     pub opening: Option<f64>,
 }
 
+/// A request for one period in full: whose spending, over which scope, which kind of period,
+/// and how many periods back.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PeriodRequest {
+    pub scope: String,
+    pub owner: Owner,
+    pub kind: PeriodKind,
+    pub offset: usize,
+}
+
 /// Whose spending a scope counts: yours, purchases made for someone else, or both.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
 pub enum Owner {
     Me,
@@ -82,8 +145,19 @@ pub struct SpendingScope {
     /// An account ID, or `all`.
     pub scope: String,
     pub owner: Owner,
-    /// Newest first within each kind.
+    /// The current period of each kind.
     pub periods: Vec<SpendingPeriod>,
+    /// The last few calendar months, oldest first.
+    pub months: Vec<MonthSpent>,
+}
+
+/// One calendar month's spending, this month's to date.
+#[derive(Clone, Debug, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct MonthSpent {
+    /// `YYYY-MM`.
+    pub month: String,
+    pub total: f64,
 }
 
 /// One scope's activity, each transaction dated as the snapshot shows it.
@@ -185,6 +259,8 @@ impl Calendar<'_> {
                 i64::from(end.month0() / 3 * 3 + 1),
             )),
             PeriodKind::Year => Some(calendar::first_of_month(end.year(), 1)),
+            // All time starts at the first activity, which `periods` supplies.
+            PeriodKind::All => None,
         }
     }
 
@@ -329,21 +405,7 @@ fn opening(
     end: NaiveDate,
 ) -> f64 {
     if let Some(balance) = balance {
-        let net: i64 = activity
-            .dated
-            .iter()
-            .filter(|(date, _)| *date >= start && *date <= end)
-            .map(|(_, transaction)| {
-                if spending_for(transaction, activity.owner) {
-                    minor_units(transaction.amount.abs())
-                } else if transaction.amount > 0.0 {
-                    -minor_units(transaction.amount)
-                } else {
-                    0
-                }
-            })
-            .sum();
-        return (minor_units(balance) - net) as f64 / 100.0;
+        return from_minor(minor_units(balance) - net(activity, start, end));
     }
     statement
         .autopays
@@ -352,18 +414,254 @@ fn opening(
         .map_or(0.0, |autopay| autopay.amount)
 }
 
-/// Every scope Spending offers, with its periods back to the start of its history.
-pub fn scopes(
-    transactions: &[Transaction],
-    accounts: &[Account],
-    card: Option<&Account>,
-    statement: Option<&StatementCycle>,
-    updated_at: &str,
-    zone: &dyn Zone,
-) -> Vec<SpendingScope> {
-    let Some(today) = calendar::calendar_date(updated_at, zone) else {
-        return Vec::new();
-    };
+/// Purchases less credits and payments from `start` through `end`, in whole cents.
+fn net(activity: &Activity, start: NaiveDate, end: NaiveDate) -> i64 {
+    activity
+        .dated
+        .iter()
+        .filter(|(date, _)| *date >= start && *date <= end)
+        .map(|(_, transaction)| {
+            if spending_for(transaction, activity.owner) {
+                minor_units(transaction.amount.abs())
+            } else if transaction.amount > 0.0 {
+                -minor_units(transaction.amount)
+            } else {
+                0
+            }
+        })
+        .sum()
+}
+
+/// A total in whole cents beside the one before it, averaged over `days`. The percent and the
+/// average are rounded to hundredths.
+fn spent(total: i64, previous: Option<i64>, days: i64) -> Spent {
+    Spent {
+        total: from_minor(total),
+        previous: previous.map(from_minor),
+        change: previous.map(|previous| from_minor(total - previous)),
+        change_pct: previous
+            .filter(|previous| *previous != 0)
+            .map(|previous| round2((total - previous) as f64 / previous as f64 * 100.0)),
+        daily: if days > 0 {
+            round2(from_minor(total) / days as f64)
+        } else {
+            0.0
+        },
+    }
+}
+
+/// A period's sums from `start` through `end`, beside `before`, the period before cut at the
+/// same day. Its judgments are left for the caller.
+fn summed(
+    activity: &Activity,
+    kind: PeriodKind,
+    start: NaiveDate,
+    end: NaiveDate,
+    before: Option<(NaiveDate, NaiveDate)>,
+) -> SpendingPeriod {
+    let days = (end - start).num_days() + 1;
+    let cents = |transaction: &&Transaction| minor_units(transaction.amount.abs());
+    let current: Vec<&Transaction> = activity.spending_in(start, end).collect();
+    let total = current.iter().map(cents).sum();
+    let previous = before.map(|(from, through)| {
+        activity
+            .spending_in(from, through)
+            .map(|transaction| cents(&transaction))
+            .sum()
+    });
+    let earlier = before.map_or_else(BTreeMap::new, |window| activity.by_category(&[window]));
+    let mut categories: Vec<CategorySpent> = activity
+        .by_category(&[(start, end)])
+        .into_iter()
+        .map(|(name, value)| CategorySpent {
+            spent: spent(
+                value,
+                before.map(|_| earlier.get(&name).copied().unwrap_or(0)),
+                days,
+            ),
+            share: if total == 0 {
+                0.0
+            } else {
+                round2(value as f64 / total as f64 * 100.0)
+            },
+            typical: None,
+            above_typical: None,
+            name,
+        })
+        .collect();
+    categories.sort_by(|left, right| {
+        right
+            .spent
+            .total
+            .total_cmp(&left.spent.total)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    SpendingPeriod {
+        kind,
+        start,
+        end,
+        spent: spent(total, previous, days),
+        pending: from_minor(
+            current
+                .iter()
+                .filter(|transaction| transaction.pending)
+                .map(cents)
+                .sum(),
+        ),
+        // The first of equally large purchases.
+        largest: current
+            .iter()
+            .min_by(|left, right| cents(right).cmp(&cents(left)))
+            .map(|transaction| transaction.id.clone()),
+        categories,
+        balance: None,
+        typical: None,
+        projected: None,
+        opening: None,
+    }
+}
+
+/// One scope Spending offers, counted for one owner: its activity and, on the saved card, the
+/// card and its statement evidence.
+pub struct Scope<'a> {
+    pub id: &'a str,
+    pub owner: Owner,
+    activity: Activity<'a>,
+    card: Option<&'a Account>,
+    statement: Option<&'a StatementCycle>,
+    today: NaiveDate,
+}
+
+impl Scope<'_> {
+    /// The kinds of period it offers: statements once the card has closing dates.
+    fn kinds(&self) -> Vec<PeriodKind> {
+        self.statement
+            .filter(|statement| !statement.boundaries.is_empty())
+            .map(|_| PeriodKind::Statement)
+            .into_iter()
+            .chain([
+                PeriodKind::Week,
+                PeriodKind::Month,
+                PeriodKind::Quarter,
+                PeriodKind::Year,
+                PeriodKind::All,
+            ])
+            .collect()
+    }
+
+    /// A kind's calendar; statements without closing dates are calendar months.
+    fn calendar(&self, kind: PeriodKind) -> Calendar<'_> {
+        let boundaries = self
+            .statement
+            .map_or(&[][..], |statement| &statement.boundaries);
+        let kind = if kind == PeriodKind::Statement && boundaries.is_empty() {
+            PeriodKind::Month
+        } else {
+            kind
+        };
+        Calendar { kind, boundaries }
+    }
+
+    /// The first day all time counts from: the first activity, which for someone else's
+    /// spending is the first purchase that is theirs.
+    fn first(&self) -> NaiveDate {
+        self.activity
+            .dated
+            .iter()
+            .filter(|(date, transaction)| {
+                *date <= self.today && (self.activity.owner != Owner::Other || transaction.other)
+            })
+            .map(|(date, _)| *date)
+            .min()
+            .unwrap_or(self.today)
+    }
+
+    /// The period `offset` periods before the current one of `kind`, summed and judged, with
+    /// whether the saved history reaches a period before it. All time has only one.
+    pub fn period(&self, kind: PeriodKind, offset: usize) -> Option<(SpendingPeriod, bool)> {
+        let activity = &self.activity;
+        if kind == PeriodKind::All {
+            return (offset == 0).then(|| {
+                let period = summed(activity, PeriodKind::All, self.first(), self.today, None);
+                (period, false)
+            });
+        }
+        let calendar = self.calendar(kind);
+        let ends = calendar.ends(self.today, activity.first.unwrap_or(self.today));
+        let end = *ends.get(offset)?;
+        let start = calendar.start(end)?;
+        let current = offset == 0;
+        let from = calendar.previous_start(start);
+        let through =
+            (from + Duration::days((end - start).num_days())).min(start - Duration::days(1));
+        // A statement balance is never only someone else's; today's balance anchors the
+        // current cycle.
+        let balance = self
+            .card
+            .filter(|card| card.r#type == "credit" && current)
+            .and_then(|card| card.value)
+            .map(f64::abs);
+        let opening = self
+            .statement
+            .filter(|_| calendar.kind == PeriodKind::Statement && activity.owner != Owner::Other)
+            .map(|statement| opening(activity, statement, balance, start, end));
+        let typical = typical(&calendar, activity, start, end);
+        let mut sums = summed(activity, calendar.kind, start, end, Some((from, through)));
+        if let Some(typical) = &typical {
+            for category in &mut sums.categories {
+                let usual = typical.get(&category.name).copied().unwrap_or(0.0);
+                category.typical = Some(usual);
+                category.above_typical = Some(from_minor(
+                    minor_units(category.spent.total) - minor_units(usual),
+                ));
+            }
+        }
+        let period = SpendingPeriod {
+            typical,
+            projected: current
+                .then(|| projected(&calendar, activity, start, end))
+                .flatten(),
+            balance: opening
+                .map(|opening| from_minor(minor_units(opening) + net(activity, start, end))),
+            opening,
+            ..sums
+        };
+        let earlier = ends
+            .get(offset + 1)
+            .is_some_and(|end| calendar.start(*end).is_some());
+        Some((period, earlier))
+    }
+
+    /// Spending in each of the last `count` calendar months, oldest first, this one to date.
+    fn months(&self, count: i64) -> Vec<MonthSpent> {
+        (0..count)
+            .rev()
+            .map(|back| {
+                let start = calendar::add_months_first(self.today, -back);
+                let end =
+                    (calendar::add_months_first(start, 1) - Duration::days(1)).min(self.today);
+                MonthSpent {
+                    month: start.format("%Y-%m").to_string(),
+                    total: from_minor(
+                        self.activity
+                            .spending_in(start, end)
+                            .map(|transaction| minor_units(transaction.amount.abs()))
+                            .sum(),
+                    ),
+                }
+            })
+            .collect()
+    }
+}
+
+/// Every scope Spending offers, for each owner it can count.
+pub fn scope_list<'a>(
+    transactions: &'a [Transaction],
+    accounts: &'a [Account],
+    card: Option<&'a Account>,
+    statement: Option<&'a StatementCycle>,
+    today: NaiveDate,
+) -> Vec<Scope<'a>> {
     let spenders: BTreeSet<&str> = transactions
         .iter()
         .filter(|transaction| spending(transaction))
@@ -400,71 +698,45 @@ pub fn scopes(
                 Some(id) if scope == ALL_ACCOUNTS => ids.contains(id),
                 id => id == Some(scope),
             };
-            let activity = Activity::new(transactions.iter().filter(in_scope).collect(), owner);
             let on_card = card.filter(|card| card.id == scope);
-            SpendingScope {
-                scope: scope.to_owned(),
+            Scope {
+                id: scope,
                 owner,
-                periods: periods(
-                    &activity,
-                    on_card,
-                    statement.filter(|_| on_card.is_some()),
-                    today,
-                ),
+                activity: Activity::new(transactions.iter().filter(in_scope).collect(), owner),
+                card: on_card,
+                statement: statement.filter(|_| on_card.is_some()),
+                today,
             }
         })
         .collect()
 }
 
-fn periods(
-    activity: &Activity,
+/// Every scope Spending offers with its current period of each kind and its recent months.
+/// Earlier periods are read one at a time through `Scope::period`.
+pub fn scopes(
+    transactions: &[Transaction],
+    accounts: &[Account],
     card: Option<&Account>,
     statement: Option<&StatementCycle>,
-    today: NaiveDate,
-) -> Vec<SpendingPeriod> {
-    let earliest = activity.first.unwrap_or(today);
-    let kinds = statement
-        .filter(|statement| !statement.boundaries.is_empty())
-        .map(|_| PeriodKind::Statement)
-        .into_iter()
-        .chain([
-            PeriodKind::Week,
-            PeriodKind::Month,
-            PeriodKind::Quarter,
-            PeriodKind::Year,
-        ]);
-    let balance = card
-        .filter(|card| card.r#type == "credit")
-        .and_then(|card| card.value)
-        .map(f64::abs);
-    let mut periods = Vec::new();
-    for kind in kinds {
-        let calendar = Calendar {
-            kind,
-            boundaries: statement.map_or(&[][..], |statement| &statement.boundaries),
-        };
-        for (index, end) in calendar.ends(today, earliest).into_iter().enumerate() {
-            let Some(start) = calendar.start(end) else {
-                continue;
-            };
-            let current = index == 0;
-            periods.push(SpendingPeriod {
-                kind,
-                start,
-                typical: typical(&calendar, activity, start, end),
-                projected: current
-                    .then(|| projected(&calendar, activity, start, end))
-                    .flatten(),
-                // A statement balance is never only someone else's.
-                opening: statement
-                    .filter(|_| kind == PeriodKind::Statement && activity.owner != Owner::Other)
-                    .map(|statement| {
-                        opening(activity, statement, balance.filter(|_| current), start, end)
-                    }),
-            });
-        }
-    }
-    periods
+    updated_at: &str,
+    zone: &dyn Zone,
+) -> Vec<SpendingScope> {
+    let Some(today) = calendar::calendar_date(updated_at, zone) else {
+        return Vec::new();
+    };
+    scope_list(transactions, accounts, card, statement, today)
+        .iter()
+        .map(|scope| SpendingScope {
+            scope: scope.id.to_owned(),
+            owner: scope.owner,
+            periods: scope
+                .kinds()
+                .into_iter()
+                .filter_map(|kind| scope.period(kind, 0).map(|(period, _)| period))
+                .collect(),
+            months: scope.months(RECENT_MONTHS),
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -580,17 +852,45 @@ mod tests {
         // Without a balance, the cycle opens at the autopay that paid the statement before it.
         let current = period(&unknown, "card", PeriodKind::Statement, "2026-08-24");
         assert_eq!(current.opening, Some(110.0));
+        // The autopay takes 110 off and the purchase adds 25.
+        assert_eq!((current.spent.total, current.balance), (25.0, Some(25.0)));
         // 25 spent in 22 days, carried through the 31-day cycle.
         assert_eq!(current.projected.as_ref().unwrap().total, 35.23);
-        let earlier = period(&unknown, "card", PeriodKind::Statement, "2026-07-24");
+        // The cycle before is read on demand.
+        let unknown_card = card(None);
+        let statement = statement();
+        let list = scope_list(
+            &transactions,
+            std::slice::from_ref(&unknown_card),
+            Some(&unknown_card),
+            Some(&statement),
+            day("2026-09-14"),
+        );
+        let card_scope = list
+            .iter()
+            .find(|scope| scope.id == "card" && scope.owner == Owner::Me)
+            .unwrap();
+        let (earlier, before) = card_scope.period(PeriodKind::Statement, 1).unwrap();
+        assert_eq!(earlier.start, day("2026-07-24"));
         assert_eq!(
             (earlier.opening, earlier.projected.as_ref()),
             (Some(100.0), None)
         );
+        assert_eq!(
+            (earlier.end, earlier.spent.total),
+            (day("2026-08-23"), 60.0)
+        );
+        // History reaches one more cycle, then none.
+        assert!(before);
+        assert!(card_scope
+            .period(PeriodKind::Statement, 2)
+            .is_some_and(|(_, more)| !more));
+        assert!(card_scope.period(PeriodKind::Statement, 3).is_none());
         // With today's balance, it opens at that balance less the cycle's activity.
         let known = scopes(Some(-42.0));
         let current = period(&known, "card", PeriodKind::Statement, "2026-08-24");
         assert_eq!(current.opening, Some(127.0));
+        assert_eq!(current.balance, Some(42.0));
         // Other kinds of period have no statement.
         let month = period(&known, "card", PeriodKind::Month, "2026-09-01");
         assert_eq!(month.opening, None);
@@ -629,6 +929,25 @@ mod tests {
                 ("Dining".to_string(), 20.0),
                 ("Shopping".to_string(), 0.33),
             ]))
+        );
+        // Each category in view against what is usual, zero for one new to the month.
+        let against = month
+            .categories
+            .iter()
+            .map(|category| {
+                (
+                    category.name.as_str(),
+                    category.typical,
+                    category.above_typical,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            against,
+            vec![
+                ("Dining", Some(20.0), Some(5.0)),
+                ("Travel", Some(0.0), Some(5.0))
+            ]
         );
         // A week and more in with days left, so the month is projected.
         assert_eq!(month.projected.as_ref().unwrap().total, 90.0);
@@ -699,5 +1018,350 @@ mod tests {
         };
         assert_eq!(opening(Owner::All), Some(0.0));
         assert_eq!(opening(Owner::Other), None);
+    }
+
+    #[test]
+    fn each_period_sums_its_spending_beside_the_period_before_at_the_same_day() {
+        let mut pending = transaction("pending", "2026-09-02", -25.0, "Dining");
+        pending.pending = true;
+        let transactions = [
+            transaction("current", "2026-09-01", -100.0, "Shopping"),
+            pending,
+            // A payment, either way, is not spending.
+            transaction("payment", "2026-09-03", 40.0, "Payment"),
+            transaction("transfer", "2026-09-01", -500.0, "Payment"),
+            transaction("previous", "2026-08-01", -50.0, "Shopping"),
+            // August past the third, where September has reached.
+            transaction("outside", "2026-08-20", -900.0, "Shopping"),
+        ];
+        let card = card(None);
+        let scopes = scopes(
+            &transactions,
+            std::slice::from_ref(&card),
+            None,
+            None,
+            "2026-09-03T12:00:00Z",
+            &NamedZone::Utc,
+        );
+        let month = period(&scopes, "card", PeriodKind::Month, "2026-09-01");
+        assert_eq!(
+            (month.end, &month.spent, month.pending),
+            (
+                day("2026-09-03"),
+                &Spent {
+                    total: 125.0,
+                    previous: Some(50.0),
+                    change: Some(75.0),
+                    change_pct: Some(150.0),
+                    daily: 41.67,
+                },
+                25.0
+            )
+        );
+        assert_eq!(month.largest.as_deref(), Some("current"));
+        let categories = month
+            .categories
+            .iter()
+            .map(|category| {
+                (
+                    category.name.as_str(),
+                    category.spent.total,
+                    category.spent.previous,
+                    category.share,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            categories,
+            vec![
+                ("Shopping", 100.0, Some(50.0), 80.0),
+                ("Dining", 25.0, Some(0.0), 20.0)
+            ]
+        );
+        // All time runs from the first activity and has nothing before it.
+        let all = period(&scopes, "card", PeriodKind::All, "2026-08-01");
+        assert_eq!(
+            (all.spent.total, all.spent.previous, all.spent.change_pct),
+            (1_075.0, None, None)
+        );
+    }
+
+    #[test]
+    fn a_month_after_february_compares_with_february_through_its_last_day() {
+        for year in [2024, 2025, 2026] {
+            let card = card(None);
+            let scopes = scopes(
+                &[
+                    transaction("feb", &format!("{year}-02-28"), -100.0, "Shopping"),
+                    transaction("march", &format!("{year}-03-01"), -50.0, "Shopping"),
+                ],
+                std::slice::from_ref(&card),
+                None,
+                None,
+                &format!("{year}-03-31T12:00:00Z"),
+                &NamedZone::Utc,
+            );
+            let march = period(&scopes, "card", PeriodKind::Month, &format!("{year}-03-01"));
+            assert_eq!(
+                (march.spent.total, march.spent.previous, march.spent.daily),
+                (50.0, Some(100.0), 1.61)
+            );
+        }
+    }
+
+    /// The card scope, counted for `owner`, as of `today`.
+    fn card_scope<'a>(
+        transactions: &'a [Transaction],
+        accounts: &'a [Account],
+        statement: Option<&'a StatementCycle>,
+        owner: Owner,
+        today: &str,
+    ) -> Scope<'a> {
+        scope_list(
+            transactions,
+            accounts,
+            accounts.first(),
+            statement,
+            day(today),
+        )
+        .into_iter()
+        .find(|scope| scope.id == "card" && scope.owner == owner)
+        .unwrap()
+    }
+
+    fn with(transaction: Transaction, fields: serde_json::Value) -> Transaction {
+        let mut value = serde_json::to_value(transaction).unwrap();
+        for (key, field) in fields.as_object().unwrap() {
+            value[key] = field.clone();
+        }
+        serde_json::from_value(value).unwrap()
+    }
+
+    #[test]
+    fn a_period_in_full_runs_its_spending_beside_the_whole_period_before() {
+        let transactions = [
+            transaction("current", "2026-09-01", -100.0, "Shopping"),
+            with(
+                transaction("pending", "2026-09-02", -25.0, "Dining"),
+                json!({ "pending": true }),
+            ),
+            transaction("payment", "2026-09-03", 40.0, "Payment"),
+            transaction("transfer", "2026-09-01", -500.0, "Payment"),
+            transaction("previous", "2026-08-01", -50.0, "Shopping"),
+            transaction("late-august", "2026-08-20", -900.0, "Shopping"),
+        ];
+        let accounts = [card(None)];
+        let scope = card_scope(&transactions, &accounts, None, Owner::Me, "2026-09-03");
+        let month = scope.detail(PeriodKind::Month, 0).unwrap();
+        // The pace counts spending only, pending included; the month before runs whole.
+        assert_eq!(month.view.pace.current, [100.0, 125.0, 125.0]);
+        assert_eq!(month.view.pace.previous.len(), 31);
+        assert_eq!(month.view.pace.previous.last(), Some(&950.0));
+        assert_eq!(month.view.pace.end, day("2026-09-30"));
+        assert_eq!(
+            month.view.pace.days[1],
+            detail::PaceDay {
+                index: 1,
+                date: day("2026-09-02"),
+                total: 25.0,
+                purchases: vec![detail::Purchase {
+                    id: "pending".into(),
+                    value: 25.0,
+                }],
+            }
+        );
+        // A month draws its pace, not bars; all time bars by month from its first day.
+        assert!(month.bars.is_empty());
+        let all = scope.detail(PeriodKind::All, 0).unwrap();
+        let bars = all
+            .bars
+            .iter()
+            .map(|bar| {
+                (
+                    bar.from,
+                    bar.to,
+                    bar.value,
+                    bar.categories
+                        .iter()
+                        .map(|category| category.name.as_str())
+                        .collect::<Vec<_>>(),
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            bars,
+            [
+                (
+                    day("2026-08-01"),
+                    day("2026-08-31"),
+                    950.0,
+                    vec!["Shopping"]
+                ),
+                (
+                    day("2026-09-01"),
+                    day("2026-09-03"),
+                    125.0,
+                    vec!["Dining", "Shopping"]
+                ),
+            ]
+        );
+        // Everything dated in the month is listed, newest first, and netted by merchant.
+        assert_eq!(
+            month.view.transaction_ids,
+            ["payment", "pending", "transfer", "current"]
+        );
+        assert_eq!(month.view.merchants[0].name, "transfer");
+        assert_eq!(month.view.merchants.last().unwrap().total, 40.0);
+        // August has nothing before it, so the history reaches no earlier month.
+        let august = scope.detail(PeriodKind::Month, 1).unwrap();
+        assert_eq!((august.period.spent.total, august.earlier), (950.0, false));
+        assert!(scope.detail(PeriodKind::Month, 2).is_none());
+    }
+
+    #[test]
+    fn all_time_bars_by_month_with_credits_set_against_spending() {
+        let credit = with(
+            transaction("credit", "2026-09-01", 10.0, "Credit"),
+            json!({ "classification": {
+                "mark": "refund", "kind": "reimbursement", "spending": false, "credit": true,
+                "zelle": false,
+            } }),
+        );
+        let transactions = [
+            transaction("spend", "2026-09-01", -30.0, "Shopping"),
+            credit,
+            transaction("july", "2026-07-15", -5.0, "Dining"),
+        ];
+        let accounts = [card(None)];
+        let scope = card_scope(&transactions, &accounts, None, Owner::Me, "2026-09-03");
+        let all = scope.detail(PeriodKind::All, 0).unwrap();
+        // July, an empty August, then September with the credit set against it.
+        assert_eq!(
+            all.bars
+                .iter()
+                .map(|bar| (bar.from, bar.value))
+                .collect::<Vec<_>>(),
+            [
+                (day("2026-07-15"), 5.0),
+                (day("2026-08-01"), 0.0),
+                (day("2026-09-01"), 20.0)
+            ]
+        );
+        assert_eq!(
+            all.bars[2]
+                .categories
+                .iter()
+                .map(|category| (category.name.as_str(), category.value))
+                .collect::<Vec<_>>(),
+            [("Credits", -10.0), ("Shopping", 30.0)]
+        );
+        // The credit is not spending.
+        assert_eq!(all.period.spent.total, 35.0);
+    }
+
+    #[test]
+    fn a_statement_paces_through_its_closing_date() {
+        let transactions = [
+            transaction("august-pay", "2026-08-07", 100.0, "Payment"),
+            transaction("august-spend", "2026-08-03", -60.0, "Shopping"),
+            transaction("september-pay", "2026-09-07", 110.0, "Payment"),
+            transaction("current-spend", "2026-09-12", -25.0, "Shopping"),
+        ];
+        let accounts = [card(None)];
+        let statement = statement();
+        let scope = card_scope(
+            &transactions,
+            &accounts,
+            Some(&statement),
+            Owner::Me,
+            "2026-09-14",
+        );
+        let cycle = scope.detail(PeriodKind::Statement, 0).unwrap();
+        assert_eq!(
+            (cycle.view.pace.start, cycle.view.pace.end),
+            (day("2026-08-24"), day("2026-09-23"))
+        );
+        assert_eq!(cycle.view.pace.current.len(), 22);
+        assert_eq!(cycle.view.pace.current.last(), Some(&25.0));
+        assert_eq!(cycle.view.pace.previous.len(), 31);
+        assert_eq!(cycle.view.pace.previous.last(), Some(&60.0));
+        assert_eq!(cycle.view.pace.projected, Some(35.23));
+        // Payments are not spending, so only the purchase marks the pace.
+        assert_eq!(
+            cycle
+                .view
+                .pace
+                .days
+                .iter()
+                .map(|day| (day.index, day.total))
+                .collect::<Vec<_>>(),
+            [(19, 25.0)]
+        );
+    }
+
+    #[test]
+    fn a_focus_narrows_to_one_category_and_owners_list_their_own() {
+        let split = with(
+            transaction("split", "2026-09-02", -100.0, "Groceries"),
+            json!({ "merchant": "Example Market", "splits": [
+                { "category": "Groceries", "amount": -70.0 },
+                { "category": "Gifts", "amount": -30.0 },
+            ] }),
+        );
+        let theirs = with(
+            transaction("theirs", "2026-09-02", -40.0, "Dining"),
+            json!({ "other": true, "classification": {
+                "mark": "initial", "kind": "owed", "spending": false, "othersSpending": true,
+                "zelle": false,
+            } }),
+        );
+        let transactions = [
+            split,
+            with(
+                transaction("whole", "2026-09-01", -20.0, "Groceries"),
+                json!({ "merchant": "Example Market" }),
+            ),
+            transaction("dinner", "2026-09-03", -15.0, "Dining"),
+            theirs,
+        ];
+        let accounts = [card(None)];
+        let mine = card_scope(&transactions, &accounts, None, Owner::Me, "2026-09-03");
+        let month = mine.detail(PeriodKind::Month, 0).unwrap();
+        let groceries = &month.focus["Groceries"];
+        // Only the grocery part of the split counts toward its pace and its share of the bars.
+        assert_eq!(groceries.pace.current, [20.0, 90.0, 90.0]);
+        let all = mine.detail(PeriodKind::All, 0).unwrap();
+        assert_eq!(
+            all.bars[0]
+                .categories
+                .iter()
+                .map(|category| (category.name.as_str(), category.value))
+                .collect::<Vec<_>>(),
+            [("Dining", 15.0), ("Gifts", 30.0), ("Groceries", 90.0)]
+        );
+        assert_eq!(groceries.transaction_ids, ["split", "whole"]);
+        // Every category with spending has its own view.
+        assert_eq!(
+            month.focus.keys().collect::<Vec<_>>(),
+            ["Dining", "Gifts", "Groceries"]
+        );
+        assert_eq!(
+            (
+                groceries.merchants.len(),
+                groceries.merchants[0].total,
+                groceries.merchants[0].key.as_str()
+            ),
+            (1, -120.0, "example market")
+        );
+        // Your list leaves their purchase out; theirs lists only it.
+        let all_mine = mine.detail(PeriodKind::Month, 0).unwrap();
+        assert!(!all_mine
+            .view
+            .transaction_ids
+            .contains(&"theirs".to_string()));
+        let other = card_scope(&transactions, &accounts, None, Owner::Other, "2026-09-03");
+        let theirs = other.detail(PeriodKind::Month, 0).unwrap();
+        assert_eq!(theirs.view.transaction_ids, ["theirs"]);
+        assert_eq!(theirs.period.spent.total, 40.0);
     }
 }

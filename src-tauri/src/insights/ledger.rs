@@ -442,6 +442,7 @@ mod tests {
             snapshot,
             insights,
             account_names: BTreeMap::from([("chase".into(), "Everyday".into())]),
+            spending_account_id: None,
         }
     }
 

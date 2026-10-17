@@ -140,60 +140,15 @@
   color: var(--accent);
 }
 
-/* Settings: one scrolling page. A sticky search filters rows; the rail tracks sections. */
-/* Settings dialog: opens over the current page, addressed by #settings/<section>. */
-.settings-dialog {
-  /* Wide enough for the account details table without scrolling sideways. */
-  width: min(1240px, calc(100vw - 96px));
-  max-width: none;
-  height: min(900px, calc(100dvh - 96px));
-  max-height: none;
-  margin: auto;
+/* Settings: a page in the main pane, addressed by #settings/<section>. The rail opens one
+   section; search shows matches from every section. The rail and the section scroll on their
+   own, so the page itself never does. */
+.settings-page {
+  width: 100%;
+  height: 100dvh;
   padding: 0;
-  /* Clip, not hidden: the dialog itself must never scroll, even programmatically. */
-  overflow: clip;
-  border: var(--hairline) solid var(--popup-border);
-  border-radius: var(--radius-modal);
-  outline: 0;
-  background: var(--popup-sheen), var(--popup-surface);
-  box-shadow: var(--shadow-modal);
-  color: var(--text-primary);
-  opacity: 1;
-  transform: none;
-  /* The display and top-layer transitions hold the frame while it settles back down. */
-  transition:
-    opacity var(--duration-modal) var(--ease-out),
-    transform var(--duration-modal-lift) var(--ease-lift),
-    display var(--duration-modal-lift) allow-discrete,
-    overlay var(--duration-modal-lift) allow-discrete;
 }
-.settings-dialog:not([open]) {
-  opacity: 0;
-  transform: var(--modal-enter-from);
-}
-.settings-dialog::backdrop {
-  background: var(--dialog-backdrop);
-  -webkit-backdrop-filter: var(--dialog-backdrop-filter);
-  backdrop-filter: var(--dialog-backdrop-filter);
-  opacity: 1;
-  transition:
-    opacity var(--duration-modal) var(--ease-out),
-    display var(--duration-modal-lift) allow-discrete,
-    overlay var(--duration-modal-lift) allow-discrete;
-}
-.settings-dialog:not([open])::backdrop {
-  opacity: 0;
-}
-@starting-style {
-  .settings-dialog[open] {
-    opacity: 0;
-    transform: var(--modal-enter-from);
-  }
-  .settings-dialog[open]::backdrop {
-    opacity: 0;
-  }
-}
-:root:has(.settings-dialog[open]) .main-content {
+.main-content:has(> .settings-page) {
   overflow: hidden;
 }
 .settings-panel {
@@ -206,7 +161,8 @@
 .settings-panel-nav {
   display: flex;
   min-height: 0;
-  padding: 20px 12px;
+  /* The top matches every page's, clear of the window's drag region. */
+  padding: 40px 12px 20px;
   flex-direction: column;
   gap: 8px;
   overflow-y: auto;
@@ -249,11 +205,11 @@
   background: var(--hover-wash);
   color: var(--text-primary);
 }
-.settings-rail-link[aria-current='location'] {
+.settings-rail-link[aria-current='page'] {
   background: var(--sidebar-accent);
   color: var(--text-primary);
 }
-.settings-rail-link[aria-current='location'] > svg {
+.settings-rail-link[aria-current='page'] > svg {
   color: var(--text-primary);
 }
 .settings-rail-link[aria-disabled='true'] {
@@ -275,7 +231,7 @@
   min-width: 0;
   min-height: 0;
   /* The right gutter keeps the close button clear of section actions. */
-  padding: 28px 64px 48px 32px;
+  padding: 40px 64px 48px 32px;
   align-content: start;
   gap: 32px;
   overflow-y: auto;
@@ -283,7 +239,7 @@
 }
 .settings-close {
   position: absolute;
-  top: 12px;
+  top: 32px;
   right: 12px;
   z-index: 2;
 }

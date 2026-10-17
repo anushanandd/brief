@@ -84,67 +84,58 @@ const accountSchema = z.object({
     .catch(undefined),
 })
 
-const holdingSchema = z
-  .object({
-    ticker: z.string(),
-    name: z.string(),
-    accountId: z.string(),
-    shares: z.number().nullable(),
-    price: z.number().nullable(),
-    value: z.number().nullable(),
-    costBasis: z.number().nullable().optional(),
-    unrealizedGain: z.number().nullable().optional(),
-    dailyChangePct: z.number().nullable(),
-    weeklyChangePct: z.number().nullable().default(null),
-    weeklyReferencePrice: z.number().positive().nullable().default(null),
-    weeklyReferenceDate: z.string().nullable().default(null),
-    totalChangePct: z.number().nullable(),
-    instrumentKind: z.string().optional(),
-    currency: z.string().nullable().optional(),
-    quoteEligible: z.boolean().optional(),
-    valuationNote: z.string().nullable().optional(),
-    marketAsOf: z.string().nullable().optional(),
-    color: z.string(),
-    instrumentSubtype: z.string().optional(),
-    sector: z.string().optional(),
-    industry: z.string().optional(),
-    vestedShares: z.number().optional(),
-    vestedValue: z.number().optional(),
-    identifiers: z
-      .object({
-        isin: z.string().optional(),
-        cusip: z.string().optional(),
-        figi: z.string().optional(),
-        exchange: z.string().optional(),
-      })
-      .optional(),
-    option: z
-      .object({
-        contractType: z.string().nullable(),
-        expirationDate: z.iso.date().nullable(),
-        strikePrice: z.number().nullable(),
-        underlyingTicker: z.string().nullable(),
-      })
-      .optional(),
-    fixedIncome: z
-      .object({
-        yieldPercent: z.number().nullable(),
-        yieldType: z.string().nullable(),
-        maturityDate: z.iso.date().nullable(),
-        issueDate: z.iso.date().nullable(),
-        faceValue: z.number().nullable(),
-      })
-      .optional(),
-  })
-  .transform((holding) => ({
-    ...holding,
-    costBasis:
-      holding.costBasis !== undefined
-        ? holding.costBasis
-        : holding.value !== null && holding.totalChangePct !== null && holding.totalChangePct > -100
-          ? holding.value / (1 + holding.totalChangePct / 100)
-          : null,
-  }))
+const holdingSchema = z.object({
+  ticker: z.string(),
+  name: z.string(),
+  accountId: z.string(),
+  shares: z.number().nullable(),
+  price: z.number().nullable(),
+  value: z.number().nullable(),
+  /** Unknown stays unknown; Rust never sends a basis it cannot find. */
+  costBasis: z.number().nullable().default(null),
+  unrealizedGain: z.number().nullable().optional(),
+  dailyChangePct: z.number().nullable(),
+  weeklyChangePct: z.number().nullable().default(null),
+  weeklyReferencePrice: z.number().positive().nullable().default(null),
+  weeklyReferenceDate: z.string().nullable().default(null),
+  totalChangePct: z.number().nullable(),
+  instrumentKind: z.string().optional(),
+  currency: z.string().nullable().optional(),
+  quoteEligible: z.boolean().optional(),
+  valuationNote: z.string().nullable().optional(),
+  marketAsOf: z.string().nullable().optional(),
+  color: z.string(),
+  instrumentSubtype: z.string().optional(),
+  sector: z.string().optional(),
+  industry: z.string().optional(),
+  vestedShares: z.number().optional(),
+  vestedValue: z.number().optional(),
+  identifiers: z
+    .object({
+      isin: z.string().optional(),
+      cusip: z.string().optional(),
+      figi: z.string().optional(),
+      exchange: z.string().optional(),
+    })
+    .optional(),
+  option: z
+    .object({
+      contractType: z.string().nullable(),
+      expirationDate: z.iso.date().nullable(),
+      strikePrice: z.number().nullable(),
+      underlyingTicker: z.string().nullable(),
+    })
+    .optional(),
+  fixedIncome: z
+    .object({
+      yieldPercent: z.number().nullable(),
+      yieldType: z.string().nullable(),
+      maturityDate: z.iso.date().nullable(),
+      issueDate: z.iso.date().nullable(),
+      faceValue: z.number().nullable(),
+    })
+    .optional(),
+})
 
 const allocationSchema = z.object({
   name: z.string(),

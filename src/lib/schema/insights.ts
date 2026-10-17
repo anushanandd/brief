@@ -103,6 +103,16 @@ const benefitPeriodSchema = z.object({
       }),
     )
     .optional(),
+  /** The planned credits summed. */
+  plannedTotal: z.number(),
+})
+/** A year of benefit periods summed; a benefit estimated from charges adds nothing. */
+const benefitYearSchema = z.object({
+  year: z.number().int(),
+  captured: z.number(),
+  planned: z.number(),
+  missed: amountRangeSchema,
+  left: amountRangeSchema,
 })
 const benefitHistorySchema = z.object({
   id: z.string(),
@@ -112,6 +122,8 @@ const benefitHistorySchema = z.object({
   external: z.boolean(),
   retired: z.boolean(),
   periods: z.array(benefitPeriodSchema),
+  /** Each year with periods, oldest first. */
+  years: z.array(benefitYearSchema),
 })
 const benefitReviewSchema = z.object({
   kind: z.enum(['unverified-credit', 'unassigned-credit', 'no-purchase', 'not-eligible']),
@@ -474,7 +486,62 @@ const allocationSliceSchema = z.object({
   value: z.number(),
   percent: z.number(),
 })
-const changeWindowSchema = z.enum(['week', 'month', 'quarter', 'year', 'all'])
+const changeWindowSchema = z.enum(['day', 'week', 'month', 'quarter', 'year', 'all'])
+const typeChangeSchema = z.object({ type: z.string(), change: z.number().nullable() })
+const activityTotalsSchema = z.object({
+  /** `YYYY-MM-DD` for a day, `YYYY-MM` for a month. */
+  period: z.string(),
+  spent: z.number(),
+  income: z.number(),
+  net: z.number(),
+})
+/** Each value chart's change over each window; see `insights::chart_change`. */
+export const chartChangesSchema = z.array(
+  z.object({
+    series: z.string(),
+    windows: z.partialRecord(
+      changeWindowSchema,
+      z.object({ change: z.number(), percent: z.number() }),
+    ),
+  }),
+)
+export type ChartChanges = z.infer<typeof chartChangesSchema>
+const groupValueSchema = z.object({ type: z.string(), value: z.number().nullable() })
+/** Account totals as pages read them, from saved or live values; see `insights::rollup`. */
+export const rollupSchema = z.object({
+  groups: z.array(groupValueSchema),
+  listed: z.array(groupValueSchema),
+  cards: groupValueSchema.optional(),
+  shares: z.array(z.object({ type: z.string(), value: z.number(), percent: z.number() })),
+  sheet: z.object({ assets: z.number(), liabilities: z.number(), complete: z.boolean() }),
+  unrealized: z.number().nullable(),
+  realizedYtd: z.number().nullable(),
+  retirement: z.number().nullable(),
+  netWorth: z.number(),
+  combined: z.number().nullable(),
+  holdings: z.array(
+    z.object({
+      ticker: z.string(),
+      shares: z.number().nullable(),
+      vestedShares: z.number().nullable(),
+      value: z.number().nullable(),
+      basis: z.number().nullable(),
+      totalChangePct: z.number().nullable(),
+      averageBasis: z.number().nullable(),
+      weight: z.number().nullable(),
+      dailyChangePct: z.number().nullable(),
+      weeklyChangePct: z.number().nullable(),
+      accounts: z.array(
+        z.object({
+          accountId: z.string(),
+          shares: z.number().nullable(),
+          value: z.number().nullable(),
+        }),
+      ),
+    }),
+  ),
+})
+export type Rollup = z.infer<typeof rollupSchema>
 const periodRecapSchema = z.object({
   window: changeWindowSchema,
   start: isoDate,
@@ -496,6 +563,8 @@ const cardBenefitsSchema = z.object({
     .object({
       annualFee: z.number(),
       recovered: z.number(),
+      /** How far the recovered credits are from the fee, short of it or past it. */
+      gap: z.number(),
       /** Credits on purchases made for someone else: used, but not your saving. */
       forOthers: z.number(),
       since: isoDate,
@@ -512,13 +581,40 @@ const cardBenefitsSchema = z.object({
   useFirst: z.array(z.string()),
   /** Each calendar benefit's periods from the history's first year through this one. */
   history: z.array(benefitHistorySchema),
+  /** Each year summed over the benefits shown, with what landed on purchases for others. */
+  years: z.array(benefitYearSchema.extend({ forOthers: z.number() })),
   /** Matches that need a decision, newest first. */
   review: z.array(benefitReviewSchema),
 })
 
+/** What was spent, beside the period before cut at the same day (none for all time). */
+const spentSchema = z.object({
+  total: z.number(),
+  previous: z.number().nullable(),
+  change: z.number().nullable(),
+  changePct: z.number().nullable(),
+  daily: z.number(),
+})
 const spendingPeriodSchema = z.object({
-  kind: z.enum(['statement', 'week', 'month', 'quarter', 'year']),
+  kind: z.enum(['statement', 'week', 'month', 'quarter', 'year', 'all']),
   start: isoDate,
+  end: isoDate,
+  ...spentSchema.shape,
+  pending: z.number(),
+  /** The largest purchase's transaction ID. */
+  largest: z.string().optional(),
+  /** Categories with spending, largest first; a split part counts under its own category. */
+  categories: z.array(
+    spentSchema.extend({
+      name: z.string(),
+      share: z.number(),
+      /** Usual by this point (zero for a new category) and how far above it; null without history. */
+      typical: z.number().nullable(),
+      aboveTypical: z.number().nullable(),
+    }),
+  ),
+  /** The statement balance at the period's end. */
+  balance: z.number().optional(),
   /** Usual spending by this point, by category, when history covers two earlier periods. */
   typical: z.record(z.string(), z.number()).optional(),
   /** The current period carried to its end at its pace so far. */
@@ -528,6 +624,62 @@ const spendingPeriodSchema = z.object({
   /** The saved card's statement balance when the period opened. */
   opening: z.number().optional(),
 })
+const purchaseSchema = z.object({ id: z.string(), value: z.number() })
+/** What a period lists and paces, for all of it or one category. */
+const spendingPeriodViewSchema = z.object({
+  /** Newest first. */
+  transactionIds: z.array(z.string()),
+  /** By merchant, refunds netting out, largest spending first. */
+  merchants: z.array(
+    z.object({
+      key: z.string(),
+      name: z.string(),
+      total: z.number(),
+      transactionIds: z.array(z.string()),
+    }),
+  ),
+  pace: z.object({
+    start: isoDate,
+    /** The period's last day, past today for the current period. */
+    end: isoDate,
+    current: z.array(z.number()),
+    previous: z.array(z.number()),
+    projected: z.number().nullable(),
+    days: z.array(
+      z.object({
+        index: z.number().int(),
+        date: isoDate,
+        total: z.number(),
+        purchases: z.array(purchaseSchema),
+      }),
+    ),
+  }),
+})
+/** One spending period in full, read on demand. */
+export const spendingPeriodDetailSchema = spendingPeriodSchema.extend({
+  /** The saved history reaches a period before this one. */
+  earlier: z.boolean(),
+  ...spendingPeriodViewSchema.shape,
+  /** All time's bars by month; credits count against them. */
+  bars: z
+    .array(
+      z.object({
+        from: isoDate,
+        to: isoDate,
+        value: z.number().default(0),
+        categories: z
+          .array(
+            z.object({ name: z.string(), value: z.number(), purchases: z.array(purchaseSchema) }),
+          )
+          .default([]),
+      }),
+    )
+    .default([]),
+  /** The view narrowed to each category with spending. */
+  focus: z.record(z.string(), spendingPeriodViewSchema),
+})
+export type SpendingPeriodDetail = z.infer<typeof spendingPeriodDetailSchema>
+export type SpendingPeriodView = z.infer<typeof spendingPeriodViewSchema>
 export const insightsSchema = z.object({
   today: isoDate,
   computedAt: z.string(),
@@ -680,7 +832,13 @@ export const insightsSchema = z.object({
           destination: z.string(),
           abroad: z.boolean(),
           total: z.number(),
-          categories: z.array(z.object({ name: z.string(), amount: z.number() })),
+          /** The top categories and each one's share of the trip, in percent. */
+          categories: z.array(
+            z.object({ name: z.string(), amount: z.number(), share: z.number() }),
+          ),
+          /** What the top categories leave, positive, and its share. */
+          rest: z.number(),
+          restShare: z.number(),
           transactionIds: z.array(z.string()),
           ongoing: z.boolean(),
           /** Most likely flown: abroad, far from home, or with an airline or airport charge. */
@@ -703,9 +861,21 @@ export const insightsSchema = z.object({
           companions: z.array(z.string()).optional(),
         }),
       ),
+      /** Each year with a trip, newest first. */
+      years: z.array(
+        z.object({
+          year: z.number().int(),
+          count: z.number().int(),
+          days: z.number().int(),
+          spent: z.number(),
+          abroad: z.number().int(),
+          flown: z.number().int(),
+          longest: z.string(),
+        }),
+      ),
       home: z.array(z.string()),
     })
-    .default({ trips: [], home: [] }),
+    .default({ trips: [], years: [], home: [] }),
   people: z
     .object({
       /** Most recent activity first; people with nothing tagged follow by name. */
@@ -722,6 +892,8 @@ export const insightsSchema = z.object({
           tripIds: z.array(z.string()),
         }),
       ),
+      /** Everything sent to people through payment apps, positive. */
+      sent: z.number(),
       /** Names Zelle descriptors carry that match nobody, and who saved they could be. */
       suggestions: z.array(
         z.object({
@@ -734,10 +906,11 @@ export const insightsSchema = z.object({
         }),
       ),
     })
-    .default({ people: [], suggestions: [] }),
+    .default({ people: [], sent: 0, suggestions: [] }),
   /**
-   * Spending's scopes (an account ID, or `all`), whose spending each counts, and Rust's judgments
-   * about their periods. Someone else's spending and everyone's appear once a purchase is theirs.
+   * Spending's scopes (an account ID, or `all`), whose spending each counts, their current period
+   * of each kind, and their recent months. Earlier periods are read one at a time; see
+   * `getSpendingPeriod`. Someone else's spending and everyone's appear once a purchase is theirs.
    */
   spending: z
     .array(
@@ -745,6 +918,8 @@ export const insightsSchema = z.object({
         scope: z.string(),
         owner: z.enum(spendingOwners),
         periods: z.array(spendingPeriodSchema),
+        /** The last six calendar months, oldest first, this one to date. */
+        months: z.array(z.object({ month: z.string(), total: z.number() })),
       }),
     )
     .default([]),
@@ -829,7 +1004,7 @@ export const insightsSchema = z.object({
       accountId: z.string(),
       windows: z.array(
         z.object({
-          window: z.enum(['week', 'month', 'quarter', 'year-to-date', 'year', 'all']),
+          window: z.enum(['day', 'week', 'month', 'quarter', 'year-to-date', 'year', 'all']),
           start: isoDate,
           end: isoDate,
           timeWeightedPct: z.number(),
@@ -848,6 +1023,9 @@ export const insightsSchema = z.object({
   allocation: z
     .object({
       total: z.number(),
+      /** The accounts' uninvested cash, and its share of the total. */
+      cash: z.number(),
+      cashPercent: z.number(),
       incomplete: z.boolean(),
       cashUnknown: z.boolean(),
       kinds: z.array(allocationSliceSchema),
@@ -880,8 +1058,36 @@ export const insightsSchema = z.object({
       accounts: z.array(z.object({ accountId: z.string(), change: z.number() })),
       incomplete: z.boolean(),
       transactions: z.number().int().nonnegative(),
+      /** Each type's change over every account, and over the counted ones; null when an
+       * account's history doesn't reach the period. The spending cards' change apart. */
+      groups: z.array(typeChangeSchema),
+      listed: z.array(typeChangeSchema),
+      cards: z.number().nullable().optional(),
     }),
   ),
+  /** What moved through each account, and the combined one, over each chart period. */
+  flows: z.array(
+    z.object({
+      accountId: z.string(),
+      window: changeWindowSchema,
+      start: isoDate.nullable(),
+      end: isoDate,
+      moneyIn: z.number(),
+      moneyOut: z.number(),
+      netFlow: z.number(),
+      interest: z.number(),
+      dividends: z.number(),
+      contributions: z.number().nullable(),
+      marketChange: z.number().nullable(),
+    }),
+  ),
+  /** Each day's and month's spending and income across every account, for the calendar. */
+  activityDays: z.array(activityTotalsSchema),
+  activityMonths: z.array(activityTotalsSchema),
+  /** Account totals from saved values; a live projection carries its own. */
+  rollup: rollupSchema,
+  /** Each value chart's change at its saved values; the market stream sends its own. */
+  chartChanges: chartChangesSchema,
   interest: z.array(
     z.object({
       accountId: z.string(),
@@ -1016,10 +1222,12 @@ export type BenefitReview = NonNullable<Insights['benefits']>['review'][number]
 export type AttentionItem = Insights['attention'][number]
 export type CardBenefits = z.infer<typeof cardBenefitsSchema>
 export type SpendingPeriodJudgment = z.infer<typeof spendingPeriodSchema>
+export type SpendingFigures = z.infer<typeof spentSchema>
 export type Allocation = NonNullable<Insights['allocation']>
 export type ChangeWindow = z.infer<typeof changeWindowSchema>
 export type CreditInsight = Insights['credit']
 export type Trip = Insights['trips']['trips'][number]
+export type Trips = Insights['trips']
 export type Taxes = Insights['taxes']
 export type TaxYear = z.infer<typeof taxYearSchema>
 export type Subscription = Insights['subscriptions']['items'][number]

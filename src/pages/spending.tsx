@@ -5,7 +5,7 @@ import { PagedActivityList } from '../components/activity-list'
 import { SpendingBarChart } from '../components/charts'
 import { PageError, PageLoading } from '../components/data-state'
 import { ChevronRight, X } from '../components/icons'
-import { groupByMerchant, MerchantGroups } from '../components/merchant-groups'
+import { MerchantGroups, type MerchantGroup } from '../components/merchant-groups'
 import { PlatinumBenefits } from '../components/platinum-benefits'
 import { RankedBars } from '../components/ranked-bars'
 import { MoneyStrip } from '../components/report-links'
@@ -24,6 +24,7 @@ import {
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import { type SpendingComparison, useSpendingActions } from '../hooks/use-spending-actions'
+import { useSpendingPeriod } from '../hooks/use-spending-period'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { accountDisplayName } from '../lib/account-names'
 import { buildActivities, type ActivityItem } from '../lib/activity'
@@ -33,22 +34,21 @@ import { formatProseCurrency, pluralize, formatDay } from '../lib/format'
 import { getExternalLogosEnabled } from '../lib/logos'
 import type { SpendingOwner } from '../lib/schema'
 import {
-  buildSpendingBars,
   allSpendingAccounts,
-  buildSpendingView,
-  spendingFor,
-  spendingJudgments,
+  spendingChartBars,
+  spendingChartPace,
+  spendingFigures,
   spendingOwnerOptions,
   spendingScope,
   spendingCategoryColor,
   type SpendingPeriod,
+  spendingPeriodKind,
   spendingPeriodLabel,
   spendingPeriodForRange,
   spendingPeriodOptions,
-  spendingPeriodReference,
   spendingRangeForPeriod,
+  spendingView,
 } from '../lib/spending'
-import { isSpendingTransaction, splitParts } from '../lib/transaction-kind'
 
 const monthYearFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'long',
@@ -87,10 +87,6 @@ function useActivityData(requested: string | undefined, requestedOwner: Spending
         : undefined,
     [data, requested, settings.spendingAccountId],
   )
-  const transactions = useMemo(
-    () => spendingFor(scope?.transactions ?? [], owner),
-    [owner, scope?.transactions],
-  )
   return {
     query,
     data,
@@ -101,7 +97,6 @@ function useActivityData(requested: string | undefined, requestedOwner: Spending
     options: scope?.options ?? [],
     hasOthers,
     owner,
-    transactions,
   }
 }
 
@@ -128,8 +123,10 @@ function useLinkedRowInView(scroll: RefObject<HTMLElement | null>, linked: objec
 export function SpendingPage() {
   const search = useSearch({ from: '/spending' })
   const navigate = useNavigate({ from: '/spending' })
-  const { query, data, names, account, card, options, hasOthers, owner, transactions } =
-    useActivityData(search.account, search.for ?? 'me')
+  const { query, data, names, account, card, options, hasOthers, owner } = useActivityData(
+    search.account,
+    search.for ?? 'me',
+  )
   const setOwner = useCallback(
     (next: SpendingOwner) =>
       void navigate({
@@ -193,43 +190,21 @@ export function SpendingPage() {
     account && data?.insights?.benefits?.accountId === account.id
       ? data.insights.statement
       : undefined
-  const periodReference = spendingPeriodReference(statement, referenceIso, periodOffset, period)
-  const judgments = useMemo(
-    () => spendingJudgments(data?.insights, account?.id ?? allSpendingAccounts, owner),
-    [account?.id, data?.insights, owner],
-  )
-  const view = useMemo(
-    () =>
-      buildSpendingView(transactions, referenceIso, period, periodReference, judgments, statement),
-    [judgments, period, periodReference, referenceIso, statement, transactions],
-  )
-  const focusView = useMemo(
-    () =>
-      focus
-        ? buildSpendingView(
-            // A split transaction contributes only the part in the focused category.
-            transactions
-              .flatMap(splitParts)
-              .filter(
-                (transaction) =>
-                  transaction.category === focus && isSpendingTransaction(transaction),
-              ),
-            referenceIso,
-            period,
-            periodReference,
-            judgments,
-            statement,
-            focus,
-          )
-        : null,
-    [focus, judgments, period, periodReference, referenceIso, statement, transactions],
-  )
+  // Rust reads the period: its figures, list, merchants, pace, and each category's view.
+  const periodQuery = useSpendingPeriod(data, {
+    scope: account?.id ?? allSpendingAccounts,
+    owner,
+    kind: spendingPeriodKind(period),
+    offset: -periodOffset,
+  })
+  const detail = periodQuery.data ?? undefined
 
   useLinkedRowInView(activityScrollRef, linked?.from === 'chart' ? linked : null)
 
   // Categories compare with the last period or with the average of earlier ones.
   const [chosenComparison, setComparison] = useState<SpendingComparison>('previous')
-  const canCompareTypical = period !== 0 && view.categories.some(({ typical }) => typical != null)
+  const periodCategories = detail?.categories ?? []
+  const canCompareTypical = period !== 0 && periodCategories.some(({ typical }) => typical != null)
   const comparison = canCompareTypical ? chosenComparison : 'previous'
 
   useSpendingActions({
@@ -240,6 +215,8 @@ export function SpendingPage() {
     focus,
     period,
     periodOffset,
+    // Back stops where the saved history does, and waits for the period it is leaving.
+    hasEarlier: Boolean(detail?.earlier) && !periodQuery.isPlaceholderData,
     choosePeriod,
     setPeriodOffset,
     clearFocus,
@@ -248,37 +225,44 @@ export function SpendingPage() {
     setComparison,
   })
 
-  if (query.isLoading) return <PageLoading />
-  if (query.isError || !data) return <PageError />
+  if (query.isLoading || (options.length > 0 && periodQuery.isLoading)) return <PageLoading />
+  if (query.isError || periodQuery.isError || !data) return <PageError />
 
+  const today = data.insights?.today ?? referenceIso.slice(0, 10)
+  const start = detail?.start ?? today
+  const end = detail?.end ?? today
+  const basis = detail?.kind === 'statement' ? 'statement' : 'calendar'
   const selectedPeriod =
-    view.periodBasis === 'statement' || period === 'week'
-      ? formatDay(view.end)
-      : monthYearFormatter.format(new Date(`${view.end}T00:00:00Z`))
-  const periodLabel = spendingPeriodLabel(period, periodOffset, selectedPeriod, view.periodBasis)
-  const shown = focusView ?? view
+    basis === 'statement' || period === 'week'
+      ? formatDay(end)
+      : monthYearFormatter.format(new Date(`${end}T00:00:00Z`))
+  const periodLabel = spendingPeriodLabel(period, periodOffset, selectedPeriod, basis)
+  const shown = detail ? spendingView(detail, focus ?? undefined) : undefined
+  const figures = spendingFigures(detail, focus ?? undefined)
   // The headline is always what was spent; a statement's balance reads beside its name, and is
   // never only someone else's.
   const statementBalance =
-    view.periodBasis === 'statement' && period === 'statement' && owner !== 'other'
-      ? view.statementBalance
+    basis === 'statement' && period === 'statement' && owner !== 'other'
+      ? (detail?.balance ?? null)
       : null
-  const spendingChange = period ? shown.total - shown.previousTotal : null
+  const spendingChange = period ? figures.change : null
   const closingDate =
     period === 'statement' && periodOffset === 0 ? statement?.nextClose : undefined
-  const closingDays = closingDate
-    ? daysBetween(data.insights?.today ?? referenceIso.slice(0, 10), closingDate)
-    : null
+  const closingDays = closingDate ? daysBetween(today, closingDate) : null
   const closingLabel =
     closingDays == null || closingDays < 0
       ? ''
       : closingDays === 0
         ? ' · closes today'
         : ` · closes in ${closingDays} ${pluralize(closingDays, 'day')}`
-  const bars = buildSpendingBars(shown.transactions, view.start, view.end, period)
-  const segments = view.categories.map(({ name, value }) => ({
+  const bars = spendingChartBars(detail?.bars ?? [], focus ?? undefined)
+  // Without a period from Rust (no insights yet), the chart reads as empty.
+  const pace = shown
+    ? spendingChartPace(shown.pace)
+    : { start, end, current: [], previous: [], projected: null, days: [] }
+  const segments = periodCategories.map(({ name, total }) => ({
     name,
-    value,
+    value: total,
     color: spendingCategoryColor(name),
   }))
   const chartCategories = bars.some(({ categories }) =>
@@ -288,24 +272,31 @@ export function SpendingPage() {
     : segments
   // A statement period without statements is the calendar month.
   const unit =
-    period === 'statement' && view.periodBasis !== 'statement'
+    period === 'statement' && basis !== 'statement'
       ? 'month'
       : spendingPeriodOptions.find((option) => option.value === period)!.unit
+  // Every transaction in the period, so the charts can name any purchase they mark.
+  const listedIds = new Set(detail?.transactionIds)
   const activities = buildActivities(
-    { ...data, transactions: view.transactions, trades: [] },
+    { ...data, transactions: data.transactions.filter(({ id }) => listedIds.has(id)), trades: [] },
     names,
     getExternalLogosEnabled(),
   )
   const activityById = new Map(activities.map((activity) => [activity.id, activity]))
-  const focusIds = focusView
-    ? new Set(focusView.transactions.map(({ id }) => `spending:${id}`))
-    : null
+  const activitiesFor = (ids: readonly string[]) =>
+    ids.flatMap((id) => activityById.get(`spending:${id}`) ?? [])
   // Your own spending still sums everything on the card, so its statement balance stays whole,
-  // but lists only what is yours.
-  const visibleActivities = activities.filter(
-    ({ id, other }) => (!focusIds || focusIds.has(id)) && (owner !== 'me' || !other),
+  // but lists only what is yours; Rust lists what the choice and the focus count.
+  const visibleActivities = activitiesFor(shown?.transactionIds ?? [])
+  const merchantGroups: MerchantGroup[] = (shown?.merchants ?? []).map(
+    ({ key, name, total, transactionIds }) => ({
+      key,
+      name,
+      total,
+      activities: activitiesFor(transactionIds),
+    }),
   )
-  const merchantOrder = groupByMerchant(visibleActivities).flatMap((group) => group.activities)
+  const merchantOrder = merchantGroups.flatMap((group) => group.activities)
   const openFrom = (list: ActivityItem[]) => (activity: ActivityItem) => {
     if (document.activeElement instanceof HTMLElement) opener.current = document.activeElement
     setOpened({ id: activity.id, list: list.map(({ id }) => id) })
@@ -328,20 +319,15 @@ export function SpendingPage() {
     linked?.from === 'chart'
       ? visibleActivities.findLastIndex(({ id }) => linked.ids.has(id)) + 1
       : 0
-  const categoryBars = view.categories.map(({ name, value, change, previousValue, typical }) => ({
-    name,
-    value,
-    color: spendingCategoryColor(name),
-    change:
-      period === 0
-        ? null
-        : comparison === 'typical'
-          ? typical == null
-            ? null
-            : Math.round((value - typical) * 100) / 100
-          : change,
-    mark: period === 0 ? null : comparison === 'typical' ? typical : previousValue,
-  }))
+  const categoryBars = periodCategories.map(
+    ({ name, total, change, previous, typical, aboveTypical }) => ({
+      name,
+      value: total,
+      color: spendingCategoryColor(name),
+      change: period === 0 ? null : comparison === 'typical' ? aboveTypical : change,
+      mark: period === 0 ? null : comparison === 'typical' ? typical : previous,
+    }),
+  )
   const focusColor = focus ? spendingCategoryColor(focus) : undefined
 
   return (
@@ -368,7 +354,6 @@ export function SpendingPage() {
         current="/spending"
         period={period}
         spendingAccount={search.account}
-        today={data.insights?.today}
       />
       {!options.length ? (
         <SpendingAccountEmptyState />
@@ -386,7 +371,7 @@ export function SpendingPage() {
                       <h2
                         className="balance-label"
                         aria-description={
-                          view.periodBasis === 'statement'
+                          basis === 'statement'
                             ? statement?.source === 'issuer'
                               ? 'Period from issuer-reported statement dates'
                               : 'Period inferred from recurring posted autopay dates'
@@ -409,19 +394,19 @@ export function SpendingPage() {
                           `${periodLabel}${closingLabel}`
                         )}
                       </h2>
-                      <AnimatedCurrency className="hero-number" value={shown.total} />
+                      <AnimatedCurrency className="hero-number" value={figures.total} />
                     </div>
                     <div className="chart-summary-row">
                       {spendingChange != null ? (
                         <ChartChange
                           amount={spendingChange}
-                          percent={shown.percentChange}
+                          percent={figures.changePct}
                           favorable="decrease"
                           ariaLabel="Change versus prior period"
                         />
                       ) : null}
                       <span className="spending-daily-average sensitive-value">
-                        {`${formatProseCurrency(shown.dailyAverage)} a day`}
+                        {`${formatProseCurrency(figures.daily)} a day`}
                       </span>
                       {focus ? (
                         <button
@@ -485,7 +470,7 @@ export function SpendingPage() {
                     />
                   ) : (
                     <SpendingPaceChart
-                      pace={shown.pace}
+                      pace={pace}
                       color={focusColor}
                       highlightedIds={linked?.from === 'list' ? linked.ids : undefined}
                       onSelectRange={(from, to) =>
@@ -546,7 +531,7 @@ export function SpendingPage() {
                   data-keyboard-region
                 >
                   <MerchantGroups
-                    activities={visibleActivities}
+                    groups={merchantGroups}
                     referenceIso={data.updatedAt}
                     emptyMessage={
                       focus ? `No ${focus} activity in this range.` : 'No activity in this range.'
@@ -567,8 +552,8 @@ export function SpendingPage() {
                         account: account?.id,
                         category: focus ?? undefined,
                         for: hasOthers && owner !== 'all' ? owner : undefined,
-                        from: view.start,
-                        to: view.end,
+                        from: start,
+                        to: end,
                       }}
                       className="section-heading-link"
                       data-command="navigation.open./activities"

@@ -4,9 +4,16 @@ import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { adjacentGraphWindow, graphWindows } from '../lib/graph-preferences'
 
 // Ids name the range, so saved usage and pinned commands keep working.
-const rangeIds = ['graph-week', 'graph-month', 'graph-quarter', 'graph-year', 'graph-all']
+const rangeIds = [
+  'graph-day',
+  'graph-week',
+  'graph-month',
+  'graph-quarter',
+  'graph-year',
+  'graph-all',
+]
 
-/** W, M, Q, Y, and A choose a chart's range; ⌘⌃← and ⌘⌃→ step through them. */
+/** D, W, M, Q, Y, and A choose a chart's range; ⌘⌃← and ⌘⌃→ step through them. */
 export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<number>>) {
   const actions = useMemo<AppAction[]>(() => {
     const step = (direction: -1 | 1) => () =>

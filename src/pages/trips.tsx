@@ -117,8 +117,8 @@ function YearView({ data, trips }: { data: FinanceSnapshot; trips: Trip[] }) {
   const years = tripYears(trips, today)
   const year = search.year && years.includes(search.year) ? search.year : currentYear
   const shown = trips.filter(inYear(year))
-  const totals = tripYearTotals(shown)
-  const lastYear = tripYearTotals(trips.filter(inYear(year - 1)))
+  const totals = tripYearTotals(data.insights?.trips, year)
+  const lastYear = tripYearTotals(data.insights?.trips, year - 1)
   const colors = useMemo(() => tripColors(shown), [shown])
   const longest = totals.longest ? tripDayCount(totals.longest) : 1
   const now = trips.find(({ ongoing }) => ongoing)
@@ -726,21 +726,18 @@ function Route({ trip, referenceIso }: { trip: Trip; referenceIso: string }) {
   )
 }
 
-/** Where a trip's money went: Rust ranked the top categories; the rest closes the line. */
+/** Where a trip's money went: Rust ranked the top categories and what they leave. */
 function Split({ trip }: { trip: Trip }) {
-  const total = Math.abs(trip.total)
-  if (!total || !trip.categories.length) return <EmptyState>Nothing bought.</EmptyState>
-  const segments: ShareSegment[] = trip.categories.map(({ name, amount }) => ({
+  if (!trip.total || !trip.categories.length) return <EmptyState>Nothing bought.</EmptyState>
+  const segments: ShareSegment[] = trip.categories.map(({ name, amount, share }) => ({
     key: name,
     label: name,
     value: Math.abs(amount),
-    percent: (Math.abs(amount) / total) * 100,
+    percent: share,
   }))
-  const ranked = Math.round(segments.reduce((sum, { value }) => sum + value * 100, 0)) / 100
-  const rest = Math.round((total - ranked) * 100) / 100
   const tail =
-    rest > 0
-      ? { key: 'rest', label: 'Everything else', value: rest, percent: (rest / total) * 100 }
+    trip.rest > 0
+      ? { key: 'rest', label: 'Everything else', value: trip.rest, percent: trip.restShare }
       : undefined
   const legend = [
     ...segments.map((segment, index) => ({ ...segment, color: `var(--data-${index + 1})` })),

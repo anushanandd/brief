@@ -45,6 +45,10 @@ describe('cash-flow Sankey model', () => {
       ],
       fees: 5,
       taxes: 0,
+      inflow: 2_040,
+      outflow: 125,
+      gap: 0,
+      retained: 1_915,
     })
 
     expect(model.total).toBe(2_040)
@@ -73,6 +77,10 @@ describe('cash-flow Sankey model', () => {
       ],
       fees: 0,
       taxes: 0,
+      inflow: 100,
+      outflow: 150,
+      gap: 50,
+      retained: 0,
     })
 
     expect(model.total).toBe(150)
@@ -108,6 +116,10 @@ describe('cash-flow Sankey model', () => {
           ],
           fees: 0,
           taxes: 0,
+          inflow: 200,
+          outflow: 150,
+          gap: 0,
+          retained: 50,
         },
       }),
     )

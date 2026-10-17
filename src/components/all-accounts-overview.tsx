@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { useMemo, type ReactNode } from 'react'
 
-import { accountGroups } from '../lib/account-groups'
+import { accountGroups, groupLabel } from '../lib/account-groups'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { getDataHealth } from '../lib/api'
 import { financeSettings } from '../lib/finance-settings'
@@ -40,14 +40,24 @@ export function AllAccountsOverview({
   const names = financeSettings(data).accountNames
   const changeWindow = chartPeriod(graphWindow)
   const periodChanges = data.insights?.changes.find(({ window }) => window === changeWindow)
+  // The counted accounts by type, then the spending cards apart, each as Rust totaled them.
+  const rollup = data.insights?.rollup
   const groups = [
-    ...accountGroups(accounts, periodChanges?.accounts),
-    ...accountGroups(spendingCards, periodChanges?.accounts).map((group) => ({
-      ...group,
-      type: 'spending',
-      label: 'Spending cards',
-      outsideTotal: true,
-    })),
+    ...accountGroups(accounts, rollup?.listed ?? [], periodChanges?.listed),
+    ...(rollup?.cards && spendingCards.length
+      ? [
+          {
+            type: 'spending',
+            label: groupLabel('spending'),
+            accounts: spendingCards.toSorted(
+              (left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity),
+            ),
+            value: rollup.cards.value,
+            change: periodChanges?.cards ?? null,
+            outsideTotal: true,
+          },
+        ]
+      : []),
   ]
 
   return (

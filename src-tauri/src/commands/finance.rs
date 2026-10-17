@@ -11,7 +11,7 @@ use crate::{
     storage::Annotation, AppState,
 };
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_finance_snapshot(state: State<'_, AppState>) -> Result<Value, String> {
     let mut storage = state.storage()?;
     let upgraded = storage.upgrade_projection().is_ok();
@@ -24,7 +24,47 @@ pub(crate) fn get_finance_snapshot(state: State<'_, AppState>) -> Result<Value, 
     Ok(snapshot)
 }
 
-#[tauri::command]
+/// One Spending period in full: the snapshot carries only each scope's current periods.
+#[tauri::command(async)]
+pub(crate) fn get_spending_period(
+    request: crate::insights::spending::PeriodRequest,
+    state: State<'_, AppState>,
+) -> Result<Option<crate::insights::spending::PeriodDetail>, String> {
+    if request.scope.len() > 128 || request.offset > 10_000 {
+        return Err("Invalid spending period".into());
+    }
+    let view = state.storage()?.read_view()?;
+    Ok(crate::insights::spending_period(
+        &view,
+        &request,
+        &crate::insights::calendar::LocalZone,
+    ))
+}
+
+/// Money's and Investments' reports over a window and accounts; see `insights::reports`.
+#[tauri::command(async)]
+pub(crate) fn get_reports(
+    request: crate::insights::reports::ReportRequest,
+    state: State<'_, AppState>,
+) -> Result<Option<crate::insights::reports::Reports>, String> {
+    if request.accounts.as_ref().is_some_and(|accounts| {
+        accounts.len() > 256 || accounts.iter().any(|account| account.len() > 128)
+    }) {
+        return Err("Invalid report request".into());
+    }
+    let view = state.storage()?.read_view()?;
+    let zone = crate::insights::calendar::LocalZone;
+    // Reports run through today, which may be later than the last refresh.
+    let today = view.insights.as_ref().map_or_else(
+        || crate::insights::calendar::Zone::date(&zone, Utc::now()),
+        |insights| insights.today,
+    );
+    Ok(crate::insights::reports::reports(
+        &view, &request, today, &zone,
+    ))
+}
+
+#[tauri::command(async)]
 pub(crate) fn get_sync_runs(state: State<'_, AppState>) -> Result<Vec<database::SyncRun>, String> {
     state.storage()?.sync_runs()
 }
@@ -83,7 +123,7 @@ pub(crate) async fn restore_transaction_annotations(
     Ok(serde_json::json!({ "annotations": annotations, "snapshot": storage.snapshot()? }))
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn save_finance_settings(
     settings: settings::FinanceSettings,
     importing: bool,
@@ -91,8 +131,10 @@ pub(crate) fn save_finance_settings(
     state: State<'_, AppState>,
 ) -> Result<Value, String> {
     let saved = state.storage()?.save_settings(settings, importing)?;
-    // The menu bar item follows background refresh, which this save may have changed.
-    notify::sync_tray(&app, background::enabled(&app));
+    // The menu bar item follows background refresh, which this save may have changed. The save
+    // runs off the main thread; the tray is built back on it.
+    let tray = app.clone();
+    let _ = app.run_on_main_thread(move || notify::sync_tray(&tray, background::enabled(&tray)));
     // Sync, account names, and benefit visibility all change the Brief calendar.
     crate::calendar::sync_in_background(app);
     Ok(saved)
@@ -143,7 +185,7 @@ pub(crate) async fn import_statement(
     Ok(snapshot)
 }
 
-#[tauri::command]
+#[tauri::command(async)]
 pub(crate) fn get_statement_imports(
     state: State<'_, AppState>,
 ) -> Result<Vec<storage::StatementSummary>, String> {
