@@ -371,8 +371,14 @@ pub fn apply<'a>(
         }
         t.classification = Some(classification);
     }
-    // A linked refund repays its purchase: it takes that purchase's category, unless one was
-    // chosen by hand, and reduces spending instead of counting as income or a transfer.
+    link_refunds(transactions, refunds);
+    pair_transfers(transactions);
+}
+
+/// A linked refund repays its purchase: it takes that purchase's category, unless one was
+/// chosen by hand, and reduces spending instead of counting as income or a transfer. Links
+/// are `(refund's index, purchase id)`, from your edits or an Explained rule.
+pub(crate) fn link_refunds(transactions: &mut [Transaction], refunds: Vec<(usize, String)>) {
     for (index, purchase_id) in refunds {
         let Some((category, purchase_other)) = transactions
             .iter()
@@ -409,7 +415,6 @@ pub fn apply<'a>(
         }
         refund.other |= purchase_other;
     }
-    pair_transfers(transactions);
 }
 
 /// Pairs the two legs of each move between two of your accounts, so every reader agrees which

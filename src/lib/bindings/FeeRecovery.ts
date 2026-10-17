@@ -10,7 +10,16 @@ export type FeeRecovery = { annualFee: number,
  */
 recovered: number, 
 /**
- * How far `recovered` is from the fee, short of it or past it.
+ * Money from elsewhere filed as repaying the fee charge since `since`: a bank's
+ * engagement bonus a program explains, or a refund link you made.
+ */
+offsets: number, 
+/**
+ * Whether `recovered` and `offsets` together reach the fee.
+ */
+covered: boolean, 
+/**
+ * How far `recovered` and `offsets` together are from the fee, short of it or past it.
  */
 gap: number, 
 /**

@@ -9,6 +9,8 @@
 //! exactly. The replay test (Gate A) runs it through the real refresh and edit paths.
 use std::collections::BTreeMap;
 
+pub(crate) mod career;
+
 use chrono::{Duration, NaiveDate, TimeZone, Utc};
 use serde_json::{json, Value};
 

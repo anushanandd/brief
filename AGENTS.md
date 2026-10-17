@@ -41,6 +41,7 @@ Run checks in proportion to the change. Docs-only changes need none.
 - Market sockets: keep timestamps monotonic, feeds separate, corrections repaired, hidden windows shut down, and stale data cleaned. Price ticks may coalesce; bar corrections may not drop.
 - `pnpm tauri dev` signs builds through `scripts/macos-signed-runner.sh`. Brief must run from `target/debug/brief`, the path Keychain trusts.
 - Don't run `cargo clean` unless necessary.
+- Apple Intelligence reads about 4,096 tokens per question, tool definitions included, so a question is offered only the tools `ledger::tools_for` picks. A new tool goes in `ledger::TOOLS` with its hint words, in the Swift bridge, and in `insights/assistant-evals.jsonl`; `cargo test assistant_answers_the_eval_set -- --ignored --nocapture` asks the on-device model the eval set.
 
 ## Code and docs
 

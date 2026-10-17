@@ -240,3 +240,102 @@ fn normalized_store_round_trips_and_rejects_duplicate_entity_ids() {
     ]);
     assert!(database.checkpoint(&state, Reason::Start).is_err());
 }
+
+#[test]
+fn version_twenty_two_keeps_proofs_and_a_research_log() {
+    let path =
+        std::env::temp_dir().join(format!("brief-migration-{}.sqlite3", uuid::Uuid::new_v4()));
+    let mut db = Database::open(&path).unwrap();
+    db.checkpoint(&crate::storage::empty_state().unwrap(), Reason::Start)
+        .unwrap();
+    // Version 21's facts table, with no proofs and a saved graph hash.
+    db.connection
+        .execute_batch(
+            "DROP TABLE graph_facts; DROP TABLE research_log; DROP TABLE research_sources;
+             CREATE TABLE graph_facts (
+               subject TEXT NOT NULL, predicate TEXT NOT NULL,
+               value_json TEXT NOT NULL CHECK (json_valid(value_json)),
+               valid_from TEXT, valid_to TEXT,
+               sources_json TEXT NOT NULL CHECK (json_valid(sources_json)),
+               grade TEXT, tier TEXT NOT NULL
+             ) STRICT;
+             INSERT INTO graph_meta(id, hash) VALUES (1, printf('%064d', 0));
+             PRAGMA user_version = 21;",
+        )
+        .unwrap();
+    drop(db);
+    let db = Database::open(&path).unwrap();
+    // The old graph's hash is forgotten, so the next read writes the graph with its proofs.
+    assert_eq!(db.graph_hash().unwrap(), None);
+    let proof = crate::evidence::Proof {
+        program: "rule".into(),
+        name: "Rule".into(),
+        source: crate::evidence::programs::Source {
+            url: "https://example.com/terms".into(),
+            title: "Terms".into(),
+        },
+        reviewed: chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
+        steps: vec![crate::evidence::Step {
+            says: "A record".into(),
+            evidence: vec!["transaction:t1".into()],
+            detail: None,
+            met: true,
+        }],
+        unchecked: Vec::new(),
+        notes: Vec::new(),
+    };
+    let graph = crate::objects::Graph {
+        objects: Vec::new(),
+        links: Vec::new(),
+        facts: vec![crate::objects::Fact {
+            subject: "transaction:t1".into(),
+            predicate: "offsets".into(),
+            value: serde_json::json!("transaction:t2"),
+            from: Some("2026-07-15".into()),
+            to: None,
+            sources: vec!["program:rule".into(), "transaction:t1".into()],
+            grade: None,
+            tier: crate::objects::Tier::Explained,
+            proof: Some(proof),
+        }],
+    };
+    db.write_graph(&graph, &graph.hash().unwrap()).unwrap();
+    assert_eq!(db.graph_facts(None).unwrap(), graph.facts);
+
+    // The log shows a query before it runs and what came back after, newest first.
+    let now = chrono::Utc::now();
+    let mut entry = crate::research::Entry::begin(
+        crate::research::EntryKind::Search,
+        "Example Bank checking fee waiver".into(),
+        Some("account:example-bank".into()),
+        now,
+    );
+    db.begin_research(&entry).unwrap();
+    assert_eq!(
+        db.research_log().unwrap()[0].status,
+        crate::research::Status::Running
+    );
+    entry.finish(
+        Ok(vec![crate::providers::exa::Page {
+            url: "https://bank.example/fees".into(),
+            title: "Fees".into(),
+            text: "No monthly fee with $500 in deposits.".into(),
+            published: None,
+        }]),
+        now,
+    );
+    db.finish_research(&entry).unwrap();
+    assert_eq!(db.research_log().unwrap(), vec![entry]);
+    let check = crate::research::checked(None, "https://bank.example/fees", "text", now);
+    db.save_source_check(&check).unwrap();
+    assert_eq!(
+        db.source_check("https://bank.example/fees").unwrap(),
+        Some(check)
+    );
+    // Erasure clears the log with everything else.
+    let mut db = db;
+    db.erase(&crate::storage::empty_state().unwrap()).unwrap();
+    assert!(db.research_log().unwrap().is_empty() && db.source_checks().unwrap().is_empty());
+    drop(db);
+    fs::remove_file(path).unwrap();
+}

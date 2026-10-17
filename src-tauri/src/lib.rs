@@ -9,6 +9,7 @@ mod data_folder;
 mod database;
 mod document_summaries;
 mod documents;
+mod evidence;
 mod files;
 mod finance_contract;
 mod financial_engine;
@@ -26,6 +27,7 @@ mod places;
 mod providers;
 mod quality;
 mod refresh;
+mod research;
 mod search;
 mod session;
 mod settings;
@@ -286,6 +288,11 @@ pub fn run() {
             document_commands::add_document_history,
             finance::export_finance_csv,
             place_commands::find_places,
+            commands::research::get_research,
+            commands::research::research_gap,
+            commands::research::recheck_program_sources,
+            commands::research::acknowledge_program_source,
+            commands::research::draft_program,
             refresh::refresh_finance_snapshot,
             refresh::save_account_link,
             backups::recover_finance_state,

@@ -1,6 +1,7 @@
 import { expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
+import { evidenceFixture } from '../data/fixtures/evidence'
 import { transaction } from '../data/fixtures/records'
 import { renderRoute } from './routes.harness'
 import { scenario } from './routes.scenario'
@@ -259,4 +260,35 @@ it('shows who went on a trip, with P to change them', async () => {
   expect(html).toContain('Example Person A')
   expect(html).toContain('data-command="trips.people"')
   expect(html).toContain('aria-keyshortcuts="P"')
+})
+
+it('tells chapters as a timeline and a list, each opening what defines it', async () => {
+  scenario.insights = { evidence: evidenceFixture }
+  const html = await renderRoute('/insights?view=chapters')
+  expect(html).toContain('aria-current="page">Chapters')
+  expect(html).toContain('Example Employer · California · month 6')
+  expect(html).toContain('aria-label="Chapters over time"')
+  expect(html).toContain('data-command="chapters.open.work:example"')
+  expect(html).toContain('data-command="chapters.plan"')
+  // A detected chapter is a possibility until confirmed, and says so in words.
+  expect(html).toContain('>Possible<')
+
+  const detail = await renderRoute('/insights?view=chapters&chapter=work:example')
+  expect(detail).toContain('Pay statements from Example Employer')
+  expect(detail).toContain('Example fee waiver')
+  expect(detail).toContain('Check the final paycheck.')
+  expect(detail).toContain('data-command="chapter.confirm"')
+  expect(detail).toContain('data-command="chapter.dismiss"')
+})
+
+it('shows what rules explain, with tiers and the Why chain', async () => {
+  scenario.insights = { evidence: evidenceFixture }
+  const html = await renderRoute('/insights?view=rules')
+  expect(html).toContain('The $100 bonus offsets the card’s $100 fee')
+  expect(html).toContain('>Explained<')
+  expect(html).toContain('>Possible<')
+  expect(html).toContain('Paperless statements')
+  expect(html).toContain('href="https://bank.example/terms"')
+  expect(html).toContain('Deposits were short in September 2026.')
+  expect(html).toContain('Example fee waiver')
 })

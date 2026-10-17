@@ -8,13 +8,14 @@
 //! in that balance, so its next occurrence isn't subtracted again.
 use std::collections::BTreeMap;
 
-use chrono::{Duration, NaiveDate};
+use chrono::{Duration, Months, NaiveDate};
 use serde::Serialize;
 use ts_rs::TS;
 
 use super::forecast::{EventState, ExpectedEvent};
 use crate::finance_contract::Account;
 use crate::numeric::{from_minor, minor_units};
+use crate::settings::PlannedChapter;
 
 pub const HORIZON_DAYS: i64 = 90;
 
@@ -61,7 +62,14 @@ pub struct CashTimeline {
 }
 
 /// `events` is the forecast over `HORIZON_DAYS`, including each series' later occurrences.
-pub fn timeline(accounts: &[Account], events: &[ExpectedEvent], today: NaiveDate) -> CashTimeline {
+/// Chapters the user planned add their monthly costs from their start, monthly on that day,
+/// until they end: the user's own figures, so without a range.
+pub fn timeline(
+    accounts: &[Account],
+    events: &[ExpectedEvent],
+    planned: &[PlannedChapter],
+    today: NaiveDate,
+) -> CashTimeline {
     let cash_accounts = accounts
         .iter()
         .filter(|account| account.r#type == "cash")
@@ -146,6 +154,30 @@ pub fn timeline(accounts: &[Account], events: &[ExpectedEvent], today: NaiveDate
                 amount: from_minor(amount),
                 next,
             });
+        }
+    }
+    for chapter in planned {
+        let mut first = true;
+        for date in (0..)
+            .map_while(|months| chapter.start.checked_add_months(Months::new(months)))
+            .take_while(|date| *date <= horizon && chapter.end.is_none_or(|end| *date <= end))
+            .filter(|date| *date > today)
+        {
+            for cost in &chapter.costs {
+                let amount = -minor_units(cost.monthly).abs();
+                let day = changes.entry(date).or_default();
+                day.0 += amount;
+                day.1 += amount;
+                day.2 += amount;
+                timeline.events.push(CashEvent {
+                    date,
+                    recurring_id: format!("{}:{}", chapter.id, cost.label),
+                    title: format!("{} · {}", cost.label, chapter.title),
+                    amount: from_minor(amount),
+                    next: first,
+                });
+            }
+            first = false;
         }
     }
     timeline.events.sort_by(|left, right| {
@@ -257,6 +289,7 @@ mod tests {
         let result = timeline(
             &accounts,
             &[rent, power, pay, stream, late],
+            &[],
             day("2026-09-16"),
         );
 
@@ -308,7 +341,7 @@ mod tests {
         let mut bill = event("bill", "plaid:checking", "2026-09-18", -90.0, 60.0, 140.0);
         bill.state = EventState::Pending;
         bill.later = vec![day("2026-10-18")];
-        let result = timeline(&accounts, &[bill], day("2026-09-16"));
+        let result = timeline(&accounts, &[bill], &[], day("2026-09-16"));
         assert_eq!(
             result.days[1],
             CashDay {
@@ -338,7 +371,7 @@ mod tests {
         let mut bill = event("bill", "plaid:checking", "2026-09-18", -90.0, 60.0, 140.0);
         bill.state = EventState::Pending;
         bill.later = vec![day("2026-10-18")];
-        let result = timeline(&[checking, savings], &[bill], day("2026-09-16"));
+        let result = timeline(&[checking, savings], &[bill], &[], day("2026-09-16"));
         assert_eq!(result.cash, 1_370.0);
         assert_eq!(result.pending_change, -130.0);
         assert_eq!(
@@ -372,9 +405,69 @@ mod tests {
             ],
             vec![account("plaid:card", "credit", Some(-50.0), "USD")],
         ] {
-            let result = timeline(&accounts, std::slice::from_ref(&bill), day("2026-09-16"));
+            let result = timeline(
+                &accounts,
+                std::slice::from_ref(&bill),
+                &[],
+                day("2026-09-16"),
+            );
             assert!(result.cash_incomplete);
             assert!(result.days.is_empty() && result.events.is_empty() && result.lowest.is_none());
         }
+    }
+
+    #[test]
+    fn planned_chapters_spend_their_monthly_costs_from_their_start() {
+        let accounts = [account("plaid:checking", "cash", Some(5_000.0), "USD")];
+        let cost = |label: &str, monthly: f64| crate::settings::PlannedCost {
+            label: label.into(),
+            monthly,
+        };
+        let moving = PlannedChapter {
+            id: "planned:move".into(),
+            title: "Moving out".into(),
+            start: day("2026-10-01"),
+            end: Some(day("2026-11-30")),
+            costs: vec![cost("Rent", 1_800.0), cost("Utilities", 150.0)],
+        };
+        let result = timeline(&accounts, &[], &[moving], day("2026-09-16"));
+        // October and November only: the chapter ends before December.
+        assert_eq!(
+            result
+                .events
+                .iter()
+                .map(|event| (
+                    event.date.to_string(),
+                    event.title.as_str(),
+                    event.amount,
+                    event.next
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("2026-10-01".into(), "Rent · Moving out", -1_800.0, true),
+                ("2026-10-01".into(), "Utilities · Moving out", -150.0, true),
+                ("2026-11-01".into(), "Rent · Moving out", -1_800.0, false),
+                ("2026-11-01".into(), "Utilities · Moving out", -150.0, false),
+            ]
+        );
+        let last = result.days.last().unwrap();
+        assert_eq!(
+            (last.expected, last.low, last.high),
+            (1_100.0, 1_100.0, 1_100.0)
+        );
+        // A month already begun counts from the next occurrence.
+        let begun = PlannedChapter {
+            id: "planned:a".into(),
+            title: "A".into(),
+            start: day("2026-09-01"),
+            end: None,
+            costs: vec![cost("Rent", 1_000.0)],
+        };
+        let result = timeline(&accounts, &[], &[begun], day("2026-09-16"));
+        assert_eq!(
+            result.events.first().map(|event| event.date),
+            Some(day("2026-10-01"))
+        );
+        assert_eq!(result.events.len(), 3);
     }
 }

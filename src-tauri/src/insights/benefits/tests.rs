@@ -580,7 +580,7 @@ fn credits_count_against_the_fee_from_its_posting_or_from_january_without_one() 
     let activity = activity(&transactions, "2026-09-16");
     let recovery = |refs: &[&Transaction]| {
         PLATINUM
-            .fee_recovery(refs, &activity, &[], day("2026-09-16"))
+            .fee_recovery(refs, &[], &activity, &[], day("2026-09-16"))
             .unwrap()
     };
     // Only issuer credits after the fee posted count: 13.99 + 80 - 30. Hiding a benefit stops
@@ -590,6 +590,8 @@ fn credits_count_against_the_fee_from_its_posting_or_from_january_without_one() 
         FeeRecovery {
             annual_fee: 895.0,
             recovered: 63.99,
+            offsets: 0.0,
+            covered: false,
             gap: 831.01,
             for_others: 0.0,
             since: day("2026-03-01"),
@@ -598,6 +600,28 @@ fn credits_count_against_the_fee_from_its_posting_or_from_january_without_one() 
             through: day("2027-02-28"),
             expected: 0.0,
         }
+    );
+    // A bonus in another account filed as repaying this year's fee counts against it; one
+    // repaying an older fee, or still pending, doesn't.
+    let mut bonus = txn("bonus", "2026-04-15", "Engagement Bonus", 895.0);
+    bonus.refund_of = Some("fee".into());
+    let mut pending = txn("pending-bonus", "2026-09-10", "Engagement Bonus", 895.0);
+    pending.refund_of = Some("fee".into());
+    pending.pending = true;
+    let mut stale = txn("old-bonus", "2025-04-15", "Engagement Bonus", 895.0);
+    stale.refund_of = Some("old-fee".into());
+    let offset = PLATINUM
+        .fee_recovery(
+            &refs,
+            &[bonus, pending, stale],
+            &activity,
+            &[],
+            day("2026-09-16"),
+        )
+        .unwrap();
+    assert_eq!(
+        (offset.offsets, offset.gap, offset.covered),
+        (895.0, 63.99, true)
     );
     // A credit on someone else's purchase used the allowance, but saved them the money.
     let mut shared = transactions.clone();
@@ -623,6 +647,8 @@ fn credits_count_against_the_fee_from_its_posting_or_from_january_without_one() 
         FeeRecovery {
             annual_fee: 895.0,
             recovered: 83.99,
+            offsets: 0.0,
+            covered: false,
             gap: 811.01,
             for_others: 0.0,
             since: day("2026-02-10"),
@@ -694,7 +720,7 @@ fn the_fee_year_expects_the_credits_its_periods_plan_before_it_ends() {
         years: Vec::new(),
     }];
     let recovery = PLATINUM
-        .fee_recovery(&refs, &[], &history, day("2026-09-16"))
+        .fee_recovery(&refs, &[], &[], &history, day("2026-09-16"))
         .unwrap();
     assert_eq!(
         (recovery.through, recovery.expected),
@@ -1105,4 +1131,31 @@ fn each_year_sums_the_benefits_shown_and_what_went_to_others() {
             },
         ]
     );
+}
+
+#[test]
+fn official_names_recognize_the_product() {
+    for name in [
+        "Morgan Stanley Platinum Card®",
+        "The Platinum Card®",
+        "Platinum Card",
+        "Schwab Platinum Card",
+    ] {
+        assert_eq!(
+            named_product(Some(name)).map(|rules| rules.product.as_str()),
+            Some("amex-platinum"),
+            "{name}"
+        );
+    }
+    // Other products that say Platinum, and other issuers' generic names, aren't this card.
+    for name in [
+        "The Business Platinum Card®",
+        "Delta SkyMiles® Platinum American Express Card",
+        "Visa Platinum Card",
+        "Platinum Rewards Visa Signature",
+        "Everyday Checking",
+    ] {
+        assert!(named_product(Some(name)).is_none(), "{name}");
+    }
+    assert!(named_product(None).is_none());
 }

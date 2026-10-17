@@ -8,6 +8,7 @@ import { z } from 'zod'
 import type { Classification } from '../bindings/Classification'
 import type { FinanceSettings } from '../bindings/FinanceSettings'
 import type { FinanceSnapshot as View } from '../bindings/FinanceSnapshot'
+import type { Program } from '../bindings/Program'
 
 export type { Document as BriefDocument } from '../bindings/Document'
 export type { Field as DocumentField } from '../bindings/Field'
@@ -128,4 +129,39 @@ export const financeSettingsSchema: z.ZodType<FinanceSettings> = z.object({
   tripCompanions: z
     .array(z.object({ transactionIds: z.array(z.string()), people: z.array(z.string()) }))
     .default([]),
+  /** Where Brief writes its readable copy; off when absent. */
+  dataFolder: z.object({ path: z.string(), masked: z.boolean() }).optional(),
+  /** Your word on detected chapters, with any title and dates. */
+  chapters: z
+    .array(
+      z.object({
+        id: z.string().min(1),
+        status: z.enum(['confirmed', 'dismissed']),
+        title: z.string().optional(),
+        start: z.iso.date().optional(),
+        end: z.iso.date().optional(),
+      }),
+    )
+    .optional(),
+  /** Chapters planned ahead, with their expected monthly costs. */
+  plannedChapters: z
+    .array(
+      z.object({
+        id: z.string().startsWith('planned:'),
+        title: z.string().min(1),
+        start: z.iso.date(),
+        end: z.iso.date().optional(),
+        costs: z
+          .array(z.object({ label: z.string().min(1), monthly: z.number().nonnegative() }))
+          .optional(),
+      }),
+    )
+    .optional(),
+  /** Your word on Suggested explanations, by explanation id. */
+  explanationReviews: z.record(z.string(), z.enum(['confirmed', 'dismissed'])).optional(),
+  /** Rules approved from research; Rust checks each as it checks its own. */
+  programs: z
+    .array(z.custom<Program>((value) => typeof value === 'object' && value !== null))
+    .optional(),
+  research: z.boolean().default(false),
 })

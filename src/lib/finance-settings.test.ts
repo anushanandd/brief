@@ -44,6 +44,7 @@ it('imports legacy renderer settings once and removes them only after the native
       calendarSync: false,
       people: [],
       tripCompanions: [],
+      research: false,
     },
   })
   expect(localStorage.getItem('brief:spending-account-id')).toBeNull()
@@ -73,5 +74,6 @@ it('uses empty defaults when a snapshot has no saved settings', () => {
     calendarSync: false,
     people: [],
     tripCompanions: [],
+    research: false,
   })
 })

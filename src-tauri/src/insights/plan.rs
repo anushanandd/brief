@@ -50,6 +50,11 @@ pub struct Plan {
     pub projected: f64,
     pub categories: Vec<CategoryPlan>,
     pub coverage: Coverage,
+    /// Where typical spending starts: the latest confirmed chapter's start, when one began
+    /// within the last three months.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub baseline_since: Option<NaiveDate>,
     /// Average monthly personal spending over the last three complete months.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -90,6 +95,7 @@ pub fn plan(
     transactions: &[Transaction],
     accounts: &[Account],
     expected: &[ExpectedEvent],
+    since: Option<NaiveDate>,
     today: NaiveDate,
 ) -> Plan {
     let month_start = calendar::add_months_first(today, 0);
@@ -98,8 +104,14 @@ pub fn plan(
     let days_elapsed = today.day() as i64;
     let months = monthly_spending(transactions);
     let current = months.get(&month_start).cloned().unwrap_or_default();
+    // A confirmed chapter starts a new normal: only whole months since its start are typical.
+    let first_whole = since.map(|since| match since.day() {
+        1 => since,
+        _ => calendar::add_months_first(since, 1),
+    });
     let complete = (1..=3)
         .map(|offset| calendar::add_months_first(month_start, -offset))
+        .filter(|month| first_whole.is_none_or(|first| *month >= first))
         .collect::<Vec<_>>();
     let history_months = complete
         .iter()
@@ -196,6 +208,7 @@ pub fn plan(
             after_outflows: from_minor(cash - outflows),
             horizon_days: 30,
         },
+        baseline_since: since.filter(|since| *since > calendar::add_months_first(month_start, -3)),
         monthly_spending: monthly.map(from_minor),
         runway_months: monthly
             .filter(|monthly| *monthly > 0 && cash > 0 && !cash_incomplete)

@@ -19,7 +19,7 @@ it('omits the current year from saved timestamps', () => {
 
 it('reports each provider as not set up, connected, checked, or needing attention', () => {
   const states = connectionStates(
-    { plaid: true, snaptrade: true, alpaca: true, alphaVantage: false, sec: true },
+    { plaid: true, snaptrade: true, alpaca: true, alphaVantage: false, sec: true, exa: false },
     {
       plaid: { updatedAt: '2026-10-05T17:20:00Z', error: null },
       snaptrade: { updatedAt: '2026-10-05T17:20:00Z', error: 'Reauthorize' },
@@ -32,6 +32,7 @@ it('reports each provider as not set up, connected, checked, or needing attentio
     { id: 'alpaca', tone: 'negative', state: 'Needs attention', checkedAt: undefined },
     { id: 'alphavantage', tone: 'neutral', state: 'Not set up', checkedAt: undefined },
     { id: 'sec', tone: 'positive', state: 'Connected', checkedAt: undefined },
+    { id: 'exa', tone: 'neutral', state: 'Not set up', checkedAt: undefined },
   ])
 })
 

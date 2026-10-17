@@ -321,6 +321,47 @@ impl Storage {
         self.database.save_market_sessions(closed)
     }
 
+    /// The saved finance settings.
+    pub fn settings(&self) -> &crate::settings::FinanceSettings {
+        &self.data.settings
+    }
+
+    /// The research log, newest first, and what each rule source said when last read.
+    pub fn research(
+        &self,
+    ) -> Result<
+        (
+            Vec<crate::research::Entry>,
+            Vec<crate::research::SourceCheck>,
+        ),
+        String,
+    > {
+        Ok((
+            self.database.research_log()?,
+            self.database.source_checks()?,
+        ))
+    }
+
+    /// Logs a research query before it runs; results, not edits, so the revision is unchanged.
+    pub fn begin_research(&self, entry: &crate::research::Entry) -> Result<(), String> {
+        self.ensure_writable()?;
+        self.database.begin_research(entry)
+    }
+
+    pub fn finish_research(&self, entry: &crate::research::Entry) -> Result<(), String> {
+        self.ensure_writable()?;
+        self.database.finish_research(entry)
+    }
+
+    pub fn source_check(&self, url: &str) -> Result<Option<crate::research::SourceCheck>, String> {
+        self.database.source_check(url)
+    }
+
+    pub fn save_source_check(&self, check: &crate::research::SourceCheck) -> Result<(), String> {
+        self.ensure_writable()?;
+        self.database.save_source_check(check)
+    }
+
     /// How often the layered model's thresholds fired over the latest year of saved sessions.
     pub fn calibration(&self) -> Result<CalibrationSummary, String> {
         Ok(crate::summary::calibration(

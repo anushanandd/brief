@@ -1,9 +1,11 @@
-import { Plane, Users } from '../components/icons'
+import { BriefcaseBusiness, Plane, ScrollText, Users } from '../components/icons'
 
 /** Insights' views, in strip order. Trips is the first and the default. */
 export const insightsViews = [
   { id: 'trips', label: 'Trips', icon: Plane, color: 'var(--data-4)' },
   { id: 'people', label: 'People', icon: Users, color: 'var(--data-2)' },
+  { id: 'chapters', label: 'Chapters', icon: BriefcaseBusiness, color: 'var(--data-1)' },
+  { id: 'rules', label: 'Rules', icon: ScrollText, color: 'var(--data-3)' },
 ] as const
 export type InsightsView = (typeof insightsViews)[number]['id']
 
@@ -15,6 +17,8 @@ export type InsightsSearch = {
   trip?: string
   /** People: one person, by their id. */
   person?: string
+  /** Chapters: one chapter, by its id. */
+  chapter?: string
 }
 
 export const insightsView = (value: unknown): InsightsView | undefined =>
@@ -34,5 +38,6 @@ export function insightsSearch(search: Record<string, unknown>): InsightsSearch 
     ...(typeof search.person === 'string' && search.person.startsWith('person:')
       ? { person: search.person }
       : {}),
+    ...(typeof search.chapter === 'string' && search.chapter ? { chapter: search.chapter } : {}),
   }
 }

@@ -39,6 +39,7 @@ import { CategoryMark } from './category-mark'
 import {
   Activity,
   ArrowLeftRight,
+  BriefcaseBusiness,
   Building,
   Copy,
   CreditCard,
@@ -56,6 +57,7 @@ import {
   RefreshCw,
   ScrollText,
   Search,
+  ShieldCheck,
   TrendingUp,
   Users,
   type IconComponent,
@@ -182,6 +184,8 @@ const objectIcons: Record<ObjectKind, IconComponent> = {
   bill: Receipt,
   benefit: Gift,
   story: ScrollText,
+  chapter: BriefcaseBusiness,
+  program: ShieldCheck,
 }
 
 /**

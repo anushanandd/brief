@@ -31,6 +31,7 @@ import {
   dashboardAccountViews,
   withoutSpendingCard,
 } from '../lib/dashboard-account-views'
+import { evidenceOf, nowLine } from '../lib/evidence'
 import { financeSettings } from '../lib/finance-settings'
 import { countOf } from '../lib/format'
 import { chartPeriod, useGraphWindow } from '../lib/graph-preferences'
@@ -182,7 +183,11 @@ export function OverviewPage() {
 
   return (
     <div className="page overview-page">
-      <WorkspaceHeader title="Home" status={<MarketStatus />} />
+      <WorkspaceHeader
+        title="Home"
+        detail={nowLine(evidenceOf(committed)) || undefined}
+        status={<MarketStatus />}
+      />
 
       {/* Two rows split by one rule. Above it, the chart sets the height and what's ahead fills
           the column beside it, Coming up scrolling to the rule. Below it, holdings and accounts

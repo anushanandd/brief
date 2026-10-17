@@ -307,6 +307,33 @@ fn plan_paces_categories_and_covers_expected_outflows_in_cents() {
         attention::Item::CoverageShort { .. }
     ));
     assert_eq!(insights.attention.len(), 1);
+
+    // A chapter confirmed mid-July starts a new normal: only August is typical, and July,
+    // part old life, isn't.
+    let fresh = plan::plan(
+        &transactions,
+        &accounts,
+        &[],
+        Some(NaiveDate::from_ymd_opt(2026, 7, 10).unwrap()),
+        NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
+    );
+    let whole = plan::plan(
+        &transactions,
+        &accounts,
+        &[],
+        Some(NaiveDate::from_ymd_opt(2026, 8, 1).unwrap()),
+        NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
+    );
+    let typical = |plan: &plan::Plan| {
+        plan.categories
+            .iter()
+            .map(|c| (c.category.clone(), c.typical))
+            .collect::<Vec<_>>()
+    };
+    assert_eq!(typical(&fresh), typical(&whole));
+    assert_eq!(fresh.baseline_since, NaiveDate::from_ymd_opt(2026, 7, 10));
+    // One month is too little to call a monthly average.
+    assert_eq!(fresh.monthly_spending, None);
 }
 
 #[test]
@@ -448,6 +475,7 @@ fn split_parts_count_under_their_own_categories() {
         &transactions,
         &[],
         &[],
+        None,
         NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
     );
     let spent = |category: &str| {
@@ -537,6 +565,7 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
                 attention::Item::ContributionLimit { .. } => "contribution-limit",
                 attention::Item::PayMissing { .. } => "pay-missing",
                 attention::Item::W2Differs { .. } => "w2-differs",
+                attention::Item::ProgramNote { .. } => "program-note",
             })
             .collect::<Vec<_>>()
     };
@@ -671,6 +700,28 @@ fn each_assigned_card_is_tracked_under_its_own_product_and_account() {
         ]
     );
     assert_eq!(benefits::products().len(), 1);
+
+    // A card the issuer names as the product is tracked without an assignment.
+    let mut named = account("plaid:unassigned");
+    named.official_name = Some("Morgan Stanley Platinum Card®".into());
+    let insights = compute(
+        &transactions,
+        &[account("plaid:card"), named],
+        &settings,
+        "2026-09-26T12:00:00Z",
+        DateTime::parse_from_rfc3339("2026-09-26T15:00:00Z")
+            .unwrap()
+            .to_utc(),
+        &NamedZone::Utc,
+    );
+    assert_eq!(
+        insights
+            .other_card_benefits
+            .iter()
+            .map(|card| card.account_id.as_str())
+            .collect::<Vec<_>>(),
+        vec!["plaid:unassigned"]
+    );
 }
 
 #[test]

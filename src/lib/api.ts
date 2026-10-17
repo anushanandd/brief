@@ -70,7 +70,7 @@ export async function openExternalUrl(url: string): Promise<void> {
   window.open(safeUrl, '_blank', 'noopener,noreferrer')
 }
 
-export type CredentialProvider = 'plaid' | 'snaptrade' | 'alpaca' | 'alphavantage' | 'sec'
+export type CredentialProvider = 'plaid' | 'snaptrade' | 'alpaca' | 'alphavantage' | 'sec' | 'exa'
 
 export async function getSyncRuns(): Promise<SyncRun[]> {
   if (!isTauri()) return []
@@ -416,7 +416,14 @@ export async function pollProviderLink(
 
 export async function getIntegrationStatus(): Promise<IntegrationStatus> {
   if (!isTauri())
-    return { plaid: false, snaptrade: false, alpaca: false, alphaVantage: false, sec: false }
+    return {
+      plaid: false,
+      snaptrade: false,
+      alpaca: false,
+      alphaVantage: false,
+      sec: false,
+      exa: false,
+    }
   return invoke<IntegrationStatus>('get_integration_status')
 }
 

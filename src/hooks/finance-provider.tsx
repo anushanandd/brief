@@ -166,6 +166,7 @@ function useBaseFinanceState() {
       alpaca: false,
       alphaVantage: false,
       sec: false,
+      exa: false,
     },
     integrationStatusLoading: integration.isLoading,
     liveMarketEnabled: integration.data?.alpaca === true && !query.data?.recovery,

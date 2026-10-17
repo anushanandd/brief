@@ -34,7 +34,8 @@ pub(super) const SCHEMA: &str = "CREATE TABLE IF NOT EXISTS graph_objects (
        valid_to TEXT,
        sources_json TEXT NOT NULL CHECK (json_valid(sources_json)),
        grade TEXT,
-       tier TEXT NOT NULL
+       tier TEXT NOT NULL,
+       proof_json TEXT CHECK (proof_json IS NULL OR json_valid(proof_json))
      ) STRICT;
      CREATE INDEX IF NOT EXISTS graph_facts_subject ON graph_facts(subject, predicate);
      CREATE TABLE IF NOT EXISTS graph_meta (
@@ -155,7 +156,8 @@ impl Database {
             let mut insert = transaction
                 .prepare(
                     "INSERT INTO graph_facts(subject, predicate, value_json, valid_from, valid_to,
-                       sources_json, grade, tier) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                       sources_json, grade, tier, proof_json)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                 )
                 .map_err(db_error)?;
             for fact in &graph.facts {
@@ -169,6 +171,11 @@ impl Database {
                         serde_json::to_string(&fact.sources).map_err(json_error)?,
                         fact.grade.as_ref().map(text_of).transpose()?,
                         text_of(&fact.tier)?,
+                        fact.proof
+                            .as_ref()
+                            .map(serde_json::to_string)
+                            .transpose()
+                            .map_err(json_error)?,
                     ])
                     .map_err(db_error)?;
             }
@@ -223,7 +230,7 @@ impl Database {
             .connection
             .prepare(
                 "SELECT subject, predicate, value_json, valid_from, valid_to, sources_json, grade,
-                   tier FROM graph_facts WHERE ?1 IS NULL OR subject = ?1
+                   tier, proof_json FROM graph_facts WHERE ?1 IS NULL OR subject = ?1
                  ORDER BY subject, predicate, rowid",
             )
             .map_err(db_error)?;
@@ -238,11 +245,12 @@ impl Database {
                     row.get::<_, String>(5)?,
                     row.get::<_, Option<String>>(6)?,
                     row.get::<_, String>(7)?,
+                    row.get::<_, Option<String>>(8)?,
                 ))
             })
             .map_err(db_error)?;
         rows.map(|row| {
-            let (subject, predicate, value, from, to, sources, grade, tier) =
+            let (subject, predicate, value, from, to, sources, grade, tier, proof) =
                 row.map_err(db_error)?;
             Ok(Fact {
                 subject,
@@ -253,6 +261,11 @@ impl Database {
                 sources: serde_json::from_str(&sources).map_err(json_error)?,
                 grade: grade.as_deref().map(name).transpose()?,
                 tier: name(&tier)?,
+                proof: proof
+                    .as_deref()
+                    .map(serde_json::from_str)
+                    .transpose()
+                    .map_err(json_error)?,
             })
         })
         .collect()

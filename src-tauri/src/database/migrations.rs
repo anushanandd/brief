@@ -106,6 +106,7 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
             .and_then(|()| connection.execute_batch(super::blobs::SCHEMA))
             .and_then(|()| connection.execute_batch(super::changesets::SCHEMA))
             .and_then(|()| connection.execute_batch(super::graph::SCHEMA))
+            .and_then(|()| connection.execute_batch(super::research::SCHEMA))
             .map_err(db_error);
     }
 
@@ -284,6 +285,26 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
     // Version 21 keeps the object graph read from the view, for search and the raw view.
     connection
         .execute_batch(super::graph::SCHEMA)
+        .map_err(db_error)?;
+    // Version 22 keeps each rule conclusion's proof. The graph is derived, so forgetting its
+    // hash has the next read write it whole.
+    let has_proof = connection
+        .prepare("SELECT 1 FROM pragma_table_info('graph_facts') WHERE name = 'proof_json'")
+        .and_then(|mut statement| statement.exists([]))
+        .map_err(db_error)?;
+    if !has_proof {
+        connection
+            .execute_batch(
+                "ALTER TABLE graph_facts ADD COLUMN proof_json TEXT
+                   CHECK (proof_json IS NULL OR json_valid(proof_json));
+                 DELETE FROM graph_meta;",
+            )
+            .map_err(db_error)?;
+    }
+    // Version 22 also keeps the log of research queries, which the user sees before and after
+    // each one runs.
+    connection
+        .execute_batch(super::research::SCHEMA)
         .map_err(db_error)?;
     connection
         .execute_batch(&format!(

@@ -10,7 +10,7 @@ invested: number, complete: boolean,
  */
 spending: number, 
 /**
- * The planned monthly additions, for a year.
+ * The planned monthly costs, yours and those of planned chapters not yet over, for a year.
  */
 planned: number, 
 /**
