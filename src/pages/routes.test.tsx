@@ -344,21 +344,6 @@ it('maps every control to a registered command', async () => {
       color: '#fff',
     },
   ]
-  const { readFileSync, readdirSync } = await import('node:fs')
-  const sources = (directory: string): string[] =>
-    readdirSync(directory, { withFileTypes: true }).flatMap((entry) =>
-      entry.isDirectory()
-        ? sources(`${directory}/${entry.name}`)
-        : /\.tsx?$/.test(entry.name) && !entry.name.includes('.test.')
-          ? [readFileSync(`${directory}/${entry.name}`, 'utf8')]
-          : [],
-    )
-  const code = sources('src').join('\n')
-  const ids = [...code.matchAll(/id: '([^']+)'/g)].map((match) => match[1])
-  const families = [...code.matchAll(/id: `([^`$]+)\$\{/g)].map((match) => match[1])
-  const registered = (command: string) =>
-    ids.includes(command) ||
-    families.some((family) => command.startsWith(family) || family.startsWith(command))
   const voids = new Set([
     'area',
     'br',
@@ -390,7 +375,13 @@ it('maps every control to a registered command', async () => {
     '/calendar',
     '/documents',
   ]) {
-    const html = await renderRoute(route)
+    // The registry as the page fills it: every control must name an action registered there.
+    const ids = new Set<string>()
+    const html = await renderRoute(route, 'selected', ids)
+    expect(ids.has('palette.open'), `${route} registered the app's actions`).toBe(true)
+    // A family registered per option (`spending.for.me`) covers a control naming its stem.
+    const registered = (command: string) =>
+      ids.has(command) || [...ids].some((id) => id.startsWith(command) && command.endsWith('.'))
     const open: Array<{ tag: string; row: boolean }> = []
     for (const [, closing, tag, attributes, selfClosing] of html.matchAll(
       /<(\/?)([a-zA-Z][\w-]*)([^>]*?)(\/?)>/g,

@@ -18,6 +18,7 @@ import {
   valueTone,
 } from '../lib/format'
 import { shortcutInput } from '../lib/keyboard'
+import { activityObjectId } from '../lib/objects'
 import { placeLabel, placeMapsUrl, placeSource } from '../lib/places'
 import type { BenefitActivity, FinanceSnapshot, QualityEvidence, Transaction } from '../lib/schema'
 import { formatActivityDate } from '../lib/spending'
@@ -39,6 +40,7 @@ import {
   X,
 } from './icons'
 import { Keys } from './keys'
+import { useShowObject } from './object-details'
 import { escapeClosesSettings } from './settings-dialog'
 import { TransactionEdits } from './transaction-edits'
 import { AnimatedCurrency, Button } from './ui'
@@ -116,9 +118,23 @@ export function TransactionDialog({
   // App shortcuts pause while a dialog is open, so the inspector handles its own keys. The
   // listener is on the window so a key still works after stepping replaces the focused content.
   const open = Boolean(activity)
+  const showObject = useShowObject()
+  const objectId = activity ? activityObjectId(activity.id) : undefined
   useEffect(() => {
     if (!open || !dialog) return undefined
     const onKeyDown = (event: KeyboardEvent) => {
+      // ⌘I: everything stored about this transaction, over the inspector.
+      if (
+        objectId &&
+        event.metaKey &&
+        !event.ctrlKey &&
+        !event.altKey &&
+        event.key.toLowerCase() === 'i'
+      ) {
+        event.preventDefault()
+        showObject(objectId)
+        return
+      }
       if (
         event.defaultPrevented ||
         event.isComposing ||
@@ -140,7 +156,7 @@ export function TransactionDialog({
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [dialog, onStep, open])
+  }, [dialog, objectId, onStep, open, showObject])
 
   return (
     <dialog
@@ -695,6 +711,9 @@ function TransactionDetails({
         </span>
         <span className="command-footer-hint">
           Me or other <Keys label="F" />
+        </span>
+        <span className="command-footer-hint">
+          Details <Keys label="⌘I" />
         </span>
         <span className="command-footer-hint">
           Close <Keys label="Esc" />

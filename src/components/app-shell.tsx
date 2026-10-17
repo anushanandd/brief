@@ -18,6 +18,7 @@ import { useSettingsDialog } from '../lib/settings-dialog'
 import { CommandMenu } from './command-menu'
 import { FocusHints } from './focus-hints'
 import { KeyGuide } from './key-guide'
+import { ObjectDetailsProvider } from './object-details'
 import { RecoveryNotice } from './recovery-notice'
 import { SettingsView } from './settings-dialog'
 import { ShortcutsDialog } from './shortcuts-dialog'
@@ -26,9 +27,18 @@ import { Sidebar } from './sidebar'
 /**
  * The window: sidebar, page, and the overlays every page shares. Brief is driven by the pointer
  * and keyboard shortcuts, so the shell owns the global actions and dispatches key sequences
- * to whichever action, global or registered by the page, they name.
+ * to whichever action, global or registered by the page, they name. Any object's raw view
+ * opens over all of it.
  */
 export function AppShell() {
+  return (
+    <ObjectDetailsProvider>
+      <Shell />
+    </ObjectDetailsProvider>
+  )
+}
+
+function Shell() {
   const pages = useOrderedNavigation()
   const pathname = useLocation({ select: (location) => location.pathname })
   const reportChart = useLocation({
@@ -119,66 +129,68 @@ export function AppShell() {
   }, [])
 
   return (
-    <div className="app-frame">
-      <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />
-      <Sidebar
-        pages={pages}
-        reportHome={reportHome}
-        reportsOpen={reportsOpen}
-        onToggleReports={toggleReports}
-        settingsOpen={settings.open}
-        onOpenSettings={settings.show}
-      />
-
-      <main className="main-content" ref={mainContentRef}>
-        {finance.data?.recovery ? <RecoveryNotice recovery={finance.data.recovery} /> : null}
-        {finance.data?.syncWarnings?.length ? (
-          <p className="sync-notice" role="status">
-            {finance.data.syncWarnings.join(' · ')}
-          </p>
-        ) : null}
-        {finance.annotationWarning ? (
-          <p className="sync-notice" role="status">
-            {finance.annotationWarning}
-          </p>
-        ) : null}
-        {/* Settings takes the page's place and stays usable when the snapshot can't load. */}
-        <Fragment key={valuesHidden ? 'amounts-hidden' : 'amounts-shown'}>
-          {settings.open ? (
-            <SettingsView />
-          ) : finance.data?.recovery && !finance.data.recovery.canRestore ? null : (
-            <Outlet />
-          )}
-        </Fragment>
-      </main>
-
-      {commandOpen ? (
-        <CommandMenu
-          open
-          onOpenChange={setCommandOpen}
-          onShowShortcuts={() => setShortcutsOpen(true)}
-          onRunAction={keyboard.executeAction}
+    <>
+      <div className="app-frame">
+        <div className="window-drag-region" data-tauri-drag-region aria-hidden="true" />
+        <Sidebar
+          pages={pages}
+          reportHome={reportHome}
+          reportsOpen={reportsOpen}
+          onToggleReports={toggleReports}
+          settingsOpen={settings.open}
+          onOpenSettings={settings.show}
         />
-      ) : null}
-      {keyboard.keyGuideOpen ? (
-        <KeyGuide
+
+        <main className="main-content" ref={mainContentRef}>
+          {finance.data?.recovery ? <RecoveryNotice recovery={finance.data.recovery} /> : null}
+          {finance.data?.syncWarnings?.length ? (
+            <p className="sync-notice" role="status">
+              {finance.data.syncWarnings.join(' · ')}
+            </p>
+          ) : null}
+          {finance.annotationWarning ? (
+            <p className="sync-notice" role="status">
+              {finance.annotationWarning}
+            </p>
+          ) : null}
+          {/* Settings takes the page's place and stays usable when the snapshot can't load. */}
+          <Fragment key={valuesHidden ? 'amounts-hidden' : 'amounts-shown'}>
+            {settings.open ? (
+              <SettingsView />
+            ) : finance.data?.recovery && !finance.data.recovery.canRestore ? null : (
+              <Outlet />
+            )}
+          </Fragment>
+        </main>
+
+        {commandOpen ? (
+          <CommandMenu
+            open
+            onOpenChange={setCommandOpen}
+            onShowShortcuts={() => setShortcutsOpen(true)}
+            onRunAction={keyboard.executeAction}
+          />
+        ) : null}
+        {keyboard.keyGuideOpen ? (
+          <KeyGuide
+            actions={keyboard.actions}
+            prefix={keyboard.keySequence}
+            count={keyboard.keyCount}
+            onRun={keyboard.executeAction}
+            onClose={keyboard.closeKeyState}
+            onShowAll={() => {
+              keyboard.closeKeyState()
+              setShortcutsOpen(true)
+            }}
+          />
+        ) : null}
+        <ShortcutsDialog
+          open={shortcutsOpen}
           actions={keyboard.actions}
-          prefix={keyboard.keySequence}
-          count={keyboard.keyCount}
-          onRun={keyboard.executeAction}
-          onClose={keyboard.closeKeyState}
-          onShowAll={() => {
-            keyboard.closeKeyState()
-            setShortcutsOpen(true)
-          }}
+          onClose={() => setShortcutsOpen(false)}
         />
-      ) : null}
-      <ShortcutsDialog
-        open={shortcutsOpen}
-        actions={keyboard.actions}
-        onClose={() => setShortcutsOpen(false)}
-      />
-      {focusHintsOpen ? <FocusHints onClose={() => setFocusHintsOpen(false)} /> : null}
-    </div>
+        {focusHintsOpen ? <FocusHints onClose={() => setFocusHintsOpen(false)} /> : null}
+      </div>
+    </>
   )
 }

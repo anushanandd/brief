@@ -1,5 +1,6 @@
 src/data/seed-spending.json
 src/data/seed-reports.json
 src/data/seed-view.json
+src/data/seed-objects.json
 src/data/empty-view.json
 src/lib/bindings/

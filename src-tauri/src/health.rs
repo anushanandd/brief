@@ -576,7 +576,8 @@ fn coverage_issues(snapshot: &Snapshot) -> Vec<HealthIssue> {
 }
 
 /// The latest refresh, when it failed.
-/// The change log should replay to the saved state; saved data is used either way.
+/// The change log should replay to the saved state. Brief reads what the log holds, and the
+/// next launch brings saved tables that strayed back to it.
 fn log_issues(log: Option<&LogCheck>) -> Vec<HealthIssue> {
     let Some(log) = log.filter(|log| log.outcome != Outcome::Matches) else {
         return Vec::new();
@@ -593,7 +594,7 @@ fn log_issues(log: Option<&LogCheck>) -> Vec<HealthIssue> {
         severity,
         Category::Storage,
         title,
-        "Saved data is unchanged; see Diagnostics",
+        "Brief reads what the change log holds; see Diagnostics",
     )
     .evidence(log.detail.iter().cloned().collect())
     .action("Open diagnostics", "/logs")]

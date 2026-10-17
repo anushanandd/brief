@@ -22,7 +22,10 @@ const listRows: ShortcutRow[] = [
 const paletteRows: ShortcutRow[] = [
   { title: 'Change type', keys: ['←', '→'] },
   { title: 'Filter Activity', keys: ['/'] },
-  { title: 'Actions for the selected result', keys: ['⌥↵'] },
+  { title: 'Actions for the selected result', keys: ['⌥↵', '.'] },
+  { title: 'Details of the selected result', keys: ['⌘I'] },
+  { title: 'Search one kind, such as @doc w-2', keys: ['@'] },
+  { title: 'Step back from a question or filter', keys: ['⌫'] },
   { title: 'Secondary action', keys: ['⌘↵'] },
   { title: 'Add or remove a favorite', keys: ['⌘D'] },
   { title: 'Ask Brief', keys: ['?'] },

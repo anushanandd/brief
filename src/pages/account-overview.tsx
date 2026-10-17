@@ -15,6 +15,7 @@ import { ValueHistoryEmptyState } from '../components/data-state'
 import { ExpectedActivity } from '../components/expected-activity'
 import { ExternalLink } from '../components/external-link'
 import { ArrowUpRight, ChevronRight, Download } from '../components/icons'
+import { useObjectDetailsAction } from '../components/object-details'
 import { PositionTable } from '../components/position-table'
 import { SalesTable } from '../components/sales-table'
 import { SettingsLink } from '../components/settings-dialog'
@@ -261,6 +262,7 @@ export function AccountOverview({
   const exportRef = useRef(exportCsv)
   exportRef.current = exportCsv
   const detailsRef = useRef<HTMLDetailsElement>(null)
+  useObjectDetailsAction(isCombined ? undefined : `account:${account.id}`)
   useRegisterActions(
     useMemo<AppAction[]>(
       () => [

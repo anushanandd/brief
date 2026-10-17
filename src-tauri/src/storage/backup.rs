@@ -321,7 +321,9 @@ impl Storage {
         Database::copy_backup(source, temporary.path())?;
         Database::validate_backup(temporary.path())?;
         let database = Database::open(temporary.path())?;
-        let state = validate_state(database.load()?.ok_or("This is not a Brief backup")?)?;
+        // The backup's log is its truth too; the restore checkpoint saves this state whole.
+        let (state, _) = super::change::authoritative(&database)?;
+        let state = validate_state(state)?;
         Ok((temporary, database, state))
     }
 }

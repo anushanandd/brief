@@ -5,7 +5,7 @@ use super::Storage;
 use crate::database::{BankStatement, StatementCheck};
 
 /// Where a statement is copied to open it; cleared before each copy and by erasure.
-pub(super) const OPENED_DIRECTORY: &str = "opened-statements";
+pub(crate) const OPENED_DIRECTORY: &str = "opened-statements";
 
 impl Storage {
     pub fn bank_statements(&self) -> Result<Vec<BankStatement>, String> {

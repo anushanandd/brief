@@ -202,6 +202,57 @@
 .data-inventory dt > svg {
   color: var(--text-tertiary);
 }
+/* Local storage: each file's name, then its purpose and tables. */
+.stored-files dt {
+  overflow-wrap: anywhere;
+}
+.stored-files dd {
+  display: grid;
+  gap: 4px;
+}
+.stored-tables {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 12px;
+}
+.stored-tables .object-link[aria-pressed='true'] {
+  text-decoration: underline;
+}
+.stored-rows {
+  display: grid;
+  margin-top: 12px;
+  gap: 8px;
+}
+.stored-rows header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.stored-rows-scroll {
+  max-height: 420px;
+  overflow: auto;
+}
+.stored-rows table {
+  border-collapse: collapse;
+  font-size: var(--type-meta);
+}
+.stored-rows th,
+.stored-rows td {
+  min-width: 80px;
+  max-width: 360px;
+  padding: 4px 8px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  text-align: left;
+  vertical-align: top;
+  overflow-wrap: anywhere;
+}
+.stored-rows th {
+  position: sticky;
+  top: 0;
+  background: var(--popup-surface);
+  color: var(--text-secondary);
+}
 .data-inventory dd {
   margin: 0;
   color: var(--text-tertiary);

@@ -1,3 +1,4 @@
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
 import { useNavigate } from '@tanstack/react-router'
 import { Command } from 'cmdk'
 import {
@@ -13,6 +14,7 @@ import {
 import { useAskBrief } from '../hooks/use-ask-brief'
 import { useFinance } from '../hooks/use-finance'
 import { useFinanceRefreshState, useRefreshFinance } from '../hooks/use-refresh-finance'
+import { useRunVerb } from '../hooks/use-run-verb'
 import { accountDisplayName } from '../lib/account-names'
 import {
   forgetActionUsage,
@@ -27,6 +29,7 @@ import { countOf } from '../lib/format'
 import { ledgerView } from '../lib/ledger-view'
 import { getExternalLogosEnabled } from '../lib/logos'
 import { useOrderedNavigation } from '../lib/navigation-preferences'
+import { objectKinds, objectQuery, searchObjects, type ObjectKind } from '../lib/objects'
 import { activityMatchesChips, activityTerm, filterFields } from '../lib/palette-filters'
 import {
   forgetQueryPicks,
@@ -40,25 +43,65 @@ import {
   toggleFavorite,
   type PaletteMode,
 } from '../lib/palette-ranking'
-import { menuRows, paletteSections, type MenuAction, type RowAction } from '../lib/palette-rows'
+import {
+  menuRows,
+  paletteSections,
+  type MenuAction,
+  type PaletteSection,
+  type RowAction,
+} from '../lib/palette-rows'
 import { initialPalette, paletteReducer } from '../lib/palette-state'
 import { isPinned, savePins, usePins, withPin } from '../lib/pins'
+import { verbById } from '../lib/verbs'
 import { acceptAutofill, AutofillField, autofillCompletion } from './autofill'
 import { ActionsPopover, useActionsMenu } from './command-menu-popover'
 import {
   activityRow,
+  choiceRow,
   filterRows,
   FooterHint,
   Highlighted,
   paletteActions,
   RowMark,
+  rowObjectId,
 } from './command-menu-rows'
 import { Ellipsis, RefreshCw, Star, X } from './icons'
 import { Keys } from './keys'
 import { LedgerResult } from './ledger-result'
+import { useShowObject } from './object-details'
 
 const plainMeta = (event: KeyboardEvent, key: string) =>
   event.key.toLowerCase() === key && event.metaKey && !event.ctrlKey && !event.shiftKey
+
+// Accounts, holdings, and Activity have rows of their own outside the Objects tab, which
+// read the snapshot's richer fields; Activity's rows come from the search below.
+const ownRows = new Set<ObjectKind>(['account', 'holding', 'transaction', 'trade'])
+/** How many Activity entries one search reads; the count shows `+` when it reaches it. */
+const ACTIVITY_LIMIT = 100
+// `account: chase`: a field-scoped Activity filter, which the palette applies itself.
+const scopedFilter = /^(description|account|category|tag|person|method|location|amount|date):/i
+
+/**
+ * Rust's search for what the palette shows: words, or, with kinds and no words, every object
+ * of those kinds, as a verb's question lists them.
+ */
+function useObjectHits(
+  lookup: { text: string; kinds: ObjectKind[] },
+  limit: number,
+  enabled: boolean,
+) {
+  const text = lookup.text.trim()
+  const asks = enabled && (text.length >= 2 || (lookup.kinds.length > 0 && !text))
+  const search = useQuery({
+    queryKey: ['object-search', text, lookup.kinds, limit],
+    queryFn: () => searchObjects({ text, kinds: lookup.kinds, limit }),
+    enabled: asks,
+    placeholderData: keepPreviousData,
+    staleTime: 30_000,
+    retry: false,
+  })
+  return asks ? (search.data ?? []) : []
+}
 
 /**
  * The command palette: one search over actions, pages, accounts, holdings, and activity, with
@@ -86,7 +129,8 @@ export function CommandMenu({
   const input = useRef<HTMLInputElement>(null)
   const list = useRef<HTMLDivElement>(null)
   const [palette, dispatch] = useReducer(paletteReducer, paletteMode.get(), initialPalette)
-  const { mode, query, tabId, chips, filterStep, selected } = palette
+  const { mode, query, tabId, chips, filterStep, verbStep, selected } = palette
+  const askingVerb = verbStep ? verbById(verbStep) : undefined
   const [favorites, setFavorites] = useState(getPaletteFavorites)
   const [notice, setNotice] = useState<string>()
   const [, setRankingVersion] = useState(0)
@@ -112,14 +156,47 @@ export function CommandMenu({
     finance.data?.accountLinks,
   )
   const textSearch = activityTerm(trimmedQuery).length >= 2
-  const searchesActivity = !askMode && !filterStep && (textSearch || chips.length > 0)
-  const activityMatches = searchesActivity
-    ? activities.filter(
-        (activity) =>
-          activityMatchesChips(activity, chips) &&
-          (!textSearch || activityMatchesSearch(activity, trimmedQuery)),
-      )
-    : []
+  const searching = !askMode && !filterStep && !askingVerb
+  const searchesActivity = searching && (textSearch || chips.length > 0)
+  const showObject = useShowObject()
+  const runVerb = useRunVerb()
+  const objectsTab = tab.id === 'objects'
+  // A verb's question searches its kind; the Objects tab may name one; elsewhere, every kind.
+  const objectHits = useObjectHits(
+    askingVerb?.object
+      ? { text: trimmedQuery, kinds: [askingVerb.object] }
+      : objectsTab
+        ? objectQuery(trimmedQuery)
+        : { text: trimmedQuery, kinds: [] },
+    40,
+    (searching && !chips.length) || Boolean(askingVerb),
+  )
+  // Free text finds Activity through Rust's search; chips and field-scoped filters narrow
+  // the entries here, as Activity's own filters do.
+  const freeText = textSearch && !scopedFilter.test(trimmedQuery)
+  const transactionHits = useObjectHits(
+    { text: trimmedQuery, kinds: ['transaction', 'trade'] },
+    ACTIVITY_LIMIT,
+    searchesActivity && freeText,
+  )
+  const activityById = useMemo(
+    () => new Map(activities.map((activity) => [activity.id, activity])),
+    [activities],
+  )
+  const activityMatches = !searchesActivity
+    ? []
+    : freeText
+      ? transactionHits.flatMap((hit) => {
+          const id =
+            hit.kind === 'trade' ? hit.id : `spending:${hit.id.slice('transaction:'.length)}`
+          const activity = activityById.get(id)
+          return activity && activityMatchesChips(activity, chips) ? [activity] : []
+        })
+      : activities.filter(
+          (activity) =>
+            activityMatchesChips(activity, chips) &&
+            (!textSearch || activityMatchesSearch(activity, trimmedQuery)),
+        )
 
   const rowContext = {
     navigate,
@@ -142,6 +219,20 @@ export function CommandMenu({
     isRefreshing,
     refresh,
     onShowShortcuts,
+    activityCapped: freeText && transactionHits.length >= ACTIVITY_LIMIT,
+    objectHits: objectsTab ? objectHits : objectHits.filter((hit) => !ownRows.has(hit.kind)),
+    chooseVerb: (verb) => {
+      dispatch({ type: 'chooseVerb', verb: verb.id })
+      input.current?.focus()
+    },
+    showObject: (id) => {
+      onOpenChange(false)
+      showObject(id)
+    },
+    runVerb: (verb, objectId) => {
+      onOpenChange(false)
+      void runVerb(verb, objectId)
+    },
   })
 
   const pickerRows = filterRows(filterStep, {
@@ -162,17 +253,30 @@ export function CommandMenu({
     favorites: favoriteIds,
     now: Date.now(),
   }
-  const sections = paletteSections({
-    askMode,
-    filterStep,
-    filterRows: pickerRows,
-    tab,
-    chipCount: chips.length,
-    actions,
-    favorites,
-    recentActivity: activities.slice(0, 8).map((activity) => activityRow(activity, rowContext)),
-    ranking,
-  })
+  // A verb's question lists only the objects it could act on, in search's order.
+  const sections: PaletteSection[] = askingVerb?.object
+    ? [
+        {
+          heading: objectKinds[askingVerb.object].plural,
+          items: objectHits.map((hit, index) =>
+            choiceRow(hit, index, askingVerb, (verb, objectId) => {
+              onOpenChange(false)
+              void runVerb(verb, objectId)
+            }),
+          ),
+        },
+      ]
+    : paletteSections({
+        askMode,
+        filterStep,
+        filterRows: pickerRows,
+        tab,
+        chipCount: chips.length,
+        actions,
+        favorites,
+        recentActivity: activities.slice(0, 8).map((activity) => activityRow(activity, rowContext)),
+        ranking,
+      })
   const rows = sections.flatMap(({ items }) => items)
   const firstEnabled = rows.find((action) => !action.disabled)?.id ?? ''
   const selectedValue = rows.some(({ id }) => id === selected) ? selected : firstEnabled
@@ -292,7 +396,7 @@ export function CommandMenu({
     const atEnd = event.currentTarget.selectionStart === query.length
     // Esc steps back one level: filter picker, then the query, then the palette. Handling it on
     // keydown, not in the dialog's cancel event, keeps browsers from closing it on a repeated Esc.
-    if (event.key === 'Escape' && (filterStep || query)) {
+    if (event.key === 'Escape' && (filterStep || verbStep || query)) {
       event.preventDefault()
       dispatch({ type: 'clear' })
       return
@@ -301,7 +405,7 @@ export function CommandMenu({
       if (askMode && !filterStep) {
         event.preventDefault()
         switchMode('search')
-      } else if (filterStep || chips.length) {
+      } else if (filterStep || verbStep || chips.length) {
         event.preventDefault()
         dispatch({ type: 'back' })
       }
@@ -336,6 +440,15 @@ export function CommandMenu({
     } else if (event.key === 'Enter' && event.metaKey && target.secondary) {
       event.preventDefault()
       runFollowUp(target, target.secondary)
+    } else if (plainMeta(event, 'i') && rowObjectId(target.id)) {
+      // Details: the selected object's raw view.
+      event.preventDefault()
+      onOpenChange(false)
+      showObject(rowObjectId(target.id)!)
+    } else if (event.key === '.' && !query && !event.metaKey && !event.altKey) {
+      // `.` lists the selected row's verbs.
+      event.preventDefault()
+      menu.openMenu()
     } else if (plainMeta(event, 'd') && !target.ephemeral) {
       event.preventDefault()
       toggleFavoriteFor(target)
@@ -362,9 +475,11 @@ export function CommandMenu({
   const askStatus = ask.statusFor(trimmedQuery)
   const emptyLabel = filterStep
     ? 'No matching filter.'
-    : tab.id === 'all'
-      ? 'No results found'
-      : `No results in ${tab.label}`
+    : askingVerb?.object
+      ? `No matching ${objectKinds[askingVerb.object].plural.toLowerCase()}`
+      : tab.id === 'all'
+        ? 'No results found'
+        : `No results in ${tab.label}`
   const resultCount = rows.length
 
   return (
@@ -425,6 +540,11 @@ export function CommandMenu({
                 {filterFields.find(({ field }) => field === filterStep)?.label}
               </span>
             ) : null}
+            {askingVerb ? (
+              <span className="command-chip command-chip-pending">
+                {askingVerb.title.replace(/…$/, '')}
+              </span>
+            ) : null}
             <AutofillField query={query} completion={completion}>
               <Command.Input
                 ref={input}
@@ -434,11 +554,13 @@ export function CommandMenu({
                 placeholder={
                   askMode
                     ? 'Ask about your finances…'
-                    : filterStep === 'field'
-                      ? 'Filter by…'
-                      : filterStep
-                        ? 'Choose a value…'
-                        : 'Search'
+                    : askingVerb?.object
+                      ? `Which ${objectKinds[askingVerb.object].label.toLowerCase()}?`
+                      : filterStep === 'field'
+                        ? 'Filter by…'
+                        : filterStep
+                          ? 'Choose a value…'
+                          : 'Search'
                 }
               />
             </AutofillField>
@@ -451,7 +573,7 @@ export function CommandMenu({
               <X size={15} aria-hidden="true" />
             </button>
           </label>
-          {!askMode && !filterStep ? (
+          {!askMode && !filterStep && !askingVerb ? (
             <div className="command-tabs" role="tablist" aria-label="Result type">
               {paletteTabs.map((option) => (
                 <button
@@ -623,7 +745,7 @@ export function CommandMenu({
                 {!query ? <FooterHint label="Search" keys={['⌫']} /> : null}
                 {askReady ? <FooterHint label="Ask" keys={['↵']} /> : null}
               </>
-            ) : filterStep ? (
+            ) : filterStep || askingVerb ? (
               <>
                 <FooterHint label="Close" keys={['Esc']} />
                 <FooterHint label="Back" keys={['⌫']} />

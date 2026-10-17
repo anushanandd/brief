@@ -97,6 +97,11 @@ pub(crate) async fn erase_finance_state(
         .map_err(|_| "App data directory unavailable")?;
     state.startup_market.clear()?;
     state.providers.clear_disposable_data(&directory).await?;
+    // The readable folder is a copy of this data, so it goes with it.
+    let folder = state.storage()?.data.settings.data_folder.clone();
+    if let Some(folder) = folder {
+        crate::data_folder::remove(std::path::Path::new(&folder.path))?;
+    }
     state.storage()?.erase()
 }
 

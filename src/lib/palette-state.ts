@@ -9,6 +9,8 @@ export type PaletteState = {
   chips: FilterChip[]
   /** The `/` filter picker's step while it is open: a field, then one of its values. */
   filterStep?: FilterStep
+  /** A verb asking which object it acts on, by verb id; the query searches that kind. */
+  verbStep?: string
   /** The highlighted row; empty highlights the first one available. */
   selected: string
 }
@@ -23,6 +25,8 @@ export type PaletteEvent =
   | { type: 'showTab'; tabId: PaletteTab['id'] }
   | { type: 'stepTab'; offset: -1 | 1 }
   | { type: 'chooseField'; field: FilterStep }
+  /** A verb that needs an object: the palette asks which one. */
+  | { type: 'chooseVerb'; verb: string }
   | { type: 'addChip'; chip: FilterChip }
   | { type: 'removeChip'; field: FilterChip['field'] }
   /** Esc: leaves the filter picker and clears the query. */
@@ -44,6 +48,8 @@ export function paletteReducer(state: PaletteState, event: PaletteEvent): Palett
       return { ...state, selected: event.id }
     case 'type': {
       if (state.mode === 'ask') return { ...state, query: event.query }
+      // A verb's question searches its kind with whatever is typed.
+      if (state.verbStep) return { ...state, query: event.query, selected: '' }
       if (!state.filterStep && !state.query && event.query === '/')
         return { ...state, filterStep: 'field', selected: '' }
       const jump = state.filterStep || state.query ? undefined : paletteTabPrefix(event.query)
@@ -59,6 +65,7 @@ export function paletteReducer(state: PaletteState, event: PaletteEvent): Palett
         mode: event.mode,
         query: event.query ?? '',
         filterStep: undefined,
+        verbStep: undefined,
         selected: '',
       }
     case 'showTab':
@@ -70,6 +77,8 @@ export function paletteReducer(state: PaletteState, event: PaletteEvent): Palett
     }
     case 'chooseField':
       return { ...state, filterStep: event.field, query: '', selected: '' }
+    case 'chooseVerb':
+      return { ...state, verbStep: event.verb, filterStep: undefined, query: '', selected: '' }
     case 'addChip':
       return {
         ...state,
@@ -82,8 +91,11 @@ export function paletteReducer(state: PaletteState, event: PaletteEvent): Palett
     case 'removeChip':
       return { ...state, chips: state.chips.filter(({ field }) => field !== event.field) }
     case 'clear':
+      // Esc leaves a verb's question with its query, then the question itself.
+      if (state.verbStep && !state.query) return { ...state, verbStep: undefined, selected: '' }
       return { ...state, filterStep: undefined, query: '', selected: '' }
     case 'back':
+      if (state.verbStep) return { ...state, verbStep: undefined, selected: '' }
       if (state.filterStep)
         return {
           ...state,

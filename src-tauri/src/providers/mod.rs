@@ -638,6 +638,7 @@ impl Providers {
         }
         holding_market::clear_cache(&directory.join("market-prices.sqlite3"))?;
         crate::places::cache::clear(&directory.join("places.sqlite3"))?;
+        crate::search::embeddings::clear(&directory.join("embeddings.sqlite3"))?;
         self.chart_previews
             .lock()
             .map_err(|_| "Market preview state is unavailable")?

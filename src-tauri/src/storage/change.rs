@@ -199,8 +199,19 @@ impl From<String> for ReplayError {
 pub(crate) fn replay(
     database: &crate::database::Database,
 ) -> Result<(Option<FinanceState>, usize), ReplayError> {
+    replay_with(database, true).map(|(state, count, _)| (state, count))
+}
+
+/// Replays from the latest checkpoint with this code. `strict` stops at the first changeset
+/// whose result differs from the state it recorded; otherwise replay goes on, and says
+/// whether any differed.
+fn replay_with(
+    database: &crate::database::Database,
+    strict: bool,
+) -> Result<(Option<FinanceState>, usize, bool), ReplayError> {
     let changesets = database.since_checkpoint()?;
     let mut state: Option<FinanceState> = None;
+    let mut differed = false;
     for changeset in &changesets {
         let change = database.change(changeset)?;
         let next = match (&change, &state) {
@@ -213,14 +224,67 @@ pub(crate) fn replay(
             }
         };
         if state_hash(&next)? != changeset.state {
-            return Err(ReplayError::Diverged {
-                seq: changeset.seq,
-                kind: changeset.kind.clone(),
-            });
+            if strict {
+                return Err(ReplayError::Diverged {
+                    seq: changeset.seq,
+                    kind: changeset.kind.clone(),
+                });
+            }
+            differed = true;
         }
         state = Some(next);
     }
-    Ok((state, changesets.len()))
+    Ok((state, changesets.len(), differed))
+}
+
+/// What opening a database must do to its tables so they match the log.
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum Tables {
+    /// They hash to the log's latest state.
+    Current,
+    /// Rewrite them from the replayed state.
+    Rebuild,
+    /// Replay under this code gave other results than the log recorded (a new field, or a
+    /// calculation that changed), so save the replayed state as a checkpoint, which also
+    /// rewrites them; later opens compare against it.
+    Checkpoint,
+}
+
+/// The state the log holds, which is what Brief reads, and what the saved tables need. The
+/// tables are the log's cache: they stand when they hash to the state the latest changeset
+/// recorded, which costs one hash and no replay. Otherwise the log is replayed from its
+/// latest checkpoint with this code, so tables that strayed never reach a reader, and an
+/// update that changed how a state is saved doesn't stop Brief from opening. A database
+/// whose log hasn't begun keeps its tables, and the log begins from them.
+pub(crate) fn authoritative(
+    database: &crate::database::Database,
+) -> Result<(FinanceState, Tables), String> {
+    let saved = database.load()?;
+    let Some(logged) = database.logged_state()? else {
+        return saved
+            .map(|saved| (saved, Tables::Current))
+            .ok_or_else(|| "The finance database has no committed state".to_string());
+    };
+    if let Some(saved) = saved {
+        if state_hash(&saved)? == logged {
+            return Ok((saved, Tables::Current));
+        }
+    }
+    match replay_with(database, false) {
+        Ok((Some(state), _, differed)) => Ok((
+            state,
+            if differed {
+                Tables::Checkpoint
+            } else {
+                Tables::Rebuild
+            },
+        )),
+        Ok((None, _, _)) => Err("The change log is empty".into()),
+        Err(ReplayError::Failed(error)) => Err(error),
+        Err(ReplayError::Diverged { seq, kind }) => Err(format!(
+            "Replaying changeset {seq} ({kind}) gave another result"
+        )),
+    }
 }
 
 /// Whether the log replays to the saved state.
@@ -286,7 +350,7 @@ pub(crate) fn check(database: &crate::database::Database, now: DateTime<Utc>) ->
         (Some(_), Ok(false)) => result(
             Outcome::Differs,
             count,
-            Some("The saved tables differ from the change log".into()),
+            Some("The saved tables differ from the change log; the next launch rebuilds them from it".into()),
         ),
         (Some(_), Err(error)) => result(Outcome::Failed, count, Some(error)),
     }

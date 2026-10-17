@@ -29,17 +29,7 @@ import {
   importSettingsPreferences,
   parseSettingsPreferences,
 } from '../../lib/settings-preferences'
-import {
-  CalendarDays,
-  Download,
-  Fingerprint,
-  MapPinned,
-  RotateCcw,
-  ShieldCheck,
-  Trash2,
-  Upload,
-  X,
-} from '../icons'
+import { CalendarDays, Download, Fingerprint, MapPinned, Trash2, Upload, X } from '../icons'
 import {
   SettingsBlock,
   SettingsCard,
@@ -49,6 +39,7 @@ import {
   SettingsSwitch,
 } from '../settings-ui'
 import { Button, StatusDot } from '../ui'
+import { DataFolder, StoredFiles } from './storage'
 
 /**
  * Runs a backup or file task, marking it busy until it ends and toasting `failure` with the
@@ -77,32 +68,9 @@ export function DataSection() {
         <FinancialBackup />
         <PreferencesFile />
         <Exports />
+        <DataFolder />
         <Places />
-        <SettingsBlock id="local-storage" title="Local storage">
-          <dl className="data-inventory">
-            <div>
-              <dt>
-                <ShieldCheck size={15} aria-hidden="true" />
-                Finance database
-              </dt>
-              <dd>Snapshot, caches, your edits, and sync history</dd>
-            </div>
-            <div>
-              <dt>
-                <Fingerprint size={15} aria-hidden="true" />
-                macOS Keychain
-              </dt>
-              <dd>Credentials and access tokens</dd>
-            </div>
-            <div>
-              <dt>
-                <RotateCcw size={15} aria-hidden="true" />
-                Disposable caches
-              </dt>
-              <dd>Prices, news, earnings, and places</dd>
-            </div>
-          </dl>
-        </SettingsBlock>
+        <StoredFiles />
       </SettingsCard>
       <SettingsCard>
         <EraseData />

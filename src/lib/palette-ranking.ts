@@ -234,7 +234,7 @@ export function moveFavorite(ids: readonly string[], id: string, offset: -1 | 1)
 }
 
 export type PaletteTab = {
-  id: 'all' | 'commands' | 'accounts' | 'holdings' | 'activity'
+  id: 'all' | 'commands' | 'accounts' | 'holdings' | 'activity' | 'objects'
   label: string
   /** Result groups the tab shows; `undefined` means every group. */
   groups?: readonly string[]
@@ -251,9 +251,11 @@ export const paletteTabs: readonly PaletteTab[] = [
     groups: ['Here', 'View', 'Navigate', 'Analytics', 'Appearance', 'Actions'],
     prefix: '>',
   },
-  { id: 'accounts', label: 'Accounts', groups: ['Accounts'], prefix: '@' },
+  { id: 'accounts', label: 'Accounts', groups: ['Accounts'] },
   { id: 'holdings', label: 'Holdings', groups: ['Holdings'] },
   { id: 'activity', label: 'Activity', groups: ['Activity'] },
+  // Every kind Rust's search finds; a first word naming a kind narrows it (`@doc w-2`).
+  { id: 'objects', label: 'Objects', groups: ['Objects'], prefix: '@' },
 ]
 
 /** The tab a leading prefix asks for, and the query without it. */

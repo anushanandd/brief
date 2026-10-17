@@ -10,9 +10,43 @@ import { ActionProvider, useRegisterActions, type AppAction } from '../lib/actio
 import { datePresets } from '../lib/palette-filters'
 import { heldSecurities, paletteQuestion } from '../lib/palette-rows'
 import { CommandMenu } from './command-menu'
+import { ObjectDetailsProvider } from './object-details'
 
 const scenario = vi.hoisted(() => ({ refreshing: false, withActivity: false }))
 vi.mock('@tanstack/react-router', () => ({ useNavigate: () => vi.fn() }))
+// Rust's search, for this file's own activity; every other kind searches the seed's graph.
+vi.mock('../lib/objects', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../lib/objects')>()
+  return {
+    ...actual,
+    searchObjects: async (query: Parameters<typeof actual.searchObjects>[0]) => {
+      const { text, kinds } = query
+      if (!kinds.includes('transaction')) return actual.searchObjects(query)
+      const term = text.toLowerCase()
+      if (!scenario.withActivity) return []
+      return [
+        ...['0', '1']
+          .filter(() => 'chipotle dining'.includes(term))
+          .map((index) => ({
+            id: `transaction:synthetic-chipotle-${index}`,
+            kind: 'transaction' as const,
+            title: 'Chipotle',
+            match: 'words' as const,
+          })),
+        ...('nvda buy'.includes(term)
+          ? [
+              {
+                id: 'trade:synthetic-buy',
+                kind: 'trade' as const,
+                title: 'NVDA',
+                match: 'words' as const,
+              },
+            ]
+          : []),
+      ]
+    },
+  }
+})
 vi.mock('../hooks/use-finance', () => ({
   useFinance: () => ({
     data: {
@@ -207,6 +241,8 @@ it('ranks an exact ticker, then Activity search, then matching entries', async (
   scenario.withActivity = true
   const menu = await mountMenu()
   await menu.type('nvda')
+  // Activity's entries come from search, a moment after the typed query.
+  await vi.waitFor(() => expect(menu.labels()).toContain('Bought NVDA'))
   const labels = menu.labels()
   const holding = labels.indexOf('NVDA · Synthetic Security')
   const search = labels.indexOf('Search Activity for “nvda”')
@@ -215,8 +251,33 @@ it('ranks an exact ticker, then Activity search, then matching entries', async (
   expect(search).toBeGreaterThan(holding)
   expect(purchase).toBeGreaterThan(search)
   await menu.type('chipotle')
+  await vi.waitFor(() => expect(menu.labels()[1]).toBe('Chipotle'))
   expect(menu.selectedLabel()).toBe('Search Activity for “chipotle”')
-  expect(menu.labels()[1]).toBe('Chipotle')
+  await menu.cleanup()
+})
+
+it('asks which object a verb acts on, lists that kind, and steps back with Backspace', async () => {
+  // Without trips there is nothing to ask about, and the row says so.
+  let menu = await mountMenu()
+  await menu.type('who went')
+  expect(menu.labels()).toContain('Who went on this trip…')
+  expect(menu.container.textContent).toContain('No trips yet')
+  await menu.cleanup()
+
+  scenario.withActivity = true
+  menu = await mountMenu()
+  await menu.type('import a statement')
+  expect(menu.selectedLabel()).toBe('Import a statement into the account…')
+  await menu.press('Enter')
+  expect(menu.input().placeholder).toBe('Which account?')
+  expect(menu.container.querySelector('.command-chip-pending')?.textContent).toBe(
+    'Import a statement into the account',
+  )
+  // Before a word is typed, the question lists every account.
+  await vi.waitFor(() => expect(menu.labels().length).toBeGreaterThan(0))
+  expect(menu.container.querySelector('[cmdk-group-heading]')?.textContent).toBe('Accounts')
+  await menu.press('Backspace')
+  expect(menu.input().placeholder).toBe('Search')
   await menu.cleanup()
 })
 
@@ -273,15 +334,33 @@ it('changes type with the arrow keys and with a leading prefix', async () => {
   await menu.press('ArrowLeft')
   await menu.press('ArrowLeft')
   expect(menu.activeTab()).toBe('All')
-  await menu.type('@syn')
-  expect(menu.activeTab()).toBe('Accounts')
-  expect(menu.input().value).toBe('syn')
-  expect(menu.labels()).toEqual(['Synthetic Card'])
-  await menu.type('zzz')
+  // `@` searches every kind of object Rust holds.
+  await menu.type('@zzz')
+  expect(menu.activeTab()).toBe('Objects')
+  expect(menu.input().value).toBe('zzz')
   expect(menu.container.querySelector('.command-empty')?.textContent).toContain(
-    'No results in Accounts',
+    'No results in Objects',
   )
   expect(menu.container.querySelector('.command-empty-action')?.textContent).toBe('Search all')
+  await menu.cleanup()
+})
+
+it('finds any kind of object, narrows to one, and shows its raw view with ⌘I', async () => {
+  const menu = await mountMenu(
+    <ObjectDetailsProvider>
+      <CommandMenu open onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />
+    </ObjectDetailsProvider>,
+  )
+  await menu.type('@trip austin')
+  await vi.waitFor(() => expect(menu.labels()).toEqual(['Austin, TX']))
+  expect(menu.container.textContent).toContain('Trip · 2026-08-13 to 2026-08-15')
+  await menu.press('i', { metaKey: true })
+  await vi.waitFor(() =>
+    expect(document.querySelector('.object-details-dialog h2')?.textContent).toBe(
+      'Trip: Austin, TX',
+    ),
+  )
+  expect(document.querySelector('.object-details-dialog')?.textContent).toContain('destination')
   await menu.cleanup()
 })
 
@@ -324,15 +403,19 @@ it('opens a numbered Actions menu beside the selected row', async () => {
   ).toEqual([
     'Open holding1',
     'Search Activity for NVDA2',
-    'Copy ticker3',
-    'Add to Favorites4',
-    'Reset ranking5',
+    // The holding's catalog verbs, which open its page and run there.
+    'Show taxes3',
+    'Refresh news4',
+    'Show price chart details5',
+    'Copy ticker6',
+    'Add to Favorites7',
+    'Reset ranking8',
   ])
   await menu.press('Escape')
   expect(menu.container.querySelector('.command-menu-popover')).toBeNull()
   expect(menu.input().value).toBe('nvda')
   await menu.press('Enter', { altKey: true })
-  await menu.press('4')
+  await menu.press('7')
   expect(menu.footer()).toBe('Added to Favorites')
   await menu.type('')
   const favorites = menu.container.querySelector('[cmdk-group]')

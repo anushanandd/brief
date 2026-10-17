@@ -5,10 +5,18 @@ import type { AppAction } from '../lib/action-system'
 import { actionScopePriority } from '../lib/action-system'
 import { activityMethod, type ActivityItem } from '../lib/activity'
 import { localDateKey, validDate } from '../lib/dates'
-import { pluralize } from '../lib/format'
+import { formatCurrency, pluralize } from '../lib/format'
 import { stockLogoUrl, stockMarkColor, stockMarkLabel } from '../lib/logos'
 import { analyticsNavigation, secondaryNavigation } from '../lib/navigation'
 import type { useOrderedNavigation } from '../lib/navigation-preferences'
+import {
+  activityObjectId,
+  getObject,
+  objectKinds,
+  openObject,
+  type ObjectKind,
+  type SearchHit,
+} from '../lib/objects'
 import {
   chipSearch,
   datePresets,
@@ -18,10 +26,11 @@ import {
   type FilterStep,
 } from '../lib/palette-filters'
 import type { MatchRange } from '../lib/palette-ranking'
-import { groupTone, heldSecurities, type MenuAction } from '../lib/palette-rows'
+import { groupTone, heldSecurities, type MenuAction, type RowAction } from '../lib/palette-rows'
 import type { FinanceSettings, FinanceSnapshot } from '../lib/schema'
 import { settingsHash } from '../lib/settings-dialog'
 import { transactionDateKey } from '../lib/spending'
+import { objectVerbs, verbs, type Verb } from '../lib/verbs'
 import { AccountMark } from './account-mark'
 import { ActivityMark } from './activity-list'
 import { ActivityMethodMark } from './activity-method-mark'
@@ -29,15 +38,27 @@ import { BrandMark } from './brand-mark'
 import { CategoryMark } from './category-mark'
 import {
   Activity,
+  ArrowLeftRight,
+  Building,
   Copy,
   CreditCard,
   Database,
+  FileText,
+  Gift,
   HelpCircle,
+  Info,
   Landmark,
   List,
+  MapPinned,
+  Plane,
+  Receipt,
+  ReceiptText,
   RefreshCw,
+  ScrollText,
   Search,
   TrendingUp,
+  Users,
+  type IconComponent,
 } from './icons'
 import { Keys } from './keys'
 
@@ -147,6 +168,80 @@ export function activityRow(activity: ActivityItem, context: RowContext): MenuAc
   }
 }
 
+const objectIcons: Record<ObjectKind, IconComponent> = {
+  account: Landmark,
+  transaction: Activity,
+  holding: TrendingUp,
+  trade: ArrowLeftRight,
+  document: FileText,
+  statement: ReceiptText,
+  person: Users,
+  organization: Building,
+  place: MapPinned,
+  trip: Plane,
+  bill: Receipt,
+  benefit: Gift,
+  story: ScrollText,
+}
+
+/**
+ * The object id a palette row names, for its raw view: an object hit, an account, or an
+ * Activity entry's transaction or trade.
+ */
+export function rowObjectId(rowId: string): string | undefined {
+  if (rowId.startsWith('object:')) return rowId.slice('object:'.length)
+  if (rowId.startsWith('account:')) return rowId
+  if (rowId.startsWith('activity:')) return activityObjectId(rowId.slice('activity:'.length))
+  return undefined
+}
+
+/**
+ * One of Rust's search results as a row, keeping Rust's order: word matches, then meaning
+ * matches below them. Enter opens its page; ⌘↵ or ⌘I shows its raw view.
+ */
+export function objectRow(
+  hit: SearchHit,
+  index: number,
+  context: RowContext & Pick<PaletteActionsInput, 'showObject' | 'runVerb'>,
+): MenuAction {
+  const kind = objectKinds[hit.kind]
+  const open = (object: Parameters<typeof openObject>[1]) =>
+    openObject(context.navigate, object, context.showObject)
+  return {
+    id: `object:${hit.id}`,
+    label: hit.title,
+    detail: [
+      kind.label,
+      hit.subtitle,
+      hit.date ? transactionDateKey(hit.date) : undefined,
+      hit.amount == null ? undefined : formatCurrency(hit.amount),
+      hit.match === 'meaning' ? 'Similar' : undefined,
+    ]
+      .filter(Boolean)
+      .join(' · '),
+    search: '',
+    group: 'Objects',
+    icon: objectIcons[hit.kind],
+    fixedScore: (hit.match === 'words' ? 50 : 40) - index * 0.01,
+    ephemeral: true,
+    verb: 'Open',
+    secondary: {
+      label: 'Show details',
+      icon: Info,
+      run: () => context.showObject(hit.id),
+    },
+    extras: [
+      ...verbRows(hit.kind, hit.id, context.runVerb),
+      { label: 'Copy id', icon: Copy, notice: 'Copied', run: () => copyText(hit.id) },
+    ],
+    // A story opens its link, which only its full record holds.
+    run: () =>
+      hit.kind === 'story'
+        ? getObject(hit.id).then((detail) => (detail ? open(detail.object) : undefined))
+        : open(hit),
+  }
+}
+
 export type PaletteActionsInput = RowContext & {
   finance: FinanceSnapshot | undefined
   registeredActions: readonly AppAction[]
@@ -156,11 +251,32 @@ export type PaletteActionsInput = RowContext & {
   searchesActivity: boolean
   textSearch: boolean
   activityMatches: readonly ActivityItem[]
+  /** Search read as many entries as it reads at once; there may be more. */
+  activityCapped: boolean
   activityAccountIds: ReadonlySet<string>
   isRefreshing: boolean
   refresh: () => unknown
   onShowShortcuts: () => void
+  /** What Rust's search found for the query, best first. */
+  objectHits: readonly SearchHit[]
+  showObject: (id: string) => void
+  /** Opens a catalog verb's page or object, then runs it. */
+  runVerb: (verb: Verb, objectId?: string) => unknown
+  /** Asks which object a verb acts on. */
+  chooseVerb: (verb: Verb) => void
 }
+
+/** An object's catalog verbs, for its row's Actions menu. */
+const verbRows = (
+  kind: ObjectKind,
+  objectId: string,
+  runVerb: PaletteActionsInput['runVerb'],
+): RowAction[] =>
+  objectVerbs(kind).map((verb) => ({
+    label: verb.title,
+    icon: List,
+    run: () => runVerb(verb, objectId),
+  }))
 
 /**
  * Every row the palette can offer: registered actions first, then an Activity search for the
@@ -169,6 +285,16 @@ export type PaletteActionsInput = RowContext & {
 export function paletteActions(input: PaletteActionsInput): MenuAction[] {
   const { finance, registeredActions, pages, chips, navigate, query } = input
   const hasRegistered = (id: string) => registeredActions.some((action) => action.id === id)
+  const pageLabel = (href: string) => {
+    const path = href.split('?')[0]
+    return (
+      [
+        ...pages,
+        ...secondaryNavigation,
+        ...analyticsNavigation.map(({ label }) => ({ label, to: '/analytics' })),
+      ].find(({ to }) => to === path)?.label ?? path
+    )
+  }
   return [
     ...registeredActions
       .filter(({ id }) => id !== 'palette.open')
@@ -195,7 +321,7 @@ export function paletteActions(input: PaletteActionsInput): MenuAction[] {
             label: input.textSearch ? `Search Activity for “${query}”` : 'Show filtered Activity',
             detail: !finance
               ? 'Local activity unavailable'
-              : `${input.activityMatches.length} matching ${pluralize(input.activityMatches.length, 'entry', 'entries')}`,
+              : `${input.activityMatches.length}${input.activityCapped ? '+' : ''} matching ${pluralize(input.activityMatches.length, 'entry', 'entries')}`,
             search: `activity search ${query}`,
             group: 'Activity',
             icon: Search,
@@ -266,6 +392,7 @@ export function paletteActions(input: PaletteActionsInput): MenuAction[] {
               }
             : undefined,
           extras: [
+            ...verbRows('account', `account:${account.id}`, input.runVerb),
             {
               label: 'Copy account name',
               icon: Copy,
@@ -289,7 +416,10 @@ export function paletteActions(input: PaletteActionsInput): MenuAction[] {
         icon: Search,
         run: () => navigate({ to: '/activities', search: { q: ticker } }),
       },
-      extras: [{ label: 'Copy ticker', icon: Copy, notice: 'Copied', run: () => copyText(ticker) }],
+      extras: [
+        ...verbRows('holding', holdingObjectId(finance?.holdings ?? [], ticker), input.runVerb),
+        { label: 'Copy ticker', icon: Copy, notice: 'Copied', run: () => copyText(ticker) },
+      ],
       run: () => navigate({ to: '/holdings/$ticker', params: { ticker } }),
     })),
     ...(!hasRegistered('finance.refresh')
@@ -327,7 +457,95 @@ export function paletteActions(input: PaletteActionsInput): MenuAction[] {
       icon: Database,
       run: () => navigate({ to: '.', search: true, hash: settingsHash('connections') }),
     },
+    // Verbs whose page isn't open, which open it and then run.
+    ...verbs
+      .filter((verb) => verb.page && !hasRegistered(verb.id))
+      .map((verb) => ({
+        id: `verb:${verb.id}`,
+        label: verb.title,
+        search: `${verb.title} ${verb.keywords}`,
+        group: 'Actions',
+        icon: List,
+        detail: `On ${pageLabel(verb.page ?? '')}`,
+        run: () => input.runVerb(verb),
+      })),
+    // Verbs on an object, which ask which one first; with none to act on, they say so.
+    ...verbs.flatMap((verb) => {
+      if (!verb.object) return []
+      const kind = objectKinds[verb.object]
+      const count = objectCount(finance, verb.object)
+      return [
+        {
+          id: `verb:${verb.id}`,
+          label: `${verb.title.replace(/…$/, '')}…`,
+          search: `${verb.title} ${verb.keywords} ${kind.label}`,
+          group: 'Actions',
+          icon: objectIcons[verb.object],
+          detail: count ? `Choose ${article(kind.label)}` : `No ${kind.plural.toLowerCase()} yet`,
+          disabled: !count,
+          keepsOpen: true,
+          run: () => input.chooseVerb(verb),
+        },
+      ]
+    }),
+    ...input.objectHits.map((hit, index) => objectRow(hit, index, input)),
   ]
+}
+
+const article = (noun: string) => `${/^[aeiou]/i.test(noun) ? 'an' : 'a'} ${noun.toLowerCase()}`
+
+/**
+ * How many objects of a kind the snapshot holds, for the kinds verbs act on; a kind it can't
+ * count is taken to have some, and the question lists what search finds.
+ */
+function objectCount(finance: FinanceSnapshot | undefined, kind: ObjectKind) {
+  if (!finance) return 0
+  switch (kind) {
+    case 'account':
+      return finance.accounts.filter(({ id }) => id !== 'all').length
+    case 'holding':
+      return finance.holdings.length
+    case 'document':
+      return finance.documents?.length ?? 0
+    case 'trip':
+      return finance.insights?.trips.trips.length ?? 0
+    case 'person':
+      return finance.settings?.people?.length ?? 0
+    default:
+      return 1
+  }
+}
+
+/** One object a verb could act on, as the verb's question lists it. */
+export function choiceRow(
+  hit: SearchHit,
+  index: number,
+  verb: Verb,
+  runVerb: PaletteActionsInput['runVerb'],
+): MenuAction {
+  return {
+    id: `choice:${hit.id}`,
+    label: hit.title,
+    detail: [hit.subtitle, hit.date ? transactionDateKey(hit.date) : undefined]
+      .filter(Boolean)
+      .join(' · '),
+    search: '',
+    group: 'Objects',
+    icon: objectIcons[hit.kind],
+    fixedScore: 50 - index * 0.01,
+    ephemeral: true,
+    verb: verb.title.replace(/…$/, ''),
+    run: () => runVerb(verb, hit.id),
+  }
+}
+
+/** The object id of a ticker's position: the first account's, as the holding page shows. */
+const holdingObjectId = (
+  holdings: readonly { ticker: string; accountId: string }[],
+  ticker: string,
+) => {
+  const held = holdings.find((holding) => holding.ticker === ticker)
+  return held ? `holding:${held.accountId}:${ticker}` : `holding::${ticker}`
 }
 
 /** The `/` filter picker's rows: first a field, then its values; a choice becomes a chip. */

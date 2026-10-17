@@ -15,7 +15,9 @@ import {
   setCommandMenu,
   viewLink,
 } from '../lib/native-commands'
+import { verbLink } from '../lib/verbs'
 import { useLatest } from './use-latest'
+import { useRunVerb } from './use-run-verb'
 
 const copy = (text: string) => () => void copyText(text).catch(() => undefined)
 
@@ -34,7 +36,8 @@ export function useNativeCommands(
 ) {
   const router = useRouter()
   const location = useLocation()
-  const latest = useLatest({ actions, executeAction, location })
+  const runVerb = useRunVerb()
+  const latest = useLatest({ actions, executeAction, location, runVerb })
 
   // Pages register and drop commands as they mount, so the menu follows after they settle.
   useEffect(() => {
@@ -50,6 +53,12 @@ export function useNativeCommands(
     if (!isTauri()) return undefined
     const routes = Object.keys(router.routesByPath)
     const open = (view: string) => {
+      // `brief://do/<verb>?object=<id>` runs a catalog verb, as Shortcuts and scripts can.
+      const link = verbLink(view)
+      if (link) {
+        void latest.current.runVerb(link.verb, link.object)
+        return
+      }
       const href = openedViewHref(view, routes)
       if (href) void router.navigate({ href })
     }
