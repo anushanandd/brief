@@ -6,7 +6,6 @@ import {
   chartPointAtOrAfter,
   chartPointsFromStartDate,
   chartRangeChange,
-  marketClosePoint,
   splitAtEstimate,
   upsertLiveChartPoint,
 } from './live-chart'
@@ -33,17 +32,6 @@ it('splits a line at its last observed day so the estimate starts where it ends'
 })
 
 describe('live chart points', () => {
-  it('keeps a single provider close point visible outside regular hours', () => {
-    const close = { time: 100, value: 1_000 }
-
-    expect(marketClosePoint([close], 'Overnight', close.time)).toBe(close)
-    expect(marketClosePoint([close], 'After hours', close.time)).toBe(close)
-    expect(marketClosePoint([close], 'Pre-market', close.time)).toBe(close)
-    expect(marketClosePoint([close], 'Market closed', close.time)).toBe(close)
-    expect(marketClosePoint([close], 'Regular market', close.time)).toBeUndefined()
-    expect(marketClosePoint([close], undefined, close.time)).toBeUndefined()
-  })
-
   it('keeps the latest account value for each minute', () => {
     const first = appendLiveChartPoint([], 100, 10)
     const sameMinute = appendLiveChartPoint(first, 101, 59)

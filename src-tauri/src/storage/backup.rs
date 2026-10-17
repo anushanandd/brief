@@ -94,12 +94,24 @@ impl Storage {
         // saved earlier still open.
         let mut removable = vec![self.backup_path(), self.documents_path()?];
         removable.extend(LEGACY_FINANCE_FILES.map(|name| directory.join(name)));
+        // Every other copy of the finance database goes too, whatever made it: retained copies,
+        // backups, and copies an earlier version or a migration left behind, with their WAL
+        // files. Only the open database and its own WAL files stay.
+        let live = self
+            .path
+            .file_name()
+            .map(|name| name.to_string_lossy().into_owned())
+            .unwrap_or_default();
         if let Ok(entries) = fs::read_dir(directory) {
             removable.extend(entries.flatten().filter_map(|entry| {
                 let name = entry.file_name();
                 let name = name.to_string_lossy();
-                (name.starts_with("finance-state.retained-") && name.ends_with(".sqlite3"))
-                    .then(|| entry.path())
+                let copy = name.starts_with("finance-state.")
+                    && !name.starts_with(&live)
+                    && [".sqlite3", ".sqlite3-wal", ".sqlite3-shm"]
+                        .iter()
+                        .any(|suffix| name.ends_with(suffix));
+                copy.then(|| entry.path())
             }));
         }
         for path in removable {

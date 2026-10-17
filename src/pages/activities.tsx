@@ -12,7 +12,6 @@ import { DateRangePicker } from '../components/date-range-picker'
 import { Download, Filter } from '../components/icons'
 import { TransactionDialog } from '../components/transaction-dialog'
 import { Button, ScrollCueCard } from '../components/ui'
-import { usePresence } from '../components/ui/presence'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
@@ -99,9 +98,9 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
       void navigate({ search: (current) => ({ ...current, ...patch }), replace: true }),
     [navigate],
   )
+  // The filters card opens with a slide and closes at once, so the ledger reclaims its width
+  // in one step instead of waiting for a fade.
   const filtersOpen = activityFiltersOpen.use()
-  const [filterCard, setFilterCard] = useState<HTMLDivElement | null>(null)
-  const filtersPresent = usePresence(filtersOpen, filterCard)
   const focusedRow = useFocusedActivity()
   const [draft, setDraft] = useState('')
   const inputRef = useSearchShortcuts(draft, setDraft)
@@ -110,8 +109,13 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
   const savedViews = activityViews.use()
   // Me/Other choices shown at once, by activity ID, while their save is on its way.
   const [flipped, setFlipped] = useState<Record<string, boolean>>({})
+  // Ledger transactions are addressed by their bare ID; trades keep their `trade:` prefix.
   const [openId, setOpenId] = useState<string | undefined>(() =>
-    search.open ? `spending:${search.open}` : undefined,
+    search.open
+      ? search.open.startsWith('trade:')
+        ? search.open
+        : `spending:${search.open}`
+      : undefined,
   )
   const openerRef = useRef<HTMLElement | null>(null)
   // Rows chosen for a bulk edit, by activity ID; only ledger transactions can be edited.
@@ -426,10 +430,8 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
             />
           </div>
         </ScrollCueCard>
-        {filtersPresent ? (
+        {filtersOpen ? (
           <ActivityFilterCard
-            ref={setFilterCard}
-            leaving={!filtersOpen}
             active={ledger.cardFilterCount}
             owner={search.for}
             ownerCounts={ledger.options.owners}

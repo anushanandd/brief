@@ -40,9 +40,7 @@ export function AppShell() {
       ? analyticsGroup(reportChart ?? analyticsCharts[0].id) === 'money'
         ? '/spending'
         : '/holdings'
-      : pathname === '/taxes'
-        ? '/holdings'
-        : undefined
+      : undefined
   const mainContentRef = useRef<HTMLElement>(null)
   const settings = useSettingsDialog()
   const finance = useFinance()

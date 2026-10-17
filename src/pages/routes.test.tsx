@@ -125,7 +125,8 @@ it('shows as much recent activity on Home as the longer preview beside it', asyn
   expect(accounts).toContain('2 accounts')
   expect(accounts).not.toContain('href="/accounts?account=')
   // No holdings and one account category, so one activity.
-  expect(activity.match(/class="financial-activity-row"/g)).toHaveLength(1)
+  // Each row opens its transaction on Activity.
+  expect(activity.match(/class="financial-activity-row is-openable"/g)).toHaveLength(1)
   // Without holdings or a positive balance there is no line to split.
   expect(html).not.toContain('class="share-line"')
 })

@@ -13,7 +13,6 @@ import {
   MapPinned,
   Palette,
   Plane,
-  ReceiptText,
   Repeat2,
   RotateCcw,
   Sunset,
@@ -42,6 +41,7 @@ const navigationSequences: Record<string, string> = {
   '/insights': 'n',
   '/calendar': 'd',
   '/documents': 'o',
+  '/taxes': 'r t',
 }
 /**
  * `g r` followed by these keys opens the report; `g r t` opens Taxes, `g r u` Recurring,
@@ -135,16 +135,6 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
         ],
         run: () => navigate({ to: report.to, search: report.search }),
       })),
-      {
-        id: 'navigation.open./taxes',
-        title: 'Open Taxes',
-        search: 'go report taxes tax estimate 1099 wash sale harvest capital gains',
-        group: 'Navigate',
-        icon: ReceiptText,
-        scope: 'app' as const,
-        bindings: [{ sequence: ['g', 'r', 't'], label: 'g r t' }],
-        run: () => navigate({ to: '/taxes' }),
-      },
       {
         id: 'navigation.open./holdings/retirement',
         title: 'Open Retirement',

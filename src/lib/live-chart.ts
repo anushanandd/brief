@@ -1,7 +1,6 @@
 import type { LivelinePoint } from 'liveline'
 
 import { dayKey } from './dates'
-import type { MarketSnapshots } from './schema'
 
 const MAX_LIVE_POINTS = 7 * 24 * 60
 const DATE_PATTERN = /^\d{4}-\d{2}-\d{2}$/
@@ -109,13 +108,4 @@ export function buildLiveChartData(
     .toSorted((left, right) => left.time - right.time)
 
   return [...new Map(merged.map((point) => [point.time, point])).values()]
-}
-
-export function marketClosePoint(
-  points: LivelinePoint[],
-  session: MarketSnapshots['session'] | undefined,
-  closeTime: number | undefined,
-) {
-  if (!session || session === 'Regular market' || closeTime === undefined) return undefined
-  return points.find((point) => point.time === closeTime)
 }

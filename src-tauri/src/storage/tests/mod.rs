@@ -362,6 +362,11 @@ fn explicit_erasure_replaces_finance_state_and_removes_retained_copies() {
     storage.database.backup(&storage.backup_path()).unwrap();
     let retained = storage.path.with_extension("retained-test.sqlite3");
     fs::write(&retained, b"retained financial data").unwrap();
+    // A copy an old migration left behind, with its WAL file.
+    let leftover = storage.path.with_extension("before-migration.sqlite3");
+    fs::write(&leftover, b"leftover financial data").unwrap();
+    let leftover_wal = storage.path.with_extension("before-migration.sqlite3-wal");
+    fs::write(&leftover_wal, b"leftover journal").unwrap();
     let revision = storage.data.revision;
 
     let snapshot = storage.erase().unwrap();
@@ -370,6 +375,9 @@ fn explicit_erasure_replaces_finance_state_and_removes_retained_copies() {
     assert_eq!(snapshot["revision"], revision + 1);
     assert!(!storage.backup_path().exists());
     assert!(!retained.exists());
+    assert!(!leftover.exists());
+    assert!(!leftover_wal.exists());
+    assert!(storage.path.exists());
     drop(storage);
     assert_eq!(
         Storage::new(directory.clone()).unwrap().snapshot().unwrap()["netWorth"],

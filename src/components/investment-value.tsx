@@ -12,7 +12,7 @@ import {
 } from '../lib/dashboard-account-views'
 import { financeSettings } from '../lib/finance-settings'
 import { type ChartPeriod, chartPeriodSeconds } from '../lib/graph-preferences'
-import { buildLiveChartData, chartPointsFromStartDate, marketClosePoint } from '../lib/live-chart'
+import { buildLiveChartData, chartPointsFromStartDate } from '../lib/live-chart'
 import type { FinanceSnapshot } from '../lib/schema'
 import { PerformanceChart } from './charts'
 import { ValueHistoryEmptyState } from './data-state'
@@ -134,11 +134,6 @@ export function InvestmentsPortfolio({
                 referenceIso={data.updatedAt}
                 startDate={startDate}
                 selectedWindow={graphWindow}
-                sessionBoundary={marketClosePoint(
-                  livePoints,
-                  live.marketSession,
-                  live.marketCloseTime,
-                )}
               />
             ) : (
               <ValueHistoryEmptyState

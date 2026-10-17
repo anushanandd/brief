@@ -97,7 +97,7 @@ it('renders accessible category-stacked spending bars with five axis labels', ()
   expect(html.match(/analytics-bar-axis[\s\S]*?<span/g)).toBeTruthy()
 })
 
-it('renders range controls and the regular-market close marker', () => {
+it('renders range controls without an unlabeled session marker', () => {
   const now = Date.parse('2026-09-03T12:00:00Z') / 1_000
   const points = [
     { time: now - 23 * 60 * 60, value: 100 },
@@ -113,15 +113,13 @@ it('renders range controls and the regular-market close marker', () => {
         value={110}
         referenceIso="2026-09-03T12:00:00Z"
         selectedWindow={0}
-        sessionBoundary={points[0]}
       />
     </>,
   )
   expect(html).toMatch(/role="combobox"[^>]*aria-label="Chart range"/)
   expect(html).toContain('All time')
   expect(html).toContain('Chart range: All time')
-  expect(html).toContain('aria-label="Regular market close"')
-  expect(html).toContain('with the regular-market close marked')
+  expect(html).not.toContain('Regular market close')
 })
 
 it.each([
