@@ -23,14 +23,18 @@ import {
 } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
-import { type SpendingComparison, useSpendingActions } from '../hooks/use-spending-actions'
+import {
+  type SpendingBreakdown,
+  type SpendingComparison,
+  useSpendingActions,
+} from '../hooks/use-spending-actions'
 import { useSpendingPeriod } from '../hooks/use-spending-period'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { accountDisplayName } from '../lib/account-names'
 import { buildActivities, type ActivityItem } from '../lib/activity'
 import { daysBetween } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
-import { formatProseCurrency, pluralize, formatDay } from '../lib/format'
+import { formatMonthYear, formatProseCurrency, pluralize, formatDay } from '../lib/format'
 import { getExternalLogosEnabled } from '../lib/logos'
 import type { SpendingOwner } from '../lib/schema'
 import {
@@ -203,6 +207,7 @@ export function SpendingPage() {
 
   // Categories compare with the last period or with the average of earlier ones.
   const [chosenComparison, setComparison] = useState<SpendingComparison>('previous')
+  const [breakdown, setBreakdown] = useState<SpendingBreakdown>('categories')
   const periodCategories = detail?.categories ?? []
   const canCompareTypical = period !== 0 && periodCategories.some(({ typical }) => typical != null)
   const comparison = canCompareTypical ? chosenComparison : 'previous'
@@ -223,6 +228,8 @@ export function SpendingPage() {
     comparison,
     canCompareTypical,
     setComparison,
+    breakdown,
+    setBreakdown,
   })
 
   if (query.isLoading || (options.length > 0 && periodQuery.isLoading)) return <PageLoading />
@@ -329,6 +336,15 @@ export function SpendingPage() {
     }),
   )
   const focusColor = focus ? spendingCategoryColor(focus) : undefined
+  const placeBars = (detail?.places ?? []).map(({ name, total }) => ({
+    name,
+    value: total,
+    color: 'var(--data-5)',
+  }))
+  const shownBreakdown = placeBars.length ? breakdown : 'categories'
+  // A total reaching back to Wallet's first record says the history stops there.
+  const historyFrom = data.wallet?.historyFrom
+  const historyStart = historyFrom != null && start <= historyFrom ? historyFrom : undefined
 
   return (
     <div className="page spending-workspace-page">
@@ -382,9 +398,7 @@ export function SpendingPage() {
                           `${periodLabel} · ${focus}`
                         ) : statementBalance != null ? (
                           <>
-                            {periodOffset === 0
-                              ? 'Statement balance '
-                              : `${periodLabel} · balance `}
+                            {periodOffset === 0 ? 'Balance ' : `${periodLabel} · balance `}
                             <span className="sensitive-value">
                               {formatProseCurrency(statementBalance)}
                             </span>
@@ -408,6 +422,11 @@ export function SpendingPage() {
                       <span className="spending-daily-average sensitive-value">
                         {`${formatProseCurrency(figures.daily)} a day`}
                       </span>
+                      {historyStart ? (
+                        <span className="spending-daily-average">
+                          {`Card history starts ${formatMonthYear(historyStart)}`}
+                        </span>
+                      ) : null}
                       {focus ? (
                         <button
                           type="button"
@@ -597,9 +616,36 @@ export function SpendingPage() {
           <div className="spending-companion">
             <Card className="spending-category-card">
               <SectionHeading
-                title="Categories"
+                title={
+                  placeBars.length ? (
+                    <span className="spending-tabs" role="tablist" aria-label="Spending by">
+                      {(
+                        [
+                          ['categories', 'Categories'],
+                          ['places', 'Places'],
+                        ] as const
+                      ).map(([value, label]) => (
+                        <button
+                          type="button"
+                          role="tab"
+                          key={value}
+                          aria-selected={shownBreakdown === value}
+                          aria-keyshortcuts="B"
+                          tabIndex={-1}
+                          data-command="spending.breakdown.toggle"
+                          onClick={() => setBreakdown(value)}
+                        >
+                          {label}
+                        </button>
+                      ))}
+                    </span>
+                  ) : (
+                    'Categories'
+                  )
+                }
                 action={
-                  period === 0 ? undefined : canCompareTypical ? (
+                  shownBreakdown === 'places' ? undefined : period ===
+                    0 ? undefined : canCompareTypical ? (
                     <div
                       className="spending-tabs"
                       role="tablist"
@@ -632,22 +678,30 @@ export function SpendingPage() {
                   )
                 }
               />
-              <RankedBars
-                comparison={comparison === 'typical' ? 'the average' : `the last ${unit}`}
-                markLabel={
-                  comparison === 'typical'
-                    ? 'on average by this point'
-                    : `by this point last ${unit}`
-                }
-                items={categoryBars}
-                label={`${periodLabel} spending by category`}
-                emptyMessage="No spending in this range."
-                selected={focus}
-                onSelect={(name) => {
-                  setFocus(name)
-                  setLinked(null)
-                }}
-              />
+              {shownBreakdown === 'places' ? (
+                <RankedBars
+                  items={placeBars}
+                  label={`${periodLabel} spending by place`}
+                  emptyMessage="No spending with a known place in this range."
+                />
+              ) : (
+                <RankedBars
+                  comparison={comparison === 'typical' ? 'the average' : `the last ${unit}`}
+                  markLabel={
+                    comparison === 'typical'
+                      ? 'on average by this point'
+                      : `by this point last ${unit}`
+                  }
+                  items={categoryBars}
+                  label={`${periodLabel} spending by category`}
+                  emptyMessage="No spending in this range."
+                  selected={focus}
+                  onSelect={(name) => {
+                    setFocus(name)
+                    setLinked(null)
+                  }}
+                />
+              )}
             </Card>
             {account && account.id !== card?.id ? (
               // Another card shows its own benefits only when a product is assigned to it.

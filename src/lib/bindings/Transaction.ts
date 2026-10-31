@@ -10,15 +10,26 @@ import type { Presence } from "./Presence";
 import type { Quality } from "./Quality";
 import type { Split } from "./Split";
 import type { TransactionLocation } from "./TransactionLocation";
+import type { WalletDetail } from "./WalletDetail";
 
-export type Transaction = { classification?: Classification, id: string, merchant: string, category: string, date: string, occurredOn: string | null, postedOn: string | null, location?: TransactionLocation, 
+export type Transaction = { classification?: Classification, id: string, merchant: string, category: string, date: string, occurredOn: string | null, 
+/**
+ * The moment of purchase at the place it happened, as RFC 3339 with that place's offset.
+ * Absent unless a source reports the time and its zone.
+ */
+occurredAt?: string, postedOn: string | null, 
+/**
+ * What Apple Wallet recorded about this purchase.
+ */
+wallet?: WalletDetail, location?: TransactionLocation, 
 /**
  * What the card issuer's imported export says about the merchant.
  */
 issuer?: IssuerDetail, 
 /**
- * Where it was made, as best known: the issuer's address, then the bank's descriptor, then
- * `location`, which stays the provider's own report. Absent for a purchase made remotely.
+ * Where it was made, as best known: Wallet's record, the issuer's address, then the bank's
+ * descriptor, then `location`, which stays the provider's own report. Absent for a purchase
+ * made remotely.
  */
 place?: Place, 
 /**

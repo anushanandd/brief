@@ -3,6 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
 import { ExternalLink } from '../components/external-link'
+import { FilterSelect } from '../components/filter-select'
 import { Check, RefreshCw, Search, X } from '../components/icons'
 import { useShowObject } from '../components/object-details'
 import { Button, Card, EmptyState, SectionHeading } from '../components/ui'
@@ -26,6 +27,7 @@ import {
   type Program,
   type ResearchState,
 } from '../lib/evidence'
+import { formatDay, formatUpdatedAt } from '../lib/format'
 import type { FinanceSnapshot } from '../lib/schema'
 
 const researchKey = ['research'] as const
@@ -40,6 +42,10 @@ export function RulesView({ data }: { data: FinanceSnapshot }) {
   const evidence = evidenceOf(data)
   const client = useQueryClient()
   const research = useQuery({ queryKey: researchKey, queryFn: getResearch })
+  const [drafting, setDrafting] = useState<ResearchPage>()
+  const stopDrafting = useCallback(() => setDrafting(undefined), [])
+  const programName = (id: string) =>
+    evidence.programs.find((program) => program.id === id)?.name ?? 'A rule Brief knows'
   useEffect(() => {
     if (!isTauri()) return undefined
     const stop = listen(
@@ -55,35 +61,51 @@ export function RulesView({ data }: { data: FinanceSnapshot }) {
       </Card>
     )
   }
+  // What the rules conclude and note leads; the rules themselves and research sit beside it.
+  // A draft takes the full width, its source page beside the form.
   return (
     <div className="trips-main">
-      {evidence.alerts.length ? (
-        <Card className="chapters-card">
-          <SectionHeading title="Notes from rules" />
-          <ul className="chapter-checklist">
-            {evidence.alerts.map((alert) => (
-              <li key={alert.id}>{alert.says}</li>
-            ))}
-          </ul>
-        </Card>
-      ) : null}
-      <Card className="chapters-card">
-        <SectionHeading
-          title="Explained"
-          detail="Conclusions published rules reach from your records, with the rule's source."
-        />
-        {evidence.explanations.length ? (
-          <ul className="rules-list">
-            {evidence.explanations.map((explanation) => (
-              <ExplanationRow key={explanation.id} explanation={explanation} />
-            ))}
-          </ul>
-        ) : (
-          <EmptyState>No rule's conditions are all met by your records yet.</EmptyState>
-        )}
-      </Card>
-      <ProgramsCard data={data} research={research.data} />
-      <ResearchCard research={research.data} />
+      {drafting ? <DraftSheet page={drafting} onDone={stopDrafting} /> : null}
+      <div className="rules-grid">
+        <div className="trips-main">
+          {evidence.alerts.length ? (
+            <Card className="chapters-card">
+              <SectionHeading title="Notes" />
+              <ul className="rules-notes">
+                {evidence.alerts.map((alert) => (
+                  <li key={alert.id} data-keyboard-row>
+                    <span className="chapters-row-copy">
+                      <strong>{alert.says}</strong>
+                      <small>
+                        {programName(alert.program)} · {formatDay(alert.date)}
+                      </small>
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </Card>
+          ) : null}
+          <Card className="chapters-card">
+            <SectionHeading
+              title="Explained"
+              detail="What published rules conclude from your records, each with its source."
+            />
+            {evidence.explanations.length ? (
+              <ul className="rules-list">
+                {evidence.explanations.map((explanation) => (
+                  <ExplanationRow key={explanation.id} explanation={explanation} />
+                ))}
+              </ul>
+            ) : (
+              <EmptyState>No rule's conditions are all met by your records yet.</EmptyState>
+            )}
+          </Card>
+        </div>
+        <div className="trips-main">
+          <ProgramsCard data={data} research={research.data} />
+          <ResearchCard research={research.data} onDraft={setDrafting} />
+        </div>
+      </div>
     </div>
   )
 }
@@ -159,7 +181,7 @@ function ExplanationRow({ explanation }: { explanation: Explanation }) {
           <ExternalLink href={explanation.proof.source.url}>
             {explanation.proof.source.title}
           </ExternalLink>{' '}
-          · read {explanation.proof.reviewed}
+          · read {formatDay(explanation.proof.reviewed)}
         </p>
       </details>
       {explanation.tier === 'suggested' ? (
@@ -255,7 +277,7 @@ function ProgramsCard({ data, research }: { data: FinanceSnapshot; research?: Re
                 <small>
                   {program.organization} ·{' '}
                   <ExternalLink href={program.source.url}>{program.source.title}</ExternalLink> ·
-                  read {program.reviewed}
+                  read {formatDay(program.reviewed)}
                   {program.approved ? ' · approved by you' : ''}
                 </small>
               </span>
@@ -290,12 +312,16 @@ function ProgramsCard({ data, research }: { data: FinanceSnapshot; research?: Re
  * Opt-in research: what no rule covers, the public query that would look for one, and every
  * query sent. Pages that come back are shown, never acted on; a rule joins only when approved.
  */
-function ResearchCard({ research }: { research?: ResearchState }) {
+function ResearchCard({
+  research,
+  onDraft,
+}: {
+  research?: ResearchState
+  onDraft: (page: ResearchPage) => void
+}) {
   const client = useQueryClient()
   const [running, setRunning] = useState<string>()
   const [error, setError] = useState<string>()
-  const [drafting, setDrafting] = useState<ResearchPage>()
-  const stopDrafting = useCallback(() => setDrafting(undefined), [])
   // A month after the last read of a source, opening Rules reads it again; Rust reads only the
   // sources due, so once per visit is enough.
   const rechecked = useRef(false)
@@ -356,10 +382,11 @@ function ResearchCard({ research }: { research?: ResearchState }) {
           </ul>
         </section>
       ) : null}
-      {drafting ? <DraftSheet page={drafting} onDone={stopDrafting} /> : null}
       {research.log.length ? (
-        <section>
-          <h3>Research log</h3>
+        <details className="rules-why rules-log-disclosure">
+          <summary>
+            Research log <small>{research.log.length}</small>
+          </summary>
           <ul className="rules-log">
             {research.log.map((entry) => (
               <li key={entry.id} data-keyboard-row>
@@ -367,7 +394,7 @@ function ResearchCard({ research }: { research?: ResearchState }) {
                   <strong>{entry.query}</strong>
                   <small>
                     {entry.kind === 'recheck' ? 'Source read again' : 'Search'} ·{' '}
-                    {entry.startedAt.slice(0, 16).replace('T', ' ')} ·{' '}
+                    {formatUpdatedAt(entry.startedAt)} ·{' '}
                     {entry.status === 'running'
                       ? 'running'
                       : entry.status === 'failed'
@@ -380,7 +407,7 @@ function ResearchCard({ research }: { research?: ResearchState }) {
                     {entry.pages.map((page) => (
                       <li key={page.url}>
                         <ExternalLink href={page.url}>{page.title || page.url}</ExternalLink>
-                        <Button size="compact" variant="ghost" onClick={() => setDrafting(page)}>
+                        <Button size="compact" variant="ghost" onClick={() => onDraft(page)}>
                           Draft a rule from this page
                         </Button>
                       </li>
@@ -390,7 +417,7 @@ function ResearchCard({ research }: { research?: ResearchState }) {
               </li>
             ))}
           </ul>
-        </section>
+        </details>
       ) : null}
       {error ? (
         <p role="alert" className="transaction-edit-note">
@@ -528,19 +555,18 @@ function DraftSheet({ page, onDone }: { page: ResearchPage; onDone: () => void }
         <form ref={form} className="chapter-edit" onSubmit={(event) => void check(event)}>
           <label>
             <span>Kind</span>
-            <select
+            <FilterSelect
+              label="Kind of rule"
               value={template}
-              onChange={(event) => {
-                const chosen = templateIds.find((id) => id === event.target.value)
-                if (chosen) setTemplate(chosen)
+              options={templateIds.map((id) => ({ value: id, label: templates[id] }))}
+              onValueChange={(value) => {
+                const chosen = templateIds.find((id) => id === value)
+                if (chosen) {
+                  setDraft(undefined)
+                  setTemplate(chosen)
+                }
               }}
-            >
-              {templateIds.map((id) => (
-                <option key={id} value={id}>
-                  {templates[id]}
-                </option>
-              ))}
-            </select>
+            />
           </label>
           {field('name', 'Rule name')}
           {field(

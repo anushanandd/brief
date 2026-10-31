@@ -25,6 +25,8 @@ pub(super) struct Imported {
     pub(super) reconciliation: Vec<StatementReconciliation>,
     /// What the card issuer's export says about each transaction's merchant, by transaction id.
     pub(super) issuers: BTreeMap<String, IssuerDetail>,
+    /// Plaid transactions the bank's own statement types as an ATM or cash withdrawal.
+    pub(super) cash_withdrawals: BTreeSet<String>,
     /// The tax years brokerages' statements say IRA contributions count toward.
     pub(super) contribution_years: Vec<ContributionYear>,
 }
@@ -316,6 +318,7 @@ pub(super) fn project_imported(
         trades: Vec::new(),
         reconciliation: Vec::new(),
         issuers: BTreeMap::new(),
+        cash_withdrawals: BTreeSet::new(),
         contribution_years: Vec::new(),
     };
     if files.is_empty() {
@@ -422,6 +425,14 @@ pub(super) fn project_imported(
             });
         }
         if plaid_cash.is_some() {
+            // A bank types an ATM withdrawal outright, even when its descriptor names only the
+            // store whose machine it was.
+            imported.cash_withdrawals.extend(
+                plan.described
+                    .iter()
+                    .filter(|(_, row)| row.activity == Activity::CashWithdrawal)
+                    .map(|(id, _)| id.clone()),
+            );
             let described = plan.described.iter().map(|(id, row)| (id.as_str(), *row));
             let added = plan
                 .rows

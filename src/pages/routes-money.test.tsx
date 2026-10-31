@@ -615,7 +615,7 @@ it('shows days until the statement closes in the Spending chart and manual accou
   const spending = await renderRoute('/spending')
   // The balance reads beside the statement's close; the headline stays what was spent.
   expect(spending).toMatch(
-    /Statement balance <span class="sensitive-value">−?\$[\d,.]+<\/span> · closes in 5 days<\/h2>/,
+    /Balance <span class="sensitive-value">−?\$[\d,.]+<\/span> · closes in 5 days<\/h2>/,
   )
   const settings = await renderSettings('/#settings/manual-accounts')
   expect(settings).toContain('Manual accounts')

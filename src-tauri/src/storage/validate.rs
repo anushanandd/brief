@@ -169,9 +169,12 @@ fn valid_holding(holding: &Holding, ids: &BTreeSet<&str>) -> bool {
 }
 
 /// A trade's account and the gain estimated for it.
-/// An account the snapshot lists, or a manual one, which joins when the view is read.
+/// An account the snapshot lists, or a manual or spending-only one, which joins when the view
+/// is read.
 fn known_account(id: &str, ids: &BTreeSet<&str>) -> bool {
-    ids.contains(id) || id.starts_with("manual:")
+    ids.contains(id)
+        || id.starts_with("manual:")
+        || id.starts_with(crate::finance_contract::SPENDING_ONLY_PREFIX)
 }
 
 fn valid_trade_result(trade: &Trade, ids: &BTreeSet<&str>) -> bool {
@@ -272,8 +275,10 @@ fn valid_transaction_changes(changes: &[crate::finance_contract::TransactionChan
 }
 
 /// Non-negative category totals with unique names that sum to the month and, when the month
-/// has spending, to 100 percent.
+/// has spending, to 100 percent, give or take the half hundredth each rounded percent can be
+/// off by.
 fn spending_reconciles(spending: &Spending) -> bool {
+    let rounding = (spending.categories.len() as f64 * 0.005).max(0.02);
     let total: f64 = spending
         .categories
         .iter()
@@ -299,7 +304,7 @@ fn spending_reconciles(spending: &Spending) -> bool {
         })
         && (total - spending.month_total).abs() <= 0.011
         && names.len() == spending.categories.len()
-        && (spending.month_total <= 0.0 || (percent - 100.0).abs() <= 0.02)
+        && (spending.month_total <= 0.0 || (percent - 100.0).abs() <= rounding)
         && (spending.month_total != 0.0 || percent.abs() <= 0.001)
 }
 
@@ -436,4 +441,40 @@ pub(super) fn valid_performance_points(points: &[PerformancePoint], method: Opti
                 point.net_deposits.is_some()
             }
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::finance_contract::Allocation;
+
+    fn month(percents: &[f64]) -> Spending {
+        Spending {
+            month_total: 100.0 * percents.len() as f64,
+            categories: percents
+                .iter()
+                .enumerate()
+                .map(|(index, percent)| Allocation {
+                    name: format!("Category {index}"),
+                    value: 100.0,
+                    percent: *percent,
+                    color: String::new(),
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn a_month_of_many_categories_may_round_past_a_hundredth_but_never_further() {
+        // Thirteen shares rounded up by half a hundredth each: rounding, not a wrong total.
+        assert!(spending_reconciles(&month(&[7.695; 13])));
+        let mut rounded = [7.69; 13];
+        rounded[0] = 7.76;
+        assert!(spending_reconciles(&month(&rounded)));
+        // Beyond what rounding can explain, it's still refused.
+        rounded[0] = 8.0;
+        assert!(!spending_reconciles(&month(&rounded)));
+        // A few categories keep the tolerance they always had.
+        assert!(!spending_reconciles(&month(&[50.0, 50.03])));
+    }
 }

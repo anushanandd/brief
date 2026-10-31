@@ -7,7 +7,7 @@ import { useGlobalActions } from '../hooks/use-global-actions'
 import { useInvestmentsWarmup } from '../hooks/use-investments-warmup'
 import { useKeyboardDispatch } from '../hooks/use-keyboard-dispatch'
 import { useNativeCommands } from '../hooks/use-native-commands'
-import { useAutoRefreshFinance } from '../hooks/use-refresh-finance'
+import { useAutoRefreshFinance, useWalletWatch } from '../hooks/use-refresh-finance'
 import { useRegisterActions, useRegisteredActions } from '../lib/action-system'
 import { analyticsChart, analyticsCharts, analyticsGroup } from '../lib/analytics'
 import { isTauri } from '../lib/api'
@@ -71,6 +71,9 @@ function Shell() {
       !finance.data?.recovery &&
       !finance.integrationStatusLoading &&
       Object.values(finance.integrationStatus).some(Boolean),
+  )
+  useWalletWatch(
+    isTauri() && !finance.data?.recovery && Boolean(finance.data?.settings?.appleWallet),
   )
   useInvestmentsWarmup(
     finance.data?.recovery ? undefined : finance.data,

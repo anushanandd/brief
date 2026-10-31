@@ -1,6 +1,13 @@
 import { useNavigate, useRouter, useSearch } from '@tanstack/react-router'
 import { useEffect, useMemo } from 'react'
 
+import {
+  accountMenuGroups,
+  AccountsMenu,
+  menuOrder,
+  selectionLabel,
+  type AccountsSelection,
+} from '../components/all-accounts-overview'
 import { PageError, PageLoading } from '../components/data-state'
 import { WorkspaceHeader } from '../components/workspace-header'
 import {
@@ -8,7 +15,6 @@ import {
   useGraphWindowShortcuts,
 } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
-import { accountDisplayName } from '../lib/account-names'
 import { withoutSpendingCard } from '../lib/dashboard-account-views'
 import { financeSettings, spendingAccountIds } from '../lib/finance-settings'
 import { useGraphWindow } from '../lib/graph-preferences'
@@ -34,6 +40,10 @@ export function AccountsPage() {
   return <AccountsWorkspace data={page.data} names={page.names} />
 }
 
+/**
+ * Accounts: one layout for every view. Balances is the menu; All accounts is the default, and
+ * a type of account or one account replaces the view beside it in place.
+ */
 function AccountsWorkspace({
   data,
   names,
@@ -42,78 +52,95 @@ function AccountsWorkspace({
   names: Record<string, string>
 }) {
   const routeSearch = useSearch({ from: '/accounts' })
-  const spendingIds = spendingAccountIds(financeSettings(data))
-  // Spending cards are listed with every other account; only the totals leave them out.
-  const accounts = useMemo(() => {
-    // Rust always sends the combined row as `all`.
-    const allAccount = data.accounts.find(({ id }) => id === 'all')
-    return [
-      ...(allAccount ? [allAccount] : []),
-      ...data.accounts
-        .filter(({ id }) => id !== 'all')
-        .toSorted((left, right) => {
-          if (left.value == null) return right.value == null ? 0 : 1
-          if (right.value == null) return -1
-          return right.value - left.value
-        }),
-    ]
-  }, [data.accounts])
+  const spendingIds = spendingAccountIds(financeSettings(data), data.accounts)
   const [graphWindow, setGraphWindow] = useGraphWindow()
   useGraphWindowShortcuts(setGraphWindow)
-  const selectedAccount =
-    accounts.find(({ id }) => id === (routeSearch.account ?? 'all')) ?? accounts[0]
-  // The grouped list is the way in; ⌘← and ⌘→ still step through every account in its order.
+  // Rust always sends the combined row as `all`.
+  const allAccount = data.accounts.find(({ id }) => id === 'all')
+  const groups = useMemo(
+    () => accountMenuGroups(data, spendingIds, graphWindow),
+    // The ids are a fresh array each render; their contents are what matter.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [data, spendingIds.join(','), graphWindow],
+  )
+  const group = groups.find(({ type }) => type === routeSearch.group)
+  const account = data.accounts.find(({ id }) => id !== 'all' && id === routeSearch.account)
+  const selection: AccountsSelection = group
+    ? { kind: 'group', group }
+    : account
+      ? { kind: 'account', account }
+      : { kind: 'all' }
+
+  // ⌘← and ⌘→ step through the menu in its order: All accounts, then each type and its accounts.
   const navigate = useNavigate()
   const router = useRouter()
-  const index = accounts.findIndex(({ id }) => id === selectedAccount?.id)
-  const linkAt = (offset: number) => {
-    const account = accounts[(index + offset + accounts.length) % accounts.length]
-    return {
-      to: '/accounts' as const,
-      search: { account: account.id === 'all' ? undefined : account.id },
-    }
-  }
+  const order = useMemo(() => menuOrder(groups), [groups])
+  const index = Math.max(
+    0,
+    order.findIndex((item) =>
+      selection.kind === 'group'
+        ? item.group === selection.group.type
+        : selection.kind === 'account'
+          ? item.account === selection.account.id
+          : !item.group && !item.account,
+    ),
+  )
+  const searchAt = (offset: number) => order[(index + offset + order.length) % order.length]
   useGraphAccountShortcuts((direction) => {
-    if (accounts.length > 1) void navigate(linkAt(direction))
+    if (order.length > 1) void navigate({ to: '/accounts', search: searchAt(direction) })
   })
-  const neighbourKey =
-    accounts.length > 1 ? `${linkAt(-1).search.account}:${linkAt(1).search.account}` : ''
+  // The memoized order's entries are stable, so the neighbours change only when the view does.
+  const previous = order.length > 1 ? searchAt(-1) : undefined
+  const next = order.length > 1 ? searchAt(1) : undefined
   useEffect(() => {
-    if (!neighbourKey) return undefined
-    const [previous, next] = neighbourKey.split(':')
+    if (!previous || !next) return undefined
     const idle = globalThis.requestIdleCallback ?? ((run: () => void) => setTimeout(run, 50))
     const cancel = globalThis.cancelIdleCallback ?? clearTimeout
     const handle = idle(() => {
-      for (const account of [previous, next])
-        void router
-          .preloadRoute({ to: '/accounts', search: { account: account || undefined } })
-          .catch(() => undefined)
+      for (const search of [previous, next])
+        void router.preloadRoute({ to: '/accounts', search }).catch(() => undefined)
     })
     return () => cancel(handle)
-  }, [neighbourKey, router])
+  }, [previous, next, router])
+
+  const menu = (
+    <AccountsMenu
+      data={data}
+      groups={groups}
+      allAccount={allAccount}
+      selection={selection}
+      graphWindow={graphWindow}
+    />
+  )
+  const shown = selection.kind === 'account' ? selection.account : allAccount
 
   return (
     <div className="page accounts-workspace-page">
       <WorkspaceHeader
         title="Accounts"
         breadcrumbs={
-          selectedAccount && selectedAccount.id !== 'all'
-            ? [
+          selection.kind === 'all'
+            ? undefined
+            : [
                 { label: 'Accounts', to: '/accounts', search: {} },
                 {
-                  label: accountDisplayName(selectedAccount.id, selectedAccount.name, names),
+                  label: selectionLabel(selection, names),
                   to: '/accounts',
-                  search: { account: selectedAccount.id },
+                  search:
+                    selection.kind === 'group'
+                      ? { group: selection.group.type }
+                      : { account: selection.account.id },
                 },
               ]
-            : undefined
         }
       />
 
-      {selectedAccount ? (
+      {shown ? (
+        // Unkeyed, so the menu stays mounted while the view beside it changes.
         <AccountOverview
-          key={selectedAccount.id}
-          account={selectedAccount}
+          account={shown}
+          group={selection.kind === 'group' ? selection.group : undefined}
+          menu={menu}
           data={data}
           graphWindow={graphWindow}
           onGraphWindowChange={setGraphWindow}

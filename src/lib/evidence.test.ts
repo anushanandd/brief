@@ -22,12 +22,12 @@ describe('evidence words', () => {
   })
 
   it('writes spans as dates', () => {
-    expect(chapterSpan({ start: '2026-03-02' })).toBe('Since 2026-04-20')
-    expect(chapterSpan({ start: '2025-01-01', end: '2026-03-31' })).toBe('2025-01-01 to 2026-03-31')
-    expect(explanationSpan({ from: '2026-05-01', to: '2026-08-31' })).toBe(
-      '2026-05-01 to 2026-08-31',
+    expect(chapterSpan({ start: '2026-03-02' })).toBe('Since Mar 2, 2026')
+    expect(chapterSpan({ start: '2025-01-01', end: '2026-03-31' })).toBe(
+      'Jan 1, 2025 – Mar 31, 2026',
     )
-    expect(explanationSpan({ from: '2026-07-15' })).toBe('From 2026-07-15')
+    expect(explanationSpan({ from: '2026-05-01', to: '2026-08-31' })).toBe('May 1 – Aug 31, 2026')
+    expect(explanationSpan({ from: '2026-07-15' })).toBe('From Jul 15, 2026')
     expect(explanationSpan({})).toBeUndefined()
   })
 

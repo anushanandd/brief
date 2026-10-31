@@ -247,6 +247,7 @@ pub fn report_with(
     issues.extend(valuation_issues(snapshot));
     issues.extend(freshness_issues(snapshot, now));
     issues.extend(coverage_issues(snapshot));
+    issues.extend(wallet_issues(snapshot));
     issues.extend(ledger_checks::ledger_issues(snapshot, now));
     issues.extend(sync_issues(sync_runs));
     issues.sort_by_key(|item| item.severity);
@@ -611,7 +612,14 @@ fn sync_issues(sync_runs: &[SyncRun]) -> Vec<HealthIssue> {
                 "Latest refresh did not commit",
                 "Previous snapshot kept; see Diagnostics",
             )
-            .evidence(vec![run.finished_at.clone()])
+            .evidence(
+                run.details
+                    .reason
+                    .iter()
+                    .cloned()
+                    .chain([run.finished_at.clone()])
+                    .collect(),
+            )
             .action("Open diagnostics", "/logs"),
         );
     }
@@ -696,8 +704,83 @@ fn parse_time(value: &str) -> Option<DateTime<Utc>> {
 }
 
 fn provider_label(provider: &str) -> &str {
+    if provider == crate::storage::change::WALLET_PROVIDER {
+        return "Apple Wallet";
+    }
     crate::providers::vault::Integration::from_name(provider)
         .map_or(provider, |integration| integration.label())
+}
+
+/// What comparing Wallet with the providers found. Figures stay on the Connections page, where
+/// screen privacy masks them; these name only what needs a look.
+fn wallet_issues(snapshot: &Snapshot) -> Vec<HealthIssue> {
+    const WALLET_ROUTE: &str = "/settings/connections";
+    let Some(wallet) = snapshot.wallet.as_ref() else {
+        return Vec::new();
+    };
+    let mut issues = Vec::new();
+    if let Some(cash) = wallet
+        .daily_cash
+        .as_ref()
+        .filter(|cash| cash.failing_since.is_some())
+    {
+        issues.push(
+            issue(
+                "wallet-daily-cash",
+                Severity::Warning,
+                Category::Consistency,
+                "Daily Cash payouts are failing",
+                "Apple's records show payouts that failed and none paid since. Wallet doesn't show \
+                 whether Apple credited that cash another way, so check Daily Cash in Wallet.",
+            )
+            .evidence(
+                [
+                    Some(format!("{} payouts failed", cash.failed_payouts)),
+                    cash.last_paid_on
+                        .as_ref()
+                        .map(|day| format!("Last paid {day}")),
+                    cash.failing_since
+                        .as_ref()
+                        .map(|day| format!("Failing since {day}")),
+                ]
+                .into_iter()
+                .flatten()
+                .collect(),
+            )
+            .action("Review Apple Wallet", WALLET_ROUTE),
+        );
+    }
+    let unconfirmed = wallet.review.iter().filter(|row| !row.confirmed).count();
+    if unconfirmed > 0 {
+        issues.push(
+            issue(
+                "wallet-review",
+                Severity::Warning,
+                Category::Consistency,
+                format!(
+                    "{unconfirmed} Wallet charge{} no provider reported",
+                    if unconfirmed == 1 { "" } else { "s" }
+                ),
+                "Wallet shows these but Plaid hasn't reported them after several days. They stay \
+                 out of totals until you confirm them.",
+            )
+            .evidence(
+                wallet
+                    .cards
+                    .iter()
+                    .filter(|card| card.review > 0)
+                    .map(|card| {
+                        format!(
+                            "{}: {} matched, {} to review",
+                            card.issuer, card.matched, card.review
+                        )
+                    })
+                    .collect(),
+            )
+            .action("Review Apple Wallet", WALLET_ROUTE),
+        );
+    }
+    issues
 }
 
 #[cfg(test)]

@@ -37,6 +37,7 @@ mod records;
 mod refresh_changes;
 mod transactions;
 mod values;
+mod wallet;
 
 use accounts::*;
 use activities::*;
@@ -50,6 +51,7 @@ use records::*;
 use refresh_changes::*;
 use transactions::*;
 use values::*;
+use wallet::*;
 
 const COLORS: [&str; 6] = [
     "#232424", "#71877c", "#b87543", "#9d9588", "#6f7680", "#a39b8e",
@@ -58,7 +60,7 @@ const SPENDING_COLORS: [&str; 6] = [
     "#477d75", "#4f78a8", "#b58a3f", "#7d6da5", "#a45f79", "#79924b",
 ];
 pub(crate) use imported::{provider_activity, reconciles};
-pub(crate) const CALCULATION_VERSION: u32 = 41;
+pub(crate) const CALCULATION_VERSION: u32 = 42;
 
 pub fn project(
     sync: &ProviderSync,
@@ -92,6 +94,7 @@ pub fn project(
         trades: imported_trades,
         reconciliation: statement_reconciliation,
         mut issuers,
+        cash_withdrawals,
         contribution_years,
     } = project_imported(
         &sync.statements,
@@ -101,6 +104,13 @@ pub fn project(
         &mut warnings,
     );
     plaid_transactions.extend(imported_plaid);
+    file_cash_withdrawals(&mut plaid_transactions, &cash_withdrawals);
+    let mut wallet = project_wallet(
+        sync.wallet.as_ref(),
+        &accounts,
+        &plaid_transactions,
+        calendar_date,
+    );
     let plaid_histories = reconstructed_plaid_histories(
         &parsed.plaid_accounts,
         &plaid_transactions,
@@ -125,7 +135,9 @@ pub fn project(
             issuer: issuers.remove(&transaction.id),
             ..transaction
         })
+        .map(|transaction| wallet.enrich(transaction))
         .collect::<Vec<_>>();
+    transactions.append(&mut wallet.transactions);
     let mut trades = Vec::new();
     for account in &parsed.snap_accounts {
         let activities = parsed
@@ -147,11 +159,13 @@ pub fn project(
     );
     trades.extend(plaid_investment_activity.trades);
     transactions.extend(plaid_investment_activity.transactions);
-    // Newest first, then by id, so rows on one day keep a stable order.
+    // Newest first, by the moment when it's known, then by id, so rows on one day keep a stable
+    // order.
     transactions.sort_by(|left, right| {
         right
             .date
             .cmp(&left.date)
+            .then_with(|| right.occurred_at.cmp(&left.occurred_at))
             .then_with(|| left.id.cmp(&right.id))
     });
     trades.sort_by(|left, right| {
@@ -304,6 +318,7 @@ pub fn project(
         possible_duplicate_accounts: possible_duplicates,
         history_check,
         statement_reconciliation,
+        wallet: wallet.summary,
         contribution_years,
         dividend_history,
         recurring_streams: recurring_streams(&sync.plaid.recurring_streams),

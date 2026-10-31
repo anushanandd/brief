@@ -328,13 +328,8 @@
 }
 
 @media (max-width: 1350px) {
-  .account-preview-grid,
   .home-secondary-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .account-preview-grid > * {
-    grid-column: auto;
   }
 }
 
@@ -362,13 +357,8 @@
 
   .accounts-overview-grid,
   .spending-overview-grid,
-  .account-overview-primary-grid,
-  .account-preview-grid {
+  .account-overview-primary-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .account-preview-grid > * {
-    grid-column: auto;
   }
 
   .metric:nth-child(odd) {

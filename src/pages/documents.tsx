@@ -1,7 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { open as choose } from '@tauri-apps/plugin-dialog'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { AutofillField, acceptAutofill, autofillCompletion } from '../components/autofill'
@@ -115,24 +115,22 @@ function taxYears(data: FinanceSnapshot | undefined) {
   return { today, thisYear, years }
 }
 
-/** The one figure a row leads with: wages, net pay, or the ending balance. */
-function headline(document: BriefDocument) {
-  const amount = (key: string) => document.fields.find((field) => field.key === key)?.amount
+/** The one figure a document leads with: wages, net pay, or the ending balance. */
+function headlineField(document: BriefDocument) {
+  const read = (key: string) =>
+    document.fields.find((field) => field.key === key && field.amount != null)
   switch (document.kind) {
     case 'payslip':
-      return amount('net')
+      return read('net')
     case 'taxForm':
-      return (
-        amount('box1') ??
-        amount('box10') ??
-        document.fields.find((field) => field.amount != null)?.amount
-      )
+      return read('box1') ?? read('box10') ?? document.fields.find((field) => field.amount != null)
     case 'statement':
-      return amount('endingBalance')
+      return read('endingBalance')
     default:
       return undefined
   }
 }
+const headline = (document: BriefDocument) => headlineField(document)?.amount
 
 const toCheck = (document: BriefDocument) =>
   document.reviewed
@@ -967,6 +965,12 @@ function DocumentPanel({
     void run('save the document', () => updateDocument(document.id, next))
   const payslip = document.kind === 'payslip'
   const open = toCheck(document)
+  const lead = headlineField(document)
+  // What the document is and whose it is: tucked away once read, open while it has no account.
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  const openDetails = () => {
+    if (detailsRef.current) detailsRef.current.open = true
+  }
 
   useRegisterActions(
     useMemo<AppAction[]>(
@@ -1011,10 +1015,12 @@ function DocumentPanel({
           title: field === 'kind' ? 'Change what the document is' : 'Change its account',
           group: 'Actions',
           scope: 'page' as const,
-          run: () =>
+          run: () => {
+            openDetails()
             globalThis.document
               .querySelector<HTMLElement>(`[data-command="documents.${field}"]`)
-              ?.click(),
+              ?.click()
+          },
         })),
       ],
       // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -1044,11 +1050,19 @@ function DocumentPanel({
           {kindNames[document.kind]}
         </span>
         {document.date ? <span>{formatDay(document.date)}</span> : null}
-        <span title={document.fileName}>{document.fileName}</span>
+        {document.accountId ? <span>{accountName(document.accountId)}</span> : null}
         {keep ? (
           <span>{keep.until ? `Keep until ${formatDay(keep.until)}` : keep.reason}</span>
         ) : null}
       </p>
+      {lead?.amount != null ? (
+        <p className="documents-headline">
+          <strong className="hero-number sensitive-value" data-copy-amount>
+            {formatCurrency(lead.amount)}
+          </strong>
+          <small>{lead.label}</small>
+        </p>
+      ) : null}
       {open && !document.reviewed ? (
         <p className="documents-callout" role="status">
           {countOf(open, 'figure')} to compare with the original
@@ -1150,64 +1164,81 @@ function DocumentPanel({
           )}
         </span>
       </div>
-      <div className="documents-details">
-        <label>
-          <span>Kind</span>
-          <FilterSelect
-            label="Kind of document"
-            command="documents.kind"
-            value={document.kind}
-            options={Object.entries(kindNames).map(([value, label]) => ({ value, label }))}
-            onValueChange={(value) => {
-              const kind = documentKinds.find((known) => known === value)
-              if (kind) change({ kind })
-            }}
-          />
-        </label>
-        <label>
-          <span>Tax year</span>
-          <input
-            className="documents-input"
-            inputMode="numeric"
-            aria-label="Tax year"
-            defaultValue={document.taxYear ?? ''}
-            onBlur={(event) => {
-              const year = Number(event.target.value)
-              if (event.target.value && year !== document.taxYear) change({ taxYear: year })
-            }}
-          />
-        </label>
-        <label>
-          <span>From</span>
-          <input
-            className="documents-input"
-            aria-label="Issuer"
-            defaultValue={document.issuer ?? ''}
-            onBlur={(event) => {
-              if (event.target.value !== (document.issuer ?? ''))
-                change({ issuer: event.target.value })
-            }}
-          />
-        </label>
-        <label>
-          <span>Account</span>
-          <FilterSelect
-            label="Account"
-            command="documents.account"
-            value={document.accountId ?? ''}
-            options={[
-              { value: '', label: document.mask ? `None · ends ${document.mask}` : 'None' },
-              ...data.accounts
-                .filter((account) => account.type !== 'combined')
-                .map((account) => ({
-                  value: account.id,
-                  label: `${accountName(account.id)}${account.mask ? ` ··${account.mask}` : ''}`,
-                })),
-            ]}
-            onValueChange={(accountId) => change({ accountId })}
-          />
-        </label>
-      </div>
+      <details
+        ref={detailsRef}
+        className="documents-details-disclosure"
+        open={!document.accountId && (document.kind === 'statement' || document.kind === 'export')}
+      >
+        <summary>
+          Details
+          <small>
+            {[document.issuer, document.taxYear ? `Tax year ${document.taxYear}` : null]
+              .filter(Boolean)
+              .join(' · ')}
+          </small>
+        </summary>
+        <div className="documents-details">
+          <label>
+            <span>Kind</span>
+            <FilterSelect
+              label="Kind of document"
+              command="documents.kind"
+              value={document.kind}
+              options={Object.entries(kindNames).map(([value, label]) => ({ value, label }))}
+              onValueChange={(value) => {
+                const kind = documentKinds.find((known) => known === value)
+                if (kind) change({ kind })
+              }}
+            />
+          </label>
+          <label>
+            <span>Tax year</span>
+            <input
+              className="documents-input"
+              inputMode="numeric"
+              aria-label="Tax year"
+              defaultValue={document.taxYear ?? ''}
+              onBlur={(event) => {
+                const year = Number(event.target.value)
+                if (event.target.value && year !== document.taxYear) change({ taxYear: year })
+              }}
+            />
+          </label>
+          <label>
+            <span>From</span>
+            <input
+              className="documents-input"
+              aria-label="Issuer"
+              defaultValue={document.issuer ?? ''}
+              onBlur={(event) => {
+                if (event.target.value !== (document.issuer ?? ''))
+                  change({ issuer: event.target.value })
+              }}
+            />
+          </label>
+          <label>
+            <span>Account</span>
+            <FilterSelect
+              label="Account"
+              command="documents.account"
+              value={document.accountId ?? ''}
+              options={[
+                { value: '', label: document.mask ? `None · ends ${document.mask}` : 'None' },
+                ...data.accounts
+                  .filter((account) => account.type !== 'combined')
+                  .map((account) => ({
+                    value: account.id,
+                    label: `${accountName(account.id)}${account.mask ? ` ··${account.mask}` : ''}`,
+                  })),
+              ]}
+              onValueChange={(accountId) => change({ accountId })}
+            />
+          </label>
+        </div>
+        <p className="documents-file" title={document.fileName}>
+          {document.fileName}
+        </p>
+      </details>
       {document.fields.length ? (
         <section className="documents-block" aria-label="What it says">
           <header className={`documents-field documents-field-head${payslip ? ' has-ytd' : ''}`}>

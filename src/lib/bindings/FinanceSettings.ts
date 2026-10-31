@@ -90,6 +90,10 @@ plaidInvestmentTransactions: boolean,
  */
 plaidRecurring: boolean, 
 /**
+ * Read Apple Wallet's records on this Mac. Off until turned on.
+ */
+appleWallet?: boolean, 
+/**
  * The people transactions and trips can be tagged with.
  */
 people?: Array<Person>, 

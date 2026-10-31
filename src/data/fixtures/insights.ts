@@ -45,6 +45,7 @@ export const emptyInsightDetails = {
   activityDays: [],
   activityMonths: [],
   rollup: emptyRollup(),
+  groupHistory: [],
   chartChanges: [],
 } satisfies Partial<Insights>
 

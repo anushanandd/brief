@@ -34,11 +34,14 @@ pub(super) fn transaction_diff(
     let cutoff = previous_refresh_date(previous)
         .map(|date| date - Duration::days(LATE_ACTIVITY_DAYS))
         .unwrap_or(NaiveDate::MIN);
+    // A Wallet row stands in until the provider reports the charge, so its coming and going
+    // says nothing about the account.
     let in_scope = |transaction: &&Transaction| {
-        transaction
-            .account_id
-            .as_deref()
-            .is_some_and(|account| checked_accounts.contains(account))
+        !transaction.from_wallet()
+            && transaction
+                .account_id
+                .as_deref()
+                .is_some_and(|account| checked_accounts.contains(account))
     };
     let recent = |transaction: &Transaction| {
         NaiveDate::parse_from_str(transaction.posted_date(), "%Y-%m-%d")

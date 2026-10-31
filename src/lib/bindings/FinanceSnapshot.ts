@@ -23,6 +23,7 @@ import type { StatementReconciliation } from "./StatementReconciliation";
 import type { Trade } from "./Trade";
 import type { Transaction } from "./Transaction";
 import type { TransactionChange } from "./TransactionChange";
+import type { WalletSummary } from "./WalletSummary";
 
 /**
  * The view as the renderer receives it: the snapshot with the edits and insights it was
@@ -54,6 +55,10 @@ historyCheck?: HistoryCheck,
  * Imported statements checked against Plaid, per account.
  */
 statementReconciliation?: Array<StatementReconciliation>, 
+/**
+ * What Apple Wallet holds and how it compares with the providers, while it is turned on.
+ */
+wallet?: WalletSummary, 
 /**
  * The tax years imported brokerage statements say IRA contributions count toward.
  */

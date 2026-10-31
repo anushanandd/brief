@@ -10,7 +10,8 @@ pnpm tauri dev                                         # native app
 pnpm test                                              # frontend tests
 pnpm check                                             # format, lint, test, build
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
-cargo test --manifest-path src-tauri/Cargo.toml
+(cd src-tauri && cargo test)                            # from src-tauri, so .cargo/config.toml
+                                                        # sends bindings to src/lib/bindings
 ```
 
 Run checks in proportion to the change. Docs-only changes need none.

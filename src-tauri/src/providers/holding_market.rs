@@ -400,25 +400,26 @@ impl Providers {
         });
         Ok((sip, boats))
     }
-    /// Each symbol's week of five-minute bars for the portfolio chart, shared with the holding
-    /// chart's week: memory first, then Alpaca, saved back to the price cache. Any symbol that
-    /// can't be read fails the whole set, since a partial portfolio would misstate its value.
-    pub async fn week_bars(
+    /// Each symbol's bars over a holding chart range (the week's five minutes or the month's
+    /// half hours) for the portfolio chart, shared with the holding chart: memory first, then
+    /// Alpaca, saved back to the price cache. Any symbol that can't be read fails the whole
+    /// set, since a partial portfolio would misstate its value.
+    pub async fn range_bars(
         &self,
         cache: &Path,
         symbols: &[String],
+        range: u64,
     ) -> Result<BTreeMap<String, PriceHistory>, String> {
-        const WEEK: u64 = 604_800;
         let credentials = self.alpaca_credentials()?;
         let mut histories = BTreeMap::new();
         for symbol in symbols {
             let epoch = self.market_streams.epoch.load(Ordering::SeqCst);
-            let history = match self.fresh_chart(symbol, WEEK) {
+            let history = match self.fresh_chart(symbol, range) {
                 Some(history) => history,
                 None => {
                     let (sip, boats) = self.market_access(symbol).await?;
                     let history = self
-                        .chart_history(&credentials, symbol, WEEK, sip && boats, None)
+                        .chart_history(&credentials, symbol, range, sip && boats, None)
                         .await?;
                     self.remember_chart(&history, epoch);
                     // The cache is disposable; a failed save only costs the next launch.

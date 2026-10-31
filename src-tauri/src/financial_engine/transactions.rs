@@ -105,6 +105,40 @@ pub(super) fn possible_duplicate(
         })
 }
 
+/// Plaid's detailed code for cash taken out of an account, at an ATM or a teller.
+const CASH_WITHDRAWAL: &str = "TRANSFER_OUT_WITHDRAWAL";
+
+/// Files cash withdrawals Plaid filed as purchases. An ATM inside a store can print only the
+/// store ("CVS STORE #... SUNNYVALE"), and Plaid's merchant matching then files the withdrawal
+/// as a purchase there. The institution's own word outranks that guess: Plaid's transaction
+/// code (`atm`, or `cash` for money out; Plaid sends codes only for some institutions), or the
+/// bank statement row that describes the transaction, in `typed`. Such a withdrawal takes the
+/// code Plaid gives the withdrawals it recognizes, so it is cash, not spending at the store.
+/// A bank fee stays a fee.
+pub(super) fn file_cash_withdrawals(
+    transactions: &mut [PlaidTransaction],
+    typed: &BTreeSet<String>,
+) {
+    for transaction in transactions {
+        let category = transaction.personal_finance_category.as_ref();
+        // Plaid's amounts are positive for money out.
+        let outflow = transaction.amount > Decimal::ZERO;
+        let coded = transaction.transaction_code.as_deref().is_some_and(|code| {
+            matches!(code.trim().to_ascii_lowercase().as_str(), "atm" | "cash")
+        });
+        let filed = category.is_some_and(|category| {
+            category.primary == "BANK_FEES" || category.detailed.as_deref() == Some(CASH_WITHDRAWAL)
+        });
+        if outflow && !filed && (coded || typed.contains(&transaction.transaction_id)) {
+            transaction.personal_finance_category = Some(PlaidCategory {
+                primary: "TRANSFER_OUT".into(),
+                detailed: Some(CASH_WITHDRAWAL.into()),
+                confidence_level: None,
+            });
+        }
+    }
+}
+
 /// The top-level category and concise label for a Plaid transaction. Payment-app transfers
 /// are labeled with the app Plaid names, such as Venmo or Zelle.
 pub(super) fn category_name(

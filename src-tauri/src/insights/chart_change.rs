@@ -11,6 +11,7 @@ use ts_rs::TS;
 
 use super::calendar;
 use super::changes::Window;
+use super::totals::{group_series_id, GroupHistory};
 use crate::finance_contract::{Point, Snapshot};
 use crate::numeric::round2;
 use crate::settings::FinanceSettings;
@@ -177,6 +178,15 @@ fn start_date(snapshot: &Snapshot, settings: &FinanceSettings, id: &str) -> Opti
             .collect(),
         id => vec![id],
     };
+    earliest_start(snapshot, settings, ids)
+}
+
+/// The earliest start of these accounts.
+fn earliest_start<'a>(
+    snapshot: &Snapshot,
+    settings: &FinanceSettings,
+    ids: impl IntoIterator<Item = &'a str>,
+) -> Option<NaiveDate> {
     ids.into_iter()
         .filter_map(|account| {
             settings
@@ -227,13 +237,14 @@ fn daily(points: impl IntoIterator<Item = (String, f64)>) -> Vec<(NaiveDate, f64
 }
 
 /// The value charts: net worth without the spending cards (from `net_worth_history`, its
-/// card-free history, and `net_worth`, its value), each brokerage and their total, and each
-/// account with a balance history.
+/// card-free history, and `net_worth`, its value), each brokerage and their total, each
+/// account with a balance history, and each account group with a value.
 pub fn series(
     snapshot: &Snapshot,
     settings: &FinanceSettings,
     net_worth_history: &[Point],
     net_worth: f64,
+    groups: &[GroupHistory],
 ) -> Vec<Series> {
     let mut series = vec![Series {
         id: NET_WORTH.into(),
@@ -282,6 +293,26 @@ pub fn series(
                     .map(|point| (point.date.clone(), point.value)),
             ),
             start: start_date(snapshot, settings, &history.account_id),
+            current,
+        });
+    }
+    for group in groups {
+        let Some(current) = group.value else {
+            continue;
+        };
+        series.push(Series {
+            id: group_series_id(&group.account_type),
+            history: daily(
+                group
+                    .points
+                    .iter()
+                    .map(|point| (point.date.clone(), point.value)),
+            ),
+            start: earliest_start(
+                snapshot,
+                settings,
+                group.account_ids.iter().map(String::as_str),
+            ),
             current,
         });
     }
@@ -356,6 +387,59 @@ mod tests {
         assert_eq!(percent(&series(Some("2026-09-01")), &[], 0), 20.0);
         // A live point replaces its day.
         assert_eq!(percent(&series(None), &[(now, 110.0)], 7 * 86_400), 10.0);
+    }
+
+    #[test]
+    fn each_group_with_a_value_is_a_chart_from_its_earliest_accounts_start() {
+        let snapshot: Snapshot = serde_json::from_value(serde_json::json!({
+            "updatedAt": "2026-09-08T12:00:00Z", "netWorth": 0, "accounts": [],
+            "holdings": [], "transactions": [], "netWorthHistory": [],
+            "spending": { "monthTotal": 0, "categories": [] },
+        }))
+        .unwrap();
+        let settings = FinanceSettings {
+            account_start_dates: BTreeMap::from([
+                ("plaid:checking".into(), "2026-09-03".into()),
+                ("plaid:savings".into(), "2026-09-02".into()),
+            ]),
+            ..FinanceSettings::default()
+        };
+        let group = |kind: &str, value: Option<f64>| GroupHistory {
+            account_type: kind.into(),
+            account_ids: vec!["plaid:checking".into(), "plaid:savings".into()],
+            value,
+            points: vec![
+                Point {
+                    date: "2026-09-01".into(),
+                    value: 50.0,
+                },
+                Point {
+                    date: "2026-09-02".into(),
+                    value: 100.0,
+                },
+                Point {
+                    date: "2026-09-08".into(),
+                    value: 150.0,
+                },
+            ],
+        };
+        let all = series(
+            &snapshot,
+            &settings,
+            &[],
+            0.0,
+            &[group("cash", Some(150.0)), group("loan", None)],
+        );
+        let cash = all.iter().find(|series| series.id == "group:cash").unwrap();
+        assert_eq!(cash.start, Some(day("2026-09-02")));
+        assert!(all.iter().all(|series| series.id != "group:loan"));
+        let read = changes(&all, &BTreeMap::new(), noon("2026-09-08"));
+        let cash = read
+            .iter()
+            .find(|chart| chart.series == "group:cash")
+            .unwrap();
+        // All time runs from the earliest start, the 2nd's $100.
+        assert_eq!(cash.windows[&Window::All].change, 50.0);
     }
 
     #[test]

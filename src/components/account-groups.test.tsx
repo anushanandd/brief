@@ -12,7 +12,8 @@ import { expect, it } from 'vitest'
 
 import { account } from '../data/fixtures/records'
 import { accountGroups } from '../lib/account-groups'
-import { AccountGroups, AccountRows } from './account-groups'
+import { AccountGroupList, AccountGroups, AccountRows } from './account-groups'
+import { menuOrder } from './all-accounts-overview'
 
 const changes = [{ accountId: 'checking', change: 1 }]
 const accounts = [
@@ -95,4 +96,35 @@ it('lists every account without category rows when expanded', async () => {
   expect(rows[1].textContent).toContain('+$1.00')
 
   await unmount()
+})
+
+it('opens a type of account from its heading in the menu, and marks what is shown', async () => {
+  const groups = accountGroups(accounts, [{ type: 'cash', value: 30 }])
+  const { container, unmount } = await render(
+    <AccountGroupList groups={groups} accountNames={accountNames} selected="group:cash" />,
+  )
+  const heading = container.querySelector('a.account-group-section-link')
+  expect(heading?.getAttribute('href')).toBe('/accounts?group=cash')
+  expect(heading?.getAttribute('aria-current')).toBe('page')
+  expect(container.querySelectorAll('a.account-row[aria-current="page"]')).toHaveLength(0)
+
+  await unmount()
+})
+
+it('steps through the menu in its order: all, then each type and its accounts', () => {
+  const single = accountGroups(
+    [account({ id: 'ira', name: 'IRA', type: 'retirement', value: 5 }), ...accounts],
+    [
+      { type: 'cash', value: 30 },
+      { type: 'retirement', value: 5 },
+    ],
+  )
+  // A type of one account opens as that account, so it has no stop of its own.
+  expect(menuOrder(single)).toEqual([
+    {},
+    { group: 'cash' },
+    { account: 'savings' },
+    { account: 'checking' },
+    { account: 'ira' },
+  ])
 })

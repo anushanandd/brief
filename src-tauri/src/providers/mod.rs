@@ -37,6 +37,7 @@ pub mod portfolio;
 pub mod sec;
 pub mod snaptrade;
 pub mod vault;
+pub mod wallet;
 
 pub use alpaca::normalize_stock_symbols;
 pub use corporate_actions::CorporateAction;
@@ -263,6 +264,8 @@ pub struct ProviderSync {
     pub statements: Vec<crate::statements::StatementFile>,
     /// Splits and cash dividends for held and traded symbols.
     pub corporate_actions: Vec<CorporateAction>,
+    /// Apple Wallet's records, while the user has it on.
+    pub wallet: Option<wallet::WalletData>,
 }
 
 #[derive(Clone, Debug, Default, Deserialize, Serialize)]
@@ -363,6 +366,9 @@ pub struct ProviderDataCache {
     #[serde(deserialize_with = "corporate_actions::lenient")]
     pub corporate_actions: Vec<CorporateAction>,
     pub corporate_actions_refreshed_at: Option<String>,
+    /// Apple Wallet's records, kept even after Apple drops them.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub wallet: Option<wallet::WalletData>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize)]

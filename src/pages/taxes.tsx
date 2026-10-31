@@ -9,9 +9,9 @@ import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { evidenceOf, tierLabels } from '../lib/evidence'
+import { daySpan, evidenceOf, tierLabels } from '../lib/evidence'
 import { financeSettings } from '../lib/finance-settings'
-import { formatCurrency, formatSignedCurrency, valueTone } from '../lib/format'
+import { countOf, formatCurrency, formatSignedCurrency, valueTone } from '../lib/format'
 import type { FinanceSnapshot, TaxYear } from '../lib/schema'
 import { formatActivityDate, formatListDate } from '../lib/spending'
 import { estimateRange, taxYear } from '../lib/taxes'
@@ -81,7 +81,16 @@ export function TaxesPage() {
         </Card>
       ) : (
         <>
+          {/* The year's answer leads: the estimate beside what the forms will say and where
+              you lived. What can still change it follows. */}
           <div className="taxes-grid">
+            <EstimateCard year={selected} hasProfile={taxes.hasProfile} />
+            <div className="taxes-side">
+              <FormsCard year={selected} />
+              <ResidencyCard year={selected.year} data={query.data} />
+            </div>
+          </div>
+          <div className="taxes-grid taxes-actions">
             <Card className="taxes-card">
               <SectionHeading title="Wash sales" />
               {selected.washSales.length || taxes.washWindows.length ? (
@@ -162,12 +171,6 @@ export function TaxesPage() {
               Tax tables from {formatActivityDate(taxes.tablesVersion)}.
             </span>
           </p>
-          {/* The estimate and forms describe the year; what can still change it comes first. */}
-          <div className="taxes-grid">
-            <EstimateCard year={selected} hasProfile={taxes.hasProfile} />
-            <FormsCard year={selected} />
-          </div>
-          <ResidencyCard year={selected.year} data={query.data} />
         </>
       )}
     </div>
@@ -184,22 +187,29 @@ function ResidencyCard({ year, data }: { year: number; data: FinanceSnapshot | u
   return (
     <Card className="taxes-card">
       <SectionHeading
-        title={`Residency · ${year}`}
+        title="Residency"
         detail={
           new Set(spans.map((span) => span.state)).size > 1 ? 'Part-year in each state' : undefined
         }
       />
-      <ul className="chapter-facts">
+      <ul className="taxes-list">
         {spans.map((span) => (
-          <li key={`${span.state}-${span.from}`} data-keyboard-row>
+          <li key={`${span.state}-${span.from}`}>
             <Link
               to="/insights"
               search={{ view: 'chapters', chapter: span.chapter }}
-              className="object-link"
+              className="taxes-list-link taxes-residency-link"
+              data-keyboard-row
+              data-keyboard-open
             >
-              {span.state} · {span.from} to {span.to} · {span.days} days
+              <span>
+                <strong>{span.state}</strong>
+                <small>
+                  {daySpan(span.from, span.to)} · {countOf(span.days, 'day')}
+                </small>
+              </span>
+              <span className={`tier-label tier-${span.tier}`}>{tierLabels[span.tier].label}</span>
             </Link>
-            <span className={`tier-label tier-${span.tier}`}>{tierLabels[span.tier].label}</span>
           </li>
         ))}
       </ul>

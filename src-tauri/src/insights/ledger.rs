@@ -410,20 +410,34 @@ impl<'a> Ledger<'a> {
     fn cash_flow(&self, arguments: &Value) -> Result<Value, String> {
         let (start, end) = self.range(arguments)?;
         let (mut income, mut spending, mut reimbursements, mut fees, mut taxes) = (0, 0, 0, 0, 0);
+        // Spending someone else paid for is still yours, but no cash left your accounts.
+        let mut covered = 0;
         for (_, transaction) in self.posted_in(start, end) {
             let amount = minor_units(transaction.amount);
+            let paid_by_someone_else = transaction.paid_by_someone_else();
             match transaction.kind() {
                 Some(Kind::Income | Kind::Dividend | Kind::Interest) if amount > 0 => {
                     income += amount
                 }
-                Some(Kind::Expense) => spending -= amount,
-                Some(Kind::Reimbursement) if amount > 0 => reimbursements += amount,
+                Some(Kind::Expense) => {
+                    spending -= amount;
+                    if paid_by_someone_else {
+                        covered -= amount;
+                    }
+                }
+                Some(Kind::Reimbursement) if amount > 0 => {
+                    reimbursements += amount;
+                    if paid_by_someone_else {
+                        covered -= amount;
+                    }
+                }
                 Some(Kind::Fee) => fees -= amount,
                 Some(Kind::Tax) => taxes -= amount,
                 _ => {}
             }
         }
         let personal = (spending - reimbursements).max(0);
+        let cash_spent = (personal - covered.max(0)).max(0);
         Ok(json!({
             "start": calendar::iso(start),
             "end": calendar::iso(end),
@@ -431,7 +445,7 @@ impl<'a> Ledger<'a> {
             "spendingAfterReimbursements": from_minor(personal),
             "fees": from_minor(fees),
             "taxes": from_minor(taxes),
-            "netCashFlow": from_minor(income - personal - fees - taxes),
+            "netCashFlow": from_minor(income - cash_spent - fees - taxes),
         }))
     }
 
@@ -854,6 +868,37 @@ mod tests {
             account_names: BTreeMap::from([("chase".into(), "Everyday".into())]),
             spending_account_id: None,
         }
+    }
+
+    #[test]
+    fn spending_someone_else_paid_for_is_yours_but_no_cash_left_your_accounts() {
+        let query = |view: &View| {
+            Ledger::new(view, chrono::NaiveDate::from_ymd_opt(2026, 8, 31).unwrap()).call(
+                "cashFlow",
+                &json!({"start": "2026-07-01", "end": "2026-07-31"}),
+            )
+        };
+        let mut view = view(false);
+        let before = query(&view);
+        let spending = |value: &Value| value["spendingAfterReimbursements"].as_f64().unwrap();
+        let net = |value: &Value| value["netCashFlow"].as_f64().unwrap();
+        let mut purchase = view
+            .snapshot
+            .transactions
+            .iter()
+            .find(|transaction| {
+                transaction.kind() == Some(Kind::Expense)
+                    && transaction.posted_date().starts_with("2026-07")
+            })
+            .unwrap()
+            .clone();
+        purchase.id = "wallet:one".into();
+        purchase.account_id = Some("wallet:apple-card".into());
+        purchase.amount = -100.0;
+        view.snapshot.transactions.push(purchase);
+        let after = query(&view);
+        assert!((spending(&after) - spending(&before) - 100.0).abs() < 0.001);
+        assert!((net(&after) - net(&before)).abs() < 0.001);
     }
 
     #[test]

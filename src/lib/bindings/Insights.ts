@@ -17,6 +17,7 @@ import type { Documents } from "./Documents";
 import type { EvidenceGraph } from "./EvidenceGraph";
 import type { ExpectedEvent } from "./ExpectedEvent";
 import type { Exposure } from "./Exposure";
+import type { GroupHistory } from "./GroupHistory";
 import type { InvestmentAttention } from "./InvestmentAttention";
 import type { LongTermSoon } from "./LongTermSoon";
 import type { Movers } from "./Movers";
@@ -72,6 +73,10 @@ recurringCheck: RecurringCheck,
  * Spending's scopes and their periods.
  */
 spending: Array<SpendingScope>, accountsTotal?: AccountsTotal, 
+/**
+ * Each account group's value and daily history, the spending cards as their own group.
+ */
+groupHistory: Array<GroupHistory>, 
 /**
  * Account totals from saved values; each market projection carries its own from live ones.
  */

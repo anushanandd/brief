@@ -21,7 +21,7 @@ mod verify;
 mod tests;
 
 pub use issuer::IssuerDetail;
-pub use plan::{plan, row_ids, Counts, ProviderActivity};
+pub use plan::{plan, row_ids, similarity, Counts, ProviderActivity};
 pub use verify::{Check, Status};
 
 /// Statement exports are small; this bounds memory and the database.

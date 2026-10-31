@@ -34,6 +34,7 @@ import {
   SettingsSwitch,
 } from '../settings-ui'
 import { Button, StatusDot } from '../ui'
+import { AppleWalletOption } from './apple-wallet'
 
 type CredentialProvider = ProviderId
 type Credentials = Parameters<typeof saveIntegrationCredentials>[1]
@@ -314,6 +315,7 @@ export function ConnectionsSection() {
         })}
       </SettingsCard>
       <PlaidOptions configured={configured('plaid')} />
+      <AppleWalletOption />
       <ResearchOption />
     </SettingsSection>
   )

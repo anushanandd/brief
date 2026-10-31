@@ -126,6 +126,14 @@ pub fn presence(transaction: &Transaction) -> Option<Presence> {
     if !purchase(transaction) {
         return None;
     }
+    // Wallet saw how the card was presented, which outranks reading the merchant's name.
+    if let Some(presence) = transaction
+        .wallet
+        .as_ref()
+        .and_then(|wallet| wallet.presence)
+    {
+        return Some(presence);
+    }
     let descriptor = descriptor(transaction).unwrap_or_default();
     let text = format!(
         "{descriptor} {}",
@@ -352,7 +360,8 @@ pub fn plaid_sure(transaction: &Transaction) -> bool {
 
 /// The name the bank's own records give, when they contradict Plaid's.
 pub fn corrected_name(transaction: &Transaction) -> Option<String> {
-    if !purchase(transaction) || !plaid_named(transaction) {
+    // Plaid named none of Wallet's rows, so there is nothing of Plaid's to correct.
+    if transaction.from_wallet() || !purchase(transaction) || !plaid_named(transaction) {
         return None;
     }
     let descriptor = descriptor(transaction)?;

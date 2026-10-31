@@ -191,8 +191,7 @@
   margin-top: 16px;
 }
 .home-primary-grid,
-.account-overview-primary-grid,
-.account-preview-grid {
+.account-overview-primary-grid {
   display: grid;
   align-items: start;
   gap: 16px;
@@ -250,23 +249,6 @@
   font-weight: 500;
   letter-spacing: -0.01em;
   line-height: 1.2;
-}
-.account-preview-grid {
-  margin-top: 16px;
-  grid-template-columns: minmax(0, 1fr) repeat(2, var(--companion-card-width));
-}
-.account-preview-grid-wide-primary,
-.account-preview-grid-wide-recent {
-  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
-}
-.account-preview-grid-wide-recent .account-recent-preview {
-  grid-column: 1;
-}
-.account-preview-grid-wide-recent .account-expected-column {
-  grid-column: 2;
-}
-.account-investment-preview-column {
-  grid-column: 1;
 }
 .account-recent-preview {
   grid-column: 2;
@@ -423,6 +405,63 @@
   color: var(--text-secondary);
   font-size: var(--type-meta);
   font-weight: 500;
+}
+/* Balances as the Accounts menu, read like the sidebar: rounded rows with no rules between
+   them, each type's heading a row of its own, space between types. Rows bleed into the gutter
+   so the one shown can be washed without its text moving, so the card mustn't clip them. */
+.accounts-menu {
+  overflow: visible;
+}
+.accounts-menu > nav {
+  display: grid;
+  gap: 2px;
+  margin-top: 8px;
+}
+.accounts-menu .account-row,
+.accounts-menu .account-group-section-heading {
+  margin-inline: -8px;
+  padding-inline: 8px;
+  border-radius: var(--radius-control);
+  color: inherit;
+}
+.accounts-menu .account-row {
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  min-height: 0;
+  padding-block: 8px;
+  border-bottom: 0;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+/* A menu changes the view in place, so its rows carry no chevron out. */
+.accounts-menu .account-row > svg {
+  display: none;
+}
+.accounts-menu .account-group-section {
+  display: grid;
+  gap: 2px;
+  margin-top: 12px;
+}
+.accounts-menu .account-group-section-heading {
+  padding-block: 4px;
+  border-bottom: 0;
+}
+.accounts-menu .account-group-section-heading > strong {
+  margin-right: 0;
+}
+.accounts-menu .account-group-section-link {
+  text-decoration: none;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.accounts-menu .account-row:hover,
+.accounts-menu .account-group-section-link:hover {
+  background: var(--hover-wash);
+}
+/* The menu shows the row hovered by its wash, not the accent its name turns elsewhere. */
+.accounts-menu .account-row:hover .account-row-name > strong {
+  color: inherit;
+}
+.accounts-menu .account-row[aria-current='page'],
+.accounts-menu .account-group-section-link[aria-current='page'] {
+  background: var(--sidebar-accent);
 }
 /* An unavailable value's note under the institution keeps its own case. */
 .account-row-name > small + small {

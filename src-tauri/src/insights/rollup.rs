@@ -5,7 +5,7 @@
 use serde::Serialize;
 use ts_rs::TS;
 
-use crate::finance_contract::{Account, Holding};
+use crate::finance_contract::{Account, Holding, SPENDING_ONLY_PREFIX};
 use crate::numeric::{from_minor, minor_units, round2};
 use crate::settings::FinanceSettings;
 
@@ -191,23 +191,32 @@ pub struct Sheet {
     pub complete: bool,
 }
 
-/// The spending cards: the credit accounts the user spends from, left out of the totals.
+/// The spending cards: the credit accounts the user spends from, left out of the totals. A
+/// spending-only account is always one, since spending is all it tracks.
 pub fn spending_cards<'a>(accounts: &'a [Account], settings: &FinanceSettings) -> Vec<&'a Account> {
     accounts
         .iter()
         .filter(|account| {
-            account.r#type == "credit" && settings.spending_account_ids().any(|id| id == account.id)
+            account.r#type == "credit"
+                && (account.id.starts_with(SPENDING_ONLY_PREFIX)
+                    || settings.spending_account_ids().any(|id| id == account.id))
         })
         .collect()
+}
+
+/// What the cards owe, in cents' precision. A spending-only card owes nothing of the user's;
+/// any other card without a value leaves the total unknown.
+fn cards_balance(cards: &[&Account]) -> Option<f64> {
+    sum(cards
+        .iter()
+        .filter(|card| card.counted())
+        .map(|card| card.value))
 }
 
 /// Net worth without the spending cards' balances, which are not market-driven; as it is when a
 /// card's balance is unknown.
 pub fn without_cards(accounts: &[Account], net_worth: f64, settings: &FinanceSettings) -> f64 {
-    sum(spending_cards(accounts, settings)
-        .iter()
-        .map(|card| card.value))
-    .map_or(net_worth, |cards| {
+    cards_balance(&spending_cards(accounts, settings)).map_or(net_worth, |cards| {
         from_minor(minor_units(net_worth) - minor_units(cards))
     })
 }
@@ -241,7 +250,7 @@ fn groups<'a>(accounts: impl IntoIterator<Item = &'a Account>) -> Vec<GroupValue
         .map(|(account_type, members)| GroupValue {
             value: sum(members
                 .iter()
-                .filter(|account| account.value.is_some() || !account.id.starts_with("manual:"))
+                .filter(|account| account.counted())
                 .map(|account| account.value)),
             account_type,
         })
@@ -254,6 +263,20 @@ fn groups<'a>(accounts: impl IntoIterator<Item = &'a Account>) -> Vec<GroupValue
             .then_with(|| left.account_type.cmp(&right.account_type))
     });
     groups
+}
+
+/// The counted accounts' totals by type, leaving out the combined account and the spending
+/// cards: `Rollup::listed` alone, which each market chart point needs without the rest.
+pub fn listed(accounts: &[Account], settings: &FinanceSettings) -> Vec<GroupValue> {
+    let card_ids = spending_cards(accounts, settings)
+        .into_iter()
+        .map(|card| card.id.as_str())
+        .collect::<Vec<_>>();
+    groups(
+        accounts
+            .iter()
+            .filter(|account| account.id != COMBINED && !card_ids.contains(&account.id.as_str())),
+    )
 }
 
 /// The totals over `accounts` and `holdings`, valued at `net_worth`, leaving out the spending
@@ -293,7 +316,7 @@ pub fn rollup(
         .iter()
         .filter(|account| matches!(account.r#type.as_str(), "brokerage" | "retirement"))
         .collect::<Vec<_>>();
-    let card_total = sum(cards.iter().map(|card| card.value));
+    let card_total = cards_balance(&cards);
     let without_cards = |value: f64| {
         card_total.map_or(value, |cards| {
             from_minor(minor_units(value) - minor_units(cards))
@@ -301,7 +324,7 @@ pub fn rollup(
     };
     Rollup {
         groups: groups(every.clone()),
-        listed: groups(listed.iter().copied()),
+        listed: self::listed(accounts, settings),
         cards: (!cards.is_empty()).then(|| GroupValue {
             account_type: "spending".into(),
             value: card_total,
@@ -445,6 +468,42 @@ mod tests {
         assert_eq!(
             (totals.net_worth, totals.combined),
             (1_040.0, Some(1_040.0))
+        );
+    }
+
+    #[test]
+    fn a_spending_only_card_is_always_a_spending_card_and_leaves_the_others_total_alone() {
+        let accounts = vec![
+            account("all", "combined", Some(900.0)),
+            account("checking", "cash", Some(1_000.0)),
+            account("card", "credit", Some(-100.0)),
+            account("wallet:apple-card", "credit", None),
+        ];
+        let settings = FinanceSettings {
+            spending_account_id: Some("card".into()),
+            ..Default::default()
+        };
+        let cards = spending_cards(&accounts, &settings);
+        assert_eq!(
+            cards
+                .iter()
+                .map(|card| card.id.as_str())
+                .collect::<Vec<_>>(),
+            ["card", "wallet:apple-card"]
+        );
+        // Its missing balance must not make the card it sits beside unknown.
+        assert_eq!(without_cards(&accounts, 900.0, &settings), 1_000.0);
+        let totals = rollup(&accounts, &[], 900.0, &settings);
+        assert_eq!(totals.cards.unwrap().value, Some(-100.0));
+        // A card that should have a balance and doesn't still leaves the total unknown.
+        let mut unknown = accounts.clone();
+        unknown[2].value = None;
+        assert_eq!(
+            rollup(&unknown, &[], 1_000.0, &settings)
+                .cards
+                .unwrap()
+                .value,
+            None
         );
     }
 

@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, type ReactNode } from 'react'
 
 import {
   cashMetrics,
@@ -9,7 +9,7 @@ import {
 } from '../components/account-metrics'
 import { AccountStatements } from '../components/account-statements'
 import { ActivityList } from '../components/activity-list'
-import { AllAccountsOverview } from '../components/all-accounts-overview'
+import { AccountsLayout } from '../components/all-accounts-overview'
 import { ChartRangeSelector, MonthlyBarChart, PerformanceChart } from '../components/charts'
 import { ValueHistoryEmptyState } from '../components/data-state'
 import { ExpectedActivity } from '../components/expected-activity'
@@ -33,6 +33,7 @@ import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
+import type { AccountGroup } from '../lib/account-groups'
 import { accountDisplayName } from '../lib/account-names'
 import { accountStartDate } from '../lib/account-start-dates'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
@@ -41,7 +42,7 @@ import { openExternalUrl } from '../lib/api'
 import { buildChartEventGroups } from '../lib/chart-events'
 import { accountValueChart } from '../lib/dashboard-account-views'
 import { financeSettings } from '../lib/finance-settings'
-import { formatCurrency, formatShares, formatShortDay, valueTone } from '../lib/format'
+import { formatCurrency, formatShare, formatShares, formatShortDay, valueTone } from '../lib/format'
 import { chartPeriod } from '../lib/graph-preferences'
 import { buildLiveChartData } from '../lib/live-chart'
 import { getExternalLogosEnabled } from '../lib/logos'
@@ -53,6 +54,8 @@ import {
 } from '../lib/spending'
 import { reconciliationSummary, reviewCount } from '../lib/statement-import'
 
+const holdsSecurities = (type: string) => type === 'brokerage' || type === 'retirement'
+
 // The figures an account shows before its Details disclosure.
 const primaryMetricCount = 4
 // The card previews; the heading opens the account's full history in Activity.
@@ -60,12 +63,19 @@ const recentActivityLimit = 8
 
 export function AccountOverview({
   account,
+  group,
+  menu,
   data,
   graphWindow,
   onGraphWindowChange,
   spendingAccountIds = [],
 }: {
+  /** The account shown, or the combined `all` row for All accounts and a type of account. */
   account: Account
+  /** A type of account shown together, in place of one account. */
+  group?: AccountGroup
+  /** Balances, the page's menu, which keeps its place in every view. */
+  menu: ReactNode
   data: FinanceSnapshot
   graphWindow: number
   onGraphWindowChange: (seconds: number) => void
@@ -83,25 +93,39 @@ export function AccountOverview({
   const website = accountDetails?.website
   const accountDisplayNames = settings.accountNames
   const accountStartDates = settings.accountStartDates
-  const isCombined = account.id === 'all' || account.type === 'combined'
-  const committedAccount = committed.accounts.find(({ id }) => id === account.id)
-  const startDate = accountStartDate(data, isCombined ? 'net-worth' : account.id, accountStartDates)
+  // All accounts and a type of account each show more than one account at once.
+  const isAll = !group && (account.id === 'all' || account.type === 'combined')
+  const isCombined = isAll || Boolean(group)
+  const memberKey = group?.accounts.map(({ id }) => id).join(',')
+  const committedAccount = isCombined
+    ? undefined
+    : committed.accounts.find(({ id }) => id === account.id)
+  // A type of account starts with its earliest account, as Rust starts its change.
+  const startDate = group
+    ? group.accounts
+        .flatMap(({ id }) => accountStartDate(data, id, accountStartDates) ?? [])
+        .toSorted()[0]
+    : accountStartDate(data, isAll ? 'net-worth' : account.id, accountStartDates)
   const externalLogosEnabled = getExternalLogosEnabled()
-  const displayName = accountDisplayName(account.id, account.name, accountDisplayNames)
-  const relatedAccountIds = useMemo(
-    () =>
-      new Set(
-        isCombined
-          ? committed.accounts.filter(({ id }) => id !== 'all').map(({ id }) => id)
-          : [
-              account.id,
-              ...Object.entries(committed.accountLinks ?? {}).flatMap(([plaidId, snaptradeId]) =>
-                snaptradeId === account.id ? [plaidId] : [],
-              ),
-            ],
+  const displayName = group
+    ? group.label
+    : isAll
+      ? 'All accounts'
+      : accountDisplayName(account.id, account.name, accountDisplayNames)
+  const relatedAccountIds = useMemo(() => {
+    const own = memberKey
+      ? memberKey.split(',')
+      : isAll
+        ? committed.accounts.filter(({ id }) => id !== 'all').map(({ id }) => id)
+        : [account.id]
+    // A brokerage's Plaid twin carries its cash activity.
+    return new Set([
+      ...own,
+      ...Object.entries(committed.accountLinks ?? {}).flatMap(([plaidId, snaptradeId]) =>
+        own.includes(snaptradeId) ? [plaidId] : [],
       ),
-    [account.id, committed.accountLinks, committed.accounts, isCombined],
-  )
+    ])
+  }, [account.id, committed.accountLinks, committed.accounts, isAll, memberKey])
   const transactions = useMemo(
     () =>
       sortTransactionsByRecency(
@@ -112,8 +136,8 @@ export function AccountOverview({
     [committed.transactions, data.updatedAt, relatedAccountIds],
   )
   const trades = useMemo(
-    () => data.trades.filter(({ accountId }) => isCombined || accountId === account.id),
-    [account.id, data.trades, isCombined],
+    () => data.trades.filter(({ accountId }) => isAll || relatedAccountIds.has(accountId)),
+    [data.trades, isAll, relatedAccountIds],
   )
   const sales = useMemo(
     () =>
@@ -127,9 +151,9 @@ export function AccountOverview({
   const positions = useMemo(
     () =>
       data.holdings
-        .filter(({ accountId }) => isCombined || accountId === account.id)
+        .filter(({ accountId }) => isAll || relatedAccountIds.has(accountId))
         .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity)),
-    [account.id, data.holdings, isCombined],
+    [data.holdings, isAll, relatedAccountIds],
   )
   const activities = useMemo(
     () =>
@@ -137,14 +161,12 @@ export function AccountOverview({
         { updatedAt: committed.updatedAt, transactions, trades },
         accountDisplayNames,
         externalLogosEnabled,
-      ).filter(
-        ({ accountId }) => !isCombined || !accountId || !spendingAccountIds.includes(accountId),
-      ),
+      ).filter(({ accountId }) => !isAll || !accountId || !spendingAccountIds.includes(accountId)),
     [
       accountDisplayNames,
       committed.updatedAt,
       spendingAccountIds,
-      isCombined,
+      isAll,
       externalLogosEnabled,
       trades,
       transactions,
@@ -157,9 +179,10 @@ export function AccountOverview({
     [account.id, data.insights],
   )
   const period = chartPeriod(graphWindow)
-  // What moved through the account over the period, as Rust summed it.
+  // What moved through the account over the period, as Rust summed it. Rust sums flows for
+  // every account and each one, not for a type of account, so a group shows none.
   const transactionSummary = committed.insights?.flows.find(
-    (flows) => flows.accountId === (isCombined ? 'all' : account.id) && flows.window === period,
+    (flows) => flows.accountId === (isAll ? 'all' : account.id) && flows.window === period,
   ) ?? {
     moneyIn: 0,
     moneyOut: 0,
@@ -169,14 +192,9 @@ export function AccountOverview({
     contributions: null,
     marketChange: null,
   }
-  const isInvestment = isCombined || account.type === 'brokerage' || account.type === 'retirement'
-  const showExpectedActivity = isCombined || !isInvestment
-  const previewLayoutClass = !showExpectedActivity
-    ? ' account-preview-grid-wide-primary'
-    : account.type === 'cash'
-      ? ' account-preview-grid-wide-recent'
-      : ''
-  const isCredit = account.type === 'credit'
+  const isInvestment = group ? holdsSecurities(group.type) : isAll || holdsSecurities(account.type)
+  // A card's chart is its monthly spending; a group of cards draws their balance.
+  const isCredit = !isCombined && account.type === 'credit'
   const performance = isCombined
     ? undefined
     : (isInvestment ? data.brokeragePerformance : data.accountBalanceHistory).find(
@@ -185,9 +203,11 @@ export function AccountOverview({
   const chartNow = Date.parse(live.valuationAsOf ?? data.updatedAt) / 1_000
   const now = Date.now() / 1_000
   const safeChartNow = Number.isFinite(chartNow) ? chartNow : now
-  const marketSeries = isCombined
-    ? (live.marketSeries.accounts ?? [])
-    : (live.marketSeries[account.id] ?? [])
+  const marketSeries = group
+    ? (live.marketSeries[`group:${group.type}`] ?? [])
+    : isAll
+      ? (live.marketSeries.accounts ?? [])
+      : (live.marketSeries[account.id] ?? [])
   const { chartData, chartChange, incomplete, historyIsAvailable } = accountValueChart(
     data,
     account,
@@ -196,7 +216,9 @@ export function AccountOverview({
     graphWindow,
     live.chartChanges,
     startDate,
+    group,
   )
+  const chartValue = group ? group.value : account.value
   const netDeposits =
     performance?.points.length && performance.performanceMethod !== 'value-only'
       ? buildLiveChartData(
@@ -220,19 +242,17 @@ export function AccountOverview({
     : undefined
   const chartEvents = useMemo(
     () =>
-      isInvestment
-        ? buildChartEventGroups(committed, isCombined ? 'net-worth' : account.id, graphWindow)
+      isInvestment && !group
+        ? buildChartEventGroups(committed, isAll ? 'net-worth' : account.id, graphWindow)
         : [],
-    [committed, isInvestment, isCombined, account.id, graphWindow],
+    [committed, isInvestment, isAll, group, account.id, graphWindow],
   )
   // Across every account, the gains Rust summed at the values shown.
   const rollup = data.insights?.rollup
-  const gain = isCombined ? (rollup?.unrealized ?? null) : account.knownUnrealizedGain
-  const realizedGain = isCombined ? (rollup?.realizedYtd ?? null) : account.estimatedRealizedGainYtd
+  const gain = isAll ? (rollup?.unrealized ?? null) : account.knownUnrealizedGain
+  const realizedGain = isAll ? (rollup?.realizedYtd ?? null) : account.estimatedRealizedGainYtd
   const unrealizedLabel =
-    isCombined || account.costBasisCoverage === 'partial'
-      ? 'Known unrealized P/L'
-      : 'Unrealized P/L'
+    isAll || account.costBasisCoverage === 'partial' ? 'Known unrealized P/L' : 'Unrealized P/L'
   const investmentFlows = {
     contributions: transactionSummary.contributions,
     marketChange: transactionSummary.marketChange,
@@ -248,7 +268,7 @@ export function AccountOverview({
     <Link
       className="section-heading-link"
       to="/activities"
-      search={isCombined ? undefined : { account: account.id }}
+      search={isAll ? undefined : { account: memberKey ?? account.id }}
       data-command="navigation.open./activities"
     >
       Recent activity <ChevronRight size={14} aria-hidden="true" />
@@ -348,13 +368,14 @@ export function AccountOverview({
           <h2 className="balance-label">
             {displayName}
             {incomplete ? ' · known USD balances only' : ''}
-            {account.balanceSource === 'unavailable' ? ' · value unavailable' : ''}
-            {account.balanceSource === 'estimated' && account.balanceAsOf
+            {!isCombined && account.balanceSource === 'unavailable' ? ' · value unavailable' : ''}
+            {!isCombined && account.balanceSource === 'estimated' && account.balanceAsOf
               ? ` · Est. since ${formatShortDay(account.balanceAsOf)}`
               : ''}
+            {group?.outsideTotal ? ' · not in total' : ''}
           </h2>
           <div className="home-balance-value">
-            <AnimatedCurrency className="hero-number" value={account.value} />
+            <AnimatedCurrency className="hero-number" value={chartValue} />
           </div>
         </div>
         {committedAccount?.id.startsWith('snaptrade:') || (!isCredit && historyIsAvailable) ? (
@@ -363,11 +384,6 @@ export function AccountOverview({
               <ChartRangeSelector value={graphWindow} onValueChange={onGraphWindowChange} />
             ) : null}
             <SnapTradeReference account={committedAccount} />
-            {account.id.startsWith('snaptrade:') && marketSeries.length ? (
-              <small className="snaptrade-reference">
-                SnapTrade daily values · Alpaca intraday projection
-              </small>
-            ) : null}
           </div>
         ) : null}
         {isCredit ? null : (
@@ -381,36 +397,29 @@ export function AccountOverview({
       </header>
 
       <div className="brokerage-chart-viewport">
-        <div key={account.id} className="brokerage-chart-slide">
+        <div key={group ? `group:${group.type}` : account.id} className="brokerage-chart-slide">
           <div className="brokerage-chart-content">
             {isCredit ? (
               <MonthlyBarChart data={monthlySpending} label={`${displayName} monthly spending`} />
-            ) : historyIsAvailable && account.value != null ? (
+            ) : historyIsAvailable && chartValue != null ? (
               <PerformanceChart
                 data={chartData}
                 netDeposits={netDeposits}
                 benchmark={benchmark}
-                value={
-                  isCombined && data.netWorthProvisional
-                    ? (chartData.at(-1)?.value ?? account.value)
-                    : account.value
-                }
+                value={chartValue}
                 events={chartEvents}
                 referenceIso={data.updatedAt}
                 startDate={startDate}
                 selectedWindow={graphWindow}
-                observedOn={account.observedOn}
+                observedOn={isCombined ? undefined : account.observedOn}
                 estimatedAfter={
-                  account.balanceSource === 'estimated'
+                  !isCombined && account.balanceSource === 'estimated'
                     ? (account.balanceAsOf ?? undefined)
                     : undefined
                 }
               />
             ) : (
-              <ValueHistoryEmptyState
-                incomplete={incomplete}
-                valueAvailable={account.value != null}
-              />
+              <ValueHistoryEmptyState incomplete={incomplete} valueAvailable={chartValue != null} />
             )}
           </div>
         </div>
@@ -502,17 +511,10 @@ export function AccountOverview({
   const primaryMetrics = ordered.slice(0, primaryMetricCount)
   const moreMetrics = ordered.slice(primaryMetricCount)
 
-  // Spending cards belong to Money: All accounts lists them apart, outside its totals.
-  const listedAccounts = isCombined
-    ? data.accounts.filter(({ id }) => id !== 'all' && !spendingAccountIds.includes(id))
-    : []
-  const spendingCards = isCombined
-    ? data.accounts.filter(({ id }) => spendingAccountIds.includes(id))
-    : []
   const sheet = rollup?.sheet ?? { assets: 0, liabilities: 0, complete: false }
   // What the accounts own and owe, then investment and income figures across every account.
   // Group totals are in "Balances".
-  const combinedDetails = isCombined ? (
+  const combinedDetails = isAll ? (
     <Card className="account-overview-summary-card">
       <SectionHeading title="Account details" />
       <div className="account-summary-metrics">
@@ -553,72 +555,86 @@ export function AccountOverview({
     </Card>
   ) : null
 
-  if (isCombined)
-    return (
-      <AllAccountsOverview
-        data={committed}
-        accounts={listedAccounts}
-        spendingCards={spendingCards}
-        graphWindow={graphWindow}
-        chartCard={chartCard}
-        activityPreview={activityPreview}
-        details={combinedDetails}
+  // A type of account: its total, its share of what you own, and how many accounts it holds,
+  // each as Rust totaled it. Rust sums flows and gains for every account or one, not a type.
+  const share = group ? rollup?.shares.find(({ type }) => type === group.type) : undefined
+  const groupDetails = group ? (
+    <Card className="account-overview-summary-card">
+      <SectionHeading
+        title={`${group.label} details`}
+        detail={group.outsideTotal ? 'Spending cards, not in totals' : undefined}
       />
-    )
-
-  return (
-    <div className="account-overview-dashboard">
-      <div className="account-overview-primary-grid">
-        {chartCard}
-
-        <Card className="account-overview-summary-card">
-          <SectionHeading
-            title="Account details"
-            detail={
-              [
-                account.officialName,
-                account.holderCategory === 'business' ? 'Business' : '',
-                spendingAccountIds.includes(account.id) ? 'Spending card, not in totals' : '',
-              ]
-                .filter(Boolean)
-                .join(' · ') || undefined
-            }
-            action={
-              accountDetails?.website ? (
-                <ExternalLink
-                  className="section-heading-link"
-                  href={accountDetails.website}
-                  data-command="account.website.open"
-                >
-                  Website
-                  <ArrowUpRight size={12} aria-hidden="true" />
-                </ExternalLink>
-              ) : undefined
-            }
-          />
-          <div className="account-summary-metrics">{primaryMetrics}</div>
-          {moreMetrics.length ? (
-            <details ref={detailsRef} className="account-details-more">
-              <summary data-command="account.details.toggle">
-                Details <small>{moreMetrics.length}</small>
-              </summary>
-              <div className="account-summary-metrics">{moreMetrics}</div>
-            </details>
-          ) : null}
-          <AccountStatements accountId={account.id} />
-        </Card>
+      <div className="account-summary-metrics">
+        <Metric label="Total" value={formatCurrency(group.value)} />
+        <Metric
+          label="Change"
+          value={
+            group.change == null
+              ? '—'
+              : `${group.change > 0 ? '+' : ''}${formatCurrency(group.change)}`
+          }
+          tone={valueTone(group.change)}
+        />
+        <Metric label="Accounts" value={String(group.accounts.length)} />
+        {share ? <Metric label="Share of assets" value={formatShare(share.percent)} /> : null}
       </div>
+    </Card>
+  ) : null
 
-      <div className={`account-preview-grid${previewLayoutClass}`}>
-        {isInvestment ? (
-          <div className="account-investment-preview-column">
-            <Card className="account-preview-card account-holdings-preview">
-              <PositionTable
-                title={holdingsLink}
-                positions={positions.slice(0, 3)}
-                externalLogosEnabled={externalLogosEnabled}
-              />
-            </Card>
+  const accountDetailsCard = isCombined ? null : (
+    <Card className="account-overview-summary-card">
+      <SectionHeading
+        title="Account details"
+        detail={
+          [
+            account.officialName,
+            account.holderCategory === 'business' ? 'Business' : '',
+            spendingAccountIds.includes(account.id) ? 'Spending card, not in totals' : '',
+          ]
+            .filter(Boolean)
+            .join(' · ') || undefined
+        }
+        action={
+          accountDetails?.website ? (
+            <ExternalLink
+              className="section-heading-link"
+              href={accountDetails.website}
+              data-command="account.website.open"
+            >
+              Website
+              <ArrowUpRight size={12} aria-hidden="true" />
+            </ExternalLink>
+          ) : undefined
+        }
+      />
+      <div className="account-summary-metrics">{primaryMetrics}</div>
+      {moreMetrics.length ? (
+        <details ref={detailsRef} className="account-details-more">
+          <summary data-command="account.details.toggle">
+            Details <small>{moreMetrics.length}</small>
+          </summary>
+          <div className="account-summary-metrics">{moreMetrics}</div>
+        </details>
+      ) : null}
+      <AccountStatements accountId={account.id} />
+    </Card>
+  )
+
+  // Beside the chart: the view's figures, then what an investment holds and sold, or what's
+  // coming up for everything else.
+  const side = (
+    <>
+      {combinedDetails ?? groupDetails ?? accountDetailsCard}
+      {isInvestment && !isAll ? (
+        <>
+          <Card className="account-preview-card account-holdings-preview">
+            <PositionTable
+              title={holdingsLink}
+              positions={positions.slice(0, 5)}
+              externalLogosEnabled={externalLogosEnabled}
+            />
+          </Card>
+          {sales.length ? (
             <ScrollCueCard
               className="account-preview-card account-sales-preview"
               scrollSelector=".financial-table-scroll"
@@ -630,24 +646,28 @@ export function AccountOverview({
                 scrollRef={salesScrollRef}
               />
             </ScrollCueCard>
-          </div>
-        ) : null}
+          ) : null}
+        </>
+      ) : (
+        <ExpectedActivity
+          data={committed}
+          account={isAll ? undefined : (memberKey ?? account.id)}
+          className="account-preview-card account-expected-preview"
+          scrollRef={expectedScrollRef}
+        />
+      )}
+    </>
+  )
 
-        <div className="account-activity-preview-column account-recent-preview">
-          {activityPreview}
-        </div>
-        {showExpectedActivity ? (
-          <div className="account-activity-preview-column account-expected-column">
-            <ExpectedActivity
-              data={committed}
-              account={isCombined ? undefined : account.id}
-              className="account-preview-card account-expected-preview"
-              scrollRef={expectedScrollRef}
-            />
-          </div>
-        ) : null}
-      </div>
-    </div>
+  return (
+    <AccountsLayout
+      revision={committed.revision}
+      showConnections={isAll}
+      chartCard={chartCard}
+      menu={menu}
+      activityPreview={activityPreview}
+      side={side}
+    />
   )
 }
 

@@ -5,6 +5,7 @@ import type { Merchant } from "./Merchant";
 import type { Pace } from "./Pace";
 import type { PeriodKind } from "./PeriodKind";
 import type { PeriodView } from "./PeriodView";
+import type { PlaceSpent } from "./PlaceSpent";
 import type { Projection } from "./Projection";
 
 export type SpendingPeriodDetail = { 
@@ -37,8 +38,13 @@ largest?: string,
  */
 categories: Array<CategorySpent>, 
 /**
- * The statement balance at the period's end: the opening plus purchases, less credits and
- * payments.
+ * Places with in-person spending, largest first; a purchase with no known place isn't one.
+ */
+places?: Array<PlaceSpent>, 
+/**
+ * The saved card's balance at the period's end: today's for the open cycle, else the
+ * issuer's last statement balance with the settled activity since undone. Absent when the
+ * saved history is missing activity or begins after the cycle ended.
  */
 balance?: number, 
 /**
@@ -51,8 +57,8 @@ typical?: { [key in string]: number },
  */
 projected?: Projection, 
 /**
- * The saved card's statement balance when the period opened: today's balance less this
- * cycle's activity, or for a closed cycle the autopay that paid the statement before it.
+ * The saved card's balance when the period opened, worked out the same way; with no
+ * balance to start from, the autopay that paid the statement before it.
  */
 opening?: number, total: number, 
 /**

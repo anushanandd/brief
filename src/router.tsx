@@ -36,7 +36,11 @@ const accountSearch = (search: Record<string, unknown>): { account?: string } =>
 const accountsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/accounts',
-  validateSearch: accountSearch,
+  // One account, or one type of account (`group`), shown in place of all of them.
+  validateSearch: (search: Record<string, unknown>): { account?: string; group?: string } =>
+    typeof search.group === 'string' && search.group
+      ? { group: search.group }
+      : accountSearch(search),
   component: lazyRouteComponent(() => import('./pages/accounts'), 'AccountsPage'),
 })
 /** A non-negative amount from a search parameter. */

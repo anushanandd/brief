@@ -4,7 +4,11 @@ import type { ProviderDiagnostic } from "./ProviderDiagnostic";
 import type { ProviderRun } from "./ProviderRun";
 import type { StageTimes } from "./StageTimes";
 
-export type SyncDiagnostics = { phase: string, providers: Array<ProviderDiagnostic>, warningCount: number, 
+export type SyncDiagnostics = { phase: string, 
+/**
+ * Why a staged refresh was refused, in Brief's own words: never a name or an amount.
+ */
+reason?: string, providers: Array<ProviderDiagnostic>, warningCount: number, 
 /**
  * What each provider used, failed or not: counts and timings, never names or amounts.
  */

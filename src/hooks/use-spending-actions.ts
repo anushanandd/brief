@@ -5,10 +5,11 @@ import type { SpendingOwner } from '../lib/schema'
 import { type SpendingPeriod, spendingOwnerOptions, spendingPeriodOptions } from '../lib/spending'
 
 export type SpendingComparison = 'previous' | 'typical'
+export type SpendingBreakdown = 'categories' | 'places'
 
 /**
  * Spending's page commands: a period per key, stepping through periods, whose spending counts,
- * clearing focus, and what categories compare against.
+ * clearing focus, what categories compare against, and whether the breakdown is by place.
  */
 export function useSpendingActions({
   hasStatements,
@@ -25,6 +26,8 @@ export function useSpendingActions({
   comparison,
   canCompareTypical,
   setComparison,
+  breakdown,
+  setBreakdown,
 }: {
   hasStatements: boolean
   /** A purchase is someone else's, so whose spending counts is a choice. */
@@ -44,6 +47,8 @@ export function useSpendingActions({
   /** Earlier periods cover this one, so an average exists. */
   canCompareTypical: boolean
   setComparison: (comparison: SpendingComparison) => void
+  breakdown: SpendingBreakdown
+  setBreakdown: (breakdown: SpendingBreakdown) => void
 }) {
   const actions = useMemo<AppAction[]>(
     () => [
@@ -100,6 +105,15 @@ export function useSpendingActions({
         disabled: !focus,
         disabledReason: focus ? undefined : 'No category is focused',
         run: clearFocus,
+      },
+      {
+        id: 'spending.breakdown.toggle',
+        title: breakdown === 'places' ? 'Show spending by category' : 'Show spending by place',
+        search: 'spending places cities countries where location categories breakdown',
+        group: 'View',
+        scope: 'page',
+        bindings: [{ sequence: ['b'], label: 'B' }],
+        run: () => setBreakdown(breakdown === 'places' ? 'categories' : 'places'),
       },
       {
         id: 'spending.compare.previous',
@@ -165,6 +179,7 @@ export function useSpendingActions({
       },
     ],
     [
+      breakdown,
       canCompareTypical,
       choosePeriod,
       clearFocus,
@@ -177,6 +192,7 @@ export function useSpendingActions({
       period,
       setOwner,
       periodOffset,
+      setBreakdown,
       setComparison,
       setPeriodOffset,
     ],

@@ -126,6 +126,24 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) minmax(360px, 0.85fr);
   align-items: start;
+  column-gap: 32px;
+}
+/* The open document stays in view while the list scrolls past it. */
+.documents-layout > .documents-panel,
+.documents-layout > .documents-summary {
+  position: sticky;
+  top: 24px;
+  max-height: calc(100dvh - 48px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+@media (max-width: 1180px) {
+  .documents-layout > .documents-panel,
+  .documents-layout > .documents-summary {
+    position: static;
+    max-height: none;
+    overflow: visible;
+  }
 }
 .documents-layout.is-single {
   grid-template-columns: minmax(0, 1fr);
@@ -281,6 +299,42 @@
   display: flex;
   align-items: center;
   gap: 6px;
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+}
+/* The figure the document leads with, and what it is. */
+.documents-headline {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+}
+.documents-headline > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+/* What the document is and whose: a summary line until opened. */
+.documents-details-disclosure > summary {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: max-content;
+  max-width: 100%;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  cursor: pointer;
+}
+.documents-details-disclosure > summary > small {
+  overflow: hidden;
+  color: var(--text-tertiary);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.documents-details-disclosure[open] > summary {
+  margin-bottom: 12px;
+}
+.documents-file {
+  margin: 12px 0 0;
+  overflow-wrap: anywhere;
   color: var(--text-tertiary);
   font-size: var(--type-micro);
 }
