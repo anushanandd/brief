@@ -3,13 +3,14 @@ import type { ComponentProps } from 'react'
 
 import {
   activityPlace,
+  activityTime,
   groupActivitiesByDate,
   type ActivityFilterColumn,
   type ActivityItem,
   type ActivitySort,
   type ActivitySortColumn,
 } from '../lib/activity'
-import { displayCase, formatCurrency, valueTone } from '../lib/format'
+import { displayCase, formatCurrency, formatForeignAmount, valueTone } from '../lib/format'
 import { formatActivityDate, formatListDate } from '../lib/spending'
 import { AccountMark } from './account-mark'
 import { PlaceMark } from './activity-method-mark'
@@ -113,10 +114,21 @@ export function activityGridWidths(
         twoLine(place.primary, place.secondary) + markWidth + cellPadding + buttonInset,
       )
     const date = formatListDate(activity.date, referenceIso)
-    columns.date.push(measure(date, 'body') + textSlack + cellPadding + buttonInset * 2)
+    columns.date.push(
+      Math.max(measure(date, 'body'), measure(activityTime(activity), 'meta')) +
+        textSlack +
+        cellPadding +
+        buttonInset * 2,
+    )
+    const foreign = activity.wallet?.foreign
     // The amount ends the row, so it pads only its left side.
     columns.amount.push(
-      measure(formatCurrency(activity.amount), 'strong') + textSlack + cellPadding / 2,
+      Math.max(
+        measure(formatCurrency(activity.amount), 'strong'),
+        foreign ? measure(formatForeignAmount(foreign.amount, foreign.currency), 'meta') : 0,
+      ) +
+        textSlack +
+        cellPadding / 2,
     )
   }
   return activityColumns.map(({ id }, index) => {
@@ -130,8 +142,13 @@ export function activityGridWidths(
 }
 
 /** What a row's merchant carries beside it: still pending, or a second look Rust suggests. */
-export function activityStatus(activity: Pick<ActivityItem, 'pending' | 'flag'>) {
-  if (activity.pending) return { badge: 'Pending', label: 'Pending', warning: false }
+export function activityStatus(activity: Pick<ActivityItem, 'pending' | 'flag' | 'wallet'>) {
+  if (activity.pending)
+    return {
+      badge: 'Pending',
+      label: activity.wallet ? 'Pending, from Apple Wallet' : 'Pending',
+      warning: false,
+    }
   if (activity.flag === 'duplicate')
     return { badge: 'Duplicate?', label: 'Possible duplicate', warning: true }
   if (activity.flag === 'unusual')
@@ -215,6 +232,8 @@ export const ActivityList = memo(function ActivityList({
         const shortDate = formatListDate(activity.date, referenceIso)
         const place = activityPlace(activity)
         const amount = formatCurrency(activity.amount)
+        const foreign = activity.wallet?.foreign
+        const time = activityTime(activity)
         const status = activityStatus(activity)
         const linked = onHighlight
           ? {
@@ -236,7 +255,14 @@ export const ActivityList = memo(function ActivityList({
                   disabled={!onFilter}
                   onClick={() => onFilter?.('date', activity)}
                 >
-                  <time dateTime={activity.date}>{shortDate}</time>
+                  {time ? (
+                    <span className="financial-activity-cell-text">
+                      <time dateTime={activity.date}>{shortDate}</time>
+                      <small>{time}</small>
+                    </span>
+                  ) : (
+                    <time dateTime={activity.date}>{shortDate}</time>
+                  )}
                 </button>
               </span>
             ) : null}
@@ -422,9 +448,11 @@ export const ActivityList = memo(function ActivityList({
                 <span
                   className={`financial-activity-amount ${valueTone(activity.amount)}`}
                   aria-label={`Amount: ${amount}`}
-                  data-copy-amount
                 >
-                  {amount}
+                  <span data-copy-amount>{amount}</span>
+                  {foreign ? (
+                    <small>{formatForeignAmount(foreign.amount, foreign.currency)}</small>
+                  ) : null}
                 </span>
               </>
             ) : (

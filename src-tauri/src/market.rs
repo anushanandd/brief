@@ -35,19 +35,58 @@ pub(crate) fn get_saved_market(
     };
     let snapshot = &storage.data.snapshot;
     let settings = &storage.data.settings;
-    let mut response = market_payload(snapshot, settings, &market)?;
-    // The week drawn from saved bars, so launch shows the detail before the stream refreshes it.
-    if let Some(bars) = price_cache(&app).and_then(|cache| {
-        providers::holding_market::cached_histories(
-            &cache,
-            &quoted_symbols(snapshot),
-            intraday::WEEK_SECONDS,
-        )
-    }) {
-        with_week(&mut response, snapshot, settings, &market, &bars)?;
-    }
+    let bars = saved_bars(&app, snapshot);
+    // Without the view there are no recorded closes to land on; the frame stays as it is.
+    let view = bars.as_ref().and_then(|_| storage.read_view().ok());
+    let mut response = frame(
+        snapshot,
+        settings,
+        &market,
+        view.as_deref().zip(bars.as_ref()),
+        chrono::Local::now().date_naive(),
+        Utc::now(),
+    )?;
     response["cached"] = true.into();
     Ok(Some(response))
+}
+
+/// The bars saved on disk for every holding: the week's, or `None` when any is missing, and
+/// the month's when every holding has them.
+fn saved_bars(app: &AppHandle, snapshot: &Snapshot) -> Option<intraday::Bars> {
+    let cache = price_cache(app)?;
+    let symbols = quoted_symbols(snapshot);
+    let saved = |range| providers::holding_market::cached_histories(&cache, &symbols, range);
+    Some(intraday::Bars {
+        week: saved(intraday::WEEK_SECONDS)?,
+        month: saved(intraday::MONTH_SECONDS),
+    })
+}
+
+/// A first frame, at launch or when a stream starts: the quotes and the committed snapshot
+/// repriced at them, with each line drawn from the saved bars when there are some, so the
+/// chart keeps its detail until fresh bars arrive instead of falling back to two points.
+fn frame(
+    snapshot: &Snapshot,
+    settings: &crate::settings::FinanceSettings,
+    market: &providers::MarketSnapshots,
+    saved: Option<(&crate::insights::View, &intraday::Bars)>,
+    today: chrono::NaiveDate,
+    now: DateTime<Utc>,
+) -> Result<Value, String> {
+    let mut response = market_payload(snapshot, settings, market)?;
+    if let Some((view, bars)) = saved {
+        with_bars(
+            &mut response,
+            snapshot,
+            settings,
+            view,
+            market,
+            bars,
+            today,
+            now,
+        )?;
+    }
+    Ok(response)
 }
 
 /// Where verified security history is saved.
@@ -71,28 +110,52 @@ fn quoted_symbols(snapshot: &Snapshot) -> Vec<String> {
     symbols.into_iter().collect()
 }
 
-/// The portfolio's intraday week in place of the frame's two points, when every holding's bars
-/// are at hand; otherwise the frame stays as it is.
-fn with_week(
+/// The recorded history of the accounts' line: net worth less the spending cards, as Home and
+/// All accounts draw it, or net worth itself when no card is set apart.
+fn accounts_history(view: &crate::insights::View) -> &[crate::finance_contract::Point] {
+    view.insights
+        .as_ref()
+        .and_then(|insights| insights.accounts_total.as_ref())
+        .map_or(&view.snapshot.net_worth_history, |total| &total.history)
+}
+
+/// Each account group's saved value and history.
+fn group_history(view: &crate::insights::View) -> &[crate::insights::totals::GroupHistory] {
+    view.insights
+        .as_ref()
+        .map_or(&[], |insights| &insights.group_history)
+}
+
+/// The intraday week and month in place of the frame's two points on every line that includes
+/// the holdings (each brokerage, their total, net worth, the accounts, and each account group
+/// holding securities), when every holding's week of bars is at hand; otherwise the frame
+/// stays as it is. `snapshot` is the committed one the stream values; `view` supplies each
+/// line's recorded closes.
+#[allow(clippy::too_many_arguments)]
+fn with_bars(
     response: &mut Value,
     snapshot: &Snapshot,
     settings: &crate::settings::FinanceSettings,
+    view: &crate::insights::View,
     market: &providers::MarketSnapshots,
-    bars: &BTreeMap<String, providers::holding_market::PriceHistory>,
+    bars: &intraday::Bars,
+    today: chrono::NaiveDate,
+    now: DateTime<Utc>,
 ) -> Result<(), String> {
-    let week = intraday::intraday_series(
+    let lines = intraday::intraday_series(
         snapshot,
         settings,
         &market.snapshots,
         bars,
-        chrono::Local::now().date_naive(),
-        chrono::Utc::now(),
+        &intraday::recorded_closes(&view.snapshot, accounts_history(view), group_history(view)),
+        today,
+        now,
     )?;
-    if week.is_empty() {
+    if lines.is_empty() {
         return Ok(());
     }
     let current = serde_json::from_value(response["chartSeries"].take()).unwrap_or_default();
-    response["chartSeries"] = json(intraday::with_intraday(current, week))?;
+    response["chartSeries"] = json(intraday::with_intraday(current, lines))?;
     Ok(())
 }
 
@@ -132,8 +195,8 @@ fn project(
     Ok(projection)
 }
 
-/// The live chart lines as the renderer holds them: the first frame's, then the week of bars
-/// with any points that followed it, then each update's point, one a minute.
+/// The live chart lines as the renderer holds them: the first frame's, then the lines drawn
+/// from bars with any points that followed them, then each update's point, one a minute.
 #[derive(Default)]
 struct LiveLines(BTreeMap<String, Vec<(i64, f64)>>);
 
@@ -209,17 +272,19 @@ impl LiveLines {
         now: i64,
     ) -> Vec<crate::insights::chart_change::ChartChanges> {
         use crate::insights::chart_change;
-        let history = view
-            .insights
-            .as_ref()
-            .and_then(|insights| insights.accounts_total.as_ref())
-            .map_or(&view.snapshot.net_worth_history, |total| &total.history);
+        let history = accounts_history(view);
         let mut lines = self.0.clone();
         if let Some(accounts) = lines.get("accounts").cloned() {
             lines.insert(chart_change::NET_WORTH.into(), accounts);
         }
         chart_change::changes(
-            &chart_change::series(&view.snapshot, settings, history, net_worth),
+            &chart_change::series(
+                &view.snapshot,
+                settings,
+                history,
+                net_worth,
+                group_history(view),
+            ),
             &lines,
             now,
         )
@@ -242,7 +307,8 @@ fn projection_json(
 }
 
 /// Each chart's point at `time`: net worth, the accounts' total without the spending cards,
-/// and each brokerage.
+/// each brokerage, and each account group holding live-priced securities, its other accounts
+/// at their known values. A group with an unknown value has no point.
 fn market_chart_values(
     projection: &MarketProjection,
     settings: &crate::settings::FinanceSettings,
@@ -271,6 +337,28 @@ fn market_chart_values(
             continue;
         }
         values.insert(account.account_id.clone(), point(account.current_value));
+    }
+    let quoted = projection
+        .holdings
+        .iter()
+        .filter(|holding| holding.quote_eligible == Some(true))
+        .map(|holding| holding.account_id.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    let market_types = projection
+        .accounts
+        .iter()
+        .filter(|account| quoted.contains(account.id.as_str()))
+        .map(|account| account.r#type.as_str())
+        .collect::<std::collections::BTreeSet<_>>();
+    for group in crate::insights::rollup::listed(&projection.accounts, settings) {
+        if let Some(value) = group.value.filter(|value| value.is_finite()) {
+            if market_types.contains(group.account_type.as_str()) {
+                values.insert(
+                    crate::insights::totals::group_series_id(&group.account_type),
+                    point(value),
+                );
+            }
+        }
     }
     values
 }
@@ -369,8 +457,18 @@ pub(crate) async fn start_market_stream(
     let response = {
         let storage = state.storage()?;
         state.startup_market.save(&storage.data.snapshot, &market);
-        let mut response = market_payload(&storage.data.snapshot, &storage.data.settings, &market)?;
         let view = storage.read_view()?;
+        // A restarted stream, after the window was hidden or the snapshot changed, starts from
+        // the saved bars rather than redrawing the detail once fresh ones arrive.
+        let bars = saved_bars(&app, &storage.data.snapshot);
+        let mut response = frame(
+            &storage.data.snapshot,
+            &storage.data.settings,
+            &market,
+            bars.as_ref().map(|bars| (&*view, bars)),
+            chrono::Local::now().date_naive(),
+            Utc::now(),
+        )?;
         let mut held = lines.lock().map_err(|_| "Market chart state unavailable")?;
         held.replace(&response["chartSeries"]);
         let net_worth = response["projection"]["rollup"]["netWorth"]
@@ -391,10 +489,11 @@ pub(crate) async fn start_market_stream(
         return Ok(());
     }
 
-    // The week of five-minute bars arrives a moment after the first frame, as its own message,
-    // so it never rolls the live prices back to the first frame's. The renderer shows the
-    // changes once that message completes the lines, so one always comes, without a week
-    // when there is none to add.
+    // The week of five-minute bars and the month's half hours arrive a moment after the first
+    // frame, as their own message, so they never roll the live prices back to the first
+    // frame's. The renderer shows the changes once that message completes the lines, so one
+    // always comes, without a week when there is none to add. The month is optional: without
+    // it, the lines reach back a week.
     let no_week = serde_json::json!({ "kind": "history", "chartSeries": {} });
     if let Some(cache) = price_cache(&app) {
         let app = app.clone();
@@ -405,9 +504,19 @@ pub(crate) async fn start_market_stream(
         let mut cancellation = receiver.clone();
         tauri::async_runtime::spawn(async move {
             let state = app.state::<AppState>();
+            let providers = &state.providers;
             let bars = tokio::select! {
                 _ = cancellation.changed() => return,
-                bars = state.providers.week_bars(&cache, &symbols) => bars,
+                bars = async {
+                    let week = providers
+                        .range_bars(&cache, &symbols, intraday::WEEK_SECONDS)
+                        .await?;
+                    let month = providers
+                        .range_bars(&cache, &symbols, intraday::MONTH_SECONDS)
+                        .await
+                        .ok();
+                    Ok::<_, String>(intraday::Bars { week, month })
+                } => bars,
             };
             if *cancellation.borrow() {
                 return;
@@ -418,20 +527,23 @@ pub(crate) async fn start_market_stream(
             };
             let message = (|| -> Result<Option<Value>, String> {
                 let storage = state.storage()?;
+                let view = storage.read_view()?;
                 let mut payload = serde_json::json!({ "chartSeries": {} });
-                with_week(
+                with_bars(
                     &mut payload,
                     &storage.data.snapshot,
                     &storage.data.settings,
+                    &view,
                     &market,
                     &bars,
+                    chrono::Local::now().date_naive(),
+                    Utc::now(),
                 )?;
                 let series = payload["chartSeries"].take();
                 if series.as_object().is_none_or(|series| series.is_empty()) {
                     return Ok(None);
                 }
                 // The changes the lines show once the week joins them.
-                let view = storage.read_view()?;
                 let mut held = lines.lock().map_err(|_| "Market chart state unavailable")?;
                 held.with_history(&series);
                 let net_worth = view

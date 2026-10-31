@@ -80,7 +80,8 @@ it('matches account selector changes to the selected chart range and available h
   expect(accountValueChart(manualData, manual, [], now, 0, []).historyIsAvailable).toBe(true)
 })
 
-it('keeps a provisional combined balance out of the chart', () => {
+// Whether net worth is provisional, the combined chart draws the line Rust sent.
+it('draws the live line for the combined balance', () => {
   const now = Date.parse('2026-09-24T12:00:00Z') / 1000
   const account = record({
     id: 'all',
@@ -93,7 +94,6 @@ it('keeps a provisional combined balance out of the chart', () => {
     {
       accounts: [account],
       netWorthIncomplete: false,
-      netWorthProvisional: true,
       updatedAt: '2026-09-24T12:00:00Z',
       netWorthHistory: [
         { date: '2026-09-22', value: 300 },
@@ -103,12 +103,15 @@ it('keeps a provisional combined balance out of the chart', () => {
       accountBalanceHistory: [],
     },
     account,
-    [{ time: now, value: 9300 }],
+    [
+      { time: now - 300, value: 9290 },
+      { time: now, value: 9300 },
+    ],
     now,
     0,
     [],
   )
-  expect(chart.chartData.at(-1)?.value).toBe(300)
+  expect(chart.chartData.slice(-2).map(({ value }) => value)).toEqual([9290, 9300])
 })
 
 const view = (accountId: string, name = accountId) =>

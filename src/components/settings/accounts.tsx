@@ -175,7 +175,10 @@ function CardPreferences({ data, settings, save }: SectionProps) {
           <ul className="settings-list">
             {otherCards.map((account) => {
               const name = accountDisplayName(account.id, account.name, accountDisplayNames)
-              const spending = settings.spendingCards?.includes(account.id) ?? false
+              // A spending-only card is one by nature, so there's nothing to choose.
+              const spendingOnly = account.balanceSource === 'spendingOnly'
+              const spending =
+                spendingOnly || (settings.spendingCards?.includes(account.id) ?? false)
               return (
                 <li className="settings-list-row" key={account.id}>
                   <span className="settings-list-copy">
@@ -186,6 +189,7 @@ function CardPreferences({ data, settings, save }: SectionProps) {
                     <input
                       type="checkbox"
                       checked={spending}
+                      disabled={spendingOnly}
                       aria-label={`${name} is a spending card`}
                       onChange={(event) => {
                         const checked = event.target.checked

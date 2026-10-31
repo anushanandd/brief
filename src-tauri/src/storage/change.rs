@@ -30,6 +30,10 @@ pub enum Change {
     /// The imported statements, after an import, a removal, or a confirmed row; saved
     /// provider data is projected again with them.
     Statements(Vec<StatementFile>),
+    /// What Wallet held when read, with what the user confirmed, or none once it is turned
+    /// off; saved provider data is projected again with it. The read happens before this
+    /// change, so replaying it never touches Wallet.
+    Wallet(Option<Box<crate::providers::wallet::WalletData>>),
     /// Annotations set, whole, and removed, by transaction id.
     Annotations {
         set: BTreeMap<String, Annotation>,
@@ -67,6 +71,9 @@ pub enum Reason {
 /// Changes after a checkpoint before the next periodic one.
 pub(crate) const CHECKPOINT_INTERVAL: u64 = 50;
 
+/// Wallet's key in the saved provider statuses.
+pub(crate) const WALLET_PROVIDER: &str = "wallet";
+
 /// What a refresh fetched and when it was projected.
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -91,6 +98,7 @@ impl Change {
             Self::Checkpoint(_) => crate::database::CHECKPOINT,
             Self::Refresh(_) => "refresh",
             Self::Statements(_) => "statements",
+            Self::Wallet(_) => "wallet",
             Self::Annotations { .. } => "annotations",
             Self::Settings(_) => "settings",
             Self::AccountLinks(_) => "accountLinks",
@@ -146,6 +154,26 @@ pub(crate) fn apply(state: &FinanceState, change: &Change) -> Result<FinanceStat
             finish_refresh(state, refresh, snapshot)
         }
         Change::Statements(statements) => reproject(state, statements.clone()),
+        Change::Wallet(wallet) => {
+            let mut next = state.clone();
+            next.provider_data.wallet = wallet.as_deref().cloned();
+            match wallet {
+                Some(wallet) => {
+                    let status = next
+                        .provider_data
+                        .sync_status
+                        .entry(WALLET_PROVIDER.into())
+                        .or_default();
+                    status.updated_at = Some(wallet.read_at.clone());
+                    status.error = None;
+                }
+                None => {
+                    next.provider_data.sync_status.remove(WALLET_PROVIDER);
+                }
+            }
+            let statements = next.statements.clone();
+            reproject(&next, statements)
+        }
         Change::Annotations { set, removed } => {
             let mut next = state.clone();
             for id in removed {
@@ -382,6 +410,7 @@ pub(crate) fn project_refresh(
         security_history: data.security_history.clone(),
         statements: statements.to_vec(),
         corporate_actions: data.corporate_actions.clone(),
+        wallet: data.wallet.clone(),
     };
     crate::financial_engine::project(
         &sync,
@@ -447,6 +476,7 @@ pub(crate) fn reproject(
         security_history: state.provider_data.security_history.clone(),
         corporate_actions: state.provider_data.corporate_actions.clone(),
         statements: statements.clone(),
+        wallet: state.provider_data.wallet.clone(),
     };
     let mut snapshot =
         crate::financial_engine::project(&sync, &state.account_links, now, calendar_date)?;
@@ -476,4 +506,241 @@ pub(crate) fn reproject(
         statements,
         ..state.clone()
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::providers::wallet::{WalletData, WalletRow};
+
+    fn state() -> FinanceState {
+        let snapshot: Snapshot = serde_json::from_value(serde_json::json!({
+            "updatedAt": "2026-10-30T12:00:00Z",
+            "calendarDate": "2026-10-30",
+            "netWorth": 0.0,
+            "accounts": [{
+                "id": "all", "name": "All accounts", "institution": "Brief",
+                "type": "combined", "value": 0.0
+            }],
+            "holdings": [],
+            "transactions": [],
+            "spending": {"monthTotal": 0.0, "categories": []},
+            "netWorthHistory": []
+        }))
+        .unwrap();
+        FinanceState {
+            snapshot,
+            ..crate::storage::empty_state().unwrap()
+        }
+    }
+
+    fn wallet() -> WalletData {
+        WalletData {
+            read_at: "2026-10-30T12:05:00Z".into(),
+            rows: vec![WalletRow {
+                id: "one".into(),
+                issuer: "Apple Card".into(),
+                amount: 100_000,
+                date: "2026-10-29".into(),
+                merchant: Some("Corner Market".into()),
+                ..WalletRow::default()
+            }],
+            ..WalletData::default()
+        }
+    }
+
+    #[test]
+    fn a_wallet_change_replays_from_itself_and_commits_no_balance() {
+        let before = state();
+        let change = Change::Wallet(Some(Box::new(wallet())));
+        let stored = Change::from_stored(change.kind(), change.body().unwrap()).unwrap();
+        let next = apply(&before, &stored).unwrap();
+        // The purchase is the user's; the balance Apple reports never reaches a total.
+        assert_eq!(next.snapshot.transactions.len(), 1);
+        assert_eq!(next.snapshot.net_worth, 0.0);
+        assert!(!next.snapshot.net_worth_incomplete);
+        assert_eq!(
+            next.provider_data.sync_status[WALLET_PROVIDER]
+                .updated_at
+                .as_deref(),
+            Some("2026-10-30T12:05:00Z")
+        );
+        // Replaying the same change gives the same state.
+        assert_eq!(
+            state_hash(&apply(&before, &stored).unwrap()).unwrap(),
+            state_hash(&next).unwrap()
+        );
+    }
+
+    /// What Wallet would change on a copy of the real database, in counts and totals only. It
+    /// reads Wallet read-only and writes nothing: set `BRIEF_WALLET_REPORT_DB` to the copy.
+    #[test]
+    #[ignore]
+    fn real_wallet_report() {
+        use crate::{insights::calendar::LocalZone, providers::wallet};
+        let path = std::env::var("BRIEF_WALLET_REPORT_DB").unwrap();
+        let database =
+            crate::database::Database::open_read_only(std::path::Path::new(&path)).unwrap();
+        let (before, _) = authoritative(&database).unwrap();
+        let now = Utc::now();
+        let read = wallet::read(now).unwrap();
+        println!("records read: {}", read.rows.len());
+        let change = Change::Wallet(Some(Box::new(read)));
+        let after = apply(&before, &change).unwrap();
+        validate_snapshot(&after.snapshot).unwrap();
+        let view = |state: &FinanceState| {
+            crate::storage::derive_view(state, None, &BTreeMap::new(), now, &LocalZone).unwrap()
+        };
+        let ((old, _), (new, _)) = (view(&before), view(&after));
+        println!(
+            "net worth: {} -> {} (incomplete {} -> {})",
+            old.snapshot.net_worth,
+            new.snapshot.net_worth,
+            old.snapshot.net_worth_incomplete,
+            new.snapshot.net_worth_incomplete
+        );
+        println!(
+            "transactions: {} -> {}",
+            old.snapshot.transactions.len(),
+            new.snapshot.transactions.len()
+        );
+        let summary = new.snapshot.wallet.as_ref().unwrap();
+        println!("history from: {:?}", summary.history_from);
+        for card in &summary.cards {
+            println!(
+                "{}: {} records, {} matched, {} waiting, {} review",
+                card.issuer, card.records, card.matched, card.waiting, card.review
+            );
+        }
+        println!("declined: {}", summary.declined.len());
+        println!("daily cash: {:?}", summary.daily_cash);
+        let apple = new
+            .snapshot
+            .transactions
+            .iter()
+            .filter(|transaction| transaction.paid_by_someone_else())
+            .collect::<Vec<_>>();
+        let spent = apple
+            .iter()
+            .filter(|t| t.classification.as_ref().is_some_and(|c| c.spending))
+            .collect::<Vec<_>>();
+        println!(
+            "apple card: {} rows, {} spending, ${:.2}",
+            apple.len(),
+            spent.len(),
+            spent.iter().map(|t| t.amount.abs()).sum::<f64>()
+        );
+        let count = |name: &str, test: &dyn Fn(&crate::finance_contract::Transaction) -> bool| {
+            println!("{name}: {}", spent.iter().filter(|t| test(t)).count());
+        };
+        use crate::merchants::Presence;
+        count("in person", &|t| t.presence == Some(Presence::InPerson));
+        count("remote", &|t| t.presence == Some(Presence::Remote));
+        count("no presence", &|t| t.presence.is_none());
+        count("place", &|t| t.place.is_some());
+        count("place exact", &|t| {
+            t.place
+                .as_ref()
+                .is_some_and(|p| p.precision == crate::places::PlacePrecision::Exact)
+        });
+        count("time", &|t| t.occurred_at.is_some());
+        let mut categories = BTreeMap::<&str, (usize, f64)>::new();
+        for transaction in &spent {
+            let entry = categories.entry(&transaction.category).or_default();
+            entry.0 += 1;
+            entry.1 += transaction.amount.abs();
+        }
+        println!("categories: {categories:?}");
+        let refunds = apple
+            .iter()
+            .filter(|t| t.refund_of.is_some())
+            .collect::<Vec<_>>();
+        println!(
+            "linked refunds: {}, ${:.2}",
+            refunds.len(),
+            refunds.iter().map(|t| t.amount).sum::<f64>()
+        );
+        let matched_time = new
+            .snapshot
+            .transactions
+            .iter()
+            .filter(|t| !t.from_wallet() && t.wallet.is_some())
+            .count();
+        println!("provider rows with Wallet's detail: {matched_time}");
+        println!(
+            "pending from wallet: {}",
+            new.snapshot
+                .transactions
+                .iter()
+                .filter(|t| t.from_wallet() && t.pending)
+                .count()
+        );
+        if let (Some(old), Some(new)) = (&old.insights, &new.insights) {
+            println!(
+                "trips: {} -> {}; home: {:?}",
+                old.trips.trips.len(),
+                new.trips.trips.len(),
+                new.trips.home
+            );
+            for trip in new.trips.trips.iter().take(12) {
+                println!("  {} {} to {}", trip.destination, trip.start, trip.end);
+            }
+        }
+    }
+
+    /// Commits saved provider data as a refresh would, on a copy of the real database, and says
+    /// why validation refuses it. Set `BRIEF_WALLET_REPORT_DB` to the copy; nothing is written.
+    #[test]
+    #[ignore]
+    fn real_refresh_report() {
+        let path = std::env::var("BRIEF_WALLET_REPORT_DB").unwrap();
+        let database =
+            crate::database::Database::open_read_only(std::path::Path::new(&path)).unwrap();
+        let (state, _) = authoritative(&database).unwrap();
+        let now = Utc::now();
+        let refresh = Refresh {
+            committed_at: now,
+            calendar_date: now.date_naive(),
+            balances_fresh: true,
+            refreshed_account_ids: state
+                .snapshot
+                .accounts
+                .iter()
+                .filter(|account| account.id != "all")
+                .map(|account| account.id.clone())
+                .collect(),
+            benchmark: serde_json::to_value(&state.snapshot.benchmark_history).unwrap(),
+            warnings: Vec::new(),
+            plaid_cache: state.plaid_cache.clone(),
+            provider_data: state.provider_data.clone(),
+        };
+        let snapshot = project_refresh(
+            &state.snapshot,
+            &state.statements,
+            &state.account_links,
+            &refresh,
+        );
+        match snapshot {
+            Err(error) => println!("projection refused: {error}"),
+            Ok(snapshot) => match finish_refresh(&state, &refresh, snapshot) {
+                Err(error) => println!("validation refused: {error}"),
+                Ok(next) => println!(
+                    "accepted: net worth {} -> {}",
+                    state.snapshot.net_worth, next.snapshot.net_worth
+                ),
+            },
+        }
+    }
+
+    #[test]
+    fn turning_wallet_off_clears_its_records_and_status() {
+        let on = apply(&state(), &Change::Wallet(Some(Box::new(wallet())))).unwrap();
+        let change = Change::Wallet(None);
+        let stored = Change::from_stored(change.kind(), change.body().unwrap()).unwrap();
+        let off = apply(&on, &stored).unwrap();
+        assert!(off.snapshot.transactions.is_empty());
+        assert!(off.snapshot.wallet.is_none());
+        assert!(off.provider_data.wallet.is_none());
+        assert!(!off.provider_data.sync_status.contains_key(WALLET_PROVIDER));
+    }
 }

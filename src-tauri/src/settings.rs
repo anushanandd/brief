@@ -77,6 +77,9 @@ pub struct FinanceSettings {
     pub plaid_investment_transactions: bool,
     /// Request Plaid Recurring Transactions, a separately billed subscription per connection.
     pub plaid_recurring: bool,
+    /// Read Apple Wallet's records on this Mac. Off until turned on.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub apple_wallet: bool,
     /// The on-device summary wording choice was retired with the model's phrases; settings
     /// saved with it still load and drop the key.
     #[serde(rename = "templateWording", skip_serializing)]
@@ -109,6 +112,20 @@ pub struct FinanceSettings {
     pub programs: Vec<crate::evidence::programs::Program>,
     /// Opt-in web research: generic queries from public names, each logged, only when on.
     pub research: bool,
+    /// Merchant sites, Mac sources, link reviews, and person handles left with Artha; settings
+    /// saved with them still load and drop the keys.
+    #[serde(rename = "merchantSites", skip_serializing)]
+    #[ts(skip)]
+    pub retired_merchant_sites: Option<IgnoredAny>,
+    #[serde(rename = "macSources", skip_serializing)]
+    #[ts(skip)]
+    pub retired_mac_sources: Option<IgnoredAny>,
+    #[serde(rename = "linkReviews", skip_serializing)]
+    #[ts(skip)]
+    pub retired_link_reviews: Option<IgnoredAny>,
+    #[serde(rename = "personHandles", skip_serializing)]
+    #[ts(skip)]
+    pub retired_person_handles: Option<IgnoredAny>,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
@@ -732,6 +749,7 @@ impl FinanceSettings {
             }),
             plaid_investment_transactions: self.plaid_investment_transactions,
             plaid_recurring: self.plaid_recurring,
+            apple_wallet: self.apple_wallet,
             retired_template_wording: None,
             people,
             trip_companions,
@@ -741,6 +759,10 @@ impl FinanceSettings {
             explanation_reviews: self.explanation_reviews,
             programs: self.programs,
             research: self.research,
+            retired_merchant_sites: None,
+            retired_mac_sources: None,
+            retired_link_reviews: None,
+            retired_person_handles: None,
         })
     }
 
@@ -791,6 +813,7 @@ impl FinanceSettings {
         }
         next.plaid_investment_transactions |= imported.plaid_investment_transactions;
         next.plaid_recurring |= imported.plaid_recurring;
+        next.apple_wallet |= imported.apple_wallet;
         for (id, treatment) in imported.account_tax_treatments {
             next.account_tax_treatments.entry(id).or_insert(treatment);
         }
@@ -1035,6 +1058,26 @@ mod tests {
         assert!(settings.plaid_liabilities);
         let saved = serde_json::to_value(settings.normalized().unwrap()).unwrap();
         assert!(saved.get("categoryTargets").is_none());
+    }
+
+    #[test]
+    fn settings_saved_with_artha_keys_still_load_without_them() {
+        let settings: FinanceSettings = serde_json::from_str(
+            r#"{"merchantSites":{"clear":"example.com"},"macSources":["mail"],
+                "linkReviews":{"event:a|spent|transaction:b":{"confirmed":true,"keys":["event-name"]}},
+                "personHandles":{"someone@example.com":"person:1"},"research":true}"#,
+        )
+        .unwrap();
+        assert!(settings.research);
+        let saved = serde_json::to_value(settings.normalized().unwrap()).unwrap();
+        for key in [
+            "merchantSites",
+            "macSources",
+            "linkReviews",
+            "personHandles",
+        ] {
+            assert!(saved.get(key).is_none(), "{key}");
+        }
     }
 
     #[test]

@@ -353,7 +353,11 @@ pub fn apply<'a>(
             .cloned()
             .unwrap_or_default();
         t.refund_of = None;
-        if let Some(purchase) = annotation.and_then(|a| a.refund_of.as_ref()) {
+        // Your link first; otherwise the purchase Wallet's own record repays.
+        let linked = annotation
+            .and_then(|a| a.refund_of.as_ref())
+            .or_else(|| t.wallet.as_ref().and_then(|w| w.refund_of.as_ref()));
+        if let Some(purchase) = linked {
             refunds.push((index, purchase.clone()));
         }
         // A category chosen by hand or rule is classified by its name, not Plaid's code.

@@ -29,6 +29,7 @@ vi.mock('../hooks/use-finance', () => ({
 }))
 vi.mock('../hooks/use-refresh-finance', () => ({
   useAutoRefreshFinance: () => undefined,
+  useWalletWatch: () => undefined,
   useFinanceRefreshState: () => false,
   useRefreshFinance: () => vi.fn(),
 }))

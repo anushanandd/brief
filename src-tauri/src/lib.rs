@@ -315,6 +315,8 @@ pub fn run() {
             integrations::get_bank_statements,
             integrations::sync_bank_statements,
             integrations::open_bank_statement,
+            integrations::sync_wallet,
+            integrations::confirm_wallet_row,
             assistant::get_foundation_model_status,
             assistant::generate_foundation_explanation,
             assistant::cancel_foundation_explanation,

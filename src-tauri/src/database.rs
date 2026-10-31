@@ -55,6 +55,10 @@ pub struct Database {
 #[serde(default, rename_all = "camelCase")]
 pub struct SyncDiagnostics {
     pub(crate) phase: String,
+    /// Why a staged refresh was refused, in Brief's own words: never a name or an amount.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub(crate) reason: Option<String>,
     #[serde(default)]
     pub(crate) providers: Vec<ProviderDiagnostic>,
     #[serde(default)]
@@ -452,9 +456,10 @@ impl Database {
             Change::Settings(_) => write_settings(&transaction, &next.settings)?,
             Change::AccountLinks(_) => write_account_links(&transaction, &next.account_links)?,
             Change::Documents(_) => write_documents(&transaction, &next.documents)?,
-            Change::Checkpoint(_) | Change::Refresh(_) | Change::Statements(_) => {
-                write_state(&transaction, next)?
-            }
+            Change::Checkpoint(_)
+            | Change::Refresh(_)
+            | Change::Statements(_)
+            | Change::Wallet(_) => write_state(&transaction, next)?,
         }
         transaction.commit().map_err(db_error)
     }

@@ -119,6 +119,10 @@ pub struct Snapshot {
     /// Imported statements checked against Plaid, per account.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub statement_reconciliation: Vec<StatementReconciliation>,
+    /// What Apple Wallet holds and how it compares with the providers, while it is turned on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub wallet: Option<WalletSummary>,
     /// The tax years imported brokerage statements say IRA contributions count toward.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub contribution_years: Vec<ContributionYear>,
@@ -406,8 +410,17 @@ pub struct Transaction {
     pub date: String,
     #[serde(default)]
     pub occurred_on: Option<String>,
+    /// The moment of purchase at the place it happened, as RFC 3339 with that place's offset.
+    /// Absent unless a source reports the time and its zone.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub occurred_at: Option<String>,
     #[serde(default)]
     pub posted_on: Option<String>,
+    /// What Apple Wallet recorded about this purchase.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub wallet: Option<WalletDetail>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub location: Option<TransactionLocation>,
@@ -415,8 +428,9 @@ pub struct Transaction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub issuer: Option<crate::statements::IssuerDetail>,
-    /// Where it was made, as best known: the issuer's address, then the bank's descriptor, then
-    /// `location`, which stays the provider's own report. Absent for a purchase made remotely.
+    /// Where it was made, as best known: Wallet's record, the issuer's address, then the bank's
+    /// descriptor, then `location`, which stays the provider's own report. Absent for a purchase
+    /// made remotely.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub place: Option<crate::places::Place>,
@@ -554,6 +568,199 @@ pub struct Transaction {
     pub quality: Option<crate::quality::Quality>,
 }
 
+/// How a purchase was paid, as Wallet records it.
+#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum WalletMethod {
+    /// Apple Pay at a terminal.
+    Tap,
+    /// Apple Pay inside an app.
+    App,
+    /// Apple Pay on a website.
+    Web,
+    /// The physical card.
+    Card,
+    /// The card's number, typed online or kept on file.
+    Online,
+}
+
+/// A purchase abroad, in the currency it was charged in.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletForeign {
+    pub currency: String,
+    pub amount: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub rate: Option<f64>,
+}
+
+/// Daily Cash on one purchase. A return's is negative.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletReward {
+    pub amount: f64,
+    pub percent: f64,
+    /// Apple's name for the reward, such as `REWARD_DEFAULT_WALLET`.
+    pub program: String,
+}
+
+/// The card network's record of a purchase, shown only on request.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletNetwork {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub merchant_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub terminal_id: Option<String>,
+    /// The merchant's name and address as the network printed them, truncated to fit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub descriptor: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub merchant_code: Option<u32>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub entry_mode: Option<String>,
+}
+
+/// What Apple Wallet recorded about a transaction.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletDetail {
+    /// Wallet's own id for the record.
+    pub record_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub method: Option<WalletMethod>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub foreign: Option<WalletForeign>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reward: Option<WalletReward>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub phone: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub network: Option<WalletNetwork>,
+    /// Whether the cardholder was there, when Wallet's record says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub presence: Option<crate::merchants::Presence>,
+    /// Where it happened, when Wallet's record says.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub place: Option<crate::places::Place>,
+    /// The purchase this refund or dispute credit repays.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub refund_of: Option<String>,
+    /// What Wallet showed at the terminal, when the provider posted another amount.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub terminal_amount: Option<f64>,
+}
+
+/// A Wallet charge the provider never reported, past the days it could still be pending.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletReviewRow {
+    pub id: String,
+    pub account: String,
+    pub date: String,
+    /// Signed as transactions are.
+    pub amount: f64,
+    pub merchant: String,
+    /// The user confirmed it, so it is in history until the provider reports it.
+    pub confirmed: bool,
+}
+
+/// A charge the card declined. It never counts.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletDeclined {
+    pub date: String,
+    pub amount: f64,
+    pub merchant: String,
+}
+
+/// How one card's Wallet records compare with its provider. A card Wallet alone reports has
+/// nothing to match.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletCard {
+    pub issuer: String,
+    pub records: usize,
+    pub matched: usize,
+    /// Shown as pending until the provider reports them.
+    pub waiting: usize,
+    /// Past that window, awaiting the user.
+    pub review: usize,
+}
+
+/// Daily Cash earned on purchases against the payouts Apple attempted.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct DailyCash {
+    pub earned: f64,
+    /// Taken back when purchases were returned.
+    pub reversed: f64,
+    pub paid: f64,
+    pub failed: f64,
+    pub failed_payouts: usize,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub last_paid_on: Option<String>,
+    /// The first payout that failed after the last that succeeded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub failing_since: Option<String>,
+}
+
+/// The whole Apple Card account as Apple reports it. It may include other holders' charges, so
+/// no total counts it.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct AppleCardAccount {
+    pub limit: f64,
+    pub available: f64,
+    pub balance: f64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub as_of: Option<String>,
+    /// How many people are on the account.
+    pub holders: usize,
+    /// Someone else owns the account, so this Mac sees only the user's own purchases.
+    pub shared: bool,
+}
+
+/// Apple Wallet's records as of the last read, and how they compare with the providers.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct WalletSummary {
+    pub read_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub history_from: Option<String>,
+    #[serde(default)]
+    pub cards: Vec<WalletCard>,
+    #[serde(default)]
+    pub review: Vec<WalletReviewRow>,
+    #[serde(default)]
+    pub declined: Vec<WalletDeclined>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub daily_cash: Option<DailyCash>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub apple_card: Option<AppleCardAccount>,
+}
+
 /// A brokerage's own note of the tax year an IRA contribution counts toward.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
@@ -622,7 +829,32 @@ pub struct Counterparty {
     pub website: Option<String>,
 }
 
+/// Accounts that track spending without a balance: their purchases are the user's, but someone
+/// else pays the bill.
+pub const SPENDING_ONLY_PREFIX: &str = "wallet:";
+
+impl Account {
+    /// Whether this account counts toward totals. A manual account awaiting its first balance
+    /// adds nothing yet, and a spending-only account never has a balance to add.
+    pub fn counted(&self) -> bool {
+        self.value.is_some()
+            || !(self.id.starts_with("manual:") || self.id.starts_with(SPENDING_ONLY_PREFIX))
+    }
+}
+
 impl Transaction {
+    /// Whether this row exists only because of a Wallet record, on no provider's say.
+    pub fn from_wallet(&self) -> bool {
+        self.id.starts_with(SPENDING_ONLY_PREFIX)
+    }
+
+    /// A purchase on an account the user doesn't pay: their spending, but no cash of theirs.
+    pub fn paid_by_someone_else(&self) -> bool {
+        self.account_id
+            .as_deref()
+            .is_some_and(|id| id.starts_with(SPENDING_ONLY_PREFIX))
+    }
+
     /// The posting date when known, otherwise the transaction date.
     pub fn posted_date(&self) -> &str {
         self.posted_on.as_deref().unwrap_or(&self.date)

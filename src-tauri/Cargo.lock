@@ -440,6 +440,7 @@ dependencies = [
  "objc2-local-authentication",
  "objc2-service-management",
  "parquet",
+ "plist",
  "regex",
  "reqwest 0.12.28",
  "rusqlite",

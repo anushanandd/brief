@@ -30,6 +30,12 @@ export const formatShortDay = (date: string) =>
   shortDayFormatter.format(new Date(`${date}T00:00:00Z`))
 /** A calendar day, `YYYY-MM-DD`, as "Sep 5, 2026". */
 export const formatDay = (date: string) => dayFormatter.format(new Date(`${date}T00:00:00Z`))
+export const formatMonthYear = (date: string) =>
+  new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', {
+    month: 'short',
+    year: 'numeric',
+    timeZone: 'UTC',
+  })
 const updatedAtFormatter = new Intl.DateTimeFormat('en-US', {
   month: 'short',
   day: 'numeric',
@@ -65,6 +71,12 @@ export function setAmountsHidden(hidden: boolean) {
   amountsMasked = hidden
 }
 export const amountsHidden = () => amountsMasked
+
+/** An amount in the currency it was charged in, abroad. */
+export const formatForeignAmount = (amount: number, currency: string) =>
+  amountsMasked
+    ? HIDDEN_AMOUNT
+    : new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount)
 
 /** A public market price, which screen privacy leaves visible. */
 export const formatPublicCurrency = (value: number | null | undefined) =>

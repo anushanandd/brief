@@ -11,36 +11,37 @@
   align-items: start;
   gap: 16px;
 }
-.chapters-residency {
-  display: grid;
-  gap: 4px;
-  margin: 8px 0 0;
-  font-size: var(--type-meta);
-}
-.chapters-residency > div {
-  display: grid;
-  grid-template-columns: 48px minmax(0, 1fr);
-  gap: 8px;
-}
-.chapters-residency dt {
+.chapters-note {
+  margin: 12px 0 0;
   color: var(--text-tertiary);
-  font-variant-numeric: tabular-nums;
-}
-.chapters-residency dd {
-  margin: 0;
-  color: var(--text-secondary);
+  font-size: var(--type-meta);
 }
 
 .chapters-timeline {
   display: grid;
   gap: 6px;
-  margin-top: 8px;
+  margin-top: 12px;
 }
 .chapters-lane {
   display: grid;
-  grid-template-columns: 148px minmax(0, 1fr);
+  grid-template-columns: 120px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
+}
+/* Years along the bottom, each label at its Jan 1 with a hairline up through the lanes. */
+.chapters-axis .chapters-lane-track {
+  height: 16px;
+  background: none;
+}
+.chapters-axis .chapters-lane-track > span {
+  position: absolute;
+  top: 0;
+  padding-left: 4px;
+  border-left: var(--hairline) solid var(--border-subtle);
+  color: var(--text-tertiary);
+  font-size: var(--type-micro);
+  font-variant-numeric: tabular-nums;
+  line-height: 16px;
 }
 .chapters-lane-label {
   color: var(--text-tertiary);
@@ -203,7 +204,12 @@
 .chapter-actions {
   display: flex;
   flex-wrap: wrap;
+  align-items: center;
   gap: 8px;
+}
+.chapter-edit-inline {
+  padding: 12px 0;
+  border-block: var(--hairline) solid var(--border-subtle);
 }
 .chapter-edit {
   display: grid;
@@ -247,6 +253,37 @@
   font: inherit;
 }
 
+/* Rules: what they conclude and note, beside the rules themselves and research. */
+.rules-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
+  align-items: start;
+  gap: 16px;
+}
+.rules-notes {
+  display: grid;
+  margin: 4px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.rules-notes > li {
+  padding: 8px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.rules-notes > li:last-child {
+  border-bottom: 0;
+}
+.rules-notes .chapters-row-copy > strong {
+  font-weight: 400;
+}
+.rules-log-disclosure {
+  margin-top: 12px;
+}
+.rules-log-disclosure > summary > small {
+  margin-left: 4px;
+  color: var(--text-tertiary);
+  font-variant-numeric: tabular-nums;
+}
 .rules-row {
   display: grid;
   gap: 8px;
@@ -338,6 +375,7 @@
 
 @media (max-width: 1100px) {
   .chapters-grid,
+  .rules-grid,
   .rules-draft-grid {
     grid-template-columns: minmax(0, 1fr);
   }

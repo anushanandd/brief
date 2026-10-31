@@ -1,25 +1,162 @@
-//! The portfolio's last week at five-minute resolution, built from each holding's price bars.
+//! The portfolio's last week at five-minute resolution, and the month before it at half an
+//! hour, built from each holding's price bars.
 //!
-//! A bar values today's holdings at that moment's prices. That is exact only while the
-//! holdings are what they are now, so the series starts the day after the latest trade. Each
-//! earlier day is then shifted to land on its recorded closing value, which carries that day's
-//! cash and deposits; today needs no shift. A day without a recorded value is left out rather
-//! than guessed.
+//! A bar values the day's holdings at that moment's prices. Each day's shares are today's
+//! with the buys, reinvestments, and sales since undone; a day with a trade is left out, since
+//! its shares changed within it, and so is every day before a share change those can't undo.
+//! Each earlier day is then shifted to land on its recorded closing value, which carries that
+//! day's cash and deposits; today needs no shift. A day without a recorded value is left out
+//! rather than guessed.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    borrow::Cow,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use chrono::{DateTime, NaiveDate, TimeZone, Utc};
 use chrono_tz::America::New_York;
 use serde_json::Value;
 
 use crate::{
-    finance_contract::Snapshot,
+    finance_contract::{Point, Snapshot},
+    insights::totals::{group_series_id, GroupHistory},
     providers::{holding_market::PriceHistory, MarketSnapshot},
     settings::FinanceSettings,
 };
 
-/// How far back the portfolio's intraday history reaches, as the holding chart's week does.
+/// How far back the five-minute lines reach, as the holding chart's week does.
 pub(super) const WEEK_SECONDS: u64 = 604_800;
+/// How far back the half-hour lines reach, as the holding chart's month does.
+pub(super) const MONTH_SECONDS: u64 = 2_592_000;
+
+/// Each holding's bars for the lines: the week's, and the month's when every holding has them.
+pub(super) struct Bars {
+    pub(super) week: BTreeMap<String, PriceHistory>,
+    pub(super) month: Option<BTreeMap<String, PriceHistory>>,
+}
+
+/// Shares differing by less than this are the same, as the daily history rebuild counts them.
+const SHARE_TOLERANCE: f64 = 0.0005;
+
+/// A position: its account and ticker.
+type Position = (String, String);
+
+/// Shares by position.
+type Shares = BTreeMap<Position, f64>;
+
+fn position(account: &str, ticker: &str) -> Position {
+    (account.to_owned(), ticker.trim().to_ascii_uppercase())
+}
+
+/// The snapshots days are valued with: the committed one while shares are today's, else a
+/// copy holding a day's closing shares, one for each run of days between trades.
+struct Held<'a> {
+    snapshots: Vec<Cow<'a, Snapshot>>,
+    days: BTreeMap<NaiveDate, usize>,
+}
+
+impl Held<'_> {
+    fn on(&self, day: NaiveDate) -> Option<&Snapshot> {
+        self.days.get(&day).map(|index| &*self.snapshots[*index])
+    }
+}
+
+/// Each day's holdings from `start` through `today`, worked back from today's shares. A day
+/// is missing when a trade changed shares on it, when it held a position no longer held, or
+/// when a later share change can't be undone (a change other than a buy, reinvestment, or
+/// sale, or one without a ticker).
+fn held(snapshot: &Snapshot, start: NaiveDate, today: NaiveDate) -> Held<'_> {
+    let mut now = Shares::new();
+    for holding in &snapshot.holdings {
+        *now.entry(position(&holding.account_id, &holding.ticker))
+            .or_default() += holding.shares.unwrap_or_default();
+    }
+    // Each day's share changes; `None` when one can't be undone.
+    let mut changes: BTreeMap<NaiveDate, Option<Vec<(Position, f64)>>> = BTreeMap::new();
+    for trade in &snapshot.trades {
+        let Some(units) = trade.units.filter(|units| *units != 0.0) else {
+            continue;
+        };
+        let Ok(date) = NaiveDate::parse_from_str(&trade.date, "%Y-%m-%d") else {
+            continue;
+        };
+        let kind = trade.r#type.to_ascii_uppercase();
+        let signed = if kind.contains("BUY") || kind.contains("REINVEST") {
+            Some(units.abs())
+        } else if kind.contains("SELL") {
+            Some(-units.abs())
+        } else {
+            None
+        };
+        let change = signed
+            .zip(trade.ticker.as_deref())
+            .map(|(signed, ticker)| (position(&trade.account_id, ticker), signed));
+        let day = changes.entry(date).or_insert_with(|| Some(Vec::new()));
+        match (day.as_mut(), change) {
+            (Some(day), Some(change)) => day.push(change),
+            (_, None) => *day = None,
+            (None, Some(_)) => {}
+        }
+    }
+    let mut held = Held {
+        snapshots: Vec::new(),
+        days: BTreeMap::new(),
+    };
+    let mut shares = now.clone();
+    // The snapshot holding `shares`, once one is made.
+    let mut current = None;
+    let mut later = changes.into_iter().rev().peekable();
+    let mut day = today;
+    while day >= start {
+        while let Some((_, change)) = later.next_if(|(on, _)| *on > day) {
+            let Some(change) = change else {
+                return held;
+            };
+            for (position, count) in change {
+                *shares.entry(position).or_default() -= count;
+            }
+            current = None;
+        }
+        let traded = later.peek().is_some_and(|(on, _)| *on == day);
+        let known = shares.iter().all(|(position, count)| {
+            *count >= -SHARE_TOLERANCE
+                && (count.abs() <= SHARE_TOLERANCE || now.contains_key(position))
+        });
+        if !traded && known {
+            let index = *current.get_or_insert_with(|| {
+                held.snapshots.push(if shares == now {
+                    Cow::Borrowed(snapshot)
+                } else {
+                    Cow::Owned(with_shares(snapshot, &now, &shares))
+                });
+                held.snapshots.len() - 1
+            });
+            held.days.insert(day, index);
+        }
+        let Some(previous) = day.pred_opt() else {
+            break;
+        };
+        day = previous;
+    }
+    held
+}
+
+/// The snapshot holding these shares, each position's difference from today's on its first row.
+fn with_shares(snapshot: &Snapshot, now: &Shares, shares: &Shares) -> Snapshot {
+    let mut copy = snapshot.clone();
+    let mut applied = BTreeSet::new();
+    for holding in &mut copy.holdings {
+        let key = position(&holding.account_id, &holding.ticker);
+        if let (Some(then), Some(held), Some(count)) =
+            (shares.get(&key), now.get(&key), holding.shares.as_mut())
+        {
+            if applied.insert(key) {
+                *count += then - held;
+            }
+        }
+    }
+    copy
+}
 
 /// The New York trading day a bar belongs to.
 fn market_day(time: i64) -> Option<NaiveDate> {
@@ -36,78 +173,115 @@ fn regular_close(day: NaiveDate) -> Option<i64> {
         .map(|close| close.timestamp())
 }
 
-/// The recorded end-of-day value for a chart series: net worth, or an account's history.
-fn recorded_value(snapshot: &Snapshot, id: &str, day: &str) -> Option<f64> {
-    if id == "net-worth" {
-        return snapshot
-            .net_worth_history
+/// Each chart line's recorded end-of-day values, by line id and then date.
+pub(super) type RecordedCloses = BTreeMap<String, BTreeMap<String, f64>>;
+
+/// The recorded closes of every series `market_chart_values` draws: net worth, the accounts'
+/// total without the spending cards (the line Home and All accounts draw), each brokerage's
+/// performance, and each account group's history. `snapshot` is the view's, with closed and
+/// manual accounts applied, so earlier days land where the saved chart has them.
+pub(super) fn recorded_closes(
+    snapshot: &Snapshot,
+    accounts: &[Point],
+    groups: &[GroupHistory],
+) -> RecordedCloses {
+    let by_date = |points: &[Point]| {
+        points
             .iter()
-            .find(|point| point.date == day)
-            .map(|point| point.value);
-    }
-    snapshot
+            .map(|point| (point.date.clone(), point.value))
+            .collect::<BTreeMap<_, _>>()
+    };
+    let mut closes = snapshot
         .brokerage_performance
         .iter()
-        .find(|account| account.account_id == id)?
-        .points
-        .iter()
-        .find(|point| point.date == day)
-        .map(|point| point.value)
+        .map(|account| {
+            let points = account
+                .points
+                .iter()
+                .map(|point| (point.date.clone(), point.value))
+                .collect();
+            (account.account_id.clone(), points)
+        })
+        .collect::<RecordedCloses>();
+    for group in groups {
+        closes.insert(group_series_id(&group.account_type), by_date(&group.points));
+    }
+    closes.insert("net-worth".into(), by_date(&snapshot.net_worth_history));
+    closes.insert("accounts".into(), by_date(accounts));
+    closes
 }
 
-/// Five-minute chart points for each series `market_chart_values` draws, from `since` to `now`.
-/// Empty when any quoted holding lacks bars, since a partial portfolio would misstate its value.
+/// Chart points for each series `market_chart_values` draws: the last week at five minutes, and
+/// before it, when every holding has the month's bars, the rest of the month at half an hour.
+/// Empty when any quoted holding lacks the week's bars, since a partial portfolio would
+/// misstate its value. A line's earlier days need its `recorded` close; non-market balances
+/// (cash, manual accounts) are what that close carries, so only the holdings move within a day.
 pub(super) fn intraday_series(
     snapshot: &Snapshot,
     settings: &FinanceSettings,
     reference: &BTreeMap<String, MarketSnapshot>,
-    bars: &BTreeMap<String, PriceHistory>,
+    bars: &Bars,
+    recorded: &RecordedCloses,
     today: NaiveDate,
     now: DateTime<Utc>,
 ) -> Result<BTreeMap<String, Vec<Value>>, String> {
-    let held: BTreeSet<String> = snapshot
+    let quoted: BTreeSet<String> = snapshot
         .holdings
         .iter()
         .filter(|holding| holding.quote_eligible == Some(true))
         .map(|holding| holding.ticker.trim().to_ascii_uppercase())
         .collect();
-    if held.is_empty()
-        || held
+    if quoted.is_empty()
+        || quoted
             .iter()
-            .any(|symbol| !bars.contains_key(symbol) || !reference.contains_key(symbol))
+            .any(|symbol| !bars.week.contains_key(symbol) || !reference.contains_key(symbol))
     {
         return Ok(BTreeMap::new());
     }
-    // Shares are known only from the day after the latest trade that changed them.
-    let latest_trade = snapshot
-        .trades
-        .iter()
-        .filter(|trade| trade.units.is_some_and(|units| units != 0.0))
-        .filter_map(|trade| NaiveDate::parse_from_str(&trade.date, "%Y-%m-%d").ok())
-        .max();
-    let since = now.timestamp() - WEEK_SECONDS as i64;
-    let mut closes: BTreeMap<&str, Vec<(i64, f64)>> = BTreeMap::new();
-    for symbol in &held {
-        let mut series: Vec<(i64, f64)> = bars[symbol]
+    let month = bars
+        .month
+        .as_ref()
+        .filter(|month| quoted.iter().all(|symbol| month.contains_key(symbol)));
+    let week_start = now.timestamp() - WEEK_SECONDS as i64;
+    let since = now.timestamp() - month.map_or(WEEK_SECONDS, |_| MONTH_SECONDS) as i64;
+    let closes_of = |history: &PriceHistory| {
+        history
             .bars
             .iter()
             .filter(|bar| bar.close.is_finite() && bar.close > 0.0)
             .map(|bar| (bar.end_time, bar.close))
-            .collect();
-        series.sort_by_key(|(time, _)| *time);
-        closes.insert(symbol, series);
+            .collect::<Vec<_>>()
+    };
+    // Each moment drawn: the week's bars within it, and the month's before it.
+    let mut times = BTreeSet::new();
+    let mut closes: BTreeMap<&str, Vec<(i64, f64)>> = BTreeMap::new();
+    for symbol in &quoted {
+        let week = closes_of(&bars.week[symbol]);
+        let earlier = month
+            .map(|month| closes_of(&month[symbol]))
+            .unwrap_or_default();
+        times.extend(
+            week.iter()
+                .map(|(time, _)| *time)
+                .filter(|time| (week_start..=now.timestamp()).contains(time))
+                .chain(
+                    earlier
+                        .iter()
+                        .map(|(time, _)| *time)
+                        .filter(|time| (since..week_start).contains(time)),
+                ),
+        );
+        // Prices in time order, from the finer bars where both have one.
+        let series = earlier.into_iter().chain(week).collect::<BTreeMap<_, _>>();
+        closes.insert(symbol, series.into_iter().collect());
     }
-    let times: BTreeSet<i64> = closes
-        .values()
-        .flatten()
-        .map(|(time, _)| *time)
-        .filter(|time| (since..=now.timestamp()).contains(time))
-        .filter(|time| {
-            market_day(*time).is_some_and(|day| latest_trade.is_none_or(|trade| day > trade))
-        })
-        .collect();
+    let Some(first) = market_day(since) else {
+        return Ok(BTreeMap::new());
+    };
+    let held = held(snapshot, first, today);
+    times.retain(|time| market_day(*time).is_some_and(|day| held.on(day).is_some()));
 
-    // Today's holdings at each moment's prices, before any day is shifted.
+    // Each day's holdings at each moment's prices, before any day is shifted.
     let mut raw: BTreeMap<String, Vec<(i64, f64)>> = BTreeMap::new();
     let mut cursor: BTreeMap<&str, usize> = BTreeMap::new();
     for &time in &times {
@@ -135,7 +309,10 @@ pub(super) fn intraday_series(
         if !priced {
             continue;
         }
-        let projection = super::project(snapshot, settings, &quotes, true)?;
+        let Some(holdings) = market_day(time).and_then(|day| held.on(day)) else {
+            continue;
+        };
+        let projection = super::project(holdings, settings, &quotes, true)?;
         for (id, point) in super::market_chart_values(&projection, settings, time) {
             if let Some(value) = point["value"].as_f64().filter(|value| value.is_finite()) {
                 raw.entry(id).or_default().push((time, value));
@@ -160,13 +337,15 @@ pub(super) fn intraday_series(
                 let Some(close) = regular_close(day) else {
                     continue;
                 };
-                let (Some(at_close), Some(recorded)) = (
+                let (Some(at_close), Some(close_value)) = (
                     points.iter().rev().find(|(time, _)| *time <= close),
-                    recorded_value(snapshot, &id, &day.format("%Y-%m-%d").to_string()),
+                    recorded
+                        .get(&id)
+                        .and_then(|days| days.get(&day.format("%Y-%m-%d").to_string())),
                 ) else {
                     continue;
                 };
-                recorded - at_close.1
+                close_value - at_close.1
             };
             shifted.extend(
                 points.into_iter().map(

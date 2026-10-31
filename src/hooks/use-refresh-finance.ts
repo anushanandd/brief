@@ -4,11 +4,12 @@ import { createElement, useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 
 import { RefreshProgress, type RefreshProgressTask } from '../components/refresh-progress'
-import { isTauri, refreshFinanceSnapshot } from '../lib/api'
+import { isTauri, refreshFinanceSnapshot, syncWallet } from '../lib/api'
 import { financeQueryKey } from './use-finance'
 
 const refreshQueryKey = ['refresh-finance'] as const
 const AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1_000
+const WALLET_CHECK_INTERVAL_MS = 60_000
 
 type FinanceRefreshProgress = {
   title: string
@@ -98,6 +99,36 @@ export function useRefreshFinance() {
     },
     [queryClient],
   )
+}
+
+/**
+ * While Apple Wallet is on and the window is visible, picks up charges as Wallet records them.
+ * Each check costs one file stat in Rust unless Wallet has written, and a failure waits for
+ * the next refresh to report it.
+ */
+export function useWalletWatch(enabled: boolean) {
+  const client = useQueryClient()
+
+  useEffect(() => {
+    if (!enabled) return undefined
+
+    const check = () => {
+      if (document.visibilityState !== 'visible') return
+      void syncWallet(true)
+        .then((view) => {
+          if (view) client.setQueryData(financeQueryKey, view)
+        })
+        .catch(() => undefined)
+    }
+
+    check()
+    const timer = window.setInterval(check, WALLET_CHECK_INTERVAL_MS)
+    document.addEventListener('visibilitychange', check)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener('visibilitychange', check)
+    }
+  }, [client, enabled])
 }
 
 export function useAutoRefreshFinance(updatedAt: string | undefined, enabled: boolean) {

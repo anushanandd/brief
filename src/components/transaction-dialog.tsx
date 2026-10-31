@@ -7,6 +7,7 @@ import {
   activityLocationText,
   activityMethod,
   activityPlace,
+  activityTime,
   type ActivityItem,
 } from '../lib/activity'
 import { documentTitle, transactionDocuments } from '../lib/documents'
@@ -14,6 +15,7 @@ import {
   displayCase,
   formatActivityName,
   formatCurrency,
+  formatForeignAmount,
   formatProseCurrency,
   valueTone,
 } from '../lib/format'
@@ -220,6 +222,9 @@ function TransactionDetails({
   const method = activityMethod(activity)
   const posted = transaction?.postedOn ?? activity.date
   const occurred = transaction?.occurredOn
+  const time = activityTime(activity)
+  const atTime = time ? ` at ${time}` : ''
+  const wallet = transaction?.wallet
   const merchant = formatActivityName(activity.title)
   const coordinates = transaction?.location
   // The matched business leads, then the resolved place; the bank's own location stays one
@@ -271,6 +276,7 @@ function TransactionDetails({
       .finally(() => setDismissing(false))
   }
   const details = transaction ? bankDetails(transaction) : []
+  const walletFacts = transaction ? walletDetails(transaction) : []
   // Documents that state this transaction: a statement lists it, or a pay statement paid it.
   const evidence = transaction ? transactionDocuments(data, transaction.id) : []
   const onStatement = evidence.some(({ kind }) => kind === 'statement')
@@ -322,12 +328,30 @@ function TransactionDetails({
           {occurred && occurred !== posted ? (
             <>
               Purchased {formatActivityDate(occurred)}
+              {atTime}
               <span aria-hidden="true"> · </span>
               posted {formatActivityDate(posted)}
             </>
           ) : (
-            formatActivityDate(posted)
+            `${formatActivityDate(posted)}${atTime}`
           )}
+          {wallet?.foreign ? (
+            <span className="transaction-details-tag sensitive-value">
+              {formatForeignAmount(wallet.foreign.amount, wallet.foreign.currency)}
+            </span>
+          ) : null}
+          {wallet?.method ? <span className="transaction-details-tag">{method}</span> : null}
+          {wallet?.reward && wallet.reward.amount > 0 ? (
+            <span className="transaction-details-tag">
+              Earned <span className="sensitive-value">{formatCurrency(wallet.reward.amount)}</span>
+            </span>
+          ) : null}
+          {wallet && !activity.pending && !transaction?.id.startsWith('wallet:') ? (
+            <span className="transaction-details-tag is-positive">
+              <ShieldCheck size={12} aria-hidden="true" />
+              Confirmed by Wallet
+            </span>
+          ) : null}
           {detail?.expected ? (
             <span className="transaction-details-tag">
               <Repeat2 size={12} aria-hidden="true" />
@@ -602,6 +626,20 @@ function TransactionDetails({
                 <div key={label}>
                   <dt>{label}</dt>
                   <dd className={conflict ? 'is-warning' : undefined}>{value}</dd>
+                </div>
+              ))}
+            </dl>
+          </details>
+        ) : null}
+
+        {walletFacts.length ? (
+          <details className="transaction-details-more">
+            <summary>Wallet details</summary>
+            <dl className="transaction-details-facts">
+              {walletFacts.map(({ label, value, raw }) => (
+                <div key={label}>
+                  <dt>{label}</dt>
+                  <dd className={raw ? 'transaction-details-raw' : undefined}>{value}</dd>
                 </div>
               ))}
             </dl>
@@ -904,6 +942,33 @@ export function conflictNote(transaction: Transaction, label: string) {
   if (label === 'Amount' && transaction.quality?.statementAmount != null)
     return `Plaid shows ${formatCurrency(transaction.amount)}; the statement shows ${formatCurrency(transaction.quality.statementAmount)}. The statement is the issuer’s final record.`
   return `Sources disagree on the ${label.toLowerCase()}.`
+}
+
+/** What Apple Wallet recorded beyond what the page shows, with its identifiers last. */
+export function walletDetails(transaction: FinanceSnapshot['transactions'][number]) {
+  const wallet = transaction.wallet
+  const rows: { label: string; value: string; raw?: boolean }[] = []
+  if (!wallet) return rows
+  const { foreign, reward, network } = wallet
+  if (wallet.terminalAmount != null)
+    rows.push({ label: 'At the terminal', value: formatCurrency(wallet.terminalAmount) })
+  if (foreign?.rate != null)
+    rows.push({ label: 'Exchange rate', value: `${foreign.rate} USD per ${foreign.currency}` })
+  if (reward)
+    rows.push({
+      label: 'Daily Cash',
+      value: `${formatCurrency(reward.amount)} at ${reward.percent}%`,
+    })
+  if (wallet.phone) rows.push({ label: 'Phone', value: wallet.phone })
+  if (network?.merchantCode != null)
+    rows.push({ label: 'Merchant code', value: String(network.merchantCode), raw: true })
+  if (network?.descriptor)
+    rows.push({ label: 'Network text', value: network.descriptor, raw: true })
+  if (network?.merchantId) rows.push({ label: 'Merchant ID', value: network.merchantId, raw: true })
+  if (network?.terminalId) rows.push({ label: 'Terminal ID', value: network.terminalId, raw: true })
+  if (network?.entryMode) rows.push({ label: 'Entry mode', value: network.entryMode, raw: true })
+  rows.push({ label: 'Wallet ID', value: wallet.recordId, raw: true })
+  return rows
 }
 
 export function bankDetails(transaction: FinanceSnapshot['transactions'][number]) {

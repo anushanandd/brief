@@ -163,6 +163,8 @@ pub struct Insights {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub accounts_total: Option<totals::AccountsTotal>,
+    /// Each account group's value and daily history, the spending cards as their own group.
+    pub group_history: Vec<totals::GroupHistory>,
     /// Account totals from saved values; each market projection carries its own from live ones.
     pub rollup: rollup::Rollup,
     /// Each value chart's change over each window at its saved values; the market stream sends
@@ -310,10 +312,13 @@ pub fn derive_with_documents(
         crate::evidence::chapters::baseline(&evidence.chapters, today),
     );
     let people = people::people(transactions, &settings.people, &trips.trips);
+    // A month that already fell short can't be changed, so its watch note stays with the rule;
+    // an ended job or a missing bonus still asks something of you.
     brief.needs.extend(
         evidence
             .alerts
             .iter()
+            .filter(|alert| alert.kind != crate::evidence::AlertKind::Watch)
             .map(|alert| attention::AttentionItem {
                 id: format!("program:{}", alert.id),
                 severity: attention::Severity::Attention,
@@ -508,6 +513,7 @@ pub fn derive_with_documents(
         .map(|card| card.id.as_str())
         .collect::<Vec<_>>();
     let rollup = rollup::rollup(accounts, holdings, snapshot.net_worth, settings);
+    let group_history = totals::group_histories(snapshot, settings, &rollup);
     let (activity_days, activity_months) = flows::calendar_totals(snapshot);
     let chart_changes = chart_change::changes(
         &chart_change::series(
@@ -517,6 +523,7 @@ pub fn derive_with_documents(
                 .as_ref()
                 .map_or(&snapshot.net_worth_history, |total| &total.history),
             rollup.net_worth,
+            &group_history,
         ),
         &BTreeMap::new(),
         now.timestamp(),
@@ -551,6 +558,7 @@ pub fn derive_with_documents(
         recurring_check,
         spending,
         accounts_total,
+        group_history,
         rollup,
         chart_changes,
         flows: flows::flows(snapshot),

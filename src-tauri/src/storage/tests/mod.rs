@@ -295,7 +295,7 @@ fn failed_validation_retains_original_run_identity_and_committed_state() {
     invalid.net_worth = 999.0;
     let error = storage.commit("synthetic-run", invalid).unwrap_err();
     assert_eq!(error.code(), "validation_failed");
-    storage.fail_pending("synthetic-run", error.code());
+    storage.fail_pending("synthetic-run", error.code(), &error.to_string());
     assert_eq!(json(&storage.data.snapshot), original);
     assert_eq!(
         json(&storage.database.load().unwrap().unwrap().snapshot),
@@ -306,6 +306,7 @@ fn failed_validation_retains_original_run_identity_and_committed_state() {
     assert_eq!(runs[0]["startedAt"], started);
     assert_eq!(runs[0]["errorCode"], "validation_failed");
     assert_eq!(runs[0]["details"]["phase"], "validation");
+    assert_eq!(runs[0]["details"]["reason"], error.to_string());
     assert!(storage.pending.is_none());
     drop(storage);
     fs::remove_dir_all(directory).unwrap();

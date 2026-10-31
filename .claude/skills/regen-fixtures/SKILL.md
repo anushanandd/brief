@@ -8,7 +8,7 @@ A contract change must pass the Rust fixture tests and the frontend typecheck.
 The renderer's types in `src/lib/bindings` are generated from Rust's by `cargo test`. After renaming or removing a type, regenerate them from scratch so its old file goes:
 
 ```sh
-rm -rf src/lib/bindings && cargo test --manifest-path src-tauri/Cargo.toml export_bindings
+rm -rf src/lib/bindings && (cd src-tauri && cargo test export_bindings)
 ```
 
 Regenerate fixtures with `BRIEF_UPDATE_CONTRACT_FIXTURE=1`, running each test on its own and in this order, then run `pnpm exec oxfmt`:
@@ -22,7 +22,7 @@ Regenerate fixtures with `BRIEF_UPDATE_CONTRACT_FIXTURE=1`, running each test on
 For example:
 
 ```sh
-BRIEF_UPDATE_CONTRACT_FIXTURE=1 cargo test --manifest-path src-tauri/Cargo.toml native_finance_fixture_matches_typed_projection
+(cd src-tauri && BRIEF_UPDATE_CONTRACT_FIXTURE=1 cargo test native_finance_fixture_matches_typed_projection)
 ```
 
 Fixtures compiled into their test fail once on the run that rewrites them; run it again to confirm it passes.

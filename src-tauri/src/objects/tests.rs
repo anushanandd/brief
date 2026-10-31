@@ -228,6 +228,7 @@ fn every_stored_field_has_a_place_to_be_seen() {
         "dividendHistory",
         "historyCheck",
         "statementReconciliation",
+        "wallet",
         "contributionYears",
         "lastChange",
     ];

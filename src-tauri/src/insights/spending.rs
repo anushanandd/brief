@@ -79,6 +79,17 @@ pub struct CategorySpent {
     pub above_typical: Option<f64>,
 }
 
+/// Spending made in one place.
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PlaceSpent {
+    /// The city and its state or country, or only the state or country when that's all known.
+    pub name: String,
+    pub total: f64,
+    /// Its share of the period's spending, in percent.
+    pub share: f64,
+}
+
 /// Where a period's spending is heading at its pace so far.
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
@@ -105,8 +116,12 @@ pub struct SpendingPeriod {
     pub largest: Option<String>,
     /// Categories with spending, largest first; a split part counts under its own category.
     pub categories: Vec<CategorySpent>,
-    /// The statement balance at the period's end: the opening plus purchases, less credits and
-    /// payments.
+    /// Places with in-person spending, largest first; a purchase with no known place isn't one.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub places: Vec<PlaceSpent>,
+    /// The saved card's balance at the period's end: today's for the open cycle, else the
+    /// issuer's last statement balance with the settled activity since undone. Absent when the
+    /// saved history is missing activity or begins after the cycle ended.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub balance: Option<f64>,
@@ -119,8 +134,8 @@ pub struct SpendingPeriod {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub projected: Option<Projection>,
-    /// The saved card's statement balance when the period opened: today's balance less this
-    /// cycle's activity, or for a closed cycle the autopay that paid the statement before it.
+    /// The saved card's balance when the period opened, worked out the same way; with no
+    /// balance to start from, the autopay that paid the statement before it.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub opening: Option<f64>,
@@ -402,41 +417,79 @@ fn projected(
     })
 }
 
-/// What the saved card's statement opened at. Purchases add to the balance and credits and
-/// payments take from it; anything else leaves it.
-fn opening(
-    activity: &Activity,
-    statement: &StatementCycle,
-    balance: Option<f64>,
-    start: NaiveDate,
-    end: NaiveDate,
-) -> f64 {
-    if let Some(balance) = balance {
-        return from_minor(minor_units(balance) - net(activity, start, end));
-    }
-    statement
-        .autopays
-        .iter()
-        .find(|autopay| autopay.date >= start && autopay.date <= end)
-        .map_or(0.0, |autopay| autopay.amount)
+/// The issuer's last statement: the day it closed and its balance.
+fn issued(statement: &StatementCycle) -> Option<(NaiveDate, f64)> {
+    let liability = statement.liability.as_ref()?;
+    Some((
+        calendar::transaction_date(liability.last_statement_date.as_deref()?)?,
+        liability.last_statement_balance?.abs(),
+    ))
 }
 
-/// Purchases less credits and payments from `start` through `end`, in whole cents.
-fn net(activity: &Activity, start: NaiveDate, end: NaiveDate) -> i64 {
+/// What the settled activity, or with `pending` the pending activity, from `start` through
+/// `end` added to the card's balance, in whole cents: every charge adds, whoever it was for,
+/// and credits and payments take off.
+fn net(activity: &Activity, start: NaiveDate, end: NaiveDate, pending: bool) -> i64 {
     activity
         .dated
         .iter()
-        .filter(|(date, _)| *date >= start && *date <= end)
-        .map(|(_, transaction)| {
-            if spending_for(transaction, activity.owner) {
-                minor_units(transaction.amount.abs())
-            } else if transaction.amount > 0.0 {
-                -minor_units(transaction.amount)
-            } else {
-                0
-            }
+        .filter(|(date, transaction)| {
+            // A Wallet row is ahead of the issuer, and no balance holds it yet.
+            transaction.pending == pending
+                && !transaction.from_wallet()
+                && *date >= start
+                && *date <= end
         })
+        .map(|(_, transaction)| -minor_units(transaction.amount))
         .sum()
+}
+
+/// The saved card's balance when a statement cycle opened and when it ended. A balance moves
+/// only by the card's activity, so any day's is the issuer's last statement balance with the
+/// settled activity between them added or undone; without that statement, today's balance
+/// stands in. Today's balance is also the check: it must be the statement's plus what has
+/// settled since (or plus everything, for an issuer whose balance counts pending), else the
+/// saved history is missing something and only the issuer's own figures are known. With no
+/// balance at all, the cycle opens at the autopay that paid the statement before it.
+fn balances(
+    activity: &Activity,
+    statement: &StatementCycle,
+    live: Option<i64>,
+    today: NaiveDate,
+    start: NaiveDate,
+    end: NaiveDate,
+) -> (Option<f64>, Option<f64>) {
+    let anchor = issued(statement)
+        .filter(|(close, _)| *close <= today)
+        .map(|(close, balance)| (close, minor_units(balance)))
+        .or(live.map(|live| (today, live)));
+    let Some((anchor, anchored)) = anchor else {
+        let opening = statement
+            .autopays
+            .iter()
+            .find(|autopay| autopay.date >= start && autopay.date <= end)
+            .map_or(0, |autopay| minor_units(autopay.amount));
+        return (
+            Some(from_minor(opening)),
+            Some(from_minor(opening + net(activity, start, end, false))),
+        );
+    };
+    let after = anchor + Duration::days(1);
+    let whole = live.is_none_or(|live| {
+        let settled = anchored + net(activity, after, today, false);
+        live == settled || live == settled + net(activity, after, today, true)
+    });
+    let on = |day: NaiveDate| {
+        let cents = match live {
+            _ if day == anchor => anchored,
+            Some(live) if day == today => live,
+            _ if !whole => return None,
+            _ if day < anchor => anchored - net(activity, day + Duration::days(1), anchor, false),
+            _ => anchored + net(activity, after, day, false),
+        };
+        Some(from_minor(cents))
+    };
+    (start.pred_opt().and_then(on), on(end))
 }
 
 /// A total in whole cents beside the one before it, averaged over `days`. The percent and the
@@ -521,11 +574,53 @@ fn summed(
             .min_by(|left, right| cents(right).cmp(&cents(left)))
             .map(|transaction| transaction.id.clone()),
         categories,
+        places: places_spent(&current, total),
         balance: None,
         typical: None,
         projected: None,
         opening: None,
     }
+}
+
+/// A place's name in a list: its city with the state, or the country abroad.
+fn place_name(place: &crate::places::Place) -> String {
+    let wider = if place.country == "US" {
+        place.region.as_deref().unwrap_or(&place.country)
+    } else {
+        &place.country
+    };
+    match &place.city {
+        Some(city) => format!("{city}, {wider}"),
+        None => wider.to_owned(),
+    }
+}
+
+fn places_spent(transactions: &[&Transaction], total: i64) -> Vec<PlaceSpent> {
+    let mut sums = BTreeMap::<String, i64>::new();
+    for transaction in transactions {
+        if let Some(place) = &transaction.place {
+            *sums.entry(place_name(place)).or_default() += minor_units(transaction.amount.abs());
+        }
+    }
+    let mut places = sums
+        .into_iter()
+        .map(|(name, value)| PlaceSpent {
+            name,
+            total: from_minor(value),
+            share: if total == 0 {
+                0.0
+            } else {
+                round2(value as f64 / total as f64 * 100.0)
+            },
+        })
+        .collect::<Vec<_>>();
+    places.sort_by(|left, right| {
+        right
+            .total
+            .total_cmp(&left.total)
+            .then_with(|| left.name.cmp(&right.name))
+    });
+    places
 }
 
 /// One scope Spending offers, counted for one owner: its activity and, on the saved card, the
@@ -601,17 +696,23 @@ impl Scope<'_> {
         let from = calendar.previous_start(start);
         let through =
             (from + Duration::days((end - start).num_days())).min(start - Duration::days(1));
-        // A statement balance is never only someone else's; today's balance anchors the
-        // current cycle.
-        let balance = self
+        // A statement balance is never only someone else's, and none is known for a cycle that
+        // ended before the saved history begins.
+        let live = self
             .card
-            .filter(|card| card.r#type == "credit" && current)
+            .filter(|card| card.r#type == "credit")
             .and_then(|card| card.value)
-            .map(f64::abs);
-        let opening = self
+            .map(|value| minor_units(value.abs()));
+        let (opening, balance) = self
             .statement
-            .filter(|_| calendar.kind == PeriodKind::Statement && activity.owner != Owner::Other)
-            .map(|statement| opening(activity, statement, balance, start, end));
+            .filter(|_| {
+                calendar.kind == PeriodKind::Statement
+                    && activity.owner != Owner::Other
+                    && activity.first.is_some_and(|first| end >= first)
+            })
+            .map_or((None, None), |statement| {
+                balances(activity, statement, live, self.today, start, end)
+            });
         let typical = typical(&calendar, activity, start, end);
         let mut sums = summed(activity, calendar.kind, start, end, Some((from, through)));
         if let Some(typical) = &typical {
@@ -628,8 +729,7 @@ impl Scope<'_> {
             projected: current
                 .then(|| projected(&calendar, activity, start, end))
                 .flatten(),
-            balance: opening
-                .map(|opening| from_minor(minor_units(opening) + net(activity, start, end))),
+            balance,
             opening,
             ..sums
         };
@@ -904,6 +1004,87 @@ mod tests {
     }
 
     #[test]
+    fn every_cycle_balance_is_worked_back_from_the_issuers_statement() {
+        let mut pending = transaction("pending", "2026-10-27", -9.0, "Shopping");
+        pending.pending = true;
+        let mut one_off = transaction("one-off", "2026-09-02", 200.0, "Payment");
+        one_off.merchant = "ONLINE PAYMENT - THANK YOU".to_string();
+        let mut autopay = transaction("autopay", "2026-10-07", 250.0, "Payment");
+        autopay.merchant = "AUTOPAY PAYMENT - THANK YOU".to_string();
+        let transactions = [
+            transaction("august", "2026-08-10", -200.0, "Shopping"),
+            // Paid by hand, so no autopay says what August's statement was.
+            one_off,
+            transaction("september", "2026-09-10", -300.0, "Shopping"),
+            // A goodwill credit the issuer took off September's 300 before autopay paid it.
+            transaction("goodwill", "2026-09-26", 50.0, "Shopping"),
+            autopay,
+            transaction("october", "2026-10-10", -120.0, "Shopping"),
+            transaction("settled", "2026-10-24", -36.0, "Dining"),
+            pending,
+        ];
+        let mut statement = statement();
+        statement.source = StatementSource::Issuer;
+        statement.liability = Some(
+            serde_json::from_value(json!({
+                "lastStatementDate": "2026-10-23", "lastStatementBalance": 120.0,
+            }))
+            .unwrap(),
+        );
+        let cycles = |live: f64| {
+            let card = card(Some(-live));
+            let list = scope_list(
+                &transactions,
+                std::slice::from_ref(&card),
+                Some(&card),
+                Some(&statement),
+                day("2026-10-28"),
+            );
+            let scope = list
+                .iter()
+                .find(|scope| scope.id == "card" && scope.owner == Owner::Me)
+                .unwrap();
+            (0..5)
+                .map(|offset| {
+                    let (period, _) = scope.period(PeriodKind::Statement, offset).unwrap();
+                    (
+                        period.start,
+                        period.opening,
+                        period.balance,
+                        period.spent.total,
+                    )
+                })
+                .collect::<Vec<_>>()
+        };
+        // Today's balance holds the settled charge but not the pending one, which only spent
+        // counts. Each cycle opens where the one before it closed, and the cycle that ended
+        // before the history began has no balance.
+        let whole = cycles(156.0);
+        assert_eq!(
+            whole,
+            vec![
+                (day("2026-10-24"), Some(120.0), Some(156.0), 45.0),
+                (day("2026-09-24"), Some(300.0), Some(120.0), 120.0),
+                (day("2026-08-24"), Some(200.0), Some(300.0), 300.0),
+                (day("2026-07-24"), Some(0.0), Some(200.0), 200.0),
+                (day("2026-06-23"), None, None, 0.0),
+            ]
+        );
+        // An issuer whose balance counts the pending charge agrees just as well.
+        assert_eq!(cycles(165.0)[1], whole[1]);
+        // A balance the saved history can't reach leaves only the issuer's own figures.
+        let missing = cycles(170.0);
+        assert_eq!(
+            missing[..3],
+            [
+                (day("2026-10-24"), Some(120.0), Some(170.0), 45.0),
+                (day("2026-09-24"), None, Some(120.0), 120.0),
+                (day("2026-08-24"), None, None, 300.0),
+            ]
+        );
+    }
+
+    #[test]
     fn usual_spending_averages_covered_earlier_periods_at_the_same_point() {
         let dining = |id: &str, date: &str, amount: f64| transaction(id, date, -amount, "Dining");
         let history = vec![
@@ -976,6 +1157,50 @@ mod tests {
     }
 
     #[test]
+    fn places_sum_in_person_spending_and_name_a_city_by_its_state_or_country() {
+        let at = |city: &str, region: &str, country: &str| crate::places::Place {
+            address: None,
+            postal_code: None,
+            city: Some(city.into()),
+            region: Some(region.into()),
+            country: country.into(),
+            lat: None,
+            lon: None,
+            source: crate::places::PlaceSource::Wallet,
+            precision: crate::places::PlacePrecision::City,
+        };
+        let mut denver = transaction("a", "2026-09-02", -30.0, "Groceries");
+        denver.place = Some(at("Denver", "CO", "US"));
+        let mut again = transaction("b", "2026-09-03", -10.0, "Dining");
+        again.place = Some(at("Denver", "CO", "US"));
+        let mut abroad = transaction("c", "2026-09-04", -50.0, "Dining");
+        abroad.place = Some(at("Interlaken", "BE", "CH"));
+        let unplaced = transaction("d", "2026-09-05", -10.0, "Dining");
+        let places = places_spent(&[&denver, &again, &abroad, &unplaced], 10_000);
+        let shown = places
+            .iter()
+            .map(|place| (place.name.as_str(), place.total, place.share))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            shown,
+            [("Interlaken, CH", 50.0, 50.0), ("Denver, CO", 40.0, 40.0)]
+        );
+    }
+
+    #[test]
+    fn a_wallet_row_ahead_of_the_issuer_counts_in_no_balance() {
+        let posted = transaction("a", "2026-09-02", -30.0, "Dining");
+        let mut pending = transaction("b", "2026-09-03", -5.0, "Dining");
+        pending.pending = true;
+        let mut wallet = transaction("wallet:c", "2026-09-03", -9.0, "Dining");
+        wallet.pending = true;
+        let activity = Activity::new(vec![&posted, &pending, &wallet], Owner::Me);
+        let (start, end) = (day("2026-09-01"), day("2026-09-30"));
+        assert_eq!(net(&activity, start, end, false), 3_000);
+        assert_eq!(net(&activity, start, end, true), 500);
+    }
+
+    #[test]
     fn a_rolling_week_is_never_projected() {
         let card = card(None);
         let scopes = scopes(
@@ -1019,10 +1244,12 @@ mod tests {
             (total(Owner::Me), total(Owner::Other), total(Owner::All)),
             (210.0, 90.0, 300.0)
         );
-        // The card's balance holds both purchases, so only everyone's spending opens at it.
+        // The card's balance holds both purchases, so yours and everyone's open at the same
+        // place; a statement is never only someone else's.
         let opening = |owner| {
             owned_period(&scopes, "card", owner, PeriodKind::Statement, "2026-08-24").opening
         };
+        assert_eq!(opening(Owner::Me), Some(0.0));
         assert_eq!(opening(Owner::All), Some(0.0));
         assert_eq!(opening(Owner::Other), None);
     }

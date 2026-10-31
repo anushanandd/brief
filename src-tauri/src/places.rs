@@ -386,6 +386,8 @@ pub fn lookup(city: &str, country: &str, region: Option<&str>) -> Option<&'stati
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlaceSource {
+    /// Apple Wallet recorded the merchant at the moment of purchase.
+    Wallet,
     /// The card issuer's export gave the street address.
     Issuer,
     /// The bank's descriptor named the place.
@@ -516,9 +518,17 @@ fn bank_place(location: &TransactionLocation) -> Option<Place> {
     })
 }
 
-/// Where a transaction was made: the issuer's street address when it agrees with the descriptor,
-/// then the descriptor's city, then the provider's location when the descriptor names none.
+/// Where a transaction was made: what Wallet recorded at the purchase, then the issuer's street
+/// address when it agrees with the descriptor, then the descriptor's city, then the provider's
+/// location when the descriptor names none.
 pub fn resolve(transaction: &Transaction) -> Option<Place> {
+    if let Some(place) = transaction
+        .wallet
+        .as_ref()
+        .and_then(|wallet| wallet.place.clone())
+    {
+        return Some(place);
+    }
     let reported = reported(transaction);
     issuer_place(transaction, reported.as_ref()).or(reported)
 }

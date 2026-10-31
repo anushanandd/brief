@@ -355,12 +355,17 @@
   gap: 16px;
   margin-bottom: 16px;
 }
-.taxes-grid + .taxes-grid {
+.taxes-grid.taxes-actions {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+}
+.taxes-side {
+  display: grid;
+  min-width: 0;
+  gap: 16px;
 }
 @media (max-width: 1100px) {
   .taxes-grid,
-  .taxes-grid + .taxes-grid {
+  .taxes-grid.taxes-actions {
     grid-template-columns: minmax(0, 1fr);
   }
 }
@@ -431,6 +436,9 @@
 }
 .taxes-list-link {
   color: inherit;
+}
+.taxes-list-link.taxes-residency-link {
+  grid-template-columns: minmax(0, 1fr) auto;
 }
 .taxes-list-link:hover {
   background: var(--hover-wash);

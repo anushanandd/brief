@@ -893,6 +893,7 @@ vi.mock('../hooks/use-reports', () => ({
 }))
 vi.mock('../hooks/use-refresh-finance', () => ({
   useAutoRefreshFinance: () => undefined,
+  useWalletWatch: () => undefined,
   useRefreshFinance: () => () => Promise.resolve(),
   useFinanceRefreshState: () => false,
 }))

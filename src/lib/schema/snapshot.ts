@@ -124,6 +124,7 @@ export const financeSettingsSchema: z.ZodType<FinanceSettings> = z.object({
     .optional(),
   plaidInvestmentTransactions: z.boolean().default(false),
   plaidRecurring: z.boolean().default(false),
+  appleWallet: z.boolean().default(false),
   people: z.array(personSchema).default([]),
   /** Who went on a trip, saved against the trip's transactions because trip ids move. */
   tripCompanions: z

@@ -39,6 +39,7 @@ futures-util = "0.3"
 hmac = "0.12"
 keyring = { version = "3", features = ["apple-native"] }
 parquet = { version = "60", default-features = false, features = ["zstd"] }
+plist = "1"
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 rusqlite = { version = "0.34", features = ["backup", "bundled"] }

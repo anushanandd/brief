@@ -292,6 +292,21 @@ export async function confirmStatementRow(
   return invoke<FinanceSnapshot>('confirm_statement_row', { fileId, rowId, confirmed })
 }
 
+/**
+ * Reads Apple Wallet and returns the new view, or nothing when no change was saved. With
+ * `onlyIfChanged`, as when polled, Wallet is read only if it wrote since the last read.
+ */
+export async function syncWallet(onlyIfChanged = false): Promise<FinanceSnapshot | null> {
+  if (!isTauri()) return null
+  return invoke<FinanceSnapshot | null>('sync_wallet', { onlyIfChanged })
+}
+
+/** Takes a Wallet charge no provider reported into history, or back out of it. */
+export async function confirmWalletRow(id: string, confirmed: boolean): Promise<FinanceSnapshot> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return invoke<FinanceSnapshot>('confirm_wallet_row', { id, confirmed })
+}
+
 export async function eraseFinanceState(): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
   return invoke<FinanceSnapshot>('erase_finance_state')

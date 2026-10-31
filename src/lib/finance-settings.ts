@@ -3,7 +3,12 @@ import { invoke } from '@tauri-apps/api/core'
 import { parseAccountDisplayNames } from './account-names'
 import { parseAccountStartDates } from './account-start-dates'
 import { getFinanceSnapshot, isTauri } from './api'
-import { financeSettingsSchema, type FinanceSettings, type FinanceSnapshot } from './schema'
+import {
+  financeSettingsSchema,
+  type Account,
+  type FinanceSettings,
+  type FinanceSnapshot,
+} from './schema'
 
 /** Renderer keys that older builds used before these settings moved into the finance store. */
 export const legacyFinanceSettingKeys = {
@@ -42,10 +47,15 @@ export function financeSettings(data: Pick<FinanceSnapshot, 'settings'> | undefi
 }
 
 /** Every card the user spends from: the saved spending card, then the others. */
-export function spendingAccountIds(settings: FinanceSettings) {
+/** The chosen spending cards, then any spending-only account, which is always one. */
+export function spendingAccountIds(
+  settings: FinanceSettings,
+  accounts: readonly Pick<Account, 'id' | 'balanceSource'>[] = [],
+) {
   return [
     ...(settings.spendingAccountId ? [settings.spendingAccountId] : []),
     ...(settings.spendingCards ?? []),
+    ...accounts.filter(({ balanceSource }) => balanceSource === 'spendingOnly').map(({ id }) => id),
   ]
 }
 

@@ -12,7 +12,8 @@ import type {
 } from './schema'
 
 const MARKET_CHART_INTERVAL = 5 * 60
-const MAX_MARKET_CHART_POINTS = 7 * 24 * 12 + 1
+// A week of five-minute points and a month of half-hour ones, as Rust draws the lines.
+const MAX_MARKET_CHART_POINTS = 7 * 24 * 12 + 30 * 24 * 2 + 1
 
 function downsampleMarketSeries(points: LivelinePoint[]) {
   const ordered = points.toSorted((left, right) => left.time - right.time)

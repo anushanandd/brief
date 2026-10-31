@@ -238,13 +238,11 @@ fn the_employee_waiver_stays_suggested_and_watches_each_month() {
         watch.says,
         "Deposits to Platinum CashPlus were under $5,000 in September 2026; the $55 monthly fee may apply."
     );
-    // The note reaches Home's needs, and never a notification, since it names amounts.
+    // A past month can't be changed, so the note stays with the rule and never reaches Home.
     let needs = &view.insights.as_ref().unwrap().brief.needs;
-    let need = needs
+    assert!(needs
         .iter()
-        .find(|need| need.id == format!("program:{}", watch.id))
-        .unwrap();
-    assert!(crate::notify::notices(std::slice::from_ref(need), |id| id.to_owned()).is_empty());
+        .all(|need| need.id != format!("program:{}", watch.id)));
 }
 
 #[test]

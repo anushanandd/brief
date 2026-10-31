@@ -127,7 +127,7 @@ fn words_in_order(text: &str) -> String {
 }
 
 /// The share of distinct words two descriptions have in common, in percent.
-fn similarity(left: &str, right: &str) -> u32 {
+pub fn similarity(left: &str, right: &str) -> u32 {
     let (left, right) = (words(left), words(right));
     let union = left.union(&right).count();
     if union == 0 {

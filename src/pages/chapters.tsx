@@ -18,7 +18,7 @@ import {
   type Chapter,
   type ChapterKind,
 } from '../lib/evidence'
-import { formatCurrency } from '../lib/format'
+import { formatCurrency, formatDay } from '../lib/format'
 import type { FinanceSnapshot } from '../lib/schema'
 
 const LANES: ChapterKind[] = ['work', 'home', 'milestone', 'shift', 'planned']
@@ -44,7 +44,11 @@ export function ChaptersView({ data }: { data: FinanceSnapshot }) {
   const search = useSearch({ from: '/insights' })
   const navigate = useNavigate({ from: '/insights' })
   const evidence = evidenceOf(data)
-  const chapter = evidence.chapters.find((candidate) => candidate.id === search.chapter)
+  // With none chosen, the latest chapter still open is shown, so the detail is never blank.
+  const chapter =
+    evidence.chapters.find((candidate) => candidate.id === search.chapter) ??
+    evidence.chapters.findLast((candidate) => !candidate.end) ??
+    evidence.chapters.at(-1)
   const [planning, setPlanning] = useState(false)
   const stopPlanning = useCallback(() => setPlanning(false), [])
 
@@ -82,10 +86,8 @@ export function ChaptersView({ data }: { data: FinanceSnapshot }) {
   }
   return (
     <div className="trips-main">
-      <NowCard data={data} />
       <Timeline
-        chapters={evidence.chapters}
-        today={data.insights.today}
+        data={data}
         current={chapter?.id}
         onOpen={(item) => void navigate({ search: chapterSearch(item) })}
       />
@@ -100,79 +102,49 @@ export function ChaptersView({ data }: { data: FinanceSnapshot }) {
           <PlanForm data={data} onDone={stopPlanning} />
         ) : chapter ? (
           <ChapterDetail key={chapter.id} data={data} chapter={chapter} />
-        ) : (
-          <Card className="chapters-card">
-            <EmptyState>Open a chapter to see what defines it and what its end changes.</EmptyState>
-          </Card>
-        )}
+        ) : null}
       </div>
     </div>
-  )
-}
-
-/** Where you are now, and where you lived each year, for part-year returns. */
-function NowCard({ data }: { data: FinanceSnapshot }) {
-  const evidence = evidenceOf(data)
-  const line = nowLine(evidence)
-  const years = [...new Set(evidence.residency.map((span) => span.year))].toSorted(
-    (left, right) => right - left,
-  )
-  return (
-    <Card className="chapters-card chapters-now">
-      <SectionHeading title="Now" detail={line || 'No open chapter says where you work or live.'} />
-      {years.length ? (
-        <dl className="chapters-residency">
-          {years.map((year) => (
-            <div key={year}>
-              <dt>{year}</dt>
-              <dd>
-                {evidence.residency
-                  .filter((span) => span.year === year)
-                  .map(
-                    (span) =>
-                      `${span.state} ${span.from.slice(5)} to ${span.to.slice(5)} (${span.days} days${span.tier === 'suggested' ? ', possible' : ''})`,
-                  )
-                  .join(' · ')}
-              </dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
-      {data.insights?.plan.baselineSince ? (
-        <p className="transaction-edit-note">
-          Typical spending counts from {data.insights.plan.baselineSince}, when a chapter you
-          confirmed began.
-        </p>
-      ) : null}
-    </Card>
   )
 }
 
 /** A date as milliseconds, for placing bars on the timeline. */
 const day = (date: string) => new Date(`${date}T00:00:00Z`).getTime()
 
-/** A lane per kind, each chapter a bar across the span of your history. */
+/**
+ * A lane per kind, each chapter a bar across the span of your history, over a year axis. Its
+ * heading says where you are now; where you lived each year is on Taxes, beside the return it
+ * shapes.
+ */
 function Timeline({
-  chapters,
-  today,
+  data,
   current,
   onOpen,
 }: {
-  chapters: Chapter[]
-  today: string
+  data: FinanceSnapshot
   current?: string
   onOpen: (chapter: Chapter) => void
 }) {
+  const evidence = evidenceOf(data)
+  const { chapters } = evidence
+  const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
+  const line = nowLine(evidence)
+  const baselineSince = data.insights?.plan.baselineSince
   if (!chapters.length) return null
   const first = Math.min(...chapters.map((chapter) => day(chapter.start)))
   const last = Math.max(day(today), ...chapters.map((chapter) => day(chapter.end ?? today)))
   const span = Math.max(1, last - first)
   const at = (date: string) => ((day(date) - first) / span) * 100
+  const firstYear = new Date(first).getUTCFullYear()
+  const years = Array.from(
+    { length: new Date(last).getUTCFullYear() - firstYear },
+    (_, index) => firstYear + index + 1,
+  )
   return (
     <Card className="chapters-card">
       <SectionHeading
         title="Timeline"
-        detail={`${new Date(first).toISOString().slice(0, 10)} to ${today}`}
+        detail={line || 'No open chapter says where you work or live.'}
       />
       <div className="chapters-timeline" role="list" aria-label="Chapters over time">
         {LANES.filter((lane) => chapters.some((chapter) => chapter.kind === lane)).map((lane) => (
@@ -202,7 +174,23 @@ function Timeline({
             </div>
           </div>
         ))}
+        <div className="chapters-lane chapters-axis" aria-hidden="true">
+          <span />
+          <div className="chapters-lane-track">
+            {years.map((year) => (
+              <span key={year} style={{ left: `${at(`${year}-01-01`)}%` }}>
+                {year}
+              </span>
+            ))}
+          </div>
+        </div>
       </div>
+      {baselineSince ? (
+        <p className="chapters-note">
+          Typical spending counts from {formatDay(baselineSince)}, when a chapter you confirmed
+          began.
+        </p>
+      ) : null}
     </Card>
   )
 }
@@ -273,6 +261,7 @@ function ChapterDetail({ data, chapter }: { data: FinanceSnapshot; chapter: Chap
   const [title, setTitle] = useState(chapter.title)
   const [start, setStart] = useState(chapter.start)
   const [end, setEnd] = useState(chapter.end ?? '')
+  const [editing, setEditing] = useState(false)
   const [error, setError] = useState<string>()
   const programs = evidenceOf(data).programs
   const planned = chapter.kind === 'planned'
@@ -287,6 +276,7 @@ function ChapterDetail({ data, chapter }: { data: FinanceSnapshot; chapter: Chap
           { id: chapter.id, ...choice },
         ],
       }))
+      setEditing(false)
       if (choice.status === 'dismissed') await navigate({ search: chapterSearch() })
     } catch (caught) {
       setError(errorMessage(caught))
@@ -344,6 +334,15 @@ function ChapterDetail({ data, chapter }: { data: FinanceSnapshot; chapter: Chap
                 scope: 'page',
                 run: () => void latest.current.choose({ status: 'dismissed' }),
               },
+              {
+                id: 'chapter.edit',
+                title: 'Edit this chapter’s title and dates',
+                search: 'chapter edit rename title dates began ended',
+                group: 'Here',
+                scope: 'page',
+                bindings: [{ sequence: ['e'], label: 'E' }],
+                run: () => setEditing((current) => !current),
+              },
             ],
       [planned],
     ),
@@ -353,8 +352,91 @@ function ChapterDetail({ data, chapter }: { data: FinanceSnapshot; chapter: Chap
     <Card className="chapters-card chapter-detail">
       <SectionHeading
         title={chapter.title}
-        detail={`${chapterKinds[chapter.kind].label} · ${chapterSpan(chapter)} · ${standing(chapter)}`}
+        detail={`${chapterKinds[chapter.kind].label} · ${chapterSpan(chapter)}`}
+        action={
+          planned ? (
+            <Button
+              size="compact"
+              variant="ghost"
+              icon={Trash2}
+              data-command="chapter.remove"
+              onClick={() => void removePlan()}
+            >
+              Remove plan
+            </Button>
+          ) : (
+            <div className="chapter-actions">
+              <span className={`tier-label tier-${chapter.confirmed ? 'observed' : 'suggested'}`}>
+                {standing(chapter)}
+              </span>
+              {chapter.confirmed ? null : (
+                <>
+                  <Button
+                    size="compact"
+                    variant="primary"
+                    icon={Check}
+                    data-command="chapter.confirm"
+                    onClick={confirmEdits}
+                  >
+                    Confirm
+                  </Button>
+                  <Button
+                    size="compact"
+                    icon={X}
+                    data-command="chapter.dismiss"
+                    onClick={() => void choose({ status: 'dismissed' })}
+                  >
+                    Not a chapter
+                  </Button>
+                </>
+              )}
+              <Button
+                size="compact"
+                variant="ghost"
+                aria-pressed={editing}
+                data-command="chapter.edit"
+                onClick={() => setEditing((current) => !current)}
+              >
+                Edit
+              </Button>
+            </div>
+          )
+        }
       />
+      {editing && !planned ? (
+        <form
+          className="chapter-edit chapter-edit-inline"
+          onSubmit={(event) => {
+            event.preventDefault()
+            confirmEdits()
+          }}
+        >
+          <label>
+            <span>Title</span>
+            <input
+              value={title}
+              maxLength={80}
+              onChange={(event) => setTitle(event.target.value)}
+            />
+          </label>
+          <label>
+            <span>Began</span>
+            <input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
+          </label>
+          <label>
+            <span>Ended</span>
+            <input type="date" value={end} onChange={(event) => setEnd(event.target.value)} />
+          </label>
+          <div className="chapter-actions">
+            <Button type="submit" size="compact" variant="primary" icon={Check}>
+              {chapter.confirmed ? 'Save' : 'Save and confirm'}
+            </Button>
+            <Button type="button" size="compact" onClick={() => setEditing(false)}>
+              Cancel
+            </Button>
+          </div>
+        </form>
+      ) : null}
       {chapter.effects.length ? (
         <div className="chapter-effects">
           {chapter.effects.map((effect) => (
@@ -450,64 +532,6 @@ function ChapterDetail({ data, chapter }: { data: FinanceSnapshot; chapter: Chap
           </ul>
         </section>
       ) : null}
-      {planned ? (
-        <div className="chapter-actions">
-          <Button
-            size="compact"
-            variant="destructive"
-            icon={Trash2}
-            data-command="chapter.remove"
-            onClick={() => void removePlan()}
-          >
-            Remove plan
-          </Button>
-        </div>
-      ) : (
-        <form
-          className="chapter-edit"
-          onSubmit={(event) => {
-            event.preventDefault()
-            confirmEdits()
-          }}
-        >
-          <label>
-            <span>Title</span>
-            <input
-              value={title}
-              maxLength={80}
-              onChange={(event) => setTitle(event.target.value)}
-            />
-          </label>
-          <label>
-            <span>Began</span>
-            <input type="date" value={start} onChange={(event) => setStart(event.target.value)} />
-          </label>
-          <label>
-            <span>Ended</span>
-            <input type="date" value={end} onChange={(event) => setEnd(event.target.value)} />
-          </label>
-          <div className="chapter-actions">
-            <Button
-              type="submit"
-              size="compact"
-              variant="primary"
-              icon={Check}
-              data-command="chapter.confirm"
-            >
-              {chapter.confirmed ? 'Save' : 'Confirm'}
-            </Button>
-            <Button
-              type="button"
-              size="compact"
-              icon={X}
-              data-command="chapter.dismiss"
-              onClick={() => void choose({ status: 'dismissed' })}
-            >
-              Not a chapter
-            </Button>
-          </div>
-        </form>
-      )}
       {error ? (
         <p role="alert" className="transaction-edit-note">
           {error}

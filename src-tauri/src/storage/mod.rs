@@ -521,6 +521,48 @@ impl Storage {
         self.snapshot()
     }
 
+    /// Saves what Wallet held when read, or clears it, and projects saved provider data again.
+    pub fn save_wallet(
+        &mut self,
+        wallet: Option<crate::providers::wallet::WalletData>,
+    ) -> Result<Value, String> {
+        self.ensure_writable()?;
+        self.database.backup(&self.backup_path())?;
+        self.record(change::Change::Wallet(wallet.map(Box::new)))?;
+        self.pending = None;
+        self.snapshot()
+    }
+
+    /// Takes a Wallet charge the provider never reported into history, or back out of it.
+    pub fn confirm_wallet_row(&mut self, id: &str, confirmed: bool) -> Result<Value, String> {
+        self.ensure_writable()?;
+        let awaiting = self
+            .data
+            .snapshot
+            .wallet
+            .iter()
+            .flat_map(|wallet| &wallet.review)
+            .any(|row| row.id == id);
+        if !awaiting {
+            return Err("The provider now reports that charge".into());
+        }
+        let mut wallet = self
+            .data
+            .provider_data
+            .wallet
+            .clone()
+            .ok_or("Apple Wallet is off")?;
+        let changed = if confirmed {
+            wallet.confirmed.insert(id.to_owned())
+        } else {
+            wallet.confirmed.remove(id)
+        };
+        if changed {
+            return self.save_wallet(Some(wallet));
+        }
+        self.snapshot()
+    }
+
     /// Applies `change`, saves the result, and appends the change to the log.
     fn record(&mut self, change: change::Change) -> Result<(), String> {
         self.begin_log()?;
@@ -828,15 +870,18 @@ impl Storage {
             .map_err(|error| error.to_string())
     }
 
-    pub fn fail_pending(&mut self, id: &str, error_code: &str) {
+    pub fn fail_pending(&mut self, id: &str, error_code: &str, reason: &str) {
         let Some(pending) = self.pending.as_ref().filter(|pending| pending.id == id) else {
             return;
         };
-        let details = SyncDiagnostics::new(
-            error_code.trim_end_matches("_failed"),
-            pending.diagnostics.providers.clone(),
-            pending.refresh.warnings.len(),
-        );
+        let details = SyncDiagnostics {
+            reason: Some(reason.chars().take(200).collect()),
+            ..SyncDiagnostics::new(
+                error_code.trim_end_matches("_failed"),
+                pending.diagnostics.providers.clone(),
+                pending.refresh.warnings.len(),
+            )
+        };
         let _ = self.database.record_sync_run(&SyncRun::ended(
             id,
             &pending.started_at,

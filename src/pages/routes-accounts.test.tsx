@@ -25,11 +25,32 @@ it('links account selections and defaults the workspace to all accounts', async 
   expect(html).toContain('Account details')
   expect(html).toContain('Recent activity')
   expect(html).toContain('href="/activities?account=other"')
-  expect(html).toContain('account-preview-grid account-preview-grid-wide-recent')
+  // Balances stays as the menu in every view, marking the account shown, with All accounts
+  // a click back.
+  expect(html).toContain('<h2>Balances</h2>')
+  const menu = html.slice(html.indexOf('<h2>Balances</h2>'))
+  const anchor = (pattern: string) => menu.match(new RegExp(`<a[^>]*${pattern}[^>]*>`))?.[0] ?? ''
+  expect(anchor('href="/accounts\\?account=other"')).toContain('aria-current="page"')
+  expect(anchor('accounts-menu-all')).not.toBe('')
+  expect(anchor('accounts-menu-all')).not.toContain('aria-current="page"')
   expect(html).toContain('<h2>Coming up</h2>')
-  expect(html.indexOf('Recent activity')).toBeLessThan(html.indexOf('<h2>Coming up</h2>'))
-  expect(html.match(/account-preview-card/g)).toHaveLength(2)
+  expect(html.indexOf('<h2>Balances</h2>')).toBeLessThan(html.indexOf('Recent activity'))
+  expect(html.match(/account-preview-card/g)).toHaveLength(3)
   expect(html).toContain('aria-current="page">Other card')
+})
+
+it('shows a type of account in place, under the same menu, with only figures Rust totaled', async () => {
+  scenario.accountType = 'brokerage'
+  scenario.otherAccountType = 'brokerage'
+  const html = await renderRoute('/accounts?group=brokerage', '')
+  expect(html).toContain('<h2>Balances</h2>')
+  expect(html).toContain('<h2>Brokerage details</h2>')
+  expect(html).toContain('<span>Total</span>')
+  // Rust sums flows and gains for every account or one, never a type, so none are shown.
+  expect(html).not.toContain('<span>Net contributions</span>')
+  expect(html).not.toContain('<span>Known unrealized P/L</span>')
+  // Its activity link opens the ledger filtered to the group's accounts.
+  expect(html).toMatch(/href="\/activities\?account=[^"]*other/)
 })
 
 it('shows all-account investment figures in their own card before Coming up', async () => {
@@ -68,7 +89,7 @@ it('shows all-account investment figures in their own card before Coming up', as
 
 it('lists the spending card on Accounts apart from the totals, and opens it', async () => {
   const all = await renderRoute('/accounts')
-  const list = all.slice(all.indexOf('aria-label="Balances by account"'))
+  const list = all.slice(all.indexOf('<h2>Balances</h2>'))
   expect(list).toContain('Spending cards<small> · Not in total</small>')
   expect(list).toContain('href="/accounts?account=selected"')
   const card = await renderRoute('/accounts?account=selected')
@@ -171,7 +192,7 @@ it('qualifies partial unrealized gain in the investment account workspace', asyn
   expect(html).toContain('<span>Investment gain</span>')
   expect(html).toContain('<span>Net contributions</span>')
   expect(html).toContain('Known total unrealized')
-  expect(html).toContain('account-preview-grid account-preview-grid-wide-primary')
+  expect(html).toContain('<h2>Balances</h2>')
   expect(html).toContain('Recent activity')
   expect(html).not.toContain('<h2>Coming up</h2>')
   expect(html).toContain('class="muted">$0.00')

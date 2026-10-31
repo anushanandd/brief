@@ -564,6 +564,116 @@ fn an_observation_that_diverges_from_the_estimate_yields_to_it() {
 }
 
 #[test]
+fn a_withdrawal_at_a_stores_atm_is_cash_when_the_institution_says_so() {
+    let mut input = sync();
+    let plaid = |id: &str, amount: &str, date: &str, primary: &str, detailed: &str, code: Value| {
+        json!({
+            "transaction_id": id, "account_id": "cash", "amount": amount,
+            "name": "EXAMPLE PHARMACY #0-XE10 1 MAIN ST SPRINGFIELD Location: CA",
+            "merchant_name": "Example Pharmacy", "pending": false, "date": date,
+            "payment_channel": "in store",
+            "personal_finance_category": { "primary": primary, "detailed": detailed, "confidence_level": "HIGH" },
+            "transaction_code": code
+        })
+    };
+    let pharmacy = ("MEDICAL", "MEDICAL_PHARMACIES_AND_SUPPLEMENTS");
+    input.plaid.transactions.extend([
+        // The bank's statement types this one ATM; its descriptor names only the store.
+        plaid(
+            "typed",
+            "203.75",
+            "2026-09-08",
+            pharmacy.0,
+            pharmacy.1,
+            Value::Null,
+        ),
+        // An institution that sends Plaid transaction codes says so itself.
+        plaid(
+            "coded",
+            "60",
+            "2026-09-08",
+            pharmacy.0,
+            pharmacy.1,
+            json!("atm"),
+        ),
+        // The machine's own fee stays a fee, and a purchase nothing types stays a purchase.
+        plaid(
+            "fee",
+            "3.5",
+            "2026-09-08",
+            "BANK_FEES",
+            "BANK_FEES_ATM_FEES",
+            json!("atm"),
+        ),
+        plaid(
+            "bought",
+            "18.4",
+            "2026-09-08",
+            pharmacy.0,
+            pharmacy.1,
+            json!("purchase"),
+        ),
+        // Money in at a machine is a deposit, never a withdrawal.
+        plaid(
+            "deposit",
+            "-80",
+            "2026-09-08",
+            "TRANSFER_IN",
+            "TRANSFER_IN_DEPOSIT",
+            json!("atm"),
+        ),
+    ]);
+    input.statements = vec![statement_file(
+        "plaid:cash",
+        "Date,Description,Type,Amount\n\
+         09/08/2026,EXAMPLE PHARMACY #0-XE10 1 MAIN ST SPRINGFIELD,ATM,-203.75\n\
+         09/08/2026,EXAMPLE PHARMACY 1 MAIN ST SPRINGFIELD,Debit Card,-18.40\n",
+    )];
+    let snapshot = project(
+        &input,
+        &BTreeMap::new(),
+        projection_time(),
+        projection_time().date_naive(),
+    )
+    .unwrap();
+    let found = |id: &str| {
+        let transaction = snapshot
+            .transactions
+            .iter()
+            .find(|transaction| transaction.id == id)
+            .unwrap();
+        let classification = crate::transaction_policy::classify(transaction);
+        (
+            transaction.category.as_str(),
+            transaction.category_detail.as_deref(),
+            classification.mark,
+            classification.spending,
+        )
+    };
+    use crate::transaction_policy::Mark;
+    let withdrawal = (
+        "Transfers",
+        Some("TRANSFER_OUT_WITHDRAWAL"),
+        Mark::Cash,
+        false,
+    );
+    assert_eq!(found("typed"), withdrawal);
+    assert_eq!(found("coded"), withdrawal);
+    assert_eq!(found("fee").1, Some("BANK_FEES_ATM_FEES"));
+    let bought = found("bought");
+    assert_eq!((bought.1, bought.3), (Some(pharmacy.1), true));
+    assert_eq!(found("deposit").1, Some("TRANSFER_IN_DEPOSIT"));
+    let typed = snapshot
+        .transactions
+        .iter()
+        .find(|transaction| transaction.id == "typed")
+        .unwrap();
+    // Still where it happened, by the store's name.
+    assert_eq!(typed.merchant, "Example Pharmacy");
+    assert_eq!(typed.subcategory.as_deref(), Some("Cash withdrawal"));
+}
+
+#[test]
 fn an_issuers_merchant_details_reach_the_transactions_its_rows_describe() {
     let mut input = sync();
     input.statements = vec![statement_file(

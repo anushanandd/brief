@@ -10,6 +10,7 @@ import type { Program } from './bindings/Program'
 import type { ProgramDraft } from './bindings/ProgramDraft'
 import type { ResearchEntry } from './bindings/ResearchEntry'
 import type { ResearchState } from './bindings/ResearchState'
+import { formatDay, formatShortDay } from './format'
 import type { FinanceSnapshot } from './schema'
 
 /**
@@ -56,9 +57,15 @@ export const emptyEvidence: EvidenceGraph = {
 export const evidenceOf = (data: FinanceSnapshot | undefined): EvidenceGraph =>
   data?.insights?.evidence ?? emptyEvidence
 
-/** A chapter's span as words: "2026-04-20 to 2026-07-31", or "Since 2026-04-20". */
+/** Two days as one span: "Apr 20 – Jul 31, 2026" within a year, else each with its year. */
+export const daySpan = (from: string, to: string) =>
+  from.slice(0, 4) === to.slice(0, 4)
+    ? `${formatShortDay(from)} – ${formatDay(to)}`
+    : `${formatDay(from)} – ${formatDay(to)}`
+
+/** A chapter's span as words: "Apr 20 – Jul 31, 2026", or "Since Apr 20, 2026". */
 export const chapterSpan = (chapter: Pick<Chapter, 'start' | 'end'>) =>
-  chapter.end ? `${chapter.start} to ${chapter.end}` : `Since ${chapter.start}`
+  chapter.end ? daySpan(chapter.start, chapter.end) : `Since ${formatDay(chapter.start)}`
 
 /**
  * Home's one line: "Morgan Stanley · California · month 6". Empty when no open chapter
@@ -74,9 +81,9 @@ export function nowLine(evidence: EvidenceGraph): string {
 /** An explanation's dates as words. */
 export const explanationSpan = (explanation: Pick<Explanation, 'from' | 'to'>) =>
   explanation.from && explanation.to
-    ? `${explanation.from} to ${explanation.to}`
+    ? daySpan(explanation.from, explanation.to)
     : explanation.from
-      ? `From ${explanation.from}`
+      ? `From ${formatDay(explanation.from)}`
       : undefined
 
 const noResearch: ResearchState = {

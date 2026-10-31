@@ -12,7 +12,6 @@ import { PeriodTotals } from '../components/period-totals'
 import { PinnedQueries } from '../components/pinned-queries'
 import { PositionTable } from '../components/position-table'
 import { ShareLine, type ShareSegment } from '../components/share-line'
-import { SinceLastRefresh, hasRefreshChanges } from '../components/since-last-refresh'
 import { SnapTradeReference } from '../components/snaptrade-reference'
 import { AnimatedCurrency, Card, ChartChange, EmptyState, SectionHeading } from '../components/ui'
 import { MarketStatus, WorkspaceHeader } from '../components/workspace-header'
@@ -20,7 +19,6 @@ import { useFinance } from '../hooks/use-finance'
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { accountGroups, groupLabel } from '../lib/account-groups'
-import type { AccountDisplayNames } from '../lib/account-names'
 import { accountStartDate } from '../lib/account-start-dates'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { buildActivities } from '../lib/activity'
@@ -31,7 +29,6 @@ import {
   dashboardAccountViews,
   withoutSpendingCard,
 } from '../lib/dashboard-account-views'
-import { evidenceOf, nowLine } from '../lib/evidence'
 import { financeSettings } from '../lib/finance-settings'
 import { countOf } from '../lib/format'
 import { chartPeriod, useGraphWindow } from '../lib/graph-preferences'
@@ -123,13 +120,7 @@ export function OverviewPage() {
   const incomplete = accountValueIncomplete(data, account.accountId)
   const startDate = accountStartDate(data, account.accountId, accountStartDates)
   const chartNow = Date.now() / 1_000
-  const provisionalNetWorth = account.accountId === 'net-worth' && data.netWorthProvisional
-  const chartData = buildLiveChartData(
-    points,
-    provisionalNetWorth ? [] : (livePoints ?? []),
-    provisionalNetWorth ? (points.at(-1)?.value ?? latestValue) : latestValue,
-    chartNow,
-  )
+  const chartData = buildLiveChartData(points, livePoints ?? [], latestValue, chartNow)
   const rangeChange = chartRangeChange(query.chartChanges, account.accountId, graphWindow)
   const netDepositsData =
     account.accountId === 'net-worth' || account.performanceMethod === 'value-only'
@@ -183,11 +174,7 @@ export function OverviewPage() {
 
   return (
     <div className="page overview-page">
-      <WorkspaceHeader
-        title="Home"
-        detail={nowLine(evidenceOf(committed)) || undefined}
-        status={<MarketStatus />}
-      />
+      <WorkspaceHeader title="Home" status={<MarketStatus />} />
 
       {/* Two rows split by one rule. Above it, the chart sets the height and what's ahead fills
           the column beside it, Coming up scrolling to the rule. Below it, holdings and accounts
@@ -211,11 +198,6 @@ export function OverviewPage() {
                     <ChartRangeSelector value={graphWindow} onValueChange={setGraphWindow} />
                   ) : null}
                   <SnapTradeReference account={referenceAccount} />
-                  {referenceAccount?.id.startsWith('snaptrade:') && livePoints?.length ? (
-                    <small className="snaptrade-reference">
-                      SnapTrade daily values · Alpaca intraday projection
-                    </small>
-                  ) : null}
                 </div>
               ) : null}
               <div className="chart-summary-row">
@@ -234,9 +216,7 @@ export function OverviewPage() {
                       data={chartData}
                       netDeposits={netDepositsData}
                       benchmark={benchmarkData}
-                      value={
-                        provisionalNetWorth ? (chartData.at(-1)?.value ?? latestValue) : latestValue
-                      }
+                      value={latestValue}
                       events={chartEvents}
                       referenceIso={data.updatedAt}
                       startDate={startDate}
@@ -329,7 +309,6 @@ export function OverviewPage() {
             </Card>
           </div>
           <div className="home-companion">
-            <SinceLastRefreshCard data={committed} accountNames={accountDisplayNames} />
             <Card className="home-overview-card home-activity-card">
               <SectionHeading
                 title={
@@ -359,21 +338,6 @@ export function OverviewPage() {
       <PinnedQueries />
     </div>
   )
-}
-
-/** The card for what the last refresh changed, left out when it changed nothing. */
-function SinceLastRefreshCard({
-  data,
-  accountNames,
-}: {
-  data: FinanceSnapshot
-  accountNames: AccountDisplayNames
-}) {
-  return hasRefreshChanges(data) ? (
-    <Card className="home-overview-summary home-ahead-card">
-      <SinceLastRefresh data={data} accountNames={accountNames} />
-    </Card>
-  ) : null
 }
 
 type Allocation = NonNullable<NonNullable<FinanceSnapshot['insights']>['allocation']>

@@ -4,9 +4,72 @@ use tauri::State;
 use super::require_sensitive_authorization;
 use crate::{
     authentication,
-    providers::{self, Integration, IntegrationStatus, LinkSession, LinkStatus},
+    providers::{self, wallet, Integration, IntegrationStatus, LinkSession, LinkStatus},
     AppState,
 };
+
+/// Reads Apple Wallet and saves what's new, or clears its records once it is turned off. With
+/// `only_if_changed`, as when polled, nothing happens unless Wallet has written since the last
+/// read, or while a refresh runs, since the refresh reads Wallet itself. Returns the view when
+/// anything was saved.
+#[tauri::command]
+pub(crate) async fn sync_wallet(
+    only_if_changed: Option<bool>,
+    state: State<'_, AppState>,
+) -> Result<Option<serde_json::Value>, String> {
+    let polled = only_if_changed.unwrap_or(false);
+    let _refresh = if polled {
+        match state.refresh.try_lock() {
+            Ok(guard) => guard,
+            Err(_) => return Ok(None),
+        }
+    } else {
+        state.refresh.lock().await
+    };
+    let (enabled, saved) = {
+        let storage = state.storage()?;
+        (
+            storage.data.settings.apple_wallet,
+            storage.data.provider_data.wallet.clone(),
+        )
+    };
+    if !enabled {
+        return if saved.is_some() {
+            state.storage()?.save_wallet(None).map(Some)
+        } else {
+            Ok(None)
+        };
+    }
+    let read_at = saved.as_ref().map(|wallet| wallet.read_at.clone());
+    let changed = tauri::async_runtime::spawn_blocking(move || {
+        if polled && !wallet::changed_since(read_at.as_deref()) {
+            return Ok(None);
+        }
+        wallet::read(chrono::Utc::now()).map(Some)
+    })
+    .await
+    .map_err(|_| "Could not read Wallet".to_string())??;
+    let Some(read) = changed else {
+        return Ok(None);
+    };
+    let merged = wallet::merged(saved.as_ref(), read);
+    // Wallet rewrites its file for many reasons; a poll saves only new records.
+    if polled && saved.is_some_and(|saved| saved.same_records(&merged)) {
+        return Ok(None);
+    }
+    state.storage()?.save_wallet(Some(merged)).map(Some)
+}
+
+/// Takes a Wallet charge the provider never reported into history, or back out of it.
+#[tauri::command]
+pub(crate) async fn confirm_wallet_row(
+    id: String,
+    confirmed: bool,
+    state: State<'_, AppState>,
+) -> Result<serde_json::Value, String> {
+    let _refresh = state.refresh.lock().await;
+    state.storage()?.confirm_wallet_row(&id, confirmed)
+}
 
 /// Holds off refreshes while credentials change; a running refresh makes the change wait.
 fn no_refresh_running<'a>(

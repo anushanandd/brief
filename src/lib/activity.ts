@@ -29,6 +29,10 @@ export type ActivityItem = {
   place?: Transaction['place']
   /** Whether the cardholder was there, as Rust weighed the records. */
   presence?: Transaction['presence']
+  /** The moment of purchase, with the offset where it happened. */
+  occurredAt?: string
+  /** What Apple Wallet recorded. */
+  wallet?: Transaction['wallet']
   paymentChannel?: string
   amount: number
   estimatedRealizedGain?: number | null
@@ -165,16 +169,16 @@ export function activityPlace(activity: ActivityItem): {
       primary: place || location!.address!,
       secondary: (place && location?.address) || (method === 'Other' ? '' : method),
     }
-  if (method === 'Online') {
+  if (onlineMethods.has(method)) {
     let host = ''
     try {
       host = activity.website ? new URL(activity.website).hostname.replace(/^www\./, '') : ''
     } catch {
       host = ''
     }
-    return { kind: 'online', primary: 'Online', secondary: host }
+    return { kind: 'online', primary: method, secondary: host }
   }
-  if (method === 'In store') return { kind: 'store', primary: 'In store', secondary: '' }
+  if (storeMethods.has(method)) return { kind: 'store', primary: method, secondary: '' }
   if (method === 'Brokerage') return { kind: 'brokerage', primary: 'Brokerage', secondary: '' }
   return { kind: 'none', primary: '—', secondary: '' }
 }
@@ -184,12 +188,32 @@ export function paymentChannelLabel(channel?: string) {
   return value ? value[0].toUpperCase() + value.slice(1).toLowerCase() : ''
 }
 
+const walletMethods = {
+  tap: 'Tap to pay',
+  app: 'In app',
+  web: 'On the web',
+  card: 'Physical card',
+  online: 'Online',
+} as const
+const onlineMethods = new Set<string>(['Online', walletMethods.app, walletMethods.web])
+const storeMethods = new Set<string>(['In store', walletMethods.tap, walletMethods.card])
+
 export function activityMethod(activity: ActivityItem) {
   if (activity.kind === 'trade' || activity.accountId?.startsWith('snaptrade:')) return 'Brokerage'
+  // Wallet saw how the card was presented, which outranks every reading of the records.
+  if (activity.wallet?.method) return walletMethods[activity.wallet.method]
   // Rust's reading of the records outranks Plaid's channel.
   if (activity.presence === 'remote') return 'Online'
   if (activity.presence === 'inPerson') return 'In store'
   return paymentChannelLabel(activity.paymentChannel)
+}
+
+/** The time of purchase as the clock read where it happened, or nothing when unknown. */
+export function activityTime(activity: Pick<ActivityItem, 'occurredAt'>) {
+  const time = activity.occurredAt && /T(\d{2}):(\d{2})/.exec(activity.occurredAt)
+  if (!time) return ''
+  const hour = Number(time[1])
+  return `${hour % 12 || 12}:${time[2]} ${hour < 12 ? 'AM' : 'PM'}`
 }
 
 export function activityMatchesSearch(activity: ActivityItem, query: string) {
@@ -350,6 +374,8 @@ export function buildActivities(
       location: transaction.location,
       place: transaction.place,
       presence: transaction.presence,
+      occurredAt: transaction.occurredAt,
+      wallet: transaction.wallet,
       paymentChannel: transaction.paymentChannel,
       amount: transaction.amount,
       pending: transaction.pending,
@@ -407,6 +433,7 @@ export function buildActivities(
   return [...transactions, ...trades].toSorted(
     (left, right) =>
       transactionDateKey(right.date).localeCompare(transactionDateKey(left.date)) ||
+      (right.occurredAt ?? '').localeCompare(left.occurredAt ?? '') ||
       right.id.localeCompare(left.id),
   )
 }

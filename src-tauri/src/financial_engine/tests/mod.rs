@@ -71,6 +71,7 @@ fn sync() -> ProviderSync {
         security_history: BTreeMap::new(),
         statements: Vec::new(),
         corporate_actions: Vec::new(),
+        wallet: None,
     }
 }
 

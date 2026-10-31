@@ -10,7 +10,7 @@ use ts_rs::TS;
 use super::{decimal_f64, money, scaled};
 use crate::finance_contract::{
     Account, MarketProjection, Performance, PerformancePoint, Point, Snapshot, StatementPosition,
-    Trade,
+    Trade, Transaction,
 };
 use crate::settings::{FinanceSettings, ManualAccount, ManualEntry};
 use rust_decimal::Decimal;
@@ -32,6 +32,8 @@ const MAX_HISTORY_DAYS: i64 = 366 * 15;
 /// Applies closed and manual accounts to a snapshot as it is read, returning the accounts
 /// that were closed. Net worth and the combined row are summed again from what remains.
 pub fn adjust_snapshot(snapshot: &mut Snapshot, settings: &FinanceSettings) -> Vec<ClosedAccount> {
+    let spending_only = spending_only_account(&snapshot.transactions, snapshot.wallet.as_ref());
+    snapshot.accounts.extend(spending_only);
     let closed = remove_closed(&mut snapshot.accounts, settings);
     let closed_ids = closed
         .iter()
@@ -143,6 +145,8 @@ pub fn adjust_projection(
     snapshot: &Snapshot,
     settings: &FinanceSettings,
 ) {
+    let spending_only = spending_only_account(&snapshot.transactions, snapshot.wallet.as_ref());
+    projection.accounts.extend(spending_only);
     let closed = remove_closed(&mut projection.accounts, settings);
     let closed_ids = closed
         .iter()
@@ -170,6 +174,28 @@ pub fn adjust_projection(
     let (net_worth, incomplete) = totals(&mut projection.accounts);
     projection.net_worth = net_worth;
     projection.net_worth_incomplete = incomplete;
+}
+
+/// The account behind purchases someone else pays for. It lists them and tracks spending, and
+/// having no balance keeps it out of net worth, cash, and debt.
+fn spending_only_account(
+    transactions: &[Transaction],
+    wallet: Option<&crate::finance_contract::WalletSummary>,
+) -> Option<Account> {
+    let transaction = transactions
+        .iter()
+        .find(|transaction| transaction.paid_by_someone_else())?;
+    Some(Account {
+        id: transaction.account_id.clone()?,
+        name: transaction.account.clone(),
+        institution: "Apple".into(),
+        r#type: "credit".into(),
+        value: None,
+        currency: Some("USD".into()),
+        balance_source: Some("spendingOnly".into()),
+        activity_as_of: wallet.map(|wallet| wallet.read_at.clone()),
+        ..Account::default()
+    })
 }
 
 /// Units held and the latest price, by fund.
@@ -410,10 +436,9 @@ fn manual_history(manual: &ManualAccount, today: NaiveDate) -> Vec<PerformancePo
 /// an account without a value left it incomplete.
 fn totals(accounts: &mut [Account]) -> (f64, bool) {
     let rows = accounts.iter().filter(|account| account.id != "all");
-    // A manual account awaiting its first balance has nothing to count yet.
     let incomplete = rows
         .clone()
-        .any(|account| account.value.is_none() && !account.id.starts_with("manual:"));
+        .any(|account| account.value.is_none() && account.counted());
     let net_worth = rows
         .filter_map(|account| account.value.and_then(decimal_f64))
         .sum::<Decimal>();
@@ -773,6 +798,30 @@ mod tests {
             .find(|account| account.id == "manual:new")
             .unwrap();
         assert_eq!(listed.value, None);
+        assert_eq!(snapshot.net_worth, 1_500.0);
+        assert!(!snapshot.net_worth_incomplete);
+    }
+
+    #[test]
+    fn a_spending_only_account_is_listed_and_never_touches_totals() {
+        let mut snapshot = snapshot();
+        snapshot.transactions.push(Transaction {
+            id: "wallet:one".into(),
+            account: "Apple Card".into(),
+            account_id: Some("wallet:apple-card".into()),
+            amount: -48.73,
+            ..Transaction::default()
+        });
+        adjust_snapshot(&mut snapshot, &FinanceSettings::default());
+        let card = snapshot
+            .accounts
+            .iter()
+            .find(|account| account.id == "wallet:apple-card")
+            .unwrap();
+        assert_eq!(card.value, None);
+        assert_eq!(card.name, "Apple Card");
+        assert_eq!(card.balance_source.as_deref(), Some("spendingOnly"));
+        // No balance of its own, and no doubt cast on the balances that are.
         assert_eq!(snapshot.net_worth, 1_500.0);
         assert!(!snapshot.net_worth_incomplete);
     }

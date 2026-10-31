@@ -6,6 +6,7 @@ import {
   activityMatchesSearch,
   activityPlace,
   activityMethod,
+  activityTime,
   linkedAccountIds,
   buildActivities,
   sortActivities,
@@ -292,6 +293,34 @@ const leg = (id: string, accountId: string, account: string, date: string, amoun
     pending: false,
     classification: classification('transfer'),
   })
+
+it('names how Wallet saw a card presented and reads the clock where it happened', () => {
+  const walletActivity = (method: 'tap' | 'app' | 'online'): ActivityItem => ({
+    id: 'spending:wallet:one',
+    kind: 'spending',
+    title: 'Corner Market',
+    category: 'Groceries',
+    detail: '',
+    date: '2025-04-28',
+    amount: -48.73,
+    occurredAt: '2025-04-28T19:30:04-06:00',
+    wallet: { recordId: 'one', method },
+  })
+  expect(activityMethod(walletActivity('tap'))).toBe('Tap to pay')
+  expect(activityPlace(walletActivity('tap'))).toMatchObject({
+    kind: 'store',
+    primary: 'Tap to pay',
+  })
+  expect(activityPlace(walletActivity('app'))).toMatchObject({ kind: 'online', primary: 'In app' })
+  expect(activityPlace(walletActivity('online'))).toMatchObject({
+    kind: 'online',
+    primary: 'Online',
+  })
+  // The time stays as the clock read there, whatever zone this Mac is in.
+  expect(activityTime(walletActivity('tap'))).toBe('7:30 PM')
+  expect(activityTime({ occurredAt: '2026-10-29T00:05:00-07:00' })).toBe('12:05 AM')
+  expect(activityTime({})).toBe('')
+})
 
 it('links each leg of a paired transfer to the account on its other side', () => {
   const [sent, arrived, alone] = buildActivities(

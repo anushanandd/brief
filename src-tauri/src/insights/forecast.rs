@@ -689,6 +689,10 @@ fn recurring_groups(transactions: &[Transaction]) -> Vec<(String, Vec<&Transacti
 /// Whether the account behind a series was read recently enough that a missing payment means
 /// something. A Plaid account never read has no say.
 fn source_current(latest: &Transaction, accounts: &[AccountView], today: NaiveDate) -> bool {
+    // The user doesn't pay this card, so a charge coming up on it is no cash of theirs.
+    if latest.paid_by_someone_else() {
+        return false;
+    }
     let account = latest
         .account_id
         .as_deref()

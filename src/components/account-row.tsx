@@ -12,6 +12,7 @@ export function AccountRow({
   detail,
   valueDetail,
   nested = false,
+  current = false,
 }: {
   account: Account
   displayName: string
@@ -19,6 +20,8 @@ export function AccountRow({
   valueDetail?: ReactNode
   /** Inside a group that already names the type, so the row names the institution instead. */
   nested?: boolean
+  /** The account the page is showing. */
+  current?: boolean
 }) {
   return (
     <Link
@@ -27,6 +30,8 @@ export function AccountRow({
       data-keyboard-open
       to="/accounts"
       search={{ account: account.id }}
+      activeOptions={{ exact: true }}
+      aria-current={current ? 'page' : undefined}
     >
       <AccountMark type={account.type} institution={account.institution} domain={account.domain} />
       <span className="account-row-name">

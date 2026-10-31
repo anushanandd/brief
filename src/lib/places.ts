@@ -33,6 +33,8 @@ export function placeLabel(place: Place | undefined) {
 /** Where the place came from, for the inspector. */
 export function placeSource(place: Place) {
   switch (place.source) {
+    case 'wallet':
+      return 'From Apple Wallet'
     case 'issuer':
       return 'From the card issuer’s records'
     case 'descriptor':

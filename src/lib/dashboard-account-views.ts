@@ -11,7 +11,7 @@ export function accountValueChart(
     | 'accountBalanceHistory'
     | 'updatedAt'
   > &
-    Partial<Pick<FinanceSnapshot, 'netWorthProvisional'>>,
+    Partial<Pick<FinanceSnapshot, 'insights'>>,
   account: Account,
   livePoints: Parameters<typeof buildLiveChartData>[1],
   valuationTime: number,
@@ -19,7 +19,24 @@ export function accountValueChart(
   /** Rust's reading of each chart's change, saved or live. */
   changes: ChartChanges,
   startDate?: string,
+  /** A type of account drawn as one line, from the history Rust summed for it. */
+  group?: { type: string; value: number | null },
 ) {
+  if (group) {
+    const history =
+      group.value == null
+        ? []
+        : (data.insights?.groupHistory?.find(({ type }) => type === group.type)?.points ?? [])
+    return {
+      chartData:
+        group.value == null
+          ? []
+          : buildLiveChartData(history, livePoints, group.value, valuationTime),
+      chartChange: chartRangeChange(changes, `group:${group.type}`, windowSeconds),
+      incomplete: group.value == null,
+      historyIsAvailable: group.value != null && hasValueHistory(history, startDate),
+    }
+  }
   const combined = account.id === 'all' || account.type === 'combined'
   const investment = account.type === 'brokerage' || account.type === 'retirement'
   // An investment account's history is its performance; a manual one, valued by hand or by
@@ -34,17 +51,12 @@ export function accountValueChart(
             (investment ? data.brokeragePerformance.find(ofAccount) : undefined) ??
             data.accountBalanceHistory.find(ofAccount)
           )?.points ?? [])
-  const chartValue =
-    combined && data.netWorthProvisional ? (history.at(-1)?.value ?? account.value) : account.value
+  // A provisional net worth still draws its live line: Rust values it from the holdings at
+  // live prices, as the investment charts are, and leaves the line out when it can't.
   const chartData =
     account.value == null
       ? []
-      : buildLiveChartData(
-          history,
-          combined && data.netWorthProvisional ? [] : livePoints,
-          chartValue ?? account.value,
-          valuationTime,
-        )
+      : buildLiveChartData(history, livePoints, account.value, valuationTime)
   const incomplete = accountValueIncomplete(data, combined ? 'all' : account.id)
   return {
     chartData,

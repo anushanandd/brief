@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import { useId, useState } from 'react'
 
 import type { AccountGroup } from '../lib/account-groups'
@@ -132,40 +133,62 @@ export function AccountGroups({
 
 /**
  * Every account under its group, always open: the group's total and change on its own line,
- * then its accounts. For the Accounts page, where the list is the way into each account.
+ * then its accounts. For the Accounts page, where the list is its menu: a group of more than
+ * one account opens that group's view, and each account its own.
  */
 export function AccountGroupList({
   groups,
   changes = [],
   accountNames,
+  selected,
 }: {
   groups: AccountGroup[]
   changes?: PeriodChanges
   accountNames: Record<string, string>
+  /** The account id, or `group:<type>`, the page is showing. */
+  selected?: string
 }) {
   return groups.map((group) => {
-    // A lone account's balance is the group's, so the heading doesn't repeat it.
+    // A lone account's balance is the group's, so the heading doesn't repeat it or open a view
+    // that would only repeat the account's.
     const single = group.accounts.length === 1
+    const heading = (
+      <>
+        <h3>
+          {group.label}
+          {group.outsideTotal ? <small> · Not in total</small> : null}
+        </h3>
+        {single ? null : (
+          <>
+            {group.change == null ? null : <PeriodChange change={group.change} />}
+            <strong className="sensitive-value" data-copy-amount>
+              {formatCurrency(group.value)}
+            </strong>
+          </>
+        )}
+      </>
+    )
     return (
       <section
         key={group.type}
         className="account-group-section"
         aria-label={`${group.label}, ${countOf(group.accounts.length, 'account')}`}
       >
-        <header className="account-group-section-heading">
-          <h3>
-            {group.label}
-            {group.outsideTotal ? <small> · Not in total</small> : null}
-          </h3>
-          {single ? null : (
-            <>
-              {group.change == null ? null : <PeriodChange change={group.change} />}
-              <strong className="sensitive-value" data-copy-amount>
-                {formatCurrency(group.value)}
-              </strong>
-            </>
-          )}
-        </header>
+        {single ? (
+          <header className="account-group-section-heading">{heading}</header>
+        ) : (
+          <Link
+            className="account-group-section-heading account-group-section-link"
+            data-keyboard-row
+            data-keyboard-open
+            to="/accounts"
+            search={{ group: group.type }}
+            activeOptions={{ exact: true }}
+            aria-current={selected === `group:${group.type}` ? 'page' : undefined}
+          >
+            {heading}
+          </Link>
+        )}
         {group.accounts.map((account) => {
           const change = changes.find(({ accountId }) => accountId === account.id)?.change
           return (
@@ -176,14 +199,17 @@ export function AccountGroupList({
               detail={
                 account.value == null && account.id.startsWith('manual:')
                   ? 'No balance yet; import a statement or enter one'
-                  : account.balanceSource === 'unavailable' || account.value == null
-                    ? 'Value unavailable'
-                    : account.balanceSource === 'estimated'
-                      ? 'Estimated'
-                      : undefined
+                  : account.balanceSource === 'spendingOnly'
+                    ? 'Tracks your spending; its balance isn’t yours'
+                    : account.balanceSource === 'unavailable' || account.value == null
+                      ? 'Value unavailable'
+                      : account.balanceSource === 'estimated'
+                        ? 'Estimated'
+                        : undefined
               }
               valueDetail={change == null ? undefined : <PeriodChange change={change} />}
               nested
+              current={selected === account.id}
             />
           )
         })}

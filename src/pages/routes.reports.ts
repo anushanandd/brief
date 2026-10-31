@@ -377,7 +377,10 @@ export function scenarioRollup(
         value: total(
           members
             .filter((account) => account.type === type)
-            .filter(({ id, value }) => value != null || !id.startsWith('manual:'))
+            .filter(
+              ({ id, value }) =>
+                value != null || !(id.startsWith('manual:') || id.startsWith('wallet:')),
+            )
             .map(({ value }) => value),
         ),
       }))

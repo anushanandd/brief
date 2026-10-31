@@ -9,7 +9,7 @@ use crate::{
     finance_contract::Snapshot,
     providers::{self, PlaidData, PlaidRefreshProgress},
     statements::StatementFile,
-    storage::change::{self, Refresh},
+    storage::change::{self, Refresh, WALLET_PROVIDER},
     AppState,
 };
 
@@ -134,10 +134,11 @@ impl From<String> for PrepareFailure {
 
 /// Records a staged refresh as failed and returns its error.
 fn fail_staged(state: &AppState, sync_id: &str, code: &str, error: impl Into<String>) -> String {
+    let error = error.into();
     if let Ok(mut storage) = state.storage() {
-        storage.fail_pending(sync_id, code);
+        storage.fail_pending(sync_id, code, &error);
     }
-    error.into()
+    error
 }
 
 #[tauri::command]
@@ -223,11 +224,11 @@ pub(crate) async fn refresh_finance_snapshot(
         let state = committer.state::<AppState>();
         let mut storage = state.storage()?;
         if tokio::time::Instant::now() >= deadline {
-            storage.fail_pending(&sync_id, "refresh_timeout");
+            storage.fail_pending(&sync_id, "refresh_timeout", TIMED_OUT);
             return Err(TIMED_OUT.into());
         }
         storage.commit(&sync_id, snapshot).map_err(|error| {
-            storage.fail_pending(&sync_id, error.code());
+            storage.fail_pending(&sync_id, error.code(), &error.to_string());
             error.to_string()
         })
     })
@@ -262,7 +263,7 @@ async fn prepare_refresh(
     state.providers.unlock_credentials()?;
     let integrations = state.providers.integration_status()?;
 
-    let (plaid_cache, mut provider_data, revision, previous, plaid_options) = {
+    let (plaid_cache, mut provider_data, revision, previous, plaid_options, read_wallet) = {
         let storage = state.storage()?;
         let settings = &storage.data.settings;
         (
@@ -276,6 +277,7 @@ async fn prepare_refresh(
                 investment_transactions: settings.plaid_investment_transactions,
                 recurring: settings.plaid_recurring,
             },
+            settings.apple_wallet,
         )
     };
     let had_accounts = |prefix: &str| {
@@ -481,6 +483,21 @@ async fn prepare_refresh(
         provider_data.corporate_actions = actions;
         provider_data.corporate_actions_refreshed_at = Some(now.to_rfc3339());
     }
+    if read_wallet {
+        let started = Instant::now();
+        report_refresh_task(app, "wallet", "Apple Wallet", "Checking", "active");
+        let read = tauri::async_runtime::spawn_blocking(move || providers::wallet::read(now))
+            .await
+            .map_err(|_| "Could not read Wallet".to_string())
+            .and_then(|read| read);
+        record_wallet_read(&mut provider_data, read, now, &mut warnings);
+        let failed = provider_data
+            .sync_status
+            .get(WALLET_PROVIDER)
+            .is_some_and(|status| status.error.is_some());
+        let notices = (!failed).then_some(&[][..]);
+        report_provider_outcome(app, "wallet", "Apple Wallet", started, notices);
+    }
 
     let committed_at = Utc::now();
     let refresh = Refresh {
@@ -542,6 +559,33 @@ async fn bounded_fetch<T>(
 /// What a bounded fetch returned, recording its warning when it failed.
 fn fetched<T>(result: Option<Result<T, String>>, warnings: &mut Vec<String>) -> Option<T> {
     result?.map_err(|warning| warnings.push(warning)).ok()
+}
+
+/// Saves what Wallet held over what was saved, or keeps the saved records with a warning.
+fn record_wallet_read(
+    provider_data: &mut providers::ProviderDataCache,
+    read: Result<providers::wallet::WalletData, String>,
+    now: DateTime<Utc>,
+    warnings: &mut Vec<String>,
+) {
+    let status = provider_data
+        .sync_status
+        .entry(WALLET_PROVIDER.into())
+        .or_default();
+    match read {
+        Ok(read) => {
+            status.error = None;
+            status.updated_at = Some(now.to_rfc3339());
+            provider_data.wallet = Some(providers::wallet::merged(
+                provider_data.wallet.as_ref(),
+                read,
+            ));
+        }
+        Err(error) => {
+            warnings.push(format!("Apple Wallet: {error}"));
+            status.error = Some(error);
+        }
+    }
 }
 
 /// Which SnapTrade histories this refresh asked for again.
