@@ -607,12 +607,6 @@
   white-space: nowrap;
   font-size: var(--type-body);
 }
-.financial-activity-amount > small {
-  display: block;
-  color: var(--text-tertiary);
-  font-size: var(--type-meta);
-  line-height: 1.3;
-}
 .activity-date-group > h3 {
   margin: 0;
   padding: 8px 0;

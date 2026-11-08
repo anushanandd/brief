@@ -1,23 +1,18 @@
 import { Link } from '@tanstack/react-router'
 
-import { analyticsNavigation, settingsNavigation } from '../lib/navigation'
+import { settingsNavigation } from '../lib/navigation'
 import type { useOrderedNavigation } from '../lib/navigation-preferences'
-import { ChevronDown } from './icons'
 
-/** The pages, the reports disclosure, and Settings. Links carry their command ids. */
+/** The pages and Settings. Links carry their command ids. */
 export function Sidebar({
   pages,
   reportHome,
-  reportsOpen,
-  onToggleReports,
   settingsOpen,
   onOpenSettings,
 }: {
   pages: ReturnType<typeof useOrderedNavigation>
   /** The page a report belongs to, highlighted while the report is open. */
   reportHome: string | undefined
-  reportsOpen: boolean
-  onToggleReports: () => void
   settingsOpen: boolean
   onOpenSettings: () => void
 }) {
@@ -50,42 +45,6 @@ export function Sidebar({
                   </Link>
                 </li>
               ))}
-            </ul>
-          </section>
-
-          <section className="sidebar-group">
-            <h2 className="sidebar-group-label">
-              <button
-                type="button"
-                className="sidebar-group-toggle"
-                aria-expanded={reportsOpen}
-                aria-controls="sidebar-analytics-menu"
-                data-command="navigation.reports.toggle"
-                onClick={onToggleReports}
-              >
-                Reports
-                <ChevronDown size={12} aria-hidden="true" />
-              </button>
-            </h2>
-            <ul className="sidebar-menu" id="sidebar-analytics-menu" hidden={!reportsOpen}>
-              {analyticsNavigation.map((chart) => {
-                const Icon = chart.icon
-                return (
-                  <li className="sidebar-menu-item" key={chart.search.chart}>
-                    <Link
-                      to={chart.to}
-                      search={chart.search}
-                      className="sidebar-menu-button"
-                      data-command={`navigation.report.${chart.search.chart}`}
-                      // One highlight: the report's destination above carries it.
-                      activeProps={{}}
-                    >
-                      <Icon size={16} aria-hidden="true" />
-                      <span>{chart.label}</span>
-                    </Link>
-                  </li>
-                )
-              })}
             </ul>
           </section>
         </nav>

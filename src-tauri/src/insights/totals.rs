@@ -4,8 +4,8 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use super::rollup::{self, Rollup};
-use crate::finance_contract::{Account, Performance, Point, Snapshot};
-use crate::numeric::{from_minor, minor_units};
+use crate::finance_contract::{Account, Performance, PerformancePoint, Point, Snapshot};
+use crate::numeric::{from_minor, minor_units, round2};
 use crate::settings::FinanceSettings;
 use serde::Serialize;
 use ts_rs::TS;
@@ -133,6 +133,100 @@ fn group_points(snapshot: &Snapshot, accounts: &[&Account]) -> Vec<Point> {
         .collect()
 }
 
+/// One day of the total Home draws, split into cash, securities, and the rest, with how far it
+/// stood below its best so far.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct NetWorthPart {
+    pub date: String,
+    /// Bank balances, and the cash in brokerages whose history records it.
+    pub cash: f64,
+    /// Securities in those brokerages.
+    pub invested: f64,
+    /// The rest of the total: accounts whose history gives only a total (a manual account, a
+    /// brokerage known by the provider's totals), debts, and money between accounts.
+    pub other: f64,
+    /// The highest the total had reached by this day.
+    pub high_water: f64,
+    /// How far below that it stood, in percent (zero at a new high); none while the high isn't
+    /// above zero.
+    pub drawdown_pct: Option<f64>,
+}
+
+/// Each day of `history`, the total Home draws, split as `NetWorthPart` says. Cash accounts and
+/// investment accounts count from their first point and carry their last across days they
+/// skip, as the total counts them, and the rest is what they leave of the total. Drawdown is
+/// the plain fall from the total's high: spending and withdrawals lower net worth, so they
+/// count. Empty without a history.
+pub fn net_worth_parts(snapshot: &Snapshot, history: &[Point]) -> Vec<NetWorthPart> {
+    type Days<'a> = BTreeMap<&'a str, i64>;
+    let mut cash: Vec<Days> = Vec::new();
+    let mut invested: Vec<Days> = Vec::new();
+    for account in snapshot
+        .accounts
+        .iter()
+        .filter(|account| account.id != "all" && account.counted())
+    {
+        let of_account = |history: &&Performance| history.account_id == account.id;
+        match account.r#type.as_str() {
+            "cash" => {
+                if let Some(history) = snapshot.account_balance_history.iter().find(of_account) {
+                    cash.push(days(history, |point| Some(point.value)));
+                }
+            }
+            "brokerage" | "retirement" => {
+                if let Some(history) = snapshot.brokerage_performance.iter().find(of_account) {
+                    cash.push(days(history, |point| point.cash));
+                    invested.push(days(history, |point| point.invested));
+                }
+            }
+            _ => {}
+        }
+    }
+    let on = |histories: &[Days], date: &str| -> i64 {
+        histories
+            .iter()
+            .filter_map(|history| history.range(..=date).next_back())
+            .map(|(_, value)| *value)
+            .sum()
+    };
+    let mut high = i64::MIN;
+    history
+        .iter()
+        .filter(|point| point.value.is_finite())
+        .map(|point| {
+            let total = minor_units(point.value);
+            let (held, securities) = (on(&cash, &point.date), on(&invested, &point.date));
+            high = high.max(total);
+            NetWorthPart {
+                date: point.date.clone(),
+                cash: from_minor(held),
+                invested: from_minor(securities),
+                other: from_minor(total - held - securities),
+                high_water: from_minor(high),
+                drawdown_pct: (high > 0)
+                    .then(|| round2((total - high) as f64 / high as f64 * 100.0)),
+            }
+        })
+        .collect()
+}
+
+/// A history's figure by date, in cents, for the days it has one.
+fn days<'a>(
+    history: &'a Performance,
+    figure: impl Fn(&PerformancePoint) -> Option<f64>,
+) -> BTreeMap<&'a str, i64> {
+    history
+        .points
+        .iter()
+        .filter(|point| point.date.len() == 10)
+        .filter_map(|point| {
+            let value = figure(point).filter(|value| value.is_finite())?;
+            Some((point.date.as_str(), minor_units(value)))
+        })
+        .collect()
+}
+
 /// The total without the spending cards, and net worth history less their balances.
 pub fn accounts_total(snapshot: &Snapshot, cards: &[&Account]) -> Option<AccountsTotal> {
     // A spending-only card has no balance to take out.
@@ -223,6 +317,73 @@ mod tests {
             "id": id, "name": id, "institution": "Bank", "type": kind, "value": value
         }))
         .unwrap()
+    }
+
+    #[test]
+    fn net_worth_splits_into_cash_securities_and_the_rest_with_its_drawdown() {
+        let accounts = [
+            account("checking", "cash", 300.0),
+            account("brokerage", "brokerage", 1_000.0),
+            account("plan", "retirement", 500.0),
+        ];
+        let performance = |id: &str, points: serde_json::Value| {
+            json!({ "accountId": id, "name": id, "institution": "Bank", "currentValue": 0,
+                "points": points })
+        };
+        let snapshot = snapshot(
+            &accounts,
+            json!({
+                "accountBalanceHistory": [performance("checking", json!([
+                    { "date": "2026-09-01", "value": 400, "netDeposits": null, "sp500": null },
+                    { "date": "2026-09-03", "value": 300, "netDeposits": null, "sp500": null },
+                ]))],
+                // The brokerage knows its cash; the plan has only totals, so it is the rest.
+                "brokeragePerformance": [
+                    performance("brokerage", json!([
+                        { "date": "2026-09-01", "value": 1_100, "netDeposits": 1_000,
+                          "sp500": null, "cash": 100, "invested": 1_000 },
+                        { "date": "2026-09-02", "value": 900, "netDeposits": 1_000,
+                          "sp500": null, "cash": 100, "invested": 800 },
+                        { "date": "2026-09-03", "value": 1_000, "netDeposits": 1_000,
+                          "sp500": null, "cash": 100, "invested": 900 },
+                    ])),
+                    performance("plan", json!([
+                        { "date": "2026-09-01", "value": 500, "netDeposits": null, "sp500": null },
+                    ])),
+                ],
+            }),
+        );
+        let history = [
+            ("2026-09-01", 2_000.0),
+            ("2026-09-02", 1_800.0),
+            ("2026-09-03", 1_800.0),
+        ]
+        .map(|(date, value)| Point {
+            date: date.into(),
+            value,
+        });
+        let parts = net_worth_parts(&snapshot, &history)
+            .into_iter()
+            .map(|part| {
+                (
+                    part.cash,
+                    part.invested,
+                    part.other,
+                    part.high_water,
+                    part.drawdown_pct,
+                )
+            })
+            .collect::<Vec<_>>();
+        assert_eq!(
+            parts,
+            [
+                (500.0, 1_000.0, 500.0, 2_000.0, Some(0.0)),
+                // The checking balance carries across the day its history skips.
+                (500.0, 800.0, 500.0, 2_000.0, Some(-10.0)),
+                (400.0, 900.0, 500.0, 2_000.0, Some(-10.0)),
+            ]
+        );
+        assert!(net_worth_parts(&snapshot, &[]).is_empty());
     }
 
     #[test]

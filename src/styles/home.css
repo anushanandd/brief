@@ -1,4 +1,4 @@
-/* Today: what needs action and the next two weeks, beside the overview metrics. */
+/* Today: the period's spending and the next two weeks, beside the overview metrics. */
 
 .home-overview-summary .account-summary-metrics {
   padding: 0 0 20px;
@@ -329,23 +329,6 @@
   padding-top: 0;
   border-top: 0;
 }
-/* A need is a whole-row link, quiet until hovered; urgent needs mark their date. */
-.needs-row {
-  color: inherit;
-  transition: background-color var(--duration-quick) var(--ease-out);
-}
-.needs-row:hover {
-  background: var(--hover-wash);
-}
-.needs-row.is-urgent > time {
-  color: var(--negative);
-}
-.needs-list .coming-up-list > li:last-child > .coming-up-row {
-  border-bottom: 0;
-}
-.needs-list .coming-up-copy > small {
-  white-space: normal;
-}
 
 /* Taxes: the estimate beside the 1099 preview, then wash sales beside losses to harvest. */
 .taxes-grid {
@@ -457,11 +440,8 @@
 .taxes-note {
   max-width: 72ch;
 }
-.needs-list .coming-up-copy > strong {
-  white-space: normal;
-}
 
-/* Today's companion: the period's spending, what needs you, what is coming, then recent
+/* Today's companion: the period's spending, what is coming, then recent
    activity, each its own section. */
 .home-companion {
   display: grid;
@@ -507,12 +487,6 @@
   overflow: hidden;
   white-space: normal;
   text-wrap: balance;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-.home-companion .needs-list .coming-up-copy > small {
-  display: -webkit-box;
-  overflow: hidden;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }

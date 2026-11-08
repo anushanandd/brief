@@ -12,6 +12,7 @@
     "format": "oxfmt .",
     "format:check": "oxfmt --check .",
     "check": "pnpm format:check && pnpm lint && pnpm test && pnpm build",
+    "release": "sh scripts/release.sh",
     "tauri": "TAURI_CLI_NO_DEV_SERVER_WAIT=true CARGO_TARGET_AARCH64_APPLE_DARWIN_RUNNER=\"$PWD/scripts/macos-signed-runner.sh\" CARGO_TARGET_X86_64_APPLE_DARWIN_RUNNER=\"$PWD/scripts/macos-signed-runner.sh\" tauri"
   },
   "dependencies": {
@@ -26,10 +27,8 @@
     "@tauri-apps/plugin-opener": "^2.5.5",
     "cmdk": "^1.1.1",
     "liveline": "^0.0.7",
-    "next-themes": "^0.4.6",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "recharts": "3.10.1",
     "sonner": "^2.0.8",
     "zod": "^4.5.4"
   },

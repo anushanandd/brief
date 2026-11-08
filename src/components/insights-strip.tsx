@@ -25,31 +25,37 @@ export function InsightsStrip({
   data,
   current,
   today,
+  stepping,
 }: {
   data: FinanceSnapshot
   current: InsightsView
   today: string
+  /** Off while one person is open, whose page steps through people instead. */
+  stepping?: boolean
 }) {
   const items = useMemo<SelectorStripItem[]>(() => {
     const insights = data.insights
     const year = Number(today.slice(0, 4))
     const figures: Record<
       InsightsView,
-      Pick<SelectorStripItem, 'value' | 'unavailable' | 'change' | 'favorable'>
+      Pick<SelectorStripItem, 'value' | 'unavailable' | 'change' | 'favorable' | 'detail'>
     > = {
       trips: {
         value: tripYearTotals(insights?.trips, year).spent,
         unavailable: !insights,
+        detail: 'this year',
       },
       // What went to people through payment apps, all time.
       people: {
         value: insights?.people.sent ?? 0,
         unavailable: !insights,
+        detail: 'sent',
       },
       // Monthly spending since the chapter you're in began.
       chapters: {
         value: nowSpending(insights),
         unavailable: nowSpending(insights) == null,
+        detail: 'a month',
       },
       // What rules recovered: money from elsewhere filed as repaying card fees.
       rules: {
@@ -58,6 +64,7 @@ export function InsightsStrip({
           0,
         ),
         unavailable: !insights,
+        detail: 'recovered',
       },
     }
     return insightsViews.map(({ id, label, icon: Icon, color }) => ({
@@ -74,5 +81,5 @@ export function InsightsStrip({
       ...figures[id],
     }))
   }, [current, data, today])
-  return <SelectorStrip label="Insights" items={items} />
+  return <SelectorStrip label="Insights" items={items} stepping={stepping} />
 }

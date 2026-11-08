@@ -1,6 +1,7 @@
 import { Outlet, useLocation } from '@tanstack/react-router'
 import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 
+import { useAccountJumpActions } from '../hooks/use-account-jump-actions'
 import { useFinance } from '../hooks/use-finance'
 import { useFocusRegion } from '../hooks/use-focus-region'
 import { useGlobalActions } from '../hooks/use-global-actions'
@@ -12,7 +13,7 @@ import { useRegisterActions, useRegisteredActions } from '../lib/action-system'
 import { analyticsChart, analyticsCharts, analyticsGroup } from '../lib/analytics'
 import { isTauri } from '../lib/api'
 import { setAmountsHidden } from '../lib/format'
-import { reportsGroupOpen, useOrderedNavigation } from '../lib/navigation-preferences'
+import { useOrderedNavigation } from '../lib/navigation-preferences'
 import { getPrivacyPreferences, usePrivacyPreferences } from '../lib/privacy-preferences'
 import { useSettingsDialog } from '../lib/settings-dialog'
 import { CommandMenu } from './command-menu'
@@ -20,7 +21,7 @@ import { FocusHints } from './focus-hints'
 import { KeyGuide } from './key-guide'
 import { ObjectDetailsProvider } from './object-details'
 import { RecoveryNotice } from './recovery-notice'
-import { SettingsView } from './settings-dialog'
+import { SettingsDialog } from './settings-dialog'
 import { ShortcutsDialog } from './shortcuts-dialog'
 import { Sidebar } from './sidebar'
 
@@ -63,8 +64,6 @@ function Shell() {
   // Formatters read this as they run, so it's set before anything below renders; the keyed
   // page then renders again with every amount masked or shown.
   setAmountsHidden(valuesHidden)
-  const reportsOpen = reportsGroupOpen.use()
-  const toggleReports = useCallback(() => reportsGroupOpen.save(!reportsGroupOpen.get()), [])
   useAutoRefreshFinance(
     finance.data?.updatedAt,
     isTauri() &&
@@ -91,9 +90,9 @@ function Shell() {
     openFocusHints: useCallback(() => setFocusHintsOpen(true), []),
     valuesHidden,
     toggleValues: useCallback(() => setValuesHidden((hidden) => !hidden), []),
-    toggleReports,
   })
   useRegisterActions(globalActions)
+  useAccountJumpActions()
   const menuActions = useMemo(
     () => [
       ...new Map(
@@ -138,8 +137,6 @@ function Shell() {
         <Sidebar
           pages={pages}
           reportHome={reportHome}
-          reportsOpen={reportsOpen}
-          onToggleReports={toggleReports}
           settingsOpen={settings.open}
           onOpenSettings={settings.show}
         />
@@ -156,15 +153,13 @@ function Shell() {
               {finance.annotationWarning}
             </p>
           ) : null}
-          {/* Settings takes the page's place and stays usable when the snapshot can't load. */}
           <Fragment key={valuesHidden ? 'amounts-hidden' : 'amounts-shown'}>
-            {settings.open ? (
-              <SettingsView />
-            ) : finance.data?.recovery && !finance.data.recovery.canRestore ? null : (
-              <Outlet />
-            )}
+            {finance.data?.recovery && !finance.data.recovery.canRestore ? null : <Outlet />}
           </Fragment>
         </main>
+
+        {/* Settings opens over any page and stays usable when the snapshot can't load. */}
+        <SettingsDialog valuesHidden={valuesHidden} />
 
         {commandOpen ? (
           <CommandMenu
@@ -178,7 +173,6 @@ function Shell() {
           <KeyGuide
             actions={keyboard.actions}
             prefix={keyboard.keySequence}
-            count={keyboard.keyCount}
             onRun={keyboard.executeAction}
             onClose={keyboard.closeKeyState}
             onShowAll={() => {

@@ -77,9 +77,11 @@ impl Totals {
 }
 
 /// Percent change with two decimals, from whole cents. Measured against the earlier figure's
-/// size, so a net that rises from a loss reads as an increase.
+/// size, so a net that rises from a loss reads as an increase. A change more than ten times the
+/// earlier figure says only that it was small (+5,040%), so it has no percent.
 fn change_pct(current: i64, previous: i64) -> Option<f64> {
-    (previous != 0)
+    let change = (current - previous).abs();
+    (previous != 0 && change <= previous.abs() * 10)
         .then(|| ((current - previous) as f64 * 10_000.0 / previous.abs() as f64).round() / 100.0)
 }
 
@@ -239,6 +241,16 @@ mod tests {
     }
 
     #[test]
+    fn a_percent_needs_a_base_at_least_a_tenth_of_the_change() {
+        assert_eq!(change_pct(150_00, 100_00), Some(50.0));
+        // From a loss to a gain reads as an increase against the loss's size.
+        assert_eq!(change_pct(50_00, -100_00), Some(150.0));
+        assert_eq!(change_pct(1_100_00, 100_00), Some(1_000.0));
+        assert_eq!(change_pct(1_100_01, 100_00), None);
+        assert_eq!(change_pct(5_00, 0), None);
+    }
+
+    #[test]
     fn each_period_is_compared_with_the_one_of_the_same_length_before_it() {
         let transactions = vec![
             txn("old", "2026-05-02", "Dining", -10.0, Kind::Expense),
@@ -268,11 +280,11 @@ mod tests {
         assert_eq!(week.spending, 1_540.0);
         assert_eq!(week.income, 4_000.0);
         assert_eq!(week.net, 2_448.0);
-        // The week before spent $40 with no income: spending rose 3,750%, income has no base,
-        // and net rose from a $40 loss to a $2,448 gain, 6,220% of the loss's size.
-        assert_eq!(week.spending_change_pct, Some(3_750.0));
+        // The week before spent $40 with no income: spending rose 38-fold and net 62-fold, more
+        // than tenfold, and income has no base, so none has a percent.
+        assert_eq!(week.spending_change_pct, None);
         assert_eq!(week.income_change_pct, None);
-        assert_eq!(week.net_change_pct, Some(6_220.0));
+        assert_eq!(week.net_change_pct, None);
         assert_eq!(
             week.categories,
             vec![

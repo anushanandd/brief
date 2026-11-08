@@ -81,15 +81,24 @@ pub(super) fn investment_performance(
                 )
             })
             .flatten();
-        let (history, source) = match rebuilt {
-            Some(history) => (history, "estimated"),
-            None => (reported, "provider-estimated"),
+        // Only a rebuilt history knows each day's cash; the provider's gives a total.
+        let (history, cash, source) = match rebuilt {
+            Some(days) => (
+                days.iter()
+                    .map(|(date, value, _)| (date.clone(), *value))
+                    .collect(),
+                days.into_iter()
+                    .map(|(date, _, cash)| (date, cash))
+                    .collect(),
+                "estimated",
+            ),
+            None => (reported, BTreeMap::new(), "provider-estimated"),
         };
         let flows = external_flows(activities, &close);
         let comparison_flows = (sync.snaptrade.activity_complete
             && (source == "estimated" || sync.snaptrade.history_complete))
             .then_some(&flows);
-        individual_performance.push(performance_record(
+        let mut record = performance_record(
             SeriesAccount {
                 id: account_id.clone(),
                 name: text(
@@ -104,7 +113,9 @@ pub(super) fn investment_performance(
             source,
             comparison_flows,
             benchmark,
-        ));
+        );
+        split_cash(&mut record, |date| cash.get(date).copied());
+        individual_performance.push(record);
         brokerage_flows.insert(account_id, flows);
     }
     for account in included {
@@ -116,7 +127,8 @@ pub(super) fn investment_performance(
         };
         let (history, flows) = stock_plan_history(account, sync, parsed, warnings);
         let comparison_flows = (!history.is_empty()).then_some(&flows);
-        individual_performance.push(performance_record(
+        let held = !history.is_empty();
+        let mut record = performance_record(
             SeriesAccount {
                 id: format!("plaid:{}", account.account_id),
                 name: text(account.name.as_deref(), "Stock Plan"),
@@ -128,7 +140,12 @@ pub(super) fn investment_performance(
             "estimated",
             comparison_flows,
             benchmark,
-        ));
+        );
+        // The history exists only when every holding is a priced security, so none is cash.
+        if held {
+            split_cash(&mut record, |_| Some(Decimal::ZERO));
+        }
+        individual_performance.push(record);
     }
     individual_performance.sort_by(|left, right| left.account_id.cmp(&right.account_id));
     Performances {
@@ -142,7 +159,8 @@ pub(super) fn investment_performance(
 /// held at that day's close. Before the first recorded activity nothing changed, so it reaches
 /// back to `provider_start` while the account held anything and closes price it. None when a
 /// day since that activity holds fewer than no shares, or shares without a close, so records
-/// that don't explain the account leave it to the provider's history.
+/// that don't explain the account leave it to the provider's history. Each day carries the
+/// cash it held.
 fn traded_history(
     valuation: SnapValuation,
     positions: &[SnapPosition],
@@ -151,7 +169,7 @@ fn traded_history(
     close: &impl Fn(&str, &str) -> Option<Decimal>,
     provider_start: Option<&str>,
     today: &str,
-) -> Option<Vec<(String, Decimal)>> {
+) -> Option<Vec<(String, Decimal, Decimal)>> {
     let tolerance = Decimal::new(5, 4);
     let mut cash = valuation.cash;
     let mut units = BTreeMap::<String, Decimal>::new();
@@ -228,7 +246,7 @@ fn traded_history(
             }
         }
         match value {
-            Some(value) => points.push((date, rounded(value))),
+            Some(value) => points.push((date, rounded(value), rounded(cash))),
             None if unrecorded => break,
             None => return None,
         }

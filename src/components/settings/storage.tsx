@@ -139,28 +139,22 @@ function TableRows({ file, table, onClose }: { file: string; table: string; onCl
           <p className="settings-copy">
             {total ? `Rows ${offset + 1}–${Math.min(offset + PAGE, total)} of ${total}` : 'No rows'}
           </p>
-          <div className="stored-rows-scroll">
-            <table>
-              <thead>
-                <tr>
-                  {rows.data.columns.map((column) => (
-                    <th key={column}>{column}</th>
+          {/* One record per row, its columns wrapping beside their names, so a wide table
+              never needs a sideways scroll. */}
+          <ol className="stored-records">
+            {rows.data.rows.map((row, index) => (
+              <li key={offset + index}>
+                <dl>
+                  {row.map((cell, column) => (
+                    <div key={column}>
+                      <dt>{rows.data.columns[column]}</dt>
+                      <dd className={cell === null ? 'raw-null' : undefined}>{cell ?? 'null'}</dd>
+                    </div>
                   ))}
-                </tr>
-              </thead>
-              <tbody>
-                {rows.data.rows.map((row, index) => (
-                  <tr key={offset + index}>
-                    {row.map((cell, column) => (
-                      <td key={column} className={cell === null ? 'raw-null' : undefined}>
-                        {cell ?? 'null'}
-                      </td>
-                    ))}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </dl>
+              </li>
+            ))}
+          </ol>
         </>
       ) : (
         <p className="settings-copy">Loading…</p>

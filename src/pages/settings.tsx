@@ -142,21 +142,32 @@ const sectionViews: Record<SettingsSectionId, () => ReactNode> = {
   advanced: AdvancedSection,
 }
 
-/**
- * The section a link opens: the section itself, or the one holding the row. A row the index
- * doesn't list opens every section, so the link still finds it.
- */
-export function settingsSectionFor(id: string | undefined): SettingsSectionId | 'all' {
-  if (!id) return settingsSections[0].id
+/** The section holding a link's target: the section itself, or the one holding the row. */
+export function settingsSectionFor(id: string | undefined): SettingsSectionId {
   const section = settingsSections.find(
     (candidate) => candidate.id === id || candidate.entries.some((entry) => entry.id === id),
   )
-  return section?.id ?? 'all'
+  return section?.id ?? settingsSections[0].id
 }
 
 /**
- * The Settings page: section list and search on the left, one section on the right. Only the
- * open section renders, so Settings opens at once; a search shows matches from every section.
+ * The section being read: the last one whose top has reached the upper part of the scroller,
+ * or the last section once the scroller can't go further.
+ */
+export function sectionInView(
+  tops: readonly { id: SettingsSectionId; top: number }[],
+  scroller: { scrollTop: number; clientHeight: number; scrollHeight: number },
+): SettingsSectionId | undefined {
+  if (!tops.length) return undefined
+  if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1)
+    return tops.at(-1)!.id
+  const line = scroller.scrollTop + Math.min(120, scroller.clientHeight / 3)
+  return tops.findLast(({ top }) => top <= line)?.id ?? tops[0].id
+}
+
+/**
+ * Settings' panel: section list and search on the left, and every section in one scroll on the
+ * right. The rail jumps to a section and marks the one being read; a search keeps only matches.
  */
 export function SettingsPanel({
   target,
@@ -175,24 +186,45 @@ export function SettingsPanel({
   const searchRef = useRef(search)
   searchRef.current = search
   const inputRef = useRef<HTMLInputElement>(null)
+  const contentRef = useRef<HTMLDivElement>(null)
   const targetId = target ? settingsHashForPath(`/settings#${target}`) : undefined
-  const current = settingsSectionFor(targetId)
-
-  const scrollToTarget = useCallback((id: string) => {
-    const element = document.getElementById(id)
-    if (!element) return
-    element.scrollIntoView({ block: 'start', behavior: reducedMotion() ? 'auto' : 'smooth' })
-    element.focus({ preventScroll: true })
-    if (!element.matches('[data-settings-item]')) return
-    element.dataset.flash = ''
-    window.setTimeout(() => delete element.dataset.flash, 1600)
+  const [current, setCurrent] = useState(() => settingsSectionFor(targetId))
+  // The first jump lands at once; scrolling down through every section to reach it would only
+  // delay what the link asked for.
+  const opened = useRef(false)
+  // A jump marks its section at once and holds it until the scroll settles, so passing over
+  // other sections, or stopping short at the bottom, doesn't move the mark.
+  const held = useRef(false)
+  const release = useRef(0)
+  const holdUntilSettled = useCallback(() => {
+    held.current = true
+    window.clearTimeout(release.current)
+    release.current = window.setTimeout(() => (held.current = false), 150)
   }, [])
+
+  const scrollToTarget = useCallback(
+    (id: string) => {
+      const element = document.getElementById(id)
+      if (!element) return
+      const section = element.closest<HTMLElement>('[data-settings-section]')
+      if (section) setCurrent(section.id as SettingsSectionId)
+      holdUntilSettled()
+      const instant = !opened.current || reducedMotion()
+      element.scrollIntoView({ block: 'start', behavior: instant ? 'auto' : 'smooth' })
+      element.focus({ preventScroll: true })
+      if (!element.matches('[data-settings-item]')) return
+      element.dataset.flash = ''
+      window.setTimeout(() => delete element.dataset.flash, 1600)
+    },
+    [holdUntilSettled],
+  )
 
   useEffect(() => {
     const id = targetId
     if (!id) {
       // Opening Settings without a destination starts in search, ready to type.
       inputRef.current?.focus({ preventScroll: true })
+      opened.current = true
       return undefined
     }
     // A deep link always wins over a search that would hide its target.
@@ -200,9 +232,45 @@ export function SettingsPanel({
       searchRef.current && document.getElementById(id)?.closest('[hidden]'),
     )
     if (hiddenBySearch) setQuery('')
-    const timer = window.setTimeout(() => scrollToTarget(id), hiddenBySearch ? 60 : 0)
+    const timer = window.setTimeout(
+      () => {
+        scrollToTarget(id)
+        opened.current = true
+      },
+      hiddenBySearch ? 60 : 0,
+    )
     return () => window.clearTimeout(timer)
   }, [targetId, scrollToTarget])
+
+  // The rail follows the reader: whichever section has reached the top is the current one.
+  useEffect(() => {
+    const scroller = contentRef.current
+    if (!scroller) return undefined
+    let frame = 0
+    const update = () => {
+      frame = 0
+      const origin = scroller.getBoundingClientRect().top - scroller.scrollTop
+      const tops = [
+        ...scroller.querySelectorAll<HTMLElement>('[data-settings-section]:not([hidden])'),
+      ].map((section) => ({
+        id: section.id as SettingsSectionId,
+        top: section.getBoundingClientRect().top - origin,
+      }))
+      const id = sectionInView(tops, scroller)
+      if (id) setCurrent(id)
+    }
+    const schedule = () => {
+      if (held.current) return holdUntilSettled()
+      if (!frame) frame = requestAnimationFrame(update)
+    }
+    scroller.addEventListener('scroll', schedule, { passive: true })
+    schedule()
+    return () => {
+      scroller.removeEventListener('scroll', schedule)
+      cancelAnimationFrame(frame)
+    }
+  }, [search, holdUntilSettled])
+  useEffect(() => () => window.clearTimeout(release.current), [])
 
   const firstResult = search
     ? settingsSections.flatMap(({ entries }) => entries).find(({ id }) => search.entryIds.has(id))
@@ -224,7 +292,17 @@ export function SettingsPanel({
       }}
     >
       <aside className="settings-panel-nav">
-        <h2 id={titleId}>Settings</h2>
+        <header className="settings-panel-header">
+          <h2 id={titleId}>Settings</h2>
+          <Button
+            icon={X}
+            size="icon-compact"
+            variant="ghost"
+            aria-label="Close settings"
+            aria-keyshortcuts="Escape"
+            onClick={onClose}
+          />
+        </header>
         <div className="settings-search">
           <Search size={15} aria-hidden="true" />
           <AutofillField query={query} completion={completion}>
@@ -278,7 +356,7 @@ export function SettingsPanel({
                   <a
                     href={`#settings/${section.id}`}
                     className="settings-rail-link"
-                    aria-current={!search && current === section.id ? 'page' : undefined}
+                    aria-current={current === section.id ? 'location' : undefined}
                     aria-disabled={dimmed || undefined}
                     tabIndex={dimmed ? -1 : undefined}
                     onClick={(event) => {
@@ -299,30 +377,20 @@ export function SettingsPanel({
         </nav>
       </aside>
 
-      <div className="settings-panel-content">
-        <Button
-          icon={X}
-          size="icon"
-          variant="ghost"
-          className="settings-close"
-          aria-label="Close settings"
-          aria-keyshortcuts="Escape"
-          onClick={onClose}
-        />
+      <div className="settings-panel-content" ref={contentRef}>
         {finance.annotationWarning ? (
           <p className="settings-overview-warning" role="status">
             {finance.annotationWarning}
           </p>
         ) : null}
         <SettingsSearchProvider value={search}>
-          {search || target ? null : <TrustSummary onShow={onShow} />}
+          {search ? null : <TrustSummary onShow={onShow} />}
           {search && !search.total ? (
             <EmptyState title={`No settings match “${query.trim()}”`}>
               Try theme, backup, or credentials.
             </EmptyState>
           ) : null}
           {settingsSections.map(({ id }) => {
-            if (!search && current !== 'all' && current !== id) return null
             const Section = sectionViews[id]
             return <Section key={id} />
           })}

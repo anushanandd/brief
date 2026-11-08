@@ -200,7 +200,6 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
           group: 'View',
           scope: 'page',
           bindings: [{ sequence: ['['], label: '[' }],
-          repeatable: true,
           run: () => showMonth(shiftMonth(month, -1)),
         },
         {
@@ -209,7 +208,6 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
           group: 'View',
           scope: 'page',
           bindings: [{ sequence: [']'], label: ']' }],
-          repeatable: true,
           run: () => showMonth(shiftMonth(month, 1)),
         },
         {
@@ -236,7 +234,6 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
           group: 'View',
           scope: 'page' as const,
           bindings: [{ sequence: [key], label }],
-          repeatable: true,
           run: () => select(addDays(day, by)),
         })),
         {
@@ -267,7 +264,8 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
           search: 'calendar calendars list choose show hide google icloud',
           group: 'Here',
           scope: 'page',
-          bindings: [{ sequence: ['c'], label: 'C' }],
+          // C starts an account jump, so this takes ⇧C.
+          bindings: [{ sequence: ['C'], label: '⇧C' }],
           disabled: access === 'unavailable',
           disabledReason: 'Your calendars show in the app',
           run: () => setMenuOpen((open) => !open),
@@ -487,7 +485,7 @@ function CalendarsMenu({
       <Popover.Trigger
         className="button-base button-ghost button-compact calendar-menu-trigger"
         aria-label="Your calendars"
-        aria-keyshortcuts="c"
+        aria-keyshortcuts="Shift+C"
         data-command="calendar.list.toggle"
         disabled={unavailable}
         title={unavailable ? 'Your calendars show in the app.' : undefined}

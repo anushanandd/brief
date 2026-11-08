@@ -156,7 +156,7 @@ export function AccountsLayout({
   )
 }
 
-/** The menu's order, for stepping through it with ⌘← and ⌘→. */
+/** The menu's order, for stepping through it with ⌘↑ and ⌘↓. */
 export function menuOrder(groups: AccountGroup[]): Array<{ group?: string; account?: string }> {
   return [
     {},

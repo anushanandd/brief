@@ -60,7 +60,7 @@ const SPENDING_COLORS: [&str; 6] = [
     "#477d75", "#4f78a8", "#b58a3f", "#7d6da5", "#a45f79", "#79924b",
 ];
 pub(crate) use imported::{provider_activity, reconciles};
-pub(crate) const CALCULATION_VERSION: u32 = 42;
+pub(crate) const CALCULATION_VERSION: u32 = 43;
 
 pub fn project(
     sync: &ProviderSync,
@@ -111,6 +111,7 @@ pub fn project(
         &plaid_transactions,
         calendar_date,
     );
+    wallet.categorize(&mut plaid_transactions);
     let plaid_histories = reconstructed_plaid_histories(
         &parsed.plaid_accounts,
         &plaid_transactions,

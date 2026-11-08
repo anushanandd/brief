@@ -256,9 +256,12 @@
   white-space: normal;
   line-height: 1.4;
 }
-.financial-activity-date time,
-.financial-activity-date small {
+/* The time under a date is secondary, as a street is under its city. */
+.financial-activity-date time {
   color: var(--text-primary);
+}
+.financial-activity-date small {
+  color: var(--text-tertiary);
 }
 
 .financial-activity-meta > strong {

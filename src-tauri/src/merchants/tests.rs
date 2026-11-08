@@ -110,6 +110,36 @@ fn plaid_enrichment_absent_leaves_the_name_alone() {
 }
 
 #[test]
+fn wallets_name_wins_only_when_it_names_another_merchant() {
+    let seen = |merchant: &str, wallet: &str| {
+        let mut transaction = purchase(merchant, "SQ *EXAMPLE", "HIGH", json!({}));
+        transaction.wallet = Some(crate::finance_contract::WalletDetail {
+            merchant: Some(wallet.into()),
+            ..Default::default()
+        });
+        transaction
+    };
+    assert_eq!(
+        corrected_name(&seen("Square", "Example Roasters")).as_deref(),
+        Some("Example Roasters")
+    );
+    assert_eq!(corrected_name(&seen("Chili's Grill & Bar", "Chilis")), None);
+    // A brand billing for its product: Wallet names the brand, Plaid the product.
+    let mut product = seen("Streamly Premium", "Megacorp");
+    let descriptor = "MEGACORP *STREAMLYPREMI G.CO/HELPPAY# CA";
+    product.original_description = Some(descriptor.into());
+    product.description = Some(descriptor.into());
+    assert_eq!(corrected_name(&product), None);
+    // Plaid only cleaned the descriptor, so Wallet's name stands even for the same merchant.
+    let mut cleaned = seen("Sq Example Roas", "Example Roasters");
+    cleaned.counterparties.clear();
+    assert_eq!(
+        corrected_name(&cleaned).as_deref(),
+        Some("Example Roasters")
+    );
+}
+
+#[test]
 fn remote_purchases_are_told_by_brand_words_category_and_code() {
     let subscription = purchase(
         "Example AI",

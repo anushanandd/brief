@@ -52,7 +52,7 @@
 }
 .settings-account-table input {
   width: 100%;
-  min-width: 148px;
+  min-width: 96px;
   height: var(--control-height);
   padding: 0 12px;
   border: var(--hairline) solid var(--control-border);
@@ -61,6 +61,50 @@
   box-shadow: var(--shadow-input);
   color: var(--text-primary);
   font: inherit;
+}
+.settings-account-table input[type='date'] {
+  min-width: 136px;
+}
+.settings-account-table tbody th {
+  min-width: 160px;
+  overflow-wrap: anywhere;
+}
+/* Account details: a table while every column fits, otherwise each account becomes a block of
+   labeled fields that wrap, so no window width hides a column behind a sideways scroll. */
+@container settings (width < 820px) {
+  .settings-account-table,
+  .settings-account-table tbody {
+    display: block;
+  }
+  .settings-account-table thead {
+    display: none;
+  }
+  .settings-account-table tr {
+    display: grid;
+    padding: 16px 0;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    gap: 12px 16px;
+    border-bottom: var(--hairline) solid var(--border-subtle);
+  }
+  .settings-account-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .settings-account-table tbody th,
+  .settings-account-table td {
+    display: grid;
+    height: auto;
+    padding: 0;
+    gap: 6px;
+    border: 0;
+  }
+  .settings-account-table tbody th {
+    grid-column: 1 / -1;
+  }
+  .settings-account-table td::before {
+    color: var(--text-tertiary);
+    font-size: var(--type-meta);
+    content: attr(data-label);
+  }
 }
 .logs-count,
 .source-time-table time {
@@ -130,25 +174,68 @@
   font-size: var(--type-meta);
 }
 .settings-trust-item strong {
-  overflow: hidden;
   color: var(--text-primary);
   font-size: var(--type-body);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .settings-trust-link:hover strong {
   color: var(--accent);
 }
 
-/* Settings: a page in the main pane, addressed by #settings/<section>. The rail opens one
-   section; search shows matches from every section. The rail and the section scroll on their
-   own, so the page itself never does. */
-.settings-page {
-  width: 100%;
-  height: 100dvh;
+/* Settings: a modal over the current page, addressed by #settings/<section>. Every section
+   follows the last in one scroll, the rail jumping between them; search keeps only matches.
+   The modal shrinks with the window, and the rail and the sections scroll on their own. */
+.settings-dialog {
+  width: min(1120px, calc(100vw - 80px));
+  max-width: none;
+  height: min(820px, calc(100dvh - 80px));
+  max-height: none;
+  margin: auto;
   padding: 0;
+  /* Clip, not hidden: the dialog itself must never scroll, even programmatically. */
+  overflow: clip;
+  border: var(--hairline) solid var(--popup-border);
+  border-radius: var(--radius-modal);
+  outline: 0;
+  background: var(--popup-sheen), var(--popup-surface);
+  box-shadow: var(--shadow-modal);
+  color: var(--text-primary);
+  opacity: 1;
+  transform: none;
+  /* The display and top-layer transitions hold the frame while it settles back down. */
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    transform var(--duration-modal-lift) var(--ease-lift),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
 }
-.main-content:has(> .settings-page) {
+.settings-dialog:not([open]) {
+  opacity: 0;
+  transform: var(--modal-enter-from);
+}
+.settings-dialog::backdrop {
+  background: var(--dialog-backdrop);
+  -webkit-backdrop-filter: var(--dialog-backdrop-filter);
+  backdrop-filter: var(--dialog-backdrop-filter);
+  opacity: 1;
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    display var(--duration-modal-lift) allow-discrete,
+    overlay var(--duration-modal-lift) allow-discrete;
+}
+.settings-dialog:not([open])::backdrop {
+  opacity: 0;
+}
+@starting-style {
+  .settings-dialog[open] {
+    opacity: 0;
+    transform: var(--modal-enter-from);
+  }
+  .settings-dialog[open]::backdrop {
+    opacity: 0;
+  }
+}
+:root:has(.settings-dialog[open]) .main-content {
   overflow: hidden;
 }
 .settings-panel {
@@ -161,16 +248,24 @@
 .settings-panel-nav {
   display: flex;
   min-height: 0;
-  /* The top matches every page's, clear of the window's drag region. */
-  padding: 40px 12px 20px;
+  padding: 24px 12px 20px;
   flex-direction: column;
-  gap: 8px;
   overflow-y: auto;
   border-right: var(--hairline) solid var(--border-subtle);
 }
-.settings-panel-nav h2 {
+/* The title and close button share the rail's top row, so the section beside it keeps even
+   gutters and nothing has to clear a floating button. */
+.settings-panel-header {
+  display: flex;
+  min-height: 32px;
+  margin-bottom: 12px;
+  padding-left: 10px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.settings-panel-header h2 {
   margin: 0;
-  padding: 2px 10px 8px;
   font-family: var(--font-editorial);
   font-size: var(--type-page);
   font-weight: 400;
@@ -179,7 +274,7 @@
 .settings-panel-nav ul {
   display: grid;
   gap: 2px;
-  margin: 4px 0 0;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -205,11 +300,11 @@
   background: var(--hover-wash);
   color: var(--text-primary);
 }
-.settings-rail-link[aria-current='page'] {
+.settings-rail-link[aria-current] {
   background: var(--sidebar-accent);
   color: var(--text-primary);
 }
-.settings-rail-link[aria-current='page'] > svg {
+.settings-rail-link[aria-current] > svg {
   color: var(--text-primary);
 }
 .settings-rail-link[aria-disabled='true'] {
@@ -230,24 +325,21 @@
   display: grid;
   min-width: 0;
   min-height: 0;
-  /* The right gutter keeps the close button clear of section actions. */
-  padding: 40px 64px 48px 32px;
+  /* The top matches the rail's, so the section title lines up with "Settings". */
+  padding: 24px 32px 40px;
   align-content: start;
-  gap: 32px;
+  /* Every section follows the last in one scroll; the wider gap marks where each begins. */
+  gap: 48px;
   overflow-y: auto;
   overscroll-behavior: contain;
-}
-.settings-close {
-  position: absolute;
-  top: 32px;
-  right: 12px;
-  z-index: 2;
+  container: settings / inline-size;
 }
 .settings-panel-content > .settings-overview-warning {
   margin: 0;
 }
+/* The items' own padding is pulled into the gutter, so their icons line up with the text. */
 .settings-panel-content > .settings-trust-card {
-  margin: 0 0 0 -12px;
+  margin: -12px -16px -16px;
   padding: 0;
 }
 .settings-panel-content .settings-trust-item strong {
@@ -308,12 +400,16 @@
   font: inherit;
   font-size: var(--type-micro);
 }
+/* Empty until a search runs, so the rail doesn't shift down by a blank line. */
 .settings-search-status {
   min-height: 0;
   margin: 0;
   padding-left: 2px;
   color: var(--text-tertiary);
   font-size: var(--type-meta);
+}
+.settings-search-status:not(:empty) {
+  padding-top: 8px;
 }
 .settings-panel-content > .empty-state {
   min-height: 200px;
@@ -582,20 +678,17 @@
   padding: 6px 0;
   gap: 2px;
 }
+/* Names and details wrap rather than ellipsize, so a narrow window never hides any of them. */
 .settings-list-copy strong {
-  overflow: hidden;
   color: var(--text-primary);
   font-size: var(--type-body);
   font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .settings-list-copy small {
-  overflow: hidden;
   color: var(--text-tertiary);
   font-size: var(--type-meta);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .settings-list-copy-inline {
   display: flex;
@@ -637,7 +730,7 @@
   min-height: 34px;
   padding: 0;
 }
-.settings-block .settings-table-scroll {
+.settings-block .settings-table {
   margin-top: 6px;
 }
 .settings-block .empty-state {

@@ -29,6 +29,7 @@
       }
     ],
     "security": {
+      "dangerousDisableAssetCspModification": ["style-src"],
       "csp": "default-src 'self'; img-src 'self' asset: data: blob: https://img.logo.dev https://plaid-merchant-logos.plaid.com; style-src 'self' 'unsafe-inline'; font-src 'self' data:; frame-src blob:; connect-src ipc: http://ipc.localhost"
     }
   },

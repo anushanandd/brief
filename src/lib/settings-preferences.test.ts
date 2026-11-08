@@ -21,20 +21,20 @@ beforeEach(() => {
 })
 
 it('exports and imports only bounded known preferences', () => {
-  localStorage.setItem('brief:theme', 'dark')
+  localStorage.setItem('brief.defaultGraphWindow', '2592000')
   localStorage.setItem('brief.accountDisplayNames', '{"account":"Primary"}')
   localStorage.setItem('unrelated', 'keep')
   const exported = exportSettingsPreferences()
   // Account settings belong to the finance database and its backups, not preference files.
-  expect(exported.preferences).toEqual({ 'brief:theme': 'dark' })
+  expect(exported.preferences).toEqual({ 'brief.defaultGraphWindow': '2592000' })
 
   const parsed = parseSettingsPreferences({
     ...exported,
     preferences: { ...exported.preferences, unknown: 'ignored' },
   })
-  localStorage.setItem('brief:theme', 'custom')
+  localStorage.setItem('brief.defaultGraphWindow', '604800')
   importSettingsPreferences(parsed)
-  expect(localStorage.getItem('brief:theme')).toBe('dark')
+  expect(localStorage.getItem('brief.defaultGraphWindow')).toBe('2592000')
   expect(localStorage.getItem('unknown')).toBeNull()
   expect(localStorage.getItem('unrelated')).toBe('keep')
 })

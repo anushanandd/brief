@@ -11,10 +11,6 @@ vi.mock('@tanstack/react-router', () => {
   const navigate = vi.fn()
   return { useNavigate: () => navigate, useLocation: () => '/' }
 })
-vi.mock('next-themes', () => {
-  const setTheme = vi.fn()
-  return { useTheme: () => ({ theme: 'custom', setTheme }) }
-})
 vi.mock('./use-finance', () => ({
   useFinance: () => ({ data: undefined, integrationStatus: { plaid: false } }),
 }))
@@ -29,7 +25,7 @@ vi.mock('./use-refresh-finance', () => {
 vi.mock('../lib/navigation-preferences', () => {
   // The real hook memoizes the order; the mock must be as stable.
   const pages: never[] = []
-  return { useOrderedNavigation: () => pages, adjacentPage: () => '/' }
+  return { useOrderedNavigation: () => pages }
 })
 // Like the real hook: a fresh object each render around stable callbacks.
 vi.mock('../lib/settings-dialog', () => {
@@ -46,7 +42,6 @@ const controls = {
   openFocusHints: () => {},
   valuesHidden: false,
   toggleValues: () => {},
-  toggleReports: () => {},
 }
 
 function Probe() {

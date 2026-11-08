@@ -421,10 +421,7 @@ fn manual_history(manual: &ManualAccount, today: NaiveDate) -> Vec<PerformancePo
             points.push(PerformancePoint {
                 date,
                 value,
-                net_deposits: None,
-                sp500: None,
-                market_change: None,
-                market_change_pct: None,
+                ..Default::default()
             });
         }
         day += Duration::days(1);

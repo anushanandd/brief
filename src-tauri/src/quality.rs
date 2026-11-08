@@ -67,6 +67,10 @@ pub enum Basis {
     /// A business in Brief's place data at the issuer's address or in the descriptor's city
     /// matches the name.
     PlaceMatched,
+    /// Apple Wallet recorded it at the purchase.
+    Wallet,
+    /// The card network's merchant code, since Plaid wasn't sure.
+    MerchantCode,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, TS, Eq)]
@@ -117,6 +121,12 @@ fn grade(
     use {Basis::*, Grade::*};
     let statement_only = transaction.id.starts_with("statement:");
     let statement_amount = differs.get(&transaction.id).copied();
+    // Wallet's record of a provider's transaction, at the amount the provider posted.
+    let wallet = transaction
+        .wallet
+        .as_ref()
+        .filter(|_| !transaction.from_wallet());
+    let wallet_amount = wallet.is_some_and(|wallet| wallet.terminal_amount.is_none());
     let amount = if statement_amount.is_some() {
         evidence(Conflict, StatementDiffers)
     } else if matched.contains(&transaction.id) {
@@ -125,6 +135,8 @@ fn grade(
         evidence(Supported, StatementOnly)
     } else if transaction.pending {
         evidence(Weak, Pending)
+    } else if wallet_amount {
+        evidence(Confirmed, Wallet)
     } else {
         evidence(Supported, Provider)
     };
@@ -140,6 +152,8 @@ fn grade(
                 .find(|counterparty| counterparty.r#type.as_deref() == Some("merchant"));
             if transaction.business.is_some() {
                 evidence(Confirmed, PlaceMatched)
+            } else if wallet.is_some_and(|wallet| wallet.merchant.is_some()) {
+                evidence(Confirmed, Wallet)
             } else if transaction.provider_merchant.is_some() {
                 evidence(Supported, ProviderContradicted)
             } else if transaction
@@ -160,6 +174,8 @@ fn grade(
         });
     let category = if transaction.category_source == Some(CategorySource::Manual) {
         evidence(Confirmed, Manual)
+    } else if wallet.is_some_and(|wallet| wallet.categorized) {
+        evidence(Supported, MerchantCode)
     } else if confident(transaction.category_confidence.as_deref()) {
         evidence(Supported, ProviderConfident)
     } else {
@@ -179,6 +195,7 @@ fn grade(
         match (&transaction.place, reported) {
             (None, _) => evidence(Weak, Unreported),
             (Some(_), _) if transaction.business.is_some() => evidence(Confirmed, PlaceMatched),
+            (Some(place), _) if place.source == PlaceSource::Wallet => evidence(Confirmed, Wallet),
             // The issuer's address stands only where the descriptor's city agrees or names none.
             (Some(place), _) if place.source == PlaceSource::Issuer => {
                 let named = transaction

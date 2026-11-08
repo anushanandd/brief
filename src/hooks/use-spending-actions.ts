@@ -12,6 +12,9 @@ export type SpendingBreakdown = 'categories' | 'places'
  * clearing focus, what categories compare against, and whether the breakdown is by place.
  */
 export function useSpendingActions({
+  accounts,
+  account,
+  chooseAccount,
   hasStatements,
   hasOthers,
   owner,
@@ -29,6 +32,11 @@ export function useSpendingActions({
   breakdown,
   setBreakdown,
 }: {
+  /** Every account first, then each account with spending, the saved card leading. */
+  accounts: Array<{ value: string; label: string }>
+  /** The choice in view. */
+  account: string
+  chooseAccount: (account: string) => void
   hasStatements: boolean
   /** A purchase is someone else's, so whose spending counts is a choice. */
   hasOthers: boolean
@@ -52,17 +60,30 @@ export function useSpendingActions({
 }) {
   const actions = useMemo<AppAction[]>(
     () => [
+      // 0 is every account and 1–9 each one, in the order the account menu lists them.
+      ...(accounts.length > 2 ? accounts : []).slice(0, 10).map(({ value, label }, index) => ({
+        id: `spending.account.${value}`,
+        title: `Show spending in ${label === 'All accounts' ? 'all accounts' : label}`,
+        search: 'spending account card cards apple amex all accounts choose switch',
+        group: 'View',
+        scope: 'page' as const,
+        bindings: [{ sequence: [String(index)], label: String(index) }],
+        disabled: account === value,
+        disabledReason: `Already showing ${label}`,
+        run: () => chooseAccount(value),
+      })),
       ...spendingPeriodOptions.map(({ key, label, value }) => ({
         disabled: value === 'statement' && !hasStatements,
         disabledReason:
-          value === 'statement' && !hasStatements ? 'Choose a spending card first' : undefined,
+          value === 'statement' && !hasStatements
+            ? 'Statements belong to the spending card set in Settings'
+            : undefined,
         id: `spending.period.${String(value)}`,
         title: `Show ${label} spending`,
         search: `spending period range ${label}`,
         group: 'View',
         scope: 'page' as const,
         bindings: [{ sequence: [key], label: key.toUpperCase() }],
-        repeatable: true,
         run: () => choosePeriod(value),
       })),
       ...spendingOwnerOptions.map(({ value, label }) => ({
@@ -88,7 +109,6 @@ export function useSpendingActions({
         bindings: [{ sequence: ['f'], label: 'F' }],
         disabled: !hasOthers,
         disabledReason: hasOthers ? undefined : 'No purchase is marked for someone else',
-        repeatable: true,
         run: () => {
           const index = spendingOwnerOptions.findIndex(({ value }) => value === owner)
           setOwner(spendingOwnerOptions[(index + 1) % spendingOwnerOptions.length].value)
@@ -112,7 +132,8 @@ export function useSpendingActions({
         search: 'spending places cities countries where location categories breakdown',
         group: 'View',
         scope: 'page',
-        bindings: [{ sequence: ['b'], label: 'B' }],
+        // B starts an account jump, so this takes ⇧B.
+        bindings: [{ sequence: ['B'], label: '⇧B' }],
         run: () => setBreakdown(breakdown === 'places' ? 'categories' : 'places'),
       },
       {
@@ -160,7 +181,6 @@ export function useSpendingActions({
             : hasEarlier
               ? undefined
               : 'No earlier period in the saved history',
-        repeatable: true,
         run: () => setPeriodOffset((current) => current - 1),
       },
       {
@@ -174,13 +194,15 @@ export function useSpendingActions({
         ],
         disabled: periodOffset === 0,
         disabledReason: periodOffset === 0 ? 'Already showing the latest period' : undefined,
-        repeatable: true,
         run: () => setPeriodOffset((current) => Math.min(0, current + 1)),
       },
     ],
     [
+      account,
+      accounts,
       breakdown,
       canCompareTypical,
+      chooseAccount,
       choosePeriod,
       clearFocus,
       comparison,

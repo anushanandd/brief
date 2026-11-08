@@ -35,16 +35,9 @@ vi.mock('../hooks/use-refresh-finance', () => ({
 }))
 vi.mock('../lib/navigation-preferences', () => ({
   useOrderedNavigation: () => [],
-  adjacentPage: () => '/',
-  reportsGroupOpen: {
-    key: 'brief:sidebar-analytics-open',
-    get: () => false,
-    save: () => {},
-    use: () => false,
-  },
 }))
+vi.mock('../hooks/use-account-jump-actions', () => ({ useAccountJumpActions: () => undefined }))
 vi.mock('../lib/api', () => ({ isTauri: () => false, recoverFinanceState: vi.fn() }))
-vi.mock('next-themes', () => ({ useTheme: () => ({ theme: 'system', setTheme: vi.fn() }) }))
 
 let root: Root
 let client: QueryClient

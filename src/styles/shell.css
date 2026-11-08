@@ -66,68 +66,12 @@ html.activity-viewport .main-content {
   font-weight: 500;
   line-height: 1;
 }
-.sidebar-group-label:has(.sidebar-group-toggle) {
-  padding: 0;
-}
-.sidebar-group-toggle {
-  display: inline-flex;
-  min-height: 28px;
-  padding: 8px 10px 4px;
-  align-items: center;
-  gap: 4px;
-  border: 0;
-  background: transparent;
-  color: inherit;
-  font: inherit;
-  line-height: 1;
-  cursor: pointer;
-  transition: color var(--duration-quick) var(--ease-out);
-}
-.sidebar-group-toggle:hover:not(:disabled) {
-  color: var(--text-secondary);
-}
-.sidebar-group-toggle:disabled {
-  cursor: default;
-}
-.sidebar-group-toggle > svg {
-  width: 12px;
-  height: 12px;
-  opacity: 0;
-  transform: rotate(-90deg);
-  transition:
-    opacity var(--duration-quick) var(--ease-out),
-    transform var(--duration-quick) var(--ease-out);
-}
-.sidebar-group-toggle[aria-expanded='true'] > svg {
-  transform: none;
-}
-.sidebar:hover .sidebar-group-toggle:not(:disabled) > svg,
-.sidebar-group-toggle[aria-expanded='false'] > svg {
-  opacity: 1;
-}
 .sidebar-menu {
   display: grid;
   gap: 2px;
   margin: 0;
   padding: 0;
   list-style: none;
-}
-.sidebar-menu[hidden] {
-  display: none;
-}
-/* The Reports group fades with its chevron instead of snapping while the chevron turns. */
-.sidebar-group-label:has(> .sidebar-group-toggle) + .sidebar-menu {
-  transition:
-    opacity var(--duration-quick) var(--ease-out),
-    display var(--duration-quick) allow-discrete;
-}
-.sidebar-group-label:has(> .sidebar-group-toggle) + .sidebar-menu[hidden] {
-  opacity: 0;
-}
-@starting-style {
-  .sidebar-group-label:has(> .sidebar-group-toggle) + .sidebar-menu:not([hidden]) {
-    opacity: 0;
-  }
 }
 .sidebar-menu-item {
   min-width: 0;
@@ -225,13 +169,6 @@ kbd {
   font-size: var(--type-page);
   font-weight: 400;
   line-height: 1.5;
-}
-:root[data-theme='dark'] .brand-name,
-:root[data-theme='dark'] .page-header h1 {
-  background: var(--brand-gradient);
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
 }
 .page-route {
   display: flex;

@@ -347,6 +347,7 @@ pub(super) fn performance_record(
                     .then(|| money(benchmark_value)),
                 market_change: market_change.map(money),
                 market_change_pct: market_change_pct.map(|percent| scaled(percent, 4)),
+                ..Default::default()
             }
         })
         .collect::<Vec<_>>();
@@ -366,6 +367,18 @@ pub(super) fn performance_record(
         history_start,
         performance_method: Some(performance_method.into()),
         points: projected_points,
+    }
+}
+
+/// Splits each point into the cash `cash` gives for its date and the rest, held in securities.
+/// A date without a known cash balance stays a total.
+pub(super) fn split_cash(record: &mut Performance, cash: impl Fn(&str) -> Option<Decimal>) {
+    for point in &mut record.points {
+        let (Some(cash), Some(value)) = (cash(&point.date), decimal_f64(point.value)) else {
+            continue;
+        };
+        point.cash = Some(money(cash));
+        point.invested = Some(money(value - cash));
     }
 }
 
@@ -500,6 +513,7 @@ pub(super) fn combined_performance(accounts: &[Performance]) -> Vec<Performance>
                 sp500: sp500.map(money),
                 market_change: market_change.map(money),
                 market_change_pct: market_change_pct.map(|percent| scaled(percent, 4)),
+                ..Default::default()
             }
         })
         .collect::<Vec<_>>();

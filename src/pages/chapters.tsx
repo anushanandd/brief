@@ -323,7 +323,8 @@ function ChapterDetail({ data, chapter }: { data: FinanceSnapshot; chapter: Chap
                 search: 'chapter confirm save title dates',
                 group: 'Here',
                 scope: 'page',
-                bindings: [{ sequence: ['c'], label: 'C' }],
+                // C starts an account jump, so this takes ⇧C.
+                bindings: [{ sequence: ['C'], label: '⇧C' }],
                 run: () => latest.current.confirmEdits(),
               },
               {

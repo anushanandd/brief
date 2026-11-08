@@ -17,7 +17,7 @@ use crate::{
         WalletCard, WalletDeclined, WalletDetail, WalletReviewRow, WalletSummary,
         SPENDING_ONLY_PREFIX,
     },
-    merchants::Presence,
+    merchants::{same_merchant, Presence},
     places::{self, Place, PlacePrecision, PlaceSource},
     providers::wallet::{WalletData, WalletKind, WalletPlace, WalletRow, WalletStatus},
 };
@@ -31,7 +31,6 @@ const PENDING_DAYS: i64 = 5;
 const MATCH_DAYS: i64 = 5;
 /// Of different amounts, they must be this close and name the same merchant: a tip, a hold.
 const AMOUNT_DIFFERS_DAYS: i64 = 3;
-const AMOUNT_DIFFERS_SIMILARITY: u32 = 50;
 /// How far back a refund or dispute credit finds the purchase it repays.
 const REFUND_DAYS: i64 = 180;
 
@@ -81,21 +80,6 @@ fn readable(name: &str) -> String {
     } else {
         categories::title_case(&name.replace(' ', "_"))
     }
-}
-
-/// Whether two names are one merchant, however a card prints it ("CHILIS", "Chili's Grill").
-fn same_merchant(left: &str, right: &str) -> bool {
-    let compact = |text: &str| {
-        text.chars()
-            .filter(char::is_ascii_alphanumeric)
-            .collect::<String>()
-            .to_ascii_lowercase()
-    };
-    let (compact_left, compact_right) = (compact(left), compact(right));
-    (!compact_left.is_empty()
-        && !compact_right.is_empty()
-        && (compact_left.contains(&compact_right) || compact_right.contains(&compact_left)))
-        || crate::statements::similarity(left, right) >= AMOUNT_DIFFERS_SIMILARITY
 }
 
 fn place(saved: &WalletPlace) -> Option<Place> {
@@ -148,6 +132,8 @@ fn detail(row: &WalletRow) -> WalletDetail {
         place: row.place.as_ref().and_then(place),
         refund_of: None,
         terminal_amount: None,
+        merchant: row.merchant.as_deref().map(readable),
+        categorized: false,
     }
 }
 
@@ -280,7 +266,7 @@ fn days_apart(row: NaiveDate, record: &PlaidTransaction) -> Option<i64> {
     .min()
 }
 
-fn description(record: &PlaidTransaction) -> String {
+fn names(record: &PlaidTransaction) -> impl Iterator<Item = &str> {
     [
         record.merchant_name.as_deref(),
         record.name.as_deref(),
@@ -288,8 +274,16 @@ fn description(record: &PlaidTransaction) -> String {
     ]
     .into_iter()
     .flatten()
-    .collect::<Vec<_>>()
-    .join(" ")
+}
+
+fn description(record: &PlaidTransaction) -> String {
+    names(record).collect::<Vec<_>>().join(" ")
+}
+
+/// Whether the record names the provider's merchant. Each of the provider's names is compared
+/// on its own: run together, they hide a name ("EXAMPLE PBC" isn't in "Example EXAMPLE* PRO").
+fn names_merchant(row: &WalletRow, record: &PlaidTransaction) -> bool {
+    names(record).any(|other| same_merchant(name(row), other))
 }
 
 /// What a matched record adds to a provider's transaction.
@@ -297,6 +291,8 @@ struct Matched {
     occurred_at: Option<String>,
     detail: WalletDetail,
     pending_id: String,
+    /// The network's merchant code as Plaid's detailed category.
+    code: Option<&'static str>,
 }
 
 /// The provider's transaction each record describes: first by amount, then, for what's left, by
@@ -334,8 +330,7 @@ fn matches<'a>(
         let best = candidates
             .iter()
             .filter(|candidate| {
-                !taken.contains(candidate.transaction_id.as_str())
-                    && same_merchant(name(row), &description(candidate))
+                !taken.contains(candidate.transaction_id.as_str()) && names_merchant(row, candidate)
             })
             .filter_map(|candidate| {
                 let days = days_apart(date, candidate).filter(|d| *d <= AMOUNT_DIFFERS_DAYS)?;
@@ -373,6 +368,30 @@ pub(super) struct Projected {
 }
 
 impl Projected {
+    /// Files a provider's transaction under the network's merchant code when Plaid isn't sure
+    /// of its own category: the code is what the merchant registered, Plaid's is a guess. A sure
+    /// Plaid category stays, since it's often finer (coffee, not restaurants).
+    pub(super) fn categorize(&mut self, transactions: &mut [PlaidTransaction]) {
+        for transaction in transactions {
+            let Some(matched) = self.matched.get_mut(&transaction.transaction_id) else {
+                continue;
+            };
+            let sure = transaction
+                .personal_finance_category
+                .as_ref()
+                .is_some_and(|filed| {
+                    matches!(
+                        filed.confidence_level.as_deref(),
+                        Some("VERY_HIGH" | "HIGH")
+                    )
+                });
+            if let Some(code) = matched.code.filter(|_| !sure) {
+                transaction.personal_finance_category = Some(category(code));
+                matched.detail.categorized = true;
+            }
+        }
+    }
+
     /// A provider's transaction with what Wallet recorded about it.
     pub(super) fn enrich(&mut self, transaction: Transaction) -> Transaction {
         let Some(matched) = self.matched.remove(&transaction.id) else {
@@ -399,7 +418,7 @@ impl Projected {
 fn filed_like(row: &WalletRow, history: &[&PlaidTransaction]) -> Option<PlaidCategory> {
     history
         .iter()
-        .find(|record| same_merchant(name(row), &description(record)))
+        .find(|record| names_merchant(row, record))
         .and_then(|record| record.personal_finance_category.as_ref())
         .map(|filed| PlaidCategory {
             primary: filed.primary.clone(),
@@ -477,6 +496,7 @@ pub(super) fn project_wallet(
                             ..detail(row)
                         },
                         pending_id: format!("{SPENDING_ONLY_PREFIX}{}", row.id),
+                        code: row.merchant_code.and_then(plaid_code),
                     },
                 );
                 continue;
@@ -741,6 +761,74 @@ mod tests {
         });
         assert_eq!(enriched.amount, -36.0);
         assert_eq!(enriched.wallet.unwrap().terminal_amount, Some(-30.0));
+    }
+
+    #[test]
+    fn the_merchant_code_files_a_charge_only_when_plaid_is_unsure() {
+        let sure = |level: &str| {
+            let mut record = plaid(level, "2026-10-13", 27.65, "Corner Market", false);
+            record
+                .personal_finance_category
+                .as_mut()
+                .unwrap()
+                .confidence_level = Some(level.into());
+            record
+        };
+        let mut records = [sure("VERY_HIGH"), sure("LOW")];
+        let dining = |id: &str| WalletRow {
+            merchant_code: Some(5812),
+            ..amex(id, "2026-10-13", 2765, "Corner Market")
+        };
+        let mut projected = project_wallet(
+            Some(&data(vec![dining("one"), dining("two")])),
+            &accounts(),
+            &records,
+            today(),
+        );
+        projected.categorize(&mut records);
+        let detailed = |record: &PlaidTransaction| {
+            record
+                .personal_finance_category
+                .as_ref()
+                .unwrap()
+                .detailed
+                .clone()
+        };
+        assert_eq!(
+            detailed(&records[0]).as_deref(),
+            Some("FOOD_AND_DRINK_GROCERIES")
+        );
+        assert_eq!(detailed(&records[1]).as_deref(), plaid_code(5812));
+        let mut categorized = |id: &str| {
+            let enriched = projected.enrich(Transaction {
+                id: id.into(),
+                amount: -27.65,
+                ..Transaction::default()
+            });
+            enriched.wallet.unwrap().categorized
+        };
+        assert!(!categorized("VERY_HIGH"));
+        assert!(categorized("LOW"));
+    }
+
+    #[test]
+    fn a_name_with_a_suffix_matches_a_charge_whose_descriptor_runs_on() {
+        let mut record = plaid("p1", "2026-10-13", 95.89, "Example Labs", false);
+        record.name = Some("EXAMPLE LABS* PRO PORTLAND".into());
+        record.original_description = Some("EXAMPLE LABS* PRO PORTLAND OR".into());
+        let projected = project_wallet(
+            Some(&data(vec![amex(
+                "one",
+                "2026-10-13",
+                9567,
+                "EXAMPLE LABS PBC",
+            )])),
+            &accounts(),
+            &[record],
+            today(),
+        );
+        assert!(projected.transactions.is_empty());
+        assert_eq!(projected.summary.unwrap().cards[0].matched, 1);
     }
 
     #[test]

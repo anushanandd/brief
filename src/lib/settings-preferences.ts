@@ -1,7 +1,7 @@
 import { homePreferenceKeys } from './home-preferences'
 import { privacyPreferenceKeys } from './privacy-preferences'
 
-export const themePreferenceKeys = ['brief:theme', ...homePreferenceKeys] as const
+export const themePreferenceKeys = [...homePreferenceKeys] as const
 export const chartPreferenceKeys = ['brief.defaultGraphWindow'] as const
 export const navigationPreferenceKeys = ['brief.pageOrder', 'brief.activitySavedViews'] as const
 

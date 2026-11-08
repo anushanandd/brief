@@ -51,7 +51,7 @@ it('sizes ledger columns using every filtered row, including later batches', () 
   expect(allRows[2]).toBeGreaterThan(firstBatch[2])
 })
 
-it('fits every rare long value in full except the flexible description', () => {
+it('fits rare long values in full except the description and the place', () => {
   const activities: ActivityItem[] = Array.from({ length: 40 }, (_, index) => ({
     id: `synthetic-${index}`,
     kind: 'spending',
@@ -69,11 +69,11 @@ it('fits every rare long value in full except the flexible description', () => {
     measureText,
   )
   const typical = activityGridWidths(activities.slice(1), '2026-09-20', measureText)
-  // A rare long place, account, and amount still show in full.
-  expect(location).toBeGreaterThan(typical[5])
+  // A rare long account and amount still show in full; a rare long place ends in an ellipsis.
+  expect(location).toBe(typical[5])
   expect(account).toBeGreaterThan(typical[2])
   expect(amount).toBeGreaterThan(typical[6])
-  // So do a rare long subcategory and street address; only the description gives way.
+  // So does a rare long subcategory; the description and a long street address give way.
   const named = activities.map((activity, index) =>
     index
       ? activity
@@ -95,12 +95,12 @@ it('fits every rare long value in full except the flexible description', () => {
   )
   expect(description).toBe(typical[1])
   expect(category).toBeGreaterThan(typical[3])
-  expect(address).toBeGreaterThan(typical[5])
+  expect(address).toBe(typical[5])
   // Me or Other: the same width on every ledger.
   expect(owner).toBe(typical[4])
 })
 
-it('sizes every column to its contents, capping only the description', () => {
+it('sizes every column to its contents, capping the description and the place', () => {
   const activity: ActivityItem = {
     id: 'long-description',
     kind: 'spending',
@@ -122,10 +122,10 @@ it('sizes every column to its contents, capping only the description', () => {
     '2026-09-20',
     measureText,
   )
-  // The description is capped; everything else shows in full, however long.
+  // The description and the place are capped; everything else shows in full, however long.
   expect(descriptionWidth).toBe(280)
   expect(categoryWidth).toBeGreaterThan(280)
-  expect(locationWidth).toBeGreaterThan(280)
+  expect(locationWidth).toBe(220)
   const [, shortDescriptionWidth, , shortCategoryWidth, , shortLocationWidth] = activityGridWidths(
     [
       {

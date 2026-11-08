@@ -163,6 +163,10 @@ pub struct Insights {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub accounts_total: Option<totals::AccountsTotal>,
+    /// Home's total by day, without the spending cards when there are any, split into cash,
+    /// securities, and the rest, with its drawdown.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub net_worth_parts: Vec<totals::NetWorthPart>,
     /// Each account group's value and daily history, the spending cards as their own group.
     pub group_history: Vec<totals::GroupHistory>,
     /// Account totals from saved values; each market projection carries its own from live ones.
@@ -514,6 +518,12 @@ pub fn derive_with_documents(
         .collect::<Vec<_>>();
     let rollup = rollup::rollup(accounts, holdings, snapshot.net_worth, settings);
     let group_history = totals::group_histories(snapshot, settings, &rollup);
+    let net_worth_parts = totals::net_worth_parts(
+        snapshot,
+        accounts_total
+            .as_ref()
+            .map_or(&snapshot.net_worth_history, |total| &total.history),
+    );
     let (activity_days, activity_months) = flows::calendar_totals(snapshot);
     let chart_changes = chart_change::changes(
         &chart_change::series(
@@ -558,6 +568,7 @@ pub fn derive_with_documents(
         recurring_check,
         spending,
         accounts_total,
+        net_worth_parts,
         group_history,
         rollup,
         chart_changes,

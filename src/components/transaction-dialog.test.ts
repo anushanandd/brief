@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 
 import { transaction as record } from '../data/fixtures/records'
 import type { Transaction } from '../lib/schema'
-import { conflictNote, evidenceDetails, inspectorKey } from './transaction-dialog'
+import { conflictNote, evidenceDetails, inspectorKey, walletDetails } from './transaction-dialog'
 
 const transaction = (patch: Partial<Transaction>): Transaction =>
   record({
@@ -69,4 +69,25 @@ it('maps the inspector keys and leaves every other key to the page', () => {
   expect(inspectorKey('o')).toBe('transfer')
   expect(inspectorKey('x')).toBeUndefined()
   expect(inspectorKey('Enter')).toBeUndefined()
+})
+
+it('keeps only Wallet’s identifiers and a name it disagrees on under Raw records', () => {
+  const wallet = {
+    recordId: 'w1',
+    categorized: false,
+    phone: '(555) 555-0100',
+    terminalAmount: -30,
+    network: { merchantCode: 5812, terminalId: 'T9' },
+  }
+  expect(walletDetails(transaction({ wallet: { ...wallet, merchant: 'Synthetic Cafe' } }))).toEqual(
+    [
+      { label: 'Merchant code', value: '5812', raw: true },
+      { label: 'Terminal ID', value: 'T9', raw: true },
+      { label: 'Wallet ID', value: 'w1', raw: true },
+    ],
+  )
+  expect(walletDetails(transaction({ wallet: { ...wallet, merchant: 'Cafe Inc' } }))[0]).toEqual({
+    label: 'Wallet’s name',
+    value: 'Cafe Inc',
+  })
 })

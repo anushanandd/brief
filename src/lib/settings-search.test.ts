@@ -22,7 +22,6 @@ it('requires every word and matches titles, keywords, and section names', () => 
   expect(privacy.counts.get('privacy')).toBe(4)
   expect(privacy.total).toBe(4)
 
-  expect(searchSettings('dark')!.entryIds.has('theme')).toBe(true)
   expect(searchSettings('collapsed')!.entryIds.has('home-accounts')).toBe(true)
   expect(searchSettings('rename')!.entryIds.has('account-details')).toBe(true)
   expect(searchSettings('zzz-not-a-setting')!.total).toBe(0)

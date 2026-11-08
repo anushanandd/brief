@@ -13,12 +13,6 @@ const root = (() => {
   return css.slice(start, css.indexOf('\n}', start))
 })()
 
-function block(selector: string) {
-  const start = css.indexOf(`${selector} {`)
-  if (start < 0) throw new Error(`No block for ${selector}`)
-  return css.slice(start, css.indexOf('\n}', start))
-}
-
 /** A token's hex value in a theme, following `var()` references and falling back to the root. */
 function resolve(blockText: string, name: string, depth = 0): string {
   const match =
@@ -47,10 +41,7 @@ const contrast = (foreground: string, background: string) => {
   return (light + 0.05) / (dark + 0.05)
 }
 
-const themes = [
-  { name: 'dark', text: block(":root[data-theme='dark']"), surfaces: ['#10120f', '#20231e'] },
-  { name: 'custom', text: root, surfaces: ['#08090a', '#1b1c1e'] },
-]
+const themes = [{ name: 'Brief', text: root, surfaces: ['#08090a', '#1b1c1e'] }]
 
 describe.each(themes)('$name theme contrast', ({ text, surfaces }) => {
   const tertiary = resolve(text, '--text-tertiary')

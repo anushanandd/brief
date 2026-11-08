@@ -26,7 +26,6 @@ export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<
         group: 'View',
         scope: 'page' as const,
         bindings: [{ sequence: [label.toLowerCase()], label }],
-        repeatable: true,
         run: () => setGraphWindow(secs),
       })),
       {
@@ -35,7 +34,6 @@ export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<
         group: 'View',
         scope: 'page',
         bindings: [{ sequence: ['Meta+Control+ArrowLeft'], label: '⌘⌃←' }],
-        repeatable: true,
         run: step(-1),
       },
       {
@@ -44,7 +42,6 @@ export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<
         group: 'View',
         scope: 'page',
         bindings: [{ sequence: ['Meta+Control+ArrowRight'], label: '⌘⌃→' }],
-        repeatable: true,
         run: step(1),
       },
     ]
@@ -52,32 +49,36 @@ export function useGraphWindowShortcuts(setGraphWindow: Dispatch<SetStateAction<
   useRegisterActions(actions)
 }
 
-/** ⌘← and ⌘→ step through a page's selector; bare arrows are left to time on the page. */
-export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => void) {
+/**
+ * ⌘↑ and ⌘↓ step through a page's selector; bare arrows are left to the page's lists. Off
+ * while something inside the selected view (one person) takes the keys instead.
+ */
+export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => void, enabled = true) {
   const actions = useMemo<AppAction[]>(
-    () => [
-      {
-        id: 'graph.selection.previous',
-        title: 'Previous in selector',
-        search: 'previous account holding report chart selector strip',
-        group: 'View',
-        scope: 'page',
-        bindings: [{ sequence: ['Meta+ArrowLeft'], label: '⌘←' }],
-        repeatable: true,
-        run: () => onDirection(-1),
-      },
-      {
-        id: 'graph.selection.next',
-        title: 'Next in selector',
-        search: 'next account holding report chart selector strip',
-        group: 'View',
-        scope: 'page',
-        bindings: [{ sequence: ['Meta+ArrowRight'], label: '⌘→' }],
-        repeatable: true,
-        run: () => onDirection(1),
-      },
-    ],
-    [onDirection],
+    () =>
+      enabled
+        ? [
+            {
+              id: 'graph.selection.previous',
+              title: 'Previous in selector',
+              search: 'previous account holding report chart selector strip',
+              group: 'View',
+              scope: 'page',
+              bindings: [{ sequence: ['Meta+ArrowUp'], label: '⌘↑' }],
+              run: () => onDirection(-1),
+            },
+            {
+              id: 'graph.selection.next',
+              title: 'Next in selector',
+              search: 'next account holding report chart selector strip',
+              group: 'View',
+              scope: 'page',
+              bindings: [{ sequence: ['Meta+ArrowDown'], label: '⌘↓' }],
+              run: () => onDirection(1),
+            },
+          ]
+        : [],
+    [enabled, onDirection],
   )
   useRegisterActions(actions)
 }

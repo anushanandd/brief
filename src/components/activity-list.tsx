@@ -10,7 +10,7 @@ import {
   type ActivitySort,
   type ActivitySortColumn,
 } from '../lib/activity'
-import { displayCase, formatCurrency, formatForeignAmount, valueTone } from '../lib/format'
+import { displayCase, formatCurrency, valueTone } from '../lib/format'
 import { formatActivityDate, formatListDate } from '../lib/spending'
 import { AccountMark } from './account-mark'
 import { PlaceMark } from './activity-method-mark'
@@ -36,6 +36,12 @@ const gridWidths = new WeakMap<ActivityItem[], { key: string; widths: number[] }
 // The description gives way down to this before any column is hidden.
 const minimumDescriptionWidth = 180
 const descriptionIndex = 1
+const locationIndex = 5
+// A place fits 95 of 100 rows up to this; a longer one, such as a full airport address, ends in
+// an ellipsis with the whole place in its tooltip and the inspector.
+const widestLocation = 220
+// When the ledger is tight, the place narrows to this before the description does.
+const minimumLocationWidth = 140
 // Columns that give way, in order, when the ledger is too narrow for all of them.
 const optionalColumns = [5, 4, 3, 2]
 // `strong` is the bold of descriptions and amounts.
@@ -65,9 +71,10 @@ function typicalWidth(widths: number[]) {
 }
 
 /**
- * Column widths for the ledger. Every column but the description fits its widest value, both lines
- * included, so no account, category, place, date, or amount is ever cut off. The description takes
- * the remaining room; its width here, fitting 95 of 100 titles, is only how far it may narrow.
+ * Column widths for the ledger. Account, category, date, and amount fit their widest value, both
+ * lines included, so none is ever cut off. The description and the place fit 95 of 100 rows, up to
+ * a cap, so one long title or address can't widen the column for every row; the description takes
+ * the remaining room, and its width here is only how far it may narrow.
  */
 export function activityGridWidths(
   activities: ActivityItem[],
@@ -120,15 +127,9 @@ export function activityGridWidths(
         cellPadding +
         buttonInset * 2,
     )
-    const foreign = activity.wallet?.foreign
     // The amount ends the row, so it pads only its left side.
     columns.amount.push(
-      Math.max(
-        measure(formatCurrency(activity.amount), 'strong'),
-        foreign ? measure(formatForeignAmount(foreign.amount, foreign.currency), 'meta') : 0,
-      ) +
-        textSlack +
-        cellPadding / 2,
+      measure(formatCurrency(activity.amount), 'strong') + textSlack + cellPadding / 2,
     )
   }
   return activityColumns.map(({ id }, index) => {
@@ -136,7 +137,9 @@ export function activityGridWidths(
     const content =
       id === 'description'
         ? Math.min(typicalWidth(values), widestDescription)
-        : Math.max(0, ...values)
+        : id === 'location'
+          ? Math.min(typicalWidth(values), widestLocation)
+          : Math.max(0, ...values)
     return Math.ceil(Math.max(header[index], content))
   })
 }
@@ -232,7 +235,6 @@ export const ActivityList = memo(function ActivityList({
         const shortDate = formatListDate(activity.date, referenceIso)
         const place = activityPlace(activity)
         const amount = formatCurrency(activity.amount)
-        const foreign = activity.wallet?.foreign
         const time = activityTime(activity)
         const status = activityStatus(activity)
         const linked = onHighlight
@@ -450,9 +452,6 @@ export const ActivityList = memo(function ActivityList({
                   aria-label={`Amount: ${amount}`}
                 >
                   <span data-copy-amount>{amount}</span>
-                  {foreign ? (
-                    <small>{formatForeignAmount(foreign.amount, foreign.currency)}</small>
-                  ) : null}
                 </span>
               </>
             ) : (
@@ -642,11 +641,19 @@ function ProgressiveActivityList({
         ? cachedWidths.widths
         : activityGridWidths(sizing, referenceIso, measure)
     gridWidths.set(sizing, { key: widthsKey, widths })
-    // Amounts and dates never clip: when the ledger is narrower than its columns, the description
-    // narrows first, then places go, then who it's for, categories, and accounts; each stays in
-    // the transaction inspector. The description, the column people scan, takes any room to spare.
+    // Amounts and dates never clip: when the ledger is narrower than its columns, the place
+    // narrows, then the description, then places go, then who it's for, categories, and accounts;
+    // each stays in the transaction inspector. Room to spare spaces the columns evenly.
     const fit = () => {
-      const floors = widths.map((value, index) =>
+      // Short of room, the place gives way first, down to its minimum, so the description keeps
+      // its usual width as long as it can.
+      const short = rowWidth(widths, []) - element.clientWidth
+      const sized = widths.map((value, index) =>
+        index === locationIndex && short > 0
+          ? Math.max(Math.min(value, minimumLocationWidth), value - short)
+          : value,
+      )
+      const floors = sized.map((value, index) =>
         index === descriptionIndex ? Math.min(value, minimumDescriptionWidth) : value,
       )
       const hidden = optionalColumns.reduce<number[]>(
@@ -654,12 +661,25 @@ function ProgressiveActivityList({
           rowWidth(floors, dropped) > element.clientWidth ? [...dropped, index] : dropped,
         [],
       )
-      const shown = floors.flatMap((value, index) => (hidden.includes(index) ? [] : [value]))
+      // The description takes back what room there is, up to its usual width; anything more is
+      // shared evenly, so the columns space out rather than the description stretching. Cells
+      // align to their start, so each column's share reads as the gap after it.
+      let spare = element.clientWidth - rowWidth(floors, hidden)
+      const columns = [...floors]
+      const regained = Math.max(
+        0,
+        Math.min(spare, sized[descriptionIndex] - floors[descriptionIndex]),
+      )
+      columns[descriptionIndex] += regained
+      spare -= regained
+      const visible = columns.flatMap((value, index) => (hidden.includes(index) ? [] : [value]))
+      const share = spare > 0 ? Math.floor(spare / visible.length) : 0
+      const shown = visible.map((value) => value + share)
       element.dataset.hiddenColumns = hidden.map((index) => activityColumns[index].id).join(' ')
       element.style.setProperty(
         '--activity-grid-columns',
-        `${shown[0]}px 32px minmax(${shown[1]}px, 1fr) ${shown
-          .slice(2)
+        `${shown[0]}px 32px ${shown
+          .slice(1)
           .map((value) => `${value}px`)
           .join(' ')}`,
       )

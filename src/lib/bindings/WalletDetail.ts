@@ -29,4 +29,12 @@ refundOf?: string,
 /**
  * What Wallet showed at the terminal, when the provider posted another amount.
  */
-terminalAmount?: number, };
+terminalAmount?: number, 
+/**
+ * The merchant as Wallet named it: the brand or Apple Maps' name, else the issuer's.
+ */
+merchant?: string, 
+/**
+ * The category is the card network's merchant code, because Plaid wasn't sure of its own.
+ */
+categorized?: boolean, };

@@ -38,13 +38,3 @@ export function useOrderedNavigation() {
     [order],
   )
 }
-
-/** Whether the sidebar shows its reports. */
-export const reportsGroupOpen = preference('brief:sidebar-analytics-open', (raw) => raw === 'true')
-export function adjacentPage(order: PagePath[], pathname: string, direction: -1 | 1) {
-  const current = order.findIndex((path) =>
-    path === '/' ? pathname === '/' : pathname === path || pathname.startsWith(`${path}/`),
-  )
-  const index = current < 0 ? (direction > 0 ? -1 : 0) : current
-  return order[(index + direction + order.length) % order.length]
-}

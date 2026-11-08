@@ -726,7 +726,7 @@ function AnalyticsBars({
   )
 }
 
-/** ⌘← and ⌘→ through a destination's reports where no strip heads them. */
+/** ⌘↑ and ⌘↓ through a destination's reports where no strip heads them. */
 function ReportStepper({
   reports,
   selected,

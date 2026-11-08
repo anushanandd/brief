@@ -117,30 +117,9 @@
   row-gap: var(--card-padding);
   column-gap: 48px;
 }
-.card-scroll-cue {
-  position: absolute;
-  z-index: 1;
-  bottom: 8px;
-  left: 50%;
-  display: grid;
-  width: 28px;
-  height: 28px;
-  place-items: center;
-  transform: translateX(-50%);
-  border-radius: 50%;
-  background: var(--popup-surface);
-  color: var(--text-secondary);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--duration-quick) var(--ease-out);
-}
-.card-scroll-cue[data-visible] {
-  opacity: 1;
-}
-@media (prefers-reduced-motion: reduce) {
-  .card-scroll-cue {
-    transition-duration: var(--duration-instant) !important;
-  }
+/* A scroll region with more below fades out over its last 32px (ScrollCueCard). */
+[data-more-below] {
+  mask-image: linear-gradient(to bottom, #000 calc(100% - 32px), transparent);
 }
 .section-heading {
   display: flex;
@@ -462,30 +441,6 @@
 /* Comparison lines stay visible; their optional Liveline toggles stay out of the layout. */
 .live-performance-chart > div:not(.liveline-chart-canvas) {
   display: none !important;
-}
-/* Value history (Recharts) fills the chart's height, as the live chart's canvas does. */
-.value-chart {
-  position: relative;
-  display: flex;
-  box-sizing: border-box;
-  flex-direction: column;
-}
-.value-chart > .recharts-responsive-container {
-  flex: 1;
-  min-height: 0;
-}
-.value-chart .recharts-surface {
-  overflow: visible;
-}
-.value-chart-tooltip {
-  display: grid;
-  min-width: 160px;
-  gap: 4px;
-  padding: 8px 10px;
-}
-.value-chart-tooltip p {
-  margin: 0;
-  color: var(--text-tertiary);
 }
 .brokerage-holdings-card {
   min-width: 0;

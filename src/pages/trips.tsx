@@ -148,7 +148,6 @@ function YearView({ data, trips }: { data: FinanceSnapshot; trips: Trip[] }) {
           bindings: [{ sequence: ['ArrowLeft'], label: '←' }],
           disabled: yearIndex >= years.length - 1,
           disabledReason: 'No earlier year with trips',
-          repeatable: true,
           run: () => setYear(years[Math.min(years.length - 1, yearIndex + 1)]),
         },
         {
@@ -159,7 +158,6 @@ function YearView({ data, trips }: { data: FinanceSnapshot; trips: Trip[] }) {
           bindings: [{ sequence: ['ArrowRight'], label: '→' }],
           disabled: yearIndex <= 0,
           disabledReason: 'Already showing this year',
-          repeatable: true,
           run: () => setYear(years[Math.max(0, yearIndex - 1)]),
         },
         ...shown.map((trip) => ({

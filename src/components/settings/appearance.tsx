@@ -1,4 +1,3 @@
-import { useTheme } from 'next-themes'
 import { useState } from 'react'
 
 import {
@@ -26,11 +25,6 @@ import {
   SettingsSection,
 } from '../settings-ui'
 import { Button, ChartRangeSelect } from '../ui'
-
-const themes = [
-  { value: 'dark', label: 'Dark', accessibleLabel: 'Dark' },
-  { value: 'custom', label: 'Brief', accessibleLabel: 'Brief' },
-] as const
 
 function MoveButtons({
   label,
@@ -66,7 +60,6 @@ function MoveButtons({
 }
 
 export function AppearanceSection() {
-  const { theme, setTheme } = useTheme()
   const accountGroupsMode = useAccountGroupsMode()
   return (
     <SettingsSection
@@ -75,14 +68,6 @@ export function AppearanceSection() {
       action={<SettingsResetButton section="appearance" keys={themePreferenceKeys} />}
     >
       <SettingsCard>
-        <SettingsRow id="theme" title="Theme">
-          <ChartRangeSelect
-            label="Theme"
-            options={[...themes]}
-            value={theme ?? 'dark'}
-            onValueChange={setTheme}
-          />
-        </SettingsRow>
         <SettingsRow id="home-accounts" title="Account categories">
           <ChartRangeSelect
             label="Overview account categories"

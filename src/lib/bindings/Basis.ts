@@ -3,4 +3,4 @@
 /**
  * What a detail rests on.
  */
-export type Basis = "statement" | "statementDiffers" | "statementOnly" | "pending" | "provider" | "providerConfident" | "providerUnsure" | "manual" | "sourcesAgree" | "sourcesDisagree" | "descriptorOnly" | "bankOnly" | "unreported" | "issuer" | "providerContradicted" | "placeMatched";
+export type Basis = "statement" | "statementDiffers" | "statementOnly" | "pending" | "provider" | "providerConfident" | "providerUnsure" | "manual" | "sourcesAgree" | "sourcesDisagree" | "descriptorOnly" | "bankOnly" | "unreported" | "issuer" | "providerContradicted" | "placeMatched" | "wallet" | "merchantCode";

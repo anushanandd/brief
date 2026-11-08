@@ -12,7 +12,7 @@ import { classification } from '../data/fixtures/classification'
 import { emptyInsightDetails } from '../data/fixtures/insights'
 import { account, holding, transaction as record } from '../data/fixtures/records'
 import { LiveMarketProvider } from '../hooks/live-market-provider'
-import { ActionCollectorContext } from '../lib/action-system'
+import { ActionCollectorContext, type AppAction } from '../lib/action-system'
 import { dayKey } from '../lib/dates'
 import { formatShortDay, setAmountsHidden } from '../lib/format'
 import { settingsSections } from '../lib/settings-search'
@@ -911,11 +911,11 @@ afterEach(() => {
   setAmountsHidden(false)
 })
 
-/** Renders a route; `registered`, when given, collects the action ids its page registers. */
+/** Renders a route; `registered`, when given, receives each action its page registers. */
 export async function renderRoute(
   path: string,
   selectedAccount = 'selected',
-  registered?: Set<string>,
+  registered?: (action: AppAction) => void,
 ) {
   scenario.spendingAccountId = selectedAccount
   const storage = {
@@ -955,7 +955,7 @@ export async function renderSettings(path = '/#settings') {
   return renderRoute(path)
 }
 
-/** Settings renders one section at a time, so this opens each section by its address. */
+/** Opens Settings at each section's address, so each section's jump is exercised too. */
 export async function renderEverySettingsSection(page = '/') {
   const sections: string[] = []
   for (const { id } of settingsSections)

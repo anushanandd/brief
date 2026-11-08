@@ -338,6 +338,31 @@ fn numbers(words: &[String]) -> Vec<&str> {
         .collect()
 }
 
+/// A name's letters and digits, lowercased: "Chili's Grill" is `chilisgrill`.
+fn compact(text: &str) -> String {
+    text.chars()
+        .filter(char::is_ascii_alphanumeric)
+        .collect::<String>()
+        .to_ascii_lowercase()
+}
+
+/// Whether `name` is the one a `BRAND*` descriptor opens with: who billed for the merchant
+/// after it (`GOOGLE *YOUTUBEPREMI` is billed by Google).
+fn billed_by(transaction: &Transaction, name: &str) -> bool {
+    descriptor(transaction)
+        .and_then(|text| PREFIXED.captures(text))
+        .is_some_and(|captures| compact(&captures[1]) == compact(name))
+}
+
+/// Whether two names are one merchant, however a card prints it ("CHILIS", "Chili's Grill").
+pub fn same_merchant(left: &str, right: &str) -> bool {
+    let (compact_left, compact_right) = (compact(left), compact(right));
+    (!compact_left.is_empty()
+        && !compact_right.is_empty()
+        && (compact_left.contains(&compact_right) || compact_right.contains(&compact_left)))
+        || crate::statements::similarity(left, right) >= 50
+}
+
 /// Plaid's merchant, unless it's Plaid's own enrichment.
 pub fn plaid_named(transaction: &Transaction) -> bool {
     transaction.merchant_entity_id.is_some()
@@ -361,7 +386,26 @@ pub fn plaid_sure(transaction: &Transaction) -> bool {
 /// The name the bank's own records give, when they contradict Plaid's.
 pub fn corrected_name(transaction: &Transaction) -> Option<String> {
     // Plaid named none of Wallet's rows, so there is nothing of Plaid's to correct.
-    if transaction.from_wallet() || !purchase(transaction) || !plaid_named(transaction) {
+    if transaction.from_wallet() {
+        return None;
+    }
+    // Wallet saw the purchase, so its name outranks Plaid's when they name different merchants,
+    // and outranks a descriptor Plaid only cleaned up. A brand billing for its own product
+    // (`GOOGLE *YOUTUBEPREMI`) is the exception: Wallet names the brand, and Plaid's name for
+    // the product is the finer one.
+    if let Some(name) = transaction
+        .wallet
+        .as_ref()
+        .and_then(|wallet| wallet.merchant.as_deref())
+    {
+        let differs = if plaid_named(transaction) {
+            !same_merchant(name, &transaction.merchant) && !billed_by(transaction, name)
+        } else {
+            name != transaction.merchant
+        };
+        return differs.then(|| name.to_owned());
+    }
+    if !purchase(transaction) || !plaid_named(transaction) {
         return None;
     }
     let descriptor = descriptor(transaction)?;

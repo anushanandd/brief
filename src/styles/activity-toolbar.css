@@ -123,7 +123,7 @@
   font-size: var(--type-meta);
   cursor: default;
 }
-.transaction-details-more > .transaction-details-facts {
+.transaction-details-more .transaction-details-facts {
   padding: 0;
 }
 .security-taxes-flag {

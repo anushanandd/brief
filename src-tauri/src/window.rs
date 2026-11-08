@@ -1,4 +1,5 @@
 //! The main window: its macOS chrome, showing it, and the `brief://` links that open views.
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
 
 use tauri::{AppHandle, Emitter, Manager};
@@ -30,10 +31,20 @@ pub(crate) fn bring_forward(app: &AppHandle) {
     }
 }
 
+/// Whether the window has been revealed since launch.
+static REVEALED: AtomicBool = AtomicBool::new(false);
+
+/// Shows the main window once the renderer is ready. macOS activates an app opened from
+/// Finder or the Dock, but not a dev build started from a terminal, so a dev build's first
+/// reveal also asks for focus. Later reveals, from renderer reloads, leave focus alone.
 #[tauri::command]
 pub(crate) fn reveal_main_window(app: AppHandle) -> Result<(), String> {
     let window = app.get_webview_window("main").ok_or("Window unavailable")?;
-    window.show().map_err(|error| error.to_string())
+    window.show().map_err(|error| error.to_string())?;
+    if cfg!(debug_assertions) && !REVEALED.swap(true, Ordering::AcqRel) {
+        let _ = window.set_focus();
+    }
+    Ok(())
 }
 
 /// A `brief://` link that opened the app before the window could listen for it.

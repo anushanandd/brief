@@ -16,9 +16,11 @@ debug = "line-tables-only"
 [profile.dev.package."*"]
 debug = false
 
+# Thin LTO across parallel codegen units: a release build in a minute or two rather than six,
+# for a binary that waits on the screen and SQLite, not the CPU.
 [profile.release]
-lto = true
-codegen-units = 1
+lto = "thin"
+codegen-units = 16
 panic = "abort"
 strip = true
 

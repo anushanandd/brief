@@ -896,6 +896,7 @@
       "logoName": "Blue Bottle Coffee",
       "merchant": "Blue Bottle Coffee",
       "merchantEntityId": "synthetic-blue-bottle",
+      "occurredAt": "2026-08-28T08:14:00-07:00",
       "occurredOn": null,
       "originalDescription": "SQ *BLUE BOTTLE COFFE Portland OR",
       "paymentChannel": "in store",
@@ -911,6 +912,18 @@
       },
       "postedOn": null,
       "presence": "inPerson",
+      "wallet": {
+        "merchant": "Blue Bottle Coffee",
+        "method": "tap",
+        "network": {
+          "descriptor": "BLUE BOTTLE COFFEE PORTLAND OR",
+          "entryMode": "contactless",
+          "merchantCode": 5814
+        },
+        "phone": "(503) 555-0142",
+        "recordId": "wallet-synthetic-5",
+        "terminalAmount": -10.75
+      },
       "website": "https://bluebottlecoffee.com"
     },
     {
@@ -1316,7 +1329,7 @@
       "account": "Chase Checking",
       "accountId": "chase",
       "amount": -2400.0,
-      "category": "Rent And Utilities",
+      "category": "Rent",
       "categorySource": "provider",
       "classification": {
         "credit": false,
@@ -1337,7 +1350,7 @@
       "account": "Chase Checking",
       "accountId": "chase",
       "amount": -2400.0,
-      "category": "Rent And Utilities",
+      "category": "Rent",
       "categorySource": "provider",
       "classification": {
         "credit": false,
@@ -1358,7 +1371,7 @@
       "account": "Chase Checking",
       "accountId": "chase",
       "amount": -2400.0,
-      "category": "Rent And Utilities",
+      "category": "Rent",
       "categorySource": "provider",
       "classification": {
         "credit": false,

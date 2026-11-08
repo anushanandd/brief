@@ -185,6 +185,43 @@ a.transaction-details-tag {
   color: var(--accent);
   font-size: var(--type-meta);
 }
+/* Maps and the merchant's site, side by side under Where. */
+.transaction-details-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+}
+.transaction-details-value > svg {
+  flex: none;
+  color: var(--text-tertiary);
+}
+.transaction-details-value > svg.positive {
+  color: var(--positive);
+}
+/* What each detail rests on, folded under Verified. */
+.transaction-details-why > summary {
+  color: var(--accent);
+  font-size: var(--type-meta);
+  cursor: default;
+}
+.transaction-details-why > .transaction-details-facts {
+  padding: 4px 0 0;
+}
+.transaction-details-why > .transaction-details-facts > div {
+  padding: 6px 0;
+  grid-template-columns: 64px minmax(0, 1fr);
+}
+.transaction-details-why dd {
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+/* Raw records: each source's own fields, under its name. */
+.transaction-details-record > h4 {
+  margin: 8px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
 /* Each document that states the transaction, on its own line, with how it states it. */
 .transaction-details-documents {
   display: grid;
@@ -261,4 +298,7 @@ a.transaction-details-tag {
 }
 .transaction-details-history li.is-expected > span {
   color: var(--accent);
+}
+.transaction-details-record .transaction-details-facts > div {
+  grid-template-columns: 96px minmax(0, 1fr);
 }

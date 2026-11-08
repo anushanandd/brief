@@ -71,7 +71,7 @@ function AccountsWorkspace({
       ? { kind: 'account', account }
       : { kind: 'all' }
 
-  // ⌘← and ⌘→ step through the menu in its order: All accounts, then each type and its accounts.
+  // ⌘↑ and ⌘↓ step through the menu in its order: All accounts, then each type and its accounts.
   const navigate = useNavigate()
   const router = useRouter()
   const order = useMemo(() => menuOrder(groups), [groups])

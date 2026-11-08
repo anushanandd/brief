@@ -7,7 +7,6 @@ import { ChartRangeSelector, PerformanceChart } from '../components/charts'
 import { PageError, HomeLoading, ValueHistoryEmptyState } from '../components/data-state'
 import { ExpectedActivity } from '../components/expected-activity'
 import { ChevronRight } from '../components/icons'
-import { NeedsList } from '../components/needs-list'
 import { PeriodTotals } from '../components/period-totals'
 import { PinnedQueries } from '../components/pinned-queries'
 import { PositionTable } from '../components/position-table'
@@ -233,11 +232,6 @@ export function OverviewPage() {
             <Card className="home-overview-summary home-ahead-card home-period-card">
               <PeriodTotals data={committed} window={changeWindow} />
             </Card>
-            {committed.insights?.brief.needs.length ? (
-              <Card className="home-overview-summary home-ahead-card home-needs-card">
-                <NeedsList data={committed} />
-              </Card>
-            ) : null}
             <ExpectedActivity data={data} className="home-expected-card" />
           </div>
         </div>

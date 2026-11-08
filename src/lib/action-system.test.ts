@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 
 import {
+  bindingConflicts,
   hintCode,
   longestCommonPrefix,
   paletteCompletion,
@@ -26,6 +27,29 @@ describe('action key resolution', () => {
   it('gives the more local scope precedence for an identical binding', () => {
     const actions = [action('global-next', 'app', ['j']), action('row-next', 'region', ['j'])]
     expect(resolveBinding(actions, ['j']).exact?.action.id).toBe('row-next')
+  })
+
+  it("lets a selection's key act at once where it starts a longer shortcut", () => {
+    const jump = action('cash', 'app', ['c', '1'])
+    const category = action('category', 'selection', ['c'])
+    expect(resolveBinding([jump], ['c'])).toMatchObject({ exact: undefined, pending: true })
+    expect(resolveBinding([jump, category], ['c'])).toMatchObject({
+      exact: { action: { id: 'category' } },
+      pending: false,
+    })
+  })
+
+  it('names a shortcut that starts a longer one, except a selection key', () => {
+    const settings = action('settings', 'app', ['g', 's', 'e'])
+    expect(bindingConflicts([action('money', 'app', ['g', 's']), settings])).toEqual([
+      'g s (money) starts g s e (settings)',
+    ])
+    expect(
+      bindingConflicts([action('clear', 'page', ['c']), action('cash', 'app', ['c', '1'])]),
+    ).toHaveLength(1)
+    expect(
+      bindingConflicts([action('category', 'selection', ['c']), action('cash', 'app', ['c', '1'])]),
+    ).toEqual([])
   })
 
   it('does not report unrelated input as a pending command', () => {

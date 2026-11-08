@@ -25,14 +25,12 @@ type GuideEntry = {
 export function KeyGuide({
   actions,
   prefix,
-  count,
   onRun,
   onClose,
   onShowAll,
 }: {
   actions: readonly AppAction[]
   prefix: readonly string[]
-  count: string
   onRun: (action: AppAction) => void
   onClose: () => void
   onShowAll?: () => void
@@ -57,7 +55,7 @@ export function KeyGuide({
         left.action.title.localeCompare(right.action.title),
     )
   }, [actions, prefix])
-  const typed = [...(count ? [count] : []), ...prefix].join(' ')
+  const typed = prefix.join(' ')
 
   return (
     <aside className="key-guide" role="dialog" aria-modal="false" aria-labelledby="key-guide-title">

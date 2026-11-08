@@ -1,6 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
-import { ThemeProvider } from 'next-themes'
 import { StrictMode, useEffect, useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
 import { Toaster } from 'sonner'
@@ -84,42 +83,21 @@ function StartupReady() {
   return null
 }
 
-// Light and System were retired; a saved or imported choice of either opens in Dark.
-try {
-  const savedTheme = localStorage.getItem('brief:theme')
-  if (savedTheme === 'light' || savedTheme === 'system') localStorage.setItem('brief:theme', 'dark')
-} catch {
-  // Storage can be unavailable; the provider then falls back to Dark.
-}
-
 function App() {
   return (
-    <ThemeProvider
-      attribute="data-theme"
-      defaultTheme="dark"
-      enableSystem={false}
-      storageKey="brief:theme"
-      themes={['dark', 'custom']}
-      disableTransitionOnChange
-    >
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider delay={50} closeDelay={80}>
-          <ActionProvider>
-            <FinanceProvider>
-              <LiveMarketProvider>
-                <RouterProvider router={router} />
-                <StartupReady />
-              </LiveMarketProvider>
-            </FinanceProvider>
-          </ActionProvider>
-          <Toaster
-            theme="dark"
-            position="bottom-right"
-            toastOptions={{ className: 'brief-toast' }}
-          />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <QueryClientProvider client={queryClient}>
+      <TooltipProvider delay={50} closeDelay={80}>
+        <ActionProvider>
+          <FinanceProvider>
+            <LiveMarketProvider>
+              <RouterProvider router={router} />
+              <StartupReady />
+            </LiveMarketProvider>
+          </FinanceProvider>
+        </ActionProvider>
+        <Toaster theme="dark" position="bottom-right" toastOptions={{ className: 'brief-toast' }} />
+      </TooltipProvider>
+    </QueryClientProvider>
   )
 }
 

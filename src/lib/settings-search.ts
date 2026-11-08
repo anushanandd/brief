@@ -179,11 +179,6 @@ export const settingsSections: readonly SettingsSection[] = [
     keywords: 'look display',
     entries: [
       {
-        id: 'theme',
-        title: 'Theme',
-        keywords: 'light dark system brief translucent glass mode color',
-      },
-      {
         id: 'home-accounts',
         title: 'Account categories',
         keywords: 'home today categories groups expanded collapsed',

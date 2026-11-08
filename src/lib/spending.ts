@@ -92,9 +92,8 @@ export function resolveSpendingAccount(accounts: Account[], preferredId: string)
 export const allSpendingAccounts = 'all'
 
 /**
- * What Spending covers: one account, or every USD account with spending. The saved card is
- * the default and the only account with statements and benefits; no other card is ever
- * chosen in its place.
+ * What Spending covers: every USD account with spending, the default, or one of them. The
+ * saved card leads the list and is the only account with statements and benefits.
  */
 export function spendingScope(
   accounts: Account[],
@@ -108,14 +107,13 @@ export function spendingScope(
       .filter(isSpendingTransaction)
       .flatMap(({ accountId }) => (accountId ? [accountId] : [])),
   )
-  const options = accounts.filter(
-    ({ id, currency }) =>
-      id !== 'all' && (!currency || currency === 'USD') && (spenders.has(id) || id === card?.id),
-  )
-  const selected =
-    requested === allSpendingAccounts
-      ? undefined
-      : (options.find(({ id }) => id === requested) ?? card)
+  const options = accounts
+    .filter(
+      ({ id, currency }) =>
+        id !== 'all' && (!currency || currency === 'USD') && (spenders.has(id) || id === card?.id),
+    )
+    .toSorted((left, right) => Number(right.id === card?.id) - Number(left.id === card?.id))
+  const selected = options.find(({ id }) => id === requested)
   return { card, options, selected }
 }
 

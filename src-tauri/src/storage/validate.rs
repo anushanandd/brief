@@ -432,6 +432,8 @@ pub(super) fn valid_performance_points(points: &[PerformancePoint], method: Opti
             && point.sp500.is_none_or(f64::is_finite)
             && point.market_change.is_none_or(f64::is_finite)
             && point.market_change_pct.is_none_or(f64::is_finite)
+            && point.cash.is_none_or(f64::is_finite)
+            && point.invested.is_none_or(f64::is_finite)
             && if method == Some("value-only") {
                 point.net_deposits.is_none()
                     && point.sp500.is_none()

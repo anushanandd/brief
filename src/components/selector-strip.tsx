@@ -24,13 +24,24 @@ export type SelectorStripItem = {
   favorable?: 'increase' | 'decrease'
   /** The item can't report for this period. */
   unavailable?: boolean
+  /** What the figure measures, when the label alone doesn't say ("sent", "a month"). */
+  detail?: string
 }
 
 /**
  * The one selector at the head of Accounts, Money, and Investments: a strip of cards, each with
- * its figure and change over the page's period. ⌘← and ⌘→ step through it.
+ * its figure and change over the page's period. ⌘↑ and ⌘↓ step through it.
  */
-export function SelectorStrip({ label, items }: { label: string; items: SelectorStripItem[] }) {
+export function SelectorStrip({
+  label,
+  items,
+  stepping = true,
+}: {
+  label: string
+  items: SelectorStripItem[]
+  /** Off while the view below takes ⌘↑ and ⌘↓ for its own items. */
+  stepping?: boolean
+}) {
   const ref = useActiveSelectionScroll()
   const navigate = useNavigate()
   const step = useCallback(
@@ -44,9 +55,9 @@ export function SelectorStrip({ label, items }: { label: string; items: Selector
     },
     [items, navigate],
   )
-  useGraphAccountShortcuts(step)
+  useGraphAccountShortcuts(step, stepping)
   // The cards either side are the likeliest next step, so their code and data load ahead and
-  // ⌘← or ⌘→ only has to render.
+  // ⌘↑ or ⌘↓ only has to render.
   const router = useRouter()
   const index = items.findIndex(({ current }) => current)
   const neighbours =
@@ -72,7 +83,7 @@ export function SelectorStrip({ label, items }: { label: string; items: Selector
       ref={ref}
       className="account-switcher"
       aria-label={label}
-      aria-keyshortcuts="Meta+ArrowLeft Meta+ArrowRight"
+      aria-keyshortcuts={stepping ? 'Meta+ArrowUp Meta+ArrowDown' : undefined}
       data-keyboard-region
     >
       <div className="account-switcher-grid">
@@ -94,6 +105,7 @@ export function SelectorStrip({ label, items }: { label: string; items: Selector
                 <span className="sensitive-value" data-copy-amount>
                   {formatCurrency(item.unavailable ? null : item.value)}
                 </span>
+                {item.detail && !item.unavailable ? <small>{item.detail}</small> : null}
                 {item.change == null || item.unavailable ? null : (
                   <span
                     className={`sensitive-value ${changeTone(item.change, item.favorable)}`}

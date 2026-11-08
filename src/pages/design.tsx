@@ -63,7 +63,7 @@ export function DesignPage() {
     )
   }, [])
   return (
-    <div className="page settings-page design-page">
+    <div className="page design-page">
       <WorkspaceHeader
         title="Design"
         parent={{ label: 'Settings', to: '/settings' }}

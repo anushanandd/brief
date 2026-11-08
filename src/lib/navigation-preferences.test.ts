@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest'
 
 import { navigation } from './navigation'
-import { adjacentPage, movePage, parsePageOrder } from './navigation-preferences'
+import { movePage, parsePageOrder } from './navigation-preferences'
 
 it('restores valid ordering, discards unknowns and duplicates, and appends missing pages', () => {
   const defaults = navigation.map(({ to }) => to)
@@ -14,14 +14,4 @@ it('restores valid ordering, discards unknowns and duplicates, and appends missi
   expect(movePage(order, 0, -1)).toEqual(order)
   expect(movePage(order, 0, 1).slice(0, 2)).toEqual(['/spending', '/holdings'])
   expect(order[0]).toBe('/holdings')
-})
-
-it('cycles the saved order including nested routes and wraps at either end', () => {
-  const order = parsePageOrder('["/holdings","/spending"]')
-  expect(adjacentPage(order, '/holdings', 1)).toBe('/spending')
-  expect(adjacentPage(order, '/settings/design', 1)).toBe('/holdings')
-  expect(adjacentPage(order, '/settings/design', -1)).toBe(order.at(-1))
-  expect(adjacentPage(order, '/accounts/example', -1)).toBe('/')
-  expect(adjacentPage(order, '/holdings', -1)).toBe(order.at(-1))
-  expect(adjacentPage(order, order.at(-1)!, 1)).toBe('/holdings')
 })

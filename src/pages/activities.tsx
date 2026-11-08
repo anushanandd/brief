@@ -627,7 +627,6 @@ function useActivityCommands(handlers: {
           group: 'View',
           scope: 'page' as const,
           bindings: [{ sequence: [option.value], label: option.value.toUpperCase() }],
-          repeatable: true,
           run: () => update(activityDatePreset(option.value, localDateKey(Date.now() / 1000))),
         })),
       {
@@ -668,7 +667,8 @@ function useActivityCommands(handlers: {
         search: 'reset search filters',
         group: 'Here',
         scope: 'page',
-        bindings: [{ sequence: ['c'], label: 'C' }],
+        // C starts an account jump, so this takes ⇧C.
+        bindings: [{ sequence: ['C'], label: '⇧C' }],
         run: clearAll,
       },
       // Once a row has focus, the list's own motions take over the arrows.
@@ -733,7 +733,8 @@ function useActivityCommands(handlers: {
               search: 'bulk category recategorize selected',
               group: 'Here',
               scope: 'selection' as const,
-              bindings: [{ sequence: ['e'], label: 'E' }],
+              // C, as in the inspector; with rows selected it wins over a cash account's jump.
+              bindings: [{ sequence: ['c'], label: 'C' }],
               run: () =>
                 document
                   .querySelector<HTMLElement>('[data-selection-key="category"] button')

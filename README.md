@@ -51,6 +51,7 @@ pnpm install
 pnpm dev          # browser preview with synthetic data
 pnpm tauri dev    # native app with real providers
 pnpm check        # format, lint, test, build
+pnpm release      # build, sign, and replace /Applications/Brief.app
 cargo test --manifest-path src-tauri/Cargo.toml
 ```
 

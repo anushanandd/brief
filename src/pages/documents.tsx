@@ -358,7 +358,7 @@ export function DocumentsPage() {
       [search.year, open],
     ),
   )
-  // ⌘← and ⌘→ step through the tax years, newest first, as the strip lists them.
+  // ⌘↑ and ⌘↓ step through the tax years, newest first, as the strip lists them.
   useGraphAccountShortcuts(
     useCallback(
       (direction: -1 | 1) => {
@@ -731,7 +731,6 @@ function DocumentList({
             { sequence: [arrow], label: arrowLabel },
             { sequence: [letter], label: letter.toUpperCase() },
           ],
-          repeatable: true,
           disabled: !order.length,
           disabledReason: 'No documents shown',
           run: () => step(direction),

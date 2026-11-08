@@ -13,10 +13,10 @@ export function visibleKeyboardRows(region: HTMLElement) {
   )
 }
 
-/** The row `count` steps from `current` in `direction`, wrapping at either end. */
-export function countedRowIndex(current: number, length: number, direction: -1 | 1, count = 1) {
+/** The row one step from `current` in `direction`, wrapping at either end. */
+export function adjacentRowIndex(current: number, length: number, direction: -1 | 1) {
   if (length <= 0) return -1
-  return (current + direction * Math.max(1, count) + length * (count + 1)) % length
+  return (current + direction + length) % length
 }
 
 export function openFocusedKeyboardRow() {
@@ -27,17 +27,17 @@ export function openFocusedKeyboardRow() {
   target?.click()
 }
 
-/** Motions over the focused list's rows: next, previous, by page, to either end, and open. */
+/** Motions over the focused list's rows: next, previous, to either end, and open. */
 export function contextualListActions(region: HTMLElement | undefined): AppAction[] {
   if (!region || !visibleKeyboardRows(region).length) return []
   const label = region.getAttribute('aria-label') || 'focused list'
   // Rows are read when an action runs, since a list can grow or shrink while focus stays in it.
-  const move = (direction: -1 | 1, count = 1) => {
+  const move = (direction: -1 | 1) => {
     const rows = visibleKeyboardRows(region)
     if (!rows.length) return
     const current = document.activeElement?.closest<HTMLElement>('[data-keyboard-row]')
     const index = current ? rows.indexOf(current) : direction > 0 ? -1 : 0
-    const next = countedRowIndex(index, rows.length, direction, count)
+    const next = adjacentRowIndex(index, rows.length, direction)
     rows[next].focus()
     rows[next].scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
@@ -55,11 +55,10 @@ export function contextualListActions(region: HTMLElement | undefined): AppActio
       icon: List,
       scope: 'region',
       bindings: [
-        { sequence: ['j'], label: 'J', acceptsCount: true },
-        { sequence: ['ArrowDown'], label: '↓', acceptsCount: true },
+        { sequence: ['j'], label: 'J' },
+        { sequence: ['ArrowDown'], label: '↓' },
       ],
-      repeatable: true,
-      run: (count) => move(1, count),
+      run: () => move(1),
     },
     {
       id: `motion.previous:${label}`,
@@ -68,31 +67,10 @@ export function contextualListActions(region: HTMLElement | undefined): AppActio
       icon: List,
       scope: 'region',
       bindings: [
-        { sequence: ['k'], label: 'K', acceptsCount: true },
-        { sequence: ['ArrowUp'], label: '↑', acceptsCount: true },
+        { sequence: ['k'], label: 'K' },
+        { sequence: ['ArrowUp'], label: '↑' },
       ],
-      repeatable: true,
-      run: (count) => move(-1, count),
-    },
-    {
-      id: `motion.viewport-next:${label}`,
-      title: `Move down through ${label}`,
-      group: 'Here',
-      icon: List,
-      scope: 'region',
-      bindings: [{ sequence: ['Control+d'], label: '⌃D', acceptsCount: true }],
-      repeatable: true,
-      run: (count) => move(1, 8 * (count ?? 1)),
-    },
-    {
-      id: `motion.viewport-previous:${label}`,
-      title: `Move up through ${label}`,
-      group: 'Here',
-      icon: List,
-      scope: 'region',
-      bindings: [{ sequence: ['Control+u'], label: '⌃U', acceptsCount: true }],
-      repeatable: true,
-      run: (count) => move(-1, 8 * (count ?? 1)),
+      run: () => move(-1),
     },
     {
       id: `motion.first:${label}`,
@@ -101,7 +79,6 @@ export function contextualListActions(region: HTMLElement | undefined): AppActio
       icon: List,
       scope: 'region',
       bindings: [{ sequence: ['g', 'g'], label: 'g g' }],
-      repeatable: true,
       run: () => edge('first'),
     },
     {
@@ -111,7 +88,6 @@ export function contextualListActions(region: HTMLElement | undefined): AppActio
       icon: List,
       scope: 'region',
       bindings: [{ sequence: ['G'], label: 'G' }],
-      repeatable: true,
       run: () => edge('last'),
     },
     {

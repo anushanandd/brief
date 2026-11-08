@@ -550,7 +550,8 @@ function PersonView({
           detail: earlier ? names.get(earlier.id) : undefined,
           group: 'View',
           scope: 'page',
-          bindings: [{ sequence: ['ArrowLeft'], label: '←' }],
+          // ⌘↑ and ⌘↓ step through what's open, as on every selector.
+          bindings: [{ sequence: ['Meta+ArrowUp'], label: '⌘↑' }],
           disabled: !earlier,
           disabledReason: 'This is the first person',
           run: () => go(earlier),
@@ -561,7 +562,7 @@ function PersonView({
           detail: later ? names.get(later.id) : undefined,
           group: 'View',
           scope: 'page',
-          bindings: [{ sequence: ['ArrowRight'], label: '→' }],
+          bindings: [{ sequence: ['Meta+ArrowDown'], label: '⌘↓' }],
           disabled: !later,
           disabledReason: 'This is the last person',
           run: () => go(later),

@@ -4,6 +4,7 @@ import { expect, it } from 'vitest'
 
 import { evidenceFixture } from '../data/fixtures/evidence'
 import { expectedEvent } from '../data/fixtures/insights'
+import { bindingConflicts, type AppAction } from '../lib/action-system'
 import { settingsSections } from '../lib/settings-search'
 import {
   hasRoute,
@@ -35,24 +36,23 @@ it('shows unknown quote timestamps instead of the saved snapshot time', async ()
   expect(html).toContain('Source timestamps')
 })
 
-it('opens Settings as a page in place of the current one, one section at a time', async () => {
+it('opens Settings as a modal over the current page, every section in one scroll', async () => {
   scenario.annotationWarning = 'Transaction annotations could not be loaded.'
   const html = await renderSettings('/accounts#settings')
-  expect(html).toMatch(/<div class="page settings-page" role="region" aria-labelledby="[^"]+"/)
-  // The page beneath gives way rather than sitting behind a modal.
-  expect(html).not.toContain('<dialog class="settings-dialog"')
-  expect(html).not.toContain('<h2>Balances</h2>')
+  expect(html).toMatch(/<dialog class="settings-dialog" aria-labelledby="[^"]+"/)
+  expect(html).not.toContain('settings-page')
   expect(html).toContain('aria-label="Close settings"')
   expect(html).toContain('Transaction annotations could not be loaded.')
   expect(html).toMatch(/type="text"[^>]*aria-label="Search settings"[^>]*autoComplete="off"/)
   expect(html).toContain('aria-label="Settings sections"')
-  // The first section opens by default, and only it renders.
+  // The rail marks the first section, and every section renders beneath it.
   expect(html).toContain(
-    'href="#settings/connections" class="settings-rail-link" aria-current="page"',
+    'href="#settings/connections" class="settings-rail-link" aria-current="location"',
   )
-  expect(html).toContain('id="connections"')
-  expect(html).not.toContain('id="advanced"')
-  for (const section of settingsSections) expect(html).toContain(`href="#settings/${section.id}"`)
+  for (const section of settingsSections) {
+    expect(html).toContain(`href="#settings/${section.id}"`)
+    expect(html).toContain(`id="${section.id}"`)
+  }
 })
 
 it('reaches every Settings section and row by its address', async () => {
@@ -66,11 +66,12 @@ it('reaches every Settings section and row by its address', async () => {
   expect(html).toContain('role="switch"')
 })
 
-it('opens the section holding a linked row', async () => {
+it('marks the section holding a linked row', async () => {
   const html = await renderSettings('/#settings/platinum-benefits')
-  expect(html).toContain('href="#settings/accounts" class="settings-rail-link" aria-current="page"')
+  expect(html).toContain(
+    'href="#settings/accounts" class="settings-rail-link" aria-current="location"',
+  )
   expect(html).toContain('id="platinum-benefits"')
-  expect(html).not.toContain('id="connections"')
 })
 
 it('opens explicit recovery without showing a fabricated empty finance page', async () => {
@@ -228,20 +229,11 @@ it('keeps account details and utilities out of the organized sidebar', async () 
   expect(sidebar).not.toContain('Test Bank')
   expect(sidebar).not.toContain('Other Bank')
   expect(sidebar).not.toContain('href="/spending/platinum"')
-  expect(sidebar).toContain('href="/analytics?chart=amex-credits"')
-  for (const chart of [
-    'income',
-    'amex-credits',
-    'dividends',
-    'interest',
-    'fees',
-    'realized',
-    'cash-flow',
-  ]) {
-    expect(sidebar).toContain(`href="/analytics?chart=${chart}"`)
-  }
+  // Reports open from the palette and the pages that link them, not the sidebar.
+  expect(sidebar).not.toContain('href="/analytics')
   const appearance = await renderEverySettingsSection()
-  expect(appearance).toMatch(/role="combobox"[^>]*aria-label="Theme"/)
+  // One look; there is no theme to choose.
+  expect(appearance).not.toContain('aria-label="Theme"')
   expect(appearance).toMatch(/role="combobox"[^>]*aria-label="Live price updates"/)
   expect(appearance).toContain('Live price updates')
   expect(appearance).toContain('Financial backup')
@@ -361,6 +353,7 @@ it('maps every control to a registered command', async () => {
     'wbr',
   ])
   const missing: string[] = []
+  const conflicts: string[] = []
   for (const route of [
     '/',
     '/accounts',
@@ -382,9 +375,12 @@ it('maps every control to a registered command', async () => {
     '/documents',
   ]) {
     // The registry as the page fills it: every control must name an action registered there.
-    const ids = new Set<string>()
-    const html = await renderRoute(route, 'selected', ids)
+    const actions = new Map<string, AppAction>()
+    const html = await renderRoute(route, 'selected', (action) => actions.set(action.id, action))
+    const ids = new Set(actions.keys())
     expect(ids.has('palette.open'), `${route} registered the app's actions`).toBe(true)
+    // Every shortcut the page offers works: none waits on, or shares a key with, another.
+    conflicts.push(...bindingConflicts([...actions.values()]).map((found) => `${route}: ${found}`))
     // A family registered per option (`spending.for.me`) covers a control naming its stem.
     const registered = (command: string) =>
       ids.has(command) || [...ids].some((id) => id.startsWith(command) && command.endsWith('.'))
@@ -413,39 +409,5 @@ it('maps every control to a registered command', async () => {
     }
   }
   expect(missing).toEqual([])
-})
-
-it('lists what needs action on Home, each opening where to act', async () => {
-  scenario.insights = {
-    brief: {
-      needs: [
-        {
-          id: 'duplicate:a:b',
-          severity: 'attention',
-          kind: 'possible-duplicate',
-          accountId: 'selected',
-          merchant: 'Example Hardware',
-          amount: -54.2,
-          date: '2026-09-12',
-          transactionIds: ['a', 'b'],
-        },
-        {
-          id: 'wash-window:sale',
-          severity: 'attention',
-          kind: 'wash-window',
-          ticker: 'BBB',
-          accountId: 'selected',
-          soldOn: '2026-09-10',
-          until: '2026-10-10',
-          loss: -50,
-        },
-      ],
-    },
-  }
-  const html = (await renderRoute('/')).replaceAll('<!-- -->', '')
-  expect(html).toContain('Needs you')
-  expect(html).toContain('Possible duplicate at Example Hardware')
-  expect(html).toContain('href="/activities?open=b"')
-  expect(html).toContain('Don’t buy BBB until Oct 11')
-  expect(html).toContain('href="/taxes"')
+  expect(conflicts).toEqual([])
 })

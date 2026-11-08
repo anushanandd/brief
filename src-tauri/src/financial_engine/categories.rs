@@ -86,11 +86,18 @@ pub fn kind_for(detailed: &str) -> Option<CodeKind> {
         })
 }
 
+/// `RENT_AND_UTILITIES` as "Rent and Utilities": each word capitalized but the short joining
+/// words, which stay lowercase after the first.
 pub fn title_case(value: &str) -> String {
+    const MINOR: [&str; 9] = ["a", "an", "and", "at", "for", "in", "of", "or", "the"];
     value
         .to_ascii_lowercase()
         .split('_')
-        .map(|part| {
+        .enumerate()
+        .map(|(index, part)| {
+            if index > 0 && MINOR.contains(&part) {
+                return part.to_owned();
+            }
             let mut chars = part.chars();
             chars
                 .next()
@@ -104,6 +111,13 @@ pub fn title_case(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn title_case_keeps_joining_words_lowercase() {
+        assert_eq!(title_case("RENT_AND_UTILITIES"), "Rent and Utilities");
+        assert_eq!(title_case("THE_HOME_DEPOT"), "The Home Depot");
+        assert_eq!(title_case("GENERAL_MERCHANDISE"), "General Merchandise");
+    }
 
     #[test]
     fn maps_detailed_codes_to_categories_with_concise_labels() {

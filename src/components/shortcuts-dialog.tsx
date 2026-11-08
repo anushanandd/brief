@@ -44,7 +44,7 @@ function sectionFor(action: AppAction): (typeof sectionOrder)[number] {
 export function shortcutSections(actions: readonly AppAction[]): ShortcutSection[] {
   const rows = new Map<string, { section: string; row: ShortcutRow }>()
   for (const { action, binding } of actionBindings(actions)) {
-    if (action.id.startsWith('motion.') || action.id === 'action.repeat') continue
+    if (action.id.startsWith('motion.')) continue
     const entry = rows.get(action.title) ?? {
       section: sectionFor(action),
       row: { title: action.title, keys: [] as string[] },

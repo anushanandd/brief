@@ -15,7 +15,6 @@ import {
   displayCase,
   formatActivityName,
   formatCurrency,
-  formatForeignAmount,
   formatProseCurrency,
   valueTone,
 } from '../lib/format'
@@ -34,8 +33,8 @@ import {
   ArrowUpRight,
   Check,
   FileText,
+  Globe2,
   MapPinned,
-  Plane,
   Repeat2,
   ShieldCheck,
   Unlink,
@@ -244,13 +243,33 @@ function TransactionDetails({
         .filter(Boolean)
         .join(', ')
     : ''
-  const businessFacts = business
+  const businessFacts = [
+    business?.category ? categoryLabel(business.category) : '',
+    business?.phone ?? wallet?.phone,
+    business?.closed ? 'Listed as closed' : '',
+  ].filter(Boolean)
+  // Documents that state this transaction: a statement lists it, or a pay statement paid it.
+  const evidence = transaction ? transactionDocuments(data, transaction.id) : []
+  const onStatement = evidence.some(({ kind }) => kind === 'statement')
+  const onPayStatement = evidence.some(({ kind }) => kind === 'pay')
+  const website = business?.website ?? transaction?.website
+  // How it was paid, beside what Wallet saw at the terminal.
+  const paid = transaction
     ? [
-        business.category ? categoryLabel(business.category) : '',
-        business.phone,
-        business.closed ? 'Listed as closed' : '',
+        wallet?.terminalAmount != null
+          ? `Approved for ${formatCurrency(Math.abs(wallet.terminalAmount))} at the terminal`
+          : '',
+        wallet?.reward && wallet.reward.amount > 0
+          ? `Earned ${formatCurrency(wallet.reward.amount)} Daily Cash · ${wallet.reward.percent}%`
+          : '',
       ].filter(Boolean)
     : []
+  // Who else recorded it: Wallet at the terminal, a statement, or a pay statement.
+  const sources = [
+    wallet && !activity.pending && !transaction?.id.startsWith('wallet:') ? 'Apple Wallet' : '',
+    onStatement ? 'the statement' : onPayStatement ? 'the pay statement' : '',
+  ].filter(Boolean)
+  const quality = transaction ? evidenceDetails(transaction) : []
   // Google Maps opens the business's card from its name and street address, when known.
   const mapsHref = resolved
     ? placeMapsUrl(
@@ -277,24 +296,20 @@ function TransactionDetails({
   }
   const details = transaction ? bankDetails(transaction) : []
   const walletFacts = transaction ? walletDetails(transaction) : []
-  // Documents that state this transaction: a statement lists it, or a pay statement paid it.
-  const evidence = transaction ? transactionDocuments(data, transaction.id) : []
-  const onStatement = evidence.some(({ kind }) => kind === 'statement')
-  const onPayStatement = evidence.some(({ kind }) => kind === 'pay')
   // Details whose sources disagree, until the user marks the transaction reviewed.
   const conflicts =
     transaction?.quality && !transaction.reviewed
-      ? evidenceDetails(transaction)
-          .filter(({ conflict }) => conflict)
-          .map(({ label }) => label)
+      ? quality.filter(({ conflict }) => conflict).map(({ label }) => label)
       : []
 
   const categoryOrigin =
     detail?.categoryOrigin === 'manual'
       ? 'Set by you'
-      : transaction?.providerCategory && transaction.providerCategory !== activity.category
-        ? `Bank says ${transaction.providerCategory}`
-        : 'From the bank'
+      : wallet?.categorized
+        ? 'From the card network'
+        : transaction?.providerCategory && transaction.providerCategory !== activity.category
+          ? `Bank says ${transaction.providerCategory}`
+          : 'From the bank'
 
   return (
     <article className="transaction-details">
@@ -335,29 +350,6 @@ function TransactionDetails({
           ) : (
             `${formatActivityDate(posted)}${atTime}`
           )}
-          {wallet?.foreign ? (
-            <span className="transaction-details-tag sensitive-value">
-              {formatForeignAmount(wallet.foreign.amount, wallet.foreign.currency)}
-            </span>
-          ) : null}
-          {wallet?.method ? <span className="transaction-details-tag">{method}</span> : null}
-          {wallet?.reward && wallet.reward.amount > 0 ? (
-            <span className="transaction-details-tag">
-              Earned <span className="sensitive-value">{formatCurrency(wallet.reward.amount)}</span>
-            </span>
-          ) : null}
-          {wallet && !activity.pending && !transaction?.id.startsWith('wallet:') ? (
-            <span className="transaction-details-tag is-positive">
-              <ShieldCheck size={12} aria-hidden="true" />
-              Confirmed by Wallet
-            </span>
-          ) : null}
-          {detail?.expected ? (
-            <span className="transaction-details-tag">
-              <Repeat2 size={12} aria-hidden="true" />
-              {detail.expected.frequency}
-            </span>
-          ) : null}
           {detail?.duplicate ? (
             <span className="transaction-details-tag is-warning">
               <AlertCircle size={12} aria-hidden="true" />
@@ -382,25 +374,6 @@ function TransactionDetails({
               <span className="sensitive-value">
                 {formatCurrency(Math.abs(detail.priceChange.previous))}
               </span>
-            </span>
-          ) : null}
-          {detail?.trip ? (
-            <span className="transaction-details-tag">
-              <Plane size={12} aria-hidden="true" />
-              {detail.trip.destination}
-            </span>
-          ) : null}
-          {onStatement || onPayStatement ? (
-            <span className="transaction-details-tag is-positive">
-              <ShieldCheck size={12} aria-hidden="true" />
-              {onStatement ? 'On the statement' : 'Matches the pay statement'}
-            </span>
-          ) : null}
-          {transaction?.dividendType ? (
-            <span className="transaction-details-tag">
-              {transaction.dividendType === 'qualified'
-                ? 'Qualified dividend'
-                : 'Ordinary dividend'}
             </span>
           ) : null}
           {detail?.benefits.map((benefit) => (
@@ -544,21 +517,70 @@ function TransactionDetails({
                         <small>{address}</small>
                       ) : null}
                       {businessFacts.length ? <small>{businessFacts.join(' · ')}</small> : null}
-                      {place.kind !== 'place' && method && method !== place.primary ? (
+                      {!transaction &&
+                      place.kind !== 'place' &&
+                      method &&
+                      method !== place.primary ? (
                         <small>{method}</small>
                       ) : null}
                     </span>
                   </span>
-                  {mapsHref ? (
-                    <ExternalLink className="transaction-details-link" href={mapsHref}>
-                      <MapPinned size={12} aria-hidden="true" />
-                      Open in Google Maps
-                    </ExternalLink>
+                  {mapsHref || website ? (
+                    <span className="transaction-details-links">
+                      {mapsHref ? (
+                        <ExternalLink className="transaction-details-link" href={mapsHref}>
+                          <MapPinned size={12} aria-hidden="true" />
+                          Open in Google Maps
+                        </ExternalLink>
+                      ) : null}
+                      {website ? (
+                        <ExternalLink
+                          className="transaction-details-link"
+                          href={/^https?:\/\//.test(website) ? website : `https://${website}`}
+                        >
+                          <Globe2 size={12} aria-hidden="true" />
+                          {website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
+                        </ExternalLink>
+                      ) : null}
+                    </span>
                   ) : null}
                 </dd>
               </div>
+              {transaction && (method || paid.length) ? (
+                <div>
+                  <dt>Paid</dt>
+                  <dd>
+                    {method || 'With the card'}
+                    {paid.map((line) => (
+                      <small key={line} className="sensitive-value">
+                        {line}
+                      </small>
+                    ))}
+                  </dd>
+                </div>
+              ) : null}
             </>
           )}
+          {detail?.expected ? (
+            <div>
+              <dt>Repeats</dt>
+              <dd>
+                <span className="transaction-details-value">
+                  <Repeat2 size={14} aria-hidden="true" />
+                  <span>
+                    {detail.expected.frequency}
+                    <small>Next expected {formatActivityDate(detail.expected.date)}</small>
+                  </span>
+                </span>
+              </dd>
+            </div>
+          ) : null}
+          {transaction?.dividendType ? (
+            <div>
+              <dt>Dividend</dt>
+              <dd>{transaction.dividendType === 'qualified' ? 'Qualified' : 'Ordinary'}</dd>
+            </div>
+          ) : null}
           {activity.description && activity.description !== activity.title ? (
             <div>
               <dt>Bank text</dt>
@@ -616,49 +638,39 @@ function TransactionDetails({
               </dd>
             </div>
           ) : null}
+          {transaction ? (
+            <div>
+              <dt>Verified</dt>
+              <dd>
+                <span className="transaction-details-value">
+                  {sources.length ? (
+                    <ShieldCheck size={14} aria-hidden="true" className="positive" />
+                  ) : null}
+                  <span>
+                    {sources.length
+                      ? `${activity.pending ? 'Pending' : 'Posted'} and confirmed by ${sources.join(' and ')}`
+                      : activity.pending
+                        ? 'Pending with the bank'
+                        : 'Reported by the bank'}
+                  </span>
+                </span>
+                {quality.length ? (
+                  <details className="transaction-details-why">
+                    <summary>How Brief knows</summary>
+                    <dl className="transaction-details-facts">
+                      {quality.map(({ label, value, conflict }) => (
+                        <div key={label}>
+                          <dt>{label}</dt>
+                          <dd className={conflict ? 'is-warning' : undefined}>{value}</dd>
+                        </div>
+                      ))}
+                    </dl>
+                  </details>
+                ) : null}
+              </dd>
+            </div>
+          ) : null}
         </dl>
-
-        {transaction?.quality ? (
-          <details className="transaction-details-more">
-            <summary>Evidence</summary>
-            <dl className="transaction-details-facts">
-              {evidenceDetails(transaction).map(({ label, value, conflict }) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd className={conflict ? 'is-warning' : undefined}>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        ) : null}
-
-        {walletFacts.length ? (
-          <details className="transaction-details-more">
-            <summary>Wallet details</summary>
-            <dl className="transaction-details-facts">
-              {walletFacts.map(({ label, value, raw }) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd className={raw ? 'transaction-details-raw' : undefined}>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        ) : null}
-
-        {details.length ? (
-          <details className="transaction-details-more">
-            <summary>Bank details</summary>
-            <dl className="transaction-details-facts">
-              {details.map(({ label, value, raw }) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd className={raw ? 'transaction-details-raw' : undefined}>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
-        ) : null}
 
         {transaction ? (
           <TransactionEdits
@@ -717,6 +729,14 @@ function TransactionDetails({
             </ul>
           </section>
         ) : null}
+
+        {walletFacts.length || details.length ? (
+          <details className="transaction-details-more">
+            <summary>Raw records</summary>
+            {walletFacts.length ? <RawRecord title="Apple Wallet" rows={walletFacts} /> : null}
+            {details.length ? <RawRecord title="Bank" rows={details} /> : null}
+          </details>
+        ) : null}
       </div>
       <footer className="command-footer transaction-details-keys" aria-label="Keyboard">
         <span className="command-footer-hint">
@@ -732,23 +752,10 @@ function TransactionDetails({
             Unlink <Keys label="U" />
           </span>
         ) : null}
+        {/* The edit rows' first letters: Category, For, Tags, People, Note, Split. */}
         <span className="command-footer-hint">
-          Category <Keys label="C" />
-        </span>
-        <span className="command-footer-hint">
-          Tag <Keys label="T" />
-        </span>
-        <span className="command-footer-hint">
-          People <Keys label="P" />
-        </span>
-        <span className="command-footer-hint">
-          Note <Keys label="N" />
-        </span>
-        <span className="command-footer-hint">
-          Split <Keys label="S" />
-        </span>
-        <span className="command-footer-hint">
-          Me or other <Keys label="F" />
+          Edit <Keys label="C" /> <Keys label="F" /> <Keys label="T" /> <Keys label="P" />{' '}
+          <Keys label="N" /> <Keys label="S" />
         </span>
         <span className="command-footer-hint">
           Details <Keys label="⌘I" />
@@ -776,7 +783,29 @@ const counterpartyLabels: Record<string, string> = {
   income_source: 'Income source',
 }
 
-/** What the bank and Plaid reported beyond the essentials, for the Bank details disclosure. */
+/** One source's raw record, under Raw records. */
+function RawRecord({
+  title,
+  rows,
+}: {
+  title: string
+  rows: { label: string; value: string; raw?: boolean }[]
+}) {
+  return (
+    <section className="transaction-details-record" aria-label={title}>
+      <h4>{title}</h4>
+      <dl className="transaction-details-facts">
+        {rows.map(({ label, value, raw }) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd className={raw ? 'transaction-details-raw' : undefined}>{value}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
 /** The purchase a benefit match rests on: this one, or the one a credit was paired with. */
 function benefitLink(benefits: readonly BenefitActivity[]) {
   const match = benefits.find(
@@ -868,6 +897,8 @@ const evidenceLabels: Record<QualityEvidence['basis'], string> = {
   statementDiffers: 'The statement shows another amount',
   statementOnly: 'From an imported statement',
   pending: 'Pending; may change when it posts',
+  wallet: 'Apple Wallet recorded it',
+  merchantCode: 'The card network’s merchant code',
   provider: 'Posted by the bank',
   providerConfident: 'Plaid is sure',
   providerUnsure: 'Plaid isn’t sure',
@@ -944,22 +975,14 @@ export function conflictNote(transaction: Transaction, label: string) {
   return `Sources disagree on the ${label.toLowerCase()}.`
 }
 
-/** What Apple Wallet recorded beyond what the page shows, with its identifiers last. */
+/** What Apple Wallet recorded that the page doesn't show: its name and the network's identifiers. */
 export function walletDetails(transaction: FinanceSnapshot['transactions'][number]) {
   const wallet = transaction.wallet
   const rows: { label: string; value: string; raw?: boolean }[] = []
   if (!wallet) return rows
-  const { foreign, reward, network } = wallet
-  if (wallet.terminalAmount != null)
-    rows.push({ label: 'At the terminal', value: formatCurrency(wallet.terminalAmount) })
-  if (foreign?.rate != null)
-    rows.push({ label: 'Exchange rate', value: `${foreign.rate} USD per ${foreign.currency}` })
-  if (reward)
-    rows.push({
-      label: 'Daily Cash',
-      value: `${formatCurrency(reward.amount)} at ${reward.percent}%`,
-    })
-  if (wallet.phone) rows.push({ label: 'Phone', value: wallet.phone })
+  const { network } = wallet
+  if (wallet.merchant && wallet.merchant !== transaction.merchant)
+    rows.push({ label: 'Wallet’s name', value: wallet.merchant })
   if (network?.merchantCode != null)
     rows.push({ label: 'Merchant code', value: String(network.merchantCode), raw: true })
   if (network?.descriptor)
@@ -1000,8 +1023,6 @@ export function bankDetails(transaction: FinanceSnapshot['transactions'][number]
     })
   if (issuer?.category) rows.push({ label: 'Issuer’s category', value: issuer.category })
   if (issuer?.phone) rows.push({ label: 'Merchant phone', value: issuer.phone })
-  if (transaction.business?.website)
-    rows.push({ label: 'Website', value: transaction.business.website })
   if (transaction.accountOwner) rows.push({ label: 'Card holder', value: transaction.accountOwner })
   if (transaction.checkNumber)
     rows.push({ label: 'Check', value: `No. ${transaction.checkNumber}` })

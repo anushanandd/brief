@@ -21,6 +21,7 @@ import type { GroupHistory } from "./GroupHistory";
 import type { InvestmentAttention } from "./InvestmentAttention";
 import type { LongTermSoon } from "./LongTermSoon";
 import type { Movers } from "./Movers";
+import type { NetWorthPart } from "./NetWorthPart";
 import type { People } from "./People";
 import type { PeriodChange } from "./PeriodChange";
 import type { PeriodRecap } from "./PeriodRecap";
@@ -73,6 +74,11 @@ recurringCheck: RecurringCheck,
  * Spending's scopes and their periods.
  */
 spending: Array<SpendingScope>, accountsTotal?: AccountsTotal, 
+/**
+ * Home's total by day, without the spending cards when there are any, split into cash,
+ * securities, and the rest, with its drawdown.
+ */
+netWorthParts?: Array<NetWorthPart>, 
 /**
  * Each account group's value and daily history, the spending cards as their own group.
  */

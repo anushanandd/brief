@@ -3,11 +3,12 @@
 import { expect, it, vi } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
+import type { AppAction } from '../lib/action-system'
 import { renderEverySettingsSection, renderRoute, renderSettings } from './routes.harness'
 import { scenario } from './routes.scenario'
 
 it('keeps a short Platinum preview on Spending and links to Benefits', async () => {
-  const html = await renderRoute('/spending')
+  const html = await renderRoute('/spending?account=selected')
   expect(html).toContain('<h2>Categories</h2>')
   expect(html).toContain('a day</span>')
   // A glance leads with the fee, then what to use soon; captured credits and exact ranges read
@@ -35,6 +36,28 @@ it('keeps a short Platinum preview on Spending and links to Benefits', async () 
   expect(html.indexOf('spending-companion')).toBeLessThan(html.indexOf('spending-benefits-card'))
   expect(html).toContain('aria-label="Spending by merchant"')
   expect(html).not.toContain('Other account transaction')
+})
+
+it('opens Money on every account, with a control and 0–9 to choose one', async () => {
+  // A second card with purchases of its own.
+  scenario.otherKind = 'expense'
+  scenario.otherCategory = 'Shopping'
+  const actions = new Map<string, AppAction>()
+  const html = await renderRoute('/spending', 'selected', (action) =>
+    actions.set(action.id, action),
+  )
+  expect(html).toMatch(/role="combobox"[^>]*aria-label="Spending account\. Showing: All accounts"/)
+  expect(html).toContain('Other account transaction')
+  const keys = [...actions.values()]
+    .filter(({ id }) => id.startsWith('spending.account.'))
+    .map(({ id, bindings }) => [id, bindings?.[0].label])
+  // The saved card leads, so it is always 1.
+  expect(keys.slice(0, 2)).toEqual([
+    ['spending.account.all', '0'],
+    ['spending.account.selected', '1'],
+  ])
+  // Statements belong to the saved card, so every account's view counts the month.
+  expect(html).toMatch(/aria-label="Spending range\. Active period: This month"/)
 })
 
 it('ranks spending categories below the pace chart', async () => {
@@ -294,7 +317,8 @@ it('shows where spending went beside the latest activity', async () => {
 })
 
 it('uses the shared Spending range control and keyboard period navigation', async () => {
-  const html = await renderRoute('/spending')
+  // The saved card's view, the one with a statement period.
+  const html = await renderRoute('/spending?account=selected')
   const spendingPanel = html.slice(
     html.indexOf('<section class="spending-total-panel"'),
     html.indexOf('</section>', html.indexOf('<section class="spending-total-panel"')),
@@ -318,7 +342,7 @@ it('opens the selected analytics chart with shared account and date scope', asyn
   scenario.creditKind = 'income'
   const html = await renderRoute('/analytics?chart=income&from=2026-09-01&to=2026-09-03')
   expect(html).toContain('class="account-switcher" aria-label="Money"')
-  expect(html).toContain('aria-keyshortcuts="Meta+ArrowLeft Meta+ArrowRight"')
+  expect(html).toContain('aria-keyshortcuts="Meta+ArrowUp Meta+ArrowDown"')
   expect(html).toContain('aria-current="page">Income')
   expect(html).toContain('$70.00')
   expect(html).toMatch(/role="combobox"[^>]*aria-label="Analytics period"/)
@@ -612,7 +636,8 @@ it('shows days until the statement closes in the Spending chart and manual accou
       nextClose: '2026-09-25',
     },
   }
-  const spending = await renderRoute('/spending')
+  // A statement belongs to the saved card, so its view shows the close.
+  const spending = await renderRoute('/spending?account=selected')
   // The balance reads beside the statement's close; the headline stays what was spent.
   expect(spending).toMatch(
     /Balance <span class="sensitive-value">−?\$[\d,.]+<\/span> · closes in 5 days<\/h2>/,

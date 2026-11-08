@@ -198,10 +198,7 @@ fn series(id: &str, source: &str, points: &[(&str, f64)]) -> Performance {
             .map(|(date, value)| PerformancePoint {
                 date: (*date).into(),
                 value: *value,
-                net_deposits: None,
-                sp500: None,
-                market_change: None,
-                market_change_pct: None,
+                ..Default::default()
             })
             .collect(),
     }
@@ -306,6 +303,25 @@ fn combined_brokerages_start_at_the_earliest_account_history() {
         values(&[older, unknown]),
         [("2026-09-03".to_string(), 160.0)]
     );
+}
+
+#[test]
+fn a_known_cash_balance_splits_a_day_into_cash_and_securities() {
+    let mut record = series(
+        "snaptrade:brokerage",
+        "estimated",
+        &[("2026-09-01", 1_000.0), ("2026-09-02", 940.0)],
+    );
+    // Only the second day's cash is known; the first stays a total.
+    split_cash(&mut record, |date| {
+        (date == "2026-09-02").then(|| Decimal::from(100))
+    });
+    let parts = record
+        .points
+        .iter()
+        .map(|point| (point.cash, point.invested))
+        .collect::<Vec<_>>();
+    assert_eq!(parts, [(None, None), (Some(100.0), Some(840.0))]);
 }
 
 #[test]

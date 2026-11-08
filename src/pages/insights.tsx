@@ -92,7 +92,7 @@ function Insights({ data }: { data: FinanceSnapshot }) {
   return (
     <div className="page insights-page">
       <WorkspaceHeader title="Insights" breadcrumbs={breadcrumbs} />
-      <InsightsStrip data={data} current={view} today={today} />
+      <InsightsStrip data={data} current={view} today={today} stepping={!person} />
       {view === 'trips' ? <TripsView data={data} activities={activities} /> : null}
       {view === 'people' ? <PeopleView data={data} activities={activities} /> : null}
       {view === 'chapters' ? <ChaptersView data={data} /> : null}

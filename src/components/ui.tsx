@@ -1,5 +1,5 @@
 import NumberFlow from '@number-flow/react'
-import { useLayoutEffect, useRef, useState } from 'react'
+import { useLayoutEffect, useRef } from 'react'
 import type { ComponentPropsWithRef, ReactNode } from 'react'
 
 import {
@@ -10,7 +10,6 @@ import {
   valueTone,
 } from '../lib/format'
 import { FilterSelect } from './filter-select'
-import { ChevronDown } from './icons'
 import type { IconComponent } from './icons'
 
 export function AnimatedCurrency({
@@ -103,14 +102,18 @@ export function ScrollCueCard({
   ...props
 }: Omit<ComponentPropsWithRef<'div'>, 'ref'> & { scrollSelector: string }) {
   const ref = useRef<HTMLDivElement>(null)
-  const [showScrollCue, setShowScrollCue] = useState(false)
 
+  // The region fades out at its bottom edge while more sits below, as macOS lists do; a chevron
+  // over the last row read as a stray control.
   useLayoutEffect(() => {
     const card = ref.current
     if (!card) return undefined
     const scrollRegion = card.querySelector<HTMLElement>(scrollSelector)
     if (!scrollRegion) return undefined
-    const update = () => setShowScrollCue(hasMoreBelow(scrollRegion))
+    const update = () => {
+      if (hasMoreBelow(scrollRegion)) scrollRegion.dataset.moreBelow = ''
+      else delete scrollRegion.dataset.moreBelow
+    }
     const observer = new ResizeObserver(update)
     observer.observe(card)
     observer.observe(scrollRegion)
@@ -125,13 +128,6 @@ export function ScrollCueCard({
 
   return (
     <Card ref={ref} className={className} {...props}>
-      <span
-        className="card-scroll-cue"
-        data-visible={showScrollCue || undefined}
-        aria-hidden="true"
-      >
-        <ChevronDown size={16} strokeWidth={1.75} />
-      </span>
       {children}
     </Card>
   )

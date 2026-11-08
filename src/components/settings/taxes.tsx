@@ -150,7 +150,7 @@ export function TaxesSection() {
             className="settings-number-input"
             disabled={!profile}
             value={profile ? formatProseCurrency(profile.taxableIncome) : ''}
-            placeholder="$0"
+            placeholder="Dollars"
             aria-label="Other taxable income"
             onCommit={(text) => {
               const amount = parseAmount(text)
@@ -277,7 +277,7 @@ export function TaxesSection() {
                 ? formatProseCurrency(retirement.plannedMonthly)
                 : ''
             }
-            placeholder="$0"
+            placeholder="Dollars"
             aria-label="Monthly costs you’ll add"
             onCommit={(text) => {
               const amount = parseAmount(text)

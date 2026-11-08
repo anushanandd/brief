@@ -1,5 +1,4 @@
-import { useLocation, useNavigate } from '@tanstack/react-router'
-import { useTheme } from 'next-themes'
+import { useNavigate } from '@tanstack/react-router'
 import { useMemo } from 'react'
 import { toast } from 'sonner'
 
@@ -11,7 +10,6 @@ import {
   HelpCircle,
   List,
   MapPinned,
-  Palette,
   Plane,
   Repeat2,
   RotateCcw,
@@ -24,7 +22,7 @@ import type { AnalyticsChart } from '../lib/analytics'
 import { errorMessage } from '../lib/errors'
 import { exportLotsCsv, exportUpcomingCalendar } from '../lib/exports'
 import { analyticsNavigation, settingsNavigation } from '../lib/navigation'
-import { adjacentPage, useOrderedNavigation } from '../lib/navigation-preferences'
+import { useOrderedNavigation } from '../lib/navigation-preferences'
 import { useSettingsDialog } from '../lib/settings-dialog'
 import { useFinance } from './use-finance'
 import { useFinanceEdits } from './use-finance-edits'
@@ -37,7 +35,7 @@ const navigationSequences: Record<string, string> = {
   '/accounts': 'a',
   '/holdings': 'i',
   '/activities': 'c',
-  '/spending': 's',
+  '/spending': 'm',
   '/insights': 'n',
   '/calendar': 'd',
   '/documents': 'o',
@@ -65,7 +63,6 @@ export type ShellControls = {
   openFocusHints: () => void
   valuesHidden: boolean
   toggleValues: () => void
-  toggleReports: () => void
 }
 
 /**
@@ -74,14 +71,12 @@ export type ShellControls = {
  */
 export function useGlobalActions(controls: ShellControls): AppAction[] {
   const pages = useOrderedNavigation()
-  const pathname = useLocation({ select: (location) => location.pathname })
   const navigate = useNavigate()
   // Only the callback: the dialog hook's return object is new each render.
   const { show: openSettings } = useSettingsDialog()
   const finance = useFinance()
   const refresh = useRefreshFinance()
   const isRefreshing = useFinanceRefreshState()
-  const { theme, setTheme } = useTheme()
   const { undo, undoLabel } = useFinanceEdits()
   const recovering = Boolean(finance.data?.recovery)
   const plaidConnected = finance.integrationStatus.plaid
@@ -93,15 +88,8 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
     total: placesTotal,
     start: findPlaces,
   } = useFindPlaces()
-  const {
-    openPalette,
-    openShortcuts,
-    openKeyGuide,
-    openFocusHints,
-    valuesHidden,
-    toggleValues,
-    toggleReports,
-  } = controls
+  const { openPalette, openShortcuts, openKeyGuide, openFocusHints, valuesHidden, toggleValues } =
+    controls
   return useMemo<AppAction[]>(
     () => [
       ...pages.map((page, index) => ({
@@ -183,10 +171,7 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
         group: 'Navigate',
         icon: settingsNavigation.icon,
         scope: 'app',
-        bindings: [
-          { sequence: ['Meta+,'], label: '⌘,' },
-          { sequence: ['g', 's', 'e'], label: 'g s e' },
-        ],
+        bindings: [{ sequence: ['Meta+,'], label: '⌘,' }],
         run: () => openSettings(),
       },
       {
@@ -269,40 +254,7 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
         icon: valuesHidden ? Eye : EyeOff,
         scope: 'app',
         bindings: [{ sequence: ['Meta+h'], label: '⌘H' }],
-        repeatable: true,
         run: toggleValues,
-      },
-      {
-        id: 'navigation.previous-page',
-        title: 'Open previous sidebar page',
-        group: 'Navigate',
-        scope: 'app',
-        bindings: [{ sequence: ['Meta+ArrowUp'], label: '⌘↑' }],
-        repeatable: true,
-        run: () =>
-          navigate({
-            to: adjacentPage(
-              pages.map(({ to }) => to),
-              pathname,
-              -1,
-            ),
-          }),
-      },
-      {
-        id: 'navigation.next-page',
-        title: 'Open next sidebar page',
-        group: 'Navigate',
-        scope: 'app',
-        bindings: [{ sequence: ['Meta+ArrowDown'], label: '⌘↓' }],
-        repeatable: true,
-        run: () =>
-          navigate({
-            to: adjacentPage(
-              pages.map(({ to }) => to),
-              pathname,
-              1,
-            ),
-          }),
       },
       {
         id: 'navigation.back',
@@ -310,7 +262,6 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
         group: 'Navigate',
         scope: 'app',
         bindings: [{ sequence: ['Meta+['], label: '⌘[' }],
-        repeatable: true,
         run: () => window.history.back(),
       },
       {
@@ -319,16 +270,7 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
         group: 'Navigate',
         scope: 'app',
         bindings: [{ sequence: ['Meta+]'], label: '⌘]' }],
-        repeatable: true,
         run: () => window.history.forward(),
-      },
-      {
-        id: 'navigation.reports.toggle',
-        title: 'Show or hide reports in the sidebar',
-        search: 'sidebar reports expand collapse',
-        group: 'View',
-        scope: 'app',
-        run: toggleReports,
       },
       {
         id: 'edits.undo',
@@ -400,17 +342,6 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
             toast.error('Could not save the lots', { description: errorMessage(error) }),
           ),
       },
-      ...(['dark', 'custom'] as const).map((nextTheme) => ({
-        id: `appearance.theme.${nextTheme}`,
-        title: `Switch to ${nextTheme[0].toUpperCase()}${nextTheme.slice(1)} theme`,
-        search: `${nextTheme} mode appearance theme`,
-        group: 'Appearance',
-        icon: Palette,
-        scope: 'app' as const,
-        disabled: theme === nextTheme,
-        disabledReason: theme === nextTheme ? `${nextTheme} theme is already active` : undefined,
-        run: () => setTheme(nextTheme),
-      })),
     ],
     [
       data,
@@ -424,7 +355,6 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
       openPalette,
       openShortcuts,
       pages,
-      pathname,
       findingPlaces,
       findPlaces,
       placesDone,
@@ -433,9 +363,6 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
       recovering,
       refresh,
       openSettings,
-      setTheme,
-      theme,
-      toggleReports,
       toggleValues,
       valuesHidden,
     ],

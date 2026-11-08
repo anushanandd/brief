@@ -596,7 +596,7 @@ function AccountDetails({ data, settings, save }: SectionProps) {
       description="A closed account leaves today's totals; its history and activity stay. A website opens from the account's page; an APY shows beside what it earns."
     >
       {accounts.length ? (
-        <div className="settings-table-scroll">
+        <div className="settings-table">
           <table className="settings-account-table">
             <thead>
               <tr>
@@ -624,7 +624,7 @@ function AccountDetails({ data, settings, save }: SectionProps) {
                       </span>
                     </span>
                   </th>
-                  <td>
+                  <td data-label="Display name">
                     <CommittedTextInput
                       type="text"
                       maxLength={80}
@@ -634,7 +634,7 @@ function AccountDetails({ data, settings, save }: SectionProps) {
                       onCommit={(name) => updateName(account.id, name)}
                     />
                   </td>
-                  <td>
+                  <td data-label="Start date">
                     <input
                       type="date"
                       max={data.updatedAt.slice(0, 10)}
@@ -643,7 +643,7 @@ function AccountDetails({ data, settings, save }: SectionProps) {
                       onChange={(event) => updateStartDate(account.id, event.target.value)}
                     />
                   </td>
-                  <td>
+                  <td data-label="Closed">
                     <input
                       type="date"
                       max={data.updatedAt.slice(0, 10)}
@@ -652,7 +652,7 @@ function AccountDetails({ data, settings, save }: SectionProps) {
                       onChange={(event) => updateClosedDate(account.id, event.target.value)}
                     />
                   </td>
-                  <td>
+                  <td data-label="Website">
                     <CommittedTextInput
                       type="url"
                       maxLength={500}
@@ -664,7 +664,7 @@ function AccountDetails({ data, settings, save }: SectionProps) {
                       }
                     />
                   </td>
-                  <td>
+                  <td data-label="APY %">
                     <CommittedTextInput
                       type="text"
                       inputMode="decimal"

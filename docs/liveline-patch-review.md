@@ -6,9 +6,9 @@ Brief uses `liveline@0.0.7` through the pnpm patch declared in `pnpm-workspace.y
 patches/liveline@0.0.7.patch
 ```
 
-The patch modifies both runtime formats and both declaration outputs. Keep those copies synchronized.
+The patch changes only the ES module build (`dist/index.js`) and its types (`dist/index.d.ts`): Vite, Vitest, and TypeScript all resolve Liveline through its `import` entry, so the CommonJS build is never loaded. If something ever `require`s Liveline, it gets the unpatched build.
 
-Liveline draws only the streaming Holdings chart (`src/components/holding-chart.tsx`). Value histories moved to Recharts, so the patch's multi-series parts (series `dash`, the primary series' badge in multi-series mode) no longer serve Brief; drop them at the next upgrade rather than rebasing them.
+Liveline draws the value histories (`src/components/charts.tsx`), which rely on the patch's multi-series parts (series `dash`, the primary series' badge in multi-series mode), and the streaming Holdings chart (`src/components/holding-chart.tsx`).
 
 ## Behavior Brief relies on
 
@@ -19,7 +19,7 @@ Liveline draws only the streaming Holdings chart (`src/components/holding-chart.
 - Series `dash` and `currentLine` control comparison and current-value presentation.
 - `continuous={false}` allows settled charts to stop requesting frames.
 - A chart mounted with data appears fully drawn; the reveal plays only when data arrives after an empty or loading state.
-- Accessible markers are positioned from chart coordinates and remain filtered against `endTime` for historical views. A marker is a dot on the line, or with `shape: 'rule'` a dashed vertical rule that needs only a time.
+- Accessible markers are dots on the line, positioned from chart coordinates and filtered against `endTime` for historical views.
 - The primary series can retain an endpoint badge in multi-series mode.
 - Candles support an optional display `width`, fixed-window endpoints, quote markers, reference lines, and center-based hover timestamps.
 - Canvas fonts match the app's system typography.
@@ -32,9 +32,8 @@ Before changing the patch or upgrading Liveline:
 
 1. Compare each relied-on behavior above with the candidate upstream API.
 2. Remove patch sections that upstream now supplies; rebase only the remaining behavior.
-3. Apply equivalent runtime changes to ESM and CommonJS outputs.
-4. Apply equivalent type changes to both declaration outputs.
-5. Run:
+3. Edit only `dist/index.js` and `dist/index.d.ts` (`pnpm patch liveline@0.0.7`, then `pnpm patch-commit`).
+4. Run:
 
    ```sh
    pnpm install
@@ -42,7 +41,7 @@ Before changing the patch or upgrading Liveline:
    pnpm build
    ```
 
-6. Confirm `pnpm-lock.yaml` contains the new patch hash.
-7. Restart Vite after the installed patch changes; a running server can retain the previous package realpath.
+5. Confirm `pnpm-lock.yaml` contains the new patch hash.
+6. Restart Vite after the installed patch changes; a running server can retain the previous package realpath.
 
 The focused tests cover fixed-window marker filtering and renderer-side bar/candle transformations. They do not prove canvas pixel output, pointer interaction, or macOS WebView frame pacing.

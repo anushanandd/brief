@@ -84,6 +84,31 @@ fn a_category_the_user_set_is_confirmed_and_an_unsure_one_is_weak() {
 }
 
 #[test]
+fn wallets_record_confirms_what_it_saw() {
+    let seen = graded(json!({
+        "paymentChannel": "in store", "categoryConfidence": "LOW",
+        "place": { "city": "Austin", "country": "US", "source": "wallet", "precision": "exact" },
+        "wallet": { "recordId": "w", "merchant": "Cafe", "categorized": true }
+    }));
+    assert_eq!(seen.amount, evidence(Grade::Confirmed, Basis::Wallet));
+    assert_eq!(
+        seen.merchant,
+        Some(evidence(Grade::Confirmed, Basis::Wallet))
+    );
+    assert_eq!(
+        seen.category,
+        evidence(Grade::Supported, Basis::MerchantCode)
+    );
+    assert_eq!(
+        seen.location,
+        Some(evidence(Grade::Confirmed, Basis::Wallet))
+    );
+    // A tip: Wallet saw another amount at the terminal, so the amount rests on the bank.
+    let tipped = graded(json!({ "wallet": { "recordId": "w", "terminalAmount": -5.0 } }));
+    assert_eq!(tipped.amount.basis, Basis::Provider);
+}
+
+#[test]
 fn only_bank_and_card_transactions_are_graded() {
     let mut snapshot: Snapshot =
         serde_json::from_str(include_str!("../../../src/data/empty.json")).unwrap();

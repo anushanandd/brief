@@ -664,6 +664,13 @@ pub struct WalletDetail {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub terminal_amount: Option<f64>,
+    /// The merchant as Wallet named it: the brand or Apple Maps' name, else the issuer's.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub merchant: Option<String>,
+    /// The category is the card network's merchant code, because Plaid wasn't sure of its own.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub categorized: bool,
 }
 
 /// A Wallet charge the provider never reported, past the days it could still be pending.
@@ -1050,7 +1057,7 @@ pub struct StatementPosition {
     pub value: f64,
     pub priced_on: String,
 }
-#[derive(Clone, Debug, Deserialize, Serialize, TS)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PerformancePoint {
     pub date: String,
@@ -1061,6 +1068,14 @@ pub struct PerformancePoint {
     pub market_change: Option<f64>,
     #[serde(default)]
     pub market_change_pct: Option<f64>,
+    /// The cash held that day, known when the history was rebuilt from the account's records.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub cash: Option<f64>,
+    /// The value held in securities that day: the value less `cash`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub invested: Option<f64>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]

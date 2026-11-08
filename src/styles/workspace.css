@@ -182,6 +182,12 @@
 .account-switcher-value > span {
   white-space: nowrap;
 }
+.account-switcher-value > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 400;
+  white-space: nowrap;
+}
 /* Page and report icons sit on the same tinted disc as account marks. */
 .strip-icon-mark {
   background: color-mix(in srgb, var(--mark-tone) 12%, var(--surface-raised));

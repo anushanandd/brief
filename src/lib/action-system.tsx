@@ -17,7 +17,6 @@ export type ActionScope = 'app' | 'page' | 'region' | 'selection'
 export type ActionBinding = {
   sequence: readonly string[]
   label: string
-  acceptsCount?: boolean
 }
 
 export type AppAction = {
@@ -31,8 +30,7 @@ export type AppAction = {
   bindings?: readonly ActionBinding[]
   disabled?: boolean
   disabledReason?: string
-  repeatable?: boolean
-  run: (count?: number) => unknown
+  run: () => unknown
 }
 
 type Registration = {
@@ -107,15 +105,15 @@ export function ActionProvider({ children }: { children: ReactNode }) {
 }
 
 /**
- * Tests only: collects every action id a render registers. Rendering to a string runs no
+ * Tests only: receives every action a render registers. Rendering to a string runs no
  * effects, so this is how a route test reads the registry its page would fill.
  */
-export const ActionCollectorContext = createContext<Set<string> | null>(null)
+export const ActionCollectorContext = createContext<((action: AppAction) => void) | null>(null)
 
 export function useRegisterActions(actions: readonly AppAction[]) {
   const id = useId()
-  const collector = useContext(ActionCollectorContext)
-  if (collector) for (const action of actions) collector.add(action.id)
+  const collect = useContext(ActionCollectorContext)
+  if (collect) for (const action of actions) collect(action)
   const { register, unregister } = useContext(ActionRegistryContext)
   useEffect(() => {
     register({ id, actions })
@@ -165,8 +163,50 @@ export function resolveBinding(actions: readonly AppAction[], sequence: readonly
         actionScopePriority[right.action.scope] - actionScopePriority[left.action.scope],
     )
   const exact = candidates.find(({ binding }) => binding.sequence.length === sequence.length)
-  const pending = candidates.some(({ binding }) => binding.sequence.length > sequence.length)
+  // While rows are selected, their keys act at once, even one that starts a shortcut elsewhere
+  // (C is a category for the selection, and starts a cash account's jump otherwise).
+  const selectionWins = exact?.action.scope === 'selection'
+  const pending = candidates.some(
+    ({ action, binding }) =>
+      binding.sequence.length > sequence.length && (!selectionWins || action.scope === 'selection'),
+  )
   return { candidates, exact, pending }
+}
+
+/**
+ * Bindings that can't both work. A shortcut that is also the start of a longer one would wait
+ * for a key that may never come; a selection's key is the exception, since it wins while rows
+ * are selected. Two enabled actions on one key in one scope leave which runs to chance.
+ */
+export function bindingConflicts(actions: readonly AppAction[]) {
+  const bindings = actionBindings(actions)
+  const sameKey = (left: ActionBinding, right: ActionBinding) =>
+    left.sequence.length === right.sequence.length && bindingStartsWith(left, right.sequence)
+  return bindings.flatMap((short, index) => [
+    ...(short.action.scope === 'selection'
+      ? []
+      : bindings
+          .filter(
+            (long) =>
+              long.binding.sequence.length > short.binding.sequence.length &&
+              bindingStartsWith(long.binding, short.binding.sequence),
+          )
+          .map(
+            (long) =>
+              `${short.binding.label} (${short.action.id}) starts ${long.binding.label} (${long.action.id})`,
+          )),
+    ...bindings
+      .slice(index + 1)
+      .filter(
+        (other) =>
+          other.action.id !== short.action.id &&
+          other.action.scope === short.action.scope &&
+          !short.action.disabled &&
+          !other.action.disabled &&
+          sameKey(short.binding, other.binding),
+      )
+      .map((other) => `${short.binding.label} runs both ${short.action.id} and ${other.action.id}`),
+  ])
 }
 
 export function longestCommonPrefix(values: readonly string[]) {

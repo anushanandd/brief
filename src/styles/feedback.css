@@ -70,9 +70,6 @@
   transform: translateX(-100%);
   animation: refresh-progress 1.2s linear infinite;
 }
-:root[data-theme='dark'] .refresh-progress-track > span {
-  background: var(--brand-gradient-across);
-}
 .refresh-progress small {
   color: var(--text-tertiary);
   font-size: var(--type-meta);

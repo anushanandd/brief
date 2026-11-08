@@ -139,10 +139,23 @@ export function SpendingPage() {
       }),
     [navigate],
   )
+  const setAccount = useCallback(
+    (next: string) =>
+      void navigate({
+        search: (current) => ({
+          ...current,
+          account: next === allSpendingAccounts ? undefined : next,
+        }),
+        replace: true,
+      }),
+    [navigate],
+  )
   // The period lives in the URL so Money's strip opens every card on it.
-  // Statements belong to the spending card; without one the page opens on the month.
-  const hasStatements = Boolean(card)
-  const period = spendingPeriodForRange(search.range) ?? (hasStatements ? 'statement' : 1)
+  // Statements belong to the saved card, so only its view has one; elsewhere it reads as the month.
+  const hasStatements = Boolean(card) && account?.id === card?.id
+  const ranged = spendingPeriodForRange(search.range)
+  const period =
+    ranged === 'statement' && !hasStatements ? 1 : (ranged ?? (hasStatements ? 'statement' : 1))
   const setPeriod = useCallback(
     (next: SpendingPeriod) =>
       void navigate({
@@ -158,6 +171,24 @@ export function SpendingPage() {
       setPeriodOffset(0)
     },
     [setPeriod],
+  )
+  // Each account counts its periods back from its own latest, so a choice starts there.
+  const chooseAccount = useCallback(
+    (next: string) => {
+      setAccount(next)
+      setPeriodOffset(0)
+    },
+    [setAccount],
+  )
+  const accountChoices = useMemo(
+    () => [
+      { value: allSpendingAccounts, label: 'All accounts' },
+      ...options.map(({ id, name }) => ({
+        value: id,
+        label: accountDisplayName(id, name, names),
+      })),
+    ],
+    [names, options],
   )
   // One category can focus the page: the headline, chart, and activity narrow to it.
   const [focus, setFocus] = useState<string | null>(null)
@@ -213,6 +244,9 @@ export function SpendingPage() {
   const comparison = canCompareTypical ? chosenComparison : 'previous'
 
   useSpendingActions({
+    accounts: accountChoices,
+    account: account?.id ?? allSpendingAccounts,
+    chooseAccount,
     hasStatements,
     hasOthers,
     owner,
@@ -443,6 +477,19 @@ export function SpendingPage() {
                     </div>
                   </div>
                   <span className="spending-heading-controls">
+                    {options.length > 1 ? (
+                      <ChartRangeSelect
+                        command="spending.account."
+                        label={`Spending account. Showing: ${accountChoices.find(({ value }) => value === (account?.id ?? allSpendingAccounts))?.label}`}
+                        options={accountChoices.map(({ value, label }) => ({
+                          label,
+                          accessibleLabel: label,
+                          value,
+                        }))}
+                        value={account?.id ?? allSpendingAccounts}
+                        onValueChange={chooseAccount}
+                      />
+                    ) : null}
                     {hasOthers ? (
                       <ChartRangeSelect
                         command="spending.for."
@@ -630,7 +677,7 @@ export function SpendingPage() {
                           role="tab"
                           key={value}
                           aria-selected={shownBreakdown === value}
-                          aria-keyshortcuts="B"
+                          aria-keyshortcuts="Shift+B"
                           tabIndex={-1}
                           data-command="spending.breakdown.toggle"
                           onClick={() => setBreakdown(value)}

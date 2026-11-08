@@ -72,12 +72,6 @@ export function setAmountsHidden(hidden: boolean) {
 }
 export const amountsHidden = () => amountsMasked
 
-/** An amount in the currency it was charged in, abroad. */
-export const formatForeignAmount = (amount: number, currency: string) =>
-  amountsMasked
-    ? HIDDEN_AMOUNT
-    : new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount)
-
 /** A public market price, which screen privacy leaves visible. */
 export const formatPublicCurrency = (value: number | null | undefined) =>
   value == null ? '—' : typographicMinus(currencyFormatter.format(value))

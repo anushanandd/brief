@@ -243,14 +243,18 @@ describe('spending periods', () => {
       ],
     }
     const data = { accounts, transactions: [transaction({ accountId: 'card' })], insights }
-    expect(spendingHeadline(data, 'card', 'statement')).toEqual({
+    expect(spendingHeadline(data, 'card', 'statement', 'card')).toEqual({
       hasScope: true,
       value: 50,
       change: 4,
     })
-    expect(spendingHeadline(data, 'card', 1)).toEqual({ hasScope: true, value: 20, change: -6 })
+    expect(spendingHeadline(data, 'card', 1, 'card')).toEqual({
+      hasScope: true,
+      value: 20,
+      change: -6,
+    })
     // All time has nothing to change from.
-    expect(spendingHeadline(data, 'card', 0).change).toBeNull()
+    expect(spendingHeadline(data, 'card', 0, 'card').change).toBeNull()
   })
 
   it('keeps category colors stable across ranking changes', () => {
@@ -345,7 +349,7 @@ const purchase = (id: string, accountId: string, kind: 'expense' | 'transfer' = 
     date: '2026-09-10',
   })
 
-it('scopes spending to the saved card by default, one chosen account, or every USD account', () => {
+it('scopes spending to every USD account by default, or one chosen account', () => {
   const accounts = [
     account('all', 'combined'),
     account('card', 'credit'),
@@ -362,18 +366,19 @@ it('scopes spending to the saved card by default, one chosen account, or every U
     purchase('e', 'idle', 'transfer'),
   ]
 
-  const saved = spendingScope(accounts, transactions, 'card')
-  expect(saved.selected?.id).toBe('card')
-  expect(saved.options.map(({ id }) => id)).toEqual(['card', 'other-card', 'checking'])
+  const saved = spendingScope(accounts, transactions, 'other-card')
+  expect(saved.card?.id).toBe('other-card')
+  expect(saved.selected).toBeUndefined()
+  // The saved card leads, so it is always 1.
+  expect(saved.options.map(({ id }) => id)).toEqual(['other-card', 'card', 'checking'])
   expect(spendingScope(accounts, transactions, 'card', 'checking').selected?.id).toBe('checking')
   expect(
     spendingScope(accounts, transactions, 'card', allSpendingAccounts).selected,
   ).toBeUndefined()
 
-  // Without a saved card the view is every account; no other card stands in for it.
   const unsaved = spendingScope(accounts, transactions, '')
   expect(unsaved.card).toBeUndefined()
   expect(unsaved.selected).toBeUndefined()
-  // An unknown or non-USD request falls back to the saved card.
-  expect(spendingScope(accounts, transactions, 'card', 'euro').selected?.id).toBe('card')
+  // An unknown or non-USD request reads as every account.
+  expect(spendingScope(accounts, transactions, 'card', 'euro').selected).toBeUndefined()
 })
