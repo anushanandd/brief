@@ -5,5 +5,8 @@
   <!-- A hardened-runtime build may ask for Contacts only with this; Brief only reads. -->
   <key>com.apple.security.personal-information.addressbook</key>
   <true/>
+  <!-- And Calendar only with this; Brief keeps its own calendar and reads the others. -->
+  <key>com.apple.security.personal-information.calendars</key>
+  <true/>
 </dict>
 </plist>

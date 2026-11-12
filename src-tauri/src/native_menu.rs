@@ -157,21 +157,31 @@ pub fn handle_shortcut<R: Runtime>(app: &AppHandle<R>, event: MenuEvent) {
         let _ = app.emit("open-settings", ());
     } else if shortcut == "toggle-sensitive-values" {
         let _ = app.emit("toggle-sensitive-values", ());
+    } else if shortcut == "check-for-updates" {
+        let _ = app.emit("run-action", "app.check-updates");
     } else if let Some(action) = shortcut.strip_prefix(ACTION_PREFIX) {
         let _ = app.emit("run-action", action.to_string());
     }
 }
 
-/// The app's menu bar: the default menus less File, with Settings and value hiding added and
-/// the items Brief has no use for removed. Pages add their own commands through
+/// The app's menu bar: the default menus less File, with update checks, Settings, and value
+/// hiding added and the items Brief has no use for removed. Pages add their own commands through
 /// `set_command_menu`.
 #[cfg(target_os = "macos")]
 pub fn shortcut_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
     let menu = Menu::default(app)?;
 
+    let updates = MenuItem::with_id(
+        app,
+        "check-for-updates",
+        "Check for Updates…",
+        true,
+        None::<&str>,
+    )?;
     let settings = MenuItem::with_id(app, "open-settings", "Settings…", true, Some("CmdOrCtrl+,"))?;
     if let Some(app_menu) = menu.items()?.first().and_then(|item| item.as_submenu()) {
-        app_menu.insert(&settings, 1)?;
+        app_menu.insert(&updates, 1)?;
+        app_menu.insert(&settings, 2)?;
         for child in app_menu.items()? {
             if let Some(predefined) = child.as_predefined_menuitem() {
                 let label = predefined.text()?.replace('&', "");
@@ -187,7 +197,7 @@ pub fn shortcut_menu<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<Menu<R>> {
             true,
             Some("CmdOrCtrl+H"),
         )?;
-        app_menu.insert(&hide_values, 2)?;
+        app_menu.insert(&hide_values, 3)?;
     }
 
     for item in menu.items()? {

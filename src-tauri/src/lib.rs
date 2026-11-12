@@ -1,5 +1,6 @@
 // Tests compare computed amounts with the exact values they expect; the app's code may not.
 #![cfg_attr(test, allow(clippy::float_cmp))]
+mod app_update;
 mod authentication;
 mod background;
 mod bank_statements;
@@ -187,6 +188,7 @@ pub fn run() {
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
                 .with_handler(|app, shortcut, event| {
@@ -269,6 +271,8 @@ pub fn run() {
             }
         })
         .invoke_handler(tauri::generate_handler![
+            app_update::check_app_update,
+            app_update::install_app_update,
             window::reveal_main_window,
             window::take_opened_view,
             market::get_saved_market,

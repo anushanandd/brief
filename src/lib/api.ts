@@ -4,6 +4,7 @@ import { openUrl } from '@tauri-apps/plugin-opener'
 
 import seedView from '../data/seed-view.json'
 import type { ActivityTotals } from './bindings/ActivityTotals'
+import type { AppUpdate } from './bindings/AppUpdate'
 import type { AssistantAnswer } from './bindings/AssistantAnswer'
 import type { CardDraft } from './bindings/CardDraft'
 import type { CardRulesChange } from './bindings/CardRulesChange'
@@ -397,6 +398,15 @@ export async function readSettingsFile(path: string): Promise<string> {
 
 export async function getAppVersion(): Promise<string> {
   return isTauri() ? getVersion() : 'Browser preview'
+}
+
+export async function checkAppUpdate(): Promise<AppUpdate | null> {
+  return invoke<AppUpdate | null>('check_app_update')
+}
+
+/** Resolves only on failure: a successful install relaunches Brief. */
+export async function installAppUpdate(): Promise<void> {
+  await invoke('install_app_update')
 }
 
 export async function getDataHealth(): Promise<HealthReport> {
