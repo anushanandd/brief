@@ -4,6 +4,7 @@ import type { ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 
 import { useAccountJumpActions } from '../hooks/use-account-jump-actions'
+import { useAppUpdateChecks } from '../hooks/use-app-update'
 import { useFinance } from '../hooks/use-finance'
 import { useFocusRegion } from '../hooks/use-focus-region'
 import { useGlobalActions } from '../hooks/use-global-actions'
@@ -111,6 +112,7 @@ function Shell() {
     openKeyGuide.current = keyboard.openKeyGuide
   })
   useNativeCommands(menuActions, keyboard.executeAction)
+  useAppUpdateChecks()
 
   useLayoutEffect(() => {
     document.documentElement.toggleAttribute('data-values-hidden', valuesHidden)

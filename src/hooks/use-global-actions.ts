@@ -19,6 +19,7 @@ import {
 import { RefreshCw } from '../components/icons'
 import type { AppAction } from '../lib/action-system'
 import type { AnalyticsChart } from '../lib/analytics'
+import { isTauri } from '../lib/api'
 import { errorMessage } from '../lib/errors'
 import { exportLotsCsv, exportUpcomingCalendar } from '../lib/exports'
 import { analyticsNavigation, settingsNavigation } from '../lib/navigation'
@@ -30,6 +31,7 @@ import {
   withNumberKeys,
 } from '../lib/number-keys'
 import { useSettingsDialog } from '../lib/settings-dialog'
+import { checkForUpdates } from './use-app-update'
 import { useFinance } from './use-finance'
 import { useFinanceEdits } from './use-finance-edits'
 import { useFindPlaces } from './use-find-places'
@@ -201,6 +203,17 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
         scope: 'app',
         bindings: [{ sequence: ['Meta+/'], label: '⌘/' }],
         run: openShortcuts,
+      },
+      {
+        id: 'app.check-updates',
+        title: 'Check for updates',
+        search: 'update upgrade new version release install',
+        group: 'Actions',
+        icon: Download,
+        scope: 'app',
+        disabled: !isTauri(),
+        disabledReason: 'Updates come to the Mac app',
+        run: () => checkForUpdates(true),
       },
       {
         id: 'key-guide.open',

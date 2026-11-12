@@ -19,3 +19,4 @@ Write one when you choose between real alternatives and the reason can't be read
 - [0013](0013-card-rules-are-saved-data.md): Card rules are saved data
 - [0014](0014-card-rules-are-drafted-from-evidence.md): Card rules are drafted from evidence and approved (approval superseded by 0015)
 - [0015](0015-card-rules-apply-themselves.md): Card rules apply themselves; the user's edits win
+- [0016](0016-releases-ship-from-this-mac.md): Releases ship from this Mac through GitHub Releases

@@ -2,8 +2,6 @@
 
 A personal finance app for macOS. It reads bank, card, and brokerage accounts, statements, and tax documents, keeps every record on the Mac, and computes every figure in Rust.
 
-[![CI](https://github.com/anushanandd/brief/actions/workflows/ci.yml/badge.svg)](https://github.com/anushanandd/brief/actions/workflows/ci.yml)
-
 <!--
 Screenshot: take one from the browser preview (`pnpm dev`, synthetic data only), save it as
 docs/screenshot.png, and replace this comment with:
@@ -59,11 +57,15 @@ Plaid · SnapTrade · Alpaca · SEC EDGAR · Alpha Vantage · statements · docu
 
 Credentials live only in macOS Keychain. Financial data is in SQLite files readable only by your user; they aren't encrypted, so use FileVault. Document originals are sealed with AES-256-GCM under a key in Keychain.
 
-Data leaves the Mac only for the providers that supply it. Logos, place lookups, and web research are off until you turn them on, and there is no telemetry.
+Data leaves the Mac only for the providers that supply it. Logos, place lookups, and web research are off until you turn them on, and there is no telemetry. At launch and once a day Brief asks GitHub whether a newer release exists; the request carries nothing but what any web request does, and an update installs only when you choose it.
+
+## Install
+
+Download the disk image from the [latest release](https://github.com/anushanandd/brief/releases/latest). It's signed with a Developer ID and notarized by Apple, and Brief offers each later release itself (Brief › Check for Updates…). It needs an Apple silicon Mac with macOS 14 or later.
 
 ## Run it
 
-You need macOS 14 or later, Xcode, Rust 1.89 or later, Node, and pnpm. Apple Intelligence needs macOS 26.
+You need macOS 14 or later, Xcode, rustup (it installs the Rust that `rust-toolchain.toml` pins), Node, and pnpm. Apple Intelligence needs macOS 26.
 
 ```sh
 pnpm install
@@ -73,7 +75,7 @@ pnpm check        # format, lint, test, and build the interface
 (cd src-tauri && cargo test)
 ```
 
-Native dev builds are code-signed so Keychain access survives rebuilds; with several Apple Development identities, set `APPLE_SIGNING_IDENTITY`. Run `git config core.hooksPath .githooks` once per clone to scan each commit for secrets and run the checks before each push.
+Native builds are code-signed with one identity, Developer ID when the Keychain has it and Apple Development otherwise, so Keychain access survives rebuilds and releases; set `APPLE_SIGNING_IDENTITY` to choose another. `pnpm release` installs a release build in /Applications, and `pnpm release --publish` also notarizes it and publishes it as a GitHub release; `scripts/release.sh` lists what each needs. Run `git config core.hooksPath .githooks` once per clone to scan each commit for secrets and run the checks before each push.
 
 ## License
 

@@ -74,6 +74,7 @@ tauri-plugin-dialog = "~2.7"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-notification = "2"
 tauri-plugin-opener = "2"
+tauri-plugin-updater = "2"
 tokio = { version = "1", features = ["macros", "time"] }
 tokio-tungstenite = { version = "0.30", features = ["rustls-tls-webpki-roots"] }
 ts-rs = { version = "12.0.1", features = ["chrono-impl", "serde-json-impl"] }

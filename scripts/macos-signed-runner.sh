@@ -11,11 +11,11 @@ shift
 # costs most of a second at launch while macOS assesses it. So sign the copy's source once per
 # build; every later run then copies an already-signed binary, with nothing to assess.
 signed() {
-  /usr/bin/codesign -dv --verbose=2 "$1" 2>&1 | /usr/bin/grep -q '^Authority=Apple Development:'
+  /usr/bin/codesign -dv --verbose=2 "$1" 2>&1 |
+    /usr/bin/grep -q -E '^Authority=(Developer ID Application|Apple Development):'
 }
 if ! signed "$binary"; then
-  identity="${APPLE_SIGNING_IDENTITY:-$(/usr/bin/security find-identity -v -p codesigning | /usr/bin/awk -F '"' '/Apple Development:/ { print $2; exit }')}"
-  : "${identity:?No Apple Development signing identity found. Set APPLE_SIGNING_IDENTITY.}"
+  identity="$(sh "$(dirname "$0")/signing-identity.sh")"
   size="$(/usr/bin/stat -f %z "$binary")"
   for candidate in "$(dirname "$binary")"/deps/"$(basename "$binary")"-*; do
     case "$candidate" in *.*) continue ;; esac

@@ -1,8 +1,9 @@
-# gitleaks: the default rules, plus the synthetic placeholders Brief's tests and fixtures use.
+# gitleaks: the default rules, plus the synthetic placeholders Brief's tests and fixtures use and
+# the updater's public key, whose decoded key ID reads as an API key.
 [extend]
 useDefault = true
 
 [allowlist]
-description = "Synthetic test tokens and generated files"
-regexes = ['''(access|item|checking|wallet)-synthetic[A-Za-z0-9_-]*''']
+description = "Synthetic test tokens, the updater's public key ID, and generated files"
+regexes = ['''(access|item|checking|wallet)-synthetic[A-Za-z0-9_-]*''', '''^6E54C8F708DDA729$''']
 paths = ['''pnpm-lock\.yaml$''', '''Cargo\.lock$''', '''^src/lib/bindings/''']
