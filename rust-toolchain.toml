@@ -1,0 +1,5 @@
+# CI and every Mac build with this Rust, so a new release can't fail CI with no code change.
+# Bump it on purpose, and fix what the newer clippy reports in the same change.
+[toolchain]
+channel = "1.96.0"
+components = ["clippy", "rustfmt"]

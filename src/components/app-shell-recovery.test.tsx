@@ -16,12 +16,15 @@ vi.mock('@tanstack/react-router', () => ({
   Link: ({ to, children }: { to: string; children?: ReactNode }) => <a href={to}>{children}</a>,
   Outlet: () => null,
   useNavigate: () => vi.fn(),
-  useLocation: () => '/',
+  // Applies `select` as the router does, so Settings reads its hash as closed.
+  useLocation: (options?: { select?: (location: object) => unknown }) => {
+    const location = { pathname: '/', hash: '', search: {} }
+    return options?.select ? options.select(location) : location
+  },
   useRouter: () => ({ routesByPath: {}, navigate: vi.fn() }),
 }))
 vi.mock('../hooks/use-finance', () => ({
   financeQueryKey: ['finance'],
-  snapshotKey: () => [null, null],
   setFinanceSnapshot: (client: QueryClient, next: unknown) =>
     client.setQueryData(['finance'], next),
   useFinance: () => ({
