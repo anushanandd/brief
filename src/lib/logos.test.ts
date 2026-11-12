@@ -45,14 +45,16 @@ describe('logo resolution', () => {
     )
     expect(url).toBeUndefined()
     expect(transactionMarkLabel(transaction({ logoName: 'Example Coffee' }))).toBe('EC')
-    expect(brandMarkLabel('Global Entry / TSA PreCheck')).toBe('GE')
-    expect(brandLogoUrl('Resy', 'resy.com')).toMatch(/^data:image\/svg\+xml/)
-    expect(brandLogoUrl('Resy', 'resy.com')).not.toContain('resy.com')
+    expect(brandMarkLabel('Weekend Getaway / Hotel Stay')).toBe('WG')
+    expect(brandLogoUrl('Example Bistro', 'bistro.example.com')).toMatch(/^data:image\/svg\+xml/)
+    expect(brandLogoUrl('Example Bistro', 'bistro.example.com')).not.toContain('example.com')
   })
 
   it('uses allowlisted actual logos only after external loading is enabled', () => {
     expect(stockLogoUrl('AAPL', true)).toContain('https://img.logo.dev/ticker/AAPL')
-    expect(brandLogoUrl('Resy', 'resy.com', true)).toContain('https://img.logo.dev/resy.com')
+    expect(brandLogoUrl('Example Bistro', 'bistro.example.com', true)).toContain(
+      'https://img.logo.dev/bistro.example.com',
+    )
     expect(
       transactionLogoUrl(
         transaction({ logoUrl: 'https://plaid-merchant-logos.plaid.com/merchant.png' }),
@@ -103,7 +105,7 @@ describe('logo resolution', () => {
     })
     const cardPayment = transaction({
       merchant: 'AUTOPAY PAYMENT - THANK YOU',
-      account: 'Morgan Stanley Platinum Card®',
+      account: 'American Express Card',
       category: 'Loan Payments',
       classification: classification('transfer', { mark: 'payment' }),
     })

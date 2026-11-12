@@ -27,8 +27,8 @@ it('lists a year’s documents beside what the year should bring', async () => {
       taxYear: 2026,
       date: '2026-08-28',
       fields: [
-        { key: 'net', label: 'Net pay', amount: 2_500.0, ytd: 11_616.0 },
-        { key: 'pretax401k', label: '401(k) pre-tax', amount: 200.0, uncertain: true },
+        { key: 'net', label: 'Net pay', amount: 2_500, ytd: 11_616 },
+        { key: 'pretax401k', label: '401(k) pre-tax', amount: 200, uncertain: true },
       ],
     }),
     document({
@@ -41,7 +41,7 @@ it('lists a year’s documents beside what the year should bring', async () => {
       accountId: 'other',
       statementRows: 4,
       statementCsv: 'Date,Description,Amount\n',
-      fields: [{ key: 'endingBalance', label: 'Ending balance', amount: 1_500.0 }],
+      fields: [{ key: 'endingBalance', label: 'Ending balance', amount: 1_200 }],
     }),
     document({
       id: id('c'),
@@ -58,7 +58,7 @@ it('lists a year’s documents beside what the year should bring', async () => {
           year: 2026,
           predictions: [],
           income: {
-            wages: 26_800.0,
+            wages: 26_800,
             wagesFrom: 'payStatements',
             selfEmployment: 1_500,
             selfEmploymentTax: 211.95,

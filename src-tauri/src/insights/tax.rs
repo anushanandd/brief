@@ -1,11 +1,14 @@
 //! Taxes: what the year's 1099s will roughly say, and what it may cost. Brief sees interest,
-//! dividends, and sales in taxable accounts; it never sees wages, so a tax estimate stacks
-//! these on the taxable income the user enters and says it is an estimate. Without that
-//! income, amounts are reported and no tax is guessed.
+//! dividends, and sales in taxable accounts; the tax estimate stacks these on the taxable
+//! income the user enters and says it is an estimate. Without that income, amounts are
+//! reported and no tax is guessed. Wages are seen only through pay statements: `withholding`
+//! carries the year's federal withholding to December and sets it against the federal tax and
+//! the estimated-tax safe harbors, and the typed income stays the basis without one.
 //!
 //! Gains come from the first-in-first-out estimate on saved trades. A loss sale is a wash
 //! sale when the same ticker is bought in any account within 30 days either side; a
-//! replacement in a tax-advantaged account makes the loss permanent. Unclassified dividends
+//! replacement in a tax-advantaged account makes the loss permanent. Replacement shares are
+//! matched oldest first and each replaces at most one sale's shares. Unclassified dividends
 //! make the estimate a range, from all qualified to all ordinary. Rates come from
 //! `tax-tables.json`; a year without tables has no estimate. Amounts sum in whole cents.
 use std::collections::{BTreeMap, BTreeSet};
@@ -35,7 +38,21 @@ struct Tables {
     niit_rate: f64,
     niit_thresholds: BTreeMap<String, f64>,
     capital_loss_limit: BTreeMap<String, f64>,
+    safe_harbor: SafeHarborRules,
     years: BTreeMap<i32, YearTables>,
+}
+
+/// The estimated-tax penalty's safe harbors (26 U.S.C. 6654(d)(1) and (e)(1)), not indexed.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct SafeHarborRules {
+    current_year_percent: f64,
+    prior_year_percent: f64,
+    high_income_prior_year_percent: f64,
+    /// Prior-year adjusted gross income above this takes the higher prior-year percent.
+    high_income_agi: BTreeMap<String, f64>,
+    /// Owing less than this after withholding is never penalized.
+    small_balance: f64,
 }
 
 #[derive(Deserialize)]
@@ -189,6 +206,84 @@ pub struct Taxes {
     pub has_profile: bool,
     pub tables_version: String,
     pub sources: Vec<String>,
+    /// This year's federal withholding against the tax it projects, from pay statements;
+    /// absent without a pay statement this year, when the typed taxable income is the basis.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub withholding: Option<Withholding>,
+}
+
+/// Whether withholding meets the year's estimated-tax safe harbor, as federal tax only.
+#[derive(Clone, Copy, Debug, Serialize, PartialEq, Eq, TS)]
+#[serde(rename_all = "camelCase")]
+pub enum HarborMet {
+    /// At least 90% of this year's projected tax.
+    CurrentYear,
+    /// At least 100% (110% above the income threshold) of last year's tax.
+    PriorYear,
+    /// Less than $1,000 left to pay.
+    SmallBalance,
+    /// None of the tests is met by what Brief can see.
+    None,
+    /// A test Brief can't run might be met.
+    Unknown,
+}
+
+/// One safe-harbor test: what withholding must reach and whether it does, each unavailable
+/// when the tax it rests on is unknown.
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Harbor {
+    /// The share of the year's tax it takes, in percent.
+    pub percent: f64,
+    /// The tax it is a share of.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub tax: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub required: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub met: Option<bool>,
+}
+
+/// This year's federal withholding carried to December from each employer's latest pay
+/// statement (`documents::pay_projections`) against the federal tax on the projected wages
+/// less the standard deduction plus this year's investment income so far (unclassified
+/// dividends as ordinary), at the filing status of the tax profile. Federal only: no state
+/// tax, credits, other deductions, or other income. Last year's tax is the tax on last year's
+/// W-2 wages less its standard deduction, only when every employer's W-2 for the year is in
+/// and nothing else was earned; it stands in for the return's total tax, which is the figure
+/// the rule names.
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Withholding {
+    pub year: i32,
+    /// The statements read, one per employer.
+    pub basis: Vec<super::documents::PayProjection>,
+    /// Unavailable when a statement can't be carried forward.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub projected_wages: Option<f64>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub projected_withholding: Option<f64>,
+    /// The filing status the tax uses, from the tax profile.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub filing_status: Option<String>,
+    /// Unavailable without a filing status, a projection, or the year's tables.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub projected_tax: Option<f64>,
+    /// Projected withholding less projected tax: below zero is a shortfall.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub difference: Option<f64>,
+    pub current_year: Harbor,
+    pub prior_year: Harbor,
+    pub met: HarborMet,
 }
 
 /// Marginal rates for one year, for estimating the tax on a sale.
@@ -350,6 +445,11 @@ fn wash_sales(
         .filter_map(|trade| Some((trade_date(trade)?, ticker(trade)?, trade)))
         .collect::<Vec<_>>();
     ordered.sort_by(|left, right| left.0.cmp(&right.0).then(left.2.id.cmp(&right.2.id)));
+    // Each purchase's shares not yet matched to an earlier loss sale.
+    let mut unused = ordered
+        .iter()
+        .map(|(_, _, trade)| trade.units.map(f64::abs).unwrap_or(0.0))
+        .collect::<Vec<_>>();
     let mut washes = Vec::new();
     let mut windows = Vec::new();
     for (position, (date, symbol, trade)) in ordered.iter().enumerate() {
@@ -382,10 +482,16 @@ fn wash_sales(
             })
             .sum::<f64>()
             .max(0.0);
-        let (mut same_before, mut elsewhere) = (0.0, 0.0);
+        // Replacement shares are matched in the order bought, and each share replaces
+        // at most one sale: what an earlier loss sale consumed is gone for this one.
+        let mut needed = sold;
+        let mut same_cap = remaining;
         let mut replacements = Vec::new();
         let mut permanent = false;
-        for (other_date, other, candidate) in &ordered {
+        for (index, (other_date, other, candidate)) in ordered.iter().enumerate() {
+            if needed <= 0.0 {
+                break;
+            }
             if other != symbol
                 || candidate.id == trade.id
                 || !purchase(candidate)
@@ -393,19 +499,20 @@ fn wash_sales(
             {
                 continue;
             }
-            let units = candidate.units.map(f64::abs).unwrap_or(0.0);
-            if units <= 0.0 {
+            let mut take = unused[index].min(needed);
+            if candidate.account_id == trade.account_id && other_date <= date {
+                take = take.min(same_cap);
+                same_cap -= take;
+            }
+            if take <= 0.0 {
                 continue;
             }
-            if candidate.account_id == trade.account_id && other_date <= date {
-                same_before += units;
-            } else {
-                elsewhere += units;
-            }
+            unused[index] -= take;
+            needed -= take;
             permanent |= !taxable(&candidate.account_id);
             replacements.push(candidate.id.clone());
         }
-        let replaced = (elsewhere + same_before.min(remaining)).min(sold);
+        let replaced = sold - needed;
         if replaced <= 0.0 {
             if (today - *date).num_days() <= WASH_DAYS && *date <= today {
                 windows.push(WashWindow {
@@ -530,7 +637,180 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
         has_profile: profile.is_some(),
         tables_version: TABLES.version.clone(),
         sources: TABLES.sources.clone(),
+        withholding: None,
     }
+}
+
+/// Federal tax on `taxable` ordinary income plus `investment` stacked on it, at `status`.
+fn federal_tax(year: &YearTables, status: &str, taxable: f64, investment: &Income) -> Option<f64> {
+    let profile = TaxProfile {
+        filing_status: status.to_owned(),
+        taxable_income: taxable,
+        state_rate: None,
+    };
+    let stacked = scenario(&profile, year, investment)?;
+    let wages = ordinary_tax(year.ordinary.get(status)?, taxable);
+    Some(round2(
+        wages + stacked.ordinary + stacked.capital_gains + stacked.niit,
+    ))
+}
+
+/// Last year's investment income, as far as saved history knows it.
+pub enum PriorInvestment<'a> {
+    /// Saved history doesn't cover all of last year.
+    Unknown,
+    /// It does, and holds no interest, dividends, or sales.
+    None,
+    Year(&'a TaxYear),
+}
+
+/// What saved history knows of the year before `today`'s in taxable accounts.
+pub fn prior_investment<'a>(
+    taxes: &'a Taxes,
+    transactions: &[Transaction],
+    trades: &[Trade],
+    today: NaiveDate,
+) -> PriorInvestment<'a> {
+    let last = today.year() - 1;
+    match taxes.years.iter().find(|year| year.year == last) {
+        Some(year) if !year.partial => PriorInvestment::Year(year),
+        Some(_) => PriorInvestment::Unknown,
+        None => {
+            let first = transactions
+                .iter()
+                .filter_map(|transaction| calendar::transaction_date(&transaction.date))
+                .chain(trades.iter().filter_map(trade_date))
+                .min();
+            match NaiveDate::from_ymd_opt(last, 1, 1) {
+                Some(start) if first.is_some_and(|first| first <= start) => PriorInvestment::None,
+                _ => PriorInvestment::Unknown,
+            }
+        }
+    }
+}
+
+/// A tax year's investment income, in cents.
+fn income_of(year: &TaxYear) -> Income {
+    Income {
+        interest: minor_units(year.interest),
+        qualified: minor_units(year.dividends.qualified),
+        ordinary_dividends: minor_units(year.dividends.non_qualified + year.dividends.unclassified),
+        short_term: minor_units(year.realized.short_term),
+        long_term: minor_units(year.realized.long_term),
+    }
+}
+
+/// What investment income adds to AGI: interest, dividends, and net gains, a net loss
+/// counting only to $3,000.
+fn investment_agi(income: &Income) -> f64 {
+    let gains = (income.short_term + income.long_term).max(-300_000);
+    from_minor(income.interest + income.qualified + income.ordinary_dividends + gains)
+}
+
+/// What `Withholding` describes, for `year`: `projections` from its pay statements (`None`
+/// when one can't be carried forward), `investment` its tax year so far, `prior_wages` last
+/// year's W-2 box 1 wages when every W-2 is in and there was no self-employment income, and
+/// `prior_investment` last year's investment income. Without the last, the prior-year test
+/// can't be settled.
+pub fn withholding(
+    year: i32,
+    projections: Option<Vec<super::documents::PayProjection>>,
+    investment: Option<&TaxYear>,
+    prior_wages: Option<f64>,
+    prior_investment: PriorInvestment<'_>,
+    filing_status: Option<&str>,
+) -> Option<Withholding> {
+    if projections.as_ref().is_some_and(Vec::is_empty) {
+        return None;
+    }
+    let rules = &TABLES.safe_harbor;
+    let sum = |value: fn(&super::documents::PayProjection) -> f64| {
+        projections.as_ref().map(|projections| {
+            from_minor(
+                projections
+                    .iter()
+                    .map(|projection| minor_units(value(projection)))
+                    .sum(),
+            )
+        })
+    };
+    let projected_wages = sum(|projection| projection.projected_wages);
+    let projected_withholding = sum(|projection| projection.projected_withholding);
+    let income = investment.map(income_of);
+    let tax_in = |year: i32, wages: f64, income: &Income| {
+        let status = filing_status?;
+        let tables = TABLES.years.get(&year)?;
+        let taxable = (wages - tables.standard_deduction.get(status)?).max(0.0);
+        federal_tax(tables, status, taxable, income)
+    };
+    let nothing = Income {
+        interest: 0,
+        qualified: 0,
+        ordinary_dividends: 0,
+        short_term: 0,
+        long_term: 0,
+    };
+    let projected_tax = projected_wages
+        .zip(income.as_ref())
+        .and_then(|(wages, income)| tax_in(year, wages, income));
+    let prior_income = match prior_investment {
+        PriorInvestment::Year(year) => Some(income_of(year)),
+        PriorInvestment::None => Some(nothing),
+        PriorInvestment::Unknown => None,
+    };
+    let prior = prior_wages.zip(prior_income.as_ref());
+    let prior_tax = prior.and_then(|(wages, income)| tax_in(year - 1, wages, income));
+    let prior_agi = prior.map(|(wages, income)| wages + investment_agi(income));
+    let prior_percent = match (prior_agi, filing_status) {
+        (Some(agi), Some(status))
+            if rules
+                .high_income_agi
+                .get(status)
+                .is_some_and(|threshold| agi > *threshold) =>
+        {
+            rules.high_income_prior_year_percent
+        }
+        _ => rules.prior_year_percent,
+    };
+    let harbor = |percent: f64, tax: Option<f64>| {
+        let required = tax.map(|tax| round2(tax * percent / 100.0));
+        Harbor {
+            percent,
+            tax,
+            required,
+            met: required
+                .zip(projected_withholding)
+                .map(|(required, withheld)| withheld >= required),
+        }
+    };
+    let current_year = harbor(rules.current_year_percent, projected_tax);
+    let prior_year = harbor(prior_percent, prior_tax);
+    let difference = projected_withholding
+        .zip(projected_tax)
+        .map(|(withheld, tax)| round2(withheld - tax));
+    let met = if current_year.met == Some(true) {
+        HarborMet::CurrentYear
+    } else if prior_year.met == Some(true) {
+        HarborMet::PriorYear
+    } else if difference.is_some_and(|difference| -difference < rules.small_balance) {
+        HarborMet::SmallBalance
+    } else if current_year.met == Some(false) && prior_year.met == Some(false) {
+        HarborMet::None
+    } else {
+        HarborMet::Unknown
+    };
+    Some(Withholding {
+        year,
+        basis: projections.unwrap_or_default(),
+        projected_wages,
+        projected_withholding,
+        filing_status: filing_status.map(str::to_owned),
+        projected_tax,
+        difference,
+        current_year,
+        prior_year,
+        met,
+    })
 }
 
 /// A year's interest and dividends in taxable accounts, in cents.
@@ -882,6 +1162,109 @@ mod tests {
         assert_eq!(windows[0].loss, -50.0);
     }
 
+    /// Shares replaced by `wash`, from a sale losing $10 a share.
+    fn replaced_units(wash: &WashSale) -> f64 {
+        wash.disallowed / 10.0
+    }
+
+    fn loss(id: &str, date: &str, account: &str, units: f64) -> Trade {
+        trade(id, "SELL", date, account, units, Some((-10.0 * units, 0.0)))
+    }
+
+    #[test]
+    fn one_purchase_replaces_shares_of_only_one_loss_sale() {
+        let taxable = |id: &str| id != "ira";
+        let today = day("2026-12-31");
+        // One 10-share buy near two 10-share loss sales elsewhere: it replaces the first.
+        let trades = [
+            loss("loss-1", "2026-06-01", "taxable", 10.0),
+            trade("buy", "BUY", "2026-06-10", "other", 10.0, None),
+            loss("loss-2", "2026-06-20", "taxable", 10.0),
+        ];
+        let (washes, _) = wash_sales(&trades, &taxable, today);
+        assert_eq!(washes.len(), 1);
+        assert_eq!(washes[0].sale_id, "loss-1");
+        assert_eq!(washes[0].disallowed, 100.0);
+
+        // Six shares bought: the first sale takes them, the second gets the rest of a
+        // later buy, and neither disallows more than was bought.
+        let trades = [
+            loss("loss-1", "2026-06-01", "taxable", 4.0),
+            trade("buy", "BUY", "2026-06-10", "other", 6.0, None),
+            loss("loss-2", "2026-06-20", "taxable", 10.0),
+            trade("buy-2", "BUY", "2026-06-25", "other", 1.0, None),
+        ];
+        let (washes, _) = wash_sales(&trades, &taxable, today);
+        let by_id = |id: &str| washes.iter().find(|wash| wash.sale_id == id).unwrap();
+        assert_eq!(by_id("loss-1").disallowed, 40.0);
+        assert_eq!(by_id("loss-1").replacement_trade_ids, ["buy"]);
+        assert_eq!(by_id("loss-2").disallowed, 30.0);
+        assert_eq!(by_id("loss-2").replacement_trade_ids, ["buy", "buy-2"]);
+    }
+
+    #[test]
+    fn an_ira_purchase_consumed_by_one_sale_leaves_the_next_window_open() {
+        let taxable = |id: &str| id != "ira";
+        let trades = [
+            loss("loss-1", "2026-09-01", "taxable", 5.0),
+            trade("ira-buy", "BUY", "2026-09-05", "ira", 5.0, None),
+            loss("loss-2", "2026-09-10", "taxable", 5.0),
+        ];
+        let (washes, windows) = wash_sales(&trades, &taxable, day("2026-09-20"));
+        assert_eq!(washes.len(), 1);
+        assert_eq!(washes[0].sale_id, "loss-1");
+        assert!(washes[0].permanent);
+        // No replacement shares are left, but a purchase before the window closes could still
+        // make the second sale a wash.
+        assert_eq!(windows.len(), 1);
+        assert_eq!(windows[0].sale_id, "loss-2");
+        assert_eq!(windows[0].until, day("2026-10-10"));
+    }
+
+    #[test]
+    fn disallowed_shares_never_exceed_replacement_shares_bought() {
+        // A small linear congruential generator keeps the cases reproducible.
+        let mut seed = 0x2545_f491_u64;
+        let mut next = |bound: u64| {
+            seed = seed.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1);
+            (seed >> 33) % bound
+        };
+        let taxable = |id: &str| id != "ira";
+        let accounts = ["taxable", "other", "ira"];
+        for case in 0..300 {
+            let trades = (0..2 + next(8))
+                .map(|index| {
+                    let date = day("2026-03-01") + Duration::days(next(90) as i64);
+                    let date = date.format("%Y-%m-%d").to_string();
+                    let account = accounts[next(3) as usize];
+                    let units = (1 + next(10)) as f64;
+                    let id = format!("{case}-{index}");
+                    if next(2) == 0 {
+                        trade(&id, "BUY", &date, account, units, None)
+                    } else {
+                        loss(&id, &date, account, units)
+                    }
+                })
+                .collect::<Vec<_>>();
+            let (washes, _) = wash_sales(&trades, &taxable, day("2026-12-31"));
+            let disallowed = washes.iter().map(replaced_units).sum::<f64>();
+            let bought = trades
+                .iter()
+                .filter(|trade| purchase(trade))
+                .filter_map(|trade| trade.units)
+                .sum::<f64>();
+            assert!(disallowed <= bought + 1e-9, "case {case}: {trades:?}");
+            for wash in &washes {
+                let sold = trades
+                    .iter()
+                    .find(|trade| trade.id == wash.sale_id)
+                    .and_then(|trade| trade.units)
+                    .unwrap();
+                assert!(replaced_units(wash) <= sold + 1e-9, "case {case}");
+            }
+        }
+    }
+
     #[test]
     fn estimates_a_range_until_dividends_are_classified_and_limits_net_losses() {
         let accounts = [account("taxable", "taxable"), account("roth", "taxFree")];
@@ -1003,5 +1386,425 @@ mod tests {
         );
         assert!(unprofiled.years[0].estimate.is_none() && !unprofiled.has_profile);
         assert!(unprofiled.years[0].tables_available);
+    }
+
+    /// This year's estimate for gains alone on `base` of taxable income, single, no state tax.
+    fn estimate_for(base: f64, short: f64, long: f64) -> TaxEstimate {
+        let trades = [trade(
+            "sale",
+            "SELL",
+            "2026-05-01",
+            "taxable",
+            10.0,
+            Some((short, long)),
+        )];
+        taxes(
+            TaxInputs {
+                transactions: &[],
+                trades: &trades,
+                accounts: &[account("taxable", "taxable")],
+                positions: &[],
+                harvestable: &[],
+                profile: Some(&profile(base, None)),
+            },
+            day("2026-09-20"),
+        )
+        .years[0]
+            .estimate
+            .clone()
+            .unwrap()
+    }
+
+    #[test]
+    fn long_term_gains_stack_on_ordinary_income_across_the_2026_bands() {
+        // The 0% band for a single filer ends at $49,450; the 15% band at $545,500.
+        let filling = estimate_for(40_000.0, 0.0, 9_450.0);
+        assert_eq!((filling.capital_gains, filling.ordinary), (0.0, 0.0));
+        // The next dollar is past the band.
+        assert_eq!(filling.capital_gains_rate, 15.0);
+        let crossing = estimate_for(40_000.0, 0.0, 10_000.0);
+        assert_eq!(crossing.capital_gains, 82.5);
+        assert_eq!(crossing.low, 82.5);
+
+        // Short-term gains are ordinary income, so they raise where the long-term stack starts.
+        let both = estimate_for(40_000.0, 9_000.0, 1_000.0);
+        assert_eq!(both.ordinary, 1_080.0, "$9,000 at 12%");
+        assert_eq!(both.capital_gains, 82.5, "$450 at 0%, $550 at 15%");
+        assert_eq!(both.marginal_rate, 12.0);
+        assert_eq!(both.high, 1_162.5);
+
+        // Across the 20% band, where the investment income tax applies too.
+        let top = estimate_for(540_000.0, 0.0, 10_000.0);
+        assert_eq!(top.capital_gains, 5_500.0 * 0.15 + 4_500.0 * 0.20);
+        assert_eq!(top.niit, 380.0);
+        assert_eq!(top.capital_gains_rate, 23.8);
+        assert_eq!(top.marginal_rate, 38.8, "35% bracket and 3.8%");
+        assert_eq!(top.high, 825.0 + 900.0 + 380.0);
+
+        // A long-term loss nets against a short-term gain, which stays ordinary.
+        let netted = estimate_for(80_000.0, 5_000.0, -2_000.0);
+        assert_eq!((netted.ordinary, netted.capital_gains), (660.0, 0.0));
+        assert_eq!((netted.loss_deduction, netted.loss_carryover), (0.0, 0.0));
+        // A net loss deducts at most $3,000; the rest carries over.
+        let loss = estimate_for(80_000.0, -1_000.0, -2_500.0);
+        assert_eq!((loss.loss_deduction, loss.loss_carryover), (3_000.0, 500.0));
+    }
+
+    fn position(ticker: &str, account: &str, gains: &[(f64, bool)]) -> PositionLots {
+        PositionLots {
+            account_id: account.into(),
+            ticker: ticker.into(),
+            coverage: "complete",
+            untracked_units: 0.0,
+            lots: gains
+                .iter()
+                .map(|(gain, long_term)| super::super::lots::Lot {
+                    acquired: day("2025-01-02"),
+                    units: 1.0,
+                    cost: 100.0,
+                    value: Some(100.0 + gain),
+                    gain: Some(*gain),
+                    long_term: *long_term,
+                    long_term_on: day("2026-01-03"),
+                    estimated_tax: None,
+                })
+                .collect(),
+            short_term_gain: None,
+            long_term_gain: None,
+            money_weighted_pct: None,
+            since: day("2025-01-02"),
+            tax_deferred: false,
+        }
+    }
+
+    #[test]
+    fn harvest_values_losses_by_term_at_this_years_rates_and_names_the_wash_window() {
+        let positions = [
+            // Gains never offset a lot's loss: only the losing lots count.
+            position(
+                "TEST",
+                "taxable",
+                &[(-150.25, false), (40.0, false), (-300.0, true)],
+            ),
+            position("OTHER", "taxable", &[(-20.0, true)]),
+        ];
+        let trades = [
+            trade("old", "BUY", "2026-07-01", "taxable", 1.0, None),
+            trade("recent", "BUY", "2026-09-01", "ira", 1.0, None),
+        ];
+        let harvestable = [
+            ("TEST".to_owned(), "taxable".to_owned()),
+            ("OTHER".to_owned(), "taxable".to_owned()),
+            // A pair with no saved lots is left out, not shown as zero.
+            ("GONE".to_owned(), "taxable".to_owned()),
+        ];
+        let inputs = |profile| TaxInputs {
+            transactions: &[],
+            trades: &trades,
+            accounts: &[],
+            positions: &positions,
+            harvestable: &harvestable,
+            profile,
+        };
+        // $80,000 single: 22% ordinary, 15% long-term, both with 5% state tax.
+        let with_profile = profile(80_000.0, Some(5.0));
+        let result = taxes(inputs(Some(&with_profile)), day("2026-09-20"));
+        assert_eq!(result.harvest.len(), 2);
+        let test = &result.harvest[0];
+        assert_eq!(
+            (test.short_term_loss, test.long_term_loss),
+            (-150.25, -300.0)
+        );
+        assert_eq!(test.tax_savings, Some(round2(150.25 * 0.27 + 300.0 * 0.20)));
+        // Bought 19 days ago in any account: a sale before Oct 1 would be a wash sale.
+        assert_eq!(test.wash_until, Some(day("2026-10-01")));
+        let other = &result.harvest[1];
+        assert_eq!(other.wash_until, None, "TEST's purchases don't touch OTHER");
+        // Without a profile the losses are listed and no saving is guessed.
+        let unprofiled = taxes(inputs(None), day("2026-09-20"));
+        assert!(unprofiled
+            .harvest
+            .iter()
+            .all(|harvest| harvest.tax_savings.is_none()));
+        // Thirty-one days on, the window has closed.
+        let later = taxes(inputs(None), day("2026-10-02"));
+        assert_eq!(later.harvest[0].wash_until, None);
+    }
+
+    #[test]
+    fn each_year_reports_its_own_taxable_interest_dividends_and_sales() {
+        let accounts = [account("taxable", "taxable"), account("ira", "taxDeferred")];
+        let mut pending = income("pending", "interest", "2026-02-01", "taxable", 9.0, None);
+        pending.pending = true;
+        let transactions = [
+            income("old", "interest", "2024-12-31", "taxable", 7.0, None),
+            income("last-1", "interest", "2025-03-01", "taxable", 10.5, None),
+            income(
+                "last-2",
+                "dividend",
+                "2025-12-31",
+                "taxable",
+                20.0,
+                Some("qualified"),
+            ),
+            income("this-1", "interest", "2026-01-01", "taxable", 1.25, None),
+            income(
+                "this-2",
+                "dividend",
+                "2026-06-30",
+                "taxable",
+                30.0,
+                Some("nonQualified"),
+            ),
+            income("ira", "dividend", "2026-06-30", "ira", 99.0, None),
+            // After today: not on this year's 1099 yet.
+            income("later", "interest", "2026-12-31", "taxable", 5.0, None),
+            pending,
+        ];
+        let trades = [
+            trade(
+                "sold-2025",
+                "SELL",
+                "2025-11-03",
+                "taxable",
+                1.0,
+                Some((25.0, 0.0)),
+            ),
+            trade(
+                "sold-2026",
+                "SELL",
+                "2026-04-03",
+                "taxable",
+                1.0,
+                Some((0.0, -40.0)),
+            ),
+            trade(
+                "ira-sale",
+                "SELL",
+                "2026-04-03",
+                "ira",
+                1.0,
+                Some((500.0, 0.0)),
+            ),
+            trade("unknown", "SELL", "2026-05-03", "taxable", 2.0, None),
+        ];
+        let result = taxes(
+            TaxInputs {
+                transactions: &transactions,
+                trades: &trades,
+                accounts: &accounts,
+                positions: &[],
+                harvestable: &[],
+                profile: None,
+            },
+            day("2026-09-20"),
+        );
+        let years = result
+            .years
+            .iter()
+            .map(|year| year.year)
+            .collect::<Vec<_>>();
+        assert_eq!(years, [2026, 2025], "this year first; 2024 has been filed");
+        let (this, last) = (&result.years[0], &result.years[1]);
+        assert_eq!(this.interest, 1.25);
+        assert_eq!(
+            (this.dividends.total, this.dividends.non_qualified),
+            (30.0, 30.0)
+        );
+        assert_eq!(
+            (this.realized.short_term, this.realized.long_term),
+            (0.0, -40.0)
+        );
+        assert_eq!(this.realized.sales, 2);
+        assert_eq!(
+            (
+                this.realized.unestimated_sales,
+                this.realized.unestimated_proceeds
+            ),
+            (1, 200.0)
+        );
+        assert_eq!(last.interest, 10.5);
+        assert_eq!(
+            (last.dividends.total, last.dividends.qualified),
+            (20.0, 20.0)
+        );
+        assert_eq!(last.realized.short_term, 25.0);
+        // Activity starts in 2024, so neither year is missing its start.
+        assert!(!this.partial && !last.partial);
+        assert!(this.tables_available && last.tables_available);
+    }
+
+    fn projection(wages: f64, withholding: f64) -> super::super::documents::PayProjection {
+        super::super::documents::PayProjection {
+            employer: "Example Employer".into(),
+            document_id: "a".repeat(64),
+            date: day("2026-09-30"),
+            period: 18,
+            periods: 24,
+            wages_to_date: 0.0,
+            withheld_to_date: 0.0,
+            projected_wages: wages,
+            projected_withholding: withholding,
+        }
+    }
+
+    fn quiet_year() -> TaxYear {
+        TaxYear {
+            year: 2026,
+            interest: 0.0,
+            dividends: Dividends::default(),
+            realized: Realized::default(),
+            wash_sales: Vec::new(),
+            estimate: None,
+            tables_available: true,
+            partial: false,
+        }
+    }
+
+    fn project(
+        wages: f64,
+        withholding: f64,
+        prior_wages: Option<f64>,
+        status: Option<&str>,
+    ) -> Withholding {
+        super::withholding(
+            2026,
+            Some(vec![projection(wages, withholding)]),
+            Some(&quiet_year()),
+            prior_wages,
+            PriorInvestment::None,
+            status,
+        )
+        .unwrap()
+    }
+
+    #[test]
+    fn last_years_investment_income_counts_toward_its_tax_and_agi() {
+        // $140,000 of wages alone is under the $150,000 line; with $30,000 of dividends it isn't.
+        let mut prior = quiet_year();
+        prior.year = 2025;
+        prior.dividends.qualified = 30_000.0;
+        prior.dividends.total = 30_000.0;
+        let with = |investment| {
+            super::withholding(
+                2026,
+                Some(vec![projection(150_000.0, 1_000.0)]),
+                Some(&quiet_year()),
+                Some(140_000.0),
+                investment,
+                Some("single"),
+            )
+            .unwrap()
+        };
+        let wages_only = with(PriorInvestment::None);
+        let dividends = with(PriorInvestment::Year(&prior));
+        assert_eq!(wages_only.prior_year.percent, 100.0);
+        assert_eq!(dividends.prior_year.percent, 110.0);
+        assert!(dividends.prior_year.tax > wages_only.prior_year.tax);
+        // Saved history that doesn't reach all of last year can't settle the test.
+        let unknown = with(PriorInvestment::Unknown);
+        assert_eq!(
+            (unknown.prior_year.tax, unknown.prior_year.met),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn withholding_meets_90_percent_of_tax_at_a_bracket_boundary() {
+        // $66,500 less the $16,100 standard deduction is $50,400, the top of the 12% bracket:
+        // $1,240 at 10% plus $4,560 at 12%.
+        let at_top = project(66_500.0, 5_220.0, None, Some("single"));
+        assert_eq!(at_top.projected_tax, Some(5_800.0));
+        assert_eq!(at_top.current_year.required, Some(5_220.0));
+        assert_eq!(at_top.current_year.met, Some(true));
+        assert_eq!(at_top.met, HarborMet::CurrentYear);
+        assert_eq!(at_top.difference, Some(-580.0));
+        // One dollar more is taxed at 22%.
+        let over = project(66_501.0, 5_220.0, None, Some("single"));
+        assert_eq!(over.projected_tax, Some(5_800.22));
+        assert_eq!(over.current_year.met, Some(false));
+        // Short of 90% but owing under $1,000: the small-balance rule.
+        assert_eq!(over.met, HarborMet::SmallBalance);
+        // Wages under the standard deduction owe nothing.
+        assert_eq!(
+            project(16_000.0, 0.0, None, Some("single")).projected_tax,
+            Some(0.0)
+        );
+    }
+
+    #[test]
+    fn last_years_w2_wages_set_the_prior_year_test_and_its_percent() {
+        // 2025: $64,225 less $15,750 is $48,475, the 12% bracket's top: $1,192.50 + $4,386.
+        let short = project(150_000.0, 6_000.0, Some(64_225.0), Some("single"));
+        assert_eq!(short.prior_year.tax, Some(5_578.5));
+        assert_eq!(short.prior_year.percent, 100.0);
+        assert_eq!(short.prior_year.met, Some(true));
+        assert_eq!(short.met, HarborMet::PriorYear);
+        // Above $150,000 of last year's income, 110%.
+        let high = project(250_000.0, 1_000.0, Some(200_000.0), Some("single"));
+        assert_eq!(high.prior_year.percent, 110.0);
+        assert_eq!(high.met, HarborMet::None);
+    }
+
+    #[test]
+    fn each_missing_figure_leaves_its_test_unavailable() {
+        // Without last year's W-2s the prior-year test can't run, so a shortfall is unknown.
+        let unknown = project(150_000.0, 1_000.0, None, Some("single"));
+        assert_eq!(
+            (unknown.prior_year.tax, unknown.prior_year.met),
+            (None, None)
+        );
+        assert_eq!(unknown.met, HarborMet::Unknown);
+        // Without a filing status there is no tax, so no difference and no current-year test.
+        let no_status = project(66_500.0, 5_220.0, Some(64_225.0), None);
+        assert_eq!(no_status.filing_status, None);
+        assert_eq!(
+            (no_status.projected_tax, no_status.difference),
+            (None, None)
+        );
+        assert_eq!(no_status.current_year.met, None);
+        assert_eq!(no_status.met, HarborMet::Unknown);
+        // A statement that can't be carried forward leaves wages and withholding unknown.
+        let unread = super::withholding(
+            2026,
+            None,
+            Some(&quiet_year()),
+            None,
+            PriorInvestment::None,
+            Some("single"),
+        )
+        .unwrap();
+        assert_eq!(
+            (
+                unread.projected_wages,
+                unread.projected_withholding,
+                unread.projected_tax
+            ),
+            (None, None, None)
+        );
+        assert!(unread.basis.is_empty());
+        // No pay statement this year: no projection, and the typed income stays the basis.
+        assert_eq!(
+            super::withholding(
+                2026,
+                Some(Vec::new()),
+                Some(&quiet_year()),
+                None,
+                PriorInvestment::None,
+                Some("single")
+            ),
+            None
+        );
+        // A year without tables has no tax.
+        let untabled = super::withholding(
+            2030,
+            Some(vec![projection(66_500.0, 5_220.0)]),
+            Some(&quiet_year()),
+            None,
+            PriorInvestment::None,
+            Some("single"),
+        )
+        .unwrap();
+        assert_eq!(untabled.projected_tax, None);
     }
 }

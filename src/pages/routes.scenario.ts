@@ -22,7 +22,7 @@ const initial = () => ({
   otherMerchant: 'Other account transaction',
   partialBasis: false,
   linkedPending: false,
-  uberPurchase: false,
+  partnerPurchase: false,
   hiddenBenefits: '',
   spendingAccountId: 'selected',
   insights: {} as Partial<Insights>,
@@ -30,7 +30,8 @@ const initial = () => ({
   reports: {} as Partial<Reports>,
   people: [] as FinanceSettings['people'],
   tripCompanions: [] as FinanceSettings['tripCompanions'],
-  benefitAmount: 10,
+  /** Each synthetic card credit; the seven together stay within one dining quarter. */
+  benefitAmount: 5,
   /** Files the seven synthetic card credits as income, for tests of a report's chart. */
   creditKind: 'other' as 'other' | 'income',
   postingDate: undefined as string | undefined,

@@ -14,6 +14,7 @@ import {
   type HoldingChartState,
 } from './holding-prices'
 import { holdingChartEventSchema, type HoldingPriceHistory, type PriceBar } from './schema'
+import { present } from './test-support'
 
 const t = (value: string) => Date.parse(value) / 1000
 const identity = { symbol: 'TEST', requestId: 'test-request' }
@@ -87,7 +88,7 @@ it('cold overnight history retains daytime and overnight executions and their ga
   )
   expect(points.map((point) => point.value)).toEqual([100, 101, 102, 103])
   expect(points.map((point) => point.breakBefore)).toEqual([false, false, true, true])
-  expect(points[0].time).toBe(now - 35940)
+  expect(points[0]?.time).toBe(now - 35940)
 })
 
 it('never splices an indicative midpoint or an individual trade into bar history', () => {
@@ -379,8 +380,8 @@ it('compresses the weekend while preserving real timestamps, feed boundaries and
   expect(axis.gaps).toHaveLength(1)
   expect(axis.toDisplay(sunday) - axis.toDisplay(friday)).toBe(4 * 3600 + 120)
   expect(axis.toActual(axis.toDisplay(sunday))).toBe(sunday)
-  expect(axis.points[1].breakBefore).toBe(true)
-  expect(points[1].time).toBe(sunday)
+  expect(axis.points[1]?.breakBefore).toBe(true)
+  expect(points[1]?.time).toBe(sunday)
   expect(
     holdingSessions(h).find((session) => session.start === t('2026-03-09T13:30:00Z'))?.label,
   ).toBe('Open')
@@ -389,12 +390,13 @@ it('compresses the weekend while preserving real timestamps, feed boundaries and
 it('connects only fully fetched same-feed history and leaves unknown/live gaps visible', () => {
   const bars = [bar(now - 3600), bar(now - 1800)]
   const h = history(bars, { calendar: [{ date: '2026-09-16', open: 34200, close: 57600 }] })
-  expect(holdingChartPoints({ history: h, bars: [] })[1].breakBefore).toBe(false)
+  expect(holdingChartPoints({ history: h, bars: [] })[1]?.breakBefore).toBe(false)
   expect(
-    holdingChartPoints({ history: h, bars: [], historyError: 'Correction pending' })[1].breakBefore,
+    holdingChartPoints({ history: h, bars: [], historyError: 'Correction pending' })[1]
+      ?.breakBefore,
   ).toBe(true)
   expect(
-    holdingChartPoints({ history: { ...h, calendar: undefined }, bars: [] })[1].breakBefore,
+    holdingChartPoints({ history: { ...h, calendar: undefined }, bars: [] })[1]?.breakBefore,
   ).toBe(true)
   expect(
     holdingChartPoints({ history: h, bars: [{ ...bar(now - 60), receivedAt: now * 1000 }] }).at(-1)
@@ -417,10 +419,10 @@ it('honors early closes, holidays and preserves unexpected observations inside c
     { time: end, value: 101 },
   ]
   const axis = holdingChartTimeline(h, points, end, 31536000)
-  expect(holdingSessions(h)[2].end).toBe(first)
+  expect(holdingSessions(h)[2]?.end).toBe(first)
   expect(axis.toDisplay(end) - axis.toDisplay(first)).toBe(7.5 * 3600)
   expect(axis.toActual(axis.toDisplay(first))).toBe(first)
-  expect(axis.points[1].breakBefore).toBeFalsy()
+  expect(axis.points[1]?.breakBefore).toBeFalsy()
   const unexpected = [...points, { time: first + 86400, value: 102 }].toSorted(
     (a, b) => a.time - b.time,
   )
@@ -448,17 +450,16 @@ it('builds candle OHLC from canonical bars and corrections without mixing feeds 
   const result = holdingChartCandles(current, timeline, start + 900, 86400)
   expect(result.candles).toHaveLength(2)
   expect(result.candles[0]).toMatchObject({ open: 100, high: 106, low: 99, close: 104 })
-  expect(
-    timeline.toActual(result.candles[0].time + (result.candles[0].width ?? result.width) / 2),
-  ).toBe(start + 120)
-  expect(h.bars[1].close).toBe(102)
+  const candle = present(result.candles[0], 'a first candle')
+  expect(timeline.toActual(candle.time + (candle.width ?? result.width) / 2)).toBe(start + 120)
+  expect(h.bars[1]?.close).toBe(102)
   expect(
     holdingChartCandles(
       { ...current, history: { ...h, cached: true } },
       timeline,
       start + 900,
       86400,
-    ).candles[0].close,
+    ).candles[0]?.close,
   ).toBe(102)
 })
 
@@ -487,14 +488,12 @@ it('keeps ordinary candle bodies wide when the last candle is only one minute ol
     86400,
   )
   const result = holdingChartCandles(current, timeline, start + 3660, 86400)
-  expect(result.candles[0].width).toBeGreaterThan(result.candles.at(-1)!.width!)
-  expect(result.candles[0].width).toBe(result.resolution)
+  expect(result.candles[0]?.width).toBeGreaterThan(result.candles.at(-1)!.width!)
+  expect(result.candles[0]?.width).toBe(result.resolution)
   result.candles.forEach((candle, index) => {
     const center = timeline.toActual(candle.time + candle.width! / 2)
     expect(bars.some((point) => point.endTime === center)).toBe(true)
-    if (index)
-      expect(result.candles[index - 1].time + result.candles[index - 1].width!).toBeLessThanOrEqual(
-        candle.time,
-      )
+    const before = result.candles[index - 1]
+    if (before) expect(before.time + before.width!).toBeLessThanOrEqual(candle.time)
   })
 })

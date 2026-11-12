@@ -15,9 +15,20 @@ Regenerate fixtures with `BRIEF_UPDATE_CONTRACT_FIXTURE=1`, running each test on
 
 1. `native_finance_fixture_matches_typed_projection`
 2. `browser_seed_contains_native_transaction_policy` (only when transaction policy changed)
-3. `browser_seed_insights_match_native_insights` (writes the preview's view, Spending periods, and reports, and the empty view tests start from: `seed-view.json`, `seed-spending.json`, `seed-reports.json`, `empty-view.json`, compact and left out of the formatter)
-4. `native_summary_contract_matches_the_renderer_fixture` (only when the summary contract changed)
-5. `native_news_contract_carries_tags_relevance_and_filings` (only when the news contract changed)
+3. `browser_seed_insights_match_native_insights` (writes the preview's view, Spending periods, and reports, and the empty view tests start from: `seed-view.json`, `seed-spending.json`, `seed-reports.json`, `seed-activity-totals.json`, `empty-view.json`, compact and left out of the formatter)
+4. `period_card_reports_match_the_renderer_fixture` (when reports change: the seed's reports that `today-cards.test.tsx` reads, `src/data/fixtures/period-card-reports.json`)
+5. `route_reports_match_the_renderer_fixture` (when reports or the rollup change, or a route test's scenario or report request does: Rust's reports and account totals over the route scenarios, `src/data/fixtures/route-reports.json`, which `src/pages/routes.fixtures.ts` reads). The scenarios and requests come from the route tests themselves; to record them, start from an empty inputs file and repeat until the route tests pass, since each pass reaches renders that needed the last pass's answers:
+
+   ```sh
+   rm src/data/fixtures/route-report-inputs.json
+   BRIEF_RECORD_ROUTE_REPORTS=1 pnpm exec vitest run src/pages --no-file-parallelism
+   (cd src-tauri && BRIEF_UPDATE_CONTRACT_FIXTURE=1 cargo test route_reports_match_the_renderer_fixture)
+   ```
+
+   Both files are compact and left out of the formatter.
+
+6. `native_summary_contract_matches_the_renderer_fixture` (only when the summary contract changed)
+7. `native_news_contract_carries_tags_relevance_and_filings` (only when the news contract changed)
 
 For example:
 

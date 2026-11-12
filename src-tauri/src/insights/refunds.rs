@@ -63,7 +63,10 @@ fn matches(
                 .collect::<Vec<_>>();
             let exact = candidates
                 .iter()
-                .filter(|purchase| -purchase.amount == refund.amount)
+                .filter(|purchase| {
+                    crate::numeric::minor_units(-purchase.amount)
+                        == crate::numeric::minor_units(refund.amount)
+                })
                 .collect::<Vec<_>>();
             let purchase = match (exact.as_slice(), candidates.as_slice()) {
                 ([only], _) => only,

@@ -266,7 +266,7 @@ static OTHER_ITEM: LazyLock<Regex> = LazyLock::new(|| {
 });
 
 /// W-2 box 14: what the employer reports beside the boxes, each a short name and an amount,
-/// such as "120.00 CA SDI" or "FAMLI 5.40", in the lines under its label.
+/// such as "120.00 CA SDI" or "UNION 5.40", in the lines under its label.
 fn box14(lines: &[Line]) -> Vec<(String, f64)> {
     let mut found = Vec::new();
     // The label may share its line with box 13's ("13 Statutory employee 14 Other").

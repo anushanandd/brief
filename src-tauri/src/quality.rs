@@ -71,6 +71,8 @@ pub enum Basis {
     Wallet,
     /// The card network's merchant code, since Plaid wasn't sure.
     MerchantCode,
+    /// Brief followed your earlier choices for the merchant, or for ones named like it.
+    Suggested,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, TS, Eq)]
@@ -125,7 +127,7 @@ fn grade(
     let wallet = transaction
         .wallet
         .as_ref()
-        .filter(|_| !transaction.from_wallet());
+        .filter(|_| !transaction.wallet_only());
     let wallet_amount = wallet.is_some_and(|wallet| wallet.terminal_amount.is_none());
     let amount = if statement_amount.is_some() {
         evidence(Conflict, StatementDiffers)
@@ -174,6 +176,8 @@ fn grade(
         });
     let category = if transaction.category_source == Some(CategorySource::Manual) {
         evidence(Confirmed, Manual)
+    } else if transaction.category_source == Some(CategorySource::Suggested) {
+        evidence(Supported, Suggested)
     } else if wallet.is_some_and(|wallet| wallet.categorized) {
         evidence(Supported, MerchantCode)
     } else if confident(transaction.category_confidence.as_deref()) {

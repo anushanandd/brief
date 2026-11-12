@@ -14,41 +14,55 @@ const wholeCurrencyFormatter = new Intl.NumberFormat('en-US', {
   currency: 'USD',
   maximumFractionDigits: 0,
 })
-const shortDayFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-})
-const dayFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
+/*
+ * Dates and times, all in US English. Two kinds, never mixed:
+ * - A calendar day from Rust (`YYYY-MM-DD`) names a day, not an instant, so it formats in UTC
+ *   and reads the same in every time zone (`formatCalendarDate` and the named days below).
+ * - An instant (an ISO time, epoch milliseconds, or a Date) reads in the user's own time zone
+ *   (`formatInstant`), except market session times, which are Eastern and say so
+ *   (`formatMarketTime`).
+ */
+const dateFormatters = new Map<string, Intl.DateTimeFormat>()
+function dateFormatter(options: Intl.DateTimeFormatOptions) {
+  const key = JSON.stringify(options)
+  let formatter = dateFormatters.get(key)
+  if (!formatter) {
+    formatter = new Intl.DateTimeFormat('en-US', options)
+    dateFormatters.set(key, formatter)
+  }
+  return formatter
+}
+
+/** A calendar day, `YYYY-MM-DD`, in any style; it never shifts with the time zone. */
+export const formatCalendarDate = (date: string, options: Intl.DateTimeFormatOptions) =>
+  dateFormatter({ ...options, timeZone: 'UTC' }).format(new Date(`${date}T00:00:00Z`))
 /** A calendar day, `YYYY-MM-DD`, as "Sep 5". */
 export const formatShortDay = (date: string) =>
-  shortDayFormatter.format(new Date(`${date}T00:00:00Z`))
+  formatCalendarDate(date, { month: 'short', day: 'numeric' })
 /** A calendar day, `YYYY-MM-DD`, as "Sep 5, 2026". */
-export const formatDay = (date: string) => dayFormatter.format(new Date(`${date}T00:00:00Z`))
+export const formatDay = (date: string) =>
+  formatCalendarDate(date, { month: 'short', day: 'numeric', year: 'numeric' })
+/** A calendar day's month, `YYYY-MM-DD`, as "Sep 2026". */
 export const formatMonthYear = (date: string) =>
-  new Date(`${date}T00:00:00Z`).toLocaleDateString('en-US', {
+  formatCalendarDate(date, { month: 'short', year: 'numeric' })
+
+/** An instant in the user's time zone; `options.timeZone` names another. */
+export const formatInstant = (
+  instant: string | number | Date,
+  options: Intl.DateTimeFormatOptions = {
     month: 'short',
-    year: 'numeric',
-    timeZone: 'UTC',
-  })
-const updatedAtFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-})
-const currentYearUpdatedAtFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-})
+    day: 'numeric',
+    hour: 'numeric',
+    minute: '2-digit',
+  },
+) => dateFormatter(options).format(new Date(instant))
+
+/** A market session time, Eastern and labeled so: "9:30 AM ET". */
+export const formatMarketTime = (instant: string | number | Date) =>
+  `${formatInstant(instant, { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET`
+
+/** A rate as given (an APR, a yield): two decimals, never signed. */
+export const formatRate = (value: number) => `${value.toFixed(2)}%`
 /**
  * Negative figures carry a true minus (U+2212): in tabular figures it shares the plus sign's
  * width, so signed columns line up. Exports and copies translate it back to a hyphen.
@@ -66,11 +80,23 @@ export const asciiMinus = (text: string) => text.replaceAll(MINUS, '-')
  */
 let amountsMasked = false
 export const HIDDEN_AMOUNT = '$••••'
-/** Set by the app shell before it renders; views re-render whenever it changes. */
+const maskListeners = new Set<() => void>()
+/**
+ * Set by the app shell as it renders, so everything rendering with it formats the same way.
+ * The shell then calls `announceAmountsHidden`, which re-renders the views that read the mask
+ * through `useAmountsHidden` but didn't render with the shell: memoized lists and every page.
+ */
 export function setAmountsHidden(hidden: boolean) {
   amountsMasked = hidden
 }
 export const amountsHidden = () => amountsMasked
+export function subscribeAmountsHidden(listener: () => void) {
+  maskListeners.add(listener)
+  return () => void maskListeners.delete(listener)
+}
+export function announceAmountsHidden() {
+  for (const listener of maskListeners) listener()
+}
 
 /** A public market price, which screen privacy leaves visible. */
 export const formatPublicCurrency = (value: number | null | undefined) =>
@@ -119,13 +145,32 @@ export const formatSignedCurrency = (value: number | null | undefined) =>
       ? HIDDEN_AMOUNT
       : `${value > 0 ? '+' : ''}${formatCurrency(value || 0)}`
 
-export const formatUpdatedAt = (iso: string) => {
+/**
+ * A personal amount in any currency (an ISO 4217 code), masked like dollars and signed as
+ * `formatCurrency` signs them. A code Intl doesn't know follows the figure.
+ */
+export function formatCurrencyIn(value: number, currency: string) {
+  if (currency === 'USD') return formatCurrency(value)
+  if (amountsMasked) return HIDDEN_AMOUNT
+  try {
+    return typographicMinus(
+      new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(value),
+    )
+  } catch {
+    return typographicMinus(`${value.toFixed(2)} ${currency}`)
+  }
+}
+
+/** When something was saved or observed: "Sep 5, 4:02 PM", with the year when it isn't this one. */
+export const formatUpdatedAt = (iso: string | number) => {
   const date = new Date(iso)
-  return (
-    date.getFullYear() === new Date().getFullYear()
-      ? currentYearUpdatedAtFormatter
-      : updatedAtFormatter
-  ).format(date)
+  return formatInstant(date, {
+    month: 'short',
+    day: 'numeric',
+    ...(date.getFullYear() === new Date().getFullYear() ? {} : { year: 'numeric' }),
+    hour: 'numeric',
+    minute: '2-digit',
+  })
 }
 
 export const formatSecurityName = (name: string) => name.replace(/\s+class\b.*$/i, '').trim()

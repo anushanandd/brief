@@ -268,6 +268,48 @@ fn native_summary_contract_matches_the_renderer_fixture() {
             filed: "2026-07-30".into(),
             url: "https://www.sec.gov/Archives/edgar/data/1/000000000026000001/".into(),
         }),
+        earnings: vec![EarningsDigest {
+            ticker: "TEST".into(),
+            reported_on: NaiveDate::from_ymd_opt(2026, 9, 29).unwrap(),
+            fiscal_date_ending: Some("2026-08-31".into()),
+            report_time: Some("post-market".into()),
+            eps: Some(0.42),
+            eps_estimate: Some(0.38),
+            surprise_pct: Some(10.53),
+            revenue: Some("Revenue was $112 million, up 12% from a year ago.".into()),
+            guidance: vec![
+                "For the fourth quarter, the company expects revenue of $118 million to $122 million.".into(),
+            ],
+            guidance_by: Some("rule".into()),
+            release_read: true,
+            release_url: Some(
+                "https://www.sec.gov/Archives/edgar/data/1/000000000026000002/ex991.htm".into(),
+            ),
+            filing_url: Some(
+                "https://www.sec.gov/Archives/edgar/data/1/000000000026000002/test-8k.htm".into(),
+            ),
+            reaction_pct: Some(6.1),
+            reaction_typical_pct: Some(2.6),
+            expected_move_pct: Some(7.9),
+            call_guidance: vec!["We expect revenue growth to continue next quarter.".into()],
+            call_guidance_by: Some("local:example".into()),
+            line: brief::earnings_line("TEST", Some(0.42), Some(0.38), Some((6.1, 2.6))),
+        }],
+        expectations: vec![Expectation {
+            ticker: "TEST".into(),
+            estimates: vec![crate::providers::expectations::EstimateTrend {
+                fiscal_date_ending: "2026-11-30".into(),
+                horizon: "fiscal quarter".into(),
+                eps: 0.45,
+                eps_30_days_ago: Some(0.43),
+                change_pct: Some(4.7),
+                revisions_up: Some(6),
+                revisions_down: Some(1),
+                analysts: Some(9),
+            }],
+            next_report: Some("2026-12-17".into()),
+            expected_move_pct: Some(8.4),
+        }],
         insiders: vec![InsiderTrade {
             date: "2026-09-14".into(),
             filed_at: "2026-09-16T20:00:00+00:00".into(),
@@ -324,9 +366,11 @@ fn native_summary_contract_matches_the_renderer_fixture() {
                 symbols: vec!["ZZZ".into()],
             },
         ],
+        refreshing: false,
     };
     let today = summary.today.as_ref().unwrap();
     summary.brief = Some(Brief {
+        market: None,
         lines: brief::lines(today, Some("TEST"), Some(48.5), &summary.session),
         headlines: vec![headlines::Headline {
             tickers: vec!["TEST".into()],
@@ -334,7 +378,13 @@ fn native_summary_contract_matches_the_renderer_fixture() {
             publisher: "CNBC".into(),
             url: "https://example.com/cfo".into(),
             published_at: "2026-09-30T13:00:00Z".into(),
+            quote: Some(
+                "The shares rose after the company named a new chief financial officer.".into(),
+            ),
+            quoted_by: Some("summary".into()),
         }],
+        changed: Vec::new(),
+        earnings: Vec::new(),
     });
     let actual = serde_json::to_value(&summary).unwrap();
     // Regenerate with BRIEF_UPDATE_CONTRACT_FIXTURE=1, then format with oxfmt.
@@ -353,6 +403,65 @@ fn native_summary_contract_matches_the_renderer_fixture() {
     ))
     .unwrap();
     assert_eq!(actual, fixture);
+}
+
+#[test]
+fn an_earnings_digest_matches_its_quarter_and_measures_the_stocks_own_answer() {
+    // Filed after Tuesday's close (Sep 29, 2026, 4:05 p.m. in New York): Wednesday reacts.
+    let report = earnings::SavedReport {
+        filing: Some(filing(
+            "2.02",
+            "Earnings results",
+            "2026-09-29T20:05:00+00:00",
+            "https://www.sec.gov/Archives/edgar/data/1/000000000026000002/test-8k.htm",
+        )),
+        quarter: Some(earnings::ReportedQuarter {
+            fiscal_date_ending: "2026-08-31".into(),
+            reported_date: "2026-09-29".into(),
+            reported_eps: Some(0.42),
+            estimated_eps: Some(0.38),
+            surprise_pct: Some(10.53),
+            report_time: Some("post-market".into()),
+        }),
+        release: None,
+        expected_move_pct: Some(5.0),
+        call_guidance: None,
+    };
+    let evidence = [holding(
+        "TEST",
+        Vec::new(),
+        Vec::new(),
+        Some(own_with(
+            "2026-09-21",
+            14,
+            &[
+                ("2026-09-29", 4.0),
+                ("2026-09-30", 3.0),
+                ("2026-10-01", 1.0),
+            ],
+        )),
+    )];
+    let window = period(day("2026-09-01"), day("2026-10-02"));
+    let reports = vec![("TEST".to_owned(), report)];
+    let digests = earnings_digests(&reports, &evidence, window, None);
+    assert_eq!(digests.len(), 1);
+    let digest = &digests[0];
+    assert_eq!(digest.reported_on, day("2026-09-29"));
+    // Wednesday and Thursday: 3.0 + 1.0, not the day before the report.
+    assert_eq!(digest.reaction_pct, Some(4.0));
+    assert_eq!(digest.reaction_typical_pct, Some(0.71));
+    // Unread, the release claims no guidance; the move priced in before it is kept.
+    assert!(!digest.release_read && digest.guidance.is_empty());
+    assert_eq!(digest.expected_move_pct, Some(5.0));
+    assert!(digest.call_guidance.is_empty() && digest.call_guidance_by.is_none());
+    // A report outside the period stays off the portfolio summary but shows on the holding.
+    let later = period(day("2026-10-05"), day("2026-10-30"));
+    assert!(earnings_digests(&reports, &evidence, later, None).is_empty());
+    assert_eq!(
+        earnings_digests(&reports, &evidence, later, Some("TEST")).len(),
+        1
+    );
+    assert!(earnings_digests(&reports, &evidence, later, Some("OTHER")).is_empty());
 }
 
 #[test]
@@ -722,17 +831,17 @@ fn a_launch_that_moves_a_high_beta_stock_today_leads_the_week() {
     let mut report = filing("", "", "2026-10-02T11:00:00+00:00", "https://www.sec.gov/r");
     report.form = "6-K".into();
     report.items.clear();
-    let nebius = holding(
-        "NBIS",
+    let testco = holding(
+        "TEST",
         vec![
             article(
-                "Nebius Rolls Out Agentic Open Model Beam",
+                "Testco Rolls Out Agentic Open Model",
                 "2026-10-06T13:10:00Z",
                 vec![NewsTag::Product],
                 "https://example.com/beam",
             ),
             article(
-                "Why Is Nebius Group Stock Soaring Tuesday?",
+                "Why Is Testco Group Stock Soaring Tuesday?",
                 "2026-10-06T16:02:00Z",
                 vec![],
                 "https://example.com/why",
@@ -741,17 +850,14 @@ fn a_launch_that_moves_a_high_beta_stock_today_leads_the_week() {
         vec![report],
         Some(own),
     );
-    let events = logged(std::slice::from_ref(&nebius), period(start, end), 3);
-    assert_eq!(
-        titles(&events),
-        ["Nebius Rolls Out Agentic Open Model Beam"]
-    );
+    let events = logged(std::slice::from_ref(&testco), period(start, end), 3);
+    assert_eq!(titles(&events), ["Testco Rolls Out Agentic Open Model"]);
     assert_eq!(events[0].z, Some(14.2));
     // The week counts today's session, so its own layer leads.
-    let closes = BTreeMap::from([("NBIS".to_string(), 100.0), ("XLK".to_string(), 100.0)]);
-    let prices = BTreeMap::from([("NBIS".to_string(), 108.8), ("XLK".to_string(), 104.0)]);
+    let closes = BTreeMap::from([("TEST".to_string(), 100.0), ("XLK".to_string(), 100.0)]);
+    let prices = BTreeMap::from([("TEST".to_string(), 108.8), ("XLK".to_string(), 104.0)]);
     let moved = period_move(
-        "NBIS",
+        "TEST",
         Some(("XLK", "Technology")),
         &closes,
         &prices,
@@ -779,20 +885,20 @@ fn today_names_the_holdings_and_sectors_that_moved() {
             },
         )
     };
-    let snapshots = BTreeMap::from([quote("NBIS", 8.7), quote("XLK", 2.2), quote("SPY", 0.4)]);
-    let today = holding_today("NBIS", Some(("XLK", "Technology")), &snapshots).unwrap();
+    let snapshots = BTreeMap::from([quote("TEST", 8.7), quote("XLK", 2.2), quote("SPY", 0.4)]);
+    let today = holding_today("TEST", Some(("XLK", "Technology")), &snapshots).unwrap();
     // The kind comes from the session's layers, never from the raw change.
     assert_eq!(today.kind, None);
     assert_eq!(today.sector.as_ref().unwrap().change_pct, 2.2);
     assert_eq!(today.market.as_ref().unwrap().change_pct, 0.4);
     // Without a previous close there is no day change, never a flat one.
     let mut stale = snapshots.clone();
-    stale.get_mut("NBIS").unwrap().previous_close_as_of = None;
-    assert!(holding_today("NBIS", None, &stale).is_none());
+    stale.get_mut("TEST").unwrap().previous_close_as_of = None;
+    assert!(holding_today("TEST", None, &stale).is_none());
     let held = [
         HeldSecurity {
-            ticker: "NBIS".into(),
-            name: "Nebius".into(),
+            ticker: "TEST".into(),
+            name: "Testco".into(),
             shares: 10.0,
             value: 1_087.0,
             kind: Some("equity".into()),
@@ -805,13 +911,13 @@ fn today_names_the_holdings_and_sectors_that_moved() {
             kind: Some("etf".into()),
         },
     ];
-    let sectors = BTreeMap::from([("NBIS".to_string(), ("XLK", "Technology"))]);
+    let sectors = BTreeMap::from([("TEST".to_string(), ("XLK", "Technology"))]);
     let portfolio = portfolio_today_move(
         &portfolio::portfolio_today(&held, &snapshots, &sectors),
         &held,
     )
     .unwrap();
-    assert_eq!(portfolio.positions[0].ticker, "NBIS");
+    assert_eq!(portfolio.positions[0].ticker, "TEST");
     // Technology is 54.4% of the portfolio, and its holdings rose 8.7% together; a fund
     // has no sector.
     assert_eq!(

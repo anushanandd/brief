@@ -25,7 +25,7 @@ it('uses the same positive Zelle income policy in Money, Overview, and Activity'
     updatedAt: '2026-09-18T12:00:00Z',
     transactions: [transaction],
   }
-  expect(buildActivities(data)[0].kind).toBe('income')
+  expect(buildActivities(data)[0]?.kind).toBe('income')
   expect(
     transactionMarkKind({
       ...transaction,
@@ -98,8 +98,10 @@ it('uses native financial meaning even when display text resembles a different k
       classification: classification('income'),
     }),
   ]
-  expect(moneyKind(data.transactions[0])).toBe('income')
-  expect(buildActivities(data)[0].kind).toBe('income')
+  const [income] = data.transactions
+  if (!income) throw new Error('Expected an income transaction')
+  expect(moneyKind(income)).toBe('income')
+  expect(buildActivities(data)[0]?.kind).toBe('income')
 })
 
 const purchase = (id: string, category: string, amount: number): Transaction =>

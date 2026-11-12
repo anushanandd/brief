@@ -176,7 +176,7 @@ impl Providers {
                 .acquire(&canonical, self.alpaca_credentials()?)?;
             let mut canonical_events = canonical_feed.events.subscribe();
             let canonical_failure = async {
-                if canonical_feed.state.lock().unwrap().finished {
+                if super::market_stream::recover(&canonical_feed.state).finished {
                     return;
                 }
                 loop {

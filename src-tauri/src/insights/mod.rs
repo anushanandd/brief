@@ -1,14 +1,16 @@
 //! Native financial insights derived from the annotation-aware committed snapshot: expected
 //! activity, statement cycles, card benefits, and plan. Rust is the only policy;
 //! the renderer formats these results and never recomputes them.
+pub mod activity_totals;
 pub mod agenda;
 pub mod allocation;
 pub mod anomalies;
+pub mod assistant_planner;
+pub mod assistant_tools;
 pub mod attention;
 pub mod benefits;
 pub mod calendar;
 pub mod cashline;
-pub mod changes;
 pub mod chart_change;
 pub mod credit;
 pub mod dividends;
@@ -17,10 +19,11 @@ pub mod flows;
 pub mod forecast;
 pub mod interest;
 pub mod investing;
-pub mod ledger;
 pub mod lots;
 pub mod people;
+pub mod period_changes;
 pub mod plan;
+pub mod precision;
 pub mod recap;
 pub mod reconcile;
 pub mod recurring;
@@ -48,9 +51,7 @@ use ts_rs::TS;
 use crate::finance_contract::{Account, Snapshot, Transaction};
 use crate::numeric::{from_minor, minor_units};
 use crate::settings::FinanceSettings;
-use benefits::{
-    BenefitActivity, BenefitHistory, BenefitOption, BenefitReview, BenefitWindow, PLATINUM,
-};
+use benefits::{BenefitActivity, BenefitHistory, BenefitOption, BenefitReview, BenefitWindow};
 use calendar::Zone;
 
 /// A snapshot as it is read: every saved edit applied, its insights when they could be derived,
@@ -137,11 +138,22 @@ pub struct Insights {
     /// Benefits for other credit cards the user assigned a product to.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub other_card_benefits: Vec<CardBenefits>,
-    /// Card products with rule data, for assigning one to a card.
+    /// Money from elsewhere filed as repaying card fees, every tracked card's `fee.offsets`
+    /// together, in whole cents; none when no tracked card has a fee year.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub fee_offsets: Option<f64>,
+    /// Card products with saved rules, for assigning one to a card.
     pub benefit_products: Vec<BenefitOption>,
+    /// The spending card's benefits, and its product's rules version and review date; none
+    /// when no product's rules cover it.
     pub benefit_options: Vec<BenefitOption>,
-    pub benefit_rules_version: String,
-    pub benefit_terms_reviewed: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub benefit_rules_version: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub benefit_terms_reviewed: Option<String>,
     /// Unlinked refunds and the one purchase each most plausibly repays.
     pub refund_suggestions: Vec<refunds::RefundSuggestion>,
     pub plan: plan::Plan,
@@ -205,7 +217,7 @@ pub struct Insights {
     /// What about the investments calls for a decision.
     pub investment_attention: investing::InvestmentAttention,
     /// Account balance changes and posted activity for each chart period.
-    pub changes: Vec<changes::PeriodChange>,
+    pub changes: Vec<period_changes::PeriodChange>,
     /// Each cash account's interest by chart period and its monthly net flow.
     pub interest: Vec<interest::AccountInterest>,
     /// This year's and last year's taxable investment income, sales, and estimates.
@@ -219,6 +231,9 @@ pub struct Insights {
     pub agenda: Vec<agenda::AgendaItem>,
     /// What program rules explain or suggest, with proofs, and life chapters.
     pub evidence: crate::evidence::Evidence,
+    /// Each detector's share of your answers that accepted it, for Diagnostics.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub precision: Vec<precision::DetectorPrecision>,
 }
 
 /// Derives insights for an annotation-aware snapshot. The snapshot takes the saved tax
@@ -382,7 +397,7 @@ pub fn derive_with_documents(
             _ => None,
         })
         .collect::<Vec<_>>();
-    let taxes = tax::taxes(
+    let mut taxes = tax::taxes(
         tax::TaxInputs {
             transactions,
             trades,
@@ -506,6 +521,26 @@ pub fn derive_with_documents(
     brief
         .needs
         .extend(documents::needs(&document_insights, documents, today));
+    // Pay statements project this year's withholding; last year's W-2s supply the prior-year
+    // test once all of them are in.
+    let prior_wages = document_insights
+        .years
+        .iter()
+        .find(|year| year.year == today.year() - 1)
+        .and_then(|year| year.income.as_ref())
+        .filter(|income| income.wages_from == "w2" && income.self_employment == 0.0)
+        .map(|income| income.wages);
+    taxes.withholding = tax::withholding(
+        today.year(),
+        documents::pay_projections(today.year(), documents),
+        taxes.years.iter().find(|year| year.year == today.year()),
+        prior_wages,
+        tax::prior_investment(&taxes, transactions, trades, today),
+        settings
+            .tax_profile
+            .as_ref()
+            .map(|profile| profile.filing_status.as_str()),
+    );
     brief.needs.sort_by_key(|item| item.severity);
     // The spending cards stay out of the totals and their history.
     let cards = rollup::spending_cards(accounts, settings);
@@ -538,6 +573,33 @@ pub fn derive_with_documents(
         &BTreeMap::new(),
         now.timestamp(),
     );
+    let fee_offsets = benefits
+        .iter()
+        .chain(&other_card_benefits)
+        .filter_map(|card| card.fee.as_ref())
+        .map(|fee| minor_units(fee.offsets))
+        .reduce(|total, offsets| total + offsets)
+        .map(from_minor);
+    let cards = benefits::Catalog::from_settings(settings);
+    let spending_rules = benefits
+        .as_ref()
+        .and_then(|card| cards.product(&card.product));
+    let benefit_options = spending_rules
+        .map(|rules| {
+            let mut options = rules.options();
+            for option in &mut options {
+                if let Some(item) = benefits
+                    .as_ref()
+                    .and_then(|card| card.history.iter().find(|item| item.id == option.id))
+                {
+                    option.logo_domain = item.logo_domain.clone();
+                    option.logo_url = item.logo_url.clone();
+                    option.logo_brand = item.logo_brand.clone();
+                }
+            }
+            options
+        })
+        .unwrap_or_default();
     let mut insights = Insights {
         today,
         computed_at: now.to_rfc3339(),
@@ -545,16 +607,22 @@ pub fn derive_with_documents(
         statement,
         benefits,
         other_card_benefits,
-        benefit_products: benefits::products()
-            .into_iter()
+        fee_offsets,
+        benefit_products: cards
+            .products()
+            .iter()
             .map(|rules| BenefitOption {
                 id: rules.product.clone(),
                 name: rules.name.clone(),
+                logo_domain: None,
+                logo_url: None,
+                logo_brand: None,
+                category: None,
             })
             .collect(),
-        benefit_options: PLATINUM.options(),
-        benefit_rules_version: PLATINUM.version.clone(),
-        benefit_terms_reviewed: PLATINUM.terms_reviewed.clone(),
+        benefit_options,
+        benefit_rules_version: spending_rules.map(|rules| rules.version.clone()),
+        benefit_terms_reviewed: spending_rules.map(|rules| rules.terms_reviewed.clone()),
         refund_suggestions,
         plan,
         attention,
@@ -586,7 +654,7 @@ pub fn derive_with_documents(
         lots,
         long_term_soon,
         investment_attention,
-        changes: changes::changes(
+        changes: period_changes::changes(
             &snapshot.account_balance_history,
             performance,
             transactions,
@@ -605,6 +673,7 @@ pub fn derive_with_documents(
         movers: lots::movers(holdings),
         agenda: Vec::new(),
         evidence,
+        precision: precision::precision(settings, transactions),
     };
     insights.agenda = agenda::agenda(agenda::Inputs {
         today,
@@ -741,17 +810,25 @@ fn cashflow(
         (year_end - today).num_days().max(0),
     ));
     // Benefits for one card under one product's rules.
-    let card_benefits = |card: &Account, rules: &'static benefits::RuleSet| {
+    let card_benefits = |card: &Account, rules: &benefits::RuleSet| {
         let own = transactions
             .iter()
             .filter(|transaction| transaction.account_id.as_deref() == Some(card.id.as_str()))
             .collect::<Vec<_>>();
+        let rules = &rules.for_card(&own);
         let activity = rules.activity(&own, updated_at);
         let history_start = own
             .iter()
             .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
             .min();
-        let windows = rules.tracker_for(&activity, &now_iso, updated_at, history_start, zone);
+        let logos = rules.logos(&own, &activity);
+        let mut windows = rules.tracker_for(&activity, &now_iso, updated_at, history_start, zone);
+        for window in &mut windows {
+            let logo = logos.get(&window.id).cloned().unwrap_or_default();
+            window.logo_domain = logo.domain;
+            window.logo_url = logo.url;
+            window.logo_brand = logo.brand;
+        }
         // A series counts toward the benefit its latest charge qualifies for.
         let charges = upcoming
             .iter()
@@ -774,7 +851,13 @@ fn cashflow(
             })
             .flatten()
             .collect::<Vec<_>>();
-        let history = rules.history(&activity, history_start, today, &charges);
+        let mut history = rules.history(&activity, history_start, today, &charges);
+        for benefit in &mut history {
+            let logo = logos.get(&benefit.id).cloned().unwrap_or_default();
+            benefit.logo_domain = logo.domain;
+            benefit.logo_url = logo.url;
+            benefit.logo_brand = logo.brand;
+        }
         let others = own
             .iter()
             .filter(|transaction| transaction.other)
@@ -799,7 +882,8 @@ fn cashflow(
             activity,
         }
     };
-    let tracked = tracked_cards(accounts, settings);
+    let cards = benefits::Catalog::from_settings(settings);
+    let tracked = tracked_cards(accounts, settings, &cards);
     let is_spending_card = |account: &Account| card.is_some_and(|card| card.id == account.id);
     let benefits = tracked
         .iter()
@@ -826,16 +910,14 @@ fn cashflow(
         cashline::HORIZON_DAYS,
     ));
     let cash = cashline::timeline(accounts, &horizon, &settings.planned_chapters, today);
-    let subscriptions = subscriptions::subscriptions(
-        &live(forecast::forecast_within(
-            transactions,
-            &views,
-            updated_at,
-            today,
-            subscriptions::HORIZON_DAYS,
-        )),
+    let year_ahead = live(forecast::forecast_within(
         transactions,
-    );
+        &views,
+        updated_at,
+        today,
+        subscriptions::HORIZON_DAYS,
+    ));
+    let subscriptions = subscriptions::subscriptions(&year_ahead, transactions);
     let credit = credit::credit(
         accounts,
         card.zip(statement.as_ref())
@@ -843,7 +925,7 @@ fn cashflow(
         today,
     );
     let anomalies = anomalies::anomalies(transactions, baseline, today);
-    let brief = attention::Brief {
+    let mut brief = attention::Brief {
         needs: attention::needs(
             context,
             &benefits
@@ -863,6 +945,14 @@ fn cashflow(
             &anomalies,
         ),
     };
+    brief.needs.extend(attention::inferred(attention::Signals {
+        today,
+        transactions,
+        new_series: &forecast::new_series(transactions, &year_ahead, today),
+        pay: &forecast::pay_changes(transactions, &year_ahead, today),
+        subscriptions: &subscriptions,
+        anomalies: &anomalies,
+    }));
     Cashflow {
         today,
         expected,
@@ -884,11 +974,12 @@ fn cashflow(
 
 /// Credit cards whose benefits are tracked, with their product's rules: the product the user
 /// assigned, else the one the issuer's official name names, else, for the spending card only,
-/// the default product.
-fn tracked_cards<'a>(
+/// the catalog's only product.
+fn tracked_cards<'a, 'c>(
     accounts: &'a [Account],
     settings: &FinanceSettings,
-) -> Vec<(&'a Account, &'static benefits::RuleSet)> {
+    cards: &'c benefits::Catalog,
+) -> Vec<(&'a Account, &'c benefits::RuleSet)> {
     let card = spending_card(accounts, settings);
     accounts
         .iter()
@@ -897,11 +988,11 @@ fn tracked_cards<'a>(
             let assigned = settings
                 .benefit_cards
                 .get(&account.id)
-                .and_then(|product| benefits::product(product))
-                .or_else(|| benefits::named_product(account.official_name.as_deref()));
+                .and_then(|product| cards.product(product))
+                .or_else(|| cards.named_product(account.official_name.as_deref()));
             let spending = card.is_some_and(|card| card.id == account.id);
             let rules = if spending {
-                assigned.or_else(|| benefits::product(benefits::DEFAULT_PRODUCT))
+                assigned.or_else(|| cards.only())
             } else {
                 assigned
             };
@@ -924,12 +1015,13 @@ fn credits_follow_purchases(
         .map(|transaction| transaction.id.clone())
         .collect::<std::collections::HashSet<_>>();
     let mut follow = Vec::new();
-    for (card, rules) in tracked_cards(accounts, settings) {
+    let cards = benefits::Catalog::from_settings(settings);
+    for (card, rules) in tracked_cards(accounts, settings, &cards) {
         let own = transactions
             .iter()
             .filter(|transaction| transaction.account_id.as_deref() == Some(card.id.as_str()))
             .collect::<Vec<_>>();
-        let activity = rules.activity(&own, updated_at);
+        let activity = rules.for_card(&own).activity(&own, updated_at);
         // Credits first, so a reversal can follow the credit it undoes.
         for kind in [
             benefits::ActivityKind::Credit,

@@ -42,6 +42,7 @@ import {
   savePaletteFavorites,
   toggleFavorite,
   type PaletteMode,
+  type PaletteTab,
 } from '../lib/palette-ranking'
 import {
   menuRows,
@@ -69,6 +70,7 @@ import { Ellipsis, RefreshCw, Star, X } from './icons'
 import { Keys } from './keys'
 import { LedgerResult } from './ledger-result'
 import { useShowObject } from './object-details'
+import { Dialog, dialogAutofocus } from './ui/dialog'
 
 const plainMeta = (event: KeyboardEvent, key: string) =>
   event.key.toLowerCase() === key && event.metaKey && !event.ctrlKey && !event.shiftKey
@@ -78,6 +80,8 @@ const plainMeta = (event: KeyboardEvent, key: string) =>
 const ownRows = new Set<ObjectKind>(['account', 'holding', 'transaction', 'trade'])
 /** How many Activity entries one search reads; the count shows `+` when it reaches it. */
 const ACTIVITY_LIMIT = 100
+// The palette's first tab shows every group, and is the fallback for an unknown tab ID.
+const allTab: PaletteTab = paletteTabs.find(({ id }) => id === 'all') ?? { id: 'all', label: 'All' }
 // `account: chase`: a field-scoped Activity filter, which the palette applies itself.
 const scopedFilter = /^(description|account|category|tag|person|method|location|amount|date):/i
 
@@ -137,7 +141,7 @@ export function CommandMenu({
   const pins = usePins()
   const trimmedQuery = query.trim()
   const askMode = mode === 'ask'
-  const tab = paletteTabs.find(({ id }) => id === tabId) ?? paletteTabs[0]
+  const tab = paletteTabs.find(({ id }) => id === tabId) ?? allTab
   const ask = useAskBrief(askMode, Boolean(finance.data))
   const askReady = ask.ready(trimmedQuery)
   const names = financeSettings(finance.data).accountNames
@@ -364,20 +368,6 @@ export function CommandMenu({
     return () => window.clearTimeout(timer)
   }, [notice])
 
-  useEffect(() => {
-    const element = dialog.current
-    if (!element) return undefined
-    if (open && !element.open) {
-      element.showModal()
-      input.current?.focus()
-    } else if (!open && element.open) {
-      element.close()
-    }
-    return () => {
-      if (element.open) element.close()
-    }
-  }, [open])
-
   const switchMode = (next: PaletteMode, nextQuery = '') => {
     dispatch({ type: 'switchMode', mode: next, query: nextQuery })
     menu.close()
@@ -483,18 +473,13 @@ export function CommandMenu({
   const resultCount = rows.length
 
   return (
-    <dialog
+    <Dialog
       ref={dialog}
+      open={open}
+      // Escape closes an open actions menu first, then the palette.
+      onClose={() => (menu.open ? closeMenu() : onOpenChange(false))}
       className="command-dialog command-palette-dialog"
       aria-labelledby="command-title"
-      onCancel={(event) => {
-        event.preventDefault()
-        if (menu.open) closeMenu()
-        else onOpenChange(false)
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onOpenChange(false)
-      }}
     >
       <h2 id="command-title" className="sr-only">
         Quick actions
@@ -548,6 +533,8 @@ export function CommandMenu({
             <AutofillField query={query} completion={completion}>
               <Command.Input
                 ref={input}
+                // The dialog focuses the query field as it opens, ahead of the mode buttons.
+                {...dialogAutofocus}
                 value={query}
                 onKeyDown={onInputKeyDown}
                 onValueChange={onQueryChange}
@@ -771,6 +758,6 @@ export function CommandMenu({
           onHover={menu.setIndex}
         />
       ) : null}
-    </dialog>
+    </Dialog>
   )
 }

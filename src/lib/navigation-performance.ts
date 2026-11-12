@@ -55,12 +55,11 @@ export function navigationBudget() {
     .getEntriesByName(measureName)
     .map(({ duration }) => duration)
     .toSorted((left, right) => left - right)
+  const p95 = durations[Math.min(durations.length - 1, Math.floor(durations.length * 0.95))]
   return {
     budgetMs: navigationBudgetMs,
     count: durations.length,
-    p95Ms: durations.length
-      ? Math.round(durations[Math.min(durations.length - 1, Math.floor(durations.length * 0.95))])
-      : null,
+    p95Ms: p95 === undefined ? null : Math.round(p95),
     overBudget: durations.filter((duration) => duration > navigationBudgetMs).length,
   }
 }

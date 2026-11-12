@@ -55,8 +55,8 @@ it('lists app and page commands once, by section, leaving focus-bound ones to th
     'export',
   ])
   // A bare key is no menu key equivalent; the page handles it outside fields.
-  expect(sections[1].items[1].accelerator).toBeNull()
-  expect(sections[2].items[0].enabled).toBe(false)
+  expect(sections[1]?.items[1]?.accelerator).toBeNull()
+  expect(sections[2]?.items[0]?.enabled).toBe(false)
 })
 
 it('opens only real views from brief:// links', () => {

@@ -60,11 +60,12 @@ const SPENDING_COLORS: [&str; 6] = [
     "#477d75", "#4f78a8", "#b58a3f", "#7d6da5", "#a45f79", "#79924b",
 ];
 pub(crate) use imported::{provider_activity, reconciles};
-pub(crate) const CALCULATION_VERSION: u32 = 43;
+pub(crate) const CALCULATION_VERSION: u32 = 44;
 
 pub fn project(
     sync: &ProviderSync,
     account_links: &BTreeMap<String, String>,
+    cards: &crate::insights::benefits::Catalog,
     now: DateTime<Utc>,
     calendar_date: NaiveDate,
 ) -> Result<Snapshot, String> {
@@ -72,6 +73,15 @@ pub fn project(
     let mut parsed = Parsed::from_sync(sync, &mut warnings);
     // Statement rows join the provider's transactions below; the rest of `parsed` stays shared.
     let mut plaid_transactions = std::mem::take(&mut parsed.plaid_transactions);
+    // Brief sums only US dollars, so a row in another currency is left out with a notice.
+    let before = plaid_transactions.len();
+    plaid_transactions.retain(|transaction| !transaction.foreign_currency());
+    if plaid_transactions.len() < before {
+        warnings.push(format!(
+            "{} transactions not in US dollars are left out of activity and spending",
+            before - plaid_transactions.len()
+        ));
+    }
     let possible_duplicates = possible_duplicate_accounts(&parsed, account_links, &mut warnings);
     let included_plaid_investments = parsed.included_plaid_investments(account_links);
     let included_plaid_ids = included_plaid_investments
@@ -237,6 +247,7 @@ pub fn project(
             .iter()
             .map(|account| (account.id.as_str(), account.name.as_str())),
         &BTreeMap::new(),
+        cards,
     );
     let tracked_accounts = plaid_histories
         .keys()
@@ -344,9 +355,30 @@ pub fn project(
 
 /// A committed snapshot as it is read: saved edits applied to its transactions, then this
 /// month's spending and each investment account's income this year again.
+/// Tests read the example card's rules.
+#[cfg(test)]
 pub fn apply_annotations(
     snapshot: &mut Snapshot,
     annotations: &BTreeMap<String, Annotation>,
+) -> Result<(), String> {
+    apply_edits(
+        snapshot,
+        annotations,
+        &BTreeMap::new(),
+        None,
+        &crate::insights::benefits::Catalog::example(),
+    )
+}
+
+/// `apply_annotations`, with categories suggested from your earlier choices before any total:
+/// `rejections` are the suggestions you turned down, `embedder` finds merchants with similar
+/// names, and `cards` are the card products whose statement credits are known.
+pub fn apply_edits(
+    snapshot: &mut Snapshot,
+    annotations: &BTreeMap<String, Annotation>,
+    rejections: &BTreeMap<String, String>,
+    embedder: Option<&dyn crate::search::embeddings::Embedder>,
+    cards: &crate::insights::benefits::Catalog,
 ) -> Result<(), String> {
     let updated_at = DateTime::parse_from_rfc3339(&snapshot.updated_at)
         .map_err(|_| "Committed snapshot timestamp is invalid")?;
@@ -365,6 +397,13 @@ pub fn apply_annotations(
             .iter()
             .map(|account| (account.id.as_str(), account.name.as_str())),
         annotations,
+        cards,
+    );
+    crate::transaction_policy::suggest_categories(
+        &mut snapshot.transactions,
+        rejections,
+        embedder,
+        cards,
     );
     snapshot.spending = spending(&snapshot.transactions, month_start);
     let year = calendar_date.format("%Y").to_string();

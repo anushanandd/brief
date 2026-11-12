@@ -18,7 +18,7 @@ use ts_rs::TS;
 
 use super::attention::{AttentionItem, Item, Severity};
 use super::calendar;
-use super::changes::Window;
+use super::period_changes::Window;
 use super::recap::{self, PeriodRecap};
 use crate::documents::Kind as DocumentKind;
 use crate::finance_contract::{Account, ContributionYear, Transaction};

@@ -1,11 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
+import { type ReactNode, useMemo, useRef } from 'react'
 
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { usePortfolioSectors } from '../hooks/use-portfolio-sectors'
 import { useReports } from '../hooks/use-reports'
 import { accountDisplayName } from '../lib/account-names'
+import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { getEarningsCalendar, getPortfolioToday, isTauri } from '../lib/api'
 import { addDays, localDateKey } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
@@ -14,6 +15,7 @@ import {
   formatPercent,
   formatProseCurrency,
   formatProsePercent,
+  formatPublicCurrency,
   formatShare,
   formatSignedCurrency,
   pluralize,
@@ -22,7 +24,13 @@ import {
 } from '../lib/format'
 import { useGraphWindow, type ChartPeriod, chartPeriodSeconds } from '../lib/graph-preferences'
 import { rangeDates } from '../lib/investment-range'
-import type { FinanceSnapshot, InvestmentSummary, ReportSummary, Statement } from '../lib/schema'
+import type {
+  Exposure,
+  FinanceSnapshot,
+  InvestmentSummary,
+  ReportSummary,
+  Statement,
+} from '../lib/schema'
 import { ChartRangeSelector } from './charts'
 import { ExternalLink } from './external-link'
 import { AlertCircle, ChevronRight } from './icons'
@@ -139,38 +147,9 @@ function ReportMetric({
   )
 }
 
-/** This tax year's estimate, labeled with its year since taxes keep their own period. */
-function TaxesMetric({ data }: { data: FinanceSnapshot }) {
-  const year = data.insights?.taxes.years[0]
-  const estimate = year?.estimate
-  return (
-    <Link
-      className="metric investments-report-metric"
-      to="/taxes"
-      data-keyboard-row
-      data-keyboard-open
-    >
-      <span>{year ? `Taxes · ${year.year}` : 'Taxes'}</span>
-      <strong className={estimate ? undefined : 'muted'}>
-        {estimate ? (
-          <span className="sensitive-value">
-            {estimate.low === estimate.high
-              ? formatCurrency(estimate.high)
-              : `${formatCurrency(estimate.low)}–${formatCurrency(estimate.high)}`}
-          </span>
-        ) : year ? (
-          'No estimate'
-        ) : (
-          'None yet'
-        )}
-      </strong>
-    </Link>
-  )
-}
-
 /**
- * The period beside the chart: where the change came from and the benchmark, then what the
- * period paid and realized, each opening its report for the same days.
+ * The period beside the chart: where the change came from, its return beside the S&P 500's,
+ * then what the period paid and realized, each opening its report for the same days.
  */
 export function PeriodCard({
   data,
@@ -210,14 +189,9 @@ export function PeriodCard({
               }
             />
             <Metric
-              label="How your investments did"
+              label="Return"
               value={formatPercent(span.timeWeightedPct)}
               tone={valueTone(span.timeWeightedPct)}
-            />
-            <Metric
-              label="How your money did"
-              value={formatPercent(span.moneyWeightedPct)}
-              tone={span.moneyWeightedPct == null ? 'muted' : valueTone(span.moneyWeightedPct)}
             />
             <Metric label="S&P 500" value={formatPercent(span.benchmarkPct)} tone="muted" />
           </>
@@ -235,9 +209,95 @@ export function PeriodCard({
             accountId={accountId}
           />
         ))}
-        <TaxesMetric data={data} />
       </nav>
+      <PeriodRisk span={span} exposure={data.insights?.exposure} />
     </Card>
+  )
+}
+
+/**
+ * How the period's path went, one disclosure below its return: the deepest fall from a high,
+ * how much the days moved, how closely the S&P 500 explains them, and how spread out the
+ * holdings are now. Each is Rust's figure for the page's period, or unavailable.
+ */
+function PeriodRisk({ span, exposure }: { span?: Statement; exposure?: Exposure }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  useRegisterActions(
+    useMemo<AppAction[]>(
+      () => [
+        {
+          id: 'investments.risk.toggle',
+          title: 'Show or hide the period’s risk',
+          search: 'risk drawdown volatility beta concentration effective holdings',
+          group: 'View',
+          scope: 'page',
+          bindings: [{ sequence: ['i'], label: 'I' }],
+          run: () => {
+            const details = detailsRef.current
+            if (details) details.open = !details.open
+          },
+        },
+      ],
+      [],
+    ),
+  )
+  const risk = span?.risk
+  const unavailable = <span className="muted">Unavailable</span>
+  return (
+    <details ref={detailsRef} className="account-details-more">
+      <summary data-command="investments.risk.toggle">Risk</summary>
+      <div className="investments-side-stats">
+        <Metric
+          label="Deepest fall"
+          value={risk?.drawdownPct != null ? formatPercent(risk.drawdownPct) : unavailable}
+          tone={risk?.drawdownPct ? 'negative' : undefined}
+        />
+        <Metric
+          label="Volatility"
+          value={
+            risk?.volatilityPct != null ? (
+              <>
+                {formatShare(risk.volatilityPct)}
+                <small className="metric-detail">a year</small>
+              </>
+            ) : (
+              unavailable
+            )
+          }
+        />
+        <Metric
+          label="Beta"
+          value={
+            risk?.beta ? (
+              <>
+                {risk.beta.beta.toFixed(2)}
+                <small className="metric-detail">
+                  R² {risk.beta.rSquared.toFixed(2)} · {risk.beta.sessions}{' '}
+                  {pluralize(risk.beta.sessions, 'session')}
+                </small>
+              </>
+            ) : (
+              unavailable
+            )
+          }
+        />
+        <Metric
+          label="Effective holdings"
+          value={
+            exposure ? (
+              <>
+                {exposure.effectiveHoldings.toFixed(1)}
+                <small className="metric-detail">
+                  of {exposure.holdings} now · top five {formatShare(exposure.topFivePct)}
+                </small>
+              </>
+            ) : (
+              unavailable
+            )
+          }
+        />
+      </div>
+    </details>
   )
 }
 
@@ -372,6 +432,8 @@ type ComingItem = {
   ticker: string | null
   title: string
   amount?: number
+  /** What's expected, such as the consensus for an earnings report. */
+  detail?: string
   status: keyof typeof statusLabels
   url?: string | null
 }
@@ -383,6 +445,7 @@ function ComingRow({ item }: { item: ComingItem }) {
       <time dateTime={item.date}>{formatShortDay(item.date)}</time>
       <span>
         {item.title} <small>{statusLabels[item.status]}</small>
+        {item.detail ? <small className="investments-coming-detail">{item.detail}</small> : null}
       </span>
       {item.amount != null ? (
         <span className="sensitive-value positive">{`+${formatCurrency(item.amount)}`}</span>
@@ -433,6 +496,11 @@ export function InvestmentsComingUp({
   const today = data.insights?.today ?? localDateKey(Date.parse(data.updatedAt) / 1000)
   const horizon = addDays(today, COMING_DAYS)
   const watch = (data.insights?.investmentAttention?.earningsWatch ?? []).toSorted()
+  // The options market's expectation, read in Rust before the report.
+  const expectedMove = (ticker: string, reportDate: string) =>
+    summary?.expectations.find(
+      (expectation) => expectation.ticker === ticker && expectation.nextReport === reportDate,
+    )?.expectedMovePct ?? null
   const earnings = useQuery({
     queryKey: ['earnings-calendar', watch],
     queryFn: () => getEarningsCalendar(watch),
@@ -465,6 +533,22 @@ export function InvestmentsComingUp({
         date: event.reportDate,
         ticker: event.symbol,
         title: `${event.symbol} earnings`,
+        // The consensus is the analysts' published estimate, not a Brief prediction.
+        detail: [
+          event.estimate != null
+            ? `consensus ${formatPublicCurrency(event.estimate)} a share`
+            : null,
+          event.timeOfDay === 'post-market'
+            ? 'after the close'
+            : event.timeOfDay === 'pre-market'
+              ? 'before the open'
+              : null,
+          expectedMove(event.symbol, event.reportDate) != null
+            ? `options price in ±${formatShare(expectedMove(event.symbol, event.reportDate))}`
+            : null,
+        ]
+          .filter(Boolean)
+          .join(' · '),
         status: 'estimated' as const,
       })),
     // Dividends are listed above with their amounts.

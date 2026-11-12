@@ -2,10 +2,12 @@ import { useQuery } from '@tanstack/react-query'
 import { Link, useNavigate } from '@tanstack/react-router'
 import { useMemo, type ReactNode } from 'react'
 
+import { snapshotKey, type SnapshotIdentity } from '../hooks/use-finance'
 import { accountGroups, groupLabel, type AccountGroup } from '../lib/account-groups'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { getDataHealth } from '../lib/api'
+import { errorMessage } from '../lib/errors'
 import { financeSettings } from '../lib/finance-settings'
 import { countOf, formatCurrency } from '../lib/format'
 import { chartPeriod } from '../lib/graph-preferences'
@@ -125,14 +127,14 @@ export function AccountsMenu({
  * the page.
  */
 export function AccountsLayout({
-  revision,
+  snapshot,
   showConnections,
   chartCard,
   menu,
   activityPreview,
   side,
 }: {
-  revision: number | undefined
+  snapshot: SnapshotIdentity
   /** Connection trouble heads the list of every account. */
   showConnections: boolean
   chartCard: ReactNode
@@ -145,7 +147,7 @@ export function AccountsLayout({
       {/* Columns that stack on their own, so none waits on another's height. */}
       <div className="all-accounts-main">
         {chartCard}
-        {showConnections ? <ConnectionNotice revision={revision} /> : null}
+        {showConnections ? <ConnectionNotice snapshot={snapshot} /> : null}
         <div className="all-accounts-lists">
           {menu}
           {activityPreview}
@@ -177,13 +179,13 @@ export function selectionLabel(selection: AccountsSelection, names: Record<strin
 }
 
 /**
- * A connection Data health says is failing, at the head of the list it affects. Nothing shows
- * while every connection is fine.
+ * A connection Data health says is failing, at the head of the list it affects, or that Data
+ * health couldn't be read. Nothing shows while every connection is fine.
  */
-function ConnectionNotice({ revision }: { revision: number | undefined }) {
+export function ConnectionNotice({ snapshot }: { snapshot: SnapshotIdentity }) {
   const navigate = useNavigate()
   const health = useQuery({
-    queryKey: ['data-health', revision],
+    queryKey: ['data-health', ...snapshotKey(snapshot)],
     queryFn: getDataHealth,
     staleTime: 60_000,
     retry: false,
@@ -210,6 +212,20 @@ function ConnectionNotice({ revision }: { revision: number | undefined }) {
     ),
   )
   const first = issues[0]
+  // A check that failed says so, rather than reading as every connection being fine.
+  if (health.isError)
+    return (
+      <div className="accounts-connection-notice" role="status">
+        <StatusDot tone="warning" />
+        <span>
+          <strong>Couldn’t check connections</strong>
+          <small>{errorMessage(health.error)}</small>
+        </span>
+        <Button size="compact" variant="secondary" onClick={() => void health.refetch()}>
+          Try again
+        </Button>
+      </div>
+    )
   if (!first) return null
   return (
     <div className="accounts-connection-notice" role="status">

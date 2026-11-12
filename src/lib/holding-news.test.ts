@@ -43,8 +43,8 @@ it('shows newest stories first, groups near-duplicates, and preserves different 
     ],
     'TEST',
   )
-  expect(groups[0].article.url).toBe('https://example.com/earnings')
-  expect(groups[0].related.map(({ url }) => url)).toEqual(['https://example.com/syndicated'])
+  expect(groups[0]?.article.url).toBe('https://example.com/earnings')
+  expect(groups[0]?.related.map(({ url }) => url)).toEqual(['https://example.com/syndicated'])
   expect(groups.map(({ article: item }) => item.url)).toEqual([
     'https://example.com/earnings',
     'https://example.com/five',

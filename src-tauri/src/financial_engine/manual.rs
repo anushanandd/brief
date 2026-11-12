@@ -1,6 +1,6 @@
-//! Accounts the user shapes by hand, applied when a committed snapshot is read: a closed
-//! account leaves today's accounts, holdings, and totals while its history and activity stay,
-//! and a manual account (one no provider reports) joins them, valued by its dated entries.
+//! Closed and manual accounts, applied when a snapshot is read. A closed account leaves
+//! today's totals but keeps its history; a manual account is valued by its dated entries and
+//! by fund units on its imported statements, which aren't holdings since they have no price.
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Duration, NaiveDate};
@@ -131,7 +131,9 @@ pub fn adjust_snapshot(snapshot: &mut Snapshot, settings: &FinanceSettings) -> V
             });
         }
     }
-    snapshot.accounts[1..].sort_by(|left, right| left.id.cmp(&right.id));
+    if let Some(rest) = snapshot.accounts.get_mut(1..) {
+        rest.sort_by(|left, right| left.id.cmp(&right.id));
+    }
     let (net_worth, incomplete) = totals(&mut snapshot.accounts);
     snapshot.net_worth = net_worth;
     snapshot.net_worth_incomplete = incomplete;
@@ -139,11 +141,12 @@ pub fn adjust_snapshot(snapshot: &mut Snapshot, settings: &FinanceSettings) -> V
 }
 
 /// The same adjustment for a live valuation of `snapshot`, so the overlay agrees with the view
-/// it covers.
+/// it covers. Manual accounts take their value on `today`, the caller's local day.
 pub fn adjust_projection(
     projection: &mut MarketProjection,
     snapshot: &Snapshot,
     settings: &FinanceSettings,
+    today: NaiveDate,
 ) {
     let spending_only = spending_only_account(&snapshot.transactions, snapshot.wallet.as_ref());
     projection.accounts.extend(spending_only);
@@ -158,7 +161,7 @@ pub fn adjust_projection(
     projection
         .brokerage_performance
         .retain(|performance| !closed_ids.contains(performance.account_id.as_str()));
-    let today = chrono::Local::now().date_naive().to_string();
+    let today = today.to_string();
     for valued in &valued(settings, snapshot) {
         let value = valued.account.value_on(&today);
         if value.is_some() || valued.account.entries.is_empty() {
@@ -170,7 +173,9 @@ pub fn adjust_projection(
             ));
         }
     }
-    projection.accounts[1..].sort_by(|left, right| left.id.cmp(&right.id));
+    if let Some(rest) = projection.accounts.get_mut(1..) {
+        rest.sort_by(|left, right| left.id.cmp(&right.id));
+    }
     let (net_worth, incomplete) = totals(&mut projection.accounts);
     projection.net_worth = net_worth;
     projection.net_worth_incomplete = incomplete;
@@ -201,8 +206,7 @@ fn spending_only_account(
 /// Units held and the latest price, by fund.
 type Positions<'a> = BTreeMap<&'a str, (Decimal, Decimal)>;
 
-/// Fund units an imported statement shows a manual account holding on each day it prices
-/// them, each at the latest price the statement records for it.
+/// A manual account's statement fund units on each priced day, at each fund's latest price.
 fn statement_positions<'a>(account_id: &str, trades: &'a [Trade]) -> Vec<(&'a str, Positions<'a>)> {
     let mut trades = trades
         .iter()
@@ -558,6 +562,42 @@ mod tests {
         assert_eq!(retirement.history_start.as_deref(), Some("2026-09-29"));
         assert_eq!(retirement.points.len(), 2);
         assert_eq!(retirement.points[1].value, 10_100.0);
+    }
+
+    #[test]
+    fn a_live_projection_values_manual_accounts_on_the_given_day() {
+        let settings = FinanceSettings {
+            manual_accounts: vec![ManualAccount {
+                id: "manual:k".into(),
+                name: "Old 401(k)".into(),
+                kind: "retirement".into(),
+                tracks_sp500: false,
+                entries: vec![
+                    ManualEntry {
+                        date: "2026-09-29".into(),
+                        value: 10_000.0,
+                    },
+                    ManualEntry {
+                        date: "2026-09-30".into(),
+                        value: 10_100.0,
+                    },
+                ],
+            }],
+            ..Default::default()
+        }
+        .normalized()
+        .unwrap();
+        let snapshot = snapshot();
+        let on = |day: &str| {
+            let mut projection = MarketProjection::from(&snapshot);
+            let today = NaiveDate::parse_from_str(day, "%Y-%m-%d").unwrap();
+            adjust_projection(&mut projection, &snapshot, &settings, today);
+            projection.net_worth
+        };
+        // 2,000 checking − 500 card, plus the 401(k) as entered by that day.
+        assert_eq!(on("2026-09-29"), 11_500.0);
+        assert_eq!(on("2026-09-30"), 11_600.0);
+        assert_eq!(on("2026-09-30"), on("2026-09-30"));
     }
 
     #[test]

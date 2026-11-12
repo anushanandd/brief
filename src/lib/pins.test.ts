@@ -14,12 +14,14 @@ it('keeps one pin per query, newest first, and drops the oldest past the limit',
   for (let index = 0; index < MAX_PINS + 2; index += 1)
     pins = withPin(pins, pin(`p${index}`, { start: `2026-0${index + 1}-01` }))
   expect(pins).toHaveLength(MAX_PINS)
-  expect(pins[0].id).toBe(`p${MAX_PINS + 1}`)
+  expect(pins[0]?.id).toBe(`p${MAX_PINS + 1}`)
   // Pinning the same query again replaces it instead of adding a second card.
-  const repinned = withPin(pins, pin('again', pins[2].arguments))
+  const third = pins[2]
+  if (!third) throw new Error('Expected a third pin')
+  const repinned = withPin(pins, pin('again', third.arguments))
   expect(repinned).toHaveLength(MAX_PINS)
-  expect(repinned[0].id).toBe('again')
-  expect(isPinned(repinned, 'cashFlow', pins[2].arguments)).toBe(true)
+  expect(repinned[0]?.id).toBe('again')
+  expect(isPinned(repinned, 'cashFlow', third.arguments)).toBe(true)
   expect(isPinned(repinned, 'cashFlow', { start: '1999-01-01' })).toBe(false)
 })
 

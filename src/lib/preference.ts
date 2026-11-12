@@ -15,6 +15,18 @@ export type Preference<T> = {
   use: () => T
 }
 
+/**
+ * This browser's storage, raw, for the few modules that move or export saved values rather
+ * than own one: the preferences file and the one-time import of what older builds kept here.
+ * Every other read goes through `preference`. These throw where storage is blocked; the
+ * caller decides what that means. Lint keeps `localStorage` itself to this module.
+ */
+export const rendererStorage = {
+  read: (key: string) => window.localStorage.getItem(key),
+  write: (key: string, value: string) => window.localStorage.setItem(key, value),
+  remove: (key: string) => window.localStorage.removeItem(key),
+}
+
 export function preference<T>(
   key: string,
   parse: (raw: string | null) => T,

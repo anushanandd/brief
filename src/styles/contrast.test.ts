@@ -19,9 +19,9 @@ function resolve(blockText: string, name: string, depth = 0): string {
     new RegExp(`${name}:\\s*([^;]+);`).exec(blockText) ??
     new RegExp(`${name}:\\s*([^;]+);`).exec(root)
   if (!match || depth > 5) throw new Error(`${name} is not defined`)
-  const value = match[1].trim()
-  const reference = /^var\((--[a-z0-9-]+)\)$/.exec(value)
-  if (reference) return resolve(blockText, reference[1], depth + 1)
+  const value = (match[1] ?? '').trim()
+  const [, reference] = /^var\((--[a-z0-9-]+)\)$/.exec(value) ?? []
+  if (reference) return resolve(blockText, reference, depth + 1)
   if (!/^#[0-9a-fA-F]{6}$/.test(value)) throw new Error(`${name} is not a hex color: ${value}`)
   return value
 }
@@ -32,13 +32,13 @@ const channel = (value: number) => {
 }
 
 function luminance(color: string) {
-  const [r, g, b] = [1, 3, 5].map((index) => channel(parseInt(color.slice(index, index + 2), 16)))
-  return 0.2126 * r + 0.7152 * g + 0.0722 * b
+  const at = (index: number) => channel(parseInt(color.slice(index, index + 2), 16))
+  return 0.2126 * at(1) + 0.7152 * at(3) + 0.0722 * at(5)
 }
 
 const contrast = (foreground: string, background: string) => {
-  const [light, dark] = [luminance(foreground), luminance(background)].toSorted((a, b) => b - a)
-  return (light + 0.05) / (dark + 0.05)
+  const [first, second] = [luminance(foreground), luminance(background)]
+  return (Math.max(first, second) + 0.05) / (Math.min(first, second) + 0.05)
 }
 
 const themes = [{ name: 'Brief', text: root, surfaces: ['#08090a', '#1b1c1e'] }]

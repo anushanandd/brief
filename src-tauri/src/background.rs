@@ -20,7 +20,7 @@ pub fn refresh_due(updated_at: &str, now: DateTime<Utc>) -> bool {
         .is_none_or(|saved| now - saved.with_timezone(&Utc) >= Duration::hours(REFRESH_AGE))
 }
 
-fn window_visible(app: &AppHandle) -> bool {
+pub(crate) fn window_visible(app: &AppHandle) -> bool {
     app.get_webview_window("main")
         .and_then(|window| window.is_visible().ok())
         .unwrap_or(false)
@@ -86,6 +86,8 @@ mod login {
     use super::LoginItem;
 
     pub fn status() -> LoginItem {
+        // SAFETY: `mainAppService` returns the running app's own service, retained by the
+        // bindings; reading its status has no preconditions.
         let status = unsafe { SMAppService::mainAppService().status() };
         match status {
             SMAppServiceStatus::Enabled => LoginItem::Enabled,
@@ -96,10 +98,14 @@ mod login {
     }
 
     pub fn set(enabled: bool) -> Result<LoginItem, String> {
+        // SAFETY: `mainAppService` returns the running app's own service, retained by the
+        // bindings.
         let service = unsafe { SMAppService::mainAppService() };
         let result = if enabled {
+            // SAFETY: `service` is live; registering returns its error rather than throwing.
             unsafe { service.registerAndReturnError() }
         } else {
+            // SAFETY: as above, for unregistering.
             unsafe { service.unregisterAndReturnError() }
         };
         result.map_err(|_| {

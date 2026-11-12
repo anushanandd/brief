@@ -1,3 +1,4 @@
+import { inferredNeedSubjects } from './needs'
 import { googleMapsUrl } from './places'
 import type { FinanceSnapshot, Transaction } from './schema'
 
@@ -37,7 +38,9 @@ export function transactionDetail(data: FinanceSnapshot, activityId: string, lim
     historyCount: history.length,
     benefits: (data.insights?.benefits?.activity ?? []).filter((item) => item.id === id),
     categoryOrigin:
-      transaction.categorySource === 'manual' ? ('manual' as const) : ('provider' as const),
+      transaction.categorySource === 'manual' || transaction.categorySource === 'suggested'
+        ? transaction.categorySource
+        : ('provider' as const),
     ...transactionFlags(data, id),
   }
 }
@@ -57,6 +60,8 @@ export function transactionFlags(data: FinanceSnapshot, id: string) {
     priceChange: insights?.subscriptions.items.find(
       ({ priceChange }) => priceChange?.transactionId === id,
     )?.priceChange,
+    /** An inferred need about this transaction, with how sure Rust is and what it read. */
+    inferred: inferredNeedSubjects(insights?.brief.needs ?? []).get(id),
   }
 }
 /**

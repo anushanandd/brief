@@ -18,6 +18,11 @@ pendingChange: number, cashIncomplete: boolean,
  */
 days: Array<CashDay>, events: Array<CashEvent>, 
 /**
+ * What drives the line: the expected deposits and the expected bills (negative) over the
+ * horizon, each summed in whole cents from `events`.
+ */
+inflows: number, outflows: number, 
+/**
  * The day the expected balance is lowest, when it falls below today's.
  */
 lowest?: CashDay, };

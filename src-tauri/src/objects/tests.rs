@@ -30,6 +30,7 @@ fn lived(days: usize) -> (std::path::PathBuf, Storage) {
             &storage.data.snapshot,
             &storage.data.statements,
             &storage.data.account_links,
+            &crate::insights::benefits::Catalog::from_settings(&storage.data.settings),
             &refresh,
         )
         .unwrap();
@@ -269,8 +270,8 @@ fn every_stored_field_has_a_place_to_be_seen() {
 #[test]
 fn one_name_however_written_is_one_organization() {
     assert_eq!(
-        organization_key("MORGAN STANLEY"),
-        organization_key("Morgan  Stanley,")
+        organization_key("EXAMPLE CORP"),
+        organization_key("Example  Corp,")
     );
     assert_eq!(organization_key("  "), None);
     assert_eq!(organization_key("AT&T").as_deref(), Some("at-t"));

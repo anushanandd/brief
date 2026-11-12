@@ -71,6 +71,14 @@ fn file_name(path: &Path) -> String {
         .unwrap_or_else(|| "Document".into())
 }
 
+/// The models Ollama has on this Mac, for choosing the local model that reads long documents.
+#[tauri::command]
+pub(crate) async fn get_local_models(
+    state: State<'_, AppState>,
+) -> Result<crate::providers::reading::LocalModels, String> {
+    Ok(state.providers.local_models().await)
+}
+
 /// Reads files and folders into documents. Reading runs off the storage lock and reports
 /// progress; the sealed originals and what was read are saved together at the end.
 #[tauri::command]

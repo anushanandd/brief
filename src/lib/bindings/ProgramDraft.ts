@@ -11,7 +11,7 @@ export type ProgramDraft = { template: ProgramTemplate, name: string, organizati
  */
 effective: string, 
 /**
- * The account's name as it shows, such as "Platinum CashPlus".
+ * The account's name as it shows, such as "Premier Checking".
  */
 accountName: string, institution: string, 
 /**

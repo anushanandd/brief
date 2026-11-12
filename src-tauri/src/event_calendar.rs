@@ -219,8 +219,8 @@ pub struct Update {
 /// How far back the Brief calendar is kept matched: a trip found after it ended, or a date
 /// that moved, is still corrected. Older events are left as they were written.
 const KEPT_DAYS: i64 = 30;
-/// The agenda's kinds the Brief calendar holds, besides earnings. Subscriptions and
-/// dividends take care of themselves.
+/// The agenda kinds the Brief calendar holds, besides earnings. Subscriptions and dividends
+/// need no action, so they're left out.
 const WRITTEN: [AgendaKind; 8] = [
     AgendaKind::PaymentDue,
     AgendaKind::StatementCloses,
@@ -530,6 +530,9 @@ mod macos {
 
     use super::Access;
 
+    // The Swift bridge (native/CalendarBridge.swift). Each `*mut c_char` it returns is null or a
+    // NUL-terminated string from `strdup`, owned by the caller until `brief_calendar_free`;
+    // each `*const c_char` it takes is only read during the call.
     unsafe extern "C" {
         fn brief_calendar_status() -> i32;
         fn brief_calendar_request(
@@ -545,6 +548,8 @@ mod macos {
     }
 
     pub fn access() -> Access {
+        // SAFETY: takes nothing and returns an integer; reading EventKit's status has no
+        // preconditions.
         match unsafe { brief_calendar_status() } {
             0 => Access::NotAsked,
             1 => Access::Restricted,
@@ -555,6 +560,8 @@ mod macos {
     }
 
     extern "C" fn granted(context: *mut c_void, granted: i32, _error: *const c_char) {
+        // SAFETY: `context` is the `Box<Sender<bool>>` that `request` leaked, handed back
+        // unchanged; EventKit calls the completion once, so the box is reclaimed exactly once.
         let sender = unsafe { Box::from_raw(context.cast::<oneshot::Sender<bool>>()) };
         let _ = sender.send(granted == 1);
     }
@@ -562,6 +569,8 @@ mod macos {
     pub async fn request() -> Result<Access, String> {
         let (sender, receiver) = oneshot::channel::<bool>();
         let context = Box::into_raw(Box::new(sender)).cast::<c_void>();
+        // SAFETY: the bridge only carries `context` back to `granted`, which takes ownership;
+        // `granted` matches the callback signature the bridge declares.
         unsafe { brief_calendar_request(context, granted) };
         receiver
             .await
@@ -573,9 +582,12 @@ mod macos {
         if output.is_null() {
             return None;
         }
+        // SAFETY: a non-null result is a NUL-terminated `strdup` string the bridge handed over,
+        // read before it is freed.
         let text = unsafe { CStr::from_ptr(output) }
             .to_string_lossy()
             .into_owned();
+        // SAFETY: freed once, by the bridge's own `free`, and never read again.
         unsafe { brief_calendar_free(output) };
         Some(text)
     }
@@ -586,14 +598,18 @@ mod macos {
         function: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     ) -> Option<String> {
         let input = CString::new(input).ok()?;
+        // SAFETY: `function` is one of the bridge's JSON functions, which only read the
+        // NUL-terminated `input` during the call; `input` outlives it.
         owned(unsafe { function(input.as_ptr()) })
     }
 
     pub fn sources() -> Option<String> {
+        // SAFETY: takes nothing; `owned` takes the string it returns.
         owned(unsafe { brief_calendar_sources() })
     }
 
     pub fn list() -> Option<String> {
+        // SAFETY: takes nothing; `owned` takes the string it returns.
         owned(unsafe { brief_calendar_list() })
     }
 
@@ -1133,7 +1149,7 @@ mod tests {
     #[test]
     fn descriptors_in_capitals_read_as_words() {
         assert_eq!(display_case("ACH RENT PAYMENT"), "ACH Rent Payment");
-        assert_eq!(display_case("Equinox"), "Equinox");
+        assert_eq!(display_case("Ridgeline"), "Ridgeline");
         assert_eq!(display_case("SQ *COFFEE 0412"), "SQ *COFFEE 0412");
     }
 

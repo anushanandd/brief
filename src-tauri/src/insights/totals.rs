@@ -212,10 +212,10 @@ pub fn net_worth_parts(snapshot: &Snapshot, history: &[Point]) -> Vec<NetWorthPa
 }
 
 /// A history's figure by date, in cents, for the days it has one.
-fn days<'a>(
-    history: &'a Performance,
+fn days(
+    history: &Performance,
     figure: impl Fn(&PerformancePoint) -> Option<f64>,
-) -> BTreeMap<&'a str, i64> {
+) -> BTreeMap<&str, i64> {
     history
         .points
         .iter()
@@ -441,7 +441,10 @@ mod tests {
         })
     }
 
-    fn lines(groups: &[GroupHistory]) -> Vec<(&str, Option<f64>, Vec<(&str, f64)>)> {
+    /// A group's type, value, and dated points.
+    type Line<'a> = (&'a str, Option<f64>, Vec<(&'a str, f64)>);
+
+    fn lines(groups: &[GroupHistory]) -> Vec<Line<'_>> {
         groups
             .iter()
             .map(|group| {

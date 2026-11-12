@@ -75,7 +75,9 @@ it('matches account selector changes to the selected chart range and available h
   const manualData = {
     ...data,
     accounts: [manual],
-    accountBalanceHistory: [{ ...data.accountBalanceHistory[0], accountId: 'manual:plan' }],
+    accountBalanceHistory: data.accountBalanceHistory
+      .slice(0, 1)
+      .map((saved) => ({ ...saved, accountId: 'manual:plan' })),
   }
   expect(accountValueChart(manualData, manual, [], now, 0, []).historyIsAvailable).toBe(true)
 })

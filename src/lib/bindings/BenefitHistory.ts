@@ -2,7 +2,7 @@
 import type { BenefitPeriod } from "./BenefitPeriod";
 import type { BenefitYear } from "./BenefitYear";
 
-export type BenefitHistory = { id: string, name: string, recurring: boolean, 
+export type BenefitHistory = { id: string, name: string, logoDomain?: string, logoUrl?: string, logoBrand?: string, category?: string, recurring: boolean, 
 /**
  * Its use doesn't show on the card, so periods are estimated from charges.
  */

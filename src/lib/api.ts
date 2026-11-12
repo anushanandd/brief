@@ -3,9 +3,15 @@ import { Channel, invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 
 import seedView from '../data/seed-view.json'
+import type { ActivityTotals } from './bindings/ActivityTotals'
 import type { AssistantAnswer } from './bindings/AssistantAnswer'
+import type { CardDraft } from './bindings/CardDraft'
+import type { CardRulesChange } from './bindings/CardRulesChange'
+import type { CatalogCard } from './bindings/CatalogCard'
 import type { DocumentImport as NativeDocumentImport } from './bindings/DocumentImport'
+import type { LocalModels } from './bindings/LocalModels'
 import type { PortfolioNews } from './bindings/PortfolioNews'
+import type { ProgramPrefill } from './bindings/ProgramPrefill'
 import { previewFinanceSettings } from './finance-settings'
 import { ledgerCallSchema, type LedgerCall } from './ledger-view'
 import { fromRust } from './rust-json'
@@ -36,6 +42,7 @@ import {
   type SyncRun,
   type BackupInfo,
   type BriefDocument,
+  type CardRules,
   type DocumentField,
   type FoundationModelStatus,
   type IntegrationStatus,
@@ -169,6 +176,19 @@ export async function getReports(request: ReportRequest): Promise<Reports | null
   return invoke<Reports | null>('get_reports', { request })
 }
 
+/**
+ * Rust's totals over the Activity rows named by `ids` (row IDs, sorted). The preview has no
+ * Rust to ask, so it reads the totals Rust wrote for each seed merchant's rows; any other set
+ * of rows has none there (`null`), and the footer shows no figures rather than guessing.
+ */
+export async function getActivityTotals(ids: readonly string[]): Promise<ActivityTotals | null> {
+  if (!isTauri()) {
+    const { default: totals } = await import('../data/seed-activity-totals.json')
+    return fromRust<Record<string, ActivityTotals>>(totals)[ids.join(',')] ?? null
+  }
+  return invoke<ActivityTotals>('get_activity_totals', { ids })
+}
+
 export async function recoverFinanceState(restore: boolean): Promise<FinanceSnapshot> {
   return invoke<FinanceSnapshot>('recover_finance_state', { restore })
 }
@@ -256,6 +276,59 @@ export async function addDocumentHistory(
 export async function findPlaces(): Promise<void> {
   if (!isTauri()) throw new Error('Desktop app only')
   await invoke('find_places')
+}
+
+/** Reads a card product's benefit rules from a file and checks they compile. Saving them is a
+    settings save. */
+export async function readCardRules(path: string): Promise<CardRules> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return invoke<CardRules>('read_card_rules', { path })
+}
+
+/** Cards in the open benefits catalog whose name or issuer matches `query`. */
+export async function searchCardCatalog(query: string): Promise<CatalogCard[]> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return invoke<CatalogCard[]>('search_card_catalog', { query })
+}
+
+/** Every brand the open benefits catalog names; none while the catalog is off. */
+export async function catalogBrands(): Promise<string[]> {
+  if (!isTauri()) return []
+  return invoke<string[]>('catalog_brands')
+}
+
+/** A card's drafted rules with the evidence for each term; nothing is saved. */
+export async function draftCardRules(request: {
+  accountId: string
+  catalogId?: string
+  readTerms: boolean
+}): Promise<CardDraft> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return invoke<CardDraft>('draft_card_rules', request)
+}
+
+/** Saved card rules whose catalog entry or terms page changed since they were approved. */
+export async function recheckCardRules(): Promise<CardRulesChange[]> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return invoke<CardRulesChange[]>('recheck_card_rules')
+}
+
+/** Applies a catalog card's rules to a credit card whose match was a close call. */
+export async function chooseCatalogCard(
+  accountId: string,
+  catalogId: string,
+): Promise<FinanceSnapshot> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return invoke<FinanceSnapshot>('choose_catalog_card', { accountId, catalogId })
+}
+
+/** A bank rule's draft fields read from a research page, each with the sentence that states it. */
+export async function prefillProgramDraft(request: {
+  gapId: string
+  url: string
+}): Promise<ProgramPrefill> {
+  if (!isTauri()) throw new Error('Desktop app only')
+  return invoke<ProgramPrefill>('prefill_program_draft', request)
 }
 
 /** Reads and checks a statement file. Rust keeps the bytes until `importStatement`. */
@@ -576,6 +649,16 @@ export async function getInvestmentSummary(
 }
 
 /**
+ * Has Rust make the portfolio's summary from `start` and then each holding's, largest first,
+ * one at a time in the background; each one made is announced with
+ * `investment-summary-updated`. Desktop only.
+ */
+export async function warmInvestmentSummaries(start: string) {
+  if (!isTauri()) return
+  await invoke('warm_investment_summaries', { start })
+}
+
+/**
  * Saves the past week's news for every held stock in one request and checks EDGAR for the
  * stalest holdings, so summaries and the holdings list are ready before they're opened. Runs at
  * most every ten minutes; `refreshed` is false when it was skipped.
@@ -589,6 +672,12 @@ export async function refreshPortfolioNews(): Promise<PortfolioNews> {
 export async function getPortfolioSectors(): Promise<SectorExposure> {
   if (!isTauri()) throw new Error('Desktop app only')
   return invoke<SectorExposure>('get_portfolio_sectors')
+}
+
+/** The models Ollama has on this Mac, for Settings' local model. */
+export async function getLocalModels(): Promise<LocalModels> {
+  if (!isTauri()) return { running: false, models: [] }
+  return invoke<LocalModels>('get_local_models')
 }
 
 export async function getEarningsCalendar(symbols: string[]): Promise<EarningsEvent[]> {

@@ -9,11 +9,12 @@ import { ExpectedActivity } from '../components/expected-activity'
 import { ChevronRight } from '../components/icons'
 import { PeriodTotals } from '../components/period-totals'
 import { PinnedQueries } from '../components/pinned-queries'
-import { PositionTable } from '../components/position-table'
+import { PositionTable, type PositionRow } from '../components/position-table'
 import { ShareLine, type ShareSegment } from '../components/share-line'
 import { SnapTradeReference } from '../components/snaptrade-reference'
 import { AnimatedCurrency, Card, ChartChange, EmptyState, SectionHeading } from '../components/ui'
 import { MarketStatus, WorkspaceHeader } from '../components/workspace-header'
+import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useFinance } from '../hooks/use-finance'
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
@@ -31,6 +32,7 @@ import {
 import { financeSettings } from '../lib/finance-settings'
 import { countOf } from '../lib/format'
 import { chartPeriod, useGraphWindow } from '../lib/graph-preferences'
+import { consolidatedPositions } from '../lib/holding-detail'
 import {
   accountGroupsModes,
   saveAccountGroupsMode,
@@ -46,14 +48,8 @@ const holdingsPreviewRows = 8
 export function OverviewPage() {
   const live = useLiveFinance()
   // Spending presents the spending card; Home's totals leave it out, like Accounts.
-  const query = useMemo(() => {
-    // Rust's live total without the cards, whose balances are not market-driven.
-    const marketSeries: typeof live.marketSeries = {
-      ...live.marketSeries,
-      'net-worth': live.marketSeries.accounts ?? [],
-    }
-    return { ...live, data: live.data && withoutSpendingCard(live.data), marketSeries }
-  }, [live])
+  const liveData = useMemo(() => live.data && withoutSpendingCard(live.data), [live.data])
+  const query = { ...live, data: liveData }
   const finance = useFinance()
   const navigate = useNavigate()
   const committed = finance.data
@@ -91,7 +87,22 @@ export function OverviewPage() {
     return view ? { ...view, name: 'Net worth' } : undefined
   }, [query.data])
   const resolvedAccountId = netWorthView?.accountId
-  const livePoints = resolvedAccountId ? query.marketSeries[resolvedAccountId] : undefined
+  // Rust's live total without the cards, whose balances are not market-driven.
+  const livePoints = live.marketSeries.accounts
+  // The same points give the same array, so the chart redraws only when a point changes. Home
+  // charts net worth, which has no deposits or S&P 500 lines.
+  const chartData = useMemo(
+    () =>
+      netWorthView
+        ? buildLiveChartData(
+            netWorthView.points,
+            livePoints ?? [],
+            netWorthView.currentValue,
+            Date.now() / 1_000,
+          )
+        : [],
+    [netWorthView, livePoints],
+  )
 
   const details = useMemo(() => {
     if (!committed) return undefined
@@ -99,12 +110,15 @@ export function OverviewPage() {
       latestActivities: buildActivities(committed, accountDisplayNames, externalLogosEnabled),
     }
   }, [committed, accountDisplayNames, externalLogosEnabled])
+  // Event labels carry formatted amounts, so they are built again when the mask changes.
+  const amountsHidden = useAmountsHidden()
   const chartEvents = useMemo(
     () =>
       committed && resolvedAccountId
         ? buildChartEventGroups(committed, resolvedAccountId, graphWindow)
         : [],
-    [committed, resolvedAccountId, graphWindow],
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- the mask changes what is formatted
+    [committed, resolvedAccountId, graphWindow, amountsHidden],
   )
 
   if (query.isLoading || query.startupPending) return <HomeLoading />
@@ -118,31 +132,7 @@ export function OverviewPage() {
   const latestValue = account.currentValue
   const incomplete = accountValueIncomplete(data, account.accountId)
   const startDate = accountStartDate(data, account.accountId, accountStartDates)
-  const chartNow = Date.now() / 1_000
-  const chartData = buildLiveChartData(points, livePoints ?? [], latestValue, chartNow)
   const rangeChange = chartRangeChange(query.chartChanges, account.accountId, graphWindow)
-  const netDepositsData =
-    account.accountId === 'net-worth' || account.performanceMethod === 'value-only'
-      ? undefined
-      : buildLiveChartData(
-          points.flatMap((point) =>
-            typeof point.netDeposits === 'number'
-              ? [{ date: point.date, value: point.netDeposits }]
-              : [],
-          ),
-          [],
-          points.findLast((point) => typeof point.netDeposits === 'number')?.netDeposits ?? 0,
-          chartNow,
-        )
-  const benchmarkHistory =
-    account.accountId === 'net-worth' || account.performanceMethod === 'value-only'
-      ? []
-      : points.flatMap((point) =>
-          typeof point.sp500 === 'number' ? [{ date: point.date, value: point.sp500 }] : [],
-        )
-  const benchmarkData = benchmarkHistory.length
-    ? buildLiveChartData(benchmarkHistory, [], benchmarkHistory.at(-1)?.value ?? 0, chartNow)
-    : undefined
   const hasHistoricalValues = hasValueHistory(points, startDate)
   const historyIsAvailable =
     !incomplete &&
@@ -153,14 +143,14 @@ export function OverviewPage() {
     .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
   const rollup = data.insights?.rollup
   const groups = accountGroups(accounts, rollup?.groups ?? [], periodChanges?.groups)
-  const holdings = data.holdings
-    .filter(
-      ({ accountId }) =>
-        account.accountId === 'total' ||
-        account.accountId === 'net-worth' ||
-        accountId === account.accountId,
-    )
-    .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
+  // Across every account, each security once at its whole position; one account's own rows.
+  const everyAccount = account.accountId === 'total' || account.accountId === 'net-worth'
+  const positions: readonly PositionRow[] = everyAccount
+    ? consolidatedPositions(data)
+    : data.holdings.filter(({ accountId }) => accountId === account.accountId)
+  const holdings = positions.toSorted(
+    (left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity),
+  )
   const { latestActivities } = details
   // Recent activity runs as long as the longer of the two previews beside it.
   const recentActivityRows = Math.max(
@@ -213,8 +203,6 @@ export function OverviewPage() {
                   {historyIsAvailable ? (
                     <PerformanceChart
                       data={chartData}
-                      netDeposits={netDepositsData}
-                      benchmark={benchmarkData}
                       value={latestValue}
                       events={chartEvents}
                       referenceIso={data.updatedAt}

@@ -14,6 +14,7 @@ const evidenceShort: Record<ActivityEvidence, string> = {
   unlisted: 'Not listed',
   conflict: 'Disagree',
   unsure: 'Unsure',
+  suggested: 'Brief chose',
 }
 /** A section's own reset and select-all, each a registered command. */
 type SectionActions = { clear?: () => void; all?: () => void; command: string }

@@ -5,11 +5,13 @@
  */
 import { z } from 'zod'
 
+import type { CardRules } from '../bindings/CardRules'
 import type { Classification } from '../bindings/Classification'
 import type { FinanceSettings } from '../bindings/FinanceSettings'
 import type { FinanceSnapshot as View } from '../bindings/FinanceSnapshot'
 import type { Program } from '../bindings/Program'
 
+export type { CardRules }
 export type { Document as BriefDocument } from '../bindings/Document'
 export type { Field as DocumentField } from '../bindings/Field'
 export type { Evidence as QualityEvidence } from '../bindings/Evidence'
@@ -100,6 +102,19 @@ export const financeSettingsSchema: z.ZodType<FinanceSettings> = z.object({
   calendarSync: z.boolean().default(false),
   calendarId: z.string().optional(),
   benefitCards: z.record(z.string(), z.string()).optional(),
+  /** Each card product's benefit rules, from the catalog or the user; Rust compiles and checks them. */
+  cardRules: z
+    .array(z.custom<CardRules>((value) => typeof value === 'object' && value !== null))
+    .optional(),
+  cardCatalogOff: z.boolean().default(false),
+  cardChoices: z
+    .array(
+      z.object({
+        accountId: z.string(),
+        candidates: z.array(z.object({ id: z.string(), name: z.string(), issuer: z.string() })),
+      }),
+    )
+    .default([]),
   accountTaxTreatments: z
     .record(z.string(), z.enum(['taxable', 'taxDeferred', 'taxFree']))
     .optional(),
@@ -165,4 +180,6 @@ export const financeSettingsSchema: z.ZodType<FinanceSettings> = z.object({
     .array(z.custom<Program>((value) => typeof value === 'object' && value !== null))
     .optional(),
   research: z.boolean().default(false),
+  /** An Ollama model on this Mac that reads long documents; Rust checks the name. */
+  localModel: z.string().max(100).optional(),
 })

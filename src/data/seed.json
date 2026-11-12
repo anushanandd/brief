@@ -36,12 +36,12 @@
       ]
     },
     {
-      "accountId": "amex",
+      "accountId": "example-card",
       "currentValue": -2418.33,
       "historySource": "transaction-derived",
       "historyStart": "2026-08-20",
-      "institution": "American Express",
-      "name": "Platinum Card",
+      "institution": "Example Bank",
+      "name": "Example Card",
       "performanceMethod": "value-only",
       "points": [
         {
@@ -104,10 +104,10 @@
       "observedAt": "2026-08-31T21:42:00Z"
     },
     {
-      "accountId": "amex",
+      "accountId": "example-card",
       "change": -428.16,
-      "id": "2026-08-31T21:42:00Z:amex",
-      "name": "Platinum Card",
+      "id": "2026-08-31T21:42:00Z:example-card",
+      "name": "Example Card",
       "observedAt": "2026-08-31T21:42:00Z"
     }
   ],
@@ -169,10 +169,10 @@
     },
     {
       "currency": "USD",
-      "id": "amex",
-      "institution": "American Express",
-      "name": "Platinum Card",
-      "officialName": "The Platinum Card®",
+      "id": "example-card",
+      "institution": "Example Bank",
+      "name": "Example Card",
+      "officialName": "The Example Card®",
       "subtype": "credit card",
       "type": "credit",
       "value": -2418.33
@@ -584,9 +584,9 @@
         "name": "Individual brokerage"
       },
       {
-        "accountId": "amex",
+        "accountId": "example-card",
         "change": -428.16,
-        "name": "Platinum Card"
+        "name": "Example Card"
       }
     ],
     "netWorthChange": 1485.59,
@@ -721,8 +721,8 @@
   ],
   "transactions": [
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -428.16,
       "category": "Travel",
       "categorySource": "provider",
@@ -752,8 +752,8 @@
       "website": "https://www.united.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -86.42,
       "category": "Groceries",
       "categorySource": "provider",
@@ -779,11 +779,11 @@
         "address": "410 Example Ave",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
-        "postalCode": "94109",
-        "region": "CA",
-        "storeNumber": "10052"
+        "lat": 45.52,
+        "lon": -122.68,
+        "postalCode": "97205",
+        "region": "OR",
+        "storeNumber": "10410"
       },
       "logoName": "Whole Foods Market",
       "merchant": "Whole Foods Market",
@@ -793,10 +793,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
+        "lat": 45.52,
+        "lon": -122.68,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -825,8 +825,8 @@
       "postedOn": null
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -31.88,
       "category": "Transport",
       "categorySource": "provider",
@@ -840,24 +840,24 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Uber",
+          "name": "Example Rides",
           "type": "merchant",
-          "website": "www.uber.com"
+          "website": "rides.example.com"
         }
       ],
       "date": "2026-08-28",
       "description": null,
       "id": "tx-4",
-      "logoName": "Uber",
-      "merchant": "Uber",
+      "logoName": "Example Rides",
+      "merchant": "Example Rides",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.uber.com"
+      "website": "https://rides.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -12.75,
       "category": "Dining",
       "categorySource": "provider",
@@ -888,10 +888,10 @@
         "address": "220 Sample St",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
-        "postalCode": "94103",
-        "region": "CA"
+        "lat": 45.5226,
+        "lon": -122.6763,
+        "postalCode": "97205",
+        "region": "OR"
       },
       "logoName": "Blue Bottle Coffee",
       "merchant": "Blue Bottle Coffee",
@@ -904,10 +904,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
+        "lat": 45.5226,
+        "lon": -122.6763,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "descriptor"
       },
       "postedOn": null,
@@ -927,8 +927,8 @@
       "website": "https://bluebottlecoffee.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -129.0,
       "category": "Shopping",
       "categorySource": "provider",
@@ -989,8 +989,8 @@
       "website": "https://www.pge.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -642.2,
       "category": "Travel",
       "categorySource": "provider",
@@ -1020,8 +1020,8 @@
       "website": "https://www.airbnb.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -63.17,
       "category": "Groceries",
       "categorySource": "provider",
@@ -1047,10 +1047,10 @@
         "address": "85 Sample Blvd",
         "city": "Portland",
         "country": "US",
-        "lat": 37.8053,
-        "lon": -122.4128,
-        "postalCode": "94133",
-        "region": "CA"
+        "lat": 45.5264,
+        "lon": -122.6852,
+        "postalCode": "97205",
+        "region": "OR"
       },
       "logoName": "Trader Joe's",
       "merchant": "Trader Joe's",
@@ -1060,10 +1060,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.8053,
-        "lon": -122.4128,
+        "lat": 45.5264,
+        "lon": -122.6852,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -1071,8 +1071,8 @@
       "website": "https://www.traderjoes.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -12.99,
       "category": "Entertainment",
       "categorySource": "provider",
@@ -1169,8 +1169,8 @@
       "postedOn": null
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -24.65,
       "category": "Dining",
       "categorySource": "provider",
@@ -1462,17 +1462,17 @@
         "zelle": false
       },
       "date": "2026-06-10",
-      "description": "AMERICAN EXPRESS ACH PMT credit card payment",
+      "description": "EXAMPLE BANK ACH PMT credit card payment",
       "id": "tx-112",
-      "merchant": "American Express",
+      "merchant": "Example Bank",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
       "transferPairId": "tx-113"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": 1985.4,
       "category": "Transfer",
       "categorySource": "provider",
@@ -1506,17 +1506,17 @@
         "zelle": false
       },
       "date": "2026-07-10",
-      "description": "AMERICAN EXPRESS ACH PMT credit card payment",
+      "description": "EXAMPLE BANK ACH PMT credit card payment",
       "id": "tx-114",
-      "merchant": "American Express",
+      "merchant": "Example Bank",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
       "transferPairId": "tx-115"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": 2240.18,
       "category": "Transfer",
       "categorySource": "provider",
@@ -1550,17 +1550,17 @@
         "zelle": false
       },
       "date": "2026-08-10",
-      "description": "AMERICAN EXPRESS ACH PMT credit card payment",
+      "description": "EXAMPLE BANK ACH PMT credit card payment",
       "id": "tx-116",
-      "merchant": "American Express",
+      "merchant": "Example Bank",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
       "transferPairId": "tx-117"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": 2118.66,
       "category": "Transfer",
       "categorySource": "provider",
@@ -1581,8 +1581,8 @@
       "transferPairId": "tx-116"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -11.99,
       "category": "Entertainment",
       "categorySource": "provider",
@@ -1613,8 +1613,8 @@
       "website": "https://www.spotify.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -11.99,
       "category": "Entertainment",
       "categorySource": "provider",
@@ -1645,8 +1645,8 @@
       "website": "https://www.spotify.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -15.49,
       "category": "Entertainment",
       "categorySource": "provider",
@@ -1666,7 +1666,7 @@
         }
       ],
       "date": "2026-06-12",
-      "description": "Netflix streaming subscription",
+      "description": "Netflix subscription",
       "id": "tx-120",
       "merchant": "Netflix",
       "occurredOn": null,
@@ -1677,8 +1677,8 @@
       "website": "https://www.netflix.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -15.49,
       "category": "Entertainment",
       "categorySource": "provider",
@@ -1698,7 +1698,7 @@
         }
       ],
       "date": "2026-07-12",
-      "description": "Netflix streaming subscription",
+      "description": "Netflix subscription",
       "id": "tx-121",
       "merchant": "Netflix",
       "occurredOn": null,
@@ -1709,8 +1709,8 @@
       "website": "https://www.netflix.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -15.49,
       "category": "Entertainment",
       "categorySource": "provider",
@@ -1730,7 +1730,7 @@
         }
       ],
       "date": "2026-08-12",
-      "description": "Netflix streaming subscription",
+      "description": "Netflix subscription",
       "id": "tx-122",
       "merchant": "Netflix",
       "occurredOn": null,
@@ -1741,9 +1741,9 @@
       "website": "https://www.netflix.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
-      "amount": -13.99,
+      "account": "Example Card",
+      "accountId": "example-card",
+      "amount": -9.99,
       "category": "Entertainment",
       "categorySource": "provider",
       "classification": {
@@ -1756,24 +1756,24 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Disney Plus",
+          "name": "Example TV",
           "type": "merchant",
-          "website": "www.disneyplus.com"
+          "website": "tv.example.com"
         }
       ],
       "date": "2026-06-15",
-      "description": "Disney+ subscription",
+      "description": "Example TV subscription",
       "id": "tx-123",
-      "merchant": "Disney Plus",
+      "merchant": "Example TV",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.disneyplus.com"
+      "website": "https://tv.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
-      "amount": 13.99,
+      "account": "Example Card",
+      "accountId": "example-card",
+      "amount": 9.99,
       "category": "Transfer",
       "categorySource": "provider",
       "classification": {
@@ -1784,17 +1784,17 @@
         "zelle": false
       },
       "date": "2026-06-17",
-      "description": "Amex Platinum digital entertainment credit",
+      "description": "Example Card streaming credit",
       "id": "tx-124",
-      "merchant": "Digital Entertainment Credit",
+      "merchant": "Streaming Credit",
       "occurredOn": null,
       "pending": false,
       "postedOn": null
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
-      "amount": -13.99,
+      "account": "Example Card",
+      "accountId": "example-card",
+      "amount": -9.99,
       "category": "Entertainment",
       "categorySource": "provider",
       "classification": {
@@ -1807,24 +1807,24 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Disney Plus",
+          "name": "Example TV",
           "type": "merchant",
-          "website": "www.disneyplus.com"
+          "website": "tv.example.com"
         }
       ],
       "date": "2026-07-15",
-      "description": "Disney+ subscription",
+      "description": "Example TV subscription",
       "id": "tx-125",
-      "merchant": "Disney Plus",
+      "merchant": "Example TV",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.disneyplus.com"
+      "website": "https://tv.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
-      "amount": 13.99,
+      "account": "Example Card",
+      "accountId": "example-card",
+      "amount": 9.99,
       "category": "Transfer",
       "categorySource": "provider",
       "classification": {
@@ -1835,17 +1835,17 @@
         "zelle": false
       },
       "date": "2026-07-17",
-      "description": "Amex Platinum digital entertainment credit",
+      "description": "Example Card streaming credit",
       "id": "tx-126",
-      "merchant": "Digital Entertainment Credit",
+      "merchant": "Streaming Credit",
       "occurredOn": null,
       "pending": false,
       "postedOn": null
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
-      "amount": -13.99,
+      "account": "Example Card",
+      "accountId": "example-card",
+      "amount": -9.99,
       "category": "Entertainment",
       "categorySource": "provider",
       "classification": {
@@ -1858,24 +1858,24 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Disney Plus",
+          "name": "Example TV",
           "type": "merchant",
-          "website": "www.disneyplus.com"
+          "website": "tv.example.com"
         }
       ],
       "date": "2026-08-15",
-      "description": "Disney+ subscription",
+      "description": "Example TV subscription",
       "id": "tx-127",
-      "merchant": "Disney Plus",
+      "merchant": "Example TV",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.disneyplus.com"
+      "website": "https://tv.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
-      "amount": 13.99,
+      "account": "Example Card",
+      "accountId": "example-card",
+      "amount": 9.99,
       "category": "Transfer",
       "categorySource": "provider",
       "classification": {
@@ -1886,16 +1886,16 @@
         "zelle": false
       },
       "date": "2026-08-17",
-      "description": "Amex Platinum digital entertainment credit",
+      "description": "Example Card streaming credit",
       "id": "tx-128",
-      "merchant": "Digital Entertainment Credit",
+      "merchant": "Streaming Credit",
       "occurredOn": null,
       "pending": false,
       "postedOn": null
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -260.0,
       "category": "Personal Care",
       "categorySource": "provider",
@@ -1909,23 +1909,23 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Equinox",
+          "name": "Example Gym",
           "type": "merchant",
-          "website": "www.equinox.com"
+          "website": "gym.example.com"
         }
       ],
       "date": "2026-06-02",
-      "description": "Equinox membership",
+      "description": "Example Gym membership",
       "id": "tx-129",
-      "merchant": "Equinox",
+      "merchant": "Example Gym",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.equinox.com"
+      "website": "https://gym.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -260.0,
       "category": "Personal Care",
       "categorySource": "provider",
@@ -1939,23 +1939,23 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Equinox",
+          "name": "Example Gym",
           "type": "merchant",
-          "website": "www.equinox.com"
+          "website": "gym.example.com"
         }
       ],
       "date": "2026-07-02",
-      "description": "Equinox membership",
+      "description": "Example Gym membership",
       "id": "tx-130",
-      "merchant": "Equinox",
+      "merchant": "Example Gym",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.equinox.com"
+      "website": "https://gym.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -260.0,
       "category": "Personal Care",
       "categorySource": "provider",
@@ -1969,23 +1969,23 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Equinox",
+          "name": "Example Gym",
           "type": "merchant",
-          "website": "www.equinox.com"
+          "website": "gym.example.com"
         }
       ],
       "date": "2026-08-03",
-      "description": "Equinox membership",
+      "description": "Example Gym membership",
       "id": "tx-131",
-      "merchant": "Equinox",
+      "merchant": "Example Gym",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.equinox.com"
+      "website": "https://gym.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -180.4,
       "category": "Dining",
       "categorySource": "provider",
@@ -1999,15 +1999,15 @@
       "date": "2026-07-08",
       "description": null,
       "id": "tx-132",
-      "merchant": "Resy - Example Bistro",
+      "merchant": "Example Tables - Example Bistro",
       "occurredOn": null,
       "pending": false,
       "postedOn": null
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
-      "amount": 100.0,
+      "account": "Example Card",
+      "accountId": "example-card",
+      "amount": 50.0,
       "category": "Transfer",
       "categorySource": "provider",
       "classification": {
@@ -2018,16 +2018,16 @@
         "zelle": false
       },
       "date": "2026-07-12",
-      "description": "Amex Platinum Resy credit",
+      "description": "Example Card Example Tables dining credit",
       "id": "tx-133",
-      "merchant": "Resy credit",
+      "merchant": "Example Tables credit",
       "occurredOn": null,
       "pending": false,
       "postedOn": null
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -18.4,
       "category": "Transport",
       "categorySource": "provider",
@@ -2041,23 +2041,23 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Uber",
+          "name": "Example Rides",
           "type": "merchant",
-          "website": "www.uber.com"
+          "website": "rides.example.com"
         }
       ],
       "date": "2026-06-06",
       "description": null,
       "id": "tx-134",
-      "merchant": "Uber",
+      "merchant": "Example Rides",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.uber.com"
+      "website": "https://rides.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -23.75,
       "category": "Transport",
       "categorySource": "provider",
@@ -2071,23 +2071,23 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Uber",
+          "name": "Example Rides",
           "type": "merchant",
-          "website": "www.uber.com"
+          "website": "rides.example.com"
         }
       ],
       "date": "2026-06-20",
       "description": null,
       "id": "tx-135",
-      "merchant": "Uber",
+      "merchant": "Example Rides",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.uber.com"
+      "website": "https://rides.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -14.1,
       "category": "Transport",
       "categorySource": "provider",
@@ -2101,23 +2101,23 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Uber",
+          "name": "Example Rides",
           "type": "merchant",
-          "website": "www.uber.com"
+          "website": "rides.example.com"
         }
       ],
       "date": "2026-07-09",
       "description": null,
       "id": "tx-136",
-      "merchant": "Uber",
+      "merchant": "Example Rides",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.uber.com"
+      "website": "https://rides.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -31.2,
       "category": "Transport",
       "categorySource": "provider",
@@ -2131,23 +2131,23 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Uber",
+          "name": "Example Rides",
           "type": "merchant",
-          "website": "www.uber.com"
+          "website": "rides.example.com"
         }
       ],
       "date": "2026-07-25",
       "description": null,
       "id": "tx-137",
-      "merchant": "Uber",
+      "merchant": "Example Rides",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.uber.com"
+      "website": "https://rides.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -19.85,
       "category": "Transport",
       "categorySource": "provider",
@@ -2161,23 +2161,23 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Uber",
+          "name": "Example Rides",
           "type": "merchant",
-          "website": "www.uber.com"
+          "website": "rides.example.com"
         }
       ],
       "date": "2026-08-08",
       "description": null,
       "id": "tx-138",
-      "merchant": "Uber",
+      "merchant": "Example Rides",
       "occurredOn": null,
       "pending": false,
       "postedOn": null,
-      "website": "https://www.uber.com"
+      "website": "https://rides.example.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -92.14,
       "category": "Groceries",
       "categorySource": "provider",
@@ -2203,11 +2203,11 @@
         "address": "410 Example Ave",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
-        "postalCode": "94109",
-        "region": "CA",
-        "storeNumber": "10052"
+        "lat": 45.52,
+        "lon": -122.68,
+        "postalCode": "97205",
+        "region": "OR",
+        "storeNumber": "10410"
       },
       "merchant": "Whole Foods Market",
       "occurredOn": null,
@@ -2216,10 +2216,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
+        "lat": 45.52,
+        "lon": -122.68,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2227,8 +2227,8 @@
       "website": "https://www.wholefoodsmarket.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -71.38,
       "category": "Groceries",
       "categorySource": "provider",
@@ -2254,11 +2254,11 @@
         "address": "410 Example Ave",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
-        "postalCode": "94109",
-        "region": "CA",
-        "storeNumber": "10052"
+        "lat": 45.52,
+        "lon": -122.68,
+        "postalCode": "97205",
+        "region": "OR",
+        "storeNumber": "10410"
       },
       "merchant": "Whole Foods Market",
       "occurredOn": null,
@@ -2267,10 +2267,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
+        "lat": 45.52,
+        "lon": -122.68,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2278,8 +2278,8 @@
       "website": "https://www.wholefoodsmarket.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -104.62,
       "category": "Groceries",
       "categorySource": "provider",
@@ -2305,11 +2305,11 @@
         "address": "410 Example Ave",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
-        "postalCode": "94109",
-        "region": "CA",
-        "storeNumber": "10052"
+        "lat": 45.52,
+        "lon": -122.68,
+        "postalCode": "97205",
+        "region": "OR",
+        "storeNumber": "10410"
       },
       "merchant": "Whole Foods Market",
       "occurredOn": null,
@@ -2318,10 +2318,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
+        "lat": 45.52,
+        "lon": -122.68,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2329,8 +2329,8 @@
       "website": "https://www.wholefoodsmarket.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -88.03,
       "category": "Groceries",
       "categorySource": "provider",
@@ -2356,11 +2356,11 @@
         "address": "410 Example Ave",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
-        "postalCode": "94109",
-        "region": "CA",
-        "storeNumber": "10052"
+        "lat": 45.52,
+        "lon": -122.68,
+        "postalCode": "97205",
+        "region": "OR",
+        "storeNumber": "10410"
       },
       "merchant": "Whole Foods Market",
       "occurredOn": null,
@@ -2369,10 +2369,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
+        "lat": 45.52,
+        "lon": -122.68,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2380,8 +2380,8 @@
       "website": "https://www.wholefoodsmarket.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -97.45,
       "category": "Groceries",
       "categorySource": "provider",
@@ -2407,11 +2407,11 @@
         "address": "410 Example Ave",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
-        "postalCode": "94109",
-        "region": "CA",
-        "storeNumber": "10052"
+        "lat": 45.52,
+        "lon": -122.68,
+        "postalCode": "97205",
+        "region": "OR",
+        "storeNumber": "10410"
       },
       "merchant": "Whole Foods Market",
       "occurredOn": null,
@@ -2420,10 +2420,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
+        "lat": 45.52,
+        "lon": -122.68,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2431,8 +2431,8 @@
       "website": "https://www.wholefoodsmarket.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -79.9,
       "category": "Groceries",
       "categorySource": "provider",
@@ -2458,11 +2458,11 @@
         "address": "410 Example Ave",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
-        "postalCode": "94109",
-        "region": "CA",
-        "storeNumber": "10052"
+        "lat": 45.52,
+        "lon": -122.68,
+        "postalCode": "97205",
+        "region": "OR",
+        "storeNumber": "10410"
       },
       "merchant": "Whole Foods Market",
       "occurredOn": null,
@@ -2471,10 +2471,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7907,
-        "lon": -122.422,
+        "lat": 45.52,
+        "lon": -122.68,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2482,8 +2482,8 @@
       "website": "https://www.wholefoodsmarket.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -12.75,
       "category": "Dining",
       "categorySource": "provider",
@@ -2509,10 +2509,10 @@
         "address": "220 Sample St",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
-        "postalCode": "94103",
-        "region": "CA"
+        "lat": 45.5226,
+        "lon": -122.6763,
+        "postalCode": "97205",
+        "region": "OR"
       },
       "merchant": "Blue Bottle Coffee",
       "occurredOn": null,
@@ -2521,10 +2521,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
+        "lat": 45.5226,
+        "lon": -122.6763,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2532,8 +2532,8 @@
       "website": "https://bluebottlecoffee.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -12.75,
       "category": "Dining",
       "categorySource": "provider",
@@ -2559,10 +2559,10 @@
         "address": "220 Sample St",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
-        "postalCode": "94103",
-        "region": "CA"
+        "lat": 45.5226,
+        "lon": -122.6763,
+        "postalCode": "97205",
+        "region": "OR"
       },
       "merchant": "Blue Bottle Coffee",
       "occurredOn": null,
@@ -2571,10 +2571,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
+        "lat": 45.5226,
+        "lon": -122.6763,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2582,8 +2582,8 @@
       "website": "https://bluebottlecoffee.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -12.75,
       "category": "Dining",
       "categorySource": "provider",
@@ -2609,10 +2609,10 @@
         "address": "220 Sample St",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
-        "postalCode": "94103",
-        "region": "CA"
+        "lat": 45.5226,
+        "lon": -122.6763,
+        "postalCode": "97205",
+        "region": "OR"
       },
       "merchant": "Blue Bottle Coffee",
       "occurredOn": null,
@@ -2621,10 +2621,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
+        "lat": 45.5226,
+        "lon": -122.6763,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2632,8 +2632,8 @@
       "website": "https://bluebottlecoffee.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -12.75,
       "category": "Dining",
       "categorySource": "provider",
@@ -2659,10 +2659,10 @@
         "address": "220 Sample St",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
-        "postalCode": "94103",
-        "region": "CA"
+        "lat": 45.5226,
+        "lon": -122.6763,
+        "postalCode": "97205",
+        "region": "OR"
       },
       "merchant": "Blue Bottle Coffee",
       "occurredOn": null,
@@ -2671,10 +2671,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
+        "lat": 45.5226,
+        "lon": -122.6763,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2682,8 +2682,8 @@
       "website": "https://bluebottlecoffee.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -12.75,
       "category": "Dining",
       "categorySource": "provider",
@@ -2709,10 +2709,10 @@
         "address": "220 Sample St",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
-        "postalCode": "94103",
-        "region": "CA"
+        "lat": 45.5226,
+        "lon": -122.6763,
+        "postalCode": "97205",
+        "region": "OR"
       },
       "merchant": "Blue Bottle Coffee",
       "occurredOn": null,
@@ -2721,10 +2721,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
+        "lat": 45.5226,
+        "lon": -122.6763,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2732,8 +2732,8 @@
       "website": "https://bluebottlecoffee.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -64.0,
       "category": "Dining",
       "categorySource": "provider",
@@ -2759,10 +2759,10 @@
         "address": "220 Sample St",
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
-        "postalCode": "94103",
-        "region": "CA"
+        "lat": 45.5226,
+        "lon": -122.6763,
+        "postalCode": "97205",
+        "region": "OR"
       },
       "merchant": "Blue Bottle Coffee",
       "occurredOn": null,
@@ -2771,10 +2771,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7825,
-        "lon": -122.4056,
+        "lat": 45.5226,
+        "lon": -122.6763,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,
@@ -2782,8 +2782,8 @@
       "website": "https://bluebottlecoffee.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -54.2,
       "category": "Home Improvement",
       "categorySource": "provider",
@@ -2803,8 +2803,8 @@
       "postedOn": null
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -54.2,
       "category": "Home Improvement",
       "categorySource": "provider",
@@ -2824,8 +2824,8 @@
       "postedOn": null
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -64.18,
       "category": "Dining",
       "categorySource": "provider",
@@ -2875,8 +2875,8 @@
       "website": "https://franklinbbq.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -289.0,
       "category": "Shopping",
       "categorySource": "provider",
@@ -2917,8 +2917,8 @@
       "presence": "inPerson"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -212.4,
       "category": "Dining",
       "categorySource": "provider",
@@ -2968,8 +2968,8 @@
       "website": "https://uchi.uchirestaurants.com"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -612.0,
       "category": "Travel",
       "categorySource": "provider",
@@ -2992,8 +2992,8 @@
       "presence": "remote"
     },
     {
-      "account": "Platinum Card",
-      "accountId": "amex",
+      "account": "Example Card",
+      "accountId": "example-card",
       "amount": -23.4,
       "category": "Transport",
       "categorySource": "provider",
@@ -3007,22 +3007,22 @@
       "counterparties": [
         {
           "confidence": "VERY_HIGH",
-          "name": "Uber",
+          "name": "Example Rides",
           "type": "merchant",
-          "website": "www.uber.com"
+          "website": "rides.example.com"
         }
       ],
       "date": "2026-08-14",
       "description": null,
       "id": "tx-157",
-      "logoName": "Uber",
-      "merchant": "Uber",
+      "logoName": "Example Rides",
+      "merchant": "Example Rides",
       "occurredOn": null,
       "paymentChannel": "online",
       "pending": false,
       "postedOn": null,
       "presence": "remote",
-      "website": "https://www.uber.com"
+      "website": "https://rides.example.com"
     },
     {
       "account": "Fidelity",
@@ -3086,9 +3086,9 @@
       "location": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7692,
-        "lon": -122.4153,
-        "region": "CA"
+        "lat": 45.5172,
+        "lon": -122.6741,
+        "region": "OR"
       },
       "merchant": "Harvest Co-op Grocery",
       "occurredOn": null,
@@ -3097,10 +3097,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7692,
-        "lon": -122.4153,
+        "lat": 45.5172,
+        "lon": -122.6741,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "bank"
       },
       "postedOn": null,

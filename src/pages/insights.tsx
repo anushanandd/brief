@@ -4,6 +4,7 @@ import { useMemo } from 'react'
 import { PageError, PageLoading } from '../components/data-state'
 import { InsightsStrip } from '../components/insights-strip'
 import { WorkspaceHeader, type WorkspaceBreadcrumb } from '../components/workspace-header'
+import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useFinance } from '../hooks/use-finance'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { buildActivities } from '../lib/activity'
@@ -36,12 +37,14 @@ function Insights({ data }: { data: FinanceSnapshot }) {
   const view: InsightsView = search.view ?? 'trips'
   const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
   const names = financeSettings(data).accountNames
+  const valuesHidden = useAmountsHidden()
+  // Activities carry formatted amounts, which screen privacy masks.
   const activities = useMemo(
     () =>
       new Map(
         buildActivities(data, names, getExternalLogosEnabled()).map((item) => [item.id, item]),
       ),
-    [data, names],
+    [data, names, valuesHidden],
   )
   const label = insightsViews.find(({ id }) => id === view)?.label ?? 'Trips'
   const trip = view === 'trips' ? tripFromSearch(data, search.trip) : undefined

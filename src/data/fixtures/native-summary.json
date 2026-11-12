@@ -45,10 +45,14 @@
     }
   ],
   "brief": {
+    "changed": [],
+    "earnings": [],
     "headlines": [
       {
         "publishedAt": "2026-09-30T13:00:00Z",
         "publisher": "CNBC",
+        "quote": "The shares rose after the company named a new chief financial officer.",
+        "quotedBy": "summary",
         "tickers": ["TEST"],
         "title": "Test Corp jumps after naming a new finance chief",
         "url": "https://example.com/cfo"
@@ -104,7 +108,8 @@
           "text": "."
         }
       ]
-    ]
+    ],
+    "market": null
   },
   "calendar": [
     {
@@ -120,6 +125,79 @@
       "stories": 4,
       "ticker": "TEST",
       "topRelevance": 90
+    }
+  ],
+  "earnings": [
+    {
+      "callGuidance": ["We expect revenue growth to continue next quarter."],
+      "callGuidanceBy": "local:example",
+      "eps": 0.42,
+      "epsEstimate": 0.38,
+      "expectedMovePct": 7.9,
+      "filingUrl": "https://www.sec.gov/Archives/edgar/data/1/000000000026000002/test-8k.htm",
+      "fiscalDateEnding": "2026-08-31",
+      "guidance": [
+        "For the fourth quarter, the company expects revenue of $118 million to $122 million."
+      ],
+      "guidanceBy": "rule",
+      "line": [
+        {
+          "kind": "subject",
+          "text": "TEST",
+          "ticker": "TEST"
+        },
+        {
+          "kind": "text",
+          "text": " reported "
+        },
+        {
+          "kind": "figure",
+          "sensitive": false,
+          "text": "$0.42",
+          "tone": "flat"
+        },
+        {
+          "kind": "text",
+          "text": " a share, "
+        },
+        {
+          "kind": "text",
+          "text": "above the "
+        },
+        {
+          "kind": "figure",
+          "sensitive": false,
+          "text": "$0.38",
+          "tone": "flat"
+        },
+        {
+          "kind": "text",
+          "text": " analysts expected."
+        },
+        {
+          "kind": "text",
+          "text": " Its own move over the next two sessions was "
+        },
+        {
+          "kind": "figure",
+          "sensitive": false,
+          "text": "+6.1%",
+          "tone": "up"
+        },
+        {
+          "kind": "text",
+          "text": ", 2.3× a typical two days."
+        }
+      ],
+      "reactionPct": 6.1,
+      "reactionTypicalPct": 2.6,
+      "releaseRead": true,
+      "releaseUrl": "https://www.sec.gov/Archives/edgar/data/1/000000000026000002/ex991.htm",
+      "reportTime": "post-market",
+      "reportedOn": "2026-09-29",
+      "revenue": "Revenue was $112 million, up 12% from a year ago.",
+      "surprisePct": 10.53,
+      "ticker": "TEST"
     }
   ],
   "end": "2026-09-30",
@@ -183,6 +261,25 @@
       "title": "TEST names a CFO",
       "url": "https://example.com/cfo",
       "z": 0.6
+    }
+  ],
+  "expectations": [
+    {
+      "estimates": [
+        {
+          "analysts": 9,
+          "changePct": 4.7,
+          "eps": 0.45,
+          "eps30DaysAgo": 0.43,
+          "fiscalDateEnding": "2026-11-30",
+          "horizon": "fiscal quarter",
+          "revisionsDown": 1,
+          "revisionsUp": 6
+        }
+      ],
+      "expectedMovePct": 8.4,
+      "nextReport": "2026-12-17",
+      "ticker": "TEST"
     }
   ],
   "fundamentals": {
@@ -292,6 +389,7 @@
     "portfolio": false,
     "z": -1.8
   },
+  "refreshing": false,
   "report": {
     "attribution": {
       "buyAndHold": 250.0,

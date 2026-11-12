@@ -59,10 +59,7 @@ export function InsightsStrip({
       },
       // What rules recovered: money from elsewhere filed as repaying card fees.
       rules: {
-        value: [insights?.benefits, ...(insights?.otherCardBenefits ?? [])].reduce(
-          (sum, card) => sum + (card?.fee?.offsets ?? 0),
-          0,
-        ),
+        value: insights?.feeOffsets ?? 0,
         unavailable: !insights,
         detail: 'recovered',
       },

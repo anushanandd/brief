@@ -17,12 +17,12 @@ use crate::{
 pub(crate) struct ResearchState {
     enabled: bool,
     connected: bool,
-    gaps: Vec<Gap>,
+    pub(crate) gaps: Vec<Gap>,
     log: Vec<Entry>,
     sources: Vec<SourceCheck>,
 }
 
-fn enabled(state: &State<'_, AppState>) -> Result<(), String> {
+pub(crate) fn enabled(state: &State<'_, AppState>) -> Result<(), String> {
     if state.storage()?.settings().research {
         Ok(())
     } else {
@@ -31,13 +31,21 @@ fn enabled(state: &State<'_, AppState>) -> Result<(), String> {
 }
 
 /// Logs an entry before it runs and tells the renderer, so the query is visible first.
-fn begin(app: &AppHandle, state: &State<'_, AppState>, entry: &Entry) -> Result<(), String> {
+pub(crate) fn begin(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    entry: &Entry,
+) -> Result<(), String> {
     state.storage()?.begin_research(entry)?;
     let _ = app.emit("research-updated", ());
     Ok(())
 }
 
-fn finish(app: &AppHandle, state: &State<'_, AppState>, entry: &Entry) -> Result<(), String> {
+pub(crate) fn finish(
+    app: &AppHandle,
+    state: &State<'_, AppState>,
+    entry: &Entry,
+) -> Result<(), String> {
     state.storage()?.finish_research(entry)?;
     let _ = app.emit("research-updated", ());
     Ok(())
@@ -54,6 +62,7 @@ pub(crate) async fn get_research(state: State<'_, AppState>) -> Result<ResearchS
             &view.snapshot.accounts,
             &insights.evidence.chapters,
             &programs(&settings.programs),
+            &crate::insights::benefits::Catalog::from_settings(settings),
         )
     });
     let (log, sources) = storage.research()?;

@@ -8,29 +8,6 @@
 .coming-up {
   padding-top: 16px;
 }
-.coming-up-heading {
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 12px;
-}
-/* Titles within a card read as section titles, like every card's own. */
-.coming-up-heading > h3 {
-  margin: 0;
-  font-size: var(--type-section);
-  font-weight: 500;
-  line-height: var(--heading-line);
-  letter-spacing: -0.015em;
-}
-.coming-up-link {
-  color: var(--text-secondary);
-  font-size: var(--type-meta);
-  font-weight: 500;
-  transition: color var(--duration-quick) var(--ease-out);
-}
-.coming-up-link:hover {
-  color: var(--accent);
-}
 .coming-up-list {
   margin: 4px 0 0;
   padding: 0;
@@ -60,12 +37,10 @@
   gap: 2px;
 }
 .coming-up-copy > strong {
-  overflow: hidden;
   color: var(--text-primary);
   font-size: var(--type-body);
   font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .coming-up-row > .sensitive-value {
   font-size: var(--type-body);
@@ -261,11 +236,6 @@
 }
 .home-overview-summary .account-summary-metrics {
   padding-bottom: 12px;
-}
-.coming-up-heading h3 > small {
-  color: var(--text-tertiary);
-  font-size: var(--type-meta);
-  font-weight: 400;
 }
 /* The right card is what's ahead: the period's totals, what needs action, then what's
    expected. */
@@ -483,12 +453,7 @@
   justify-self: end;
 }
 .home-companion .coming-up-copy > strong {
-  display: -webkit-box;
-  overflow: hidden;
-  white-space: normal;
   text-wrap: balance;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
 }
 
 /* Home: the chart beside what's ahead, then holdings and accounts beside what changed and

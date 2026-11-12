@@ -13,6 +13,7 @@ import { Button } from './ui'
 const sectionTitle = {
   selection: 'Selection',
   region: 'This list',
+  dialog: 'This dialog',
   page: 'This page',
   app: 'Anywhere',
 } as const
@@ -80,7 +81,7 @@ export function KeyGuide({
       </header>
       <div className="key-guide-sections">
         {!entries.length ? <p className="key-guide-empty">No shortcuts on this page.</p> : null}
-        {(['selection', 'region', 'page', 'app'] as const).map((scope) => {
+        {(['selection', 'region', 'dialog', 'page', 'app'] as const).map((scope) => {
           const scoped = entries.filter(({ action }) => action.scope === scope)
           if (!scoped.length) return null
           return (

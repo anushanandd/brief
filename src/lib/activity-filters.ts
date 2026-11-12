@@ -5,7 +5,7 @@ import {
   type ActivityItem,
 } from './activity'
 import { addDays } from './dates'
-import { graphWindows } from './graph-preferences'
+import { graphWindows, type ChartPeriod } from './graph-preferences'
 import { preference } from './preference'
 import { transactionDateKey } from './spending'
 
@@ -55,10 +55,18 @@ export const selectedFilterValues = (query: string | undefined, options: string[
   (query ?? '').split(',').filter((value) => options.includes(value))
 
 export type ActivityDateRange = 'd' | 'w' | 'm' | 'q' | 'y' | 'a' | 'custom'
-const activityDateRangeKeys = ['d', 'w', 'm', 'q', 'y', 'a'] as const
+const activityDateRangeKey = {
+  day: 'd',
+  week: 'w',
+  month: 'm',
+  quarter: 'q',
+  year: 'y',
+  all: 'a',
+} as const satisfies Record<ChartPeriod, Exclude<ActivityDateRange, 'custom'>>
+const activityDateRangeKeys = graphWindows.map(({ name }) => activityDateRangeKey[name])
 export const activityDateRangeOptions = [
-  ...graphWindows.map(({ label, settingsLabel }, index) => ({
-    value: activityDateRangeKeys[index],
+  ...graphWindows.map(({ name, label, settingsLabel }) => ({
+    value: activityDateRangeKey[name],
     label,
     accessibleLabel: settingsLabel,
   })),
@@ -66,8 +74,10 @@ export const activityDateRangeOptions = [
 ]
 
 export function activityDatePreset(preset: Exclude<ActivityDateRange, 'custom'>, today: string) {
-  const days = graphWindows[activityDateRangeKeys.indexOf(preset)].secs / 86_400
-  if (!days) return { from: undefined, to: undefined }
+  const window = graphWindows.find(({ name }) => activityDateRangeKey[name] === preset)
+  // All time (no seconds) bounds neither end.
+  if (!window?.secs) return { from: undefined, to: undefined }
+  const days = window.secs / 86_400
   return {
     from: addDays(today, 1 - days),
     to: today,

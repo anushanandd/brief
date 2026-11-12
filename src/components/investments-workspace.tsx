@@ -2,9 +2,11 @@ import { Link } from '@tanstack/react-router'
 
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { type ChartPeriod } from '../lib/graph-preferences'
+import { consolidatedPositions } from '../lib/holding-detail'
 import { useInvestmentRange } from '../lib/investment-range'
 import type { FinanceSnapshot, PortfolioToday } from '../lib/schema'
 import { PageError, PageLoading } from './data-state'
+import { EarningsReport } from './earnings-report'
 import { HoldingChart } from './holding-chart'
 import { HoldingAccounts, HoldingActivity, PositionCard } from './holding-details'
 import { HoldingNews } from './holding-news'
@@ -29,8 +31,8 @@ import { MarketStatus, WorkspaceHeader } from './workspace-header'
 type Integrations = ReturnType<typeof useLiveFinance>['integrationStatus']
 
 /**
- * The portfolio: its value and chart with the summary under them, the period's figures and
- * what's ahead beside them, then every holding, and allocation beside performance.
+ * The portfolio: its value and chart beside the period's figures, the summary beside what's
+ * ahead, then every holding beside what needs you, and allocation beside performance.
  */
 function Overview({
   data,
@@ -46,26 +48,25 @@ function Overview({
   integrations: Integrations
 }) {
   const span = periodStatement(data, range)
-  // The table's news column reads the summary the card beside it loads.
-  const { summary } = useInvestmentSummary(data, range)
+  // The table's news column reads the summary the card beside it loads, once it is current;
+  // an older one being brought up to date is shown only in the card, marked.
+  const { current } = useInvestmentSummary(data, range)
   return (
     <>
       <div className="investments-hero">
-        <div className="investments-main">
-          <InvestmentsPortfolio data={data} value={value} range={range} />
-          <InvestmentSummaryCard data={data} range={range} />
-        </div>
-        <div className="investments-side">
-          <PeriodCard data={data} span={span} range={range} />
-          <InvestmentsComingUp
-            data={data}
-            earningsConnected={integrations.alphaVantage}
-            summary={summary.data}
-          />
-          <InvestmentsAttention data={data} />
-        </div>
+        <InvestmentsPortfolio data={data} value={value} range={range} />
+        <PeriodCard data={data} span={span} range={range} />
+        <InvestmentSummaryCard data={data} range={range} />
+        <InvestmentsComingUp
+          data={data}
+          earningsConnected={integrations.alphaVantage}
+          summary={current}
+        />
       </div>
-      <HoldingsTable data={data} range={range} today={today} summary={summary.data} />
+      <div className="investments-holdings">
+        <HoldingsTable data={data} range={range} today={today} summary={current} />
+        <InvestmentsAttention data={data} />
+      </div>
       <div className="investments-pair">
         <PortfolioExposure data={data} />
         <InvestmentsPerformance data={data} range={range} />
@@ -75,8 +76,8 @@ function Overview({
 }
 
 /**
- * One holding: its chart with the summary under it, the position beside them, then its news
- * beside where it's held and what you did.
+ * One holding: its chart beside the position, the summary beside where it's held, then its
+ * news beside why you own it, its latest earnings, and what you did.
  */
 function Holding({
   data,
@@ -89,12 +90,13 @@ function Holding({
   range: ChartPeriod
   integrations: Integrations
 }) {
-  // Largest first, the order the strip and the chart's next and previous follow.
+  // Each security once, largest first: the order the strip and the chart's next and previous
+  // follow.
   const order = (data.insights?.securities ?? []).map((security) => security.ticker)
-  const holdings = data.holdings.toSorted(
+  const holdings = consolidatedPositions(data).toSorted(
     (left, right) => order.indexOf(left.ticker) - order.indexOf(right.ticker),
   )
-  if (!holdings.some((holding) => holding.ticker === ticker))
+  if (!data.holdings.some((holding) => holding.ticker === ticker))
     return (
       <Card>
         <EmptyState title={`${ticker} isn’t held`}>
@@ -107,14 +109,10 @@ function Holding({
   return (
     <>
       <div className="investments-hero">
-        <div className="investments-main">
-          <HoldingChart holdings={holdings} ticker={ticker} range={range} />
-          <InvestmentSummaryCard data={data} range={range} ticker={ticker} />
-        </div>
-        <div className="investments-side">
-          <PositionCard data={data} ticker={ticker} earningsConnected={integrations.alphaVantage} />
-          <HoldingAccounts data={data} ticker={ticker} />
-        </div>
+        <HoldingChart holdings={holdings} ticker={ticker} range={range} />
+        <PositionCard data={data} ticker={ticker} earningsConnected={integrations.alphaVantage} />
+        <InvestmentSummaryCard data={data} range={range} ticker={ticker} />
+        <HoldingAccounts data={data} ticker={ticker} />
       </div>
       <div className="holding-columns">
         <HoldingNews
@@ -122,7 +120,10 @@ function Holding({
           connected={integrations.alpaca}
           secConnected={integrations.sec}
         />
-        <HoldingActivity data={data} ticker={ticker} />
+        <div className="holding-aside">
+          <EarningsReport data={data} ticker={ticker} range={range} />
+          <HoldingActivity data={data} ticker={ticker} />
+        </div>
       </div>
     </>
   )

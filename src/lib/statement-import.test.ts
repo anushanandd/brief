@@ -90,7 +90,7 @@ describe('statement import copy', () => {
     })
     const open = {
       ...reconciled,
-      missing: [{ ...reconciled.missing[0], confirmed: false }],
+      missing: reconciled.missing.slice(0, 1).map((row) => ({ ...row, confirmed: false })),
       extra: ['c'],
     }
     expect(reconciliationSummary(open).headline).toBe('2 to review')

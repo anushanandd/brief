@@ -11,6 +11,7 @@ import { CalendarDays, Check, ChevronDown, ChevronRight } from '../components/ic
 import { Button, Card, EmptyState, Metric, SectionHeading } from '../components/ui'
 import { usePopupPortal } from '../components/ui/popup-container'
 import { WorkspaceHeader } from '../components/workspace-header'
+import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useFinance } from '../hooks/use-finance'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
@@ -36,7 +37,13 @@ import {
 import { addDays } from '../lib/dates'
 import { errorMessage } from '../lib/errors'
 import { financeSettings } from '../lib/finance-settings'
-import { formatActivityName, formatCurrency, formatSignedCurrency, valueTone } from '../lib/format'
+import {
+  formatActivityName,
+  formatCalendarDate,
+  formatCurrency,
+  formatSignedCurrency,
+  valueTone,
+} from '../lib/format'
 import { getExternalLogosEnabled } from '../lib/logos'
 import type { AgendaItem, FinanceSnapshot } from '../lib/schema'
 
@@ -63,17 +70,9 @@ const legend = [
   { label: 'Investments', color: kindColor.dividend },
   { label: 'Trips', color: kindColor.trip },
 ]
-const monthFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
-const dayFormatter = new Intl.DateTimeFormat('en-US', {
-  weekday: 'long',
-  month: 'long',
-  day: 'numeric',
-  timeZone: 'UTC',
-})
+const monthTitle = (date: string) => formatCalendarDate(date, { month: 'long', year: 'numeric' })
+const dayTitle = (date: string) =>
+  formatCalendarDate(date, { weekday: 'long', month: 'long', day: 'numeric' })
 const weekdays = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
 /**
@@ -119,7 +118,7 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
     enabled: native,
   })
   const access = status.data?.access ?? 'unavailable'
-  const [first, last] = [days[0], days.at(-1) ?? days[0]]
+  const [first, last] = [days.at(0), days.at(-1)]
   const calendars = useQuery({
     queryKey: ['calendar-list'],
     queryFn: calendarList,
@@ -132,8 +131,11 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
     : shown
   const events = useQuery({
     queryKey: ['calendar-events', first, last, shownIds],
-    queryFn: () => calendarEvents(first, last, shownIds),
-    enabled: access === 'allowed' && shownIds.length > 0,
+    queryFn: () => {
+      if (!first || !last) throw new Error('The month has no days')
+      return calendarEvents(first, last, shownIds)
+    },
+    enabled: access === 'allowed' && shownIds.length > 0 && Boolean(first && last),
     staleTime: 60 * 1000,
   })
   const toggleCalendar = (id: string) =>
@@ -146,15 +148,17 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
       toast.error('Could not ask for Calendar access', { description: errorMessage(error) }),
   })
 
+  const valuesHidden = useAmountsHidden()
+  // Activities carry formatted amounts, which screen privacy masks.
   const activities = useMemo(
     () => buildActivities(data, names, getExternalLogosEnabled()),
-    [data, names],
+    [data, names, valuesHidden],
   )
   const spentByDay = useMemo(() => {
     const byDay = new Map<string, ActivityItem[]>()
     for (const activity of activities) {
       const date = activity.date.slice(0, 10)
-      if (date < first || date > last) continue
+      if (!first || !last || date < first || date > last) continue
       byDay.set(date, [...(byDay.get(date) ?? []), activity])
     }
     return byDay
@@ -298,7 +302,7 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
       <div className="calendar-layout">
         <Card className="calendar-month-card">
           <SectionHeading
-            title={monthFormatter.format(new Date(`${firstOfMonth(month)}T00:00:00Z`))}
+            title={monthTitle(firstOfMonth(month))}
             action={
               <>
                 <CalendarsMenu
@@ -407,7 +411,7 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
         </Card>
         <div className="calendar-day-column">
           <Card className="calendar-day-card">
-            <SectionHeading title={dayFormatter.format(new Date(`${day}T00:00:00Z`))} />
+            <SectionHeading title={dayTitle(day)} />
             <div className="calendar-day-metrics">
               <Metric
                 label="Spent"
@@ -595,7 +599,7 @@ function DayCell({
     <div
       role="gridcell"
       aria-selected={selected}
-      aria-label={dayFormatter.format(new Date(`${date}T00:00:00Z`))}
+      aria-label={dayTitle(date)}
       className={`calendar-day${outside ? ' is-outside' : ''}${today ? ' is-today' : ''}${selected ? ' is-selected' : ''}${weekday === 0 || weekday === 6 ? ' is-weekend' : ''}`}
       style={{ '--heat': heat.toFixed(3) }}
       onClick={onSelect}

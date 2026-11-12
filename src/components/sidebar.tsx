@@ -3,7 +3,10 @@ import { Link } from '@tanstack/react-router'
 import { settingsNavigation } from '../lib/navigation'
 import type { useOrderedNavigation } from '../lib/navigation-preferences'
 
-/** The pages and Settings. Links carry their command ids. */
+/**
+ * The pages and Settings. Links carry their command ids; ⌘1 to ⌘9 open the pages in this order,
+ * which holding ⌘ reveals beside each (`CommandKeyHints`).
+ */
 export function Sidebar({
   pages,
   reportHome,
@@ -20,9 +23,9 @@ export function Sidebar({
   return (
     <aside className="sidebar" aria-label="Primary navigation">
       <div className="sidebar-header">
-        <Link to="/" className="brand" aria-label="Brief home" data-command="navigation.open./">
+        <div className="brand">
           <span className="brand-name">Brief</span>
-        </Link>
+        </div>
       </div>
 
       <div className="sidebar-content">
@@ -30,7 +33,7 @@ export function Sidebar({
           <section className="sidebar-group">
             <h2 className="sidebar-group-label">Workspace</h2>
             <ul className="sidebar-menu">
-              {pages.map(({ to, label, icon: Icon }) => (
+              {pages.map(({ to, label, icon: Icon }, index) => (
                 <li className="sidebar-menu-item" key={to}>
                   <Link
                     to={to}
@@ -38,6 +41,7 @@ export function Sidebar({
                     activeProps={{ className: 'sidebar-menu-button active' }}
                     activeOptions={{ exact: to === '/' }}
                     aria-label={label}
+                    aria-keyshortcuts={index < 9 ? `Meta+${index + 1}` : undefined}
                     data-command={`navigation.open.${to}`}
                   >
                     <Icon size={16} aria-hidden="true" />

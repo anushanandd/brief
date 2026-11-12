@@ -51,7 +51,7 @@ export function ActivityQueryBar({
       () =>
         chipKey
           ? chipKey.split('\u0001').map((entry) => {
-              const [id, chipLabel, value] = entry.split('\u0000')
+              const [id, chipLabel = '', value] = entry.split('\u0000')
               return {
                 id: `activity.filter.remove.${id}`,
                 title: `Remove ${chipLabel.toLowerCase()} filter: ${value}`,

@@ -6,6 +6,7 @@ import {
   chartPointAtOrAfter,
   chartPointsFromStartDate,
   chartRangeChange,
+  referenceLines,
   splitAtEstimate,
   upsertLiveChartPoint,
 } from './live-chart'
@@ -127,6 +128,22 @@ describe('live chart points', () => {
       ).map((point) => point.value),
     ).toEqual([0, -5, 10, 12])
   })
+})
+
+it('draws deposits and the S&P 500 from the recorded points, neither for a value-only chart', () => {
+  const now = Date.parse('2026-09-03T12:00:00Z') / 1_000
+  const points = [
+    { date: '2026-09-01', value: 100, netDeposits: 90, sp500: 95 },
+    { date: '2026-09-02', value: 105, netDeposits: null, sp500: 97 },
+  ]
+  const { netDeposits, benchmark } = referenceLines({ points }, now)
+  expect(netDeposits?.map(({ value }) => value)).toEqual([90, 90])
+  expect(benchmark?.map(({ value }) => value)).toEqual([95, 97, 97])
+  expect(referenceLines({ points, performanceMethod: 'value-only' }, now)).toEqual({})
+  expect(referenceLines(undefined, now)).toEqual({})
+  expect(
+    referenceLines({ points: points.map((point) => ({ ...point, sp500: null })) }, now),
+  ).toMatchObject({ benchmark: undefined })
 })
 
 it('does not fabricate a second observation from one current balance', () => {

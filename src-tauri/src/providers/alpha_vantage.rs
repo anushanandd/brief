@@ -121,6 +121,7 @@ pub(super) fn parse_earnings_csv(body: &str) -> Result<Vec<EarningsEvent>, Strin
     let fiscal_date_ending = column("fiscalDateEnding").ok();
     let estimate = column("estimate").ok();
     let currency = column("currency").ok();
+    let time_of_day = column("timeOfTheDay").ok();
     let mut events = Vec::new();
     for line in lines.filter(|line| !line.trim().is_empty()) {
         let values = csv_fields(line);
@@ -154,6 +155,11 @@ pub(super) fn parse_earnings_csv(body: &str) -> Result<Vec<EarningsEvent>, Strin
                 .and_then(|index| values.get(index))
                 .map(|value| value.trim().to_owned())
                 .filter(|value| !value.is_empty()),
+            time_of_day: time_of_day
+                .and_then(|index| values.get(index))
+                .map(|value| value.trim())
+                .filter(|value| matches!(*value, "pre-market" | "post-market"))
+                .map(str::to_owned),
         });
     }
     Ok(events)
@@ -166,14 +172,17 @@ mod tests {
     #[test]
     fn parses_quoted_earnings_calendar_rows() {
         let events = parse_earnings_csv(
-            "symbol,name,reportDate,fiscalDateEnding,estimate,currency\nAAPL,\"Apple, Inc.\",2026-10-29,2026-09-30,1.42,USD\n",
+            "symbol,name,reportDate,fiscalDateEnding,estimate,currency,timeOfTheDay\nAAPL,\"Apple, Inc.\",2026-10-29,2026-09-30,1.42,USD,post-market\nTEST,Test,2026-10-30,2026-09-30,,USD,\n",
         )
         .unwrap();
 
-        assert_eq!(events.len(), 1);
+        assert_eq!(events.len(), 2);
         assert_eq!(events[0].symbol, "AAPL");
         assert_eq!(events[0].name, "Apple, Inc.");
         assert_eq!(events[0].report_date, "2026-10-29");
         assert_eq!(events[0].estimate, Some(1.42));
+        assert_eq!(events[0].time_of_day.as_deref(), Some("post-market"));
+        assert_eq!(events[1].estimate, None);
+        assert_eq!(events[1].time_of_day, None);
     }
 }

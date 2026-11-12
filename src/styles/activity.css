@@ -208,8 +208,8 @@
 .activity-filter-option {
   display: flex;
   min-width: 0;
-  height: 28px;
-  padding: 0 8px;
+  min-height: 28px;
+  padding: 4px 8px;
   flex: 1;
   align-items: center;
   gap: 8px;
@@ -229,12 +229,11 @@
   width: 11px;
   height: 11px;
 }
+/* A long merchant or place wraps within the filter list. */
 .activity-filter-label {
   min-width: 0;
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .activity-filter-count {
   color: var(--text-tertiary);
@@ -365,6 +364,45 @@
   flex: 0 1 auto;
   min-height: 0;
 }
+/* The total sits on the ledger's own columns, pinned to the foot of the scrolling rows, so its
+   figure ends exactly where the amounts do whichever columns show. Its rule says more rows sit
+   behind it, so the list's fade gives way rather than fading the total. */
+.financial-activity-footer {
+  position: sticky;
+  bottom: 0;
+  display: grid;
+  min-height: var(--row-height-compact);
+  padding: 4px 8px;
+  align-items: center;
+  border-top: var(--hairline) solid var(--border-subtle);
+  background: var(--background);
+}
+.activity-page-list[data-more-below]:has(.financial-activity-footer) {
+  mask-image: none;
+}
+.activity-total-label {
+  grid-column: 1;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+/* From the mark to the last column, ending with the figure; it wraps rather than clipping. */
+.activity-total-figures {
+  display: flex;
+  min-width: 0;
+  grid-column: 2 / -1;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: 4px 12px;
+}
+.activity-total-figures > .financial-activity-amount {
+  font-weight: 600;
+}
+.activity-total-note {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
 .activity-page-list .financial-activity-list {
   margin-top: 0;
 }
@@ -376,7 +414,8 @@
   min-width: 0;
 }
 .financial-activity-header,
-.financial-activity-row-columns {
+.financial-activity-row-columns,
+.financial-activity-footer {
   /* Every row paints up front: skipping off-screen rows left blank gaps during fast scrolls. */
   min-width: max(100%, var(--activity-grid-width, 850px));
   grid-template-columns: var(
@@ -442,12 +481,11 @@
   min-width: 0;
   line-height: 1.3;
 }
+/* Columns are measured to fit their values; a longer one, such as a full address, wraps. */
 .financial-activity-cell-text > span,
 .financial-activity-cell-text > time,
 .financial-activity-cell-text > small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .financial-activity-cell-text > small {
   color: var(--text-tertiary);
@@ -481,11 +519,10 @@
   text-align: left;
   cursor: pointer;
 }
+/* The column fits 95 of 100 titles; the rest wrap onto a second line. */
 .financial-activity-description-button {
   max-width: 100%;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .activity-page-list .financial-activity-description-button,
 .activity-page-list .financial-activity-description-button:not(:disabled):hover {
@@ -560,10 +597,7 @@
   justify-content: flex-end;
 }
 .financial-activity-column {
-  overflow: hidden;
   color: var(--text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 .financial-activity-identity {
   display: flex;
@@ -573,12 +607,7 @@
 }
 .financial-activity-identity > span:last-child {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.financial-activity-subcategory {
-  color: var(--text-tertiary);
+  overflow-wrap: break-word;
 }
 .financial-activity-identity .transaction-mark {
   width: 24px;
@@ -590,9 +619,6 @@
   min-width: 0;
   flex-direction: column;
   gap: 4px;
-}
-.financial-activity-location {
-  white-space: nowrap;
 }
 .activity-method-mark {
   width: 24px;
@@ -753,6 +779,15 @@
   display: inline-flex;
   grid-column: 2;
   color: var(--accent);
+}
+.ledger-select-group + .ledger-select-group {
+  margin-top: 4px;
+}
+.ledger-select-group-label {
+  padding: 8px 10px 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
 }
 .activity-saved-views {
   display: flex;

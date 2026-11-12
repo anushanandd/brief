@@ -32,10 +32,12 @@ import { ConnectionsSection } from '../components/settings/connections'
 import { DataSection, PrivacySection } from '../components/settings/data'
 import { TaxesSection } from '../components/settings/taxes'
 import { Button, EmptyState, StatusDot } from '../components/ui'
-import { useFinance } from '../hooks/use-finance'
+import { snapshotKey, useFinance } from '../hooks/use-finance'
 import { getDataHealth } from '../lib/api'
 import { countOf, formatUpdatedAt } from '../lib/format'
+import { visibleKeyboardRows } from '../lib/keyboard-regions'
 import {
+  isSettingsSectionId,
   searchSettings,
   settingsHashForPath,
   settingsSections,
@@ -62,7 +64,7 @@ const sectionIcons: Record<SettingsSectionId, IconComponent> = {
 function TrustSummary({ onShow }: { onShow: (id: string) => void }) {
   const finance = useFinance()
   const health = useQuery({
-    queryKey: ['data-health', finance.data?.revision],
+    queryKey: ['data-health', ...snapshotKey(finance.data)],
     queryFn: getDataHealth,
     enabled: Boolean(finance.data),
   })
@@ -147,7 +149,8 @@ export function settingsSectionFor(id: string | undefined): SettingsSectionId {
   const section = settingsSections.find(
     (candidate) => candidate.id === id || candidate.entries.some((entry) => entry.id === id),
   )
-  return section?.id ?? settingsSections[0].id
+  // Anything else opens the first section, Connections.
+  return section?.id ?? 'connections'
 }
 
 /**
@@ -158,11 +161,12 @@ export function sectionInView(
   tops: readonly { id: SettingsSectionId; top: number }[],
   scroller: { scrollTop: number; clientHeight: number; scrollHeight: number },
 ): SettingsSectionId | undefined {
-  if (!tops.length) return undefined
+  const [head] = tops
+  if (!head) return undefined
   if (scroller.scrollTop + scroller.clientHeight >= scroller.scrollHeight - 1)
-    return tops.at(-1)!.id
+    return (tops.at(-1) ?? head).id
   const line = scroller.scrollTop + Math.min(120, scroller.clientHeight / 3)
-  return tops.findLast(({ top }) => top <= line)?.id ?? tops[0].id
+  return tops.findLast(({ top }) => top <= line)?.id ?? head.id
 }
 
 /**
@@ -207,7 +211,7 @@ export function SettingsPanel({
       const element = document.getElementById(id)
       if (!element) return
       const section = element.closest<HTMLElement>('[data-settings-section]')
-      if (section) setCurrent(section.id as SettingsSectionId)
+      if (section && isSettingsSectionId(section.id)) setCurrent(section.id)
       holdUntilSettled()
       const instant = !opened.current || reducedMotion()
       element.scrollIntoView({ block: 'start', behavior: instant ? 'auto' : 'smooth' })
@@ -252,10 +256,11 @@ export function SettingsPanel({
       const origin = scroller.getBoundingClientRect().top - scroller.scrollTop
       const tops = [
         ...scroller.querySelectorAll<HTMLElement>('[data-settings-section]:not([hidden])'),
-      ].map((section) => ({
-        id: section.id as SettingsSectionId,
-        top: section.getBoundingClientRect().top - origin,
-      }))
+      ].flatMap((section) =>
+        isSettingsSectionId(section.id)
+          ? [{ id: section.id, top: section.getBoundingClientRect().top - origin }]
+          : [],
+      )
       const id = sectionInView(tops, scroller)
       if (id) setCurrent(id)
     }
@@ -320,6 +325,15 @@ export function SettingsPanel({
               onChange={(event) => setQuery(event.target.value)}
               onKeyDown={(event) => {
                 if (acceptAutofill(event, completion, setQuery)) return
+                // Down leaves the search for the first setting shown, where J and K take over.
+                if (event.key === 'ArrowDown' && contentRef.current) {
+                  const [first] = visibleKeyboardRows(contentRef.current)
+                  if (!first) return
+                  event.preventDefault()
+                  first.focus()
+                  first.scrollIntoView({ block: 'nearest' })
+                  return
+                }
                 if (event.key !== 'Enter' || !firstResult) return
                 event.preventDefault()
                 scrollToTarget(firstResult.id)
@@ -377,7 +391,15 @@ export function SettingsPanel({
         </nav>
       </aside>
 
-      <div className="settings-panel-content" ref={contentRef}>
+      {/* Every setting is a row: J and K step through them, Return enters one, Tab walks its
+          controls. */}
+      <div
+        className="settings-panel-content"
+        ref={contentRef}
+        data-keyboard-region
+        aria-label="Settings"
+        role="group"
+      >
         {finance.annotationWarning ? (
           <p className="settings-overview-warning" role="status">
             {finance.annotationWarning}

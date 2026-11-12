@@ -22,6 +22,12 @@ const accounts = [
 ]
 const accountNames = { savings: 'Reserve' }
 
+function row(rows: Element[], index: number) {
+  const found = rows[index]
+  if (!found) throw new Error(`No row ${index}`)
+  return found
+}
+
 async function render(view: ReactNode) {
   const router = createRouter({
     routeTree: createRootRoute({ component: () => view }),
@@ -59,11 +65,11 @@ it('expands a category total to its accounts', async () => {
   expect(toggle.getAttribute('aria-expanded')).toBe('true')
   const rows = [...container.querySelectorAll('a.account-row')]
   expect(rows).toHaveLength(2)
-  expect(rows[0].textContent).toContain('Reserve')
-  expect(rows[0].querySelector('.account-mark')).not.toBeNull()
-  expect(rows[0].textContent).toContain('Example')
-  expect(rows[0].textContent).not.toContain('cash')
-  expect(rows[1].textContent).toContain('+$1.00')
+  expect(row(rows, 0).textContent).toContain('Reserve')
+  expect(row(rows, 0).querySelector('.account-mark')).not.toBeNull()
+  expect(row(rows, 0).textContent).toContain('Example')
+  expect(row(rows, 0).textContent).not.toContain('cash')
+  expect(row(rows, 1).textContent).toContain('+$1.00')
 
   await unmount()
 })
@@ -78,8 +84,8 @@ it('shows a category of one account as that account, with nothing to expand', as
   expect(container.querySelector('button[aria-expanded]')).toBeNull()
   const rows = [...container.querySelectorAll('a.account-row')]
   expect(rows).toHaveLength(1)
-  expect(rows[0].textContent).toContain('Reserve')
-  expect(rows[0].querySelector('.account-mark')).not.toBeNull()
+  expect(row(rows, 0).textContent).toContain('Reserve')
+  expect(row(rows, 0).querySelector('.account-mark')).not.toBeNull()
 
   await unmount()
 })
@@ -91,9 +97,9 @@ it('lists every account without category rows when expanded', async () => {
   expect(container.querySelector('button[aria-expanded]')).toBeNull()
   const rows = [...container.querySelectorAll('a.account-row')]
   expect(rows).toHaveLength(2)
-  expect(rows[0].textContent).toContain('Reserve')
-  expect(rows[0].querySelector('.account-mark')).not.toBeNull()
-  expect(rows[1].textContent).toContain('+$1.00')
+  expect(row(rows, 0).textContent).toContain('Reserve')
+  expect(row(rows, 0).querySelector('.account-mark')).not.toBeNull()
+  expect(row(rows, 1).textContent).toContain('+$1.00')
 
   await unmount()
 })

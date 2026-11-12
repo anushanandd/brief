@@ -2,7 +2,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
-import { useFinance } from '../../hooks/use-finance'
+import { snapshotKey, useFinance } from '../../hooks/use-finance'
 import { useFinanceEdits } from '../../hooks/use-finance-edits'
 import {
   linkProviderNames,
@@ -114,7 +114,7 @@ export function ConnectionsSection() {
   const refresh = useRefreshFinance()
   const queryClient = useQueryClient()
   const connections = useQuery({
-    queryKey: ['provider-connections', finance.data?.revision],
+    queryKey: ['provider-connections', ...snapshotKey(finance.data)],
     queryFn: getProviderConnections,
   })
   const integrationStatus = finance.integrationStatus
@@ -317,7 +317,39 @@ export function ConnectionsSection() {
       <PlaidOptions configured={configured('plaid')} />
       <AppleWalletOption />
       <ResearchOption />
+      <CardCatalogOption />
     </SettingsSection>
+  )
+}
+
+/** The open card benefits catalog, downloaded whole so the request names no card. */
+function CardCatalogOption() {
+  const finance = useFinance()
+  const { updateSettings } = useFinanceEdits()
+  const settings = financeSettings(finance.data)
+  return (
+    <SettingsCard>
+      <SettingsRow
+        id="card-catalog"
+        title="Card benefits catalog"
+        description="Downloads the open catalog of card benefits to apply each card's rules. The request names no card."
+      >
+        <SettingsSwitch
+          labelledBy="card-catalog-title"
+          describedBy="card-catalog-description"
+          checked={!settings.cardCatalogOff}
+          disabled={!isTauri() || Boolean(finance.data?.recovery)}
+          onCheckedChange={(checked) =>
+            void updateSettings((current) => ({ ...current, cardCatalogOff: !checked })).catch(
+              (error) =>
+                toast.error('Could not save the catalog setting', {
+                  description: errorMessage(error),
+                }),
+            )
+          }
+        />
+      </SettingsRow>
+    </SettingsCard>
   )
 }
 
@@ -481,7 +513,8 @@ function CredentialForm({ provider, done }: { provider: ProviderDefinition; done
     try {
       const saved: Credentials = { clientId: '' }
       provider.fields.forEach(({ key }, index) => {
-        saved[key] = values[index]
+        // A field left untouched was never typed in: it saves empty, as its input shows.
+        saved[key] = values[index] ?? ''
       })
       const status = await saveIntegrationCredentials(provider.id, saved)
       queryClient.setQueryData(['integration-status'], status)

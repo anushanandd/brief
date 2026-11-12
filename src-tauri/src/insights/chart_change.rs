@@ -10,7 +10,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use super::calendar;
-use super::changes::Window;
+use super::period_changes::Window;
 use super::totals::{group_series_id, GroupHistory};
 use crate::finance_contract::{Point, Snapshot};
 use crate::numeric::round2;

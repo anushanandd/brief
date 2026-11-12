@@ -5,6 +5,8 @@ use super::*;
 
 /// How much of each page research keeps: enough to quote terms, not a whole site.
 pub const PAGE_CHARACTERS: usize = 6_000;
+/// A card's terms page lists every benefit, so more of it is read.
+pub const TERMS_CHARACTERS: usize = 40_000;
 /// Pages per search; the review sheet shows each.
 const RESULTS: usize = 3;
 
@@ -47,8 +49,13 @@ struct Result_ {
     published_date: Option<String>,
 }
 
-/// The pages in an Exa response, each kept to an https URL and capped text.
-pub(crate) fn pages(body: &[u8]) -> Result<Vec<Page>, String> {
+#[cfg(test)]
+fn pages(body: &[u8]) -> Result<Vec<Page>, String> {
+    pages_up_to(body, PAGE_CHARACTERS)
+}
+
+/// The pages in an Exa response, each kept to an https URL and `characters` of text.
+fn pages_up_to(body: &[u8], characters: usize) -> Result<Vec<Page>, String> {
     let results: Results =
         serde_json::from_slice(body).map_err(|_| "Exa returned a response Brief can't read")?;
     Ok(results
@@ -62,7 +69,7 @@ pub(crate) fn pages(body: &[u8]) -> Result<Vec<Page>, String> {
                 .text
                 .unwrap_or_default()
                 .chars()
-                .take(PAGE_CHARACTERS)
+                .take(characters)
                 .collect(),
             published: result
                 .published_date
@@ -82,6 +89,7 @@ impl Providers {
         credentials: &ExaCredentials,
         path: &str,
         body: Value,
+        characters: usize,
     ) -> Result<Vec<Page>, String> {
         let response = self
             .http
@@ -104,7 +112,7 @@ impl Providers {
         let body = http::response_bytes(response, http::MAX_PROVIDER_RESPONSE_BYTES)
             .await
             .map_err(|error| error.to_string())?;
-        pages(&body)
+        pages_up_to(&body, characters)
     }
 
     async fn exa_search_with(
@@ -122,6 +130,7 @@ impl Providers {
                 "numResults": results,
                 "contents": { "text": { "maxCharacters": PAGE_CHARACTERS } },
             }),
+            PAGE_CHARACTERS,
         )
         .await
     }
@@ -134,11 +143,29 @@ impl Providers {
 
     /// Reads pages by URL, as the monthly re-check of rule sources does.
     pub async fn exa_contents(&self, urls: &[String]) -> Result<Vec<Page>, String> {
+        self.exa_contents_up_to(urls, PAGE_CHARACTERS).await
+    }
+
+    /// Reads one card's terms page, which runs longer than a program's.
+    pub async fn exa_terms_page(&self, url: &str) -> Result<Page, String> {
+        self.exa_contents_up_to(&[url.to_owned()], TERMS_CHARACTERS)
+            .await?
+            .into_iter()
+            .find(|page| !page.text.is_empty())
+            .ok_or_else(|| "Exa returned no text for this page".into())
+    }
+
+    async fn exa_contents_up_to(
+        &self,
+        urls: &[String],
+        characters: usize,
+    ) -> Result<Vec<Page>, String> {
         let credentials = self.exa_credentials()?;
         self.exa_post(
             &credentials,
             "/contents",
-            json!({ "urls": urls, "text": { "maxCharacters": PAGE_CHARACTERS } }),
+            json!({ "urls": urls, "text": { "maxCharacters": characters } }),
+            characters,
         )
         .await
     }

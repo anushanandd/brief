@@ -26,8 +26,8 @@ const trip = (id: string, start: string, end: string, flew: boolean) => ({
   ongoing: false,
   flew,
   stops: [
-    { city: 'Zürich', region: 'ZH', country: 'CH', purchases: 3, first: start },
-    { city: 'Berlin', region: '16', country: 'DE', purchases: 2, first: end },
+    { city: 'Lisbon', region: '14', country: 'PT', purchases: 3, first: start },
+    { city: 'Madrid', region: '29', country: 'ES', purchases: 2, first: end },
   ],
 })
 
@@ -50,16 +50,16 @@ it('opens Trips as a year: its calendar, a row per trip, and places', async () =
   expect(html).toMatch(/<span>Flown<\/span><strong>1<\/strong>/)
   // The year is a calendar: each day away opens its trip, a band from its first day to its last.
   expect(html).toContain('aria-label="Days away in 2026"')
-  expect(html).toContain('aria-label="Aug 10: Switzerland &amp; Germany"')
+  expect(html).toContain('aria-label="Aug 10: Portugal &amp; Spain"')
   expect(html).toContain('data-command="trips.open.a"')
   expect(html).toContain('trips-day is-away is-run-start')
   expect(html).toContain('class="trips-day is-future"')
   // A row per trip: named and flagged by its countries, its days as bars, its cost.
   expect(html).toContain('aria-label="Trips in 2026"')
   expect(html).toContain('href="/insights?trip=a"')
-  expect(html).toContain('🇨🇭🇩🇪')
-  expect(html).toContain('Aug 10 – Aug 12 · 3 days · Zürich, Berlin · Flown')
-  expect(html).toContain('aria-label="Switzerland &amp; Germany day by day"')
+  expect(html).toContain('🇵🇹🇪🇸')
+  expect(html).toContain('Aug 10 – Aug 12 · 3 days · Lisbon, Madrid · Flown')
+  expect(html).toContain('aria-label="Portugal &amp; Spain day by day"')
   expect(html).toContain('$40.00 a day')
   // Places count each city once per trip.
   expect(html).toContain('aria-label="Places in 2026"')
@@ -81,23 +81,23 @@ it('opens one trip: its money day by day, purchases, route, and split, stepping 
     },
   }
   const html = await renderRoute('/insights?trip=a')
-  expect(html).toContain('aria-current="page">Switzerland &amp; Germany')
+  expect(html).toContain('aria-current="page">Portugal &amp; Spain')
   expect(html).toContain('href="/insights">Trips')
   expect(html).toContain('3 days · $40.00 a day · 1 purchase · Flown · Abroad')
   // Rust summed each day; the biggest one is named with its purchases.
   expect(html).toContain(
-    'aria-label="Switzerland &amp; Germany day by day: most on Mon, Aug 10, $80.00"',
+    'aria-label="Portugal &amp; Spain day by day: most on Mon, Aug 10, $80.00"',
   )
   expect(html).toContain('Most on Monday, Aug 10: $80.00 over 2 purchases.')
   expect(html).toContain('>Purchases</h2>')
   // The route out from home in the order it was reached, and where the money went.
   expect(html).toContain('aria-label="Stops"')
-  expect(html).toContain('Zürich, Switzerland')
-  expect(html).toContain('aria-label="Switzerland &amp; Germany by category"')
+  expect(html).toContain('Lisbon, Portugal')
+  expect(html).toContain('aria-label="Portugal &amp; Spain by category"')
   expect(html).not.toContain('airport')
   // Earlier and later trips are a step away; this is the latest.
   expect(html).toContain('data-command="trips.earlier"')
-  expect(html).toContain('aria-label="Earlier: Switzerland &amp; Germany"')
+  expect(html).toContain('aria-label="Earlier: Portugal &amp; Spain"')
   expect(html).toMatch(/data-command="trips.later"[^>]*disabled=""/)
 })
 
@@ -111,7 +111,7 @@ it('shows the trip under way ahead of the year', async () => {
   }
   const html = await renderRoute('/insights')
   expect(html).toContain('Away now')
-  expect(html).toContain('3 days so far · since Sep 28 · Zürich, Berlin')
+  expect(html).toContain('3 days so far · since Sep 28 · Lisbon, Madrid')
   expect(html).toContain('<span>Spent so far</span>')
   expect(html).toContain('href="/insights?trip=now"')
 })
@@ -246,6 +246,15 @@ it('opens a person: their figures, tagged activity, trips, and details behind a 
   expect(html).toContain('href="/insights?view=people"')
 })
 
+it("leaves a person's sent and received unknown, not $0, before Rust summarizes them", async () => {
+  scenario.people = people
+  const html = await renderRoute('/insights?view=people&person=person:a')
+  expect(html).toContain('>Example Person A</h2>')
+  expect(html).toMatch(/<span>Sent<\/span><strong[^>]*><span class="sensitive-value">—</)
+  expect(html).toMatch(/<span>Received<\/span><strong[^>]*><span class="sensitive-value">—</)
+  expect(html).not.toMatch(/<span>(Sent|Received)<\/span><strong[^>]*><span[^>]*>\$0\.00/)
+})
+
 it('shows who went on a trip, with P to change them', async () => {
   scenario.people = people
   scenario.insights = {
@@ -266,7 +275,7 @@ it('tells chapters as a timeline and a list, each opening what defines it', asyn
   scenario.insights = { evidence: evidenceFixture }
   const html = await renderRoute('/insights?view=chapters')
   expect(html).toContain('aria-current="page">Chapters')
-  expect(html).toContain('Example Employer · California · month 6')
+  expect(html).toContain('Example Employer · Oregon · month 6')
   expect(html).toContain('aria-label="Chapters over time"')
   expect(html).toContain('data-command="chapters.open.work:example"')
   expect(html).toContain('data-command="chapters.plan"')
@@ -291,4 +300,9 @@ it('shows what rules explain, with tiers and the Why chain', async () => {
   expect(html).toContain('href="https://bank.example/terms"')
   expect(html).toContain('Deposits were short in September 2026.')
   expect(html).toContain('Example fee waiver')
+  // A credit card no saved rules cover can have rules drafted for it.
+  const cards = html.slice(html.indexOf('>Card rules<'))
+  expect(cards).toContain('<strong>Other card</strong>')
+  expect(cards).toContain('data-command="cardRules.find.other"')
+  expect(cards).not.toContain('data-command="cardRules.find.selected"')
 })

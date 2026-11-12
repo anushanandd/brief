@@ -1,6 +1,10 @@
 //! Plaid Statements: the PDF statements a bank issued for an item's checking and savings
 //! accounts, exactly as the bank produced them. Only items the user added statements to through
 //! Link are read. Brief stores the files; it does not read figures from them.
+//!
+//! Statements are added through Link's update mode, so the Item and its accounts stay, and are
+//! offered only where Plaid lists Statements among the institution's products and the
+//! connection holds a checking or savings account.
 use sha2::{Digest, Sha256};
 
 use super::*;

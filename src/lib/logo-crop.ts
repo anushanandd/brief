@@ -15,11 +15,20 @@ const ARTWORK_DIFFERENCE = 96
 export function logoCrop(pixels: Uint8ClampedArray, size: number): LogoCrop | undefined {
   const at = (x: number, y: number) => (y * size + x) * 4
   const corners = [at(0, 0), at(size - 1, 0), at(0, size - 1), at(size - 1, size - 1)]
-  const [r, g, b, a] = pixels.slice(corners[0], corners[0] + 4)
+  // A channel past the end reads NaN, as it did before the index was checked: the corner
+  // can't read as light, so a short buffer gets no crop.
+  const channel = (index: number) => pixels[index] ?? NaN
+  const [r, g, b, a] = [channel(0), channel(1), channel(2), channel(3)]
   const differs = (index: number) =>
-    Math.abs(pixels[index] - r) + Math.abs(pixels[index + 1] - g) + Math.abs(pixels[index + 2] - b)
+    Math.abs(channel(index) - r) +
+    Math.abs(channel(index + 1) - g) +
+    Math.abs(channel(index + 2) - b)
   const light = Math.min(r, g, b) >= 235 && Math.max(r, g, b) - Math.min(r, g, b) <= 12
-  if (a < 250 || !light || corners.some((index) => pixels[index + 3] < 250 || differs(index) >= 24))
+  if (
+    a < 250 ||
+    !light ||
+    corners.some((index) => channel(index + 3) < 250 || differs(index) >= 24)
+  )
     return undefined
   let minX = size
   let minY = size

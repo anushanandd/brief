@@ -1,3 +1,15 @@
+//! The app's one live market service. While the window is visible and Alpaca is configured, it
+//! streams the held symbols, reprices positions, and sends `MarketProjection` updates with the
+//! account totals at live values and each chart's change. Live prices overlay the committed
+//! snapshot and never rewrite it: the renderer applies an update only when its `revision` and
+//! `updatedAt` match the snapshot it holds (`compatibleMarketProjection`).
+//!
+//! The startup frame and each stream's first frame draw from the same cached bars, so a
+//! restarted stream keeps its detail. The fresh week and month arrive as a separate message;
+//! until then the renderer keeps the saved frame's changes rather than show one read from a
+//! partial line. The Holdings chart has its own pipeline and never replaces these
+//! subscriptions.
+
 mod intraday;
 
 use std::{collections::BTreeMap, time::Duration as StdDuration};
@@ -73,7 +85,7 @@ fn frame(
     today: chrono::NaiveDate,
     now: DateTime<Utc>,
 ) -> Result<Value, String> {
-    let mut response = market_payload(snapshot, settings, market)?;
+    let mut response = market_payload(snapshot, settings, market, today)?;
     if let Some((view, bars)) = saved {
         with_bars(
             &mut response,
@@ -168,30 +180,33 @@ fn market_payload(
     snapshot: &Snapshot,
     settings: &crate::settings::FinanceSettings,
     market: &providers::MarketSnapshots,
+    today: chrono::NaiveDate,
 ) -> Result<Value, String> {
     let mut response = json(market)?;
     response["projection"] = projection_json(
-        &project(snapshot, settings, &market.snapshots, false)?,
+        &project(snapshot, settings, &market.snapshots, false, today)?,
         settings,
     )?;
-    response["chartSeries"] = json(market_chart_series(snapshot, settings, market)?)?;
+    response["chartSeries"] = json(market_chart_series(snapshot, settings, market, today)?)?;
     Ok(response)
 }
 
 /// The committed valuation at these quotes, with the user's closed and manual accounts
-/// applied as the view applies them, so live totals agree with saved ones.
+/// applied as the view applies them, so live totals agree with saved ones. Manual accounts
+/// take their value on `today`.
 fn project(
     snapshot: &Snapshot,
     settings: &crate::settings::FinanceSettings,
     quotes: &BTreeMap<String, providers::MarketSnapshot>,
     historical: bool,
+    today: chrono::NaiveDate,
 ) -> Result<MarketProjection, String> {
     let mut projection = if historical {
         financial_engine::apply_historical_market_snapshots(snapshot, quotes)?
     } else {
         financial_engine::apply_market_snapshots(snapshot, quotes)?
     };
-    financial_engine::manual::adjust_projection(&mut projection, snapshot, settings);
+    financial_engine::manual::adjust_projection(&mut projection, snapshot, settings, today);
     Ok(projection)
 }
 
@@ -367,6 +382,7 @@ fn market_chart_series(
     snapshot: &Snapshot,
     settings: &crate::settings::FinanceSettings,
     market: &providers::MarketSnapshots,
+    today: chrono::NaiveDate,
 ) -> Result<BTreeMap<String, Vec<Value>>, String> {
     let close_time = market
         .snapshots
@@ -391,7 +407,7 @@ fn market_chart_series(
                 (symbol.clone(), previous)
             })
             .collect::<BTreeMap<_, _>>();
-        let projection = project(snapshot, settings, &closes, true)?;
+        let projection = project(snapshot, settings, &closes, true, today)?;
         for (id, point) in market_chart_values(&projection, settings, as_of.timestamp()) {
             series.entry(id).or_default().push(point);
         }
@@ -403,7 +419,7 @@ fn market_chart_series(
         .and_then(|value| DateTime::parse_from_rfc3339(value).ok())
         .filter(|as_of| close_time.is_none_or(|close| *as_of > close))
     {
-        let projection = project(snapshot, settings, &market.snapshots, false)?;
+        let projection = project(snapshot, settings, &market.snapshots, false, today)?;
         for (id, point) in market_chart_values(&projection, settings, as_of.timestamp()) {
             series.entry(id).or_default().push(point);
         }
@@ -589,11 +605,14 @@ pub(crate) async fn start_market_stream(
                 let storage = state.storage()?;
                 let committed = &storage.data.snapshot;
                 let settings = &storage.data.settings;
-                let projection = project(committed, settings, &tick.market.snapshots, false)?;
+                let today = chrono::Local::now().date_naive();
+                let projection =
+                    project(committed, settings, &tick.market.snapshots, false, today)?;
                 let chart_point = if let (Some(as_of), Some(chart_snapshots)) =
                     (tick.chart_as_of, tick.chart_snapshots)
                 {
-                    let chart_projection = project(committed, settings, &chart_snapshots, true)?;
+                    let chart_projection =
+                        project(committed, settings, &chart_snapshots, true, today)?;
                     DateTime::parse_from_rfc3339(&as_of).ok().map(|time| {
                         market_chart_values(&chart_projection, settings, time.timestamp())
                     })

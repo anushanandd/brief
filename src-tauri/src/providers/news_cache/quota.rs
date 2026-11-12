@@ -5,7 +5,8 @@ use super::*;
 pub(super) const DAILY_REQUESTS: usize = 25;
 
 impl NewsCache {
-    pub(super) fn budget(&self, now: i64) -> Result<(usize, Option<String>), String> {
+    /// Requests left today and any cooldown in force.
+    pub(crate) fn budget(&self, now: i64) -> Result<(usize, Option<String>), String> {
         let used: usize = self
             .0
             .query_row(

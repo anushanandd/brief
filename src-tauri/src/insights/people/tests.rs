@@ -31,7 +31,12 @@ fn read(
     annotations: &BTreeMap<String, Annotation>,
     people: &[Person],
 ) -> Vec<Transaction> {
-    apply(&mut transactions, std::iter::empty(), annotations);
+    apply(
+        &mut transactions,
+        std::iter::empty(),
+        annotations,
+        &crate::insights::benefits::Catalog::default(),
+    );
     assign(&mut transactions, people);
     transactions
 }

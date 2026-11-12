@@ -1,7 +1,11 @@
-//! Where a purchase was made: the bank's own descriptor first, the provider's location second.
+//! Where an in-person purchase was made: the issuer's street address first, unless it is a
+//! billing office; then the bank's own descriptor; then the provider's location, which is never
+//! changed. A remote purchase has no place, since where it bills from says nothing about where
+//! the cardholder was. Plaid's location is the address of the merchant Plaid named, so it isn't
+//! used once the records contradict that merchant.
 //!
 //! Card descriptors end in the merchant's city and a state or country code, often run together
-//! with a truncated merchant name ("AplPay COUNTER POINTMENLO PARK CA"), so the city is the
+//! with a truncated merchant name ("AplPay EXAMPLE CAFE RSPRINGFIELD IL"), so the city is the
 //! longest known city name ending the text. Providers send no location for most purchases
 //! abroad, and sometimes a chain's corporate address instead of the store's, while the
 //! descriptor names the store's city. City names and coordinates come from GeoNames (CC BY 4.0),
@@ -354,7 +358,8 @@ fn read_descriptor(descriptor: &str, uncoded: bool) -> (String, Option<Descripto
         };
         return (name(body.len()), Some(place));
     }
-    // An unexpected code (Amex writes BERLIN BE): the most populous city of that name anywhere.
+    // An unexpected code (an issuer writes BERLIN BE): the most populous city of that name
+    // anywhere.
     match city_at_end(body, |city| city.population >= FALLBACK_POPULATION) {
         Some((city, start)) => (
             name(start),

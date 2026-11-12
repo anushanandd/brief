@@ -211,9 +211,9 @@ pub(crate) fn summary() -> Value {
     summary.prices_as_of = Some("2026-08-31T20:00:00+00:00".into());
     let typed: Snapshot = serde_json::from_value(snapshot.clone()).unwrap();
     summary.report = Some(reconcile::report(&typed, &closes, period.start, None));
-    let launch = story(
+    let headline = story(
         "NVDA",
-        "Nvidia Wins Supply Agreement For Data Center Chips",
+        "NVDA: a synthetic preview story",
         "2026-08-31T12:30:00Z",
         vec![NewsTag::Deal],
     );
@@ -252,7 +252,7 @@ pub(crate) fn summary() -> Value {
     let evidence = vec![
         Evidence {
             ticker: "NVDA".into(),
-            articles: vec![launch],
+            articles: vec![headline],
             filings: Vec::new(),
             own: BTreeMap::from([(day("2026-08-31"), (1.73, 2.6))]),
         },
@@ -260,7 +260,7 @@ pub(crate) fn summary() -> Value {
             ticker: "MSFT".into(),
             articles: vec![story(
                 "MSFT",
-                "Microsoft Names New Head Of Cloud Business",
+                "MSFT: a synthetic preview story",
                 "2026-08-19T13:00:00Z",
                 vec![NewsTag::Leadership],
             )],
@@ -330,9 +330,9 @@ pub(crate) fn summary() -> Value {
         .flat_map(|holding| holding.articles.iter().cloned())
         .chain([
             wire(
-                "Nvidia climbs after winning a data center supply deal",
+                "$NVDA climbs in a synthetic preview headline",
                 "2026-08-31T17:05:00Z",
-                "https://example.com/preview/nvidia-climbs",
+                "https://example.com/preview/climbs",
             ),
             wire(
                 "Stocks rise as tech rallies into month-end",
@@ -348,6 +348,8 @@ pub(crate) fn summary() -> Value {
             None,
             &securities,
             &stories,
+            &BTreeMap::new(),
+            &summary.events,
             &summary.session,
             period.end,
         )
@@ -371,11 +373,10 @@ fn the_preview_summary_is_complete_with_its_brief_and_headlines() {
         .iter()
         .map(|headline| headline["title"].as_str().unwrap())
         .collect();
+    assert_eq!(titles, ["$NVDA climbs in a synthetic preview headline"]);
+    // The market's wrap has its own line.
     assert_eq!(
-        titles,
-        [
-            "Nvidia climbs after winning a data center supply deal",
-            "Stocks rise as tech rallies into month-end"
-        ]
+        preview["brief"]["market"]["title"],
+        "Stocks rise as tech rallies into month-end"
     );
 }

@@ -32,7 +32,7 @@ it("groups accounts under Rust's totals in its order, each group's accounts larg
     ['brokerage', 'Brokerage', 0.25, null],
     ['credit', 'Credit cards', -20.1, null],
   ])
-  expect(groups[0].accounts.map(({ id }) => id)).toEqual(['savings', 'checking'])
+  expect(groups[0]?.accounts.map(({ id }) => id)).toEqual(['savings', 'checking'])
 })
 
 it('names each account type, and the spending cards apart', () => {

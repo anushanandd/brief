@@ -213,7 +213,9 @@ pub fn agenda(inputs: Inputs<'_>) -> Vec<AgendaItem> {
             item.amount = Some(event.amount);
             item.estimated = true;
             item.frequency = Some(event.frequency);
-            if event.amount_low != event.amount_high {
+            if crate::numeric::minor_units(event.amount_low)
+                != crate::numeric::minor_units(event.amount_high)
+            {
                 item.amount_low = Some(event.amount_low);
                 item.amount_high = Some(event.amount_high);
             }

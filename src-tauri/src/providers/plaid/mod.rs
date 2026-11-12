@@ -1,3 +1,16 @@
+//! Plaid: bank, card, and investment connections (Items), their accounts and transactions.
+//!
+//! Balances come from Plaid's cached `/accounts/get`; the billed `/accounts/balance/get` runs
+//! only on an explicit live-balance refresh. `sync::billed_endpoints` decides every billed
+//! call, and default options and the background refresh make none, which a test holds.
+//!
+//! Transactions are requested with the institution's original descriptor, in Plaid's v2
+//! taxonomy; a cache saved in another format (`PLAID_TRANSACTION_FORMAT`) is rebuilt once from
+//! a fresh cursor. Balance history claims the whole requested window only after Plaid reports
+//! its historical pull complete; until then it starts at the earliest transaction received. A
+//! transaction in another currency is left out of activity and spending with a sync warning,
+//! and a cached row naming no currency is taken as USD. Liabilities and Investments
+//! Transactions failing is a notice, never a failed refresh: holdings still commit.
 use super::snaptrade::{
     snaptrade_active_connection_ids, snaptrade_connections, snaptrade_link_status,
 };

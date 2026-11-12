@@ -32,43 +32,40 @@ fn reads_a_city_run_into_a_truncated_merchant_name() {
         city("US", "CA", "Cupertino")
     );
     assert_eq!(
-        place("EXAMPLE SUBSCRIPTIOPORTLAND OR"),
-        city("US", "CA", "Portland")
+        place("EXAMPLE SUBSCRIPTIOLAS VEGAS NV"),
+        city("US", "NV", "Las Vegas")
     );
 }
 
 #[test]
 fn reads_cities_abroad_by_their_country_code_and_local_spelling() {
     assert_eq!(
-        place("AplPay EXAMPLE SHOP INTERLAKEN CH"),
-        Some(("CH".into(), Some("BE".into()), Some("Interlaken".into())))
+        place("AplPay EXAMPLE SHOP SEVILLA ES"),
+        Some(("ES".into(), Some("51".into()), Some("Sevilla".into())))
     );
     assert_eq!(
-        place("AplPay EXAMPLE KIOSK ZÜRICH CH")
+        place("AplPay EXAMPLE KIOSK MÁLAGA ES")
             .unwrap()
             .2
             .as_deref(),
-        Some("Zürich")
+        Some("Málaga")
     );
     assert_eq!(
-        place("AplPay EXAMPLE KIOSK ZUERICH CH")
+        place("AplPay EXAMPLE KIOSK MALAGA ES")
             .unwrap()
             .2
             .as_deref(),
-        Some("Zürich")
+        Some("Málaga")
     );
-    // DE is Delaware and Germany: the reading with a city wins.
-    let munich = place("AplPay SUMUP*EXAMPLE MUENCHEN DE").unwrap();
+    // DE is Delaware and Germany: the reading with a city wins, spelled without its umlaut.
+    let cologne = place("AplPay SUMUP*EXAMPLE KOELN DE").unwrap();
     assert_eq!(
-        (munich.0.as_str(), munich.2.as_deref()),
-        ("DE", Some("Munich"))
+        (cologne.0.as_str(), cologne.2.as_deref()),
+        ("DE", Some("Köln"))
     );
     // An unexpected code still finds a large city of that name.
-    let berlin = place("AplPay EXAMPLE STAND BERLIN BE").unwrap();
-    assert_eq!(
-        (berlin.0.as_str(), berlin.2.as_deref()),
-        ("DE", Some("Berlin"))
-    );
+    let lyon = place("AplPay EXAMPLE STAND LYON BE").unwrap();
+    assert_eq!((lyon.0.as_str(), lyon.2.as_deref()), ("FR", Some("Lyon")));
 }
 
 #[test]
@@ -142,7 +139,7 @@ fn the_provider_location_fills_in_what_the_descriptor_leaves_out() {
     // No descriptor place: the provider's, at the city's centre.
     let bank = resolve(&transaction(
         Some("EXAMPLE STORE"),
-        json!({ "city": "Austin", "region": "CO" }),
+        json!({ "city": "Austin", "region": "TX" }),
     ))
     .unwrap();
     assert_eq!(
@@ -151,7 +148,7 @@ fn the_provider_location_fills_in_what_the_descriptor_leaves_out() {
     );
     assert!(bank
         .coordinates()
-        .is_some_and(|(lat, _)| (lat - 39.74).abs() < 0.1));
+        .is_some_and(|(lat, _)| (lat - 30.27).abs() < 0.1));
     // Neither: no place.
     assert_eq!(
         resolve(&transaction(Some("EXAMPLE STORE"), json!(null))),
@@ -208,7 +205,7 @@ fn the_issuers_street_address_names_the_store_in_the_descriptors_city() {
 fn an_issuer_address_in_another_city_is_where_the_merchant_bills_from() {
     let resolved = resolve(&with_issuer(
         "AplPay EXAMPLE MEX NEWPORT BEACH CA",
-        json!({"address": "1401 EXAMPLE ST 500", "city": "AUSTIN", "region": "CO"}),
+        json!({"address": "1401 EXAMPLE ST 500", "city": "AUSTIN", "region": "TX"}),
         json!(null),
     ))
     .unwrap();

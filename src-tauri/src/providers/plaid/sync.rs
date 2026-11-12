@@ -14,6 +14,40 @@ const SYNC_PAGES: usize = 100;
 const SYNC_ATTEMPTS: usize = 3;
 const MUTATED_DURING_PAGINATION: &str = "TRANSACTIONS_SYNC_MUTATION_DURING_PAGINATION";
 
+/// Cached balances, free with Transactions.
+pub(super) const CACHED_BALANCES: &str = "/accounts/get";
+/// Real-time balances, billed per call.
+pub(super) const LIVE_BALANCES: &str = "/accounts/balance/get";
+/// Recurring Transactions, a subscription per Item.
+pub(super) const RECURRING: &str = "/transactions/recurring/get";
+/// Liabilities, billed per Item.
+pub(super) const LIABILITIES: &str = "/liabilities/get";
+/// Investments Transactions, a subscription per investment Item.
+pub(super) const INVESTMENT_TRANSACTIONS: &str = "/investments/transactions/get";
+
+/// The billed endpoints a refresh with `options` may call; a refresh calls no other. Every
+/// billed request below is gated on this set, so it is the one place that decides.
+pub(super) fn billed_endpoints(options: PlaidSyncOptions) -> BTreeSet<&'static str> {
+    [
+        (options.live_balances, LIVE_BALANCES),
+        (options.recurring, RECURRING),
+        (options.liabilities, LIABILITIES),
+        (options.investment_transactions, INVESTMENT_TRANSACTIONS),
+    ]
+    .into_iter()
+    .filter_map(|(asked, endpoint)| asked.then_some(endpoint))
+    .collect()
+}
+
+/// Where a refresh with `options` reads balances.
+pub(super) fn balance_endpoint(options: PlaidSyncOptions) -> &'static str {
+    if billed_endpoints(options).contains(LIVE_BALANCES) {
+        LIVE_BALANCES
+    } else {
+        CACHED_BALANCES
+    }
+}
+
 impl Providers {
     pub async fn sync_plaid(
         &self,
@@ -124,7 +158,7 @@ impl Providers {
         credentials: &PlaidCredentials,
         access_token: &str,
     ) -> Result<(Vec<Value>, Vec<Value>), ProviderError> {
-        const ENDPOINT: &str = "/investments/transactions/get";
+        const ENDPOINT: &str = INVESTMENT_TRANSACTIONS;
         const PAGE: usize = 500;
         let invalid = || ProviderError::invalid_response("Plaid", ENDPOINT, 1);
         let today = Utc::now().date_naive();
@@ -210,12 +244,12 @@ struct ItemSync<'a> {
 }
 
 /// A finished walk of `/transactions/sync`: the ledger as Plaid now has it.
-struct SyncedTransactions {
-    cursor: String,
-    transactions: BTreeMap<String, Value>,
-    update_status: Option<String>,
-    requests: usize,
-    retries: usize,
+pub(super) struct SyncedTransactions {
+    pub(super) cursor: String,
+    pub(super) transactions: BTreeMap<String, Value>,
+    pub(super) update_status: Option<String>,
+    pub(super) requests: usize,
+    pub(super) retries: usize,
 }
 
 /// The Item's cash and card accounts, with the ids the other products may ask about.
@@ -265,10 +299,10 @@ impl ItemSync<'_> {
             data.transaction_history_start
                 .extend(cash.ids.iter().map(|id| (id.clone(), start.clone())));
         }
-        if self.options.recurring && !cash.ids.is_empty() {
+        if self.billed(RECURRING) && !cash.ids.is_empty() {
             self.sync_recurring(&mut data).await;
         }
-        if self.options.liabilities && !cash.credit_ids.is_empty() {
+        if self.billed(LIABILITIES) && !cash.credit_ids.is_empty() {
             self.sync_liabilities(&mut data, &cash.credit_ids).await;
         }
         Ok(data)
@@ -294,7 +328,7 @@ impl ItemSync<'_> {
         }
         data.holdings = required_array(&investments, "holdings").map_err(|_| invalid())?;
         data.securities = required_array(&investments, "securities").map_err(|_| invalid())?;
-        if self.options.investment_transactions {
+        if self.billed(INVESTMENT_TRANSACTIONS) {
             match self
                 .providers
                 .plaid_investment_transactions(self.credentials, &self.item.access_token)
@@ -359,87 +393,10 @@ impl ItemSync<'_> {
             .filter(|_| current_format)
             .filter_map(|transaction| Some((transaction_id(transaction)?, transaction.clone())))
             .collect();
-        let (mut requests, mut retries) = (0, 0);
-        for attempt in 1..=SYNC_ATTEMPTS {
-            match self
-                .walk_cursor(
-                    saved_cursor.clone(),
-                    saved.clone(),
-                    &mut requests,
-                    &mut retries,
-                )
-                .await
-            {
-                Err(error)
-                    if attempt < SYNC_ATTEMPTS
-                        && error.code() == Some(MUTATED_DURING_PAGINATION) =>
-                {
-                    continue;
-                }
-                result => return result,
-            }
-        }
-        unreachable!("the last attempt returns")
-    }
-
-    /// One pass over `/transactions/sync` from `cursor`, applying added, modified, and removed
-    /// rows to `transactions` until Plaid has no more.
-    async fn walk_cursor(
-        &self,
-        mut cursor: Option<String>,
-        mut transactions: BTreeMap<String, Value>,
-        requests: &mut usize,
-        retries: &mut usize,
-    ) -> Result<SyncedTransactions, ProviderError> {
-        const ENDPOINT: &str = "/transactions/sync";
-        let invalid = || self.invalid(ENDPOINT);
-        let mut seen: BTreeSet<String> = cursor.iter().cloned().collect();
-        for page in 0..SYNC_PAGES {
-            let mut request = json!({
-                "access_token": &self.item.access_token,
-                "count": 500,
-                "options": {
-                    "personal_finance_category_version": PLAID_CATEGORY_TAXONOMY,
-                    "include_original_description": true
-                }
-            });
-            if let Some(value) = cursor.as_deref() {
-                request["cursor"] = Value::String(value.into());
-            }
-            *requests += 1;
-            let (sync, request_retries) = self.read(ENDPOINT, request).await?;
-            *retries += request_retries;
-            let update_status = sync
-                .get("transactions_update_status")
-                .and_then(Value::as_str)
-                .map(str::to_owned);
-            for transaction in
-                required_arrays(&sync, &["added", "modified"]).map_err(|_| invalid())?
-            {
-                if let Some(id) = transaction_id(&transaction) {
-                    transactions.insert(id, transaction);
-                }
-            }
-            for removed in required_array(&sync, "removed").map_err(|_| invalid())? {
-                if let Some(id) = transaction_id(&removed) {
-                    transactions.remove(&id);
-                }
-            }
-            let next_cursor = string_field(&sync, "next_cursor").map_err(|_| invalid())?;
-            let has_more = bool_field(&sync, "has_more").map_err(|_| invalid())?;
-            validate_plaid_page(&next_cursor, has_more, page, &mut seen).map_err(|_| invalid())?;
-            if !has_more {
-                return Ok(SyncedTransactions {
-                    cursor: next_cursor,
-                    transactions,
-                    update_status,
-                    requests: *requests,
-                    retries: *retries,
-                });
-            }
-            cursor = Some(next_cursor);
-        }
-        Err(invalid())
+        walk_with_restarts(saved_cursor, saved, &self.item.access_token, |body| {
+            self.read(SYNC_ENDPOINT, body)
+        })
+        .await
     }
 
     /// Cached balances come free with Transactions and update when Plaid syncs the bank; a
@@ -447,7 +404,7 @@ impl ItemSync<'_> {
     /// response with the time it was fetched.
     async fn fetch_balances(&self) -> Result<(Value, String), ProviderError> {
         let mut request = json!({ "access_token": self.item.access_token });
-        if self.options.live_balances {
+        if self.balance_endpoint() == LIVE_BALANCES {
             request["options"] = json!({
                 "min_last_updated_datetime": (Utc::now() - Duration::minutes(15)).to_rfc3339()
             });
@@ -459,11 +416,12 @@ impl ItemSync<'_> {
     }
 
     fn balance_endpoint(&self) -> &'static str {
-        if self.options.live_balances {
-            "/accounts/balance/get"
-        } else {
-            "/accounts/get"
-        }
+        balance_endpoint(self.options)
+    }
+
+    /// Whether this refresh may call the billed `endpoint`.
+    fn billed(&self, endpoint: &str) -> bool {
+        billed_endpoints(self.options).contains(endpoint)
     }
 
     /// The cash and card accounts in a balances response, described for the projection.
@@ -499,7 +457,7 @@ impl ItemSync<'_> {
     async fn sync_recurring(&self, data: &mut PlaidData) {
         match self
             .read(
-                "/transactions/recurring/get",
+                RECURRING,
                 json!({ "access_token": &self.item.access_token }),
             )
             .await
@@ -523,7 +481,7 @@ impl ItemSync<'_> {
     async fn sync_liabilities(&self, data: &mut PlaidData, credit_ids: &[String]) {
         match self
             .read(
-                "/liabilities/get",
+                LIABILITIES,
                 json!({
                     "access_token": &self.item.access_token,
                     "options": { "account_ids": credit_ids }
@@ -696,6 +654,107 @@ pub(super) fn completion_status(retries: usize) -> String {
         1 => "Complete · 1 retry".into(),
         retries => format!("Complete · {retries} retries"),
     }
+}
+
+const SYNC_ENDPOINT: &str = "/transactions/sync";
+
+/// Walks the cursor from `cursor` over the `saved` rows, starting over from the same place (a
+/// bounded number of times) when Plaid reports the ledger changed under the walk, so a partial
+/// walk's pages never reach the result. `read` sends one request body to `/transactions/sync`
+/// and returns the response with its retries; requests and retries count across attempts.
+pub(super) async fn walk_with_restarts<F, Fut>(
+    cursor: Option<String>,
+    saved: BTreeMap<String, Value>,
+    access_token: &str,
+    mut read: F,
+) -> Result<SyncedTransactions, ProviderError>
+where
+    F: FnMut(Value) -> Fut,
+    Fut: std::future::Future<Output = Result<(Value, usize), ProviderError>>,
+{
+    let (mut requests, mut retries) = (0, 0);
+    let mut attempt = 1;
+    loop {
+        match walk_cursor(
+            cursor.clone(),
+            saved.clone(),
+            access_token,
+            &mut read,
+            &mut requests,
+            &mut retries,
+        )
+        .await
+        {
+            Err(error)
+                if attempt < SYNC_ATTEMPTS && error.code() == Some(MUTATED_DURING_PAGINATION) =>
+            {
+                attempt += 1;
+            }
+            result => return result,
+        }
+    }
+}
+
+/// One pass over `/transactions/sync` from `cursor`, applying added, modified, and removed
+/// rows to `transactions` until Plaid has no more.
+async fn walk_cursor<F, Fut>(
+    mut cursor: Option<String>,
+    mut transactions: BTreeMap<String, Value>,
+    access_token: &str,
+    read: &mut F,
+    requests: &mut usize,
+    retries: &mut usize,
+) -> Result<SyncedTransactions, ProviderError>
+where
+    F: FnMut(Value) -> Fut,
+    Fut: std::future::Future<Output = Result<(Value, usize), ProviderError>>,
+{
+    let invalid = || ProviderError::invalid_response("Plaid", SYNC_ENDPOINT, 1);
+    let mut seen: BTreeSet<String> = cursor.iter().cloned().collect();
+    for page in 0..SYNC_PAGES {
+        let mut request = json!({
+            "access_token": access_token,
+            "count": 500,
+            "options": {
+                "personal_finance_category_version": PLAID_CATEGORY_TAXONOMY,
+                "include_original_description": true
+            }
+        });
+        if let Some(value) = cursor.as_deref() {
+            request["cursor"] = Value::String(value.into());
+        }
+        *requests += 1;
+        let (sync, request_retries) = read(request).await?;
+        *retries += request_retries;
+        let update_status = sync
+            .get("transactions_update_status")
+            .and_then(Value::as_str)
+            .map(str::to_owned);
+        for transaction in required_arrays(&sync, &["added", "modified"]).map_err(|_| invalid())? {
+            if let Some(id) = transaction_id(&transaction) {
+                transactions.insert(id, transaction);
+            }
+        }
+        for removed in required_array(&sync, "removed").map_err(|_| invalid())? {
+            if let Some(id) = transaction_id(&removed) {
+                transactions.remove(&id);
+            }
+        }
+        let next_cursor = string_field(&sync, "next_cursor").map_err(|_| invalid())?;
+        let has_more = bool_field(&sync, "has_more").map_err(|_| invalid())?;
+        validate_plaid_page(&next_cursor, has_more, page, &mut seen).map_err(|_| invalid())?;
+        if !has_more {
+            return Ok(SyncedTransactions {
+                cursor: next_cursor,
+                transactions,
+                update_status,
+                requests: *requests,
+                retries: *retries,
+            });
+        }
+        cursor = Some(next_cursor);
+    }
+    Err(invalid())
 }
 
 pub(super) fn validate_plaid_page(

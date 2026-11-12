@@ -4,8 +4,8 @@
   scroll-margin-top: 24px;
 }
 .settings-table-scroll {
-  overflow-x: auto;
   margin-top: 12px;
+  container: source-times / inline-size;
 }
 .settings-account-table,
 .source-time-table {
@@ -119,6 +119,43 @@
 .source-time-table tbody th {
   min-width: 160px;
   font-weight: 600;
+  overflow-wrap: anywhere;
+}
+/* Source timestamps: a table while its five columns fit, otherwise each account becomes a block
+   of labeled times, so no column hides behind a sideways scroll. */
+@container source-times (width < 680px) {
+  .source-time-table,
+  .source-time-table tbody {
+    display: block;
+  }
+  .source-time-table thead {
+    display: none;
+  }
+  .source-time-table tr {
+    display: grid;
+    padding: 12px 0;
+    grid-template-columns: repeat(auto-fill, minmax(128px, 1fr));
+    gap: 8px 16px;
+    border-bottom: var(--hairline) solid var(--border-subtle);
+  }
+  .source-time-table tbody tr:last-child {
+    border-bottom: 0;
+  }
+  .source-time-table :is(th, td) {
+    display: grid;
+    height: auto;
+    padding: 0;
+    border-bottom: 0;
+    gap: 2px;
+  }
+  .source-time-table tbody th {
+    grid-column: 1 / -1;
+  }
+  .source-time-table td::before {
+    color: var(--text-tertiary);
+    font-size: var(--type-meta);
+    content: attr(data-label);
+  }
 }
 .logs-card .settings-table-scroll {
   margin-top: 8px;
@@ -542,9 +579,7 @@
   height: 28px;
   border-radius: var(--radius-control);
 }
-.settings-panel .settings-list-mark,
 .settings-panel .settings-account-name .transaction-mark,
-.settings-panel .settings-list-copy-marked .transaction-mark,
 .settings-panel .benefit-visibility-options .transaction-mark {
   width: 24px;
   height: 24px;
@@ -554,14 +589,12 @@
   width: 14px;
   height: 14px;
 }
-.settings-list-copy.settings-list-copy-marked,
 .settings-account-name {
   display: flex;
   min-width: 0;
   align-items: center;
   gap: 10px;
 }
-.settings-list-copy-marked > span:last-child,
 .settings-account-name > span:last-child {
   display: grid;
   min-width: 0;
@@ -699,18 +732,15 @@
   flex: none;
   color: var(--text-tertiary);
 }
-.settings-list-index {
-  width: 16px;
-  color: var(--text-tertiary);
-  font-size: var(--type-meta);
-  font-variant-numeric: tabular-nums;
-  text-align: center;
-}
 .settings-list-key {
   color: var(--text-tertiary);
   font: inherit;
   font-size: var(--type-meta);
   font-variant-numeric: tabular-nums;
+}
+/* Account and security names run longer than a page's. */
+.settings-number-key-select {
+  width: 280px;
 }
 .settings-order-buttons {
   display: inline-flex;

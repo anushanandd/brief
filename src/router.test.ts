@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 
+import { QueryClient } from '@tanstack/react-query'
 import { createMemoryHistory, createRouter } from '@tanstack/react-router'
 import { expect, it } from 'vitest'
 
@@ -11,12 +12,13 @@ it('redirects Settings paths to the dialog at their sections', async () => {
     ['/settings/accounts', 'settings/accounts'],
     ['/settings/connections', 'settings/connections'],
     ['/settings/data', 'settings/privacy'],
-    ['/settings/accounts#platinum-benefits', 'settings/platinum-benefits'],
+    ['/settings/accounts#benefit-visibility', 'settings/benefit-visibility'],
     ['/settings#data-sources', 'settings/connections'],
   ] as const) {
     const testRouter = createRouter({
       routeTree: router.routeTree,
       history: createMemoryHistory({ initialEntries: [path] }),
+      context: { queryClient: new QueryClient() },
     })
     await testRouter.load()
     expect(testRouter.state.location.pathname).toBe('/')

@@ -148,8 +148,10 @@ describe('buildChartEventGroups', () => {
       ['sale', 'out'],
       ['transfer', 'out'],
     ])
-    expect(chartEventGroupLabel(brokerage[1])).toContain('Sold VTI $207.05 · −12.50%')
-    expect(chartEventGroupLabel(brokerage[2])).toContain('Near sold vti')
-    expect(chartEventGroupLabel(brokerage[0])).toContain('Bought VXUS')
+    const [bought, sold, near] = brokerage
+    if (!bought || !sold || !near) throw new Error('Expected three brokerage groups')
+    expect(chartEventGroupLabel(sold)).toContain('Sold VTI $207.05 · −12.50%')
+    expect(chartEventGroupLabel(near)).toContain('Near sold vti')
+    expect(chartEventGroupLabel(bought)).toContain('Bought VXUS')
   })
 })

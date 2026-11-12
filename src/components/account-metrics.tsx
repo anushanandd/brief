@@ -1,16 +1,18 @@
 import { Link } from '@tanstack/react-router'
 import type { ReactElement } from 'react'
 
-import { formatCurrency, formatShare, valueTone, formatShortDay } from '../lib/format'
+import { formatCurrency, formatRate, formatShare, valueTone, formatShortDay } from '../lib/format'
 import { type ChartPeriod } from '../lib/graph-preferences'
 import type { Account, Insights, SpendingPeriodJudgment, Transaction } from '../lib/schema'
 import { Metric } from './ui'
 
 /** What moved through the account over the period, as Rust summed it. */
-type TransactionSummary = Pick<
-  Insights['flows'][number],
-  'moneyIn' | 'moneyOut' | 'netFlow' | 'interest' | 'dividends'
->
+/** A period's flows as Rust summed them; each is null when Rust has none for the view. */
+type TransactionSummary = {
+  [Key in 'moneyIn' | 'moneyOut' | 'netFlow' | 'interest' | 'dividends']:
+    | Insights['flows'][number][Key]
+    | null
+}
 
 const aprLabels: Record<string, string> = {
   balance_transfer_apr: 'transfers',
@@ -28,7 +30,7 @@ export function ReportMetric({
 }: {
   chart: 'interest' | 'dividends'
   label: string
-  value: number
+  value: number | null
   range: ChartPeriod
   accountId?: string
 }) {
@@ -121,16 +123,19 @@ export function creditMetrics({
   transactionCount: number
   card: Insights['credit']['cards'][number] | undefined
 }): ReactElement[] {
-  const aprs = account.liability?.aprs?.filter(({ percentage }) => percentage != null) ?? []
+  const aprs = (account.liability?.aprs ?? []).flatMap(({ type, percentage }) =>
+    percentage == null ? [] : [{ type, percentage }],
+  )
   const purchaseApr = aprs.find(({ type }) => type === 'purchase_apr')
   const otherAprs = aprs
     .filter((apr) => apr !== purchaseApr)
-    .map((apr) => `${aprLabels[apr.type] ?? apr.type} ${apr.percentage!.toFixed(2)}%`)
+    .map((apr) => `${aprLabels[apr.type] ?? apr.type} ${formatRate(apr.percentage)}`)
     .join(' · ')
   const liability = account.liability
   return [
-    <Metric key="spent" label="Spent this month" value={formatCurrency(spending?.total ?? 0)} />,
-    <Metric key="pending" label="Pending" value={formatCurrency(spending?.pending ?? 0)} />,
+    // Without this month's period from Rust, both are unknown, not $0.
+    <Metric key="spent" label="Spent this month" value={formatCurrency(spending?.total)} />,
+    <Metric key="pending" label="Pending" value={formatCurrency(spending?.pending)} />,
     <Metric
       key="largest"
       label="Largest expense"
@@ -201,7 +206,7 @@ export function creditMetrics({
             label="Purchase APR"
             value={
               <>
-                {`${purchaseApr.percentage!.toFixed(2)}%`}
+                {formatRate(purchaseApr.percentage)}
                 {otherAprs ? <small className="metric-detail">{otherAprs}</small> : null}
               </>
             }

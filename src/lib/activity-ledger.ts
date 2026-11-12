@@ -63,6 +63,7 @@ export const evidenceKinds: readonly ActivityEvidence[] = [
   'unlisted',
   'conflict',
   'unsure',
+  'suggested',
 ]
 
 export const evidenceLabels: Record<ActivityEvidence, string> = {
@@ -70,6 +71,7 @@ export const evidenceLabels: Record<ActivityEvidence, string> = {
   unlisted: 'Not on statement',
   conflict: 'Sources disagree',
   unsure: 'Plaid unsure',
+  suggested: 'Category Brief chose',
 }
 
 /** A change to the address; `undefined` clears a filter. */
@@ -203,7 +205,7 @@ export function activityLedger({
 
   // The draft previews on top of the committed filters; Enter commits it.
   const vocabulary = {
-    accounts: accounts.map(({ id }) => ({ id, label: accountNames[id] })),
+    accounts: accounts.map(({ id }) => ({ id, label: accountNames[id] ?? id })),
     categories: allCategories,
     methods: allMethods,
   }
@@ -223,7 +225,7 @@ export function activityLedger({
   const effective = withCommitted(parsed)
   /** The address Enter commits: the draft, its unfinished word completed, as chips. */
   const committed = (
-    query = suggestions.length && !/\s$/.test(draft)
+    query = suggestions[0] && !/\s$/.test(draft)
       ? completeActivityQuery(draft, suggestions[0])
       : draft,
   ): LedgerPatch => {
@@ -334,6 +336,7 @@ export function activityLedger({
       unlisted: evidenceBase.filter((activity) => backedBy(activity, 'unlisted')).length,
       conflict: evidenceBase.filter((activity) => backedBy(activity, 'conflict')).length,
       unsure: evidenceBase.filter((activity) => backedBy(activity, 'unsure')).length,
+      suggested: evidenceBase.filter((activity) => backedBy(activity, 'suggested')).length,
     },
   }
 
@@ -547,7 +550,9 @@ export function activityLedger({
     .map(({ date }) => transactionDateKey(date))
     .filter(Boolean)
     .toSorted()
-  const dateBounds = days.length ? { min: days[0], max: days[days.length - 1] } : undefined
+  const [firstDay] = days
+  const lastDay = days.at(-1)
+  const dateBounds = firstDay && lastDay ? { min: firstDay, max: lastDay } : undefined
   const datePresets = activityDateRangeOptions.flatMap((option) =>
     option.value === 'custom'
       ? []

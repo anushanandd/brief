@@ -17,12 +17,24 @@ debug = "line-tables-only"
 debug = false
 
 # Thin LTO across parallel codegen units: a release build in a minute or two rather than six,
-# for a binary that waits on the screen and SQLite, not the CPU.
+# for a binary that waits on the screen and SQLite, not the CPU. Panics unwind, so one failing
+# command fails alone: poisoned locks report themselves unavailable, the Foundation Models
+# callbacks catch theirs, and `panic_log` records each for Data health.
 [profile.release]
 lto = "thin"
 codegen-units = 16
-panic = "abort"
 strip = true
+
+# `cargo clippy --all-targets -- -D warnings` holds these. Test code may unwrap and compare floats
+# exactly (clippy.toml and lib.rs allow it there); the app's code may not.
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+unwrap_used = "warn"
+float_cmp = "warn"
+todo = "warn"
+dbg_macro = "warn"
 
 [build-dependencies]
 tauri-build = { version = "2", features = [] }

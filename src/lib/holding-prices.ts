@@ -1,5 +1,6 @@
 import type { CandlePoint, LivelinePoint } from 'liveline'
 
+import { formatInstant } from './format'
 import type { HoldingChartEvent, HoldingPriceHistory, PriceBar } from './schema'
 
 export type SavedRangeChange = { change: number; percent: number; asOf: number }
@@ -106,7 +107,7 @@ export function reduceHoldingChart(
 export function holdingChartTime(time: number, now: number, seconds = false) {
   const date = new Date(time * 1000)
   const sameDay = date.toDateString() === new Date(now * 1000).toDateString()
-  return date.toLocaleString(undefined, {
+  return formatInstant(date, {
     ...(!sameDay ? ({ month: 'short', day: 'numeric' } as const) : {}),
     ...(date.getFullYear() !== new Date(now * 1000).getFullYear()
       ? ({ year: 'numeric' } as const)
@@ -132,20 +133,23 @@ export function holdingChartPoints(state: HoldingChartState): LivelinePoint[] {
   if (!history) return []
   const bars = holdingChartBars(state)
   const daily = history.resolution === 86400
-  return bars.map((bar, index) => ({
-    time: bar.endTime,
-    value: bar.close,
-    // Fully paginated history connects reported closes; streaming gaps and
-    // failed verification remain breaks. No bars or executions are fabricated.
-    breakBefore:
-      index > 0 &&
-      (bar.feed !== bars[index - 1].feed ||
-        (bar.time - bars[index - 1].time > history.resolution * (daily ? 4 : 1.5) &&
-          (!history.calendar?.length ||
-            Boolean(state.historyError || state.error) ||
-            bars[index - 1].time < history.start ||
-            bar.endTime > history.end))),
-  }))
+  return bars.map((bar, index) => {
+    const previous = bars[index - 1]
+    return {
+      time: bar.endTime,
+      value: bar.close,
+      // Fully paginated history connects reported closes; streaming gaps and
+      // failed verification remain breaks. No bars or executions are fabricated.
+      breakBefore:
+        previous !== undefined &&
+        (bar.feed !== previous.feed ||
+          (bar.time - previous.time > history.resolution * (daily ? 4 : 1.5) &&
+            (!history.calendar?.length ||
+              Boolean(state.historyError || state.error) ||
+              previous.time < history.start ||
+              bar.endTime > history.end))),
+    }
+  })
 }
 
 export function visibleHoldingChartPoints(points: LivelinePoint[], range: number, now: number) {
@@ -255,11 +259,13 @@ export function holdingChartTimeline(
   const gaps: Array<{ start: number; end: number; removed: number }> = []
   for (let i = 1; i < days.length; i++) {
     const previous = days[i - 1]
-    const next = days[i]
+    // Each day has four sessions, so the gap ends where the day's overnight session starts.
+    const next = daily ? days[i] : sessions[i * 4]
+    if (!previous || !next) continue
     const gapStart = daily
       ? previous.end
       : previous.end + (72000 - (history?.calendar?.[i - 1]?.close ?? 57600))
-    const gapEnd = daily ? next.start : sessions[i * 4].start
+    const gapEnd = next.start
     if (gapEnd <= gapStart || gapEnd < start || gapStart > end) continue
     // Unexpected executions override the nominal calendar; never hide evidence.
     if (points.some((point) => point.time > gapStart && point.time < gapEnd)) continue
@@ -292,15 +298,18 @@ export function holdingChartTimeline(
   const left = displayEnd - span * 0.95
   const position = (time: number) => ((toDisplay(time) - left) / span) * 100
   return {
-    points: points.map((point, i) => ({
-      ...point,
-      time: toDisplay(point.time),
-      breakBefore:
-        point.breakBefore ||
-        (!daily &&
-          i > 0 &&
-          gaps.some((gap) => points[i - 1].time <= gap.start && point.time >= gap.end)),
-    })),
+    points: points.map((point, i) => {
+      const previous = points[i - 1]
+      return {
+        ...point,
+        time: toDisplay(point.time),
+        breakBefore:
+          point.breakBefore ||
+          (!daily &&
+            previous !== undefined &&
+            gaps.some((gap) => previous.time <= gap.start && point.time >= gap.end)),
+      }
+    }),
     end: displayEnd,
     span,
     toDisplay,
@@ -351,29 +360,34 @@ export function holdingChartCandles(
   }
   const centers = grouped.map((bar) => timeline.toDisplay(bar.endTime))
   const spacing = centers
-    .slice(1)
-    .map((time, index) => time - centers[index])
+    .flatMap((time, index) => {
+      const before = centers[index - 1]
+      return before === undefined ? [] : [time - before]
+    })
     .filter((value) => value > 0)
   const sortedSpacing = spacing.toSorted((a, b) => a - b)
   const width = Math.min(
     resolution,
     sortedSpacing[Math.floor(sortedSpacing.length / 2)] ?? resolution,
   )
-  // A partial candle or compressed closure must not shrink every other body.
-  const widths = centers.map((center, index) =>
-    Math.min(
+  const candles: CandlePoint[] = grouped.map((bar, index) => {
+    const center = timeline.toDisplay(bar.endTime)
+    const before = centers[index - 1]
+    const after = centers[index + 1]
+    // A partial candle or compressed closure must not shrink every other body.
+    const body = Math.min(
       width,
-      index > 0 ? center - centers[index - 1] : width,
-      index + 1 < centers.length ? centers[index + 1] - center : width,
-    ),
-  )
-  const candles: CandlePoint[] = grouped.map((bar, index) => ({
-    time: centers[index] - widths[index] / 2,
-    width: widths[index],
-    open: bar.open,
-    high: bar.high,
-    low: bar.low,
-    close: bar.close,
-  }))
+      before === undefined ? width : center - before,
+      after === undefined ? width : after - center,
+    )
+    return {
+      time: center - body / 2,
+      width: body,
+      open: bar.open,
+      high: bar.high,
+      low: bar.low,
+      close: bar.close,
+    }
+  })
   return { candles, width, resolution }
 }

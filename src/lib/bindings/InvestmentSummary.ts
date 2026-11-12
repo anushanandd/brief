@@ -2,6 +2,8 @@
 import type { Activity } from "./Activity";
 import type { Coverage } from "./Coverage";
 import type { DayBrief } from "./DayBrief";
+import type { EarningsDigest } from "./EarningsDigest";
+import type { Expectation } from "./Expectation";
 import type { Fundamentals } from "./Fundamentals";
 import type { InsiderTrade } from "./InsiderTrade";
 import type { ListedEvent } from "./ListedEvent";
@@ -69,6 +71,14 @@ ahead: Array<Upcoming>,
  */
 quiet: Quiet | null, fundamentals: Fundamentals | null, 
 /**
+ * Earnings reports in the period (on a holding's page, its latest), newest first.
+ */
+earnings: Array<EarningsDigest>, 
+/**
+ * What analysts and the options market expect of each stock.
+ */
+expectations: Array<Expectation>, 
+/**
  * A holding's open-market insider trades in the period, newest first.
  */
 insiders: Array<InsiderTrade>, 
@@ -89,4 +99,10 @@ brief: DayBrief | null,
 /**
  * Parts that could not be loaded or were left out, each with the symbols affected.
  */
-unavailable: Array<Unavailable>, };
+unavailable: Array<Unavailable>, 
+/**
+ * A summary saved earlier, made from inputs that have since changed: shown whole, as it
+ * was at `generated_at`, while Brief makes the new one in the background and says when
+ * it is ready (`investment-summary-updated`). Never shown as current.
+ */
+refreshing: boolean, };

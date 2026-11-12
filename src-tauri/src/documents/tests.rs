@@ -47,8 +47,8 @@ fn a_file_name_suggests_the_year_and_issuer() {
     );
     assert_eq!(file_hints("Payslip_2026-05-15.pdf").issuer, None);
     // An institution's own name for a statement carries the account's last four digits.
-    let chase = file_hints("20250430-statements-5678-.pdf");
-    assert_eq!((chase.mask.as_deref(), chase.issuer), (Some("5678"), None));
+    let dated = file_hints("2025-04-30_5678.pdf");
+    assert_eq!((dated.mask.as_deref(), dated.issuer), (Some("5678"), None));
 }
 
 /// Two copies of a W-2, as a printout carries them; the second copy's box 1 is misread.
@@ -75,7 +75,7 @@ fn w2() -> Reading {
             line("620.00", 0.74, top + 0.08, 0.06),
             line("12a See instructions for box 12", 0.72, top + 0.14, 0.18),
             line("D 500.00", 0.73, top + 0.16, 0.1),
-            line("CA 000-00000 10000.00", 0.05, top + 0.2, 0.3),
+            line("OR 000-00000 10000.00", 0.05, top + 0.2, 0.3),
         ]);
     }
     vision(lines)
@@ -95,8 +95,8 @@ fn a_w2_reads_each_box_and_flags_copies_that_disagree() {
     assert_eq!(field("box2").amount, Some(1_000.0));
     assert!(!field("box2").uncertain);
     assert_eq!(field("box4").amount, Some(620.0));
-    assert_eq!(field("box12:D").amount, Some(1_200.0));
-    assert_eq!(field("state").text.as_deref(), Some("CA"));
+    assert_eq!(field("box12:D").amount, Some(500.0));
+    assert_eq!(field("state").text.as_deref(), Some("OR"));
     // 6.2% of 10,000.00 is 620.00.
     assert!(read.checks.iter().all(|check| check.passed));
 }
@@ -122,7 +122,7 @@ fn payslip() -> Reading {
         line("Withholding Tax 500.00- 2,000.00-", 0.05, 0.31, 0.45),
         line("EE Social Security Tax 248.00- 992.00-", 0.05, 0.33, 0.45),
         line("EE Medicare Tax 58.00- 232.00-", 0.05, 0.35, 0.45),
-        line("Tax Deductions: California", 0.05, 0.37, 0.2),
+        line("Tax Deductions: Oregon", 0.05, 0.37, 0.2),
         line("Withholding Tax 200.00- 800.00-", 0.05, 0.39, 0.45),
         line("EE Voluntary Disabilit 40.00- 160.00-", 0.05, 0.41, 0.45),
         line("Additional Deductions", 0.05, 0.43, 0.2),
@@ -173,7 +173,7 @@ fn figures_above_their_labels_and_box14_items_are_read_and_each_figure_has_one_b
                 0.06,
             ),
             line("13 Statutory employee 14 Other", 0.05, top + 0.05, 0.2),
-            line("FAMLI", 0.19, top + 0.065, 0.04),
+            line("UNION", 0.19, top + 0.065, 0.04),
             line("5.40", 0.25, top + 0.065, 0.03),
             line("12a Code", 0.4, top + 0.05, 0.08),
             line("CI 1.20", 0.41, top + 0.065, 0.06),
@@ -194,7 +194,7 @@ fn figures_above_their_labels_and_box14_items_are_read_and_each_figure_has_one_b
     assert_eq!(field("box17").and_then(|f| f.amount), Some(20.0));
     // Nothing under or over the local boxes: the state figures above them are taken.
     assert!(field("box18").is_none() && field("box19").is_none());
-    assert_eq!(field("box14:FAMLI").and_then(|f| f.amount), Some(5.4));
+    assert_eq!(field("box14:UNION").and_then(|f| f.amount), Some(5.4));
     // The divider after a box 12 code reads as "I"; the code is still C.
     assert_eq!(field("box12:C").and_then(|f| f.amount), Some(1.2));
 }
@@ -203,7 +203,7 @@ fn figures_above_their_labels_and_box14_items_are_read_and_each_figure_has_one_b
 fn a_pay_statement_reads_both_columns_and_balances_to_net_pay() {
     let read = understand(&payslip(), "Payslip_2026-06-19.pdf");
     assert_eq!(read.kind, Some(Kind::Payslip));
-    assert_eq!(read.date.as_deref(), Some("2026-06-18"));
+    assert_eq!(read.date.as_deref(), Some("2026-06-19"));
     assert_eq!(read.period_start.as_deref(), Some("2026-06-01"));
     assert_eq!(read.tax_year, Some(2026));
     assert_eq!(read.issuer.as_deref(), Some("Example Services Group Inc"));
@@ -254,7 +254,7 @@ fn a_bank_statement_becomes_rows_only_when_it_balances() {
     };
     let statement = [
         "Example Bank, N.A.",
-        "December 23, 2025 through January 22, 2026",
+        "December 20, 2025 through January 19, 2026",
         "Account Number: 000000123455678",
         "Beginning Balance $1,000.00",
         "Ending Balance $980.01",
@@ -263,13 +263,13 @@ fn a_bank_statement_becomes_rows_only_when_it_balances() {
         "12/30 Venmo Payment 1000000000001 Web ID: 1234567890 -40.00 960.00",
         "01/08 Online Transfer From Chk ...0000 20.00 980.00",
         "Transaction#: 20000000002",
-        "01/22 Interest Payment 0.01 980.01",
+        "01/19 Interest Payment 0.01 980.01",
         "Ending Balance $980.01",
     ];
-    let read = understand(&text(&statement), "20260122-statements-5678-.pdf");
+    let read = understand(&text(&statement), "2026-01-19_5678.pdf");
     assert_eq!(read.kind, Some(Kind::Statement));
     assert_eq!(read.mask.as_deref(), Some("5678"));
-    assert_eq!(read.period_end.as_deref(), Some("2026-01-22"));
+    assert_eq!(read.period_end.as_deref(), Some("2026-01-19"));
     let (csv, rows) = read.statement_csv.clone().unwrap();
     assert_eq!(rows, 3);
     // December's row belongs to the year the period started in, and a wrapped line joins the
@@ -281,8 +281,8 @@ fn a_bank_statement_becomes_rows_only_when_it_balances() {
     // A label alone on its line names nothing below it, such as the mailing barcode; the file
     // name's last four stand.
     let mut mailed = statement;
-    mailed[2] = "Account Number:\n0000001111 DRE 000 000 00000 NNNNNNNNNNN 1 000000000 15 0000";
-    let read = understand(&text(&mailed), "20260122-statements-5678-.pdf");
+    mailed[2] = "Account Number:\n0000001111 000 000 00000 NNNNNNNNNNN 1 000000000 15 0000";
+    let read = understand(&text(&mailed), "2026-01-19_5678.pdf");
     assert_eq!(read.mask.as_deref(), Some("5678"));
 
     let mut unbalanced = statement;

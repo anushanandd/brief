@@ -1,6 +1,16 @@
 //! The finance database's schema, created or migrated forward in place, and one-time scrubs of
 //! what older versions saved.
-use rusqlite::{Connection, OptionalExtension};
+//!
+//! One open migrates in one transaction: every step, the scrub, and the version stamp commit
+//! together or not at all, so an upgrade that fails leaves the database as the older build
+//! wrote it. SQLite's DDL (`CREATE`, `ALTER TABLE ... ADD COLUMN`, `DROP`) and the
+//! `user_version` and `application_id` pragmas are transactional. Only the connection pragmas
+//! run outside it, first: `journal_mode` can't change inside a transaction, and `foreign_keys`
+//! is ignored there. Steps up to version 6 are gated on the saved version; later ones look at
+//! the schema itself (`pragma_table_info`, `IF NOT EXISTS`), so a database that a development
+//! build stamped before its step existed is completed as well. At the current version every
+//! step finds nothing to do, and nothing is written.
+use rusqlite::{Connection, OptionalExtension, TransactionBehavior};
 use serde_json::Value;
 
 use super::*;
@@ -9,13 +19,49 @@ const DOCUMENTS_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS documents (
     id TEXT PRIMARY KEY CHECK (length(id) = 64),
     value_json TEXT NOT NULL CHECK (json_valid(value_json))
 ) STRICT;";
+const THESES_SCHEMA: &str = "CREATE TABLE IF NOT EXISTS theses (
+    ticker TEXT PRIMARY KEY CHECK (length(ticker) BETWEEN 1 AND 12),
+    value_json TEXT NOT NULL CHECK (json_valid(value_json))
+) STRICT;";
 
-pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<(), String> {
+/// Brings a database saved at `version` to `DATABASE_SCHEMA_VERSION`, atomically.
+pub(super) fn migrate(connection: &mut Connection, version: u32) -> Result<(), String> {
     connection
         .execute_batch(
             "PRAGMA foreign_keys = ON; PRAGMA journal_mode = DELETE; PRAGMA synchronous = FULL;",
         )
         .map_err(db_error)?;
+    // An upgrade takes the write lock at once; an open at the current version only reads.
+    let behavior = if version < DATABASE_SCHEMA_VERSION {
+        TransactionBehavior::Immediate
+    } else {
+        TransactionBehavior::Deferred
+    };
+    let transaction = connection
+        .transaction_with_behavior(behavior)
+        .map_err(db_error)?;
+    migrate_schema(&transaction, version)?;
+    if version < 5 {
+        scrub_legacy_diagnostics(&transaction)?;
+    }
+    if version < DATABASE_SCHEMA_VERSION {
+        transaction
+            .pragma_update(None, "user_version", DATABASE_SCHEMA_VERSION)
+            .map_err(db_error)?;
+    }
+    let application_id = transaction
+        .query_row("PRAGMA application_id", [], |row| row.get::<_, u32>(0))
+        .map_err(db_error)?;
+    if application_id != DATABASE_APPLICATION_ID {
+        transaction
+            .pragma_update(None, "application_id", DATABASE_APPLICATION_ID)
+            .map_err(db_error)?;
+    }
+    transaction.commit().map_err(db_error)
+}
+
+/// Every step from `version` on, inside the caller's transaction.
+fn migrate_schema(connection: &Connection, version: u32) -> Result<(), String> {
     let has_state = connection
         .query_row(
             "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'state_meta')",
@@ -26,8 +72,7 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
     if version == 0 && !has_state {
         return connection
             .execute_batch(
-                "BEGIN IMMEDIATE;
-                 CREATE TABLE state_meta (
+                "CREATE TABLE state_meta (
                    id INTEGER PRIMARY KEY CHECK (id = 1), schema_version INTEGER NOT NULL,
                    revision INTEGER NOT NULL CHECK (revision >= 0),
                    plaid_cache_json TEXT NOT NULL CHECK (json_valid(plaid_cache_json)),
@@ -95,10 +140,7 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
                    symbol TEXT,
                    record_json TEXT NOT NULL CHECK (json_valid(record_json))
                  ) STRICT;
-                 CREATE INDEX IF NOT EXISTS market_events_session ON market_events(session);
-                 PRAGMA application_id = 1112688966;
-                 PRAGMA user_version = 15;
-                 COMMIT;",
+                 CREATE INDEX IF NOT EXISTS market_events_session ON market_events(session);",
             )
             .and_then(|()| connection.execute_batch(super::bank_statements::SCHEMA))
             .and_then(|()| connection.execute_batch(super::journal::SCHEMA))
@@ -107,20 +149,19 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
             .and_then(|()| connection.execute_batch(super::changesets::SCHEMA))
             .and_then(|()| connection.execute_batch(super::graph::SCHEMA))
             .and_then(|()| connection.execute_batch(super::research::SCHEMA))
+            .and_then(|()| connection.execute_batch(THESES_SCHEMA))
+            .and_then(|()| connection.execute_batch(super::summaries::SCHEMA))
             .map_err(db_error);
     }
 
     if version < 3 {
         connection
             .execute_batch(
-                "BEGIN IMMEDIATE;
-                 CREATE TABLE IF NOT EXISTS workspace (
+                "CREATE TABLE IF NOT EXISTS workspace (
                    id INTEGER PRIMARY KEY CHECK (id = 1),
                    value_json TEXT NOT NULL CHECK (json_valid(value_json))
                  ) STRICT;
-                 DROP INDEX IF EXISTS account_links_snaptrade_unique;
-                 PRAGMA user_version = 3;
-                 COMMIT;",
+                 DROP INDEX IF EXISTS account_links_snaptrade_unique;",
             )
             .map_err(db_error)?;
     }
@@ -129,31 +170,26 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
             .prepare("SELECT 1 FROM pragma_table_info('sync_runs') WHERE name = 'details_json'")
             .and_then(|mut statement| statement.exists([]))
             .map_err(db_error)?;
-        connection
-            .execute_batch(if has_details {
-                "PRAGMA user_version = 4;"
-            } else {
-                "BEGIN IMMEDIATE;
-                 ALTER TABLE sync_runs ADD COLUMN details_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(details_json));
-                 PRAGMA user_version = 4;
-                 COMMIT;"
-            })
-            .map_err(db_error)?;
+        if !has_details {
+            connection
+                .execute_batch(
+                    "ALTER TABLE sync_runs ADD COLUMN details_json TEXT NOT NULL DEFAULT '{}' CHECK (json_valid(details_json));",
+                )
+                .map_err(db_error)?;
+        }
     }
     if version < 6 {
         // Version 6 moves settings that change financial results out of renderer storage.
         connection
             .execute_batch(
-                "BEGIN IMMEDIATE;
-                 CREATE TABLE IF NOT EXISTS finance_settings (
+                "CREATE TABLE IF NOT EXISTS finance_settings (
                    id INTEGER PRIMARY KEY CHECK (id = 1),
                    value_json TEXT NOT NULL CHECK (json_valid(value_json))
                  ) STRICT;
                  CREATE TABLE IF NOT EXISTS category_rules (
                    id TEXT PRIMARY KEY, ordinal INTEGER NOT NULL UNIQUE CHECK (ordinal >= 0),
                    value_json TEXT NOT NULL CHECK (json_valid(value_json))
-                 ) STRICT;
-                 COMMIT;",
+                 ) STRICT;",
             )
             .map_err(db_error)?;
     }
@@ -166,11 +202,9 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
     if !has_tags {
         connection
             .execute_batch(
-                "BEGIN IMMEDIATE;
-                 ALTER TABLE annotations ADD COLUMN tags_json TEXT CHECK (tags_json IS NULL OR json_valid(tags_json));
+                "ALTER TABLE annotations ADD COLUMN tags_json TEXT CHECK (tags_json IS NULL OR json_valid(tags_json));
                  ALTER TABLE annotations ADD COLUMN splits_json TEXT CHECK (splits_json IS NULL OR json_valid(splits_json));
-                 ALTER TABLE annotations ADD COLUMN refund_of TEXT;
-                 COMMIT;",
+                 ALTER TABLE annotations ADD COLUMN refund_of TEXT;",
             )
             .map_err(db_error)?;
     }
@@ -306,15 +340,19 @@ pub(super) fn migrate_schema(connection: &Connection, version: u32) -> Result<()
     connection
         .execute_batch(super::research::SCHEMA)
         .map_err(db_error)?;
+    // Version 23 kept investment theses. The feature is gone; the table stays so a database
+    // that holds them keeps them, and nothing reads or writes it.
+    connection.execute_batch(THESES_SCHEMA).map_err(db_error)?;
+    // Version 24 keeps the latest investment summary of each scope and period, so a page shows
+    // it without waiting on market data.
     connection
-        .execute_batch(&format!(
-            "PRAGMA application_id = {DATABASE_APPLICATION_ID};"
-        ))
+        .execute_batch(super::summaries::SCHEMA)
         .map_err(db_error)
 }
 
-pub(super) fn scrub_legacy_diagnostics(connection: &mut Connection) -> Result<(), String> {
-    let transaction = connection.transaction().map_err(db_error)?;
+/// Version 5 clears provider messages that versions before it saved, inside the migration's
+/// transaction.
+fn scrub_legacy_diagnostics(transaction: &Connection) -> Result<(), String> {
     if let Some((plaid_cache, provider_data)) = transaction
         .query_row(
             "SELECT plaid_cache_json, provider_data_json FROM state_meta WHERE id = 1",
@@ -391,8 +429,5 @@ pub(super) fn scrub_legacy_diagnostics(connection: &mut Connection) -> Result<()
     transaction
         .execute("UPDATE sync_runs SET warnings_json = '[]'", [])
         .map_err(db_error)?;
-    transaction
-        .execute_batch("PRAGMA user_version = 5;")
-        .map_err(db_error)?;
-    transaction.commit().map_err(db_error)
+    Ok(())
 }

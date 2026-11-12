@@ -1,30 +1,7 @@
-import type { AnalyticsSearch } from './analytics'
 import { formatCurrency, formatCurrencyRange, formatShortDay } from './format'
 import type { BenefitHistory, BenefitPeriod, CardBenefits } from './schema'
 
 type AmountRange = { low: number; high: number }
-
-/**
- * The calendar year Benefits shows: a custom window that spans exactly one year, otherwise this
- * year. The page has one period, so the Money strip follows the same year.
- */
-export function benefitYear(search: AnalyticsSearch, today: string) {
-  const year = search.from?.slice(0, 4)
-  return year && search.from === `${year}-01-01` && search.to === `${year}-12-31`
-    ? Number(year)
-    : Number(today.slice(0, 4))
-}
-
-/** The search that shows `year`: year to date for this year, the whole year before it. */
-export function benefitYearSearch(
-  search: AnalyticsSearch,
-  year: number,
-  today: string,
-): AnalyticsSearch {
-  return year === Number(today.slice(0, 4))
-    ? { ...search, range: 'year', from: undefined, to: undefined }
-    : { ...search, range: undefined, from: `${year}-01-01`, to: `${year}-12-31` }
-}
 
 const yearOf = (period: BenefitPeriod) => Number(period.start.slice(0, 4))
 
@@ -80,7 +57,7 @@ export function benefitRows(
 const nothing: AmountRange = { low: 0, high: 0 }
 const emptyYear = { captured: 0, planned: 0, missed: nothing, left: nothing }
 
-/** One benefit's year as Rust summed it; Uber Cash, estimated from charges, adds nothing. */
+/** One benefit's year as Rust summed it; a benefit estimated from charges adds nothing. */
 export const benefitYearTotals = (benefit: BenefitHistory | undefined, year: number) =>
   benefit?.years.find((entry) => entry.year === year) ?? emptyYear
 
@@ -127,9 +104,9 @@ export function periodSummary(period: BenefitPeriod) {
     case 'future':
       return `Opens ${formatShortDay(period.start)}${planned(period)}`
     case 'not-visible':
-      return 'Spent in the Uber app'
+      return "Spent in the partner's app"
     case 'likely-used':
-      return 'An Uber charge suggests it ran out'
+      return 'A partner charge suggests it ran out'
     case 'before-history':
       return period.credited ? `${formatCurrency(period.credited)} credited` : 'Before history'
     default:

@@ -43,8 +43,12 @@ describe('cash-flow Sankey model', () => {
           children: [{ id: 'meal', label: 'Restaurant', value: 120, date: '2026-09-10' }],
         },
       ],
-      fees: 5,
-      taxes: 0,
+      charges: {
+        id: 'charges:Fees and taxes',
+        label: 'Fees and taxes',
+        value: 5,
+        children: [{ id: 'fee', label: 'Bank fee', value: 5, date: '2026-09-03' }],
+      },
       inflow: 2_040,
       outflow: 125,
       gap: 0,
@@ -52,6 +56,11 @@ describe('cash-flow Sankey model', () => {
     })
 
     expect(model.total).toBe(2_040)
+    expect(model.uses.map(({ label }) => label)).toEqual([
+      'Dining',
+      'Fees and taxes',
+      'Cash retained',
+    ])
     expect(model.uses.find(({ id }) => id === 'retained')?.value).toBe(1_915)
     expect(model.sources.reduce((total, flow) => total + flow.value, 0)).toBe(model.total)
     expect(model.uses.reduce((total, flow) => total + flow.value, 0)).toBe(model.total)
@@ -75,8 +84,6 @@ describe('cash-flow Sankey model', () => {
           children: [{ id: 'meal', label: 'Restaurant', value: 150, date: '2026-09-02' }],
         },
       ],
-      fees: 0,
-      taxes: 0,
       inflow: 100,
       outflow: 150,
       gap: 50,
@@ -114,8 +121,6 @@ describe('cash-flow Sankey model', () => {
               ],
             },
           ],
-          fees: 0,
-          taxes: 0,
           inflow: 200,
           outflow: 150,
           gap: 0,
@@ -132,6 +137,44 @@ describe('cash-flow Sankey model', () => {
     expect(html.match(/sankey-link-interactive/g)).toHaveLength(2)
     expect(html).toContain('Payment $120.00 on Sep 1')
     expect(html).toContain('Cafe $100.00 on Sep 5')
+  })
+
+  it('names the groups an Other band holds rather than its transactions', () => {
+    const html = renderToStaticMarkup(
+      CashFlowSankey({
+        values: {
+          sources: [
+            {
+              id: 'source:Payroll',
+              label: 'Payroll',
+              value: 300,
+              children: [{ id: 'pay', label: 'Payroll', value: 300, date: '2026-09-01' }],
+            },
+          ],
+          purchases: [
+            {
+              id: 'purchase-other',
+              label: 'Other categories',
+              value: 30,
+              children: [
+                { id: 'gift', label: 'Card shop', value: 20, date: '2026-09-04' },
+                { id: 'pet', label: 'Pet store', value: 10, date: '2026-09-02' },
+              ],
+              parts: [
+                { label: 'Gifts', value: 20 },
+                { label: 'Pets', value: 10 },
+              ],
+            },
+          ],
+          inflow: 300,
+          outflow: 30,
+          gap: 0,
+          retained: 270,
+        },
+      }),
+    )
+    expect(html).toContain('Other categories, $30.00: Gifts $20.00, Pets $10.00')
+    expect(html).not.toContain('Card shop $20.00')
   })
 })
 

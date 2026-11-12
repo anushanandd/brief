@@ -331,7 +331,10 @@ function WhoIsThis({
     },
     [client, pending, updateSettings],
   )
-  const first = rows.find(({ options }) => options.length)
+  // The first name with a match, and its best match.
+  const first = rows
+    .map(({ suggestion, options: [best] }) => (best ? { suggestion, best } : undefined))
+    .find((row) => row !== undefined)
 
   useRegisterActions(
     useMemo<AppAction[]>(
@@ -352,7 +355,7 @@ function WhoIsThis({
         {
           id: 'people.who.accept',
           title: first
-            ? `${first.suggestion.name} is ${identityName(first.options[0])}`
+            ? `${first.suggestion.name} is ${identityName(first.best)}`
             : 'Accept the best match',
           search: 'people match name payment zelle who is this yes accept',
           group: 'Here',
@@ -361,7 +364,7 @@ function WhoIsThis({
           disabled: !first,
           disabledReason: 'No name in payments has a match',
           run: () => {
-            if (first) void save(first.suggestion, first.options[0])
+            if (first) void save(first.suggestion, first.best)
           },
         },
         ...rows.flatMap(({ suggestion, options }) =>
@@ -384,7 +387,8 @@ function WhoIsThis({
       <SectionHeading title="Who’s this?" />
       <ul className="people-who" aria-label="Names in payments" data-keyboard-region>
         {rows.map(({ suggestion, options }) => {
-          const latest = transactions.get(suggestion.transactionIds[0])
+          const [latestId] = suggestion.transactionIds
+          const latest = latestId === undefined ? undefined : transactions.get(latestId)
           return (
             <li
               key={suggestion.matchName}
@@ -493,7 +497,7 @@ function WhoIsThis({
       ) : null}
       {first ? (
         <p className="trips-year-note">
-          <Keys label="Y" /> {`${first.suggestion.name} is ${identityName(first.options[0])}`}
+          <Keys label="Y" /> {`${first.suggestion.name} is ${identityName(first.best)}`}
         </p>
       ) : null}
       {error ? (
@@ -629,19 +633,18 @@ function PersonView({
           <div className="people-hero-stats">
             <Metric label="Transactions" value={String(summary?.transactionCount ?? 0)} />
             <Metric label="Trips" value={String(trips.length)} />
+            {/* Without Rust's summary for this person, sent and received are unknown, not $0. */}
             <Metric
               label="Sent"
               value={
                 <span className="sensitive-value">
-                  {formatCurrency(Math.abs(summary?.sent ?? 0))}
+                  {formatCurrency(summary ? Math.abs(summary.sent) : null)}
                 </span>
               }
             />
             <Metric
               label="Received"
-              value={
-                <span className="sensitive-value">{formatCurrency(summary?.received ?? 0)}</span>
-              }
+              value={<span className="sensitive-value">{formatCurrency(summary?.received)}</span>}
             />
           </div>
           <Moments moments={moments} tripMonths={tripMonths} name={person.name} />

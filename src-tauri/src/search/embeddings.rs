@@ -106,6 +106,145 @@ pub fn embed_cached(
         .collect())
 }
 
+/// The cache at `path` alone: it never calls the framework, so a view can read it under the
+/// storage lock. A text not cached yet comes back empty, which callers read as unknown, and is
+/// noted in `missing` for a `Warmer` to embed later.
+pub struct CachedOnly {
+    pub path: std::path::PathBuf,
+    pub missing: std::cell::RefCell<std::collections::BTreeSet<String>>,
+}
+
+impl CachedOnly {
+    pub fn new(path: std::path::PathBuf) -> Self {
+        Self {
+            path,
+            missing: Default::default(),
+        }
+    }
+}
+
+impl Embedder for CachedOnly {
+    fn embed(&self, texts: &[String]) -> Option<Vec<Vec<f32>>> {
+        let found = if self.path.exists() {
+            let connection = connection(&self.path).ok()?;
+            let mut select = connection
+                .prepare_cached("SELECT vector FROM vectors WHERE text_hash = ?1")
+                .ok()?;
+            texts
+                .iter()
+                .map(|text| {
+                    let hash = crate::database::sha256(text.as_bytes());
+                    select
+                        .query_row([hash], |row| row.get::<_, Vec<u8>>(0))
+                        .map(|found| vector(&found))
+                        .unwrap_or_default()
+                })
+                .collect::<Vec<_>>()
+        } else {
+            vec![Vec::new(); texts.len()]
+        };
+        let mut missing = self.missing.borrow_mut();
+        for (text, embedded) in texts.iter().zip(&found) {
+            if embedded.is_empty() {
+                missing.insert(text.clone());
+            }
+        }
+        Some(found)
+    }
+}
+
+/// Embeds texts a view found missing (`CachedOnly`), off the storage lock and the view path:
+/// one background job at a time, each text tried once per launch. `generation` rises when a
+/// job finishes, so the next read derives its view again with the new vectors.
+#[derive(Clone)]
+pub struct Warmer {
+    path: std::path::PathBuf,
+    embedder: std::sync::Arc<dyn Embedder + Send + Sync>,
+    state: std::sync::Arc<std::sync::Mutex<WarmState>>,
+}
+
+#[derive(Default)]
+struct WarmState {
+    running: bool,
+    tried: std::collections::BTreeSet<String>,
+    queued: std::collections::BTreeSet<String>,
+    generation: u64,
+}
+
+impl Warmer {
+    pub fn new(
+        path: std::path::PathBuf,
+        embedder: std::sync::Arc<dyn Embedder + Send + Sync>,
+    ) -> Self {
+        Self {
+            path,
+            embedder,
+            state: Default::default(),
+        }
+    }
+
+    /// Changes each time a job has added to the cache.
+    pub fn generation(&self) -> u64 {
+        self.state.lock().map_or(0, |state| state.generation)
+    }
+
+    /// Queues the texts not tried yet. Outside tests a background thread embeds them; tests
+    /// call `warm` themselves, so results never depend on a thread's timing.
+    pub fn request(&self, texts: std::collections::BTreeSet<String>) {
+        let Ok(mut state) = self.state.lock() else {
+            return;
+        };
+        let fresh = texts
+            .into_iter()
+            .filter(|text| !state.tried.contains(text))
+            .collect::<Vec<_>>();
+        state.queued.extend(fresh);
+        if cfg!(test) || state.running || state.queued.is_empty() {
+            return;
+        }
+        state.running = true;
+        drop(state);
+        let warmer = self.clone();
+        std::thread::spawn(move || warmer.drain());
+    }
+
+    /// Warms until nothing is queued, so texts queued during a run aren't left waiting for the
+    /// next request; a run that panics ends its batch, not the warmer.
+    pub(crate) fn drain(&self) {
+        loop {
+            let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.warm()));
+            let Ok(mut state) = self.state.lock() else {
+                return;
+            };
+            if state.queued.is_empty() {
+                state.running = false;
+                return;
+            }
+        }
+    }
+
+    /// Embeds what is queued into the cache, then raises `generation`.
+    pub fn warm(&self) {
+        let queued = match self.state.lock() {
+            Ok(mut state) => {
+                let queued = std::mem::take(&mut state.queued);
+                state.tried.extend(queued.iter().cloned());
+                queued
+            }
+            Err(_) => return,
+        };
+        if queued.is_empty() {
+            return;
+        }
+        let texts = queued.into_iter().enumerate().collect::<Vec<_>>();
+        let added = embed_cached(&self.path, self.embedder.as_ref(), &texts)
+            .is_ok_and(|found| !found.is_empty());
+        if let (true, Ok(mut state)) = (added, self.state.lock()) {
+            state.generation += 1;
+        }
+    }
+}
+
 /// Removes the cache, as erasure and clearing caches do.
 pub fn clear(path: &Path) -> Result<(), String> {
     match std::fs::remove_file(path) {
@@ -122,18 +261,25 @@ pub struct Apple;
 impl Embedder for Apple {
     fn embed(&self, texts: &[String]) -> Option<Vec<Vec<f32>>> {
         use std::ffi::{c_char, CStr, CString};
+        // The Swift bridge (native/EmbeddingBridge.swift): the result is null or a
+        // NUL-terminated `strdup` string, owned by the caller until `brief_embed_free`.
         unsafe extern "C" {
             fn brief_embed(texts: *const c_char) -> *mut c_char;
             fn brief_embed_free(value: *mut c_char);
         }
         let input = CString::new(serde_json::to_string(texts).ok()?).ok()?;
+        // SAFETY: the bridge only reads the NUL-terminated `input` during the call; it
+        // outlives it.
         let output = unsafe { brief_embed(input.as_ptr()) };
         if output.is_null() {
             return None;
         }
+        // SAFETY: a non-null result is a NUL-terminated `strdup` string, read before it is
+        // freed.
         let text = unsafe { CStr::from_ptr(output) }
             .to_string_lossy()
             .into_owned();
+        // SAFETY: freed once, by the bridge's own `free`, and never read again.
         unsafe { brief_embed_free(output) };
         serde_json::from_str(&text).ok()
     }

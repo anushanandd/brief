@@ -21,9 +21,9 @@ pub enum PeriodState {
     /// Closed, but credits for it may still post.
     Settling,
     Future,
-    /// Use doesn't reach the card (Uber Cash spent before a charge).
+    /// Use doesn't reach the card: a partner's cash spent before any charge.
     NotVisible,
-    /// A card charge suggests the period's Uber Cash ran out first.
+    /// A card charge suggests the period's partner cash ran out first.
     LikelyUsed,
     /// The saved card history starts after the period began.
     BeforeHistory,
@@ -211,6 +211,18 @@ pub struct PlannedCredit {
 pub struct BenefitHistory {
     pub id: String,
     pub name: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub logo_domain: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub logo_url: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub logo_brand: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub category: Option<String>,
     pub recurring: bool,
     /// Its use doesn't show on the card, so periods are estimated from charges.
     pub external: bool,
@@ -254,7 +266,7 @@ pub struct BenefitReview {
 }
 
 /// What an open or future period should still be credited, in the order it should arrive.
-/// Uber Cash posts no credits, and a closed period expects nothing new.
+/// A benefit spent outside the card posts no credits, and a closed period expects nothing new.
 fn planned(
     rule: &Rule,
     period: &Period,
@@ -401,6 +413,10 @@ impl RuleSet {
                 let mut history = BenefitHistory {
                     id: definition.id.clone(),
                     name: definition.name.clone(),
+                    logo_domain: definition.logo_domain.clone(),
+                    logo_url: None,
+                    logo_brand: None,
+                    category: definition.category.clone(),
                     recurring: definition.recurring,
                     external: !definition.issuer_credits,
                     retired: definition
@@ -465,7 +481,7 @@ impl RuleSet {
         } else if !reached || (!covered && !seen) {
             (BeforeHistory, None, None)
         } else if !definition.issuer_credits {
-            // Uber Cash is spent before the card is charged, so only a charge is evidence.
+            // Partner cash is spent before the card is charged, so only a charge is evidence.
             (if charged { LikelyUsed } else { NotVisible }, None, None)
         } else if !tracked {
             (if credited > 0.0 { Full } else { NotTracked }, None, None)
@@ -478,7 +494,7 @@ impl RuleSet {
             // Cents left over still count as missed, but the credit was used in full.
             let state = if range.high < from_minor(NEGLIGIBLE_CENTS) {
                 Full
-            } else if range.low == from_minor(cap) {
+            } else if rule.usable(low) == cap {
                 Missed
             } else {
                 Partial
@@ -584,10 +600,11 @@ impl RuleSet {
         items.into_iter().map(|(_, item)| item).collect()
     }
 
-    /// The card charge most likely to have earned an unpaired credit: one at least as large,
-    /// posted within the benefit's usual delay before it, preferring the benefit's own
-    /// merchant (which may also post just after it), then an exact amount, then the closest
-    /// day. Charges already tied to a benefit, or rejected by hand, are skipped.
+    /// The card charge most likely to have earned an unpaired credit, posted within the
+    /// benefit's usual delay before it: a purchase the benefit covers at least as large (which
+    /// may also post just after it), else another merchant's charge of exactly the credit in
+    /// the benefit's spending category; then an exact amount, then the closest day. Charges
+    /// already tied to a benefit, or rejected by hand, are skipped.
     fn likely_purchase(
         &self,
         credit: &BenefitActivity,
@@ -600,7 +617,13 @@ impl RuleSet {
             .filter(|item| item.kind != ActivityKind::Purchase || item.paired_id.is_some())
             .map(|item| item.id.as_str())
             .collect::<HashSet<_>>();
+        let covered = matched
+            .iter()
+            .filter(|item| item.kind == ActivityKind::Purchase && item.benefit_id == rule.data.id)
+            .map(|item| item.id.as_str())
+            .collect::<HashSet<_>>();
         let amount = minor_units(credit.amount);
+        let fitting = spending_categories(rule.data.category.as_deref());
         own.iter()
             .filter(|transaction| {
                 transaction.amount < 0.0
@@ -614,8 +637,17 @@ impl RuleSet {
                 let date = calendar::transaction_date(transaction.occurred_date())?;
                 let days = (credit.date - date).num_days();
                 let text = transaction.descriptors();
-                let merchant = rule.matches.is_match(&text)
-                    && !rule.excludes.as_ref().is_some_and(|re| re.is_match(&text));
+                let merchant = covered.contains(transaction.id.as_str())
+                    || (rule.matches.is_match(&text)
+                        && !rule.excludes.as_ref().is_some_and(|re| re.is_match(&text)));
+                if !merchant
+                    && (-minor_units(transaction.amount) != amount
+                        || fitting.is_some_and(|fitting| {
+                            !fitting.contains(&transaction.category.as_str())
+                        }))
+                {
+                    return None;
+                }
                 let earliest = if merchant { -EARLY_CREDIT_DAYS } else { 0 };
                 (earliest..=rule.data.typical_delay_days)
                     .contains(&days)
@@ -631,4 +663,19 @@ impl RuleSet {
             })
             .map(|(transaction, _, _)| transaction.id.clone())
     }
+}
+
+/// The spending categories a charge from another merchant must be in to have earned a benefit
+/// of this category; none when the category says nothing about where it's spent.
+fn spending_categories(category: Option<&str>) -> Option<&'static [&'static str]> {
+    Some(match category? {
+        "dining" => &["Dining"],
+        "grocery" => &["Groceries"],
+        "entertainment" | "streaming" => &["Entertainment"],
+        "rideshare" => &["Transport"],
+        "hotel" => &["Travel"],
+        "airline" | "travel" => &["Travel", "Transport"],
+        "shopping" => &["Shopping"],
+        _ => return None,
+    })
 }

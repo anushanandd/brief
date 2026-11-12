@@ -11,6 +11,28 @@ pub const NOTABLE_DAY_PERCENT: f64 = 1.0;
 pub const SECTOR_CONCENTRATED_PERCENT: f64 = 40.0;
 /// EDGAR is asked about at most this many unclassified stocks per request.
 const SECTOR_LOOKUPS: usize = 40;
+/// Stocks modeled for the portfolio, largest first; one price request covers them.
+const MODELED_HOLDINGS: usize = 40;
+
+/// Stocks worth modeling, largest first: funds and non-stock holdings carry no company news.
+/// The summary models these, and portfolio news is saved for them.
+pub fn modeled(held: &[HeldSecurity], ticker: Option<&str>) -> Vec<String> {
+    let mut stocks: Vec<&HeldSecurity> = held
+        .iter()
+        .filter(|security| ticker.is_none_or(|ticker| security.ticker == ticker))
+        .filter(|security| {
+            ticker.is_some()
+                || (!fund_or_other(security.kind.as_deref())
+                    && alpaca::stock_symbol(&security.ticker).is_ok())
+        })
+        .collect();
+    stocks.sort_by(|a, b| b.value.total_cmp(&a.value).then(a.ticker.cmp(&b.ticker)));
+    stocks
+        .into_iter()
+        .take(MODELED_HOLDINGS)
+        .map(|security| security.ticker.clone())
+        .collect()
+}
 
 /// One security merged across accounts. Only USD positions with a known value and share count.
 #[derive(Clone, Debug, PartialEq)]
@@ -154,7 +176,7 @@ pub(crate) fn portfolio_today(
         change_pct,
         vs_market: change_pct
             .zip(market.as_ref().map(|market| market.change_pct))
-            .map(|(you, index)| crate::insights::returns::compare(you, index)),
+            .map(|(you, index)| crate::numeric::compare_returns(you, index)),
         notable: change_pct.is_some_and(|pct| pct.abs() >= NOTABLE_DAY_PERCENT),
         market,
         incomplete,

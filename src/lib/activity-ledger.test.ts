@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { seedSnapshot } from '../data/fixtures/records'
 import { activityLedger, activityRows, type LedgerSearch } from './activity-ledger'
+import { present } from './test-support'
 
 const data = seedSnapshot()
 const ledger = (search: LedgerSearch, draft = '') =>
@@ -51,7 +52,8 @@ describe('activity ledger', () => {
 
   it('builds breadcrumbs that keep every filter before them and names the view', () => {
     const view = ledger({ category: 'Dining', from: '2026-08-01', to: '2026-08-31', max: 40 })
-    const [category, dates] = view.breadcrumbs
+    const [category] = view.breadcrumbs
+    const dates = present(view.breadcrumbs[1], 'a dates crumb')
     expect(category).toEqual({ label: 'Dining', search: { category: 'Dining' } })
     expect(dates.search).toEqual({ category: 'Dining', from: '2026-08-01', to: '2026-08-31' })
     expect(view.viewName).toBe(`Dining · ${dates.label} · Under $40.00`)
@@ -78,7 +80,8 @@ describe('activity ledger', () => {
   })
 
   it('narrows to what Rust graded and reconciled, and flags only unreviewed conflicts', () => {
-    const [onStatement, unlisted, disputed, reviewed] = data.transactions
+    const nth = (index: number) => present(data.transactions[index], `transaction ${index}`)
+    const [onStatement, unlisted, disputed, reviewed] = [nth(0), nth(1), nth(2), nth(3)]
     const evidenceData = {
       ...data,
       transactions: data.transactions.map((transaction) =>

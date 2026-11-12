@@ -1,14 +1,7 @@
-//! A synthetic career: twenty-two months of one invented person's working life, as saved
-//! state, for the evidence graph's tests and the assistant's eval set.
-//!
-//! They work at Example Analytics in Austin from January 2025, paid every other Friday, and
-//! take a trip to Chicago in August 2025. They buy furniture that November. Their last day is
-//! February 6, 2026; they move to Seattle and start at Example Corp on March 2, paid
-//! twice a month, part into checking and part into an Example Bank Premier Checking account.
-//! In May they also open the Morgan Stanley Platinum Card, whose $895 annual fee posts on May
-//! 22, and a brokerage account. The $895 engagement bonus posts to CashPlus on July 15.
-//! Deposits to Premier Checking fall short of $5,000 in September. Pay statements and a W-2 back the
-//! jobs. Every name and amount is invented, and the life is the same on every run.
+//! A fixed synthetic career, as saved state, for the evidence tests and the assistant's eval
+//! set: two jobs with a move between them, pay split across two accounts, a fee waiver that
+//! lapses when deposits fall short, a fee repaid by a bonus, and one trip. Dates and amounts
+//! never change, so tests can assert exact results.
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use serde_json::json;
 
@@ -22,11 +15,11 @@ use crate::{
 /// The day the life is read, as tests pass it.
 pub(crate) const TODAY: (i32, u32, u32) = (2026, 10, 17);
 const FIRST: (i32, u32, u32) = (2025, 1, 1);
-/// Example Analytics' last pay date, and Example Corp's first day.
+/// The first job's last pay date, and the second job's first day.
 const LEFT: (i32, u32, u32) = (2026, 2, 6);
 const JOINED: (i32, u32, u32) = (2026, 3, 2);
 const MOVED: (i32, u32, u32) = (2026, 2, 15);
-const CASHPLUS_OPENED: (i32, u32, u32) = (2026, 5, 4);
+const PREMIER_OPENED: (i32, u32, u32) = (2026, 4, 6);
 const CARD_OPENED: (i32, u32, u32) = (2026, 5, 10);
 const BROKERAGE_OPENED: (i32, u32, u32) = (2026, 5, 15);
 const TRIP: (i32, u32, u32) = (2025, 8, 14);
@@ -75,7 +68,10 @@ impl Builder {
             "location": entry.place.map(|(city, region)| json!({ "city": city, "region": region, "country": "US" })),
         }))
         .expect("career transactions are valid");
-        transaction.classification = Some(crate::transaction_policy::classify(&transaction));
+        transaction.classification = Some(crate::transaction_policy::classify(
+            &transaction,
+            &crate::insights::benefits::Catalog::default(),
+        ));
         self.transactions.push(transaction);
     }
 }
@@ -157,7 +153,7 @@ pub(crate) fn state() -> FinanceState {
         transactions: Vec::new(),
     };
     let austin = Some(("Austin", "TX"));
-    let san_francisco = Some(("Seattle", "WA"));
+    let seattle = Some(("Seattle", "WA"));
     let (left, joined, moved) = (date(LEFT), date(JOINED), date(MOVED));
     let mut day = date(FIRST);
     while day < today() {
@@ -180,11 +176,11 @@ pub(crate) fn state() -> FinanceState {
                 place: None,
             });
         }
-        // Example Corp pays on the 15th and the month's last day, split two ways.
+        // The second job pays twice a month, split across two accounts.
         let last_day = (day + Duration::days(1)).day() == 1;
         if day >= joined && (day.day() == 15 || last_day) {
             let september = day.year() == 2026 && day.month() == 9;
-            let to_cashplus = if day < date(CASHPLUS_OPENED) {
+            let to_premier = if day < date(PREMIER_OPENED) {
                 0.0
             } else if september {
                 2_400.0
@@ -192,22 +188,22 @@ pub(crate) fn state() -> FinanceState {
                 2_600.0
             };
             life.add(Entry {
-                id: id("ms-pay"),
+                id: id("corp-pay"),
                 account: "checking",
                 day,
-                amount: 4_100.0 - to_cashplus,
+                amount: 4_100.0 - to_premier,
                 merchant: "Example Corp",
                 description: Some("EXAMPLE CORP SERV PAYROLL PPD ID: 9001"),
                 category: "Income",
                 detail: "INCOME_WAGES",
                 place: None,
             });
-            if to_cashplus > 0.0 {
+            if to_premier > 0.0 {
                 life.add(Entry {
-                    id: id("ms-pay-cashplus"),
-                    account: "cashplus",
+                    id: id("corp-pay-premier"),
+                    account: "premier",
                     day,
-                    amount: to_cashplus,
+                    amount: to_premier,
                     merchant: "Example Corp",
                     description: Some("EXAMPLE CORP SERV PAYROLL PPD ID: 9001"),
                     category: "Income",
@@ -235,7 +231,7 @@ pub(crate) fn state() -> FinanceState {
             });
         }
         let card = if day >= date(CARD_OPENED) {
-            "msplatinum"
+            "rewards"
         } else {
             "card"
         };
@@ -260,7 +256,7 @@ pub(crate) fn state() -> FinanceState {
         let home = if day < left + Duration::days(5) {
             austin
         } else if day >= moved {
-            san_francisco
+            seattle
         } else {
             None
         };
@@ -344,12 +340,12 @@ pub(crate) fn state() -> FinanceState {
     one(
         &mut life,
         Entry {
-            id: "membership-fee".into(),
-            account: "msplatinum",
+            id: "account-fee".into(),
+            account: "checking",
             day: date((2026, 5, 22)),
-            amount: -895.0,
-            merchant: "Annual Membership Fee",
-            description: Some("ANNUAL MEMBERSHIP FEE"),
+            amount: -100.0,
+            merchant: "Annual Account Fee",
+            description: Some("ANNUAL ACCOUNT FEE"),
             category: "Bank Fees",
             detail: "BANK_FEES_OTHER_BANK_FEES",
             place: None,
@@ -358,12 +354,12 @@ pub(crate) fn state() -> FinanceState {
     one(
         &mut life,
         Entry {
-            id: "engagement-bonus".into(),
-            account: "cashplus",
+            id: "loyalty-bonus".into(),
+            account: "checking",
             day: date((2026, 7, 15)),
-            amount: 895.0,
-            merchant: "Engagement Bonus",
-            description: Some("PLATINUM CASHPLUS ENGAGEMENT BONUS"),
+            amount: 100.0,
+            merchant: "Loyalty Bonus",
+            description: Some("EXAMPLE BANK LOYALTY BONUS"),
             category: "Income",
             detail: "INCOME_OTHER_INCOME",
             place: None,
@@ -393,7 +389,7 @@ pub(crate) fn state() -> FinanceState {
     transactions.sort_by(|left, right| right.date.cmp(&left.date).then(left.id.cmp(&right.id)));
 
     let analytics = "Example Analytics LLC";
-    let morgan = "Example Corp Services Group Inc.";
+    let corp = "Example Corp Services Group Inc.";
     let documents = vec![
         payslip(
             "analytics-first",
@@ -412,28 +408,28 @@ pub(crate) fn state() -> FinanceState {
         payslip(
             "analytics-last",
             analytics,
-            (date((2026, 3, 9)), date((2026, 3, 22))),
+            (date((2026, 1, 19)), date((2026, 2, 1))),
             date(LEFT),
             &[2_600.0],
         ),
-        w2(analytics, 2025, "CO"),
+        w2(analytics, 2025, "TX"),
         payslip(
-            "ms-first",
-            morgan,
-            (date(JOINED), date((2026, 4, 30))),
-            date((2026, 4, 30)),
+            "corp-first",
+            corp,
+            (date(JOINED), date((2026, 3, 15))),
+            date((2026, 3, 15)),
             &[4_100.0],
         ),
         payslip(
-            "ms-july",
-            morgan,
+            "corp-july",
+            corp,
             (date((2026, 7, 1)), date((2026, 7, 15))),
             date((2026, 7, 15)),
             &[1_500.0, 2_600.0],
         ),
         payslip(
-            "ms-september",
-            morgan,
+            "corp-september",
+            corp,
             (date((2026, 9, 16)), date((2026, 9, 30))),
             date((2026, 9, 30)),
             &[1_700.0, 2_400.0],
@@ -458,20 +454,20 @@ pub(crate) fn state() -> FinanceState {
             Some("Example Cash Back Card"),
         ),
         account(
-            "cashplus",
-            "Platinum CashPlus - 1234",
-            "Morgan Stanley",
+            "premier",
+            "Premier Checking - 5678",
+            "Example Bank",
             "cash",
             18_400.0,
-            None,
+            Some("Premier Checking"),
         ),
         account(
-            "msplatinum",
-            "Platinum Card",
-            "American Express",
+            "rewards",
+            "Example Card",
+            "Example Issuer",
             "credit",
             -1_240.0,
-            Some("Morgan Stanley Platinum Card®"),
+            Some("The Example Card®"),
         ),
         account(
             "brokerage",
@@ -482,8 +478,137 @@ pub(crate) fn state() -> FinanceState {
             None,
         ),
     ];
+    // The brokerage holds one invented fund, its whole balance.
+    state.snapshot.holdings = vec![serde_json::from_value(json!({
+        "accountId": "plaid:brokerage",
+        "ticker": "EXTM",
+        "name": "Example Total Market ETF",
+        "instrumentSubtype": "etf",
+        "shares": 10,
+        "price": 100.0,
+        "value": 1_000.0,
+        "costBasis": 950.0,
+        "unrealizedGain": 50.0,
+        "totalChangePct": 5.26,
+        "color": "#272727",
+    }))
+    .expect("the career's holding is valid")];
     state.snapshot.transactions = transactions;
     state.snapshot.updated_at = "2026-10-17T12:00:00Z".into();
     state.documents = documents;
+    state.settings.programs = vec![employee_waiver(), loyalty_bonus()];
+    state.settings.card_rules = vec![crate::insights::benefits::example_rules()];
     state
+}
+
+/// An invented employer's fee waiver, as a rule the user approved from research: it exercises
+/// employment, monthly deposits, a condition no record shows, a watch, and a job's end.
+pub(crate) fn employee_waiver() -> crate::evidence::programs::Program {
+    serde_json::from_value(json!({
+        "id": "example-premier-employee-fee-waiver",
+        "name": "Example Bank employee waiver",
+        "organization": "Example Bank",
+        "summary": "For Example Corp employees, the Premier Checking $25 monthly fee is avoided with $5,000 in monthly deposits and enrollment in online banking.",
+        "source": { "url": "https://bank.example/employees", "title": "Employee banking | Example Bank" },
+        "reviewed": "2026-10-17",
+        "terms": [{ "from": "2025-01-01", "values": { "deposits": [5000], "fee": [25] } }],
+        "conditions": [
+            {
+                "kind": "account",
+                "as": "premier",
+                "says": "A Premier Checking account at Example Bank",
+                "name": "premier checking",
+                "institution": "example bank"
+            },
+            {
+                "kind": "employment",
+                "as": "job",
+                "says": "You work at Example Corp, by your pay statements or payroll",
+                "organization": "example corp"
+            },
+            {
+                "kind": "monthlyDeposits",
+                "as": "months",
+                "says": "At least the terms' deposits reached the account in the month, while you worked there",
+                "account": "premier",
+                "atLeastTerm": "deposits",
+                "during": "job"
+            },
+            {
+                "kind": "unobservable",
+                "says": "Enrollment in Example Bank online banking, which no record Brief reads shows"
+            }
+        ],
+        "conclusion": {
+            "subject": "premier",
+            "predicate": "feeWaived",
+            "title": "Monthly fee waived",
+            "says": "The $25 monthly fee is waived under the employee criteria",
+            "spans": "months"
+        },
+        "watch": {
+            "condition": "months",
+            "says": "Deposits to Premier Checking were under {deposits} in {month}; the $25 monthly fee may apply."
+        },
+        "ends": {
+            "with": "job",
+            "says": "When work at Example Corp ends, the employee waiver lapses: the standard criteria apply, or the $25 monthly fee."
+        }
+    }))
+    .expect("the career's waiver is a valid program")
+}
+
+/// An invented bank bonus that repays an account's annual fee: it exercises an account, two
+/// dated transactions, a term amount, an offset, and an expected bonus.
+pub(crate) fn loyalty_bonus() -> crate::evidence::programs::Program {
+    serde_json::from_value(json!({
+        "id": "example-checking-loyalty-bonus",
+        "name": "Example Bank loyalty bonus",
+        "organization": "Example Bank",
+        "summary": "Example Bank pays a loyalty bonus into Everyday Checking after its annual fee.",
+        "source": { "url": "https://bank.example/loyalty", "title": "Loyalty bonus | Example Bank" },
+        "reviewed": "2026-10-17",
+        "terms": [{ "from": "2026-01-01", "values": { "bonus": [100] } }],
+        "conditions": [
+            {
+                "kind": "account",
+                "as": "checking",
+                "says": "An Everyday Checking account at Example Bank",
+                "name": "everyday checking",
+                "institution": "example bank"
+            },
+            {
+                "kind": "transaction",
+                "as": "bonus",
+                "says": "A deposit to that account named a loyalty bonus, of the amount the terms give",
+                "account": "checking",
+                "description": "loyalty bonus",
+                "direction": "in",
+                "amountTerm": "bonus"
+            },
+            {
+                "kind": "transaction",
+                "as": "fee",
+                "says": "The account's annual fee, charged in the 13 months before the bonus",
+                "account": "checking",
+                "description": "annual account fee|annual fee",
+                "direction": "out",
+                "before": { "of": "bonus", "days": 396 }
+            }
+        ],
+        "conclusion": {
+            "subject": "bonus",
+            "predicate": "offsets",
+            "object": "fee",
+            "title": "Account fee offset",
+            "says": "The {bonus} loyalty bonus offsets the account's {fee} annual fee"
+        },
+        "expect": {
+            "missing": "bonus",
+            "after": "fee",
+            "days": 60,
+            "says": "The loyalty bonus usually posts within two months of the annual fee; none has since the fee on {fee.date}."
+        }
+    }))
+    .expect("the career's bonus is a valid program")
 }

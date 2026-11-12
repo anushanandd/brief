@@ -6,7 +6,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use super::calendar::{self};
-use super::changes::{Window, WINDOWS};
+use super::period_changes::{Window, WINDOWS};
 use crate::finance_contract::{Account, Transaction};
 use crate::numeric::{from_minor, minor_units, round2};
 use crate::transaction_policy::Mark;
@@ -71,7 +71,7 @@ pub fn idle_cash(accounts: &[Account], interest: &[AccountInterest]) -> Vec<Idle
                 item.periods
                     .iter()
                     .find(|period| period.window == Window::Quarter)
-                    .map(|period| period.annual_rate.unwrap_or(0.0))
+                    .and_then(|period| period.annual_rate)
             })
     };
     let Some((better_account_id, better_rate)) = interest

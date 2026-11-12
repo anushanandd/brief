@@ -12,9 +12,11 @@ export function keyCaps(label: string): string[][] {
     .map((chord) => {
       const caps: string[] = []
       let rest = chord
-      while (rest.length > 1 && modifiers[rest[0]]) {
-        caps.push(modifiers[rest[0]])
+      let modifier = modifiers[rest.charAt(0)]
+      while (rest.length > 1 && modifier) {
+        caps.push(modifier)
         rest = rest.slice(1)
+        modifier = modifiers[rest.charAt(0)]
       }
       caps.push(rest.toLowerCase() === 'esc' ? 'Esc' : rest)
       return caps

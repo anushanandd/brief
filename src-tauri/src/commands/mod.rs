@@ -2,6 +2,7 @@
 //! it needs; storage, providers, and insights do the work.
 pub(crate) mod assistant;
 pub(crate) mod backups;
+pub(crate) mod card_rules;
 pub(crate) mod data_folder;
 pub(crate) mod documents;
 pub(crate) mod finance;

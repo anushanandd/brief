@@ -271,7 +271,7 @@
       ]
     }
   ],
-  "calculationVersion": 43,
+  "calculationVersion": 44,
   "calendarDate": "2026-09-09",
   "dividendHistory": [
     {
@@ -528,10 +528,10 @@
       "location": {
         "address": "123 Example St",
         "city": "Portland",
-        "lat": 37.7749,
-        "lon": -122.4194,
-        "postalCode": "94103",
-        "region": "CA",
+        "lat": 45.52,
+        "lon": -122.68,
+        "postalCode": "97205",
+        "region": "OR",
         "storeNumber": "0412"
       },
       "logoName": "Coffee",
@@ -545,10 +545,10 @@
       "place": {
         "city": "Portland",
         "country": "US",
-        "lat": 37.7749,
-        "lon": -122.4194,
+        "lat": 45.52,
+        "lon": -122.68,
         "precision": "exact",
-        "region": "CA",
+        "region": "OR",
         "source": "descriptor"
       },
       "postedOn": "2026-09-08",

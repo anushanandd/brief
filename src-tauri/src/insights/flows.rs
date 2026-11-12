@@ -7,7 +7,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use super::calendar;
-use super::changes::{Window, WINDOWS};
+use super::period_changes::{Window, WINDOWS};
 use crate::finance_contract::{Performance, Snapshot};
 use crate::numeric::{from_minor, minor_units};
 use crate::transaction_policy::Mark;

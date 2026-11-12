@@ -8,7 +8,7 @@ pub(super) fn storage_with_plaid_cash(directory: &Path) -> Storage {
     storage.data.provider_data.plaid = Some(crate::providers::PlaidData {
         accounts: vec![serde_json::json!({
             "account_id": "cash", "name": "Checking", "institution_name": "Bank",
-            "type": "depository", "mask": "0042",
+            "type": "depository", "mask": "0000",
             "balances": { "current": 100, "iso_currency_code": "USD" }
         })],
         transactions: vec![serde_json::json!({
@@ -21,7 +21,7 @@ pub(super) fn storage_with_plaid_cash(directory: &Path) -> Storage {
     storage
 }
 
-const CHECKING_STATEMENT: &str = "Account Activity for Checking -0042\n\
+const CHECKING_STATEMENT: &str = "Account Activity for Checking -0000\n\
     Date,Description,Amount\n\
     09/08/2026,COFFEE,-4.50\n\
     08/20/2026,PAYROLL EXAMPLE,250.00\n\

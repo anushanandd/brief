@@ -1,0 +1,2 @@
+# Tests assert by unwrapping; the app's code returns its errors instead.
+allow-unwrap-in-tests = true

@@ -1,16 +1,9 @@
-import { pluralize } from '../lib/format'
+import { formatInstant, pluralize } from '../lib/format'
 import type { MarketNewsArticle, NewsTag, SecFiling } from '../lib/schema'
 import { ExternalLink } from './external-link'
 import { ArrowUpRight } from './icons'
 import { Relevance } from './relevance'
 import { EmptyState } from './ui'
-
-const newsDate = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  hour: 'numeric',
-  minute: '2-digit',
-})
 
 export const newsTagName: Record<NewsTag, string> = {
   earnings: 'Earnings',
@@ -38,7 +31,7 @@ function StoryRow({
             <Relevance value={article.relevance} />
             <span>{article.source}</span>
             <span aria-hidden="true">·</span>
-            <time dateTime={article.createdAt}>{newsDate.format(new Date(article.createdAt))}</time>
+            <time dateTime={article.createdAt}>{formatInstant(article.createdAt)}</time>
           </span>
           <strong>{article.headline}</strong>
         </span>
@@ -75,7 +68,7 @@ function FilingRow({ filing }: { filing: SecFiling }) {
           <span className="news-row-meta">
             <span>{`SEC ${filing.form}`}</span>
             <span aria-hidden="true">·</span>
-            <time dateTime={filing.filedAt}>{newsDate.format(new Date(filing.filedAt))}</time>
+            <time dateTime={filing.filedAt}>{formatInstant(filing.filedAt)}</time>
           </span>
           <strong>{filing.title}</strong>
         </span>

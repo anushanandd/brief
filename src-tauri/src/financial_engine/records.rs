@@ -179,6 +179,23 @@ pub(super) struct PlaidTransaction {
     /// The cardholder on an account with several, when the institution reports it.
     #[serde(default)]
     pub(super) account_owner: Option<String>,
+    /// The amount's currency. Rows saved before Brief read it have neither code and are
+    /// taken as US dollars, as they always were.
+    #[serde(default)]
+    pub(super) iso_currency_code: Option<String>,
+    /// Plaid's code for a currency without an ISO one, such as a cryptocurrency.
+    #[serde(default)]
+    pub(super) unofficial_currency_code: Option<String>,
+}
+
+impl PlaidTransaction {
+    /// Whether the amount is in a currency other than US dollars.
+    pub(super) fn foreign_currency(&self) -> bool {
+        match (&self.iso_currency_code, &self.unofficial_currency_code) {
+            (Some(code), _) => !code.eq_ignore_ascii_case("USD"),
+            (None, unofficial) => unofficial.is_some(),
+        }
+    }
 }
 
 #[derive(Debug, Deserialize)]

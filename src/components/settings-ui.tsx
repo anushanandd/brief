@@ -94,6 +94,7 @@ export function SettingsRow({
       id={id}
       className={`settings-item settings-control-row${className ? ` ${className}` : ''}`}
       data-settings-item
+      data-keyboard-row
       tabIndex={-1}
       hidden={useItemHidden(id)}
       {...props}
@@ -132,6 +133,7 @@ export function SettingsBlock({
       id={id}
       className={`settings-item settings-block${className ? ` ${className}` : ''}`}
       data-settings-item
+      data-keyboard-row
       tabIndex={-1}
       hidden={useItemHidden(id)}
     >

@@ -50,7 +50,7 @@ export const secondaryNavigation = [
 export const analyticsIcons = {
   'cash-flow': ArrowDownUp,
   income: BadgeDollarSign,
-  'amex-credits': CreditCard,
+  'card-credits': CreditCard,
   dividends: Sprout,
   interest: Percent,
   fees: Receipt,
@@ -59,9 +59,9 @@ export const analyticsIcons = {
 
 // Analytics marks share one tone per chart wherever the chart is listed.
 export const analyticsIconColors = {
-  'cash-flow': 'var(--chart-secondary)',
+  'cash-flow': 'var(--data-1)',
   income: 'var(--positive)',
-  'amex-credits': 'var(--positive)',
+  'card-credits': 'var(--positive)',
   dividends: 'var(--positive)',
   interest: 'var(--positive)',
   fees: 'var(--negative)',
@@ -70,8 +70,10 @@ export const analyticsIconColors = {
 
 /** Each destination's own pages, which head its reports in one strip. */
 export const destinationPages = {
-  money: [{ to: '/spending', label: 'Spending', icon: WalletCards }],
-  investments: [{ to: '/holdings', label: 'Overview', icon: BriefcaseBusiness }],
+  money: [{ to: '/spending', label: 'Spending', icon: WalletCards, color: 'var(--negative)' }],
+  investments: [
+    { to: '/holdings', label: 'Overview', icon: BriefcaseBusiness, color: 'var(--data-1)' },
+  ],
 } as const
 
 export const analyticsNavigation = analyticsCharts.map((chart) => ({

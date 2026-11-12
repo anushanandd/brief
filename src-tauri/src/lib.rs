@@ -1,7 +1,9 @@
+// Tests compare computed amounts with the exact values they expect; the app's code may not.
+#![cfg_attr(test, allow(clippy::float_cmp))]
 mod authentication;
 mod background;
 mod bank_statements;
-mod calendar;
+mod card_drafts;
 mod close;
 mod commands;
 mod contacts;
@@ -9,10 +11,13 @@ mod data_folder;
 mod database;
 mod document_summaries;
 mod documents;
+mod event_calendar;
 mod evidence;
 mod files;
 mod finance_contract;
 mod financial_engine;
+#[cfg(test)]
+mod fixture_masks;
 mod foundation_model;
 mod health;
 mod insights;
@@ -23,9 +28,11 @@ mod native_menu;
 mod notify;
 mod numeric;
 mod objects;
+mod panic_log;
 mod places;
 mod providers;
 mod quality;
+mod reading_job;
 mod refresh;
 mod research;
 mod search;
@@ -35,6 +42,7 @@ mod startup_market;
 mod statements;
 mod storage;
 mod summary;
+mod summary_jobs;
 #[cfg(test)]
 mod synthetic;
 mod transaction_policy;
@@ -72,6 +80,8 @@ struct AppState {
     search: Mutex<Option<search::Index>>,
     /// What the readable folder last wrote.
     written: Mutex<commands::data_folder::Written>,
+    /// The latest investment summary runs, for the Logs page and Data health.
+    summary_runs: summary::SummaryRuns,
 }
 
 impl AppState {
@@ -203,6 +213,7 @@ pub fn run() {
                     .ok_or("Main window unavailable")?,
             )?;
             let directory = app.path().app_data_dir()?;
+            panic_log::install(&directory);
             app.manage(AppState {
                 startup_market: startup_market::StartupMarket::new(
                     directory.join("startup-market.sqlite3"),
@@ -220,6 +231,7 @@ pub fn run() {
                 places: tokio::sync::Mutex::new(()),
                 search: Mutex::new(None),
                 written: Mutex::default(),
+                summary_runs: summary::SummaryRuns::default(),
             });
             let handle = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -233,9 +245,11 @@ pub fn run() {
             }
             background::start(app.handle().clone());
             document_summaries::start(app.handle().clone());
-            calendar::start(app.handle().clone());
+            event_calendar::start(app.handle().clone());
             close::start(app.handle().clone());
+            reading_job::start(app.handle().clone());
             check_log_in_background(app.handle().clone());
+            commands::card_rules::apply_in_background(app.handle().clone());
             write_data_folder_in_background(app.handle().clone());
             notify::sync_tray(app.handle(), background::enabled(app.handle()));
             Ok(())
@@ -243,6 +257,10 @@ pub fn run() {
         // With background refresh on, closing the window hides it so the daily refresh can
         // run; Quit still exits.
         .on_window_event(|window, event| {
+            // Work a hidden window paused picks up when it returns, however it returns.
+            if let tauri::WindowEvent::Focused(true) = event {
+                summary_jobs::resume(window.app_handle());
+            }
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                 if window.label() == "main" && background::enabled(window.app_handle()) {
                     api.prevent_close();
@@ -261,6 +279,7 @@ pub fn run() {
             finance::get_finance_snapshot,
             finance::get_spending_period,
             finance::get_reports,
+            finance::get_activity_totals,
             finance::get_sync_runs,
             finance::get_change_log,
             object_commands::search_objects,
@@ -274,6 +293,7 @@ pub fn run() {
             finance::transaction_annotations,
             finance::restore_transaction_annotations,
             finance::save_finance_settings,
+            finance::read_card_rules,
             finance::preview_statement_import,
             finance::import_statement,
             finance::get_statement_imports,
@@ -293,6 +313,12 @@ pub fn run() {
             commands::research::recheck_program_sources,
             commands::research::acknowledge_program_source,
             commands::research::draft_program,
+            commands::card_rules::search_card_catalog,
+            commands::card_rules::catalog_brands,
+            commands::card_rules::draft_card_rules,
+            commands::card_rules::recheck_card_rules,
+            commands::card_rules::choose_catalog_card,
+            commands::card_rules::prefill_program_draft,
             refresh::refresh_finance_snapshot,
             refresh::save_account_link,
             backups::recover_finance_state,
@@ -325,10 +351,12 @@ pub fn run() {
             investments::get_portfolio_today,
             investments::get_portfolio_sectors,
             investments::get_investment_summary,
+            investments::warm_investment_summaries,
             investments::refresh_portfolio_news,
             investments::get_earnings_calendar,
             investments::get_calibration,
             investments::get_summary_runs,
+            commands::documents::get_local_models,
             background::get_login_item,
             background::set_login_item,
             native_menu::set_command_menu,
@@ -338,13 +366,13 @@ pub fn run() {
             contacts::search_contacts,
             contacts::contact_photos,
             contacts::match_contacts,
-            calendar::calendar_status,
-            calendar::request_calendar_access,
-            calendar::calendar_sources,
-            calendar::create_brief_calendar,
-            calendar::remove_brief_events,
-            calendar::calendar_events,
-            calendar::calendar_list,
+            event_calendar::calendar_status,
+            event_calendar::request_calendar_access,
+            event_calendar::calendar_sources,
+            event_calendar::create_brief_calendar,
+            event_calendar::remove_brief_events,
+            event_calendar::calendar_events,
+            event_calendar::calendar_list,
         ])
         .build(tauri::generate_context!())
         .expect("error while building Brief")

@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useEffect, useId, useMemo, useState } from 'react'
+import { useId, useMemo, useRef, useState } from 'react'
 
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { accountDisplayName } from '../lib/account-names'
@@ -10,6 +10,7 @@ import {
   formatCurrency,
   formatPercent,
   formatPublicCurrency,
+  formatRate,
   formatShare,
   formatShares,
   formatSignedCurrency,
@@ -26,7 +27,7 @@ import { useObjectDetailsAction } from './object-details'
 import { SecurityMark } from './security-mark'
 import { SettingsLink } from './settings-dialog'
 import { Button, Card, EmptyState, Metric, ScrollCueCard, SectionHeading } from './ui'
-import { PopupContainerContext } from './ui/popup-container'
+import { Dialog, dialogAutofocus } from './ui/dialog'
 
 /**
  * What you own of one security, in a card beside its price: worth and weight, gain, shares,
@@ -95,9 +96,7 @@ export function PositionCard({
           label="Value"
           value={
             <>
-              <span className="sensitive-value">
-                {formatCurrency(security?.value ?? detail.value)}
-              </span>
+              <span className="sensitive-value">{formatCurrency(detail.value)}</span>
               {security?.percent != null ? (
                 <small className="metric-detail">{`${formatShare(security.percent)} of portfolio`}</small>
               ) : null}
@@ -109,16 +108,16 @@ export function PositionCard({
           value={
             <>
               <span className="sensitive-value">
-                {security?.gain == null
+                {detail.gain == null
                   ? '—'
-                  : `${security.gain >= 0 ? '+' : ''}${formatCurrency(security.gain)}`}
+                  : `${detail.gain >= 0 ? '+' : ''}${formatCurrency(detail.gain)}`}
               </span>
-              {security?.gainPercent != null ? (
-                <small className="metric-detail">{formatPercent(security.gainPercent)}</small>
+              {detail.totalChange != null ? (
+                <small className="metric-detail">{formatPercent(detail.totalChange)}</small>
               ) : null}
             </>
           }
-          tone={valueTone(security?.gain)}
+          tone={valueTone(detail.gain)}
         />
         {moneyWeighted?.moneyWeightedPct != null ? (
           <Metric
@@ -150,7 +149,7 @@ export function PositionCard({
                 <span className="sensitive-value">{formatCurrency(dividends.annualIncome)}</span>
                 <small className="metric-detail">
                   {dividends.yieldPercent != null
-                    ? `/yr · ${dividends.yieldPercent.toFixed(2)}% yield`
+                    ? `/yr · ${formatRate(dividends.yieldPercent)} yield`
                     : '/yr'}
                 </small>
               </>
@@ -177,7 +176,7 @@ export function PositionCard({
             label="Yield"
             value={
               <>
-                {bond.yieldPercent != null ? `${bond.yieldPercent.toFixed(2)}%` : '—'}
+                {bond.yieldPercent != null ? formatRate(bond.yieldPercent) : '—'}
                 {bond.maturityDate ? (
                   <small className="metric-detail">{`matures ${formatDay(bond.maturityDate)}`}</small>
                 ) : null}
@@ -204,6 +203,7 @@ export function PositionCard({
         )}
       </div>
       {descriptors.length ? <p className="portfolio-note">{descriptors.join(' · ')}</p> : null}
+      <PositionAccounts data={data} ticker={ticker} />
       <div className="position-card-action">
         <Button
           type="button"
@@ -224,6 +224,71 @@ export function PositionCard({
         onClose={() => setTaxesOpen(false)}
       />
     </Card>
+  )
+}
+
+/**
+ * The position's parts, one per account, behind a disclosure: shown only when the security is
+ * held in more than one account, since one account's part is the whole position above.
+ */
+function PositionAccounts({ data, ticker }: { data: FinanceSnapshot; ticker: string }) {
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  const parts = holdingDetail(data, ticker).accounts
+  const several = parts.length > 1
+  useRegisterActions(
+    useMemo<AppAction[]>(
+      () =>
+        several
+          ? [
+              {
+                id: 'holding.accounts.toggle',
+                title: 'Show the position by account',
+                search: 'holding position accounts split breakdown',
+                group: 'View',
+                scope: 'page',
+                bindings: [{ sequence: ['i'], label: 'I' }],
+                run: () => {
+                  const details = detailsRef.current
+                  if (details) details.open = !details.open
+                },
+              },
+            ]
+          : [],
+      [several],
+    ),
+  )
+  if (!several) return null
+  const names = financeSettings(data).accountNames
+  const accountName = (id: string) =>
+    accountDisplayName(id, data.accounts.find((account) => account.id === id)?.name ?? id, names)
+  return (
+    <details ref={detailsRef} className="account-details-more position-accounts">
+      <summary data-command="holding.accounts.toggle">{`In ${parts.length} accounts`}</summary>
+      <table className="financial-table" aria-label={`Your ${ticker} position by account`}>
+        <thead>
+          <tr>
+            <th scope="col">Account</th>
+            <th scope="col">Shares</th>
+            <th scope="col">Value</th>
+            <th scope="col">Cost basis</th>
+            <th scope="col">Gain</th>
+          </tr>
+        </thead>
+        <tbody>
+          {parts.map((part) => (
+            <tr key={part.accountId}>
+              <th scope="row">{accountName(part.accountId)}</th>
+              <td>{formatShares(part.shares)}</td>
+              <td className="sensitive-value">{formatCurrency(part.value)}</td>
+              <td className="sensitive-value">{formatCurrency(part.costBasis)}</td>
+              <td className={`sensitive-value ${valueTone(part.unrealizedGain)}`}>
+                {formatCurrency(part.unrealizedGain)}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </details>
   )
 }
 
@@ -294,53 +359,40 @@ function SecurityTaxesDialog({
   open: boolean
   onClose: () => void
 }) {
-  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
   const titleId = useId()
-  useEffect(() => {
-    if (!dialog || typeof dialog.showModal !== 'function') return
-    if (open && !dialog.open) dialog.showModal()
-    else if (!open && dialog.open) dialog.close()
-  }, [open, dialog])
   return (
-    <dialog
-      ref={setDialog}
+    <Dialog
+      open={open}
+      onClose={onClose}
+      popups
       className="transaction-dialog security-taxes-dialog"
       aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault()
-        onClose()
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
     >
       {open ? (
-        <PopupContainerContext.Provider value={dialog}>
-          <article className="transaction-details">
-            <header className="transaction-details-header">
-              <SecurityMark ticker={ticker} />
-              <div>
-                {/* The title takes focus on open, so no control starts out ringed. */}
-                <h2 id={titleId} tabIndex={-1} autoFocus>
-                  Taxes
-                </h2>
-                <p>{ticker}</p>
-              </div>
-              <Button
-                icon={X}
-                size="icon-compact"
-                variant="ghost"
-                aria-label="Close taxes"
-                onClick={onClose}
-              />
-            </header>
-            <div className="security-taxes-body">
-              <SecurityTaxes data={data} ticker={ticker} />
+        <article className="transaction-details">
+          <header className="transaction-details-header">
+            <SecurityMark ticker={ticker} />
+            <div>
+              {/* The title takes focus on open, so no control starts out ringed. */}
+              <h2 id={titleId} tabIndex={-1} {...dialogAutofocus}>
+                Taxes
+              </h2>
+              <p>{ticker}</p>
             </div>
-          </article>
-        </PopupContainerContext.Provider>
+            <Button
+              icon={X}
+              size="icon-compact"
+              variant="ghost"
+              aria-label="Close taxes"
+              onClick={onClose}
+            />
+          </header>
+          <div className="security-taxes-body">
+            <SecurityTaxes data={data} ticker={ticker} />
+          </div>
+        </article>
       ) : null}
-    </dialog>
+    </Dialog>
   )
 }
 

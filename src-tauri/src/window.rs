@@ -9,7 +9,8 @@ pub(crate) fn hide_window_buttons(window: &tauri::WebviewWindow) -> tauri::Resul
     use objc2_app_kit::{NSWindow, NSWindowButton};
     let native = window.ns_window()? as usize;
     window.run_on_main_thread(move || {
-        // SAFETY: Tauri owns this NSWindow for the life of the main app window.
+        // SAFETY: `native` is the main window's NSWindow, which Tauri keeps alive for the app's
+        // life (closing it only hides it), and this runs on the main thread AppKit requires.
         let native = unsafe { &*(native as *const NSWindow) };
         for kind in [
             NSWindowButton::CloseButton,

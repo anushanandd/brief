@@ -1,3 +1,10 @@
+//! Apple Intelligence, through the on-device Foundation Models bridge: answers about the
+//! ledger (`generate`), document summaries, and the readings Rust checks for the investment
+//! summary (`read`). The model has no authority. An answer reads only what the read-only ledger
+//! queries (`insights::assistant_tools`) return and comes back with the queries that ran; any
+//! figure it states that none of them printed is listed (`figures_not_in`), and an answer the
+//! queries couldn't support is marked unavailable rather than failing. Requests run one at a
+//! time.
 #[cfg(target_os = "macos")]
 mod macos {
     use std::{
@@ -11,20 +18,69 @@ mod macos {
 
     pub use super::ToolHost;
 
+    /// The serialization lock a request holds: released when Swift completes it, or by Rust
+    /// once a timed-out, cancelled request still hasn't completed after `CANCEL_GRACE`.
+    type Held = Arc<std::sync::Mutex<Option<tokio::sync::OwnedMutexGuard<()>>>>;
+
+    /// How long a cancelled request has to complete before its lock is released anyway.
+    const CANCEL_GRACE: Duration = Duration::from_secs(15);
+
+    fn held(guard: tokio::sync::OwnedMutexGuard<()>) -> Held {
+        Arc::new(std::sync::Mutex::new(Some(guard)))
+    }
+
+    fn release(generation: &Held) {
+        generation
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+    }
+
     struct ResponseContext {
         sender: oneshot::Sender<Result<String, String>>,
-        // Keep serialization until Swift acknowledges completion, even after a timeout.
-        _generation: tokio::sync::OwnedMutexGuard<()>,
-        // Swift calls tools only before completion, so the host lives exactly as long.
+        // Keep serialization until Swift acknowledges completion, even after a timeout,
+        // unless that completion is lost (see `CANCEL_GRACE`).
+        generation: Held,
+        // Swift calls tools only before completion, so the host lives exactly as long. It
+        // is never freed by Rust's side of a timeout, so a late call still finds it.
         tools: Option<Box<ToolHost>>,
+    }
+
+    /// Waits up to `limit` for Swift's completion. When it doesn't come, `cancel` asks Swift
+    /// to stop and the question fails now; if Swift still hasn't completed within `grace`,
+    /// the lock is released so a lost completion can't block every later request. The
+    /// context, and the tool host in it, stay Swift's to free whenever it completes.
+    async fn completion(
+        mut receiver: oneshot::Receiver<Result<String, String>>,
+        generation: Held,
+        cancel: impl FnOnce(),
+        limit: Duration,
+        grace: Duration,
+    ) -> Result<String, String> {
+        if let Ok(result) = tokio::time::timeout(limit, &mut receiver).await {
+            return result
+                .map_err(|_| "Apple Intelligence stopped before responding".to_string())?;
+        }
+        cancel();
+        tauri::async_runtime::spawn(async move {
+            if tokio::time::timeout(grace, receiver).await.is_err() {
+                release(&generation);
+            }
+        });
+        Err("Apple Intelligence took too long to respond".into())
     }
     struct CancelOnDrop(CString);
     impl Drop for CancelOnDrop {
         fn drop(&mut self) {
+            // SAFETY: the bridge copies the NUL-terminated id (`String(cString:)`) during the
+            // call; cancelling an unknown or finished request does nothing.
             unsafe { brief_foundation_model_cancel(self.0.as_ptr()) };
         }
     }
 
+    // The Swift bridge (native/FoundationModelBridge.swift). Every string argument is copied
+    // with `String(cString:)` before the call returns, and every path of a request calls its
+    // `callback` exactly once with the `completion` it was given, from another thread.
     unsafe extern "C" {
         fn brief_foundation_model_availability() -> i32;
         fn brief_foundation_model_cancel(request: *const c_char);
@@ -45,13 +101,83 @@ mod macos {
             completion: *mut c_void,
             callback: extern "C" fn(*mut c_void, *const c_char, *const c_char),
         );
+        fn brief_foundation_model_read(
+            request: *const c_char,
+            task: *const c_char,
+            instructions: *const c_char,
+            input: *const c_char,
+            completion: *mut c_void,
+            callback: extern "C" fn(*mut c_void, *const c_char, *const c_char),
+        );
+    }
+
+    /// Background work for the model, one piece at a time: document summaries and readings.
+    static BACKGROUND: LazyLock<Arc<tokio::sync::Mutex<()>>> =
+        LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(())));
+
+    /// Runs one reading task (`cause` or `guidance`) over text Rust
+    /// prepared, with Rust's instructions, returning the model's JSON for Rust to check.
+    pub async fn read(
+        task: &'static str,
+        instructions: &'static str,
+        input: String,
+    ) -> Result<String, String> {
+        let generation = BACKGROUND.clone().lock_owned().await;
+        if status().state != "available" {
+            return Err(status().message.into());
+        }
+        let task = CString::new(task).map_err(|_| "Invalid reading task".to_string())?;
+        let instructions =
+            CString::new(instructions).map_err(|_| "Invalid reading task".to_string())?;
+        let input = CString::new(input.replace('\0', " "))
+            .map_err(|_| "The reading text is invalid".to_string())?;
+        let request = CancelOnDrop(
+            CString::new(format!("reading-{}", uuid::Uuid::new_v4()))
+                .map_err(|_| "Invalid reading request")?,
+        );
+        let (sender, receiver) = oneshot::channel::<Result<String, String>>();
+        let generation = held(generation);
+        let completion = Box::into_raw(Box::new(ResponseContext {
+            sender,
+            generation: generation.clone(),
+            tools: None,
+        }))
+        .cast::<c_void>();
+        // SAFETY: the strings outlive the call and are copied during it; `completion` is a
+        // leaked `ResponseContext` that the bridge hands to `complete` once, which reclaims it.
+        unsafe {
+            brief_foundation_model_read(
+                request.0.as_ptr(),
+                task.as_ptr(),
+                instructions.as_ptr(),
+                input.as_ptr(),
+                completion,
+                complete,
+            )
+        };
+        completion_of(receiver, generation, request, Duration::from_secs(60)).await
+    }
+
+    /// `completion` for a native request, cancelled by dropping it.
+    async fn completion_of(
+        receiver: oneshot::Receiver<Result<String, String>>,
+        generation: Held,
+        request: CancelOnDrop,
+        limit: Duration,
+    ) -> Result<String, String> {
+        completion(
+            receiver,
+            generation,
+            move || drop(request),
+            limit,
+            CANCEL_GRACE,
+        )
+        .await
     }
 
     /// Summarizes a document's text, one document at a time, behind any question in progress.
     pub async fn summarize(text: String) -> Result<String, String> {
-        static SUMMARIES: LazyLock<Arc<tokio::sync::Mutex<()>>> =
-            LazyLock::new(|| Arc::new(tokio::sync::Mutex::new(())));
-        let generation = SUMMARIES.clone().lock_owned().await;
+        let generation = BACKGROUND.clone().lock_owned().await;
         if status().state != "available" {
             return Err(status().message.into());
         }
@@ -62,12 +188,15 @@ mod macos {
                 .map_err(|_| "Invalid summary request")?,
         );
         let (sender, receiver) = oneshot::channel::<Result<String, String>>();
+        let generation = held(generation);
         let completion = Box::into_raw(Box::new(ResponseContext {
             sender,
-            _generation: generation,
+            generation: generation.clone(),
             tools: None,
         }))
         .cast::<c_void>();
+        // SAFETY: as in `read`: strings copied during the call, `completion` reclaimed once by
+        // `complete`.
         unsafe {
             brief_foundation_model_summarize(
                 request.0.as_ptr(),
@@ -76,10 +205,7 @@ mod macos {
                 complete,
             )
         };
-        let text = tokio::time::timeout(Duration::from_secs(90), receiver)
-            .await
-            .map_err(|_| "Apple Intelligence took too long to respond".to_string())?
-            .map_err(|_| "Apple Intelligence stopped before responding".to_string())??;
+        let text = completion_of(receiver, generation, request, Duration::from_secs(90)).await?;
         Ok(text.trim().to_owned())
     }
 
@@ -93,20 +219,30 @@ mod macos {
             return std::ptr::null_mut();
         }
         let result = std::panic::catch_unwind(|| {
+            // SAFETY: `host` points into the `ResponseContext` that `generate` leaked, which
+            // `complete` frees only after the model's last tool call: Swift calls tools inside
+            // `session.respond`, which returns before the completion callback. The host is
+            // only read (`call` takes `&self`).
             let host = unsafe { &*host.cast::<ToolHost>() };
+            // SAFETY: Swift passes NUL-terminated strings (`withCString`) that live for this call.
             let name = unsafe { CStr::from_ptr(name) }.to_string_lossy();
+            // SAFETY: as for `name`.
             let arguments = unsafe { CStr::from_ptr(arguments) }.to_string_lossy();
-            host.call(&name, &arguments)
+            let text = host.call(&name, &arguments);
+            CString::new(text).ok()
         });
         result
             .ok()
-            .and_then(|text| CString::new(text).ok())
+            .flatten()
             .map_or(std::ptr::null_mut(), CString::into_raw)
     }
 
+    /// Frees a tool result. Panics never cross the C boundary.
     extern "C" fn tool_free(value: *mut c_char) {
         if !value.is_null() {
-            drop(unsafe { CString::from_raw(value) });
+            // SAFETY: `value` came from `CString::into_raw` in `tool_call`, and Swift frees each
+            // result once (`defer { release(result) }`) after copying it.
+            let _ = std::panic::catch_unwind(|| drop(unsafe { CString::from_raw(value) }));
         }
     }
 
@@ -119,6 +255,7 @@ mod macos {
     }
 
     pub fn status() -> FoundationModelStatus {
+        // SAFETY: takes nothing and returns an integer.
         let (state, message) = match unsafe { brief_foundation_model_availability() } {
             0 => ("available", "Apple Intelligence is ready"),
             1 => (
@@ -132,24 +269,44 @@ mod macos {
         FoundationModelStatus { state, message }
     }
 
+    /// Swift's completion of a request: frees its context and releases its lock. Panics never
+    /// cross the C boundary; the context is freed while unwinding all the same.
     extern "C" fn complete(context: *mut c_void, result: *const c_char, error: *const c_char) {
+        if context.is_null() {
+            return;
+        }
+        // SAFETY: `context` is the `Box<ResponseContext>` a request leaked, and the bridge calls
+        // this once per request, so the box is reclaimed exactly once.
         let response = unsafe { Box::from_raw(context.cast::<ResponseContext>()) };
-        let value = if !error.is_null() {
-            Err(unsafe { CStr::from_ptr(error) }
-                .to_string_lossy()
-                .into_owned())
-        } else if !result.is_null() {
-            Ok(unsafe { CStr::from_ptr(result) }
-                .to_string_lossy()
-                .into_owned())
-        } else {
-            Err("Apple Intelligence returned no explanation".into())
-        };
-        let _ = response.sender.send(value);
+        let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+            let ResponseContext {
+                sender,
+                generation,
+                tools,
+            } = *response;
+            // SAFETY: a non-null `error` or `result` is a NUL-terminated string from Swift's
+            // `withCString`, alive for this call.
+            let value = if !error.is_null() {
+                Err(unsafe { CStr::from_ptr(error) }
+                    .to_string_lossy()
+                    .into_owned())
+            } else if !result.is_null() {
+                // SAFETY: as for `error`.
+                Ok(unsafe { CStr::from_ptr(result) }
+                    .to_string_lossy()
+                    .into_owned())
+            } else {
+                Err("Apple Intelligence returned no explanation".into())
+            };
+            let _ = sender.send(value);
+            drop(tools);
+            release(&generation);
+        }));
     }
 
     pub fn cancel(request_id: String) {
         if let Ok(id) = CString::new(request_id) {
+            // SAFETY: the bridge copies the NUL-terminated id during the call.
             unsafe { brief_foundation_model_cancel(id.as_ptr()) };
         }
     }
@@ -178,14 +335,16 @@ mod macos {
         if question.chars().count() > 1_000 || context.chars().count() > 2_000 {
             return Err("The question is too long".into());
         }
-        // Only the tools the question points to, so their definitions fit the context.
-        let tool_names =
-            CString::new(crate::insights::ledger::tools_for(question, &tools.view).join(","))
-                .map_err(|_| "Invalid tool names".to_string())?;
+        // Rust settles the question's dates and, when one query clearly answers it, runs that
+        // query itself; otherwise only the tools the question points to are offered, so their
+        // definitions fit the context.
+        let mut tools = tools;
+        let (offered, context) = super::planned(question, context, &mut tools);
+        let tool_names = CString::new(offered).map_err(|_| "Invalid tool names".to_string())?;
         let question = CString::new(question)
             .map_err(|_| "The question contains unsupported text".to_string())?;
-        let context =
-            CString::new(context).map_err(|_| "The question context is invalid".to_string())?;
+        let context = CString::new(context.replace('\0', " "))
+            .map_err(|_| "The question context is invalid".to_string())?;
         if request_id.is_empty() || request_id.len() > 100 {
             return Err("Invalid question request".into());
         }
@@ -193,9 +352,10 @@ mod macos {
             CancelOnDrop(CString::new(request_id).map_err(|_| "Invalid question request")?);
         let (sender, receiver) = oneshot::channel::<Result<String, String>>();
         let evidence = tools.evidence();
+        let generation = held(generation);
         let mut response = Box::new(ResponseContext {
             sender,
-            _generation: generation,
+            generation: generation.clone(),
             tools: Some(Box::new(tools)),
         });
         let tool_host = response
@@ -205,6 +365,8 @@ mod macos {
                 (tools as *mut ToolHost).cast::<c_void>()
             });
         let completion = Box::into_raw(response).cast::<c_void>();
+        // SAFETY: strings are copied during the call; `completion` (holding the tool host) is
+        // reclaimed once by `complete`; `tool_call` and `tool_free` match the bridge's types.
         unsafe {
             brief_foundation_model_generate(
                 request.0.as_ptr(),
@@ -223,10 +385,7 @@ mod macos {
             .send(())
             .map_err(|_| "Answer listener disconnected")?;
 
-        let text = tokio::time::timeout(Duration::from_secs(60), receiver)
-            .await
-            .map_err(|_| "Apple Intelligence took too long to respond".to_string())?
-            .map_err(|_| "Apple Intelligence stopped before responding".to_string())??;
+        let text = completion_of(receiver, generation, request, Duration::from_secs(60)).await?;
         Ok(super::Answer::checked(
             &text,
             super::take_evidence(&evidence),
@@ -243,7 +402,7 @@ mod macos {
             let (sender, receiver) = oneshot::channel();
             let context = Box::into_raw(Box::new(ResponseContext {
                 sender,
-                _generation: gate.clone().lock_owned().await,
+                generation: held(gate.clone().lock_owned().await),
                 tools: Some(Box::new(ToolHost::empty())),
             }))
             .cast::<c_void>();
@@ -252,6 +411,41 @@ mod macos {
             let error = CString::new("cancelled").unwrap();
             complete(context, std::ptr::null(), error.as_ptr());
             assert!(gate.try_lock().is_ok());
+        }
+
+        #[tokio::test]
+        async fn a_lost_completion_fails_the_question_and_releases_the_lock_after_grace() {
+            let gate = Arc::new(tokio::sync::Mutex::new(()));
+            let (sender, receiver) = oneshot::channel();
+            let generation = held(gate.clone().lock_owned().await);
+            let context = Box::into_raw(Box::new(ResponseContext {
+                sender,
+                generation: generation.clone(),
+                tools: Some(Box::new(ToolHost::empty())),
+            }));
+            let cancelled = Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let flag = cancelled.clone();
+            let short = Duration::from_millis(20);
+            let answer = completion(
+                receiver,
+                generation,
+                move || flag.store(true, std::sync::atomic::Ordering::SeqCst),
+                short,
+                Duration::from_millis(300),
+            )
+            .await;
+            assert_eq!(
+                answer.unwrap_err(),
+                "Apple Intelligence took too long to respond"
+            );
+            assert!(cancelled.load(std::sync::atomic::Ordering::SeqCst));
+            // Still held during the grace period, then released though Swift never answered.
+            assert!(gate.try_lock().is_err());
+            let released = tokio::time::timeout(Duration::from_secs(5), gate.clone().lock_owned());
+            assert!(released.await.is_ok());
+            // A completion that arrives late still frees its context and tool host safely.
+            let error = CString::new("cancelled").unwrap();
+            complete(context.cast::<c_void>(), std::ptr::null(), error.as_ptr());
         }
     }
 }
@@ -281,6 +475,14 @@ mod fallback {
         Err(status().message.into())
     }
 
+    pub async fn read(
+        _task: &'static str,
+        _instructions: &'static str,
+        _input: String,
+    ) -> Result<String, String> {
+        Err(status().message.into())
+    }
+
     pub async fn generate(
         _question: String,
         _context: String,
@@ -303,6 +505,45 @@ pub struct ToolHost {
     view: std::sync::Arc<crate::insights::View>,
     today: chrono::NaiveDate,
     evidence: Evidence,
+    /// The days the question named, as Rust resolved them; date-taking queries use these
+    /// rather than dates the model computed.
+    range: Option<(chrono::NaiveDate, chrono::NaiveDate)>,
+}
+
+/// Plans `question` (`insights::assistant_planner`) for one request: the tool names to offer,
+/// comma-separated, and the context the model reads. When Rust can run the one query that
+/// answers it, it runs it here, so the model is offered no tools and reads the result in its
+/// context; the query is evidence like any other, and the answer's figures are checked
+/// against it. Otherwise the context says what the question's date phrase means.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+fn planned(question: &str, context: String, tools: &mut ToolHost) -> (String, String) {
+    let plan = crate::insights::assistant_planner::plan(question, &tools.view, tools.today);
+    tools.range = plan.range.as_ref().map(|range| (range.start, range.end));
+    if let Some((name, arguments)) = &plan.direct {
+        if let Ok(result) = tools.query(name, arguments) {
+            if let Some((result, text)) = fit_result(result, MAX_TOOL_RESULT) {
+                if let Ok(mut evidence) = tools.evidence.lock() {
+                    evidence.push(ToolCall {
+                        name: (*name).to_owned(),
+                        arguments: arguments.clone(),
+                        result,
+                    });
+                }
+                return (
+                    String::new(),
+                    format!("{context}\n\nQuery result ({name}):\n{text}"),
+                );
+            }
+        }
+    }
+    let context = match &plan.range {
+        Some(range) => format!(
+            "{context} In this question, \"{}\" means {} through {}.",
+            range.phrase, range.start, range.end
+        ),
+        None => context,
+    };
+    (plan.tools.join(","), context)
 }
 
 /// One ledger query the model ran and the figures it returned: the evidence for an answer.
@@ -434,6 +675,7 @@ impl ToolHost {
             view,
             today,
             evidence: Evidence::default(),
+            range: None,
         }
     }
 
@@ -448,8 +690,8 @@ impl ToolHost {
         name: &str,
         arguments: &serde_json::Value,
     ) -> Result<serde_json::Value, String> {
-        let result =
-            crate::insights::ledger::Ledger::new(&self.view, self.today).call(name, arguments);
+        let result = crate::insights::assistant_tools::Ledger::new(&self.view, self.today)
+            .call(name, arguments);
         match result.get("error").and_then(serde_json::Value::as_str) {
             Some(error) => Err(error.to_owned()),
             None => Ok(result),
@@ -458,15 +700,23 @@ impl ToolHost {
 
     #[cfg(all(test, target_os = "macos"))]
     fn empty() -> Self {
-        let seed = serde_json::from_str(include_str!("../../src/data/seed.json")).unwrap();
+        let seed = serde_json::from_str(include_str!("../../src/data/seed.json"))
+            .expect("the seed is a snapshot");
         Self::new(crate::insights::View::of(seed), chrono::NaiveDate::MIN)
     }
 
     pub fn call(&self, name: &str, arguments: &str) -> String {
-        let arguments = serde_json::from_str::<serde_json::Value>(arguments)
+        let mut arguments = serde_json::from_str::<serde_json::Value>(arguments)
             .ok()
             .filter(serde_json::Value::is_object)
             .unwrap_or_else(|| serde_json::json!({}));
+        // The question's dates, as Rust resolved them, replace any the model computed.
+        if let Some((start, end)) = self.range {
+            if crate::insights::assistant_planner::DATED.contains(&name) {
+                arguments["start"] = serde_json::json!(start.to_string());
+                arguments["end"] = serde_json::json!(end.to_string());
+            }
+        }
         // The on-device model can call one query again and again until its context overflows;
         // a repeat gets a few words pointing back, not the result again.
         let repeated = self.evidence.lock().is_ok_and(|calls| {
@@ -547,6 +797,44 @@ mod tool_tests {
         assert_eq!(evidence[1].arguments["limit"], 1000);
         assert!(host.query("noSuchTool", &serde_json::json!({})).is_err());
         assert!(host.query("cashFlow", &serde_json::json!({})).is_ok());
+    }
+
+    #[test]
+    fn a_clear_question_is_queried_by_rust_and_dates_reach_the_model_resolved() {
+        let seed = serde_json::from_str(include_str!("../../src/data/seed.json")).unwrap();
+        let view = crate::insights::View::of(seed);
+        let today = chrono::NaiveDate::from_ymd_opt(2026, 8, 31).unwrap();
+
+        // Rust runs the one query that answers it; the model is offered no tools.
+        let mut host = ToolHost::new(view.clone(), today);
+        let (tools, context) = planned(
+            "What is my brokerage account worth?",
+            "Today.".into(),
+            &mut host,
+        );
+        assert_eq!(tools, "");
+        assert!(context.starts_with("Today.\n\nQuery result (listAccounts):\n{"));
+        let evidence = take_evidence(&host.evidence());
+        assert_eq!(evidence.len(), 1);
+        assert_eq!(evidence[0].name, "listAccounts");
+
+        // A search is the model's to phrase; the context says what "last month" means, and
+        // the query the model makes uses those days, whatever dates it chose.
+        let mut host = ToolHost::new(view, today);
+        let (tools, context) = planned(
+            "When did I buy something at Netflix last month?",
+            "Today.".into(),
+            &mut host,
+        );
+        assert!(tools.split(',').any(|tool| tool == "searchTransactions"));
+        assert!(context.ends_with("\"last month\" means 2026-07-01 through 2026-07-31."));
+        host.call(
+            "searchTransactions",
+            r#"{"text": "netflix", "start": "2020-01-01", "end": "2020-01-31"}"#,
+        );
+        let evidence = take_evidence(&host.evidence());
+        assert_eq!(evidence[0].arguments["start"], "2026-07-01");
+        assert_eq!(evidence[0].arguments["end"], "2026-07-31");
     }
 
     #[test]

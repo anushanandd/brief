@@ -1,5 +1,5 @@
-import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { useMemo, useRef } from 'react'
 
 import { AccountMark } from '../components/account-mark'
 import { GroupedActivityList } from '../components/activity-list'
@@ -25,33 +25,20 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
-import {
-  useGraphAccountShortcuts,
-  useGraphWindowShortcuts,
-} from '../hooks/use-graph-window-shortcuts'
-import { useReports } from '../hooks/use-reports'
+import { useGraphAccountShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
-import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { buildActivities, type ActivityItem } from '../lib/activity'
+import { type ActivityItem } from '../lib/activity'
 import {
-  analyticsCharts,
   analyticsDefinition,
-  analyticsGroup,
-  analyticsGroupColors,
   analyticsAccountMatches,
-  emptyReport,
-  reportRequest,
   toggleAnalyticsAccount,
-  noAnalyticsAccounts,
   withoutReportView,
   type AnalyticsChart,
 } from '../lib/analytics'
-import { benefitYear, benefitYearSearch } from '../lib/benefit-grid'
-import { localDateKey } from '../lib/dates'
-import { financeSettings } from '../lib/finance-settings'
 import {
   countOf,
+  formatCalendarDate,
   formatCompactCurrency,
   formatCurrency,
   formatPercent,
@@ -59,20 +46,11 @@ import {
   formatActivityName,
   formatDay,
 } from '../lib/format'
-import {
-  graphWindows,
-  useChosenGraphWindow,
-  useGraphWindow,
-  type ChartPeriod,
-  chartPeriodSeconds,
-} from '../lib/graph-preferences'
+import { graphWindows } from '../lib/graph-preferences'
 import { briefMerchant } from '../lib/insights'
-import { getExternalLogosEnabled } from '../lib/logos'
 import type { FinanceSnapshot, Report } from '../lib/schema'
-import { resolveSpendingAccount } from '../lib/spending'
+import { useAnalyticsReport } from './analytics-report'
 
-// One fixed order everywhere a chart is listed.
-const orderedCharts = analyticsCharts.map(({ id }) => id)
 const ranges = graphWindows.map(({ name, label, settingsLabel }) => ({
   value: name,
   label,
@@ -86,151 +64,38 @@ export function AnalyticsPage() {
   return <AnalyticsWorkspace data={query.data} />
 }
 
-/** Today's local date, kept current across midnight and whenever the window regains focus. */
-function useLocalDay() {
-  const [day, setDay] = useState(() => localDateKey(Date.now() / 1000))
-  useEffect(() => {
-    const update = () => setDay(localDateKey(Date.now() / 1000))
-    const timer = globalThis.setInterval(update, 60_000)
-    globalThis.addEventListener('focus', update)
-    return () => {
-      globalThis.clearInterval(timer)
-      globalThis.removeEventListener('focus', update)
-    }
-  }, [])
-  return day
-}
-
-/**
- * The route's search with its range resolved: the URL's, else the range chosen on any page
- * this session, else the report's default. Choosing a range, by control or shortcut, shares it
- * with the other pages and clears custom dates.
- */
-function useAnalyticsSearch() {
-  const routeSearch = useSearch({ from: '/analytics' })
-  const navigate = useNavigate({ from: '/analytics' })
-  const [, setSharedWindow] = useGraphWindow()
-  const chosenWindow = useChosenGraphWindow()
-  const search = useMemo(
-    () => ({
-      ...routeSearch,
-      range:
-        routeSearch.range ??
-        (routeSearch.from || routeSearch.to || chosenWindow === undefined
-          ? undefined
-          : graphWindows.find(({ secs }) => secs === chosenWindow)?.name),
-    }),
-    [routeSearch, chosenWindow],
-  )
-  const setRange = useCallback(
-    (range: ChartPeriod) => {
-      setSharedWindow(chartPeriodSeconds(range))
-      void navigate({ search: { ...search, range, from: undefined, to: undefined } })
-    },
-    [navigate, search, setSharedWindow],
-  )
-  useGraphWindowShortcuts(
-    useCallback(
-      (next) => {
-        const current = chartPeriodSeconds(search.range ?? 'month')
-        const seconds = typeof next === 'function' ? next(current) : next
-        const range = graphWindows.find(({ secs }) => secs === seconds)?.name
-        if (range) setRange(range)
-      },
-      [search.range, setRange],
-    ),
-  )
-  return { search, navigate, setRange }
-}
-
 function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
-  // Reports end on the day the insights were computed for, the same day Spending and Home
-  // use, so one strip never shows two months. The clock takes over only without insights.
-  const clock = useLocalDay()
-  const today = data.insights?.today ?? clock
   const activityScrollRef = useViewportScroll()
-  const { search, navigate, setRange } = useAnalyticsSearch()
-  const selected = search.chart ?? orderedCharts[0]
-  const definition = analyticsDefinition(selected)
-  // Benefits runs on one calendar year, and the strip above it follows that year.
-  const benefitsYear = definition.benefits ? benefitYear(search, today) : undefined
-  const pageSearch = useMemo(
-    () => (benefitsYear === undefined ? search : benefitYearSearch(search, benefitsYear, today)),
-    [benefitsYear, search, today],
-  )
-  const settings = financeSettings(data)
-  const spendingAccountId = settings.spendingAccountId ?? ''
-  const spendingAccount = resolveSpendingAccount(data.accounts, spendingAccountId)
-  const names = settings.accountNames
-  const externalLogosEnabled = getExternalLogosEnabled()
-  // Rust reads every report over the window and accounts, and this one in full.
-  const reportsQuery = useReports(data, reportRequest(pageSearch, selected))
-  const reports = reportsQuery.data ?? undefined
-  const reportWindow = reports?.window ?? {
-    start: today,
-    end: today,
-    range: pageSearch.range ?? 'month',
-    custom: Boolean(pageSearch.from || pageSearch.to),
-    valid: true,
-  }
-  const report = { label: definition.label, ...(reports?.report ?? emptyReport(selected)) }
-  // Reports sit under Money or Investments; the switcher and arrows stay within one.
-  const group = analyticsGroup(selected)
-  const groupReports = orderedCharts.filter((id) => analyticsGroup(id) === group)
+  const {
+    today,
+    search,
+    navigate,
+    setRange,
+    selected,
+    definition,
+    benefitsYear,
+    spendingAccount,
+    reportsQuery,
+    reportWindow,
+    report,
+    group,
+    groupReports,
+    missingAccount,
+    needsSpendingAccount,
+    incompatibleBenefitAccount,
+    unavailable,
+    activities,
+    groupColors,
+    accountRows,
+    expectedRecurringIds,
+    activitySearch,
+    flow,
+  } = useAnalyticsReport(data)
   const home =
     group === 'money'
       ? ({ label: 'Money', to: '/spending' } as const)
       : ({ label: 'Investments', to: '/holdings' } as const)
-  const accounts = data.accounts.filter(
-    ({ id, currency }) => id !== 'all' && (!currency || currency === 'USD'),
-  )
-  const missingAccount = Boolean(
-    search.account &&
-    search.account !== noAnalyticsAccounts &&
-    !accounts.some(({ id }) => analyticsAccountMatches(search.account, id)),
-  )
-  const needsSpendingAccount = definition.benefits && !spendingAccount
-  const incompatibleBenefitAccount =
-    definition.benefits &&
-    search.account !== undefined &&
-    !analyticsAccountMatches(search.account, spendingAccountId)
-  // Without reports (a window the preview has none for), nothing reads as a figure.
-  const unavailable =
-    needsSpendingAccount ||
-    missingAccount ||
-    incompatibleBenefitAccount ||
-    !reportWindow.valid ||
-    !reports
-  const activities = useMemo(
-    () =>
-      new Map(buildActivities(data, names, externalLogosEnabled).map((item) => [item.id, item])),
-    [data, names, externalLogosEnabled],
-  )
-  const groupColors = useMemo(() => analyticsGroupColors(reports?.groups ?? []), [reports])
-  const accountTotals = new Map(reports?.accounts.map(({ accountId, total }) => [accountId, total]))
-  const accountRows = accounts.flatMap(({ id, name, type, institution, domain }) =>
-    accountTotals.has(id)
-      ? [
-          {
-            id,
-            type,
-            institution,
-            domain,
-            label: accountDisplayName(id, name, names),
-            value: accountTotals.get(id) ?? null,
-          },
-        ]
-      : [],
-  )
-  const expectedRecurringIds = useMemo(() => new Set(reports?.recurringIds), [reports])
   const periodChange = unavailable ? null : report.change
-  const activitySearch = {
-    analysis: selected,
-    account: search.account,
-    from: reportWindow.start,
-    to: reportWindow.end,
-  }
-  const flow = definition.flow ? (reports?.flow ?? null) : null
   if (reportsQuery.isLoading) return <PageLoading />
   if (reportsQuery.isError) return <PageError />
   const expectedActivityCard = (
@@ -302,7 +167,7 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
       {/* Money's reports share its strip. Investments reports open from the portfolio's period
           card and lead back through the breadcrumb, since its page is headed by holdings. */}
       {group === 'money' ? (
-        <MoneyStrip data={data} current={selected} search={pageSearch} />
+        <MoneyStrip data={data} current={selected} search={search} />
       ) : (
         <ReportStepper reports={groupReports} selected={selected} />
       )}
@@ -318,11 +183,13 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
           activities={activities}
           onYear={(year) =>
             void navigate({
-              search: benefitYearSearch(
-                { ...search, benefit: undefined, period: undefined, review: undefined },
-                year,
-                today,
-              ),
+              search: {
+                ...search,
+                benefit: undefined,
+                period: undefined,
+                review: undefined,
+                year: year === Number(today.slice(0, 4)) ? undefined : year,
+              },
             })
           }
           onInspect={(next: BenefitInspection) =>
@@ -388,11 +255,11 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                       <>
                         Choose a spending account in{' '}
                         <SettingsLink target="spending-account">Settings</SettingsLink> to chart
-                        Amex credits.
+                        card credits.
                       </>
                     ) : incompatibleBenefitAccount ? (
                       <>
-                        Amex credits use the saved spending account.{' '}
+                        Card credits use the saved spending account.{' '}
                         <Button
                           size="compact"
                           variant="ghost"
@@ -449,42 +316,7 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
               )}
             </div>
             <div className="analytics-companion">
-              <Card className="account-overview-summary-card">
-                <SectionHeading title="Overview" />
-                <div className="account-summary-metrics">
-                  <Metric
-                    label={definition.records?.count ?? 'Posted records'}
-                    value={unavailable ? '—' : String(report.entries.length)}
-                  />
-                  <Metric
-                    label="Previous period"
-                    value={formatCurrency(unavailable ? null : report.previous)}
-                  />
-                  <Metric
-                    label={definition.records?.average ?? 'Average amount'}
-                    value={formatCurrency(unavailable ? null : report.average)}
-                  />
-                  <Metric
-                    label={definition.records?.largest ?? 'Largest amount'}
-                    value={formatCurrency(unavailable ? null : report.largest)}
-                  />
-                  <Metric
-                    label="Active days"
-                    value={unavailable ? '—' : String(report.activeDays)}
-                  />
-                  <Metric
-                    label="Period change"
-                    value={formatPercent(unavailable ? null : report.percent)}
-                    tone={valueTone(
-                      unavailable || report.percent == null
-                        ? null
-                        : definition.lowerIsBetter
-                          ? -report.percent
-                          : report.percent,
-                    )}
-                  />
-                </div>
-              </Card>
+              <ReportOverview report={report} definition={definition} unavailable={unavailable} />
               {definition.benefits ? (
                 <>
                   {activityCard}
@@ -492,68 +324,25 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                 </>
               ) : (
                 <>
-                  <Card className="account-overview-summary-card analytics-accounts-card">
-                    <SectionHeading
-                      title="Accounts"
-                      action={
-                        search.account !== undefined ? (
-                          <Button
-                            icon={X}
-                            aria-label="Clear account selection"
-                            size="compact"
-                            variant="ghost"
-                            onClick={() =>
-                              void navigate({ search: { ...search, account: undefined } })
-                            }
-                          >
-                            Clear
-                          </Button>
-                        ) : undefined
-                      }
-                    />
-                    <div className="analytics-breakdown" role="group" aria-label="Chart accounts">
-                      {accountRows.map((item) => (
-                        <label
-                          className="analytics-breakdown-row analytics-account-row"
-                          key={item.id}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={analyticsAccountMatches(search.account, item.id)}
-                            onChange={() =>
-                              void navigate({
-                                search: {
-                                  ...search,
-                                  account: toggleAnalyticsAccount(
-                                    search.account,
-                                    item.id,
-                                    accountRows.map(({ id }) => id),
-                                  ),
-                                },
-                              })
-                            }
-                          />
-                          <AccountMark
-                            type={item.type}
-                            institution={item.institution}
-                            domain={item.domain}
-                          />
-                          <span className="account-row-name">
-                            <strong>{item.label}</strong>
-                            <small>{item.type}</small>
-                          </span>
-                          <strong>
-                            {formatCurrency(
-                              needsSpendingAccount || !reportWindow.valid ? null : item.value,
-                            )}
-                          </strong>
-                        </label>
-                      ))}
-                      {!accountRows.length ? (
-                        <EmptyState>No matching accounts in this period.</EmptyState>
-                      ) : null}
-                    </div>
-                  </Card>
+                  <ReportAccounts
+                    rows={accountRows}
+                    chosen={search.account}
+                    // Totals read as unavailable when no account or window can be charted.
+                    totalsUnavailable={needsSpendingAccount || !reportWindow.valid}
+                    onClear={() => void navigate({ search: { ...search, account: undefined } })}
+                    onToggle={(id) =>
+                      void navigate({
+                        search: {
+                          ...search,
+                          account: toggleAnalyticsAccount(
+                            search.account,
+                            id,
+                            accountRows.map((row) => row.id),
+                          ),
+                        },
+                      })
+                    }
+                  />
                   {expectedActivityCard}
                 </>
               )}
@@ -565,6 +354,108 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
   )
 }
 
+/** The report's figures beside its chart: how many records, the previous period, and the rest. */
+function ReportOverview({
+  report,
+  definition,
+  unavailable,
+}: {
+  report: Report
+  definition: ReturnType<typeof analyticsDefinition>
+  unavailable: boolean
+}) {
+  return (
+    <Card className="account-overview-summary-card">
+      <SectionHeading title="Overview" />
+      <div className="account-summary-metrics">
+        <Metric
+          label={definition.records?.count ?? 'Posted records'}
+          value={unavailable ? '—' : String(report.entries.length)}
+        />
+        <Metric
+          label="Previous period"
+          value={formatCurrency(unavailable ? null : report.previous)}
+        />
+        <Metric
+          label={definition.records?.average ?? 'Average amount'}
+          value={formatCurrency(unavailable ? null : report.average)}
+        />
+        <Metric
+          label={definition.records?.largest ?? 'Largest amount'}
+          value={formatCurrency(unavailable ? null : report.largest)}
+        />
+        <Metric label="Active days" value={unavailable ? '—' : String(report.activeDays)} />
+        <Metric
+          label="Period change"
+          value={formatPercent(unavailable ? null : report.percent)}
+          tone={valueTone(
+            unavailable || report.percent == null
+              ? null
+              : definition.lowerIsBetter
+                ? -report.percent
+                : report.percent,
+          )}
+        />
+      </div>
+    </Card>
+  )
+}
+
+/** The accounts Rust read the report over, each with its total, chosen with a checkbox. */
+function ReportAccounts({
+  rows,
+  chosen,
+  totalsUnavailable,
+  onClear,
+  onToggle,
+}: {
+  rows: ReturnType<typeof useAnalyticsReport>['accountRows']
+  /** The search's account choice; none charts every account. */
+  chosen: string | undefined
+  totalsUnavailable: boolean
+  onClear: () => void
+  onToggle: (id: string) => void
+}) {
+  return (
+    <Card className="account-overview-summary-card analytics-accounts-card">
+      <SectionHeading
+        title="Accounts"
+        action={
+          chosen !== undefined ? (
+            <Button
+              icon={X}
+              aria-label="Clear account selection"
+              size="compact"
+              variant="ghost"
+              onClick={onClear}
+            >
+              Clear
+            </Button>
+          ) : undefined
+        }
+      />
+      <div className="analytics-breakdown" role="group" aria-label="Chart accounts">
+        {rows.map((item) => (
+          <label className="analytics-breakdown-row analytics-account-row" key={item.id}>
+            <input
+              type="checkbox"
+              checked={analyticsAccountMatches(chosen, item.id)}
+              onChange={() => onToggle(item.id)}
+            />
+            <AccountMark type={item.type} institution={item.institution} domain={item.domain} />
+            <span className="account-row-name">
+              <strong>{item.label}</strong>
+              <small>{item.type}</small>
+            </span>
+            <strong>{formatCurrency(totalsUnavailable ? null : item.value)}</strong>
+          </label>
+        ))}
+        {!rows.length ? <EmptyState>No matching accounts in this period.</EmptyState> : null}
+      </div>
+    </Card>
+  )
+}
+
 function AnalyticsBars({
   groupColors,
   report,
@@ -572,7 +463,7 @@ function AnalyticsBars({
   activities,
 }: {
   groupColors: Map<string, string>
-  activities: Map<string, ReturnType<typeof buildActivities>[number]>
+  activities: Map<string, ActivityItem>
   report: Report
   search: { analysis: AnalyticsChart; account?: string; from: string; to: string }
 }) {
@@ -598,14 +489,14 @@ function AnalyticsBars({
             }}
           >
             {report.buckets.map((bucket, index) => {
-              const label = new Date(`${bucket.from}T12:00:00Z`).toLocaleDateString('en-US', {
-                timeZone: 'UTC',
-                ...(report.unit === 'day'
-                  ? ({ month: 'short', day: 'numeric' } as const)
+              const label = formatCalendarDate(
+                bucket.from,
+                report.unit === 'day'
+                  ? { month: 'short', day: 'numeric' }
                   : report.unit === 'year'
-                    ? ({ year: 'numeric' } as const)
-                    : ({ month: 'short', year: '2-digit' } as const)),
-              })
+                    ? { year: 'numeric' }
+                    : { month: 'short', year: '2-digit' },
+              )
               // Where each group's bar starts: drawing positions above and below zero, stacked
               // from Rust's totals in the order Rust gives them.
               let above = 0

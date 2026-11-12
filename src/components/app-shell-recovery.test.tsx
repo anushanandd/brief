@@ -21,6 +21,8 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 vi.mock('../hooks/use-finance', () => ({
   financeQueryKey: ['finance'],
+  setFinanceSnapshot: (client: QueryClient, next: unknown) =>
+    client.setQueryData(['finance'], next),
   useFinance: () => ({
     data: { ...empty, recovery: { message: 'Synthetic recovery notice', canRestore: true } },
     integrationStatus: {},
@@ -72,6 +74,20 @@ function button(label: string) {
 async function click(label: string) {
   await act(async () => button(label).click())
 }
+
+/** Whether the shell kept Tab from moving focus. */
+function tab(target: Element) {
+  const event = new KeyboardEvent('keydown', { key: 'Tab', bubbles: true, cancelable: true })
+  target.dispatchEvent(event)
+  return event.defaultPrevented
+}
+
+it('keeps Tab off the page but lets it walk the controls of an open dialog', () => {
+  expect(tab(button('Start new snapshot'))).toBe(true)
+  const dialog = document.body.appendChild(document.createElement('dialog'))
+  dialog.setAttribute('open', '')
+  expect(tab(dialog.appendChild(document.createElement('button')))).toBe(false)
+})
 
 it('requires confirmation, focuses Cancel, and returns focus after cancellation or Escape', async () => {
   await click('Start new snapshot')

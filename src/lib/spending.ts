@@ -1,5 +1,8 @@
+import type { SpendingPeriodRequest } from './api'
 import { dayKey } from './dates'
+import { financeSettings } from './finance-settings'
 import { formatDay } from './format'
+import type { ChartPeriod } from './graph-preferences'
 import type {
   Account,
   FinanceSnapshot,
@@ -51,6 +54,56 @@ export const spendingRangeForPeriod = (period: SpendingPeriod): SpendingRange =>
 /** The kind of period Rust computes for a choice; a statement without dates is the month. */
 export const spendingPeriodKind = (period: SpendingPeriod): SpendingPeriodJudgment['kind'] =>
   spendingPeriodOptions.find((option) => option.value === period)!.kind
+/** The report range for a Spending period; reports have no statement period, so it's the month. */
+export const reportRangeForPeriod = (period: SpendingPeriod): ChartPeriod => {
+  const range = spendingRangeForPeriod(period)
+  return range === 'statement' ? 'month' : range
+}
+
+export type SpendingSearch = { account?: string; range?: SpendingRange; for?: 'other' | 'all' }
+
+/**
+ * What Spending shows for its search: the accounts it can cover and the one in view, whose
+ * spending it counts, and its period. Statements belong to the saved card, so only its view has
+ * one; elsewhere a statement reads as the month.
+ */
+export function spendingPage(data: FinanceSnapshot, search: SpendingSearch) {
+  const settings = financeSettings(data)
+  // Offer the "whose spending" choice only when some purchase is someone else's.
+  const hasOthers = data.transactions.some(({ classification }) => classification.othersSpending)
+  const owner: SpendingOwner = hasOthers ? (search.for ?? 'me') : 'me'
+  const { card, options, selected } = spendingScope(
+    data.accounts,
+    data.transactions,
+    settings.spendingAccountId ?? '',
+    search.account,
+  )
+  const hasStatements = Boolean(card) && selected?.id === card?.id
+  const ranged = spendingPeriodForRange(search.range)
+  const period: SpendingPeriod =
+    ranged === 'statement' && !hasStatements ? 1 : (ranged ?? (hasStatements ? 'statement' : 1))
+  return {
+    names: settings.accountNames,
+    hasOthers,
+    owner,
+    card,
+    options,
+    account: selected,
+    hasStatements,
+    period,
+  }
+}
+
+/** What Spending asks Rust for: its period, `back` periods before the latest. */
+export const spendingPeriodRequest = (
+  page: Pick<ReturnType<typeof spendingPage>, 'account' | 'owner' | 'period'>,
+  back: number,
+): SpendingPeriodRequest => ({
+  scope: page.account?.id ?? allSpendingAccounts,
+  owner: page.owner,
+  kind: spendingPeriodKind(page.period),
+  offset: -back,
+})
 export type SpendingPeriodBasis = 'calendar' | 'statement'
 /** One bar of the spending chart: the days it covers and its spending by category. */
 export type SpendingBar = {
@@ -204,7 +257,8 @@ export function spendingHeadline(
   )
   return {
     hasScope: scope.options.length > 0,
-    value: current?.kind === 'statement' ? (current.balance ?? 0) : (current?.total ?? 0),
+    // No period from Rust, or a statement without its balance, is unknown rather than $0.
+    value: current?.kind === 'statement' ? (current.balance ?? null) : (current?.total ?? null),
     change: period ? (current?.change ?? null) : null,
   }
 }
@@ -224,9 +278,16 @@ const nothingSpent: SpendingFigures = {
   daily: 0,
 }
 
-/** Rust's figures for a period, or for one of its categories; nothing when Rust has none. */
-export function spendingFigures(period: SpendingPeriodJudgment | undefined, focus?: string) {
-  return (focus ? period?.categories.find(({ name }) => name === focus) : period) ?? nothingSpent
+/**
+ * Rust's figures for a period, or for one of its categories. A period Rust lists carries every
+ * category that spent, so a category missing from it spent nothing; no period at all is unknown.
+ */
+export function spendingFigures(
+  period: SpendingPeriodJudgment | undefined,
+  focus?: string,
+): SpendingFigures | undefined {
+  if (!period) return undefined
+  return focus ? (period.categories.find(({ name }) => name === focus) ?? nothingSpent) : period
 }
 
 /** A period's view for all of it, or for the category in focus; nothing listed when it has none. */

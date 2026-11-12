@@ -1,9 +1,10 @@
-import { useEffect, useId, useState } from 'react'
+import { useId, useState } from 'react'
 
 import { actionBindings, type AppAction } from '../lib/action-system'
 import { X } from './icons'
 import { Keys } from './keys'
 import { Button } from './ui'
+import { Dialog } from './ui/dialog'
 import { usePresence } from './ui/presence'
 
 export type ShortcutRow = { title: string; keys: readonly string[] }
@@ -15,7 +16,6 @@ const listRows: ShortcutRow[] = [
   { title: 'Next or previous item', keys: ['J', 'K'] },
   { title: 'Move down or up a page', keys: ['⌃D', '⌃U'] },
   { title: 'First or last item', keys: ['g g', 'G'] },
-  { title: 'Repeat a motion', keys: ['3 J'] },
   { title: 'Repeat last action', keys: ['.'] },
 ]
 
@@ -31,9 +31,10 @@ const paletteRows: ShortcutRow[] = [
   { title: 'Ask Brief', keys: ['?'] },
 ]
 
-const sectionOrder = ['General', 'Navigation', 'This page', 'Appearance'] as const
+const sectionOrder = ['General', 'Navigation', 'This dialog', 'This page', 'Appearance'] as const
 
 function sectionFor(action: AppAction): (typeof sectionOrder)[number] {
+  if (action.scope === 'dialog') return 'This dialog'
   if (action.scope !== 'app') return 'This page'
   if (action.group === 'Navigate') return 'Navigation'
   if (action.group === 'Appearance') return 'Appearance'
@@ -78,24 +79,13 @@ export function ShortcutsDialog({
   const titleId = useId()
   const present = usePresence(open, dialog)
 
-  useEffect(() => {
-    if (!dialog || typeof dialog.showModal !== 'function') return
-    if (open && !dialog.open) dialog.showModal()
-    else if (!open && dialog.open) dialog.close()
-  }, [dialog, open])
-
   return (
-    <dialog
+    <Dialog
       ref={setDialog}
+      open={open}
+      onClose={onClose}
       className="shortcuts-dialog"
       aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault()
-        onClose()
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
     >
       {present ? (
         <div className="shortcuts-panel">
@@ -129,6 +119,6 @@ export function ShortcutsDialog({
           </div>
         </div>
       ) : null}
-    </dialog>
+    </Dialog>
   )
 }

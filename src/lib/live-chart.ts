@@ -33,7 +33,7 @@ export function upsertLiveChartPoint(
   const next = { time: minute(time), value }
   const existing = points.findIndex((point) => minute(point.time) === next.time)
   if (existing >= 0) {
-    if (points[existing].value === next.value) return points
+    if (points[existing]?.value === next.value) return points
     return [...points.slice(0, existing), next, ...points.slice(existing + 1)]
   }
   return [...points, next].toSorted((left, right) => left.time - right.time).slice(-MAX_LIVE_POINTS)
@@ -75,6 +75,36 @@ export function chartPointsFromStartDate(points: LivelinePoint[], startDate?: st
   if (!startDate || !DATE_PATTERN.test(startDate)) return points
   const startTime = Date.parse(`${startDate}T00:00:00Z`) / 1_000
   return Number.isFinite(startTime) ? points.filter(({ time }) => time >= startTime) : points
+}
+
+/**
+ * A value chart's net deposits and S&P 500 lines from its daily points, as Rust recorded them;
+ * a value-only chart, or none, has neither.
+ */
+export function referenceLines(
+  view:
+    | {
+        performanceMethod?: string | null
+        points: Array<{ date: string; netDeposits?: number | null; sp500?: number | null }>
+      }
+    | undefined,
+  now: number,
+): { netDeposits?: LivelinePoint[]; benchmark?: LivelinePoint[] } {
+  if (!view?.points.length || view.performanceMethod === 'value-only') return {}
+  const { points } = view
+  const line = (pick: (point: (typeof points)[number]) => number | null | undefined) =>
+    points.flatMap((point) => {
+      const value = pick(point)
+      return typeof value === 'number' ? [{ date: point.date, value }] : []
+    })
+  const deposits = line(({ netDeposits }) => netDeposits)
+  const benchmark = line(({ sp500 }) => sp500)
+  return {
+    netDeposits: buildLiveChartData(deposits, [], deposits.at(-1)?.value ?? 0, now),
+    benchmark: benchmark.length
+      ? buildLiveChartData(benchmark, [], benchmark.at(-1)!.value, now)
+      : undefined,
+  }
 }
 
 export function buildLiveChartData(

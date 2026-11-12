@@ -1,5 +1,4 @@
-//! Files from builds before the finance database, read once into it and then removed, and
-//! the owner-only permissions on the local data directory and its SQLite files.
+//! Files from builds before the finance database, read once into it and then removed.
 use std::{collections::BTreeMap, fs, path::Path};
 
 use serde::de::DeserializeOwned;
@@ -13,25 +12,6 @@ pub(super) const LEGACY_FINANCE_FILES: [&str; 5] = [
     "plaid-cache.json",
     "provider-data.json",
 ];
-
-pub(super) fn protect_directory(directory: &Path) -> Result<(), String> {
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
-            .map_err(|error| format!("Could not protect local financial data: {error}"))?;
-    }
-    for name in [
-        "finance-state.sqlite3",
-        "finance-state.backup.sqlite3",
-        "market-prices.sqlite3",
-        "news.sqlite3",
-        "startup-market.sqlite3",
-    ] {
-        crate::database::secure_file(&directory.join(name))?;
-    }
-    Ok(())
-}
 
 pub(super) fn remove_migrated_legacy_files(directory: &Path) {
     for name in LEGACY_FINANCE_FILES {

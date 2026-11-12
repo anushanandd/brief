@@ -1,12 +1,10 @@
-import { formatActivityName, formatCurrency, formatCurrencyRange } from './format'
+import {
+  formatActivityName,
+  formatCurrency,
+  formatCurrencyRange,
+  formatShortDay as formatDay,
+} from './format'
 import type { BenefitActivity, BenefitWindow } from './schema'
-
-const dayLabel = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-})
-const formatDay = (date: string) => dayLabel.format(new Date(`${date}T00:00:00Z`))
 
 /** What became of a qualifying purchase's credit, as judged natively. */
 export function purchaseCreditLabel(credit: BenefitActivity['credit']) {
@@ -19,6 +17,8 @@ export function purchaseCreditLabel(credit: BenefitActivity['credit']) {
       return `Late · allowed until ${formatDay(credit.by)}`
     case 'not-credited':
       return 'No credit'
+    case 'unlikely':
+      return 'Likely not covered: unlike every credited purchase'
     case 'over-allowance':
       return 'Over allowance'
     default:
@@ -43,6 +43,8 @@ function purchaseCreditBadge(credit: BenefitActivity['credit']) {
       return 'Credit late'
     case 'not-credited':
       return 'No credit'
+    case 'unlikely':
+      return 'Not covered'
     case 'over-allowance':
       return 'Over allowance'
     default:
@@ -71,17 +73,21 @@ export function activityBenefitNote(
     return { text: `${name} · ${label}`, label: purchaseCreditBadge(item.credit), tone }
   }
   if (item.pending) return null
+  const benefit = withoutCredit(name)
   if (item.kind === 'credit')
     return {
       text: paired
-        ? `${name} credit for ${formatActivityName(paired.merchant)} on ${formatDay(paired.date)}`
-        : `${name} credit`,
+        ? `${benefit} credit for ${formatActivityName(paired.merchant)} on ${formatDay(paired.date)}`
+        : `${benefit} credit`,
       label: 'Benefit credit',
     }
   if (item.kind === 'reversal')
-    return { text: `${name} credit reversed`, label: 'Credit reversed', tone: 'warning' }
+    return { text: `${benefit} credit reversed`, label: 'Credit reversed', tone: 'warning' }
   return null
 }
+
+/** A benefit's name without a trailing "credit", for copy that adds its own. */
+export const withoutCredit = (name: string) => name.replace(/\s+credit$/i, '')
 
 /** The one-line state of a benefit window. */
 export function benefitStatus(benefit: BenefitWindow): {
@@ -115,8 +121,8 @@ export function benefitStatus(benefit: BenefitWindow): {
 export function benefitNote(benefit: BenefitWindow) {
   if (benefit.status === 'external')
     return benefit.estimatedCreditAmount
-      ? 'An Uber charge suggests it ran out'
-      : 'Spent in the Uber app'
+      ? 'A partner charge suggests it ran out'
+      : "Spent in the partner's app"
   if (benefit.cadence === 'renewal')
     return benefit.renewalCheck ? `Renews ~${benefit.renewalCheck}` : 'Renewal date unknown'
   const range = benefit.remainingRange
@@ -143,9 +149,9 @@ export function benefitWarning(benefit: BenefitWindow) {
   const missing = benefit.activity.filter(
     ({ credit }) => credit?.state === 'late' || credit?.state === 'not-credited',
   )
-  if (!missing.length) return null
-  if (missing.length > 1) return `No credit for ${missing.length} purchases · check enrollment`
   const [purchase] = missing
+  if (!purchase) return null
+  if (missing.length > 1) return `No credit for ${missing.length} purchases · check enrollment`
   const name = formatActivityName(purchase.merchant)
   return purchase.credit?.state === 'late'
     ? `Credit for ${name} is late`

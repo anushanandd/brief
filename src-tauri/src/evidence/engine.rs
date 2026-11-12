@@ -4,6 +4,11 @@
 //! when every condition is met by observed records and the terms cover its dates; one with a
 //! condition no record can show, or a date the terms don't cover, stays Suggested. Nothing is
 //! concluded from a condition that failed.
+//!
+//! It is a small interpreter rather than a Datalog crate: crates such as `ascent` compile rules
+//! written in Rust, and these rules are data, some of them the user's. A conclusion's id is
+//! built from its rule, what it is about, and its dates, never from its position, so a
+//! confirmation or dismissal stays attached to it across reads.
 use std::collections::BTreeMap;
 
 use chrono::{Datelike, NaiveDate};
@@ -253,7 +258,8 @@ fn evaluate_condition<'a>(
                         && pattern.is_match(&text(transaction))
                 })
                 .filter_map(|transaction| {
-                    let date = date_of(transaction)?;
+                    // A rule read as of `today` knows nothing dated after it.
+                    let date = date_of(transaction).filter(|date| *date <= facts.today)?;
                     if let Some((anchor, days)) = anchor {
                         if date > anchor || (anchor - date).num_days() > days {
                             return None;

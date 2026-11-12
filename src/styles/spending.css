@@ -1,4 +1,4 @@
-/* Spending, range controls, and Platinum benefits. */
+/* Spending, range controls, and card benefits. */
 
 .spending-overview-grid {
   display: grid;
@@ -91,12 +91,9 @@
 .spending-category-card .ranked-bars {
   margin-top: 12px;
 }
-.spending-total-panel,
-.spending-category-panel {
-  min-width: 0;
-}
 .spending-total-panel {
   display: flex;
+  min-width: 0;
   flex-direction: column;
 }
 .spending-total-panel .workspace-brief-heading > div {
@@ -178,9 +175,8 @@
   gap: 6px 8px;
 }
 .spending-benefits-card .benefit-title-row h4 {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 .spending-benefits-card .benefit-allowance {
   max-width: 84px;
@@ -268,10 +264,29 @@
   background: color-mix(in srgb, var(--data-1) 16%, var(--surface-raised));
   color: var(--data-1);
 }
+.benefit-mark-dining,
+.benefit-mark-grocery {
+  background: color-mix(in srgb, var(--data-6) 16%, var(--surface-raised));
+  color: var(--data-6);
+}
+.benefit-mark-rides,
+.benefit-mark-shopping {
+  background: color-mix(in srgb, var(--data-5) 16%, var(--surface-raised));
+  color: var(--data-5);
+}
+.benefit-mark-security,
+.benefit-mark-lounge {
+  background: color-mix(in srgb, var(--data-4) 16%, var(--surface-raised));
+  color: var(--data-4);
+}
+.benefit-mark-wellness {
+  background: color-mix(in srgb, var(--data-7) 16%, var(--surface-raised));
+  color: var(--data-7);
+}
 .benefit-detail-row h4 {
   margin: 0;
   font-size: var(--type-body);
-  font-weight: 600;
+  font-weight: 500;
   line-height: 1.5;
 }
 .benefit-info-trigger {
@@ -327,9 +342,9 @@
   color: var(--accent);
 }
 .benefit-allowance {
+  color: var(--text-secondary);
   text-align: right;
-  font-size: var(--type-body);
-  font-weight: 500;
+  font-size: var(--type-meta);
   line-height: 1.5;
 }
 .benefit-detail-status {

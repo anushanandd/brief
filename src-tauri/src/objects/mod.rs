@@ -3,6 +3,11 @@
 //! sees (`insights::View`, with edits applied) and from the saved documents and settings, so
 //! it changes only when they do. Search, the raw view, the readable folder, and later rules
 //! read it; nothing writes to it but `graph`.
+//!
+//! The graph is saved whole to `graph_objects`, `graph_links`, and `graph_facts` when it
+//! changes, as derived data: never in the change log, and cleared by erasure. A read of one
+//! object compares those rows with the graph built from the view and rewrites any that
+//! drifted before answering, so the raw view never shows what the view doesn't hold.
 use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};

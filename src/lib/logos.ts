@@ -3,7 +3,8 @@ import type { Transaction } from './schema'
 import { transactionMarkKind } from './transaction-kind'
 
 const externalLogosKey = 'brief.externalLogosEnabled'
-const logoDevPublishableKey = 'pk_REDACTED'
+/** logo.dev's publishable key, from `VITE_LOGO_DEV_KEY` in a git-ignored `.env.local`. */
+const logoDevPublishableKey: string = import.meta.env.VITE_LOGO_DEV_KEY ?? ''
 const allowedProviderLogoHosts = new Set(['plaid-merchant-logos.plaid.com'])
 
 const markPalette = [
@@ -34,7 +35,8 @@ function markPaletteEntry(label: string) {
   const paletteIndex = label
     .split('')
     .reduce((hash, character) => (hash * 31 + character.charCodeAt(0)) % markPalette.length, 0)
-  return markPalette[paletteIndex]
+  // The hash is taken modulo the palette's length, so the fallback is never reached.
+  return markPalette[paletteIndex] ?? markPalette[0]
 }
 
 export function markColor(label: string): string {
@@ -52,7 +54,7 @@ function markUrl(label: string): string {
 function logoDevUrl(kind: 'name' | 'ticker' | null, value: string): string {
   const path = kind ? `${kind}/${encodeURIComponent(value)}` : encodeURIComponent(value)
   const url = new URL(`https://img.logo.dev/${path}`)
-  url.searchParams.set('token', logoDevPublishableKey)
+  if (logoDevPublishableKey) url.searchParams.set('token', logoDevPublishableKey)
   url.searchParams.set('size', '64')
   url.searchParams.set('format', 'png')
   url.searchParams.set('fallback', '404')
@@ -98,10 +100,7 @@ export function stockMarkLabel(ticker: string): string {
 
 function isAmericanExpressPayment(transaction: Transaction): boolean {
   const text = `${transaction.merchant} ${transaction.description ?? ''} ${transaction.account}`
-  return (
-    transactionMarkKind(transaction) === 'payment' &&
-    /\bamex\b|american express|morgan stanley platinum card/i.test(text)
-  )
+  return transactionMarkKind(transaction) === 'payment' && /\bamex\b|american express/i.test(text)
 }
 
 export function brandMarkLabel(source: string): string {
@@ -204,6 +203,74 @@ function recognizedMerchant(transaction: Transaction) {
         type === 'merchant' && (confidence === 'VERY_HIGH' || confidence === 'HIGH'),
     ),
   )
+}
+
+/**
+ * A benefit's logos to try in order when external logos are on: Logo.dev by the domain Rust
+ * resolved, Plaid's for its last purchase, then Logo.dev by the brand its rule names.
+ */
+export function benefitLogoUrls(
+  logo: { logoDomain?: string; logoUrl?: string; logoBrand?: string },
+  external: boolean,
+): string[] {
+  if (!external) return []
+  return [
+    logo.logoDomain ? logoDevUrl(null, logo.logoDomain) : undefined,
+    allowedProviderLogo(logo.logoUrl),
+    logo.logoBrand ? logoDevUrl('name', logo.logoBrand) : undefined,
+  ].filter((url): url is string => Boolean(url))
+}
+
+const warmedAt = preference('brief.benefitLogosWarmedAt', (raw) => Number(raw) || 0)
+let warmedThisSession = 0
+const WARM_EVERY_MS = 24 * 60 * 60 * 1000
+const WARM_BATCH = 4
+
+function loadImage(src: string) {
+  return new Promise<void>((resolve) => {
+    const image = new Image()
+    image.fetchPriority = 'low'
+    image.addEventListener('load', () => resolve(), { once: true })
+    image.addEventListener('error', () => resolve(), { once: true })
+    image.src = src
+  })
+}
+
+function whenIdle(run: () => void) {
+  if (typeof requestIdleCallback === 'function') requestIdleCallback(run)
+  else setTimeout(run, 1000)
+}
+
+/**
+ * Loads every catalog brand's logo by name, a few at a time while the webview is idle and at
+ * most once a day, so the names Logo.dev is asked for don't single out the user's card.
+ */
+export async function warmBenefitLogos({
+  external,
+  brands,
+  now = Date.now(),
+  load = loadImage,
+  schedule = whenIdle,
+}: {
+  external: boolean
+  brands: () => Promise<readonly string[]>
+  now?: number
+  load?: (src: string) => Promise<void>
+  schedule?: (run: () => void) => void
+}): Promise<boolean> {
+  const last = Math.max(warmedAt.get(), warmedThisSession)
+  if (!external || now - last < WARM_EVERY_MS) return false
+  warmedThisSession = now
+  const names = await brands().catch(() => [])
+  if (!names.length) return false
+  warmedAt.save(now)
+  const queue = names.map((name) => logoDevUrl('name', name))
+  const step = () => {
+    const batch = queue.splice(0, WARM_BATCH)
+    if (batch.length) void Promise.allSettled(batch.map(load)).then(() => schedule(step))
+  }
+  schedule(step)
+  return true
 }
 
 /**

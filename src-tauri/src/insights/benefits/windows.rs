@@ -145,12 +145,15 @@ impl WindowCredits<'_> {
 }
 
 impl RuleSet {
-    /// Whether the text is an issuer statement-credit descriptor, such as "Platinum Hotel
+    /// Whether the text is an issuer statement-credit descriptor, such as "Example Card Travel
     /// Credit". Plaid files these under the benefit's spending category, a transfer, or a
     /// fee, so the descriptor decides that they are credits.
     pub fn is_issuer_credit(&self, text: &str) -> bool {
         !REFUND.is_match(text)
-            && (ISSUER_CREDIT.is_match(text)
+            && (self
+                .issuer_credit_matches
+                .as_ref()
+                .is_some_and(|issuer| issuer.is_match(text))
                 || self.rules.iter().any(|rule| {
                     rule.data.issuer_credits
                         && rule
@@ -167,13 +170,80 @@ impl RuleSet {
             .map(|rule| BenefitOption {
                 id: rule.data.id.clone(),
                 name: rule.data.name.clone(),
+                logo_domain: rule.data.logo_domain.clone(),
+                logo_url: None,
+                logo_brand: brands::brand(&rule.data),
+                category: rule.data.category.clone(),
             })
             .collect()
     }
 
-    /// Classifies posted and pending card activity against the benefit rules, then pairs
-    /// credits with purchases and places each credit in a window, as of `reference`.
+    /// Each benefit's logo (see `BenefitLogo`), from the latest purchase matched to it on this
+    /// card and the brand its rule names.
+    pub fn logos(
+        &self,
+        transactions: &[&Transaction],
+        activity: &[BenefitActivity],
+    ) -> BTreeMap<String, BenefitLogo> {
+        self.rules
+            .iter()
+            .filter_map(|rule| {
+                let id = &rule.data.id;
+                let purchase = activity
+                    .iter()
+                    .filter(|item| item.kind == ActivityKind::Purchase && &item.benefit_id == id)
+                    .filter_map(|item| {
+                        let transaction = transactions
+                            .iter()
+                            .find(|transaction| transaction.id == item.id)?;
+                        let url = transaction
+                            .logo_url
+                            .clone()
+                            .filter(|url| url.starts_with("https://"));
+                        let site = transaction
+                            .website
+                            .as_deref()
+                            .and_then(crate::insights::forecast::website_domain);
+                        (url.is_some() || site.is_some()).then_some((item.date, url, site))
+                    })
+                    .max_by(|left, right| left.0.cmp(&right.0));
+                let (url, site) = purchase
+                    .map(|(_, url, site)| (url, site))
+                    .unwrap_or_default();
+                let logo = BenefitLogo {
+                    domain: rule
+                        .data
+                        .logo_domain
+                        .clone()
+                        .or(site.filter(|_| url.is_none())),
+                    url,
+                    brand: brands::brand(&rule.data),
+                };
+                (logo != BenefitLogo::default()).then(|| (id.clone(), logo))
+            })
+            .collect()
+    }
+
+    /// Classifies posted and pending card activity against the benefit rules and the merchants
+    /// their history shows they cover, then pairs credits with purchases and places each credit
+    /// in a window, as of `reference`.
     pub fn activity(&self, transactions: &[&Transaction], reference: &str) -> Vec<BenefitActivity> {
+        let activity = self.read(transactions, reference);
+        let mut taught = self.clone();
+        let mut learned_any = false;
+        for rule in &mut taught.rules {
+            let learned = attribution::learned_merchants(rule, transactions, &activity);
+            learned_any |= !learned.is_empty();
+            rule.data.merchant_amount_matches.extend(learned);
+        }
+        if learned_any {
+            taught.read(transactions, reference)
+        } else {
+            activity
+        }
+    }
+
+    fn read(&self, transactions: &[&Transaction], reference: &str) -> Vec<BenefitActivity> {
         let reference_day = calendar::transaction_date(reference);
         let mut activity = transactions
             .iter()
@@ -191,8 +261,12 @@ impl RuleSet {
             .collect::<Vec<_>>();
         activity.sort_by_key(|item| std::cmp::Reverse(item.date));
         if let Some(today) = reference_day {
+            let by_id = transactions
+                .iter()
+                .map(|transaction| (transaction.id.as_str(), *transaction))
+                .collect();
             for rule in &self.rules {
-                attribution::attribute(rule, &mut activity, today);
+                attribution::attribute(rule, &mut activity, &by_id, today);
             }
         }
         activity
@@ -479,7 +553,7 @@ impl RuleSet {
             .filter(|remainder| *remainder > 0)
             .map(from_minor);
         let remaining_amount = remaining_range
-            .filter(|range| range.low == range.high)
+            .filter(|_| rule.spendable(unused_low) == rule.spendable(unused_high))
             .map(|range| range.low);
         let renewal_credit = last_credit.filter(|last| {
             period.cadence == Cadence::Renewal
@@ -487,10 +561,15 @@ impl RuleSet {
                     item.kind == ActivityKind::Reversal && !item.pending && item.date >= last.date
                 })
         });
-        // Global Entry's $120 credit renews after four years; TSA PreCheck's, up to $85, after
-        // four and a half.
+        // A renewal credit's wait depends on what it paid for, which its amount tells: the term
+        // with the highest floor below the credit, else four years.
         let renewal_check = renewal_credit.map(|credit| {
-            let months = if credit.amount > 85.0 { 48 } else { 54 };
+            let months = definition
+                .renewal_terms
+                .iter()
+                .filter(|term| credit.amount > term.above)
+                .max_by(|left, right| left.above.total_cmp(&right.above))
+                .map_or(48, |term| term.months);
             calendar::add_months_first(credit.date, months)
                 + Duration::days(credit.date.day() as i64 - 1)
         });
@@ -517,9 +596,14 @@ impl RuleSet {
         BenefitWindow {
             id: definition.id.clone(),
             name: definition.name.clone(),
+            logo_domain: definition.logo_domain.clone(),
+            logo_url: None,
+            logo_brand: None,
+            category: definition.category.clone(),
             limit: period.limit.clone(),
             cap: period.cap,
             cadence: period.cadence,
+            anniversary_unknown: rule.anniversary_unknown,
             instruction: definition.instruction.clone(),
             url: definition.url.clone(),
             deadline_note: definition.deadline_note.clone(),
@@ -562,7 +646,45 @@ pub(super) fn collate(left: &str, right: &str) -> std::cmp::Ordering {
         .then_with(|| right.cmp(left))
 }
 
-/// JavaScript `Math.round`: halves round toward positive infinity.
+/// The cardmember-year window containing `date`: the year starts on the anniversary (a Feb
+/// 29 anniversary starts Feb 28 in other years), split into halves or quarters for those
+/// cadences.
+pub(super) fn anniversary_window(
+    date: NaiveDate,
+    cadence: Cadence,
+    (month, day): (u32, u32),
+) -> (NaiveDate, NaiveDate) {
+    let on = |year: i32| {
+        NaiveDate::from_ymd_opt(year, month, day)
+            .or_else(|| NaiveDate::from_ymd_opt(year, month, day - 1))
+            .expect("anniversary in range")
+    };
+    let mut year_start = on(date.year());
+    if year_start > date {
+        year_start = on(date.year() - 1);
+    }
+    let months = match cadence {
+        Cadence::Quarterly => 3,
+        Cadence::Semiannual => 6,
+        _ => 12,
+    };
+    let at = |step: u32| {
+        year_start
+            .checked_add_months(chrono::Months::new(step * months))
+            .expect("date in range")
+    };
+    let step = (0..12 / months)
+        .rev()
+        .find(|step| at(*step) <= date)
+        .unwrap_or(0);
+    let end = if step + 1 == 12 / months {
+        on(year_start.year() + 1)
+    } else {
+        at(step + 1)
+    };
+    (at(step), end.pred_opt().expect("date in range"))
+}
+
 pub(super) fn benefit_window(date: NaiveDate, cadence: Cadence) -> (NaiveDate, NaiveDate) {
     let month = date.month0() as i64;
     let (start_month, duration) = match cadence {

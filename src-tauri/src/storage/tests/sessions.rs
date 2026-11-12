@@ -108,3 +108,47 @@ fn closed_sessions_persist_by_date_are_replaced_only_by_a_new_method_and_are_era
         .is_empty());
     fs::remove_dir_all(directory).unwrap();
 }
+
+#[test]
+fn saved_summaries_keep_the_latest_per_scope_drop_old_ones_and_are_erased() {
+    let directory = directory();
+    let mut storage = Storage::new(directory.clone()).unwrap();
+    let day = |value: &str| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap();
+    let saved = |at: &str, inputs: char| crate::database::SavedSummary {
+        version: 1,
+        inputs: inputs.to_string().repeat(64),
+        complete: true,
+        saved_at: chrono::DateTime::parse_from_rfc3339(at).unwrap().to_utc(),
+        json: "{}".into(),
+    };
+    let old = saved("2026-09-01T21:00:00Z", 'a');
+    storage
+        .save_summary(Some("TEST"), day("2026-08-01"), &old)
+        .unwrap();
+    storage
+        .save_summary(None, day("2026-10-09"), &saved("2026-10-16T21:00:00Z", 'b'))
+        .unwrap();
+    let latest = saved("2026-10-17T21:00:00Z", 'c');
+    storage
+        .save_summary(None, day("2026-10-09"), &latest)
+        .unwrap();
+    // The latest replaces the one before for the scope and start.
+    assert_eq!(
+        storage.saved_summary(None, day("2026-10-09")).unwrap(),
+        Some(latest)
+    );
+    // One saved weeks before is gone.
+    assert_eq!(
+        storage
+            .saved_summary(Some("TEST"), day("2026-08-01"))
+            .unwrap(),
+        None
+    );
+    storage.erase().unwrap();
+    assert_eq!(
+        storage.saved_summary(None, day("2026-10-09")).unwrap(),
+        None
+    );
+    drop(storage);
+    fs::remove_dir_all(directory).unwrap();
+}

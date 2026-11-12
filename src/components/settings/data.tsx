@@ -3,8 +3,9 @@ import { open, save } from '@tauri-apps/plugin-dialog'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
-import { financeQueryKey } from '../../hooks/use-finance'
+import { setFinanceSnapshot } from '../../hooks/use-finance'
 import { useFinance } from '../../hooks/use-finance'
+import { useFinanceEdits } from '../../hooks/use-finance-edits'
 import { useFindPlaces } from '../../hooks/use-find-places'
 import {
   authenticateSensitiveAction,
@@ -12,6 +13,7 @@ import {
   exportFinanceBackup,
   exportSettingsFile,
   getFoundationModelStatus,
+  getLocalModels,
   inspectFinanceBackup,
   isTauri,
   readSettingsFile,
@@ -19,7 +21,8 @@ import {
 } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
 import { exportLotsCsv, exportUpcomingCalendar } from '../../lib/exports'
-import { countOf } from '../../lib/format'
+import { financeSettings } from '../../lib/finance-settings'
+import { countOf, formatUpdatedAt } from '../../lib/format'
 import { getExternalLogosEnabled, saveExternalLogosEnabled } from '../../lib/logos'
 import { getPrivacyPreferences, savePrivacyPreferences } from '../../lib/privacy-preferences'
 import type { BackupInfo } from '../../lib/schema'
@@ -29,6 +32,7 @@ import {
   importSettingsPreferences,
   parseSettingsPreferences,
 } from '../../lib/settings-preferences'
+import { FilterSelect } from '../filter-select'
 import { CalendarDays, Download, Fingerprint, MapPinned, Trash2, Upload, X } from '../icons'
 import {
   SettingsBlock,
@@ -120,7 +124,7 @@ function FinancialBackup() {
     runTask(setBusy, 'restore', 'Could not restore backup', async () => {
       await authenticateSensitiveAction()
       const snapshot = await restoreFinanceBackup(path, restorePassphrase)
-      queryClient.setQueryData(financeQueryKey, snapshot)
+      setFinanceSnapshot(queryClient, snapshot)
       setPendingRestore(null)
       setRestorePassphrase('')
       await Promise.all([
@@ -181,7 +185,7 @@ function FinancialBackup() {
           <div>
             <strong>Replace current local financial data?</strong>
             <p>
-              Data through {new Date(pendingRestore.info.updatedAt).toLocaleString()} ·{' '}
+              Data through {formatUpdatedAt(pendingRestore.info.updatedAt)} ·{' '}
               {pendingRestore.info.accounts} accounts · {pendingRestore.info.transactions}{' '}
               activities · {pendingRestore.info.holdings} holdings
               {pendingRestore.info.documents ? ` · ${pendingRestore.info.documents} documents` : ''}
@@ -383,7 +387,7 @@ function EraseData() {
     runTask(setErasing, 'erase', 'Could not erase local data', async () => {
       await authenticateSensitiveAction()
       const snapshot = await eraseFinanceState()
-      queryClient.setQueryData(financeQueryKey, snapshot)
+      setFinanceSnapshot(queryClient, snapshot)
       queryClient.removeQueries({ queryKey: ['market-snapshots'] })
       queryClient.removeQueries({ queryKey: ['provider-connections'] })
       queryClient.removeQueries({ queryKey: ['sync-runs'] })
@@ -506,7 +510,54 @@ export function PrivacySection() {
                 (foundationModel.isLoading ? 'Checking…' : 'Unavailable'))}
           </span>
         </SettingsRow>
+        <LocalModelRow />
       </SettingsCard>
     </SettingsSection>
+  )
+}
+
+/**
+ * An Ollama model on this Mac that reads long documents whole: earnings releases and calls.
+ * Off by default; Brief reaches it only on the loopback address.
+ */
+function LocalModelRow() {
+  const finance = useFinance()
+  const { updateSettings } = useFinanceEdits()
+  const chosen = financeSettings(finance.data).localModel ?? ''
+  const local = useQuery({ queryKey: ['local-models'], queryFn: getLocalModels, staleTime: 60_000 })
+  const models = local.data?.models ?? []
+  const options = [
+    { value: '', label: 'Off' },
+    ...models.map((name) => ({ value: name, label: name })),
+    // A saved model Ollama no longer lists stays visible, so it can be turned off.
+    ...(chosen && !models.includes(chosen)
+      ? [{ value: chosen, label: `${chosen} (not found)` }]
+      : []),
+  ]
+  return (
+    <SettingsRow
+      id="local-model"
+      title="Local model"
+      description={
+        local.data?.running === false
+          ? 'Reads whole earnings releases and calls on this Mac. Start Ollama to choose a model.'
+          : 'Reads whole earnings releases and calls on this Mac, through Ollama.'
+      }
+    >
+      <FilterSelect
+        label="Local model"
+        value={chosen}
+        options={options}
+        disabled={!isTauri() || Boolean(finance.data?.recovery)}
+        onValueChange={(value) =>
+          void updateSettings((current) => ({
+            ...current,
+            localModel: value || undefined,
+          })).catch((error) =>
+            toast.error('Could not save the local model', { description: errorMessage(error) }),
+          )
+        }
+      />
+    </SettingsRow>
   )
 }

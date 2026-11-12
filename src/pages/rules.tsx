@@ -2,16 +2,19 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { listen } from '@tauri-apps/api/event'
 import { useCallback, useEffect, useMemo, useRef, useState, type FormEvent } from 'react'
 
+import { CardDraftReview, CardRulesChanges } from '../components/card-rules-draft'
 import { ExternalLink } from '../components/external-link'
 import { FilterSelect } from '../components/filter-select'
 import { Check, RefreshCw, Search, X } from '../components/icons'
 import { useShowObject } from '../components/object-details'
 import { Button, Card, EmptyState, SectionHeading } from '../components/ui'
 import { useFinanceEdits } from '../hooks/use-finance-edits'
+import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { isTauri } from '../lib/api'
+import { isTauri, prefillProgramDraft } from '../lib/api'
 import type { ProgramTemplate } from '../lib/bindings/ProgramTemplate'
 import type { ResearchPage } from '../lib/bindings/ResearchPage'
+import { cardsWithoutRules } from '../lib/card-drafts'
 import { errorMessage } from '../lib/errors'
 import {
   acknowledgeProgramSource,
@@ -19,6 +22,7 @@ import {
   evidenceOf,
   explanationSpan,
   getResearch,
+  prefilledFields,
   recheckProgramSources,
   researchGap,
   sourceDue,
@@ -27,8 +31,9 @@ import {
   type Program,
   type ResearchState,
 } from '../lib/evidence'
+import { financeSettings } from '../lib/finance-settings'
 import { formatDay, formatUpdatedAt } from '../lib/format'
-import type { FinanceSnapshot } from '../lib/schema'
+import type { Account, FinanceSnapshot } from '../lib/schema'
 
 const researchKey = ['research'] as const
 
@@ -42,8 +47,20 @@ export function RulesView({ data }: { data: FinanceSnapshot }) {
   const evidence = evidenceOf(data)
   const client = useQueryClient()
   const research = useQuery({ queryKey: researchKey, queryFn: getResearch })
-  const [drafting, setDrafting] = useState<ResearchPage>()
+  const [drafting, setDrafting] = useState<{ page: ResearchPage; gapId?: string }>()
   const stopDrafting = useCallback(() => setDrafting(undefined), [])
+  const [draftingCard, setDraftingCard] = useState<string>()
+  const stopDraftingCard = useCallback(() => setDraftingCard(undefined), [])
+  const { updateSettings } = useFinanceEdits()
+  const uncovered = useMemo(() => cardsWithoutRules(data), [data])
+  const cardName = useCallback(
+    (id: string) => {
+      const account = data.accounts.find((candidate) => candidate.id === id)
+      const names = financeSettings(data).accountNames
+      return account ? accountDisplayName(account.id, account.name, names) : 'Card'
+    },
+    [data],
+  )
   const programName = (id: string) =>
     evidence.programs.find((program) => program.id === id)?.name ?? 'A rule Brief knows'
   useEffect(() => {
@@ -65,7 +82,18 @@ export function RulesView({ data }: { data: FinanceSnapshot }) {
   // A draft takes the full width, its source page beside the form.
   return (
     <div className="trips-main">
-      {drafting ? <DraftSheet page={drafting} onDone={stopDrafting} /> : null}
+      {drafting ? (
+        <DraftSheet page={drafting.page} gapId={drafting.gapId} onDone={stopDrafting} />
+      ) : null}
+      {draftingCard ? (
+        <CardDraftReview
+          accountId={draftingCard}
+          accountName={cardName(draftingCard)}
+          canReadTerms={Boolean(research.data?.enabled && research.data.connected)}
+          save={updateSettings}
+          onDone={stopDraftingCard}
+        />
+      ) : null}
       <div className="rules-grid">
         <div className="trips-main">
           {evidence.alerts.length ? (
@@ -103,7 +131,19 @@ export function RulesView({ data }: { data: FinanceSnapshot }) {
         </div>
         <div className="trips-main">
           <ProgramsCard data={data} research={research.data} />
-          <ResearchCard research={research.data} onDraft={setDrafting} />
+          <CardRulesCard
+            data={data}
+            uncovered={uncovered}
+            cardName={cardName}
+            onFind={setDraftingCard}
+            save={updateSettings}
+          />
+          <ResearchCard
+            research={research.data}
+            onDraft={(page, gapId) => setDrafting({ page, gapId })}
+            cardFor={(name) => cardForGap(uncovered, name)}
+            onFindCard={setDraftingCard}
+          />
         </div>
       </div>
     </div>
@@ -144,19 +184,15 @@ function ExplanationRow({ explanation }: { explanation: Explanation }) {
       <details className="rules-why">
         <summary>Why</summary>
         <ol>
-          {explanation.proof.steps.map((step) => (
+          {explanation.proof.steps.map(({ evidence: [source], ...step }) => (
             <li key={step.says} className={step.met ? 'is-met' : undefined}>
               <span aria-label={step.met ? 'Met' : 'Not met'}>{step.met ? '✓' : '–'}</span>
               <span>
                 {step.says}
                 {step.detail ? <small>{step.detail}</small> : null}
               </span>
-              {step.evidence[0] ? (
-                <button
-                  type="button"
-                  className="object-link"
-                  onClick={() => showObject(step.evidence[0])}
-                >
+              {source ? (
+                <button type="button" className="object-link" onClick={() => showObject(source)}>
                   Record
                 </button>
               ) : null}
@@ -308,6 +344,82 @@ function ProgramsCard({ data, research }: { data: FinanceSnapshot; research?: Re
   )
 }
 
+/** The credit card a card gap names, among those no rules cover. */
+function cardForGap(uncovered: Account[], name: string) {
+  const wanted = name.toLowerCase()
+  const named = uncovered.find((account) =>
+    [account.officialName, account.name].some((text) => text?.toLowerCase().includes(wanted)),
+  )
+  return named ?? (uncovered.length === 1 ? uncovered[0] : undefined)
+}
+
+/** Cards whose benefits no saved rules cover, each with a draft to review, and saved rules' changes. */
+function CardRulesCard({
+  data,
+  uncovered,
+  cardName,
+  onFind,
+  save,
+}: {
+  data: FinanceSnapshot
+  uncovered: Account[]
+  cardName: (id: string) => string
+  onFind: (accountId: string) => void
+  save: ReturnType<typeof useFinanceEdits>['updateSettings']
+}) {
+  const settings = financeSettings(data)
+  const saved = settings.cardRules ?? []
+  const choices = new Set((settings.cardChoices ?? []).map(({ accountId }) => accountId))
+  useRegisterActions(
+    useMemo<AppAction[]>(
+      () =>
+        uncovered.map((account) => ({
+          id: `cardRules.find.${account.id}`,
+          title: `Find rules for ${cardName(account.id)}`,
+          search: 'card rules benefits find draft catalog credits',
+          group: 'Here',
+          scope: 'page' as const,
+          run: () => onFind(account.id),
+        })),
+      [cardName, onFind, uncovered],
+    ),
+  )
+  return (
+    <Card className="chapters-card">
+      <SectionHeading
+        title="Card rules"
+        detail="Each card's benefit terms, applied from the open card catalog and checked against your card's credits."
+      />
+      {uncovered.length ? (
+        <ul className="chapter-facts">
+          {uncovered.map((account) => (
+            <li key={account.id} data-keyboard-row>
+              <span className="chapters-row-copy">
+                <strong>{cardName(account.id)}</strong>
+                <small>
+                  {account.institution} ·{' '}
+                  {choices.has(account.id) ? 'Which card is this?' : 'no catalog match'}
+                </small>
+              </span>
+              <Button
+                size="compact"
+                icon={Search}
+                data-command={`cardRules.find.${account.id}`}
+                onClick={() => onFind(account.id)}
+              >
+                Find rules
+              </Button>
+            </li>
+          ))}
+        </ul>
+      ) : (
+        <EmptyState>Every credit card has rules.</EmptyState>
+      )}
+      {saved.some(({ origin }) => origin === 'user') ? <CardRulesChanges save={save} /> : null}
+    </Card>
+  )
+}
+
 /**
  * Opt-in research: what no rule covers, the public query that would look for one, and every
  * query sent. Pages that come back are shown, never acted on; a rule joins only when approved.
@@ -315,9 +427,13 @@ function ProgramsCard({ data, research }: { data: FinanceSnapshot; research?: Re
 function ResearchCard({
   research,
   onDraft,
+  cardFor,
+  onFindCard,
 }: {
   research?: ResearchState
-  onDraft: (page: ResearchPage) => void
+  onDraft: (page: ResearchPage, gapId?: string) => void
+  cardFor: (name: string) => Account | undefined
+  onFindCard: (accountId: string) => void
 }) {
   const client = useQueryClient()
   const [running, setRunning] = useState<string>()
@@ -369,6 +485,11 @@ function ResearchCard({
                   <strong>{gap.name}</strong>
                   <small>Query: {gap.query}</small>
                 </span>
+                {gap.kind === 'card' && cardFor(gap.name) ? (
+                  <Button size="compact" onClick={() => onFindCard(cardFor(gap.name)!.id)}>
+                    Find rules
+                  </Button>
+                ) : null}
                 <Button
                   size="compact"
                   icon={Search}
@@ -407,7 +528,11 @@ function ResearchCard({
                     {entry.pages.map((page) => (
                       <li key={page.url}>
                         <ExternalLink href={page.url}>{page.title || page.url}</ExternalLink>
-                        <Button size="compact" variant="ghost" onClick={() => onDraft(page)}>
+                        <Button
+                          size="compact"
+                          variant="ghost"
+                          onClick={() => onDraft(page, entry.subject)}
+                        >
                           Draft a rule from this page
                         </Button>
                       </li>
@@ -433,42 +558,75 @@ const templates: Record<ProgramTemplate, string> = {
   employeeDepositWaiver: 'A monthly fee waived for employees with enough deposits',
 }
 const templateIds: ProgramTemplate[] = ['bonusOffsetsFee', 'employeeDepositWaiver']
+const emptyDraftFields = {
+  name: '',
+  organization: '',
+  summary: '',
+  effective: '',
+  accountName: '',
+  institution: '',
+  cardName: '',
+  bonusWords: '',
+  amount: '',
+  fee: '',
+  unobservable: '',
+}
 
 /**
  * Drafting a rule beside the page it comes from. Rust builds and checks the rule; it joins
  * settings only when you approve it, and is matched by the plain words you type.
  */
-function DraftSheet({ page, onDone }: { page: ResearchPage; onDone: () => void }) {
+function DraftSheet({
+  page,
+  gapId,
+  onDone,
+}: {
+  page: ResearchPage
+  /** The gap the page was found for; a bank account's gap can prefill the form from the page. */
+  gapId?: string
+  onDone: () => void
+}) {
   const { updateSettings } = useFinanceEdits()
   const [template, setTemplate] = useState<ProgramTemplate>('employeeDepositWaiver')
-  const [fields, setFields] = useState<Record<string, string>>({
-    name: '',
-    organization: '',
-    summary: '',
-    effective: '',
-    accountName: '',
-    institution: '',
-    cardName: '',
-    bonusWords: '',
-    amount: '',
-    fee: '',
-    unobservable: '',
-  })
+  const [fields, setFields] = useState(emptyDraftFields)
+  const [prefilled, setPrefilled] = useState<ReadonlySet<string>>(new Set())
+  const [quotes, setQuotes] = useState<ReadonlyMap<string, string>>(new Map())
   const [draft, setDraft] = useState<Program>()
   const [error, setError] = useState<string>()
-  const field = (key: string, label: string, type = 'text') => (
-    <label key={key}>
-      <span>{label}</span>
+  const field = (key: keyof typeof emptyDraftFields, label: string, type = 'text') => (
+    <label key={key} className={prefilled.has(key) ? 'is-prefilled' : undefined}>
+      <span>
+        {label}
+        {prefilled.has(key) ? (
+          <small title={quotes.get(key)}> · from the page, check it</small>
+        ) : null}
+      </span>
       <input
         type={type}
         value={fields[key]}
         onChange={(event) => {
           setDraft(undefined)
           setFields({ ...fields, [key]: event.target.value })
+          setPrefilled((current) => new Set([...current].filter((known) => known !== key)))
         }}
       />
     </label>
   )
+  const prefill = async () => {
+    if (!gapId) return
+    setError(undefined)
+    try {
+      const { draft: filled, quotes: cited } = await prefillProgramDraft({ gapId, url: page.url })
+      const next = prefilledFields(filled)
+      setTemplate(filled.template)
+      setFields({ ...fields, ...next })
+      setPrefilled(new Set(Object.keys(next)))
+      setQuotes(new Map(cited.map((quote) => [quote.field, quote.sentence])))
+      setDraft(undefined)
+    } catch (caught) {
+      setError(errorMessage(caught))
+    }
+  }
   const check = async (event: FormEvent) => {
     event.preventDefault()
     setError(undefined)
@@ -512,6 +670,8 @@ function DraftSheet({ page, onDone }: { page: ResearchPage; onDone: () => void }
   const form = useRef<HTMLFormElement>(null)
   const latest = useRef(approve)
   latest.current = approve
+  const latestPrefill = useRef(prefill)
+  latestPrefill.current = prefill
   useRegisterActions(
     useMemo<AppAction[]>(
       () => [
@@ -532,6 +692,18 @@ function DraftSheet({ page, onDone }: { page: ResearchPage; onDone: () => void }
           disabled: !draft,
           run: () => void latest.current(),
         },
+        ...(gapId
+          ? [
+              {
+                id: 'rules.draft.prefill',
+                title: 'Prefill the draft from its page',
+                search: 'rule draft prefill page research fill',
+                group: 'Here',
+                scope: 'page' as const,
+                run: () => void latestPrefill.current(),
+              },
+            ]
+          : []),
         {
           id: 'rules.draft.cancel',
           title: 'Cancel the draft',
@@ -541,7 +713,7 @@ function DraftSheet({ page, onDone }: { page: ResearchPage; onDone: () => void }
           run: onDone,
         },
       ],
-      [draft, onDone],
+      [draft, gapId, onDone],
     ),
   )
   return (
@@ -591,6 +763,16 @@ function DraftSheet({ page, onDone }: { page: ResearchPage; onDone: () => void }
             </>
           )}
           <div className="chapter-actions">
+            {gapId ? (
+              <Button
+                type="button"
+                size="compact"
+                data-command="rules.draft.prefill"
+                onClick={() => void prefill()}
+              >
+                Prefill from page
+              </Button>
+            ) : null}
             <Button type="submit" size="compact" data-command="rules.draft.check">
               Check
             </Button>

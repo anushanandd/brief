@@ -329,22 +329,14 @@
   font-size: var(--type-body);
   font-weight: 500;
 }
-@media (max-width: 1000px) {
-  .settings-panel {
-    grid-template-columns: 188px minmax(0, 1fr);
-  }
-  .settings-panel-content {
-    padding-inline: 24px;
-  }
-}
-
+/* Widths: the named viewport breakpoints in tokens.css. */
 @media (max-width: 1350px) {
   .home-secondary-grid {
     grid-template-columns: minmax(0, 1fr);
   }
 }
 
-@media (max-width: 1150px) {
+@media (max-width: 1100px) {
   .logs-grid {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -366,7 +358,6 @@
     padding-inline: 32px;
   }
 
-  .accounts-overview-grid,
   .spending-overview-grid,
   .account-overview-primary-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -379,6 +370,13 @@
 
   .home-primary-grid {
     grid-template-columns: minmax(0, 1fr);
+  }
+
+  .settings-panel {
+    grid-template-columns: 188px minmax(0, 1fr);
+  }
+  .settings-panel-content {
+    padding-inline: 24px;
   }
 }
 

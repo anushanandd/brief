@@ -1,16 +1,18 @@
 //! The assistant's eval set: questions about the synthetic career person, each with the
 //! ledger tool and arguments that answer it and the figures that answer holds.
 //!
-//! The deterministic test runs every tool call and checks its figures, that the router
-//! offers each question its tool, and that the Swift bridge defines every tool, so a changed
-//! figure or a renamed tool fails in CI. The ignored test asks Apple Intelligence each
-//! question on a Mac that has it, and checks that it queried, quoted the figures with none
-//! unverified, and called the unanswerable unavailable:
+//! The deterministic tests run every tool call and check its figures, that the Swift bridge
+//! defines every tool, and that the planner leads with each question's tool, resolves its
+//! dates, and runs directly only what it can answer, so a changed figure, a renamed tool, or a
+//! routing regression fails in CI. The ignored test asks Apple Intelligence each question on a
+//! Mac that has it, checks that it queried, quoted the figures with none unverified, and
+//! called the unanswerable unavailable, and appends its pass rate to the private
+//! `notes/assistant-eval-history.jsonl`:
 //! `cargo test assistant_answers_the_eval_set -- --ignored --nocapture`.
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::{insights::ledger::Ledger, synthetic::career};
+use crate::{insights::assistant_tools::Ledger, synthetic::career};
 
 #[derive(Deserialize)]
 struct Eval {
@@ -24,6 +26,15 @@ struct Eval {
     says: Vec<Vec<String>>,
     #[serde(default)]
     unavailable: bool,
+    /// The days the planner resolves the question's date phrase to, when it has one.
+    #[serde(default)]
+    range: Option<DateRange>,
+}
+
+#[derive(Debug, Deserialize, PartialEq)]
+struct DateRange {
+    start: String,
+    end: String,
 }
 
 fn evals() -> Vec<Eval> {
@@ -62,7 +73,7 @@ fn every_eval_question_has_a_tool_answer_with_its_figures() {
     let ledger = Ledger::new(&view, career::today());
     let bridge = include_str!("../../native/FoundationModelBridge.swift");
     // Every tool a question can be offered is one the bridge defines and the ledger runs.
-    for (name, _) in crate::insights::ledger::TOOLS {
+    for (name, _) in crate::insights::assistant_tools::TOOLS {
         assert!(
             bridge.contains(&format!("name: \"{name}\"")),
             "the Swift bridge offers {name}"
@@ -73,7 +84,6 @@ fn every_eval_question_has_a_tool_answer_with_its_figures() {
             serde_json::json!(format!("Unknown tool {name}"))
         );
     }
-    let mut unrouted = Vec::new();
     for eval in &evals {
         assert!(ids.insert(eval.id.as_str()), "{} is repeated", eval.id);
         let Some(tool) = &eval.tool else {
@@ -84,10 +94,6 @@ fn every_eval_question_has_a_tool_answer_with_its_figures() {
             bridge.contains(&format!("name: \"{tool}\"")),
             "the Swift bridge offers {tool}"
         );
-        let offered = crate::insights::ledger::tools_for(&eval.question, &view);
-        if !offered.contains(&tool.as_str()) {
-            unrouted.push(format!("{}: {tool} not in {offered:?}", eval.id));
-        }
         let result = ledger.call(tool, &eval.arguments);
         assert!(result.get("error").is_none(), "{}: {result}", eval.id);
         for (pointer, expected) in &eval.expect {
@@ -104,11 +110,6 @@ fn every_eval_question_has_a_tool_answer_with_its_figures() {
             eval.id
         );
     }
-    assert!(
-        unrouted.is_empty(),
-        "questions offered the wrong tools:\n{}",
-        unrouted.join("\n")
-    );
 }
 
 /// Whether an answer contains one of the forms, ignoring case, dollar signs, and commas in
@@ -187,6 +188,10 @@ async fn assistant_answers_the_eval_set() {
         }
     }
     eprintln!("{} of {} passed", evals.len() - failures.len(), evals.len());
+    // Only a run of the whole set is a pass rate worth keeping.
+    if only.is_none() {
+        record_run(evals.len() - failures.len(), evals.len(), &failures);
+    }
     assert!(failures.is_empty(), "failed: {failures:?}");
 }
 
@@ -201,4 +206,99 @@ fn answers_match_figures_however_they_are_written() {
         &["2026-07-15".into(), "July 15".into()]
     ));
     assert!(!contains_any("About $8,000.", &["8200".into()]));
+}
+
+/// The planner, without the model, over every eval question: the leading tool is the one that
+/// answers it, the resolved dates are the ones it names, a query Rust runs itself returns the
+/// figures the eval expects, and an unanswerable question is never run directly.
+#[test]
+fn the_planner_routes_every_eval_question_and_resolves_its_dates() {
+    use crate::insights::assistant_planner::plan;
+    let view = view();
+    let ledger = Ledger::new(&view, career::today());
+    let mut wrong = Vec::new();
+    let mut per_tool = std::collections::BTreeMap::<&str, usize>::new();
+    let mut direct = 0;
+    let evals = evals();
+    for eval in &evals {
+        let plan = plan(&eval.question, &view, career::today());
+        let range = plan.range.as_ref().map(|range| DateRange {
+            start: range.start.to_string(),
+            end: range.end.to_string(),
+        });
+        if range != eval.range {
+            wrong.push(format!(
+                "{}: dates {range:?}, expected {:?}",
+                eval.id, eval.range
+            ));
+        }
+        let Some(tool) = &eval.tool else {
+            if plan.direct.is_some() {
+                wrong.push(format!("{}: unanswerable, but run directly", eval.id));
+            }
+            continue;
+        };
+        *per_tool.entry(tool.as_str()).or_default() += 1;
+        if plan.tools.first() != Some(&tool.as_str()) {
+            let scores = crate::insights::assistant_planner::scores(
+                &eval.question,
+                &view,
+                plan.range.as_ref(),
+            );
+            wrong.push(format!(
+                "{}: {tool} is not first in {:?}",
+                eval.id,
+                &scores[..4]
+            ));
+        }
+        if let Some((name, arguments)) = &plan.direct {
+            direct += 1;
+            let result = ledger.call(name, arguments);
+            for (pointer, expected) in &eval.expect {
+                if result.pointer(pointer) != Some(expected) {
+                    wrong.push(format!(
+                        "{}: ran {name} {arguments} directly, {pointer} is {:?}",
+                        eval.id,
+                        result.pointer(pointer)
+                    ));
+                }
+            }
+        }
+    }
+    for (tool, _) in crate::insights::assistant_tools::TOOLS {
+        if !per_tool.contains_key(tool) {
+            wrong.push(format!("no eval question needs {tool}"));
+        }
+    }
+    eprintln!("planner: {direct} run directly; questions per tool {per_tool:?}");
+    assert!(wrong.is_empty(), "planner:\n{}", wrong.join("\n"));
+}
+
+/// Appends one on-device run's pass rate to `notes/assistant-eval-history.jsonl`, so the rate
+/// is kept over time. `notes/` is gitignored: a run's record is this Mac's, not the repo's.
+#[cfg(target_os = "macos")]
+fn record_run(passed: usize, total: usize, failing: &[String]) {
+    use std::io::Write;
+    let os = std::process::Command::new("sw_vers")
+        .arg("-productVersion")
+        .output()
+        .ok()
+        .map(|output| String::from_utf8_lossy(&output.stdout).trim().to_owned())
+        .filter(|version| !version.is_empty());
+    let line = serde_json::json!({
+        "date": chrono::Local::now().date_naive().to_string(),
+        "macos": os,
+        "passed": passed,
+        "total": total,
+        "failing": failing,
+    });
+    let notes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../notes");
+    let _ = std::fs::create_dir_all(&notes);
+    if let Ok(mut file) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(notes.join("assistant-eval-history.jsonl"))
+    {
+        let _ = writeln!(file, "{line}");
+    }
 }

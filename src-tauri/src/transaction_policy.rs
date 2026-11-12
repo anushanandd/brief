@@ -1,4 +1,13 @@
-//! Financial transaction meaning is assigned here, after saved overrides.
+//! What each transaction means: its kind (income, spending, a transfer, someone else's money),
+//! its category, refund links, and transfer pairs. Assigned on every read after saved edits;
+//! the committed snapshot keeps the provider's categories, so a policy change applies to all
+//! history.
+//!
+//! A category is the user's, else a suggested one, else the provider's, and a posted
+//! transaction takes the edits of the pending one it replaced. Plaid's detailed code decides a
+//! provider category's meaning; the name and text policy covers refunds, unknown codes, and
+//! categories chosen by hand or rule. A positive issuer statement credit is always a credit,
+//! since Plaid files those under the benefit's spending category, a transfer, or a fee.
 use crate::{
     finance_contract::Transaction, financial_engine::categories::CodeKind, storage::Annotation,
 };
@@ -84,8 +93,10 @@ fn word(text: &str, terms: &[&str]) -> bool {
     text.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
         .any(|part| terms.contains(&part))
 }
-pub fn classify(t: &Transaction) -> Classification {
-    if t.amount > 0.0 && crate::insights::benefits::PLATINUM.is_issuer_credit(&t.descriptors()) {
+/// What a transaction is. `cards` are the card products whose issuer statement credits are
+/// known, since those credits are told apart by their descriptors.
+pub fn classify(t: &Transaction, cards: &crate::insights::benefits::Catalog) -> Classification {
+    if t.amount > 0.0 && cards.is_issuer_credit(&t.descriptors()) {
         // A card statement credit repays benefit spending, whatever Plaid's category says.
         return Classification {
             mark: Mark::Refund,
@@ -251,12 +262,287 @@ fn classify_by_name(t: &Transaction) -> Classification {
     }
 }
 
-/// Where a transaction's category came from: chosen by hand, by a rule, or the provider's.
+/// Where a transaction's category came from: chosen by hand, the provider's, or suggested by
+/// Brief from your earlier choices (`suggest_categories`).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
 #[serde(rename_all = "lowercase")]
 pub enum CategorySource {
     Manual,
     Provider,
+    Suggested,
+}
+
+/// The least confidence a suggested category is applied at; below it the provider's stands.
+pub const SUGGEST_CONFIDENCE: f64 = 0.65;
+/// The least cosine similarity between two merchants' names for one's choices to count for the
+/// other.
+pub const NEIGHBOUR_SIMILARITY: f32 = 0.8;
+/// How many similar merchants vote at most.
+const NEIGHBOURS: usize = 5;
+/// How many earlier choices a suggestion names.
+const SUGGESTION_EVIDENCE: usize = 12;
+
+/// What a suggestion followed: your choices for the same merchant, or, when you never chose
+/// one for it, your choices for merchants whose names mean nearly the same.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "lowercase")]
+pub enum SuggestionBasis {
+    Merchant,
+    Similar,
+}
+
+/// Why Brief chose a transaction's category for you.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct CategorySuggestion {
+    /// See `suggest_categories` for the formula.
+    pub confidence: f64,
+    pub basis: SuggestionBasis,
+    /// Your earlier transactions it follows, newest first.
+    pub from: Vec<String>,
+}
+
+/// The merchant identity choices are learned under: Plaid's entity when known, otherwise the
+/// name's letters and digits, in any script. A name with none has no identity to learn under.
+fn merchant_key(t: &Transaction) -> Option<String> {
+    t.merchant_entity_id.clone().or_else(|| {
+        let key = t
+            .merchant
+            .chars()
+            .filter(|character| character.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect::<String>();
+        (!key.is_empty()).then_some(key)
+    })
+}
+
+/// Your categorizations of one merchant: each transaction you categorized votes for its
+/// category, and each suggestion you rejected is a vote that agrees with none.
+#[derive(Clone, Default)]
+struct Votes {
+    /// Category → the transactions you gave it, with their dates.
+    chosen: BTreeMap<String, Vec<(String, String)>>,
+    rejected: usize,
+}
+
+impl Votes {
+    fn total(&self) -> usize {
+        self.chosen.values().map(Vec::len).sum::<usize>() + self.rejected
+    }
+
+    fn add(&mut self, other: &Votes) {
+        for (category, ids) in &other.chosen {
+            self.chosen
+                .entry(category.clone())
+                .or_default()
+                .extend(ids.iter().cloned());
+        }
+        self.rejected += other.rejected;
+    }
+
+    /// The category most of the votes chose, other than `excluded`, with its confidence and
+    /// the choices behind it. Confidence is the share of votes that agree, discounted for few
+    /// of them: agree / (votes + 1), so one choice is 0.5, two that agree 0.67, and three of
+    /// four 0.6. Ties go to the alphabetically first category, so a history always reads alike.
+    fn best(&self, excluded: Option<&str>) -> Option<(String, f64, Vec<String>)> {
+        let total = self.total();
+        let (category, ids) = self
+            .chosen
+            .iter()
+            .filter(|(category, _)| Some(category.as_str()) != excluded)
+            .max_by(|left, right| {
+                left.1
+                    .len()
+                    .cmp(&right.1.len())
+                    .then_with(|| right.0.cmp(left.0))
+            })?;
+        let mut from = ids.clone();
+        from.sort_by(|left, right| right.1.cmp(&left.1).then(right.0.cmp(&left.0)));
+        Some((
+            category.clone(),
+            ids.len() as f64 / (total as f64 + 1.0),
+            from.into_iter()
+                .take(SUGGESTION_EVIDENCE)
+                .map(|(id, _)| id)
+                .collect(),
+        ))
+    }
+}
+
+/// Whether a transaction may take a suggested category: an ordinary purchase whose category is
+/// still the provider's, not split, not a refund, not a move between your accounts, and not a
+/// payment to a person.
+fn suggestible(t: &Transaction) -> bool {
+    t.category_source == Some(CategorySource::Provider)
+        && t.amount < 0.0
+        && t.splits.is_empty()
+        && t.refund_of.is_none()
+        && t.transfer_pair_id.is_none()
+        && t.category != PEOPLE_CATEGORY
+        && t.classification
+            .as_ref()
+            .is_some_and(|classification| classification.kind == Kind::Expense)
+}
+
+/// Suggests categories from your own choices, after `apply`. For each purchase whose category
+/// is still the provider's, the votes are your categorizations of the same merchant; only when
+/// there are none, those of up to `NEIGHBOURS` merchants whose names' on-device embeddings
+/// (`embedder`) lie within `NEIGHBOUR_SIMILARITY` of its own. The leading category is applied
+/// when its confidence (`Votes::best`) reaches `SUGGEST_CONFIDENCE` and it differs from the
+/// provider's, and never when you rejected it for that transaction (`rejections`). Each change
+/// you make changes the votes, so the next read follows it. The result depends only on the
+/// history, your choices, and the embedding of each name, which the cache keeps.
+pub fn suggest_categories(
+    transactions: &mut [Transaction],
+    rejections: &BTreeMap<String, String>,
+    embedder: Option<&dyn crate::search::embeddings::Embedder>,
+    cards: &crate::insights::benefits::Catalog,
+) {
+    let mut votes = BTreeMap::<String, Votes>::new();
+    // Each voting merchant is compared by the name on its most recently categorized purchase.
+    let mut names = BTreeMap::<String, (String, String)>::new();
+    for t in transactions.iter() {
+        let Some(key) = merchant_key(t) else {
+            continue;
+        };
+        if t.category_source == Some(CategorySource::Manual) && t.splits.is_empty() {
+            votes
+                .entry(key.clone())
+                .or_default()
+                .chosen
+                .entry(t.category.clone())
+                .or_default()
+                .push((t.id.clone(), t.date.clone()));
+            let name = names
+                .entry(key)
+                .or_insert_with(|| (t.date.clone(), t.merchant.clone()));
+            if t.date > name.0 {
+                *name = (t.date.clone(), t.merchant.clone());
+            }
+        } else if rejections.contains_key(&t.id) {
+            votes.entry(key).or_default().rejected += 1;
+        }
+    }
+    let candidates = transactions
+        .iter()
+        .enumerate()
+        .filter(|(_, t)| suggestible(t))
+        .filter_map(|(index, t)| Some((index, merchant_key(t)?)))
+        .collect::<Vec<_>>();
+    // Merchants you never categorized learn from similar names, embedded once per name.
+    let unknown = candidates
+        .iter()
+        .filter(|(_, key)| votes.get(key).is_none_or(|votes| votes.total() == 0))
+        .map(|(index, _)| transactions[*index].merchant.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    let neighbours = match embedder {
+        Some(embedder) if !unknown.is_empty() && !names.is_empty() => {
+            similar_merchants(embedder, &unknown, &names)
+        }
+        _ => BTreeMap::new(),
+    };
+    for (index, key) in candidates {
+        let t = &transactions[index];
+        let rejected = rejections.get(&t.id).map(String::as_str);
+        let (pool, basis) = match votes.get(&key).filter(|votes| votes.total() > 0) {
+            Some(own) => (std::borrow::Cow::Borrowed(own), SuggestionBasis::Merchant),
+            None => {
+                let mut pooled = Votes::default();
+                for similar in neighbours.get(&t.merchant).into_iter().flatten() {
+                    if let Some(found) = votes.get(similar) {
+                        pooled.add(found);
+                    }
+                }
+                (std::borrow::Cow::Owned(pooled), SuggestionBasis::Similar)
+            }
+        };
+        let Some((category, confidence, from)) = pool.best(rejected) else {
+            continue;
+        };
+        if confidence < SUGGEST_CONFIDENCE || category == t.category {
+            continue;
+        }
+        let t = &mut transactions[index];
+        let provider = std::mem::replace(&mut t.category, category);
+        // A chosen category is classified by its name, as a manual one is.
+        let detail = t.category_detail.take();
+        let classification = classify(t, cards);
+        t.category_detail = detail;
+        // A suggestion only moves a purchase between spending categories. One that made it a
+        // transfer or income would need pairing and refunds read again, so it isn't made.
+        if classification.kind != Kind::Expense {
+            t.category = provider;
+            continue;
+        }
+        t.provider_category.get_or_insert(provider);
+        t.category_source = Some(CategorySource::Suggested);
+        t.subcategory = None;
+        t.category_suggestion = Some(CategorySuggestion {
+            confidence,
+            basis,
+            from,
+        });
+        t.classification = Some(classification);
+    }
+}
+
+/// For each unknown merchant name, the voting merchants (by key) whose names are within
+/// `NEIGHBOUR_SIMILARITY`, most similar first. Names the embedder can't embed have none.
+fn similar_merchants(
+    embedder: &dyn crate::search::embeddings::Embedder,
+    unknown: &std::collections::BTreeSet<String>,
+    names: &BTreeMap<String, (String, String)>,
+) -> BTreeMap<String, Vec<String>> {
+    let known = names
+        .iter()
+        .map(|(key, (_, name))| (key.clone(), name.clone()))
+        .collect::<Vec<_>>();
+    let texts = unknown
+        .iter()
+        .cloned()
+        .chain(known.iter().map(|(_, name)| name.clone()))
+        .collect::<Vec<_>>();
+    let Some(vectors) = embedder.embed(&texts) else {
+        return BTreeMap::new();
+    };
+    if vectors.len() != texts.len() {
+        return BTreeMap::new();
+    }
+    let unit = |vector: &[f32]| {
+        let length = vector.iter().map(|value| value * value).sum::<f32>().sqrt();
+        (length > 0.0 && length.is_finite()).then(|| {
+            vector
+                .iter()
+                .map(|value| value / length)
+                .collect::<Vec<_>>()
+        })
+    };
+    let (unknown_vectors, known_vectors) = vectors.split_at(unknown.len());
+    let known_units = known_vectors.iter().map(|v| unit(v)).collect::<Vec<_>>();
+    unknown
+        .iter()
+        .zip(unknown_vectors)
+        .filter_map(|(name, vector)| {
+            let own = unit(vector)?;
+            let mut close = known
+                .iter()
+                .zip(&known_units)
+                .filter_map(|((key, _), other)| {
+                    let other = other.as_ref()?;
+                    let similarity = own.iter().zip(other).map(|(a, b)| a * b).sum::<f32>();
+                    (similarity >= NEIGHBOUR_SIMILARITY).then(|| (similarity, key.clone()))
+                })
+                .collect::<Vec<_>>();
+            close.sort_by(|left, right| right.0.total_cmp(&left.0).then(left.1.cmp(&right.1)));
+            close.truncate(NEIGHBOURS);
+            (!close.is_empty()).then(|| {
+                (
+                    name.clone(),
+                    close.into_iter().map(|(_, key)| key).collect(),
+                )
+            })
+        })
+        .collect()
 }
 
 /// Where a transaction's people came from: chosen by hand (possibly nobody), or matched by a
@@ -275,6 +561,7 @@ pub fn apply<'a>(
     transactions: &mut [Transaction],
     accounts: impl IntoIterator<Item = (&'a str, &'a str)>,
     annotations: &BTreeMap<String, Annotation>,
+    cards: &crate::insights::benefits::Catalog,
 ) {
     let mut names = BTreeMap::<&str, Option<&str>>::new();
     for (id, name) in accounts {
@@ -363,17 +650,18 @@ pub fn apply<'a>(
         // A category chosen by hand or rule is classified by its name, not Plaid's code.
         let mut classification = if edited {
             let detail = t.category_detail.take();
-            let classification = classify(t);
+            let classification = classify(t, cards);
             t.category_detail = detail;
             classification
         } else {
-            classify(t)
+            classify(t, cards)
         };
         t.other = annotation.and_then(|a| a.other) == Some(true);
         if t.other {
             owe(&mut classification, t.amount);
         }
         t.classification = Some(classification);
+        t.benefit_credit = (t.amount > 0.0).then(|| cards.credit_identity(t)).flatten();
     }
     link_refunds(transactions, refunds);
     pair_transfers(transactions);
@@ -547,3 +835,94 @@ pub(crate) fn owe(classification: &mut Classification, amount: f64) {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod suggestions {
+    use super::*;
+    use crate::insights::benefits::Catalog;
+
+    fn suggested(merchants: &[(&str, &str)], chosen: &[(&str, &str)]) -> Vec<Transaction> {
+        let mut transactions = merchants
+            .iter()
+            .map(|(id, merchant)| purchase(id, merchant))
+            .collect::<Vec<_>>();
+        let annotations = chosen
+            .iter()
+            .map(|(id, category)| {
+                (
+                    (*id).to_owned(),
+                    Annotation {
+                        category: Some((*category).into()),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+        let cards = Catalog::default();
+        apply(&mut transactions, [], &annotations, &cards);
+        suggest_categories(&mut transactions, &BTreeMap::new(), None, &cards);
+        transactions
+    }
+
+    #[test]
+    fn a_suggestion_never_turns_a_purchase_into_a_transfer() {
+        let transactions = suggested(
+            &[
+                ("a", "Example Pay"),
+                ("b", "Example Pay"),
+                ("c", "Example Pay"),
+            ],
+            &[("a", "Transfer"), ("b", "Transfer")],
+        );
+        let third = transactions.iter().find(|t| t.id == "c").unwrap();
+        assert_eq!(third.category, "Shopping");
+        assert_eq!(third.kind(), Some(Kind::Expense));
+    }
+
+    fn purchase(id: &str, merchant: &str) -> Transaction {
+        serde_json::from_value(serde_json::json!({
+            "id": id, "merchant": merchant, "category": "Shopping", "amount": -20.0,
+            "account": "Example", "accountId": "plaid:card", "date": "2026-09-01",
+            "pending": false,
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn a_name_without_letters_learns_nothing_and_other_scripts_keep_their_own() {
+        let mut transactions = vec![
+            purchase("cafe-1", "カフェ"),
+            purchase("cafe-2", "カフェ"),
+            purchase("cafe-3", "カフェ"),
+            purchase("noodles", "ラーメン"),
+            purchase("blank", ""),
+            purchase("dots", "..."),
+        ];
+        let annotations = ["cafe-1", "cafe-2"]
+            .into_iter()
+            .map(|id| {
+                (
+                    id.to_owned(),
+                    Annotation {
+                        category: Some("Dining".into()),
+                        ..Default::default()
+                    },
+                )
+            })
+            .collect();
+        let cards = Catalog::default();
+        apply(&mut transactions, [], &annotations, &cards);
+        suggest_categories(&mut transactions, &BTreeMap::new(), None, &cards);
+        let category = |id: &str| {
+            transactions
+                .iter()
+                .find(|t| t.id == id)
+                .map(|t| t.category.as_str())
+                .unwrap()
+        };
+        assert_eq!(category("cafe-3"), "Dining");
+        for id in ["noodles", "blank", "dots"] {
+            assert_eq!(category(id), "Shopping", "{id}");
+        }
+    }
+}

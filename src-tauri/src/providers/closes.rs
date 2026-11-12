@@ -6,10 +6,7 @@ use super::*;
 use crate::numeric::median;
 use crate::session::{self, Session};
 
-/// A symbol's daily closes, oldest first.
-pub type CloseSeries = [(NaiveDate, f64)];
-/// Each symbol's daily closes, oldest first.
-pub type DailyCloses = BTreeMap<String, Vec<(NaiveDate, f64)>>;
+pub use crate::session::DailyCloses;
 
 /// A floor on the yardstick, so a nearly flat fund doesn't make every wobble look unusual.
 const MIN_SIGMA_PCT: f64 = 0.25;

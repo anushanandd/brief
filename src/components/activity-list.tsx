@@ -1,6 +1,8 @@
 import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
-import type { ComponentProps } from 'react'
+import type { ComponentProps, ReactNode, RefObject } from 'react'
 
+import { useAmountsHidden } from '../hooks/use-amounts-hidden'
+import { useLatest } from '../hooks/use-latest'
 import {
   activityPlace,
   activityTime,
@@ -37,8 +39,8 @@ const gridWidths = new WeakMap<ActivityItem[], { key: string; widths: number[] }
 const minimumDescriptionWidth = 180
 const descriptionIndex = 1
 const locationIndex = 5
-// A place fits 95 of 100 rows up to this; a longer one, such as a full airport address, ends in
-// an ellipsis with the whole place in its tooltip and the inspector.
+// A place fits 95 of 100 rows up to this; a longer one, such as a full airport address, wraps
+// onto more lines rather than widening the column for every row.
 const widestLocation = 220
 // When the ledger is tight, the place narrows to this before the description does.
 const minimumLocationWidth = 140
@@ -63,29 +65,32 @@ function rowWidth(columns: number[], hidden: number[]) {
   )
 }
 
-/** The width that fits 95 of 100 rows; the rest ellipsize and keep their full text in a tooltip. */
+/** The width that fits 95 of 100 rows on one line; the rest wrap. */
 function typicalWidth(widths: number[]) {
-  if (!widths.length) return 0
   const sorted = widths.toSorted((a, b) => a - b)
-  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))]
+  return sorted[Math.min(sorted.length - 1, Math.floor(sorted.length * 0.95))] ?? 0
 }
 
 /**
  * Column widths for the ledger. Account, category, date, and amount fit their widest value, both
- * lines included, so none is ever cut off. The description and the place fit 95 of 100 rows, up to
- * a cap, so one long title or address can't widen the column for every row; the description takes
- * the remaining room, and its width here is only how far it may narrow.
+ * lines included, so none wraps. The description and the place fit 95 of 100 rows, up to a cap,
+ * so one long title or address wraps instead of widening the column for every row; the
+ * description takes the remaining room, and its width here is only how far it may narrow.
  */
 export function activityGridWidths(
   activities: ActivityItem[],
   referenceIso: string,
   measure: (text: string, weight: TextWeight) => number,
 ) {
-  // The description heading also spans the mark's column.
-  const header = activityColumns.map(({ id, label }) =>
-    Math.max(0, measure(label, 'header') + cellPadding + (id === 'description' ? -32 : 0)),
-  )
-  const columns = Object.fromEntries(activityColumns.map(({ id }) => [id, [] as number[]]))
+  const columns: Record<(typeof activityColumns)[number]['id'], number[]> = {
+    date: [],
+    description: [],
+    account: [],
+    category: [],
+    owner: [],
+    location: [],
+    amount: [],
+  }
   const twoLine = (main: string, sub: string | undefined) =>
     Math.max(measure(main, 'body'), sub ? measure(sub, 'meta') : 0) + textSlack
   // A badge sits 4px after the title, with 6px padding each side.
@@ -132,15 +137,20 @@ export function activityGridWidths(
       measure(formatCurrency(activity.amount), 'strong') + textSlack + cellPadding / 2,
     )
   }
-  return activityColumns.map(({ id }, index) => {
+  return activityColumns.map(({ id, label }) => {
     const values = columns[id]
+    // The description heading also spans the mark's column.
+    const header = Math.max(
+      0,
+      measure(label, 'header') + cellPadding + (id === 'description' ? -32 : 0),
+    )
     const content =
       id === 'description'
         ? Math.min(typicalWidth(values), widestDescription)
         : id === 'location'
           ? Math.min(typicalWidth(values), widestLocation)
           : Math.max(0, ...values)
-    return Math.ceil(Math.max(header[index], content))
+    return Math.ceil(Math.max(header, content))
   })
 }
 
@@ -158,6 +168,13 @@ export function activityStatus(activity: Pick<ActivityItem, 'pending' | 'flag' |
     return { badge: 'Unusual', label: 'Unusual amount', warning: true }
   if (activity.flag === 'conflict')
     return { badge: 'Check', label: 'Sources disagree', warning: true }
+  if (activity.flag === 'new')
+    return { badge: 'New', label: 'New recurring series', warning: false }
+  if (activity.flag === 'price') return { badge: 'Price', label: 'New price', warning: true }
+  if (activity.flag === 'fee')
+    return { badge: 'Fee', label: 'Fee or interest charged', warning: true }
+  if (activity.flag === 'pay')
+    return { badge: 'Pay', label: 'Paycheck outside its usual range', warning: true }
   return undefined
 }
 
@@ -183,6 +200,40 @@ export function ActivityMark({ activity }: { activity: ActivityItem }) {
   )
 }
 
+/** Which pages of a long list `ActivityList` draws; every other page is a gap of its height. */
+export type ActivityPages = {
+  size: number
+  shown: ReadonlySet<number>
+  heights: ReadonlyMap<number, number>
+}
+
+/**
+ * The list's rows, or with `pages`, each page behind a marker that also stands in for the page
+ * at its measured height while it isn't drawn.
+ */
+function drawRows(
+  activities: ActivityItem[],
+  pages: ActivityPages | undefined,
+  row: (activity: ActivityItem) => ReactNode,
+) {
+  if (!pages) return activities.map(row)
+  const drawn: ReactNode[] = []
+  for (let start = 0; start < activities.length; start += pages.size) {
+    const page = start / pages.size
+    const shown = pages.shown.has(page)
+    drawn.push(
+      <div
+        key={`page-${page}`}
+        aria-hidden
+        data-activity-page={page}
+        style={shown ? undefined : { height: pages.heights.get(page) ?? 0 }}
+      />,
+    )
+    if (shown) drawn.push(...activities.slice(start, start + pages.size).map(row))
+  }
+  return drawn
+}
+
 export const ActivityList = memo(function ActivityList({
   activities,
   referenceIso,
@@ -199,9 +250,12 @@ export const ActivityList = memo(function ActivityList({
   checkedIds,
   highlightedIds,
   onHighlight,
+  pages,
 }: {
   activities: ActivityItem[]
   referenceIso: string
+  /** Draws only these pages of a long list; see `useActivityWindow`. */
+  pages?: ActivityPages
   emptyMessage?: string
   showDescriptions?: boolean
   showColumns?: boolean
@@ -222,6 +276,8 @@ export const ActivityList = memo(function ActivityList({
   /** The row under the pointer or keyboard focus; null when it leaves. */
   onHighlight?: (activity: ActivityItem | null) => void
 }) {
+  // Memoized, so it subscribes to the privacy mask itself to re-format amounts when it changes.
+  useAmountsHidden()
   return (
     <div
       className={`financial-activity-list${showColumns ? ' financial-activity-list-columns' : ''}`}
@@ -230,7 +286,7 @@ export const ActivityList = memo(function ActivityList({
       aria-label="Activity entries"
       tabIndex={0}
     >
-      {activities.map((activity) => {
+      {drawRows(activities, pages, (activity) => {
         const date = formatActivityDate(activity.date)
         const shortDate = formatListDate(activity.date, referenceIso)
         const place = activityPlace(activity)
@@ -271,7 +327,7 @@ export const ActivityList = memo(function ActivityList({
             <ActivityMark activity={activity} />
             {checked ? <span className="sr-only">Selected. </span> : null}
             <span className="financial-activity-copy">
-              <span className="financial-activity-title" title={activity.title}>
+              <span className="financial-activity-title">
                 {showColumns ? (
                   <>
                     <button
@@ -353,7 +409,6 @@ export const ActivityList = memo(function ActivityList({
                   <button
                     type="button"
                     className="financial-activity-cell-button"
-                    title={activity.account}
                     aria-label={`Filter by account: ${activity.account ?? 'Unavailable'}`}
                     disabled={!onFilter || !activity.accountId}
                     onClick={() => onFilter?.('account', activity)}
@@ -376,11 +431,6 @@ export const ActivityList = memo(function ActivityList({
                   <button
                     type="button"
                     className="financial-activity-cell-button"
-                    title={
-                      activity.subcategory
-                        ? `${activity.category} · ${activity.subcategory}`
-                        : activity.category
-                    }
                     aria-label={`Filter by category: ${activity.category}`}
                     disabled={!onFilter}
                     onClick={() => onFilter?.('category', activity)}
@@ -420,9 +470,6 @@ export const ActivityList = memo(function ActivityList({
                   <button
                     type="button"
                     className="financial-activity-cell-button"
-                    title={
-                      place.secondary ? `${place.primary} · ${place.secondary}` : place.primary
-                    }
                     aria-label={
                       place.kind === 'place'
                         ? `Filter by location: ${place.primary}`
@@ -516,25 +563,40 @@ type GroupedActivityListProps = {
   selectedId?: string
   /** Rows chosen for a bulk edit. */
   checkedIds?: ReadonlySet<string>
+  /**
+   * A row pinned under the columned ledger, laid out on its columns: a child spanning to the
+   * last column ends where the amounts do, whichever columns are showing.
+   */
+  footer?: ReactNode
 }
 
 export function GroupedActivityList(props: GroupedActivityListProps) {
-  // Reset the batch when filtering changes the actual rows, not their array identity.
-  return (
-    <ProgressiveActivityList key={props.activities.map(({ id }) => id).join('\0')} {...props} />
-  )
+  return <ProgressiveActivityList {...props} />
 }
 
 const activityPageSize = 60
+
+/** The nearest ancestor that scrolls, which the list's windowing and paging measure against. */
+function scrollContainer(element: HTMLElement) {
+  let root = element.parentElement
+  while (root && !/auto|scroll/.test(getComputedStyle(root).overflowY)) root = root.parentElement
+  return root
+}
 
 /**
  * Renders a long list a page at a time: the next page mounts once the end of the rendered rows comes
  * within a viewport and a half of the scroll container, so scrolling and row motions stay ahead of
  * it while rows nobody reaches are never built. `minimum` keeps rows that must be shown, such as
- * highlighted ones, within the rendered pages.
+ * highlighted ones, within the rendered pages. A new `rows` (what identifies the list's content)
+ * starts again from the first page.
  */
-function useActivityPages(total: number, minimum = 0) {
+function useActivityPages(total: number, minimum = 0, rows?: string) {
   const [pages, setPages] = useState(1)
+  const [pagedRows, setPagedRows] = useState(rows)
+  if (pagedRows !== rows) {
+    setPagedRows(rows)
+    setPages(1)
+  }
   const sentinel = useRef<HTMLButtonElement>(null)
   const count = Math.max(pages * activityPageSize, minimum)
   const hasMore = count < total
@@ -542,8 +604,7 @@ function useActivityPages(total: number, minimum = 0) {
     const target = sentinel.current
     if (!target || !hasMore || typeof IntersectionObserver === 'undefined') return undefined
     // The margin applies only to the root, so observe within the list's own scroll container.
-    let root = target.parentElement
-    while (root && !/auto|scroll/.test(getComputedStyle(root).overflowY)) root = root.parentElement
+    const root = scrollContainer(target)
     // A new observer per page reports at once, so pages keep coming while the end stays in range.
     const observer = new IntersectionObserver(
       ([entry]) => {
@@ -565,7 +626,99 @@ function useActivityPages(total: number, minimum = 0) {
       ↓
     </button>
   ) : null
-  return { count, more }
+  /** Loads through the page after `index`'s, so a row motion always has a next row. */
+  const reach = (index: number) => {
+    const page = Math.floor(index / activityPageSize) + 1
+    if (hasMore && page >= Math.ceil(count / activityPageSize)) setPages(page + 1)
+  }
+  return { count, more, reach }
+}
+
+/**
+ * Keeps a long ledger's DOM bounded: of the loaded pages it draws those within a viewport and a
+ * half of the scroll position, the first and last (so G G, ⇧G, and wrapping keep their rows),
+ * the focused row's page and its neighbours (so J and K always have a next row), and the
+ * selected row's. Every other page is one gap of the height it had when last drawn, so the
+ * scroll position never moves. Rows wrap to varying heights, so nothing is estimated: a page is
+ * drawn until it has been measured.
+ */
+function useActivityWindow(
+  list: RefObject<HTMLElement | null>,
+  activities: ActivityItem[],
+  count: number,
+  focusedPage: number | undefined,
+  selectedId: string | undefined,
+): ActivityPages {
+  const size = activityPageSize
+  const loaded = Math.ceil(Math.min(count, activities.length) / size)
+  // Heights belong to one list of rows; new rows are measured again.
+  const heights = useMemo(() => new Map<number, number>(), [activities])
+  const [near, setNear] = useState<{ rows: ActivityItem[]; pages: ReadonlySet<number> }>()
+  const selectedIndex = useMemo(
+    () => (selectedId ? activities.findIndex(({ id }) => id === selectedId) : -1),
+    [activities, selectedId],
+  )
+  const selectedPage = selectedIndex < 0 ? undefined : Math.floor(selectedIndex / size)
+  const nearPages = near?.rows === activities ? near.pages : undefined
+  const shown = useMemo(() => {
+    const pinned = [0, loaded - 1, selectedPage]
+    if (focusedPage != null) pinned.push(focusedPage - 1, focusedPage, focusedPage + 1)
+    const pages = new Set<number>()
+    for (let page = 0; page < loaded; page += 1)
+      if (!heights.has(page) || nearPages?.has(page) || pinned.includes(page)) pages.add(page)
+    return pages
+  }, [loaded, heights, nearPages, focusedPage, selectedPage])
+
+  // Measures the drawn pages and finds the ones near the scroll position, after every render
+  // and on each scroll; a render with the same pages near changes nothing.
+  const update = useLatest(() => {
+    const element = list.current
+    const markers = element?.querySelectorAll<HTMLElement>('[data-activity-page]')
+    const end = markers?.[0]?.parentElement?.getBoundingClientRect().bottom
+    if (!element || !markers || end == null) return
+    const tops = [...markers].map((marker) => marker.getBoundingClientRect().top)
+    const bottom = (page: number) => tops[page + 1] ?? end
+    tops.forEach((top, page) => {
+      if (shown.has(page)) heights.set(page, bottom(page) - top)
+    })
+    const root = scrollContainer(element)
+    const view = root?.getBoundingClientRect()
+    const margin = (view?.height ?? 0) * 1.5
+    const pages = new Set<number>()
+    if (view)
+      tops.forEach((top, page) => {
+        if (bottom(page) > view.top - margin && top < view.bottom + margin) pages.add(page)
+      })
+    setNear((current) =>
+      current?.rows === activities &&
+      current.pages.size === pages.size &&
+      [...pages].every((page) => current.pages.has(page))
+        ? current
+        : { rows: activities, pages },
+    )
+  })
+  useLayoutEffect(() => update.current())
+  const drawn = loaded > 0
+  useEffect(() => {
+    const element = list.current
+    const root = element ? scrollContainer(element) : null
+    if (!root) return undefined
+    let frame = 0
+    const schedule = () => {
+      cancelAnimationFrame(frame)
+      frame = requestAnimationFrame(() => update.current())
+    }
+    root.addEventListener('scroll', schedule, { passive: true })
+    const observer =
+      typeof ResizeObserver === 'undefined' ? undefined : new ResizeObserver(schedule)
+    observer?.observe(root)
+    return () => {
+      cancelAnimationFrame(frame)
+      root.removeEventListener('scroll', schedule)
+      observer?.disconnect()
+    }
+  }, [list, drawn, update])
+  return useMemo(() => ({ size, shown, heights }), [size, shown, heights])
 }
 
 /** `ActivityList` rendered a page at a time inside its scroll container. */
@@ -599,9 +752,27 @@ function ProgressiveActivityList({
   onOpen,
   selectedId,
   checkedIds,
+  footer,
 }: GroupedActivityListProps) {
-  const { count, more } = useActivityPages(activities.length)
+  // Paging starts again when filtering changes which rows there are; an edit to a row doesn't.
+  // The count and ends stand in for the full list of ids, which would cost a join per render.
+  const rows = `${activities.length}\0${activities[0]?.id}\0${activities.at(-1)?.id}`
+  const { count, more, reach } = useActivityPages(activities.length, 0, rows)
   const table = useRef<HTMLDivElement>(null)
+  const [focusedPage, setFocusedPage] = useState<number>()
+  const pages = useActivityWindow(table, activities, count, focusedPage, selectedId)
+  const loadedRows = useMemo(() => activities.slice(0, count), [activities, count])
+  const focusRow = (target: EventTarget) => {
+    const id =
+      target instanceof Element
+        ? target.closest<HTMLElement>('[data-activity-id]')?.dataset.activityId
+        : undefined
+    const index = id == null ? -1 : activities.findIndex((activity) => activity.id === id)
+    if (index < 0) return
+    // By page, so stepping within one renders nothing.
+    setFocusedPage(Math.floor(index / activityPageSize))
+    reach(index)
+  }
 
   useLayoutEffect(() => {
     const element = table.current
@@ -665,23 +836,25 @@ function ProgressiveActivityList({
       // shared evenly, so the columns space out rather than the description stretching. Cells
       // align to their start, so each column's share reads as the gap after it.
       let spare = element.clientWidth - rowWidth(floors, hidden)
-      const columns = [...floors]
-      const regained = Math.max(
-        0,
-        Math.min(spare, sized[descriptionIndex] - floors[descriptionIndex]),
+      const usual = sized[descriptionIndex]
+      const floor = floors[descriptionIndex]
+      const regained =
+        usual != null && floor != null ? Math.max(0, Math.min(spare, usual - floor)) : 0
+      const columns = floors.map((value, index) =>
+        index === descriptionIndex ? value + regained : value,
       )
-      columns[descriptionIndex] += regained
       spare -= regained
       const visible = columns.flatMap((value, index) => (hidden.includes(index) ? [] : [value]))
       const share = spare > 0 ? Math.floor(spare / visible.length) : 0
-      const shown = visible.map((value) => value + share)
-      element.dataset.hiddenColumns = hidden.map((index) => activityColumns[index].id).join(' ')
+      // The date is never hidden, so the first visible column is always there; the mark's
+      // 32px column follows it.
+      const [first = 0, ...rest] = visible.map((value) => value + share)
+      element.dataset.hiddenColumns = hidden
+        .flatMap((index) => activityColumns[index]?.id ?? [])
+        .join(' ')
       element.style.setProperty(
         '--activity-grid-columns',
-        `${shown[0]}px 32px ${shown
-          .slice(1)
-          .map((value) => `${value}px`)
-          .join(' ')}`,
+        `${first}px 32px ${rest.map((value) => `${value}px`).join(' ')}`,
       )
       element.style.setProperty('--activity-grid-width', `${rowWidth(floors, hidden)}px`)
     }
@@ -720,7 +893,8 @@ function ProgressiveActivityList({
       ) : null}
       {showColumns ? (
         <ActivityList
-          activities={activities.slice(0, count)}
+          activities={loadedRows}
+          pages={pages}
           referenceIso={referenceIso}
           showColumns
           accountTypes={accountTypes}
@@ -732,7 +906,7 @@ function ProgressiveActivityList({
           checkedIds={checkedIds}
         />
       ) : (
-        groupActivitiesByDate(activities.slice(0, count), referenceIso).map((group, index) => {
+        groupActivitiesByDate(loadedRows, referenceIso).map((group, index) => {
           const headingId = `activity-date-group-${index}`
           return (
             <section className="activity-date-group" aria-labelledby={headingId} key={group.label}>
@@ -743,10 +917,15 @@ function ProgressiveActivityList({
         })
       )}
       {more}
+      {showColumns && footer ? <div className="financial-activity-footer">{footer}</div> : null}
     </>
   )
   return showColumns ? (
-    <div className="financial-activity-table" ref={table}>
+    <div
+      className="financial-activity-table"
+      ref={table}
+      onFocus={(event) => focusRow(event.target)}
+    >
       {content}
     </div>
   ) : (

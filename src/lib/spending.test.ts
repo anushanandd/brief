@@ -6,6 +6,7 @@ import {
   account as accountRecord,
   transaction as transactionRecord,
 } from '../data/fixtures/records'
+import { formatCurrency } from './format'
 import type {
   Account,
   BenefitWindow,
@@ -40,7 +41,7 @@ const transaction = (overrides: Partial<Transaction>): Transaction =>
     category: 'Shopping',
     date: '2026-09-01',
     amount: -10,
-    account: 'Platinum Card',
+    account: 'Example Card',
     classification: classification('expense'),
     pending: false,
     ...overrides,
@@ -142,9 +143,35 @@ describe('spending periods', () => {
     const period = rustPeriod({ total: 30, previous: 40, change: -10, categories: [dining] })
     expect(spendingFigures(period)).toBe(period)
     expect(spendingFigures(period, 'Dining')).toBe(dining)
-    // A category without spending this period, or a period Rust lacks, spent nothing.
+    // A category without spending in a period Rust lists spent nothing.
     expect(spendingFigures(period, 'Travel')).toMatchObject({ total: 0, change: null })
-    expect(spendingFigures(undefined)).toMatchObject({ total: 0, changePct: null })
+    // A period Rust lacks is unknown, never $0.
+    expect(spendingFigures(undefined)).toBeUndefined()
+    expect(spendingFigures(undefined, 'Dining')).toBeUndefined()
+  })
+
+  it('leaves the headline unknown without a period or a statement balance from Rust', () => {
+    const accounts: Account[] = [
+      accountRecord({ id: 'card', name: 'Card', institution: 'Bank', type: 'credit', value: -50 }),
+    ]
+    const transactions = [transaction({ accountId: 'card' })]
+    // No insights yet: the figure is unknown and reads as a dash.
+    const unread = spendingHeadline({ accounts, transactions }, 'card', 1, 'card')
+    expect(unread).toEqual({ hasScope: true, value: null, change: null })
+    expect(formatCurrency(unread.value)).toBe('—')
+    const insights = {
+      spending: [
+        {
+          scope: 'card',
+          owner: 'me' as const,
+          periods: [rustPeriod({ kind: 'statement', total: 30, balance: undefined })],
+          months: [],
+        },
+      ],
+    }
+    expect(
+      spendingHeadline({ accounts, transactions, insights }, 'card', 'statement', 'card').value,
+    ).toBeNull()
   })
 
   it("lists and paces a category from Rust's view of it, and nothing for one without spending", () => {
@@ -326,10 +353,10 @@ describe('benefits to use first', () => {
   it("lists benefits to use first in Rust's order", () => {
     // Rust orders them; a hidden benefit (here `hidden`) is left out of what is shown.
     const ordered = benefitsToUseFirst(
-      [monthlyWindow('hotel', {}), monthlyWindow('uber', {}), monthlyWindow('streaming', {})],
-      ['streaming', 'hidden', 'uber', 'hotel'],
+      [monthlyWindow('travel', {}), monthlyWindow('dining', {}), monthlyWindow('streaming', {})],
+      ['streaming', 'hidden', 'dining', 'travel'],
     )
-    expect(ordered.map(({ id }) => id)).toEqual(['streaming', 'uber', 'hotel'])
+    expect(ordered.map(({ id }) => id)).toEqual(['streaming', 'dining', 'travel'])
   })
 })
 

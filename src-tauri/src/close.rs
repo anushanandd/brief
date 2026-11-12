@@ -74,10 +74,16 @@ async fn run_once(app: &AppHandle, now: DateTime<Utc>) {
     }
     // Fresh stories and filings first, so the session's news and disclosures are complete.
     let _ = state.providers.refresh_portfolio_news(&view.snapshot).await;
-    if let Ok(closed) = state
-        .providers
-        .close_session(&view.snapshot, period, SessionClock::at(now), kept)
-        .await
+    crate::reading_job::nudge(app);
+    if let Ok(closed) = crate::summary::close_session(
+        &state.providers,
+        &state.summary_runs,
+        &view.snapshot,
+        period,
+        SessionClock::at(now),
+        kept,
+    )
+    .await
     {
         state.save_market_sessions(&closed);
     }

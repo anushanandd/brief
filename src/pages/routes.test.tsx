@@ -24,12 +24,6 @@ it('redirects the former Recurring page to Spending, where subscriptions live', 
   expect(redirectOf('/recurring', {})).toMatchObject({ options: { to: '/spending' } })
 })
 
-it('redirects the former Platinum page to Amex credits', () => {
-  expect(redirectOf('/spending/platinum', {})).toMatchObject({
-    options: { to: '/analytics', search: { chart: 'amex-credits' } },
-  })
-})
-
 it('shows unknown quote timestamps instead of the saved snapshot time', async () => {
   const html = await renderRoute('/logs')
   expect(html).toContain('<strong>SYNTH</strong><time>Unknown</time>')
@@ -67,11 +61,11 @@ it('reaches every Settings section and row by its address', async () => {
 })
 
 it('marks the section holding a linked row', async () => {
-  const html = await renderSettings('/#settings/platinum-benefits')
+  const html = await renderSettings('/#settings/benefit-visibility')
   expect(html).toContain(
     'href="#settings/accounts" class="settings-rail-link" aria-current="location"',
   )
-  expect(html).toContain('id="platinum-benefits"')
+  expect(html).toContain('id="benefit-visibility"')
 })
 
 it('opens explicit recovery without showing a fabricated empty finance page', async () => {
@@ -124,7 +118,7 @@ it('places graph ranges at the top right, above the change row', async () => {
   for (const [path, heading] of [
     ['/analytics?chart=income', 'home-balance-header'],
     ['/spending', 'workspace-brief-heading'],
-  ]) {
+  ] as const) {
     if (path === '/spending') scenario.accountType = 'credit'
     const html = await renderRoute(path)
     expect(html).toContain(heading)
@@ -228,7 +222,6 @@ it('keeps account details and utilities out of the organized sidebar', async () 
   expect(sidebar).not.toContain('href="/accounts?account=')
   expect(sidebar).not.toContain('Test Bank')
   expect(sidebar).not.toContain('Other Bank')
-  expect(sidebar).not.toContain('href="/spending/platinum"')
   // Reports open from the palette and the pages that link them, not the sidebar.
   expect(sidebar).not.toContain('href="/analytics')
   const appearance = await renderEverySettingsSection()
@@ -369,7 +362,7 @@ it('maps every control to a registered command', async () => {
     '/insights?view=chapters',
     '/insights?view=chapters&chapter=work:example',
     '/insights?view=rules',
-    '/analytics?chart=amex-credits',
+    '/analytics?chart=card-credits',
     '/taxes',
     '/calendar',
     '/documents',
@@ -385,7 +378,8 @@ it('maps every control to a registered command', async () => {
     const registered = (command: string) =>
       ids.has(command) || [...ids].some((id) => id.startsWith(command) && command.endsWith('.'))
     const open: Array<{ tag: string; row: boolean }> = []
-    for (const [, closing, tag, attributes, selfClosing] of html.matchAll(
+    // Each capture group always matches, possibly empty.
+    for (const [, closing = '', tag = '', attributes = '', selfClosing = ''] of html.matchAll(
       /<(\/?)([a-zA-Z][\w-]*)([^>]*?)(\/?)>/g,
     )) {
       if (closing) {

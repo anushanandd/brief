@@ -1,3 +1,6 @@
+//! SnapTrade: brokerage accounts, their positions, cash, and activity. An account is valued
+//! from its cash plus positions; the total SnapTrade reports is evidence only. Its daily
+//! history is rebuilt from the activity (`financial_engine::performance`).
 use super::*;
 
 impl Providers {

@@ -352,6 +352,112 @@ fn pay_links(
     links
 }
 
+/// One employer's pay carried to the year's end from its latest pay statement: what the year
+/// has paid and withheld so far, and that plus the statement's own period for each pay period
+/// left. Wages are W-2 box 1 wages (gross less pre-tax benefits, HSA, and 401(k) deferrals).
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PayProjection {
+    pub employer: String,
+    pub document_id: String,
+    /// The statement's check date.
+    pub date: NaiveDate,
+    /// Which pay period of the year the statement is, and how many the year has.
+    pub period: u32,
+    pub periods: u32,
+    pub wages_to_date: f64,
+    pub withheld_to_date: f64,
+    pub projected_wages: f64,
+    pub projected_withholding: f64,
+}
+
+/// Pay periods a year has, from a statement's period: weekly and every two weeks by its
+/// length, twice a month when it runs the 1st to the 15th or the 16th to the month's end, and
+/// monthly when it covers a whole month. Anything else is unknown.
+fn periods_per_year(start: NaiveDate, end: NaiveDate) -> Option<u32> {
+    let days = (end - start).num_days() + 1;
+    let month_end = |date: NaiveDate| (date + Duration::days(1)).month() != date.month();
+    let half_month = (start.day() == 1 && end.day() == 15)
+        || (start.day() == 16 && month_end(end) && start.month() == end.month());
+    match days {
+        _ if half_month => Some(24),
+        _ if start.day() == 1 && month_end(end) && start.month() == end.month() => Some(12),
+        6..=8 => Some(52),
+        13..=15 => Some(26),
+        _ => None,
+    }
+}
+
+/// Which of the year's `periods` pay periods a check dated `date` is: by its day of the year
+/// for weekly and two-weekly pay, by its half-month or month otherwise.
+fn period_of(date: NaiveDate, periods: u32) -> u32 {
+    let index = match periods {
+        52 => date.ordinal().div_ceil(7),
+        26 => date.ordinal().div_ceil(14),
+        24 => (date.month() - 1) * 2 + if date.day() <= 15 { 1 } else { 2 },
+        _ => date.month(),
+    };
+    index.clamp(1, periods)
+}
+
+/// Each employer's pay carried to the end of `year` from its latest pay statement that year.
+/// An employer whose statement doesn't print its period, the period's gross and federal
+/// withholding, and their year-to-date amounts can't be carried forward, so the whole
+/// projection is unavailable (`None`) rather than short by that employer.
+pub fn pay_projections(year: i32, documents: &[Document]) -> Option<Vec<PayProjection>> {
+    let mut latest = BTreeMap::<String, &Document>::new();
+    for document in documents.iter().filter(|document| {
+        document.kind == Kind::Payslip
+            && document.tax_year == Some(year)
+            && document.issuer.is_some()
+    }) {
+        let employer = document.issuer.clone().unwrap_or_default();
+        let key = latest
+            .keys()
+            .find(|known| same_payer(known, &employer))
+            .cloned()
+            .unwrap_or(employer);
+        match latest.get(&key) {
+            Some(known) if known.date >= document.date => {}
+            _ => {
+                latest.insert(key, document);
+            }
+        }
+    }
+    latest
+        .into_iter()
+        .map(|(employer, document)| {
+            let periods = periods_per_year(
+                day(document.period_start.as_deref())?,
+                day(document.period_end.as_deref())?,
+            )?;
+            let date = day(document.date.as_deref())?;
+            let period = period_of(date, periods);
+            let left = f64::from(periods - period);
+            // Box 1 wages for the period and the year so far.
+            let wages = |value: &dyn Fn(&str) -> Option<f64>| -> Option<f64> {
+                let part = |key: &str| value(key).unwrap_or_default();
+                Some(value("gross")? - part("hsa") - part("pretaxBenefits") - part("pretax401k"))
+            };
+            let wages_to_date = wages(&|key| document.ytd(key))?;
+            let period_wages = wages(&|key| document.amount(key))?;
+            let withheld_to_date = document.ytd("federalWithholding")?;
+            let period_withheld = document.amount("federalWithholding")?;
+            Some(PayProjection {
+                employer,
+                document_id: document.id.clone(),
+                date,
+                period,
+                periods,
+                wages_to_date: round2(wages_to_date),
+                withheld_to_date: round2(withheld_to_date),
+                projected_wages: round2(wages_to_date + left * period_wages),
+                projected_withholding: round2(withheld_to_date + left * period_withheld),
+            })
+        })
+        .collect()
+}
+
 /// The year's latest pay statement from each employer, and what it says the W-2 will show.
 fn predictions(year: i32, documents: &[Document]) -> Vec<W2Prediction> {
     let mut latest = BTreeMap::<String, &Document>::new();

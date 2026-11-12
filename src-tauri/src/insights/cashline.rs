@@ -55,6 +55,10 @@ pub struct CashTimeline {
     /// One entry for today and for every later day the balance changes.
     pub days: Vec<CashDay>,
     pub events: Vec<CashEvent>,
+    /// What drives the line: the expected deposits and the expected bills (negative) over the
+    /// horizon, each summed in whole cents from `events`.
+    pub inflows: f64,
+    pub outflows: f64,
     /// The day the expected balance is lowest, when it falls below today's.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -100,6 +104,8 @@ pub fn timeline(
         cash_incomplete,
         days: Vec::new(),
         events: Vec::new(),
+        inflows: 0.0,
+        outflows: 0.0,
         lowest: None,
     };
     if cash_incomplete {
@@ -185,6 +191,19 @@ pub fn timeline(
             .cmp(&right.date)
             .then(left.title.cmp(&right.title))
     });
+    let (inflows, outflows) = timeline
+        .events
+        .iter()
+        .map(|event| minor_units(event.amount))
+        .fold((0, 0), |(inflows, outflows), amount| {
+            if amount > 0 {
+                (inflows + amount, outflows)
+            } else {
+                (inflows, outflows + amount)
+            }
+        });
+    timeline.inflows = from_minor(inflows);
+    timeline.outflows = from_minor(outflows);
 
     let (mut expected, mut low, mut high) = (cash, cash, cash);
     let day = |date, expected, low, high| CashDay {
@@ -330,6 +349,7 @@ mod tests {
             ]
         );
         assert_eq!(result.lowest.unwrap().date, day("2026-11-20"));
+        assert_eq!((result.inflows, result.outflows), (2_400.0, -4_680.0));
         assert_eq!(result.events.len(), 6);
         assert!(result.events.iter().all(|event| event.title != "stream"));
         assert_eq!(result.events.iter().filter(|event| !event.next).count(), 2);

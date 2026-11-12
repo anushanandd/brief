@@ -18,4 +18,12 @@ onPace: boolean, } | { "kind": "pay-missing", documentId: string, employer: stri
 /**
  * The object it's about.
  */
-subject: string, });
+subject: string, } | { "kind": "new-series", recurringId: string, title: string, event: EventKind, frequency: string, accountId?: string, amount: number, firstSeen: string, transactionId: string, confidence: number, evidence: Array<string>, } | { "kind": "price-changed", recurringId: string, title: string, previous: number, latest: number, changedOn: string, transactionId: string, confidence: number, evidence: Array<string>, } | { "kind": "fees-charged", since: string, count: number, 
+/**
+ * Their sum, negative.
+ */
+amount: number, 
+/**
+ * The latest fee.
+ */
+transactionId: string, confidence: number, evidence: Array<string>, } | { "kind": "pay-differs", recurringId: string, title: string, accountId?: string, amount: number, low: number, high: number, date: string, transactionId: string, confidence: number, evidence: Array<string>, } | { "kind": "unusual-charge", merchant: string, amount: number, usual: number, observations: number, transactionId: string, confidence: number, evidence: Array<string>, });

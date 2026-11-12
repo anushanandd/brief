@@ -67,5 +67,5 @@ it('keeps the same action list across renders that change nothing it reads', () 
   expect(seen.length).toBeGreaterThanOrEqual(3)
   // A new list each render would re-register with the action registry and loop the shell.
   expect(new Set(seen).size).toBe(1)
-  expect(seen[0].some(({ id }) => id === 'settings.open')).toBe(true)
+  expect(seen[0]?.some(({ id }) => id === 'settings.open')).toBe(true)
 })

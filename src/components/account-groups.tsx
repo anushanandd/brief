@@ -72,17 +72,15 @@ export function AccountGroups({
     })
 
   return groups.map((group) => {
-    if (group.accounts.length === 1) {
-      const [account] = group.accounts
+    const [only] = group.accounts
+    if (only && group.accounts.length === 1) {
       return (
         <AccountRow
           key={group.type}
-          account={account}
-          displayName={accountDisplayName(account.id, account.name, accountNames)}
+          account={only}
+          displayName={accountDisplayName(only.id, only.name, accountNames)}
           valueDetail={
-            <PeriodChange
-              change={changes.find(({ accountId }) => accountId === account.id)?.change}
-            />
+            <PeriodChange change={changes.find(({ accountId }) => accountId === only.id)?.change} />
           }
         />
       )

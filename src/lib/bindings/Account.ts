@@ -9,8 +9,8 @@ export type Account = { id: string, name: string, institution: string, type: str
  */
 observedOn?: Array<string>, 
 /**
- * Fund units an imported statement shows a manual account holding, at the statement's
- * latest price. Without a market price they stay off the holdings list.
+ * Fund units from an imported statement, at its latest price. They have no market price,
+ * so they aren't holdings.
  */
 statementPositions?: Array<StatementPosition>, cashValue: number | null, investedValue: number | null, knownCostBasis: number | null, knownUnrealizedGain: number | null, knownUnrealizedGainPct: number | null, investmentIncomeYtd: number | null, saleProceedsYtd: number | null, salesYtd?: number, estimatedRealizedGainYtd: number | null, realizedGainCoverage?: string, costBasisCoverage?: string, balanceAsOf: string | null, currency: string | null, balanceFetchedAt: string | null, balanceSource: string | null, reportedBalance: number | null, positionsAsOf: string | null, activityAsOf: string | null, 
 /**
@@ -23,7 +23,7 @@ balanceMode?: string, liability?: CreditLiability,
  */
 availableBalance?: number, creditLimit?: number, 
 /**
- * The institution's full product name, such as "Platinum Card®".
+ * The institution's full product name, such as "Example Card®".
  */
 officialName?: string, 
 /**

@@ -211,15 +211,120 @@ fn fees_net_their_refunds_and_cash_flow_reconciles_with_its_sankey() {
     let cash = read(&view, request(Chart::CashFlow, None));
     assert_eq!(cash.report.unwrap().summary.total, Some(104.0));
     let flow = cash.flow.unwrap();
-    // Pay, the repayment, and the fee refund came in; the purchase and the fee went out.
-    assert_eq!((flow.inflow, flow.outflow), (134.0, 30.0));
+    // A fee refund reduces fees, and a repayment with no spending to offset counts as income.
+    assert_eq!((flow.inflow, flow.outflow), (130.0, 26.0));
     assert_eq!((flow.retained, flow.gap), (104.0, 0.0));
+    assert_eq!(
+        flow.sources
+            .iter()
+            .map(|item| (item.label.as_str(), item.value))
+            .collect::<Vec<_>>(),
+        [("Payroll", 100.0), ("Refunds and repayments", 30.0)]
+    );
     assert_eq!(flow.purchases[0].label, "Dining");
-    assert_eq!(flow.fees, 10.0);
+    let charges = flow.charges.unwrap();
+    assert_eq!(
+        (charges.label.as_str(), charges.value),
+        ("Fees and taxes", 6.0)
+    );
 }
 
 #[test]
-fn cash_flow_groups_income_by_source_and_purchases_by_category_largest_first() {
+fn a_refund_nets_out_of_the_category_it_repaid() {
+    let view = view(
+        vec![
+            transaction("pay", 500.0, json!({})),
+            transaction(
+                "shoes",
+                -120.0,
+                json!({ "merchant": "Shoe shop", "category": "Shopping", "classification": classification("expense") }),
+            ),
+            transaction(
+                "returned",
+                40.0,
+                json!({ "merchant": "Shoe shop", "category": "Shopping", "classification": classification("reimbursement") }),
+            ),
+        ],
+        vec![],
+    );
+    let flow = read(&view, request(Chart::CashFlow, None)).flow.unwrap();
+    // The return isn't income: Shopping is what was spent, less what came back.
+    assert_eq!(flow.sources.len(), 1);
+    assert_eq!(
+        (flow.purchases[0].label.as_str(), flow.purchases[0].value),
+        ("Shopping", 80.0)
+    );
+    assert_eq!(
+        flow.purchases[0]
+            .children
+            .iter()
+            .map(|child| child.value)
+            .collect::<Vec<_>>(),
+        [120.0, -40.0]
+    );
+    assert_eq!(
+        (flow.inflow, flow.outflow, flow.retained),
+        (500.0, 80.0, 420.0)
+    );
+    assert!(flow.charges.is_none());
+}
+
+#[test]
+fn cash_flow_shows_its_largest_categories_and_folds_the_rest_into_one() {
+    let mut transactions = vec![transaction("pay", 5_000.0, json!({}))];
+    for (index, category) in [
+        "Rent",
+        "Travel",
+        "Dining",
+        "Groceries",
+        "Shopping",
+        "Gifts",
+        "Pets",
+    ]
+    .iter()
+    .enumerate()
+    {
+        transactions.push(transaction(
+            &format!("spent-{index}"),
+            -(700.0 - index as f64 * 100.0),
+            json!({ "merchant": "Example", "category": category, "classification": classification("expense") }),
+        ));
+    }
+    let flow = read(&view(transactions, vec![]), request(Chart::CashFlow, None))
+        .flow
+        .unwrap();
+    let shown = flow
+        .purchases
+        .iter()
+        .map(|item| (item.label.as_str(), item.value))
+        .collect::<Vec<_>>();
+    assert_eq!(
+        shown,
+        [
+            ("Rent", 700.0),
+            ("Travel", 600.0),
+            ("Dining", 500.0),
+            ("Groceries", 400.0),
+            ("Shopping", 300.0),
+            ("Other categories", 300.0),
+        ]
+    );
+    let other = flow.purchases.last().unwrap();
+    assert_eq!(
+        other
+            .parts
+            .iter()
+            .map(|part| (part.label.as_str(), part.value))
+            .collect::<Vec<_>>(),
+        [("Gifts", 200.0), ("Pets", 100.0)]
+    );
+    assert_eq!(other.children.len(), 2);
+    // Folding moves nothing: everything spent is still out.
+    assert_eq!(flow.outflow, 2_800.0);
+}
+
+#[test]
+fn cash_flow_groups_income_as_the_income_report_does_and_purchases_by_category() {
     let spent = |id: &str, amount: f64, merchant: &str, category: &str| {
         transaction(
             id,
@@ -263,7 +368,7 @@ fn cash_flow_groups_income_by_source_and_purchases_by_category_largest_first() {
         summary(&flow.sources),
         [
             (
-                "Acme Payroll".to_owned(),
+                "Payroll".to_owned(),
                 2_000.0,
                 vec![
                     pair("source-transaction:pay-1", "Acme Payroll"),
@@ -271,7 +376,7 @@ fn cash_flow_groups_income_by_source_and_purchases_by_category_largest_first() {
                 ]
             ),
             (
-                "Marcus".to_owned(),
+                "Interest".to_owned(),
                 25.0,
                 vec![pair("source-transaction:interest", "Marcus")]
             ),
@@ -379,8 +484,12 @@ fn a_report_compares_the_window_before_only_when_history_reaches_it() {
         (week.start, week.previous_start),
         (day("2026-09-12"), day("2026-09-05"))
     );
+    // A year is the trailing 365 days, as on every chart and Home, not the calendar year.
     let year = read(&both, request(Chart::Income, Some(Range::Year))).window;
-    assert_eq!(year.start, day("2026-01-01"));
+    assert_eq!(
+        (year.start, year.previous_start),
+        (day("2025-09-19"), day("2024-09-19"))
+    );
     let one = read(&both, request(Chart::Income, Some(Range::Day))).window;
     assert_eq!(
         (one.start, one.previous_start),
@@ -484,7 +593,7 @@ fn income_groups_by_kind_of_payment_and_other_reports_by_account_name() {
         transaction(
             "broker",
             10.0,
-            json!({ "merchant": "TRANSFER MONEY FROM BROKERAGE XXXXX0001 REF A" }),
+            json!({ "merchant": "TRANSFER MONEY FROM BROKERAGE XXXXX0000 REF A" }),
         ),
         transaction(
             "zelle",
@@ -604,6 +713,7 @@ fn card_credits_are_the_saved_cards_posted_credits_net_of_reversals() {
         .clone();
     let settings = crate::settings::FinanceSettings {
         spending_account_id: Some(card.clone()),
+        card_rules: vec![crate::insights::benefits::example_rules()],
         ..Default::default()
     };
     let now = chrono::DateTime::parse_from_rfc3339(&seed.updated_at.clone())
@@ -633,7 +743,7 @@ fn card_credits_are_the_saved_cards_posted_credits_net_of_reversals() {
     let all_time = |view: &View| {
         read_on(
             view,
-            request(Chart::AmexCredits, Some(Range::All)),
+            request(Chart::CardCredits, Some(Range::All)),
             &today.to_string(),
         )
         .report
@@ -642,7 +752,7 @@ fn card_credits_are_the_saved_cards_posted_credits_net_of_reversals() {
     let report = all_time(&view);
     assert!(!report.entries.is_empty());
     assert_eq!(report.summary.total, expected);
-    // Another saved card has no Platinum credits to report.
+    // Another saved card has no card credits to report.
     view.spending_account_id = Some("cash".into());
     assert!(all_time(&view).entries.is_empty());
 }
@@ -676,4 +786,192 @@ fn every_report_is_summed_for_the_strip_and_an_empty_account_choice_counts_nothi
         },
     );
     assert_eq!(income(&none), Some(0.0));
+}
+
+/// Whole cents, so sums are compared exactly.
+fn cents(value: f64) -> i64 {
+    crate::numeric::minor_units(value)
+}
+
+/// A synthetic life's last snapshot with every third card purchase split in two at a generated
+/// point, read through the same path as the app (`storage::derive_view`).
+fn synthetic_view(seed: u64) -> (View, NaiveDate) {
+    let life = crate::synthetic::Life::new(seed);
+    let mut state = crate::storage::empty_state().unwrap();
+    for day in life.refresh_days() {
+        let refresh = life.refresh(day);
+        let snapshot = crate::storage::change::project_refresh(
+            &state.snapshot,
+            &[],
+            &state.account_links,
+            &crate::insights::benefits::Catalog::from_settings(&state.settings),
+            &refresh,
+        )
+        .unwrap();
+        state = crate::storage::change::finish_refresh(&state, &refresh, snapshot).unwrap();
+    }
+    // A splitmix-style walk, so each seed splits different purchases at different points.
+    let mut walk = seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1;
+    let mut next = || {
+        walk ^= walk << 13;
+        walk ^= walk >> 7;
+        walk ^= walk << 17;
+        walk
+    };
+    for (index, transaction) in state.snapshot.transactions.iter().enumerate() {
+        let whole = cents(transaction.amount);
+        if index % 3 != 0 || whole > -200 || transaction.pending {
+            continue;
+        }
+        let part = -(1 + i64::try_from(next() % u64::try_from(-whole - 1).unwrap()).unwrap());
+        state.annotations.insert(
+            transaction.id.clone(),
+            crate::storage::Annotation {
+                splits: Some(vec![
+                    crate::storage::Split {
+                        category: "Generated A".into(),
+                        amount: crate::numeric::from_minor(part),
+                    },
+                    crate::storage::Split {
+                        category: "Generated B".into(),
+                        amount: crate::numeric::from_minor(whole - part),
+                    },
+                ]),
+                ..Default::default()
+            },
+        );
+    }
+    let now = chrono::DateTime::parse_from_rfc3339(&state.snapshot.updated_at)
+        .unwrap()
+        .to_utc();
+    let (view, _) =
+        crate::storage::derive_view(&state, None, &BTreeMap::new(), now, &NamedZone::Utc).unwrap();
+    (view, now.date_naive())
+}
+
+#[test]
+fn every_breakdown_sums_to_its_total_to_the_cent() {
+    use crate::insights::spending::{PeriodKind, PeriodRequest};
+    let mut periods = 0;
+    for seed in 1..=6 {
+        let (view, today) = synthetic_view(seed);
+        let insights = view.insights.as_ref().unwrap();
+        assert!(view
+            .snapshot
+            .transactions
+            .iter()
+            .any(|transaction| !transaction.splits.is_empty()));
+
+        // Each Spending period's categories, split parts included, sum to its total.
+        for scope in &insights.spending {
+            for kind in [
+                PeriodKind::Week,
+                PeriodKind::Month,
+                PeriodKind::Quarter,
+                PeriodKind::Year,
+                PeriodKind::All,
+            ] {
+                for offset in 0..4 {
+                    let request = PeriodRequest {
+                        scope: scope.scope.clone(),
+                        owner: scope.owner,
+                        kind,
+                        offset,
+                    };
+                    let Some(detail) =
+                        crate::insights::spending_period(&view, &request, &NamedZone::Utc)
+                    else {
+                        break;
+                    };
+                    let period = &detail.period;
+                    let categories: i64 = period
+                        .categories
+                        .iter()
+                        .map(|category| cents(category.spent.total))
+                        .sum();
+                    assert_eq!(
+                        categories,
+                        cents(period.spent.total),
+                        "seed {seed} {} {kind:?} {offset}",
+                        scope.scope
+                    );
+                    periods += 1;
+                }
+            }
+        }
+
+        // Reports: the breakdown, the buckets, each account, and the cash flow agree.
+        for chart in Chart::ALL {
+            for range in Range::ALL {
+                let request = ReportRequest {
+                    chart: Some(chart),
+                    range: Some(range),
+                    ..Default::default()
+                };
+                let reports = reports(&view, &request, today, &NamedZone::Utc).unwrap();
+                let report = reports.report.as_ref().unwrap();
+                let context = format!("seed {seed} {chart:?} {range:?}");
+                let Some(total) = report.summary.total.map(cents) else {
+                    continue;
+                };
+                let breakdown: i64 = report
+                    .breakdown
+                    .iter()
+                    .map(|group| cents(group.value.unwrap()))
+                    .sum();
+                assert_eq!(breakdown, total, "{context}: breakdown");
+                let buckets: i64 = report
+                    .buckets
+                    .iter()
+                    .map(|bucket| bucket.value.map_or(0, cents))
+                    .sum();
+                assert_eq!(buckets, total, "{context}: buckets");
+                let accounts: i64 = reports
+                    .accounts
+                    .iter()
+                    .map(|account| account.total.map_or(0, cents))
+                    .sum();
+                assert_eq!(accounts, total, "{context}: accounts");
+                if let Some(flow) = &reports.flow {
+                    let items = |items: &[FlowItem]| -> i64 {
+                        items
+                            .iter()
+                            .map(|item| {
+                                let children: i64 =
+                                    item.children.iter().map(|child| cents(child.value)).sum();
+                                assert_eq!(children, cents(item.value), "{context}: {}", item.id);
+                                children
+                            })
+                            .sum()
+                    };
+                    assert_eq!(
+                        items(&flow.sources),
+                        cents(flow.inflow),
+                        "{context}: inflow"
+                    );
+                    assert_eq!(
+                        items(&flow.purchases)
+                            + flow
+                                .charges
+                                .as_ref()
+                                .map_or(0, |charges| items(std::slice::from_ref(charges))),
+                        cents(flow.outflow),
+                        "{context}: outflow"
+                    );
+                    // The surplus or shortfall equals the report's total.
+                    assert_eq!(
+                        cents(flow.retained) - cents(flow.gap),
+                        total,
+                        "{context}: what was left"
+                    );
+                    assert!(
+                        flow.sources.len() <= FLOW_GROUPS + 1
+                            && flow.purchases.len() <= FLOW_GROUPS + 1,
+                        "{context}: groups shown"
+                    );
+                }
+            }
+        }
+    }
+    assert!(periods > 50, "only {periods} periods were checked");
 }

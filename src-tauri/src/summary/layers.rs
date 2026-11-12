@@ -451,7 +451,7 @@ pub(super) fn groups(
             .iter()
             .filter(|split| {
                 !grouped.contains(&split.ticker)
-                    && split.own_z.signum() == sign
+                    && split.own_z.is_sign_negative() == (sign < 0.0)
                     && split.own_z.abs() >= LOOSE_Z
                     && split.own_pct.abs() >= OWN_PCT
             })

@@ -1,6 +1,7 @@
 import type { ContactFit } from './contacts'
 import { daysBetween } from './dates'
 import type { Settings } from './finance-settings'
+import { formatCalendarDate } from './format'
 import type { FinanceSnapshot, Person, Transaction, Trip } from './schema'
 
 /**
@@ -87,12 +88,13 @@ export function withIdentity(
 
 /** Tagged transactions in each of the last twelve months, oldest first. */
 export function monthlyMoments(dates: readonly string[], today: string) {
-  const [year, month] = today.split('-').map(Number)
+  // A malformed day stays NaN, an invalid date, rather than becoming a real month.
+  const [year = NaN, month = NaN] = today.split('-').map(Number)
   const months = Array.from({ length: 12 }, (_, index) => {
-    const date = new Date(Date.UTC(year, month - 12 + index, 1))
+    const date = new Date(Date.UTC(year, month - 12 + index, 1)).toISOString().slice(0, 10)
     return {
-      key: date.toISOString().slice(0, 7),
-      label: date.toLocaleString('en-US', { month: 'short', timeZone: 'UTC' }),
+      key: date.slice(0, 7),
+      label: formatCalendarDate(date, { month: 'short' }),
       count: 0,
     }
   })
@@ -112,7 +114,9 @@ export function peopleById(settings: Pick<Settings, 'people'>) {
 /** Up to two initials, for a person without a photo. */
 export function initials(name: string) {
   const words = name.trim().split(/\s+/).filter(Boolean)
-  const letters = words.length > 1 ? [words[0], words.at(-1) ?? ''] : words
+  const [first, ...rest] = words
+  const last = rest.at(-1)
+  const letters = first !== undefined && last !== undefined ? [first, last] : words
   const segments = new Intl.Segmenter()
   return letters
     .map((word) => segments.segment(word)[Symbol.iterator]().next().value?.segment ?? '')
@@ -143,14 +147,15 @@ export function newPerson(name: string, contactId?: string, matchName?: string):
 /** People whose name contains every word typed, best first: a name starting with it first. */
 export function filterPeople(people: readonly Person[], query: string) {
   const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-  if (!words.length) return people.toSorted((left, right) => left.name.localeCompare(right.name))
+  const [first] = words
+  if (first === undefined)
+    return people.toSorted((left, right) => left.name.localeCompare(right.name))
   return people
     .filter((person) => words.every((word) => person.name.toLowerCase().includes(word)))
     .toSorted(
       (left, right) =>
-        Number(right.name.toLowerCase().startsWith(words[0])) -
-          Number(left.name.toLowerCase().startsWith(words[0])) ||
-        left.name.localeCompare(right.name),
+        Number(right.name.toLowerCase().startsWith(first)) -
+          Number(left.name.toLowerCase().startsWith(first)) || left.name.localeCompare(right.name),
     )
 }
 

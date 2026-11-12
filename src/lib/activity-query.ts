@@ -1,5 +1,5 @@
 /**
- * Reads an Activity filter the way it would be said: "dining over $50 last month on platinum".
+ * Reads an Activity filter the way it would be said: "dining over $50 last month on my card".
  * Known accounts, categories, and methods become filters, amount and date phrases become
  * bounds, and whatever is left is ordinary text search. Pure, so typing previews instantly.
  */
@@ -140,18 +140,20 @@ function parseDates(text: string, today: string): { text: string; from?: string;
   const span = new RegExp(
     String.raw`\b(?:from |between )?${dayPattern} (?:to|-|–|through|until|and) ${dayPattern}\b`,
   ).exec(text)
-  if (span) {
+  // The month groups aren't optional, so a match always has both.
+  const [spanned, firstMonth, firstDay, firstYear, lastMonth, lastDay, lastYear] = span ?? []
+  if (spanned && firstMonth && lastMonth) {
     // A year written on one end carries to the other, wrapping when the months cross a new year.
-    const wraps = monthIndex(span[4]) < monthIndex(span[1])
-    const startYear = span[3] ?? (span[6] && (wraps ? String(Number(span[6]) - 1) : span[6]))
-    const endYear = span[6] ?? (span[3] && (wraps ? String(Number(span[3]) + 1) : span[3]))
-    const start = namedDay(today, span[1], span[2], startYear || undefined, false)
-    const end = namedDay(today, span[4], span[5], endYear || undefined, true)
-    return { text: text.replace(span[0], ' '), from: start, to: end < start ? start : end }
+    const wraps = monthIndex(lastMonth) < monthIndex(firstMonth)
+    const startYear = firstYear ?? (lastYear && (wraps ? String(Number(lastYear) - 1) : lastYear))
+    const endYear = lastYear ?? (firstYear && (wraps ? String(Number(firstYear) + 1) : firstYear))
+    const start = namedDay(today, firstMonth, firstDay, startYear || undefined, false)
+    const end = namedDay(today, lastMonth, lastDay, endYear || undefined, true)
+    return { text: text.replace(spanned, ' '), from: start, to: end < start ? start : end }
   }
   const since = new RegExp(String.raw`\b(since|after|before|until) ${dayPattern}\b`).exec(text)
-  if (since) {
-    const [, word, name, day, year] = since
+  const [, word, name, day, year] = since ?? []
+  if (since && name) {
     const date = namedDay(today, name, day, year, word === 'until')
     const rest = text.replace(since[0], ' ')
     if (word === 'since') return { text: rest, from: date, to: today }
@@ -160,13 +162,13 @@ function parseDates(text: string, today: string): { text: string; from?: string;
     return { text: rest, to: date }
   }
   const named = new RegExp(String.raw`\b(?:in )?${dayPattern}\b`).exec(text)
-  if (named) {
-    const [, name, day, year] = named
-    const start = namedDay(today, name, day, year, false)
+  const [, month, monthDay, monthYear] = named ?? []
+  if (named && month) {
+    const start = namedDay(today, month, monthDay, monthYear, false)
     return {
       text: text.replace(named[0], ' '),
       from: start,
-      to: day ? start : namedDay(today, name, undefined, year, true),
+      to: monthDay ? start : namedDay(today, month, undefined, monthYear, true),
     }
   }
   return { text }
@@ -207,25 +209,26 @@ function parseAmounts(text: string) {
   let max: number | undefined
   const between = new RegExp(String.raw`\bbetween ${amount} and ${amount}`).exec(rest)
   const span = new RegExp(String.raw`\$(\d[\d,]*(?:\.\d+)?)\s*(?:-|to)\s*${amount}`).exec(rest)
-  const range = between ?? span
-  if (range) {
-    min = Math.min(money(range[1]), money(range[2]))
-    max = Math.max(money(range[1]), money(range[2]))
-    rest = rest.replace(range[0], ' ')
+  // Each amount group is required, so a match carries every one.
+  const [ranged, low, high] = between ?? span ?? []
+  if (ranged && low && high) {
+    min = Math.min(money(low), money(high))
+    max = Math.max(money(low), money(high))
+    rest = rest.replace(ranged, ' ')
   }
-  const over = new RegExp(
-    String.raw`(?:\b(?:over|above|more than|at least)\s*|>=?\s*)${amount}`,
-  ).exec(rest)
-  if (over) {
-    min = money(over[1])
-    rest = rest.replace(over[0], ' ')
+  const [over, floor] =
+    new RegExp(String.raw`(?:\b(?:over|above|more than|at least)\s*|>=?\s*)${amount}`).exec(rest) ??
+    []
+  if (over && floor) {
+    min = money(floor)
+    rest = rest.replace(over, ' ')
   }
-  const under = new RegExp(
-    String.raw`(?:\b(?:under|below|less than|at most)\s*|<=?\s*)${amount}`,
-  ).exec(rest)
-  if (under) {
-    max = money(under[1])
-    rest = rest.replace(under[0], ' ')
+  const [under, ceiling] =
+    new RegExp(String.raw`(?:\b(?:under|below|less than|at most)\s*|<=?\s*)${amount}`).exec(rest) ??
+    []
+  if (under && ceiling) {
+    max = money(ceiling)
+    rest = rest.replace(under, ' ')
   }
   return { text: rest, min, max }
 }
@@ -409,7 +412,8 @@ export function amountMatches(value: number, min?: number, max?: number) {
 
 /** The draft without the fragment a suggestion is still completing, so previews stay useful. */
 export function settledActivityQuery(input: string, suggestions: QuerySuggestion[]) {
-  if (!suggestions.length || /\s$/.test(input)) return input
-  const completed = completeActivityQuery(input, suggestions[0])
-  return completed.slice(0, completed.length - suggestions[0].phrase.length - 1)
+  const [first] = suggestions
+  if (!first || /\s$/.test(input)) return input
+  const completed = completeActivityQuery(input, first)
+  return completed.slice(0, completed.length - first.phrase.length - 1)
 }

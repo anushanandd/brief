@@ -37,7 +37,7 @@ pub(super) fn transaction_diff(
     // A Wallet row stands in until the provider reports the charge, so its coming and going
     // says nothing about the account.
     let in_scope = |transaction: &&Transaction| {
-        !transaction.from_wallet()
+        !transaction.wallet_only()
             && transaction
                 .account_id
                 .as_deref()
@@ -68,24 +68,32 @@ pub(super) fn transaction_diff(
         .map(|account| (account.clone(), Decimal::ZERO))
         .collect::<BTreeMap<_, _>>();
     let mut backfilled = 0;
-    let mut explain = |transaction: &Transaction, amount: Decimal| {
-        if let Some(total) = transaction
-            .account_id
-            .as_ref()
-            .and_then(|account| explained.get_mut(account))
-        {
-            *total += amount;
+    // An amount that isn't a number leaves its account's balance change unexplained rather
+    // than explained by a made-up zero.
+    let mut explain = |transaction: &Transaction, amount: Option<Decimal>| {
+        let Some(account) = transaction.account_id.as_ref() else {
+            return;
+        };
+        match amount {
+            Some(amount) => {
+                if let Some(total) = explained.get_mut(account) {
+                    *total += amount;
+                }
+            }
+            None => {
+                explained.remove(account);
+            }
         }
     };
     let mut changes = Vec::new();
     for (id, transaction) in &now {
-        let amount = decimal_f64(transaction.amount).unwrap_or_default();
+        let amount = decimal_f64(transaction.amount);
         match before.get(id) {
             Some(prior) => {
-                let prior_amount = decimal_f64(prior.amount).unwrap_or_default();
+                let prior_amount = decimal_f64(prior.amount);
                 match (prior.pending, transaction.pending) {
                     (false, false) if prior_amount != amount => {
-                        explain(transaction, amount - prior_amount);
+                        explain(transaction, amount.zip(prior_amount).map(|(a, b)| a - b));
                         changes.push(change(
                             transaction,
                             TransactionChangeKind::Amended,
@@ -116,7 +124,7 @@ pub(super) fn transaction_diff(
                 }
                 match settled {
                     Some(pending) => {
-                        if decimal_f64(pending.amount).unwrap_or_default() != amount {
+                        if decimal_f64(pending.amount) != amount {
                             changes.push(change(
                                 transaction,
                                 TransactionChangeKind::Settled,
@@ -137,7 +145,7 @@ pub(super) fn transaction_diff(
             continue;
         }
         if !prior.pending && recent(prior) {
-            explain(prior, -decimal_f64(prior.amount).unwrap_or_default());
+            explain(prior, decimal_f64(prior.amount).map(|amount| -amount));
         }
         if prior.pending || recent(prior) {
             changes.push(change(prior, TransactionChangeKind::Removed, None));
@@ -247,6 +255,21 @@ mod tests {
 
     fn checked() -> BTreeSet<String> {
         ["plaid:card", "plaid:checking"].map(String::from).into()
+    }
+
+    #[test]
+    fn an_amount_that_is_not_a_number_leaves_the_balance_unexplained() {
+        let previous = snapshot(vec![]);
+        let current = vec![
+            transaction("broken", "plaid:card", "2026-10-11", f64::NAN, false),
+            transaction("paycheck", "plaid:checking", "2026-10-11", 2_000.0, false),
+        ];
+        let diff = transaction_diff(&previous, &current, &checked(), "2026-10-11T15:00:00Z");
+        assert_eq!(diff.explained.get("plaid:card"), None);
+        assert_eq!(
+            diff.explained.get("plaid:checking"),
+            Some(&Decimal::from(2_000))
+        );
     }
 
     #[test]

@@ -10,16 +10,30 @@ import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 
 import { insights } from '../data/fixtures/insights'
-import { scenarioReports } from '../pages/routes.reports'
+import periodCardReports from '../data/fixtures/period-card-reports.json'
 
-// Server rendering never runs a query; Rust's reports follow the same rules over the data.
+// Server rendering never runs a query. Rust wrote the seed's reports for the days these cards
+// ask for (`period_card_reports_match_the_renderer_fixture`), as saved and with no sale's gain
+// known; any other request has none.
 vi.mock('../hooks/use-reports', () => ({
   useReports: (
     data: import('../lib/schema').FinanceSnapshot,
     request: import('../lib/api').ReportRequest,
-  ) => ({ data: scenarioReports(data, request), isLoading: false, isError: false }),
+  ) => {
+    const variant = data.trades.every(({ estimatedRealizedGain }) => estimatedRealizedGain == null)
+      ? 'unknownGains'
+      : 'seed'
+    const key = `${variant}|${request.from ?? ''}|${request.to ?? ''}`
+    const reports = fromRust<Record<string, import('../lib/schema').Reports>>(periodCardReports)
+    return {
+      data: request.accounts ? null : (reports[key] ?? null),
+      isLoading: false,
+      isError: false,
+    }
+  },
 }))
 import { seedSnapshot, seedSummary } from '../data/fixtures/records'
+import { fromRust } from '../lib/rust-json'
 import type { Insights, PortfolioToday, Statement } from '../lib/schema'
 import { HoldingsTable } from './holdings-table'
 import {
@@ -113,8 +127,10 @@ it('shows income, spent, and net for the chart period with changes and links', a
   expect(html).toContain('<small class="negative" aria-label="+50.00% versus the period before">')
   expect(html).toContain('<small class="negative" aria-label="−10.00% versus the period before">')
   expect(html).toContain('<small class="positive" aria-label="+25.00% versus the period before">')
-  expect(html).toContain('href="/analytics?chart=income&amp;from=2026-09-10&amp;to=2026-09-16"')
-  expect(html).toContain('href="/analytics?chart=cash-flow&amp;from=2026-09-10&amp;to=2026-09-16"')
+  // Each opens on the same period by name, not as custom days.
+  expect(html).toContain('href="/analytics?chart=income&amp;range=week"')
+  expect(html).toContain('href="/analytics?chart=cash-flow&amp;range=week"')
+  expect(html).toContain('href="/spending?range=week"')
   expect(html).not.toContain('transaction')
   // Without a recap for the window, the figures are unavailable rather than zero.
   const empty = await render((data) => <PeriodTotals data={data} window="month" />, {})
@@ -185,8 +201,13 @@ it('backs the period with its evidence and what it paid, never inventing either'
   expect(year).toMatch(/<span class="sensitive-value">\+\$38,100(\.00)?<\/span>/)
   expect(year).toContain('<span>Added</span>')
   expect(year).toMatch(/<span class="sensitive-value">\$14,200(\.00)?<\/span>/)
-  expect(year).toMatch(/\+12\.90?%/)
+  // The time-weighted return beside the S&P 500; the money-weighted rate isn't shown.
+  expect(year).toContain('<span>Return</span>')
+  expect(year).toMatch(/\+14\.20?%/)
   expect(year).toMatch(/\+11\.00?%/)
+  expect(year).not.toMatch(/\+12\.90?%/)
+  // Taxes are left off this card; they have their own page.
+  expect(year).not.toContain('href="/taxes"')
   // Each report opens for the same days: the returns window's flows start the day after it.
   expect(year).toContain('href="/analytics?chart=dividends&amp;from=2025-09-17&amp;to=2026-09-16"')
   expect(year).toContain('href="/analytics?chart=realized&amp;from=2025-09-17&amp;to=2026-09-16"')
@@ -198,13 +219,13 @@ it('backs the period with its evidence and what it paid, never inventing either'
           ...data,
           trades: data.trades.map((trade) => ({ ...trade, estimatedRealizedGain: null })),
         }}
-        span={{ ...yearWindow, moneyWeightedPct: null, benchmarkPct: null }}
+        span={{ ...yearWindow, benchmarkPct: null }}
         range="year"
       />
     ),
     {},
   )
-  expect(unknown.match(/>—</g)).toHaveLength(2)
+  expect(unknown.match(/>—</g)).toHaveLength(1)
   // A sale without a known cost leaves realized P/L unavailable, not zero.
   expect(unknown).toContain('Unavailable')
   // Without a returns window the reports still open for the period's days.

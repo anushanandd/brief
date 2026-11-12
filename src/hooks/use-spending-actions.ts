@@ -60,14 +60,14 @@ export function useSpendingActions({
 }) {
   const actions = useMemo<AppAction[]>(
     () => [
-      // 0 is every account and 1–9 each one, in the order the account menu lists them.
-      ...(accounts.length > 2 ? accounts : []).slice(0, 10).map(({ value, label }, index) => ({
+      // Each account in the palette, in the account menu's order. They take no key: the plain
+      // digits are the user's bookmarks.
+      ...(accounts.length > 2 ? accounts : []).slice(0, 10).map(({ value, label }) => ({
         id: `spending.account.${value}`,
         title: `Show spending in ${label === 'All accounts' ? 'all accounts' : label}`,
-        search: 'spending account card cards apple amex all accounts choose switch',
+        search: 'spending account card cards all accounts choose switch',
         group: 'View',
         scope: 'page' as const,
-        bindings: [{ sequence: [String(index)], label: String(index) }],
         disabled: account === value,
         disabledReason: `Already showing ${label}`,
         run: () => chooseAccount(value),
@@ -111,7 +111,8 @@ export function useSpendingActions({
         disabledReason: hasOthers ? undefined : 'No purchase is marked for someone else',
         run: () => {
           const index = spendingOwnerOptions.findIndex(({ value }) => value === owner)
-          setOwner(spendingOwnerOptions[(index + 1) % spendingOwnerOptions.length].value)
+          const next = spendingOwnerOptions[(index + 1) % spendingOwnerOptions.length]
+          if (next) setOwner(next.value)
         },
       },
       {

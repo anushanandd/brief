@@ -25,11 +25,13 @@ mod graph;
 mod journal;
 mod migrations;
 mod research;
+mod summaries;
 
 pub use bank_statements::{BankStatement, StatementCheck};
 pub(crate) use blobs::sha256;
 pub use changesets::LogSummary;
 pub(crate) use changesets::{Changeset, CHECKPOINT};
+pub use summaries::SavedSummary;
 
 const COLLECTIONS: [&str; 11] = [
     "accounts",
@@ -44,7 +46,7 @@ const COLLECTIONS: [&str; 11] = [
     "brokeragePerformance",
     "possibleDuplicateAccounts",
 ];
-const DATABASE_SCHEMA_VERSION: u32 = 22;
+pub(crate) const DATABASE_SCHEMA_VERSION: u32 = 24;
 const DATABASE_APPLICATION_ID: u32 = 0x4252_4946; // BRIF
 
 pub struct Database {
@@ -342,19 +344,39 @@ impl Database {
         let version = connection
             .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
             .map_err(db_error)?;
+        // Refused before anything is written, so the build that wrote it still opens it.
         if version > DATABASE_SCHEMA_VERSION {
             return Err("The finance database requires a newer version of Brief".into());
         }
-        migrations::migrate_schema(&connection, version)?;
-        if version < 5 {
-            migrations::scrub_legacy_diagnostics(&mut connection)?;
-        }
-        if version < DATABASE_SCHEMA_VERSION {
-            connection
-                .pragma_update(None, "user_version", DATABASE_SCHEMA_VERSION)
-                .map_err(db_error)?;
-        }
+        migrations::migrate(&mut connection, version)?;
         Ok(Self { connection })
+    }
+
+    /// The schema version of the Brief database at `path`, read without changing it; `None`
+    /// when the file holds no Brief state. A crash mid-write leaves a journal that a read-only
+    /// connection can't roll back, so then it is read read-write, which rolls the journal back
+    /// as opening the database would.
+    pub fn schema_version(path: &Path) -> Result<Option<u32>, String> {
+        Self::read_schema_version(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .or_else(|_| Self::read_schema_version(path, OpenFlags::SQLITE_OPEN_READ_WRITE))
+    }
+
+    fn read_schema_version(path: &Path, flags: OpenFlags) -> Result<Option<u32>, String> {
+        let connection = Connection::open_with_flags(path, flags).map_err(db_error)?;
+        let has_state = connection
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'state_meta')",
+                [],
+                |row| row.get::<_, bool>(0),
+            )
+            .map_err(db_error)?;
+        if !has_state {
+            return Ok(None);
+        }
+        connection
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, u32>(0))
+            .map(Some)
+            .map_err(db_error)
     }
 
     pub fn load(&self) -> Result<Option<FinanceState>, String> {
@@ -456,7 +478,9 @@ impl Database {
             Change::Settings(_) => write_settings(&transaction, &next.settings)?,
             Change::AccountLinks(_) => write_account_links(&transaction, &next.account_links)?,
             Change::Documents(_) => write_documents(&transaction, &next.documents)?,
-            Change::Checkpoint(_)
+            // Theses were removed; an old change still in a log writes nothing.
+            Change::Theses(_)
+            | Change::Checkpoint(_)
             | Change::Refresh(_)
             | Change::Statements(_)
             | Change::Wallet(_) => write_state(&transaction, next)?,
@@ -544,6 +568,7 @@ impl Database {
             .map_err(db_error)?;
         Self::clear_graph(&transaction)?;
         Self::clear_research(&transaction)?;
+        Self::clear_summaries(&transaction)?;
         transaction
             .execute("DELETE FROM bank_statements", [])
             .map_err(db_error)?;
@@ -1030,4 +1055,4 @@ pub(crate) fn secure_file(path: &Path) -> Result<(), String> {
 }
 
 #[cfg(test)]
-mod tests;
+pub(crate) mod tests;

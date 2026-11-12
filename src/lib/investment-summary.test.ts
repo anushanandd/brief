@@ -7,13 +7,13 @@ import { summaryStart } from './investment-summary'
 import { fromRust } from './rust-json'
 import type { InvestmentSummary } from './schema'
 
-// Rust's own serialization of a summary, checked from the Rust side.
+// A summary as Rust serializes it; a Rust test keeps this fixture in sync.
 const summary = fromRust<InvestmentSummary>(nativeSummary)
 
 it('carries Rust’s brief whole, line by line, with its headlines as published', () => {
   const brief = summary.brief!
   // Every word is Rust’s: the renderer joins none of its own.
-  const text = brief.lines[0].map((span) => span.text).join('')
+  const text = (brief.lines[0] ?? []).map((span) => span.text).join('')
   expect(text).toMatch(/^TEST rose 2\.4% \(\+\$49\) today, more than the S&P 500’s 0\.\d%\./)
   expect(brief.headlines[0]).toEqual({
     tickers: ['TEST'],
@@ -21,7 +21,12 @@ it('carries Rust’s brief whole, line by line, with its headlines as published'
     publisher: 'CNBC',
     url: 'https://example.com/cfo',
     publishedAt: '2026-09-30T13:00:00Z',
+    // The publisher's summary, credited as theirs rather than a sentence a reader picked.
+    quote: 'The shares rose after the company named a new chief financial officer.',
+    quotedBy: 'summary',
   })
+  expect(brief.market).toBeNull()
+  expect(brief.changed).toEqual([])
 })
 
 it('starts a summary where the portfolio’s reconciled period does, or the day before the range', () => {

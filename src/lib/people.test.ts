@@ -64,12 +64,10 @@ it('makes someone match a name in payments, adding them from Contacts when neede
   const settings = settingsOf({
     people: [{ id: 'person:a', name: 'Example Person', matchNames: ['EXAMPLE PERSON'] }],
   })
-  const known = withIdentity(settings, 'EXAMPLE', {
-    kind: 'person',
-    person: settings.people[0],
-    fit: 'possible',
-  })
-  expect(known.people[0].matchNames).toEqual(['EXAMPLE PERSON', 'EXAMPLE'])
+  const [person] = settings.people
+  if (!person) throw new Error('Expected a person')
+  const known = withIdentity(settings, 'EXAMPLE', { kind: 'person', person, fit: 'possible' })
+  expect(known.people[0]?.matchNames).toEqual(['EXAMPLE PERSON', 'EXAMPLE'])
   const added = withIdentity(settings, 'OTHER', {
     kind: 'contact',
     contact: { identifier: 'card', name: 'Other Person', hasPhoto: true, fit: 'possible' },

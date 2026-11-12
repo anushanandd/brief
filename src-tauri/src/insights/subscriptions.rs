@@ -46,6 +46,19 @@ pub struct PriceChange {
     pub latest: f64,
     pub changed_on: NaiveDate,
     pub transaction_id: String,
+    /// The run of charges at the previous price just before the change, oldest first; not part
+    /// of the contract.
+    #[serde(skip)]
+    pub steady: Vec<String>,
+}
+
+impl PriceChange {
+    /// After `k` charges in a row at the old price, the rule of succession puts the chance the
+    /// old price was the series' settled price at k / (k + 1): one earlier charge says little.
+    pub fn confidence(&self) -> f64 {
+        let k = self.steady.len() as f64;
+        k / (k + 1.0)
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
@@ -91,6 +104,10 @@ fn price_changes(transactions: &[Transaction]) -> BTreeMap<String, PriceChange> 
             let (previous, latest) = (amount(count - 2), amount(count - 1));
             let steady = count < 3 || amount(count - 3) == previous;
             let (changed_on, transaction) = charges[count - 1];
+            let run = (0..count - 1)
+                .rev()
+                .take_while(|index| amount(*index) == previous)
+                .count();
             (steady && changed(previous, latest)).then(|| {
                 (
                     key,
@@ -99,6 +116,10 @@ fn price_changes(transactions: &[Transaction]) -> BTreeMap<String, PriceChange> 
                         latest: latest as f64 / 100.0,
                         changed_on,
                         transaction_id: transaction.id.clone(),
+                        steady: charges[count - 1 - run..count - 1]
+                            .iter()
+                            .map(|(_, charge)| charge.id.clone())
+                            .collect(),
                     },
                 )
             })
@@ -216,6 +237,9 @@ mod tests {
         assert_eq!((change.previous, change.latest), (-11.99, -13.99));
         assert_eq!(change.changed_on, day("2026-08-05"));
         assert_eq!(change.transaction_id, "august");
+        // Two charges held the old price, so the change is two-thirds sure.
+        assert_eq!(change.steady, ["june", "july"]);
+        assert!((change.confidence() - 2.0 / 3.0).abs() < 1e-9);
 
         // A bill that always varies, and a few cents of tax drift, are not new prices.
         let variable = [

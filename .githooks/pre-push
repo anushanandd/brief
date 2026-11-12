@@ -1,0 +1,22 @@
+#!/bin/sh
+# Runs the full local gate before a push: the same checks CI runs, plus binding drift.
+# Skip once with BRIEF_SKIP_PREPUSH=1 git push. Enable: git config core.hooksPath .githooks
+set -eu
+
+if [ "${BRIEF_SKIP_PREPUSH:-}" = 1 ]; then
+  echo "pre-push: skipped (BRIEF_SKIP_PREPUSH=1)." >&2
+  exit 0
+fi
+
+cd "$(git rev-parse --show-toplevel)"
+cargo fmt --manifest-path src-tauri/Cargo.toml --check
+(cd src-tauri && cargo clippy --all-targets -- -D warnings)
+# From src-tauri, so .cargo/config.toml sends generated bindings to src/lib/bindings.
+(cd src-tauri && cargo test)
+drift="$(git status --porcelain -- src/lib/bindings)"
+if [ -n "$drift" ]; then
+  echo "$drift" >&2
+  echo "pre-push: src/lib/bindings differs from what is committed; commit the regenerated types." >&2
+  exit 1
+fi
+pnpm check

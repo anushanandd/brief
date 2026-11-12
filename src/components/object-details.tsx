@@ -3,19 +3,19 @@ import {
   createContext,
   useCallback,
   useContext,
-  useEffect,
   useId,
   useMemo,
   useState,
   type ReactNode,
 } from 'react'
 
+import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { tierLabels } from '../lib/evidence'
-import { amountsHidden } from '../lib/format'
 import { getObject, objectKinds, type ObjectDetail } from '../lib/objects'
 import { X } from './icons'
 import { Button } from './ui'
+import { Dialog } from './ui/dialog'
 import { usePresence } from './ui/presence'
 
 /**
@@ -64,9 +64,14 @@ export function ObjectDetailsProvider({ children }: { children: ReactNode }) {
 
 const MASK = '••••'
 
+/** The raw view opens outside the page, so it follows screen privacy itself. */
+function MaskedNumber({ value }: { value: number }) {
+  return <span>{useAmountsHidden() ? MASK : String(value)}</span>
+}
+
 function Leaf({ value }: { value: unknown }) {
   if (value === null || value === undefined) return <span className="raw-null">none</span>
-  if (typeof value === 'number') return <span>{amountsHidden() ? MASK : String(value)}</span>
+  if (typeof value === 'number') return <MaskedNumber value={value} />
   if (typeof value === 'boolean') return <span>{value ? 'yes' : 'no'}</span>
   return <span>{typeof value === 'string' ? value : JSON.stringify(value)}</span>
 }
@@ -105,6 +110,16 @@ export function RawTree({ value }: { value: unknown }) {
 }
 
 /** An object's facts, links, record, and provider record. */
+/** A proof step's first evidence, as a link to it; nothing when the step cites none. */
+function EvidenceLink({ id, onShow }: { id: string | undefined; onShow: (id: string) => void }) {
+  if (!id) return null
+  return (
+    <button type="button" className="object-link" onClick={() => onShow(id)}>
+      {id}
+    </button>
+  )
+}
+
 export function ObjectDetailsBody({
   detail,
   onShow,
@@ -151,15 +166,7 @@ export function ObjectDetailsBody({
                             {step.says}
                             {step.detail ? <small>{step.detail}</small> : null}
                           </span>
-                          {step.evidence[0] ? (
-                            <button
-                              type="button"
-                              className="object-link"
-                              onClick={() => onShow(step.evidence[0])}
-                            >
-                              {step.evidence[0]}
-                            </button>
-                          ) : null}
+                          <EvidenceLink id={step.evidence[0]} onShow={onShow} />
                         </li>
                       ))}
                       {fact.proof.unchecked.map((says) => (
@@ -235,24 +242,13 @@ function ObjectDetailsDialog({
     [detail],
   )
 
-  useEffect(() => {
-    if (!dialog || typeof dialog.showModal !== 'function') return
-    if (id && !dialog.open) dialog.showModal()
-    else if (!id && dialog.open) dialog.close()
-  }, [dialog, id])
-
   return (
-    <dialog
+    <Dialog
       ref={setDialog}
+      open={Boolean(id)}
+      onClose={onClose}
       className="shortcuts-dialog object-details-dialog"
       aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault()
-        onClose()
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
     >
       {present ? (
         <div className="shortcuts-panel">
@@ -274,6 +270,6 @@ function ObjectDetailsDialog({
           </div>
         </div>
       ) : null}
-    </dialog>
+    </Dialog>
   )
 }

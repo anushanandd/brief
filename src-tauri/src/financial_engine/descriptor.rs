@@ -92,7 +92,7 @@ static INSTANT_PAYMENT: LazyLock<Regex> = LazyLock::new(|| {
         .expect("instant payment pattern")
 });
 
-/// A postal code and country closing an address (`02111 US`, `94111-4122 US`).
+/// A postal code and country closing an address (`02111 US`, `89101-4122 US`).
 static POSTAL: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r" \d{5}(?:-\d{4})?(?: [A-Z]{2})?$").expect("postal pattern"));
 
@@ -258,7 +258,7 @@ mod tests {
                 "Wire to EXAMPLE PAY CORP",
             ),
             (
-                "BOOK TRANSFER CREDIT B/O: EXAMPLE GLOBAL, INC. PORTLAND OR 94111-4122 US",
+                "BOOK TRANSFER CREDIT B/O: EXAMPLE GLOBAL, INC. LAS VEGAS NV 89101-4122 US",
                 "Transfer from EXAMPLE GLOBAL, INC.",
             ),
             (

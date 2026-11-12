@@ -25,6 +25,7 @@ fn refresh(storage: &mut Storage, refresh: change::Refresh) {
         &storage.data.snapshot,
         &storage.data.statements,
         &storage.data.account_links,
+        &crate::insights::benefits::Catalog::from_settings(&storage.data.settings),
         &refresh,
     )
     .unwrap();
@@ -326,6 +327,32 @@ fn a_log_this_code_reads_differently_opens_at_its_replay_and_checkpoints_it() {
     );
     // The new checkpoint makes the log and tables agree, so later opens need no replay.
     assert_replays(&storage);
+    drop(storage);
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_log_from_a_build_with_theses_still_opens_and_replays() {
+    let directory = directory();
+    let mut storage = Storage::new(directory.clone()).unwrap();
+    // A thesis change from an older build still reads, and changes nothing.
+    let before = change::state_hash(&storage.data).unwrap();
+    storage
+        .record(Change::Theses(serde_json::json!([{
+            "ticker": "TEST",
+            "versions": [{ "writtenAt": "2026-09-01T12:00:00+00:00", "points": [] }],
+            "reviews": []
+        }])))
+        .unwrap();
+    assert_eq!(change::state_hash(&storage.data).unwrap(), before);
+    drop(storage);
+    let storage = Storage::new(directory.clone()).unwrap();
+    assert!(!storage.is_recovering());
+    assert_replays(&storage);
+    // A checkpoint an earlier build saved still names its theses; the state reads without them.
+    let mut saved = serde_json::to_value(&storage.data).unwrap();
+    saved["theses"] = serde_json::json!([{ "ticker": "TEST", "versions": [], "reviews": [] }]);
+    assert!(serde_json::from_value::<FinanceState>(saved).is_ok());
     drop(storage);
     fs::remove_dir_all(directory).unwrap();
 }

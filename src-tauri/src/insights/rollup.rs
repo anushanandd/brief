@@ -39,25 +39,42 @@ pub struct Rollup {
     pub holdings: Vec<HoldingTotal>,
 }
 
-/// One security's position across accounts. A sum is none while any account's part is unknown.
+/// One security's position across accounts: the user's whole position in it, which every page
+/// about the security reads. A sum is none while any account's part is unknown, never the
+/// known parts' sum. Positions in different currencies are not added: the money sums are none
+/// and `currency` is none, while shares still sum.
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct HoldingTotal {
     pub ticker: String,
+    /// Name, kind, color, quote eligibility, and valuation note, from the first held position.
+    pub name: String,
+    pub instrument_kind: Option<String>,
+    pub color: String,
+    pub quote_eligible: Option<bool>,
+    pub valuation_note: Option<String>,
+    /// The currency every position is valued in (USD when a provider names none); none when
+    /// they differ.
+    pub currency: Option<String>,
     pub shares: Option<f64>,
     /// Vested shares, counting a position without a vesting schedule as vested; none when no
     /// position has one.
     pub vested_shares: Option<f64>,
     pub value: Option<f64>,
-    pub basis: Option<f64>,
+    pub cost_basis: Option<f64>,
+    /// Value less cost basis, from the two sums.
+    pub unrealized_gain: Option<f64>,
     /// The gain on cost, in percent.
     pub total_change_pct: Option<f64>,
     pub average_basis: Option<f64>,
     /// Its share of every known position's value, in percent.
     pub weight: Option<f64>,
-    /// The day's and week's move, when every position agrees on it.
+    /// The price and its day's and week's move, all from one quote: the position priced most
+    /// recently (the first held on a tie), so the three never mix two quotes.
+    pub price: Option<f64>,
     pub daily_change_pct: Option<f64>,
     pub weekly_change_pct: Option<f64>,
+    pub market_as_of: Option<String>,
     /// Each account's part, in the order first held.
     pub accounts: Vec<HoldingPart>,
 }
@@ -66,8 +83,28 @@ pub struct HoldingTotal {
 #[serde(rename_all = "camelCase")]
 pub struct HoldingPart {
     pub account_id: String,
+    /// The currency this account's part is valued in; none when its own positions differ.
+    pub currency: Option<String>,
     pub shares: Option<f64>,
     pub value: Option<f64>,
+    pub cost_basis: Option<f64>,
+    pub unrealized_gain: Option<f64>,
+}
+
+/// The currency the positions share (USD when the provider names none); none when they differ.
+fn shared_currency<'a>(positions: impl IntoIterator<Item = &'a &'a Holding>) -> Option<String> {
+    let mut codes = positions
+        .into_iter()
+        .map(|position| position.currency.as_deref().unwrap_or("USD"));
+    let first = codes.next()?;
+    codes.all(|code| code == first).then(|| first.to_owned())
+}
+
+/// Value less cost, in cents; none while either is unknown.
+fn gain(value: Option<f64>, basis: Option<f64>) -> Option<f64> {
+    value
+        .zip(basis)
+        .map(|(value, basis)| from_minor(minor_units(value) - minor_units(basis)))
 }
 
 /// Share counts summed to the hundred-millionth, so float error never reaches a total.
@@ -80,7 +117,7 @@ fn sum_shares(values: impl IntoIterator<Item = Option<f64>>) -> Option<f64> {
 }
 
 /// Each security across the accounts holding it, in the order first held.
-fn holding_totals(holdings: &[Holding]) -> Vec<HoldingTotal> {
+pub fn holding_totals(holdings: &[Holding]) -> Vec<HoldingTotal> {
     let known = holdings
         .iter()
         .filter_map(|holding| holding.value)
@@ -100,17 +137,38 @@ fn holding_totals(holdings: &[Holding]) -> Vec<HoldingTotal> {
                 .iter()
                 .filter(|holding| holding.ticker == ticker)
                 .collect::<Vec<_>>();
-            let shares = sum_shares(positions.iter().map(|position| position.shares));
-            let value = sum(positions.iter().map(|position| position.value));
-            let basis = sum(positions.iter().map(|position| position.cost_basis));
-            let agreed = |pick: fn(&Holding) -> Option<f64>| {
-                let first = pick(positions[0]);
-                positions
-                    .iter()
-                    .all(|position| pick(position) == first)
-                    .then_some(first)
-                    .flatten()
+            let currency = shared_currency(&positions);
+            // Money in different currencies is never added.
+            let money = |pick: fn(&Holding) -> Option<f64>, parts: &[&Holding]| {
+                shared_currency(parts)
+                    .and_then(|_| sum(parts.iter().map(|position| pick(position))))
             };
+            let shares = sum_shares(positions.iter().map(|position| position.shares));
+            let value = money(|holding| holding.value, &positions);
+            let basis = money(|holding| holding.cost_basis, &positions);
+            let unrealized_gain = gain(value, basis);
+            let first_some = |pick: fn(&Holding) -> Option<String>| {
+                positions.iter().find_map(|position| pick(position))
+            };
+            // One quote for every per-share figure: the newest, the first held on a tie.
+            let quoted = positions
+                .iter()
+                .enumerate()
+                .max_by(|(left_index, left), (right_index, right)| {
+                    let at = |holding: &Holding| {
+                        holding
+                            .market_as_of
+                            .as_deref()
+                            .and_then(|at| chrono::DateTime::parse_from_rfc3339(at).ok())
+                    };
+                    at(left).cmp(&at(right)).then(right_index.cmp(left_index))
+                })
+                .map(|(_, position)| *position)
+                .unwrap_or(positions[0]);
+            let notes = positions
+                .iter()
+                .map(|position| position.valuation_note.as_deref())
+                .collect::<Vec<_>>();
             let mut accounts: Vec<&str> = Vec::new();
             for position in &positions {
                 if !accounts.contains(&position.account_id.as_str()) {
@@ -119,20 +177,37 @@ fn holding_totals(holdings: &[Holding]) -> Vec<HoldingTotal> {
             }
             HoldingTotal {
                 ticker: ticker.to_owned(),
+                name: positions[0].name.clone(),
+                instrument_kind: first_some(|holding| holding.instrument_kind.clone()),
+                color: positions[0].color.clone(),
+                quote_eligible: positions
+                    .iter()
+                    .find_map(|position| position.quote_eligible),
+                valuation_note: notes
+                    .iter()
+                    .all(|note| *note == notes[0])
+                    .then(|| notes[0].map(str::to_owned))
+                    .flatten(),
+                currency,
                 shares,
                 vested_shares: positions
                     .iter()
                     .any(|position| position.vested_shares.is_some())
                     .then(|| {
-                        sum_shares(positions.iter().map(|position| {
-                            Some(position.vested_shares.or(position.shares).unwrap_or(0.0))
-                        }))
+                        // A position whose shares are unknown leaves the total unknown.
+                        sum_shares(
+                            positions
+                                .iter()
+                                .map(|position| position.vested_shares.or(position.shares)),
+                        )
                     })
                     .flatten(),
-                total_change_pct: value
+                total_change_pct: unrealized_gain
                     .zip(basis)
                     .filter(|(_, basis)| *basis > 0.0)
-                    .map(|(value, basis)| round2((value - basis) / basis * 100.0)),
+                    .map(|(gain, basis)| {
+                        round2(minor_units(gain) as f64 / minor_units(basis) as f64 * 100.0)
+                    }),
                 average_basis: basis
                     .zip(shares)
                     .filter(|(_, shares)| *shares > 0.0)
@@ -140,24 +215,33 @@ fn holding_totals(holdings: &[Holding]) -> Vec<HoldingTotal> {
                 weight: value
                     .filter(|value| *value >= 0.0 && known > 0)
                     .map(|value| round2(minor_units(value) as f64 / known as f64 * 100.0)),
-                daily_change_pct: agreed(|holding| holding.daily_change_pct),
-                weekly_change_pct: agreed(|holding| holding.weekly_change_pct),
+                price: quoted.price,
+                daily_change_pct: quoted.daily_change_pct,
+                weekly_change_pct: quoted.weekly_change_pct,
+                market_as_of: quoted.market_as_of.clone(),
                 accounts: accounts
                     .into_iter()
                     .map(|account_id| {
                         let parts = positions
                             .iter()
                             .filter(|position| position.account_id == account_id)
+                            .copied()
                             .collect::<Vec<_>>();
+                        let value = money(|holding| holding.value, &parts);
+                        let basis = money(|holding| holding.cost_basis, &parts);
                         HoldingPart {
                             account_id: account_id.to_owned(),
+                            currency: shared_currency(&parts),
                             shares: sum_shares(parts.iter().map(|part| part.shares)),
-                            value: sum(parts.iter().map(|part| part.value)),
+                            unrealized_gain: gain(value, basis),
+                            value,
+                            cost_basis: basis,
                         }
                     })
                     .collect(),
                 value,
-                basis,
+                cost_basis: basis,
+                unrealized_gain,
             }
         })
         .collect()
@@ -547,27 +631,48 @@ mod tests {
         let totals = rollup(&[], &all, 0.0, &FinanceSettings::default());
         let vti = &totals.holdings[0];
         assert_eq!(
-            (vti.shares, vti.value, vti.basis, vti.vested_shares),
+            (vti.shares, vti.value, vti.cost_basis, vti.vested_shares),
             (Some(1.6), Some(160.0), Some(140.0), Some(1.4))
+        );
+        assert_eq!(vti.unrealized_gain, Some(20.0));
+        assert_eq!(
+            (vti.name.as_str(), vti.currency.as_deref(), vti.price),
+            ("VTI", Some("USD"), Some(100.0))
         );
         assert_eq!(
             (vti.total_change_pct, vti.weight, vti.daily_change_pct),
             (Some(14.29), Some(80.0), Some(1.5))
         );
         assert_eq!(vti.average_basis, Some(87.5));
+        // A position whose shares are unknown leaves vested shares unknown, not short.
+        let mut unknown = holding("c", 0.0, None, 0.0);
+        unknown.shares = None;
+        let partial = rollup(
+            &[],
+            &[&holdings[..], &[unknown]].concat(),
+            0.0,
+            &FinanceSettings::default(),
+        );
+        assert_eq!(partial.holdings[0].vested_shares, None);
         // Each account's part, in the order first held.
         assert_eq!(
             vti.accounts,
             [
                 HoldingPart {
                     account_id: "a".into(),
+                    currency: Some("USD".into()),
                     shares: Some(1.3),
                     value: Some(130.0),
+                    cost_basis: Some(120.0),
+                    unrealized_gain: Some(10.0),
                 },
                 HoldingPart {
                     account_id: "b".into(),
+                    currency: Some("USD".into()),
                     shares: Some(0.3),
                     value: Some(30.0),
+                    cost_basis: Some(20.0),
+                    unrealized_gain: Some(10.0),
                 },
             ]
         );
@@ -584,6 +689,99 @@ mod tests {
         assert_eq!(
             (unknown.holdings[0].value, unknown.holdings[0].weight),
             (None, None)
+        );
+    }
+
+    /// A position with a synthetic quote, in `currency`.
+    fn position(account: &str, value: f64, basis: Option<f64>, currency: &str) -> Holding {
+        serde_json::from_value(json!({
+            "ticker": "SYN", "name": "Synthetic Co", "accountId": account, "shares": 2.0,
+            "price": value / 2.0, "value": value, "costBasis": basis, "dailyChangePct": 1.0,
+            "totalChangePct": null, "color": "", "currency": currency,
+            "marketAsOf": "2026-10-16T20:00:00Z",
+        }))
+        .unwrap()
+    }
+
+    #[test]
+    fn one_unknown_cost_basis_leaves_the_whole_positions_basis_and_gain_unknown() {
+        let totals = rollup(
+            &[],
+            &[
+                position("a", 300.0, Some(200.0), "USD"),
+                position("b", 100.0, None, "USD"),
+            ],
+            0.0,
+            &FinanceSettings::default(),
+        );
+        assert_eq!(totals.holdings.len(), 1);
+        let syn = &totals.holdings[0];
+        // The value is known in both accounts; the basis only in one, so it is unknown, not 200.
+        assert_eq!((syn.shares, syn.value), (Some(4.0), Some(400.0)));
+        assert_eq!(
+            (syn.cost_basis, syn.unrealized_gain, syn.total_change_pct),
+            (None, None, None)
+        );
+        assert_eq!(syn.average_basis, None);
+        // Each account keeps what it knows.
+        assert_eq!(
+            (syn.accounts[0].cost_basis, syn.accounts[0].unrealized_gain),
+            (Some(200.0), Some(100.0))
+        );
+        assert_eq!(
+            (syn.accounts[1].cost_basis, syn.accounts[1].unrealized_gain),
+            (None, None)
+        );
+    }
+
+    #[test]
+    fn positions_in_different_currencies_are_never_added() {
+        let totals = rollup(
+            &[],
+            &[
+                position("a", 300.0, Some(200.0), "USD"),
+                position("b", 100.0, Some(50.0), "CAD"),
+            ],
+            0.0,
+            &FinanceSettings::default(),
+        );
+        let syn = &totals.holdings[0];
+        // One record for the ticker; shares are shares in any currency, money is not summed.
+        assert_eq!(totals.holdings.len(), 1);
+        assert_eq!((syn.shares, syn.currency.as_deref()), (Some(4.0), None));
+        assert_eq!(
+            (syn.value, syn.cost_basis, syn.unrealized_gain, syn.weight),
+            (None, None, None, None)
+        );
+        assert_eq!(
+            syn.accounts
+                .iter()
+                .map(|part| (part.currency.as_deref(), part.value, part.unrealized_gain))
+                .collect::<Vec<_>>(),
+            [
+                (Some("USD"), Some(300.0), Some(100.0)),
+                (Some("CAD"), Some(100.0), Some(50.0)),
+            ]
+        );
+    }
+
+    #[test]
+    fn per_share_figures_come_from_the_newest_quote_together() {
+        let mut older = position("a", 300.0, Some(200.0), "USD");
+        older.market_as_of = Some("2026-10-15T20:00:00Z".into());
+        older.daily_change_pct = Some(-2.0);
+        let mut newer = position("b", 110.0, Some(100.0), "USD");
+        newer.daily_change_pct = Some(3.0);
+        let totals = rollup(&[], &[older, newer], 0.0, &FinanceSettings::default());
+        let syn = &totals.holdings[0];
+        assert_eq!(
+            (syn.price, syn.daily_change_pct, syn.market_as_of.as_deref()),
+            (Some(55.0), Some(3.0), Some("2026-10-16T20:00:00Z"))
+        );
+        // The gain and its percent come from the sums: 410 on a 300 basis.
+        assert_eq!(
+            (syn.unrealized_gain, syn.total_change_pct),
+            (Some(110.0), Some(36.67))
         );
     }
 }

@@ -106,10 +106,10 @@ describe('trip days and neighbours', () => {
 
 describe('trip places', () => {
   it('counts a city once per trip and ranks by purchases', () => {
-    const zurich = {
-      city: 'Zürich',
-      region: 'ZH',
-      country: 'CH',
+    const malaga = {
+      city: 'Málaga',
+      region: '51',
+      country: 'ES',
       purchases: 3,
       first: '2026-03-01',
     }
@@ -121,17 +121,17 @@ describe('trip places', () => {
       first: '2026-05-01',
     }
     const places = tripPlaces([
-      trip('a', '2026-03-01', '2026-03-02', { abroad: true, stops: [zurich] }),
+      trip('a', '2026-03-01', '2026-03-02', { abroad: true, stops: [malaga] }),
       trip('b', '2026-04-01', '2026-04-02', {
         abroad: true,
-        stops: [zurich, { ...zurich, purchases: 1 }],
+        stops: [malaga, { ...malaga, purchases: 1 }],
       }),
       trip('c', '2026-05-01', '2026-05-02', { stops: [austin] }),
     ])
     expect(places.map(({ label, trips, purchases }) => [label, trips, purchases])).toEqual([
-      ['Zürich, Switzerland', 2, 7],
+      ['Málaga, Spain', 2, 7],
       ['Austin, TX', 1, 5],
     ])
-    expect(places[0].abroad).toBe(true)
+    expect(places[0]?.abroad).toBe(true)
   })
 })

@@ -54,35 +54,6 @@
   margin: 0;
   accent-color: var(--accent);
 }
-.external-logo-setting {
-  display: flex;
-  max-width: 720px;
-  min-height: 56px;
-  margin-top: 12px;
-  align-items: center;
-  gap: 12px;
-  color: var(--text-secondary);
-  cursor: pointer;
-}
-.external-logo-setting input {
-  width: 16px;
-  height: 16px;
-  margin: 0;
-  flex: 0 0 auto;
-  accent-color: var(--accent);
-}
-.external-logo-setting span {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.external-logo-setting strong {
-  color: var(--text-primary);
-  font-size: var(--type-body);
-}
-.graph-window-options {
-  margin-top: 16px;
-}
 .settings-copy {
   margin: 8px 0 0;
   color: var(--text-tertiary);
@@ -139,19 +110,16 @@
   gap: 8px;
 }
 .diagnostics-stat-value strong {
-  overflow: hidden;
   font-size: var(--type-section);
   font-weight: 500;
   font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
+/* A market failure's message can run long; it wraps under its status. */
 .diagnostics-stat small {
-  overflow: hidden;
   color: var(--text-tertiary);
   font-size: var(--type-meta);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .logs-card {
   min-width: 0;
@@ -199,9 +167,8 @@
   font-size: var(--type-meta);
 }
 .news-row-meta > span:first-child {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 .news-row > svg {
   color: var(--text-tertiary);
@@ -329,6 +296,10 @@
 .connection-row:last-child,
 .activity-log-row:last-child {
   border-bottom: 0;
+}
+/* The row J and K have reached in a Diagnostics list. */
+.logs-page [data-keyboard-row]:focus {
+  background: var(--sidebar-accent);
 }
 .connection-row > div,
 .activity-log-row > div {

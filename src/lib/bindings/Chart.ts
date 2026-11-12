@@ -3,4 +3,4 @@
 /**
  * A report.
  */
-export type Chart = "cash-flow" | "income" | "interest" | "fees" | "amex-credits" | "dividends" | "realized";
+export type Chart = "cash-flow" | "income" | "interest" | "fees" | "card-credits" | "dividends" | "realized";

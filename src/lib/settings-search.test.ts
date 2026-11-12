@@ -47,7 +47,7 @@ it('merges overlapping highlight ranges', () => {
 it('maps former detail routes and anchors onto the single Settings page', () => {
   expect(settingsHashForPath('/settings/connections')).toBe('connections')
   expect(settingsHashForPath('/settings/accounts')).toBe('accounts')
-  expect(settingsHashForPath('/settings/accounts#platinum-benefits')).toBe('platinum-benefits')
+  expect(settingsHashForPath('/settings/accounts#benefit-visibility')).toBe('benefit-visibility')
   expect(settingsHashForPath('/settings#data-sources')).toBe('connections')
   expect(settingsHashForPath('/settings')).toBeUndefined()
 })
@@ -56,7 +56,7 @@ it('addresses Settings through the URL hash', () => {
   expect(settingsTarget('')).toBeUndefined()
   expect(settingsTarget('privacy')).toBeUndefined()
   expect(settingsTarget('#settings')).toBe('')
-  expect(settingsTarget('settings/platinum-benefits')).toBe('platinum-benefits')
+  expect(settingsTarget('settings/benefit-visibility')).toBe('benefit-visibility')
   expect(settingsHash()).toBe('settings')
   expect(settingsHash('privacy')).toBe('settings/privacy')
 })

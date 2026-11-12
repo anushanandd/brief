@@ -13,6 +13,7 @@ pub async fn authenticate_sensitive_action() -> Result<(), String> {
         let context = unsafe { LAContext::new() };
         // macOS manages Touch ID and the normal password fallback for this policy.
         let policy = LAPolicy::DeviceOwnerAuthentication;
+        // SAFETY: `context` is a live LAContext and `policy` a defined policy value.
         unsafe { context.canEvaluatePolicy_error(policy) }.map_err(|error| error.to_string())?;
 
         let reason = NSString::from_str("change protected Brief data");
@@ -20,6 +21,8 @@ pub async fn authenticate_sensitive_action() -> Result<(), String> {
         let reply = RcBlock::new(move |success: Bool, _error: *mut NSError| {
             let _ = sender.send(success.as_bool());
         });
+        // SAFETY: the framework copies `reply` and calls it once from its own queue; `context`
+        // and `reason` stay alive until `recv` below returns, after that call.
         unsafe {
             context.evaluatePolicy_localizedReason_reply(policy, &reason, &reply);
         }

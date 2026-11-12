@@ -7,8 +7,7 @@ import { getFinanceSnapshot, getIntegrationStatus, isTauri } from '../lib/api'
 import { localDateKey } from '../lib/dates'
 import { hasLegacySettings, importLegacyFinanceSettings } from '../lib/finance-settings'
 import { formatUpdatedAt } from '../lib/format'
-import { FinanceContext, financeQueryKey } from './use-finance'
-import { usePrefetchOpeningSpending } from './use-spending-period'
+import { FinanceContext, financeQueryKey, shareFinanceSnapshot } from './use-finance'
 
 export type RuntimeLogEntry = {
   id: number
@@ -70,8 +69,10 @@ function useBaseFinanceState() {
     queryFn: getFinanceSnapshot,
     enabled: !legacyImport || annotations.isSuccess || annotations.isError,
     staleTime: Number.POSITIVE_INFINITY,
+    // A refetch (`finance-snapshot-updated`, a new day) that finishes after a newer write
+    // keeps the newer snapshot.
+    structuralSharing: shareFinanceSnapshot,
   })
-  usePrefetchOpeningSpending(query.data)
   const insightsDay = query.data?.insights?.today
   const refetchSnapshot = query.refetch
   const tickers = useMemo(
@@ -146,34 +147,59 @@ function useBaseFinanceState() {
     )
   }, [appendRuntimeLog, integration.data, integration.isError])
 
-  return {
-    ...query,
-    refetch: async () => {
-      await annotations.refetch()
-      const result = await query.refetch()
-      return result
-    },
-    isLoading: (legacyImport && annotations.isLoading) || query.isLoading,
-    isError: query.isError,
-    error: query.error,
-    annotationWarning: annotations.isError
-      ? 'Couldn’t load annotations'
-      : annotations.data?.warning,
-    data: query.data,
-    integrationStatus: integration.data ?? {
-      plaid: false,
-      snaptrade: false,
-      alpaca: false,
-      alphaVantage: false,
-      sec: false,
-      exa: false,
-    },
-    integrationStatusLoading: integration.isLoading,
-    liveMarketEnabled: integration.data?.alpaca === true && !query.data?.recovery,
-    marketSymbols: tickers,
-    runtimeLog,
-    appendRuntimeLog,
-  }
+  const refetchAnnotations = annotations.refetch
+  const refetch = useCallback(async () => {
+    await refetchAnnotations()
+    return refetchSnapshot()
+  }, [refetchAnnotations, refetchSnapshot])
+  const isLoading = (legacyImport && annotations.isLoading) || query.isLoading
+  const annotationWarning = annotations.isError
+    ? 'Couldn’t load annotations'
+    : annotations.data?.warning
+  const integrationStatus = integration.data ?? noIntegrations
+  const liveMarketEnabled = integration.data?.alpaca === true && !query.data?.recovery
+  // One value per change, so consumers and their memos skip renders where nothing moved.
+  return useMemo(
+    () => ({
+      data: query.data,
+      dataUpdatedAt: query.dataUpdatedAt,
+      refetch,
+      isLoading,
+      isError: query.isError,
+      error: query.error,
+      annotationWarning,
+      integrationStatus,
+      integrationStatusLoading: integration.isLoading,
+      liveMarketEnabled,
+      marketSymbols: tickers,
+      runtimeLog,
+      appendRuntimeLog,
+    }),
+    [
+      query.data,
+      query.dataUpdatedAt,
+      refetch,
+      isLoading,
+      query.isError,
+      query.error,
+      annotationWarning,
+      integrationStatus,
+      integration.isLoading,
+      liveMarketEnabled,
+      tickers,
+      runtimeLog,
+      appendRuntimeLog,
+    ],
+  )
+}
+
+const noIntegrations = {
+  plaid: false,
+  snaptrade: false,
+  alpaca: false,
+  alphaVantage: false,
+  sec: false,
+  exa: false,
 }
 
 export type FinanceState = ReturnType<typeof useBaseFinanceState>

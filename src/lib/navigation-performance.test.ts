@@ -32,7 +32,7 @@ it('records completed visible switches after two frames and discards superseded 
   expect(performance.getEntriesByName('brief:navigation-to-frame')).toHaveLength(0)
   now.mockReturnValue(30)
   frame()
-  expect(performance.getEntriesByName('brief:navigation-to-frame')[0].duration).toBe(20)
+  expect(performance.getEntriesByName('brief:navigation-to-frame')[0]?.duration).toBe(20)
   navigate()
   render()
   navigate()

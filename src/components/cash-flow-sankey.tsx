@@ -17,29 +17,17 @@ export type CashFlowSankeyValues = CashFlow
 type Flow = CashFlowItem & { tone: FlowTone }
 type PositionedFlow = Flow & { y: number; height: number; center: number }
 
+/**
+ * The chart's two sides as Rust grouped them: each lists its largest groups and one "Other",
+ * so the chart stays a few rows tall, then fees and taxes, then the gap or what was left.
+ */
 export function cashFlowSankeyModel(values: CashFlowSankeyValues) {
   const sources: Flow[] = values.sources
     .filter(({ value }) => value > 0)
     .map((flow) => ({ ...flow, tone: 'positive' as const }))
-  const uses: Flow[] = [
-    ...values.purchases
-      .filter(({ value }) => value > 0)
-      .map((flow) => ({ ...flow, tone: 'negative' as const })),
-    {
-      id: 'fees',
-      label: 'Fees',
-      value: values.fees,
-      children: [],
-      tone: 'negative' as const,
-    },
-    {
-      id: 'taxes',
-      label: 'Taxes',
-      value: values.taxes,
-      children: [],
-      tone: 'negative' as const,
-    },
-  ].filter(({ value }) => value > 0)
+  const uses: Flow[] = [...values.purchases, ...(values.charges ? [values.charges] : [])]
+    .filter(({ value }) => value > 0)
+    .map((flow) => ({ ...flow, tone: 'negative' as const }))
   // Rust found what came in, what went out, and the gap or remainder between them.
   const total = Math.max(values.inflow, values.outflow)
   if (values.gap > 0) {
@@ -102,7 +90,10 @@ const flowDate = (date: string) => (validDate(date) ? formatShortDay(date) : '')
 
 export const boundedTransactionTitle = formatActivityName
 
+/** What a band holds, read aloud: an "Other" its groups, any other its transactions. */
 function transactionLabel(flow: Flow) {
+  if (flow.parts?.length)
+    return flow.parts.map((part) => `${part.label} ${formatCurrency(part.value)}`).join(', ')
   return flow.children
     .map((transaction) => {
       const date = flowDate(transaction.date)
@@ -111,9 +102,20 @@ function transactionLabel(flow: Flow) {
     .join(', ')
 }
 
+const shownRows = 8
+
+/** A band's detail: an "Other" lists the groups it holds; any other, its transactions. */
 function FlowTooltip({ flow }: { flow: Flow }) {
-  const details = flow.children.slice(0, 8)
-  const remaining = flow.children.length - details.length
+  const parts = flow.parts ?? []
+  const rows = parts.length
+    ? parts.map((part) => ({ id: part.label, label: part.label, value: part.value }))
+    : flow.children.map((transaction) => ({
+        id: transaction.id,
+        label: `${boundedTransactionTitle(transaction.label)} · ${flowDate(transaction.date)}`,
+        value: transaction.value,
+      }))
+  const details = rows.slice(0, shownRows)
+  const remaining = rows.length - details.length
   return (
     <TooltipContent className="treemap-tooltip sankey-tooltip" sideOffset={8}>
       <div className="treemap-tooltip-heading">
@@ -121,14 +123,16 @@ function FlowTooltip({ flow }: { flow: Flow }) {
         <span>{formatCurrency(flow.value)}</span>
       </div>
       <div className="treemap-tooltip-composition">
-        <span>{pluralize(flow.children.length, 'Transaction')}</span>
+        <span>
+          {parts.length
+            ? `${countOf(parts.length, 'group')} · ${countOf(flow.children.length, 'transaction')}`
+            : pluralize(flow.children.length, 'Transaction')}
+        </span>
         <ul>
-          {details.map((transaction) => (
-            <li key={transaction.id}>
-              <span>
-                {boundedTransactionTitle(transaction.label)} · {flowDate(transaction.date)}
-              </span>
-              <strong>{formatCurrency(transaction.value)}</strong>
+          {details.map((row) => (
+            <li key={row.id}>
+              <span>{row.label}</span>
+              <strong>{formatCurrency(row.value)}</strong>
             </li>
           ))}
           {remaining > 0 ? <li className="muted">+{remaining} more</li> : null}
@@ -162,15 +166,18 @@ const labelSpacing = 38
 
 /** Moves label centers apart by at least `spacing`, staying within `[min, max]`. */
 export function spreadLabels(centers: number[], spacing: number, min: number, max: number) {
-  const placed = centers.map((center, index) => ({ center, index }))
-  placed.sort((a, b) => a.center - b.center)
-  for (let index = 0; index < placed.length; index += 1) {
-    const floor = index ? placed[index - 1].center + spacing : min
-    placed[index].center = Math.max(placed[index].center, floor)
+  const placed = centers
+    .map((center, index) => ({ center, index }))
+    .toSorted((a, b) => a.center - b.center)
+  let floor = min
+  for (const label of placed) {
+    label.center = Math.max(label.center, floor)
+    floor = label.center + spacing
   }
-  for (let index = placed.length - 1; index >= 0; index -= 1) {
-    const ceiling = index < placed.length - 1 ? placed[index + 1].center - spacing : max
-    placed[index].center = Math.min(placed[index].center, ceiling)
+  let ceiling = max
+  for (const label of placed.toReversed()) {
+    label.center = Math.min(label.center, ceiling)
+    ceiling = label.center - spacing
   }
   const result = Array<number>(centers.length)
   for (const { center, index } of placed) result[index] = center
@@ -320,10 +327,15 @@ export function CashFlowSankey({ values }: { values: CashFlowSankeyValues }) {
           <strong>{formatCurrency(model.total)}</strong>
         </span>
         {sources.map((flow, index) => (
-          <FlowLabel flow={flow} side="source" top={sourceLabels[index]} key={flow.id} />
+          <FlowLabel
+            flow={flow}
+            side="source"
+            top={sourceLabels[index] ?? flow.center}
+            key={flow.id}
+          />
         ))}
         {uses.map((flow, index) => (
-          <FlowLabel flow={flow} side="use" top={useLabels[index]} key={flow.id} />
+          <FlowLabel flow={flow} side="use" top={useLabels[index] ?? flow.center} key={flow.id} />
         ))}
       </div>
     </div>

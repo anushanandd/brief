@@ -174,7 +174,7 @@
   align-items: start;
   gap: 16px;
 }
-@media (max-width: 1000px) {
+@media (max-width: 1050px) {
   .holding-columns {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -185,6 +185,56 @@
   gap: 16px;
   min-width: 0;
 }
+/* A holding's latest report: Rust's line, then the release's own sentences, quoted. */
+.holding-earnings {
+  display: grid;
+  gap: 12px;
+}
+.holding-earnings-when {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.holding-earnings-line {
+  margin: 0;
+  font-size: var(--type-body);
+  line-height: 1.5;
+}
+.holding-earnings-line strong {
+  font-weight: 500;
+}
+.holding-earnings-expected {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.holding-earnings-quote {
+  display: grid;
+  gap: 4px;
+  font-size: var(--type-body);
+  line-height: 1.45;
+}
+.holding-earnings-quote > small {
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.holding-earnings-quote ul {
+  display: grid;
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.holding-earnings-quote q {
+  color: var(--text-secondary);
+}
+.holding-earnings-links {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16px;
+  font-size: var(--type-meta);
+}
+.holding-earnings-links a {
+  color: var(--accent);
+}
 .investments-pane {
   display: grid;
   align-content: start;
@@ -192,33 +242,66 @@
   min-width: 0;
 }
 
-/* The chart and its summary in the main column, the period's figures and what's ahead in a
-   narrow one on the right. Three quarters and one: the side column is as wide as one card of a
-   four-card strip, and the holding's news below shares the split so the columns line up. */
+/* Two rows of a wide card and a narrow one: the chart beside the period's figures, then the
+   summary beside what's ahead. Three quarters and one: the narrow column is as wide as one card
+   of a four-card strip, and the sections below share the split so the columns line up. The
+   chart stretches to its row, so one rule runs under both cards of the first row. */
 .investments-hero {
   display: grid;
   grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
-  align-items: start;
-  gap: 16px;
 }
-.investments-main,
-.investments-side {
+.investments-hero > :nth-child(odd) {
+  grid-column: 1;
+}
+.investments-hero > :nth-child(even) {
+  grid-column: 2;
+}
+.investments-hero > :nth-child(-n + 2) {
+  grid-row: 1;
+}
+.investments-hero > :nth-child(n + 3) {
+  grid-row: 2;
+  align-self: start;
+  border-top: 0;
+}
+.investments-hero:has(> :nth-child(3))::after {
+  grid-row: 2;
+  grid-column: 1 / -1;
+  align-self: start;
+  border-top: var(--hairline) solid var(--border-subtle);
+  content: '';
+}
+/* Every holding, and what needs you beside them when anything does. */
+.investments-holdings {
   display: grid;
-  align-content: start;
-  gap: 16px;
-  min-width: 0;
+  grid-template-columns: minmax(0, 3fr) minmax(0, 1fr);
+  align-items: start;
 }
-@media (max-width: 1000px) {
-  .investments-hero {
+.investments-holdings:not(:has(> :nth-child(2))) {
+  grid-template-columns: minmax(0, 1fr);
+}
+@media (max-width: 1050px) {
+  .investments-hero,
+  .investments-holdings {
     grid-template-columns: minmax(0, 1fr);
+  }
+  .investments-hero > * {
+    grid-row: auto;
+    grid-column: 1;
+  }
+  .investments-hero > :nth-child(n + 3) {
+    border-top: var(--hairline) solid var(--border-subtle);
+  }
+  .investments-hero::after {
+    display: none;
   }
   /* Stacked under the chart, the side card's figures run across in columns. */
   .investments-side-stats > .metric {
     flex-basis: 150px;
   }
 }
-/* The chart fills its card, which keeps a steady height above the summary. */
-.investments-main > .brokerage-performance-card {
+/* The chart fills its card, which keeps a steady height beside the period's figures. */
+.investments-hero > .brokerage-performance-card {
   display: flex;
   flex-direction: column;
 }
@@ -260,19 +343,16 @@
 .investments-side-stats .metric > strong:not(.positive, .negative) .metric-detail {
   color: var(--text-tertiary);
 }
-/* What the period paid and realized; each figure opens its report. */
+/* What the period paid and realized, one more row of figures; each opens its report. The
+   figures above end in 16px of padding, so this makes up their 24px row gap. */
 .investments-reports {
-  margin-top: 20px;
-  padding-top: 20px;
-  border-top: var(--hairline) solid var(--border-subtle);
+  margin-top: 8px;
 }
 .investments-side-stats:empty {
   display: none;
 }
 .investments-side-stats:empty + .investments-reports {
   margin-top: 0;
-  padding-top: 0;
-  border-top: 0;
 }
 .investments-report-metric {
   color: inherit;
@@ -318,32 +398,6 @@
 .investments-portfolio-card .home-balance-header {
   margin-bottom: 8px;
 }
-.investments-sentence {
-  margin: 10px 0 0;
-  color: var(--text-secondary);
-  font-size: var(--type-section);
-  line-height: 1.45;
-  text-wrap: pretty;
-  font-variant-numeric: tabular-nums;
-}
-.investments-sentence > strong {
-  font-weight: 500;
-}
-.investments-sentence-unavailable {
-  color: var(--text-tertiary);
-}
-.investments-standout {
-  margin: 4px 0 0;
-  color: var(--text-tertiary);
-  font-size: var(--type-body);
-  line-height: 1.5;
-}
-.investments-standout > strong {
-  font-weight: 500;
-}
-.investments-standout a {
-  color: var(--accent);
-}
 /* Two columns of equal weight at the foot of the page. */
 .investments-pair {
   display: grid;
@@ -356,7 +410,7 @@
 .investments-coming-card > .section-heading {
   margin-bottom: 12px;
 }
-/* One decision per row, in the column under the movers. */
+/* One decision per row, in the narrow column beside the holdings. */
 .investments-attention {
   display: grid;
   gap: 2px;
@@ -507,6 +561,12 @@ div.investments-attention-row:hover {
   color: var(--text-tertiary);
   font-size: var(--type-meta);
 }
+/* A saved summary Rust is bringing up to date: said quietly beside its time. */
+.investment-summary-updating {
+  margin-right: 8px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
 /* The news behind the day: each headline as published, with its publisher and time below. */
 .brief-headlines {
   display: grid;
@@ -528,12 +588,52 @@ div.investments-attention-row:hover {
 .brief-headlines a:hover {
   background: var(--hover-wash);
 }
-.brief-headlines a:hover > span {
-  color: var(--accent);
-}
 .brief-headlines small {
   color: var(--text-tertiary);
   font-size: var(--type-meta);
+}
+/* Market, you, and what changed: each part labeled quietly, spaced rather than ruled. */
+.brief-section + .brief-section {
+  margin-top: 16px;
+}
+.brief-section > h3 {
+  margin: 0 0 4px;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.brief-section > .brief-headlines:first-of-type:not(:first-child) {
+  margin-top: 0;
+}
+/* A story behind the day: the holding, then the sentence that says why, then its source. */
+.brief-headlines a,
+.brief-story-static {
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: baseline;
+  column-gap: 10px;
+}
+.brief-headlines a:not(:has(> .brief-story-ticker)) {
+  grid-template-columns: minmax(0, 1fr);
+}
+.brief-story-static {
+  display: grid;
+  padding: 8px;
+  font-size: var(--type-body);
+  line-height: 1.45;
+}
+.brief-story-ticker {
+  font-weight: 600;
+}
+.brief-story-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+.brief-story-detail {
+  color: var(--text-secondary);
+}
+.brief-headlines a:hover .brief-story-copy > span:first-child {
+  color: var(--accent);
 }
 .investment-brief-pending {
   display: grid;
@@ -578,21 +678,54 @@ div.investments-attention-row:hover {
 .holdings-table-card {
   padding-bottom: var(--card-padding-end);
 }
+/* The table never scrolls sideways: as its card narrows it drops News, then Weight, then the
+   all-time Gain, then the page's period, each still on the holding's own page. */
 .holdings-table-scroll {
-  overflow-x: auto;
-  margin: 0 calc(var(--card-padding) * -1);
-  padding: 0 var(--card-padding);
+  container: holdings-table / inline-size;
 }
 .holdings-table {
-  min-width: 780px;
+  --holdings-columns: minmax(160px, 1.8fr) repeat(2, minmax(88px, 0.8fr)) minmax(100px, 0.9fr)
+    minmax(120px, 1.1fr) minmax(100px, 0.9fr) minmax(64px, 0.5fr);
   font-variant-numeric: tabular-nums;
+}
+@container holdings-table (max-width: 820px) {
+  .holdings-table {
+    --holdings-columns: minmax(160px, 1.8fr) repeat(2, minmax(88px, 0.8fr)) minmax(100px, 0.9fr)
+      minmax(120px, 1.1fr) minmax(100px, 0.9fr);
+  }
+  .holdings-table :is(.holdings-table-head, .holdings-table-row) > :nth-child(7) {
+    display: none;
+  }
+}
+@container holdings-table (max-width: 700px) {
+  .holdings-table {
+    --holdings-columns: minmax(140px, 1.8fr) repeat(2, minmax(88px, 0.8fr)) minmax(100px, 0.9fr)
+      minmax(100px, 0.9fr);
+  }
+  .holdings-table :is(.holdings-table-head, .holdings-table-row) > :nth-child(5) {
+    display: none;
+  }
+}
+@container holdings-table (max-width: 560px) {
+  .holdings-table {
+    --holdings-columns: minmax(120px, 1.8fr) repeat(2, minmax(88px, 0.8fr)) minmax(100px, 0.9fr);
+  }
+  .holdings-table :is(.holdings-table-head, .holdings-table-row) > :nth-child(6) {
+    display: none;
+  }
+}
+@container holdings-table (max-width: 440px) {
+  .holdings-table {
+    --holdings-columns: minmax(120px, 1.8fr) minmax(88px, 0.8fr) minmax(100px, 0.9fr);
+  }
+  .holdings-table :is(.holdings-table-head, .holdings-table-row) > :nth-child(3) {
+    display: none;
+  }
 }
 .holdings-table-head,
 .holdings-table-row {
   display: grid;
-  grid-template-columns:
-    minmax(180px, 1.8fr) repeat(2, minmax(88px, 0.8fr)) minmax(100px, 0.9fr)
-    minmax(120px, 1.1fr) minmax(100px, 0.9fr) minmax(64px, 0.5fr);
+  grid-template-columns: var(--holdings-columns);
   align-items: center;
   column-gap: 16px;
 }
@@ -642,6 +775,7 @@ div.investments-attention-row:hover {
 .holdings-table-row > :not(:first-child) {
   justify-self: end;
   text-align: right;
+  white-space: nowrap;
 }
 .holdings-table-name {
   display: flex;
@@ -660,13 +794,12 @@ div.investments-attention-row:hover {
 .holdings-table-row:hover .holdings-table-name strong {
   color: var(--accent);
 }
+/* A long fund name wraps under its ticker. */
 .holdings-table-name small,
 .holdings-table-pair > small {
-  overflow: hidden;
   color: var(--text-tertiary);
   font-size: var(--type-meta);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .holdings-table-pair {
   display: grid;
@@ -731,6 +864,11 @@ div.investments-attention-row:hover {
 }
 .investments-coming-row:hover > span:nth-child(2) {
   color: var(--accent);
+}
+/* What's expected sits on its own line under the event. */
+.investments-coming-row .investments-coming-detail {
+  display: block;
+  margin-top: 2px;
 }
 
 /* Returns for every period beside the S&P 500; the page's period is marked. */

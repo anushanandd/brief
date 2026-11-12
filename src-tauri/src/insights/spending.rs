@@ -436,7 +436,7 @@ fn net(activity: &Activity, start: NaiveDate, end: NaiveDate, pending: bool) -> 
         .filter(|(date, transaction)| {
             // A Wallet row is ahead of the issuer, and no balance holds it yet.
             transaction.pending == pending
-                && !transaction.from_wallet()
+                && !transaction.wallet_only()
                 && *date >= start
                 && *date <= end
         })
@@ -1174,7 +1174,7 @@ mod tests {
         let mut again = transaction("b", "2026-09-03", -10.0, "Dining");
         again.place = Some(at("Austin", "TX", "US"));
         let mut abroad = transaction("c", "2026-09-04", -50.0, "Dining");
-        abroad.place = Some(at("Interlaken", "BE", "CH"));
+        abroad.place = Some(at("Sevilla", "51", "ES"));
         let unplaced = transaction("d", "2026-09-05", -10.0, "Dining");
         let places = places_spent(&[&austin, &again, &abroad, &unplaced], 10_000);
         let shown = places
@@ -1183,7 +1183,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             shown,
-            [("Interlaken, CH", 50.0, 50.0), ("Austin, TX", 40.0, 40.0)]
+            [("Sevilla, ES", 50.0, 50.0), ("Austin, TX", 40.0, 40.0)]
         );
     }
 

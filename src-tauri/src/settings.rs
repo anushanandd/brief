@@ -10,6 +10,10 @@ const MAX_ACCOUNTS: usize = 500;
 const MAX_ID_LENGTH: usize = 220;
 const MAX_NAME_LENGTH: usize = 80;
 const MAX_HIDDEN_BENEFITS: usize = 100;
+const MAX_CARD_PRODUCTS: usize = 20;
+const MAX_CARD_BENEFITS: usize = 60;
+/// A card's rules are about 10 KB of text; this leaves room for a generous one, not a dump.
+const MAX_CARD_RULES_BYTES: usize = 64 * 1024;
 const MAX_MANUAL_ACCOUNTS: usize = 50;
 const MAX_MANUAL_ENTRIES: usize = 1_000;
 const MAX_MANUAL_VALUE: f64 = 1_000_000_000_000.0;
@@ -58,9 +62,20 @@ pub struct FinanceSettings {
     #[ts(optional)]
     pub calendar_id: Option<String>,
     /// Card products tracked for benefits, keyed by credit account ID. The spending card is
-    /// tracked without an entry.
+    /// tracked without an entry. A product with no rules in `card_rules` tracks nothing.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub benefit_cards: BTreeMap<String, String>,
+    /// The benefit rules of each card product Brief knows: applied from the open card catalog,
+    /// or edited or imported by the user. Brief ships none.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub card_rules: Vec<crate::insights::benefits::CardRules>,
+    /// The open card benefits catalog is downloaded and applied unless this is set.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub card_catalog_off: bool,
+    /// Cards whose catalog match was too close to call, with the catalog cards to choose
+    /// from; choosing one applies it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub card_choices: Vec<CardChoice>,
     /// How an account is taxed when its provider subtype says otherwise or nothing:
     /// `taxable`, `taxDeferred`, or `taxFree`, keyed by account ID.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
@@ -107,11 +122,22 @@ pub struct FinanceSettings {
     /// never asks twice.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub explanation_reviews: BTreeMap<String, ExplanationReview>,
+    /// Your answers to suggested categories, by transaction id. A rejected category is never
+    /// suggested for that transaction again and counts against it for the merchant; a kept one
+    /// is saved as your category, so here it only feeds the detector's precision.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub category_reviews: BTreeMap<String, CategoryReview>,
     /// Program rules you approved from research, with their citations.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub programs: Vec<crate::evidence::programs::Program>,
     /// Opt-in web research: generic queries from public names, each logged, only when on.
     pub research: bool,
+    /// An Ollama model on this Mac that reads long documents whole, such as an earnings
+    /// release; unset leaves reading to Apple Intelligence and rules. Reached only on the
+    /// loopback address, so nothing leaves the Mac.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub local_model: Option<String>,
     /// Merchant sites, Mac sources, link reviews, and person handles left with Artha; settings
     /// saved with them still load and drop the keys.
     #[serde(rename = "merchantSites", skip_serializing)]
@@ -182,6 +208,14 @@ pub enum ExplanationReview {
     Dismissed,
 }
 
+/// Your answer to one suggested category.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CategoryReview {
+    pub category: String,
+    pub accepted: bool,
+}
+
 /// The readable copy's place: Brief writes `Brief Data` inside the chosen folder.
 #[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
 #[serde(deny_unknown_fields, rename_all = "camelCase")]
@@ -191,6 +225,22 @@ pub struct DataFolder {
     /// Write every amount as `•••`.
     #[serde(default)]
     pub masked: bool,
+}
+
+/// A card whose catalog match was too close to call, and the catalog cards it could be.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CardChoice {
+    pub account_id: String,
+    pub candidates: Vec<CardChoiceOption>,
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
+#[serde(deny_unknown_fields, rename_all = "camelCase")]
+pub struct CardChoiceOption {
+    pub id: String,
+    pub name: String,
+    pub issuer: String,
 }
 
 /// Someone transactions and trips can be tagged with. Tagging never changes an amount or a
@@ -543,11 +593,51 @@ impl FinanceSettings {
             return Err(invalid("benefit visibility"));
         }
         if self.benefit_cards.len() > MAX_ACCOUNTS
-            || self.benefit_cards.iter().any(|(id, product)| {
-                !valid_id(id) || crate::insights::benefits::product(product).is_none()
-            })
+            || self
+                .benefit_cards
+                .iter()
+                .any(|(id, product)| !valid_id(id) || !valid_product(product))
         {
             return Err(invalid("card benefits"));
+        }
+        let mut products = BTreeSet::new();
+        if self.card_rules.len() > MAX_CARD_PRODUCTS
+            || self.card_rules.iter().any(|rules| {
+                !valid_product(&rules.product)
+                    || !products.insert(rules.product.as_str())
+                    || rules.benefits.len() > MAX_CARD_BENEFITS
+                    || rules
+                        .benefits
+                        .iter()
+                        .filter_map(|benefit| benefit.logo_domain.as_deref())
+                        .any(|domain| !valid_domain(domain))
+                    || rules.benefits.iter().any(|benefit| {
+                        benefit
+                            .category
+                            .as_deref()
+                            .is_some_and(|category| !valid_category(category))
+                    })
+                    || serde_json::to_vec(rules)
+                        .map_or(true, |json| json.len() > MAX_CARD_RULES_BYTES)
+            })
+        {
+            return Err(invalid("card rules"));
+        }
+        crate::insights::benefits::Catalog::new(&self.card_rules)?;
+        if self.card_choices.len() > MAX_ACCOUNTS
+            || self.card_choices.iter().any(|choice| {
+                !valid_id(&choice.account_id)
+                    || choice.candidates.is_empty()
+                    || choice.candidates.len() > MAX_CARD_PRODUCTS
+                    || choice.candidates.iter().any(|option| {
+                        option.id.is_empty()
+                            || option.id.len() > 128
+                            || option.name.len() > 200
+                            || option.issuer.len() > 200
+                    })
+            })
+        {
+            return Err(invalid("card choices"));
         }
         if self.account_tax_treatments.len() > MAX_ACCOUNTS
             || self.account_tax_treatments.iter().any(|(id, treatment)| {
@@ -645,6 +735,14 @@ impl FinanceSettings {
             Some(_) => return Err(invalid("calendar")),
             None => None,
         };
+        let local_model = match self.local_model.as_deref().map(str::trim) {
+            None | Some("") => None,
+            Some(name) => Some(
+                crate::providers::reading::local_model(Some(name))
+                    .ok_or_else(|| invalid("local model"))?
+                    .to_owned(),
+            ),
+        };
         if self.chapters.len() > MAX_CHAPTERS
             || self.planned_chapters.len() > MAX_CHAPTERS
             || self.explanation_reviews.len() > MAX_REVIEWS
@@ -703,6 +801,13 @@ impl FinanceSettings {
         if self.explanation_reviews.keys().any(|id| !valid_id(id)) {
             return Err(invalid("explanation review"));
         }
+        if self.category_reviews.len() > MAX_REVIEWS
+            || self.category_reviews.iter().any(|(id, review)| {
+                !valid_id(id) || review.category.trim().is_empty() || review.category.len() > 100
+            })
+        {
+            return Err(invalid("category review"));
+        }
         for program in &self.programs {
             program.validate()?;
         }
@@ -733,6 +838,9 @@ impl FinanceSettings {
             calendar_sync: self.calendar_sync,
             calendar_id,
             benefit_cards: self.benefit_cards,
+            card_rules: self.card_rules,
+            card_catalog_off: self.card_catalog_off,
+            card_choices: self.card_choices,
             account_tax_treatments: self.account_tax_treatments,
             tax_profile: self.tax_profile.map(|profile| TaxProfile {
                 taxable_income: crate::numeric::round2(profile.taxable_income),
@@ -757,8 +865,22 @@ impl FinanceSettings {
             chapters,
             planned_chapters,
             explanation_reviews: self.explanation_reviews,
+            category_reviews: self
+                .category_reviews
+                .into_iter()
+                .map(|(id, review)| {
+                    (
+                        id,
+                        CategoryReview {
+                            category: review.category.trim().to_owned(),
+                            ..review
+                        },
+                    )
+                })
+                .collect(),
             programs: self.programs,
             research: self.research,
+            local_model,
             retired_merchant_sites: None,
             retired_mac_sources: None,
             retired_link_reviews: None,
@@ -802,6 +924,7 @@ impl FinanceSettings {
         next.plaid_liabilities |= imported.plaid_liabilities;
         next.background_refresh |= imported.background_refresh;
         next.notifications |= imported.notifications;
+        next.card_catalog_off |= imported.card_catalog_off;
         for (id, product) in imported.benefit_cards {
             next.benefit_cards.entry(id).or_insert(product);
         }
@@ -844,6 +967,9 @@ impl FinanceSettings {
         for (id, review) in imported.explanation_reviews {
             next.explanation_reviews.entry(id).or_insert(review);
         }
+        for (id, review) in imported.category_reviews {
+            next.category_reviews.entry(id).or_insert(review);
+        }
         for program in imported.programs {
             if !next.programs.iter().any(|known| known.id == program.id) {
                 next.programs.push(program);
@@ -853,8 +979,58 @@ impl FinanceSettings {
     }
 }
 
+/// Settings with no more category reviews than `MAX_REVIEWS`, so answering a suggestion never
+/// fails on the cap: reviews of transactions no longer saved go first, then the oldest.
+pub fn within_review_limit(
+    mut settings: FinanceSettings,
+    transactions: &[crate::finance_contract::Transaction],
+) -> FinanceSettings {
+    let Some(excess) = settings.category_reviews.len().checked_sub(MAX_REVIEWS) else {
+        return settings;
+    };
+    let dates = transactions
+        .iter()
+        .map(|transaction| (transaction.id.as_str(), transaction.posted_date()))
+        .collect::<BTreeMap<_, _>>();
+    let mut oldest = settings
+        .category_reviews
+        .keys()
+        .map(|id| (dates.get(id.as_str()).copied(), id.clone()))
+        .collect::<Vec<_>>();
+    oldest.sort();
+    for (_, id) in oldest.into_iter().take(excess) {
+        settings.category_reviews.remove(&id);
+    }
+    settings
+}
+
 fn benefit_id_char(character: char) -> bool {
     character.is_ascii_alphanumeric() || character == '-'
+}
+
+/// A bare domain such as `example.com`: no scheme, path, or port.
+fn valid_domain(domain: &str) -> bool {
+    domain.len() <= 253
+        && domain.contains('.')
+        && crate::insights::forecast::website_domain(domain).as_deref() == Some(domain)
+}
+
+/// A benefit category: a short lowercase word, such as `dining`.
+fn valid_category(category: &str) -> bool {
+    !category.is_empty()
+        && category.len() <= 32
+        && category
+            .chars()
+            .all(|character| character.is_ascii_lowercase() || character == '-')
+}
+
+/// A card product id: a short lowercase slug, such as `example-card`.
+fn valid_product(product: &str) -> bool {
+    !product.is_empty()
+        && product.len() <= 64
+        && product.chars().all(|character| {
+            character.is_ascii_lowercase() || character.is_ascii_digit() || character == '-'
+        })
 }
 
 #[cfg(test)]
@@ -870,7 +1046,7 @@ mod tests {
                 ("plaid:two".into(), "   ".into()),
             ]),
             account_start_dates: BTreeMap::from([("plaid:one".into(), "2026-01-31".into())]),
-            hidden_benefit_ids: vec!["uber-cash".into(), "resy".into(), "uber-cash".into()],
+            hidden_benefit_ids: vec!["travel".into(), "dining".into(), "travel".into()],
             plaid_liabilities: true,
             ..Default::default()
         }
@@ -881,7 +1057,7 @@ mod tests {
             settings.account_names,
             BTreeMap::from([("plaid:one".into(), "Everyday".into())])
         );
-        assert_eq!(settings.hidden_benefit_ids, vec!["resy", "uber-cash"]);
+        assert_eq!(settings.hidden_benefit_ids, vec!["dining", "travel"]);
         assert!(settings.plaid_liabilities);
 
         for invalid in [
@@ -911,13 +1087,13 @@ mod tests {
                 ("plaid:one".into(), "Legacy".into()),
                 ("plaid:two".into(), "Added".into()),
             ]),
-            hidden_benefit_ids: vec!["resy".into()],
+            hidden_benefit_ids: vec!["dining".into()],
             ..Default::default()
         });
         assert_eq!(merged.spending_account_id.as_deref(), Some("plaid:current"));
         assert_eq!(merged.account_names["plaid:one"], "Kept");
         assert_eq!(merged.account_names["plaid:two"], "Added");
-        assert_eq!(merged.hidden_benefit_ids, vec!["resy"]);
+        assert_eq!(merged.hidden_benefit_ids, vec!["dining"]);
     }
 
     #[test]
@@ -1081,13 +1257,64 @@ mod tests {
     }
 
     #[test]
-    fn card_benefit_assignments_name_a_known_product_and_imports_never_replace_them() {
+    fn card_benefit_assignments_name_a_product_and_imports_never_replace_them() {
         let assigned = |product: &str| FinanceSettings {
             benefit_cards: [("plaid:card".to_owned(), product.to_owned())].into(),
             ..Default::default()
         };
-        assert!(assigned("amex-platinum").normalized().is_ok());
-        assert!(assigned("made-up-card").normalized().is_err());
+        // A product whose rules aren't saved tracks nothing, so removing rules never makes
+        // settings invalid; only a malformed id is refused.
+        assert!(assigned("example-card").normalized().is_ok());
+        assert!(assigned("unsaved-card").normalized().is_ok());
+        assert!(assigned("Not a product!").normalized().is_err());
+        // Saved rules must compile, and each product is saved once.
+        let rules = crate::insights::benefits::example_rules();
+        let with_rules = |rules: Vec<crate::insights::benefits::CardRules>| FinanceSettings {
+            card_rules: rules,
+            ..Default::default()
+        };
+        assert!(with_rules(vec![rules.clone()]).normalized().is_ok());
+        assert!(with_rules(vec![rules.clone(), rules.clone()])
+            .normalized()
+            .is_err());
+        let mut broken = rules.clone();
+        broken.benefits[0].matches = "(unclosed".into();
+        assert!(with_rules(vec![broken]).normalized().is_err());
+        let logo = |domain: &str| {
+            let mut rules = rules.clone();
+            rules.benefits[0].logo_domain = Some(domain.into());
+            with_rules(vec![rules]).normalized()
+        };
+        assert!(logo("tv.example.com").is_ok());
+        assert!(logo("https://tv.example.com/").is_err());
+        assert!(logo("example").is_err());
+        let category = |category: &str| {
+            let mut rules = rules.clone();
+            rules.benefits[0].category = Some(category.into());
+            with_rules(vec![rules]).normalized()
+        };
+        assert!(category("digital-entertainment").is_ok());
+        assert!(category("Dining").is_err());
+        assert!(category("").is_err());
+        let choice = |account: &str, candidates: usize| FinanceSettings {
+            card_choices: vec![CardChoice {
+                account_id: account.into(),
+                candidates: (0..candidates)
+                    .map(|index| CardChoiceOption {
+                        id: format!("card-{index}"),
+                        name: "Example Card".into(),
+                        issuer: "Example Bank".into(),
+                    })
+                    .collect(),
+            }],
+            ..Default::default()
+        };
+        assert!(choice("plaid:card", 2).normalized().is_ok());
+        assert!(choice("plaid:card", 0).normalized().is_err());
+        assert!(choice("plaid:card", MAX_CARD_PRODUCTS + 1)
+            .normalized()
+            .is_err());
+        assert!(choice("", 1).normalized().is_err());
         let treated = |treatment: &str| FinanceSettings {
             account_tax_treatments: [("plaid:hsa".to_owned(), treatment.to_owned())].into(),
             ..Default::default()
@@ -1113,18 +1340,18 @@ mod tests {
         ] {
             assert!(invalid.normalized().is_err());
         }
-        let merged = assigned("amex-platinum").merge_missing(FinanceSettings {
+        let merged = assigned("example-card").merge_missing(FinanceSettings {
             notifications: true,
             benefit_cards: [
                 ("plaid:card".to_owned(), "other".to_owned()),
-                ("plaid:new".to_owned(), "amex-platinum".to_owned()),
+                ("plaid:new".to_owned(), "example-card".to_owned()),
             ]
             .into(),
             ..Default::default()
         });
         assert!(merged.notifications);
-        assert_eq!(merged.benefit_cards["plaid:card"], "amex-platinum");
-        assert_eq!(merged.benefit_cards["plaid:new"], "amex-platinum");
+        assert_eq!(merged.benefit_cards["plaid:card"], "example-card");
+        assert_eq!(merged.benefit_cards["plaid:new"], "example-card");
         // An empty map is not written, so settings saved before it existed are unchanged.
         assert!(!serde_json::to_string(&FinanceSettings::default())
             .unwrap()
@@ -1255,7 +1482,7 @@ mod tests {
             start: Some(day("2026-05-01")),
             end: Some(day("2026-04-01")),
         };
-        let mut uncited = crate::evidence::programs::programs(&[])[0].clone();
+        let mut uncited = crate::synthetic::career::loyalty_bonus();
         uncited.source.url = "http://example.com".into();
         for invalid in [
             FinanceSettings {

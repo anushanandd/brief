@@ -2,9 +2,15 @@
 import type { HarvestEstimate } from "./HarvestEstimate";
 import type { TaxYear } from "./TaxYear";
 import type { WashWindow } from "./WashWindow";
+import type { Withholding } from "./Withholding";
 
 export type Taxes = { 
 /**
  * This year first.
  */
-years: Array<TaxYear>, harvest: Array<HarvestEstimate>, washWindows: Array<WashWindow>, hasProfile: boolean, tablesVersion: string, sources: Array<string>, };
+years: Array<TaxYear>, harvest: Array<HarvestEstimate>, washWindows: Array<WashWindow>, hasProfile: boolean, tablesVersion: string, sources: Array<string>, 
+/**
+ * This year's federal withholding against the tax it projects, from pay statements;
+ * absent without a pay statement this year, when the typed taxable income is the basis.
+ */
+withholding?: Withholding, };

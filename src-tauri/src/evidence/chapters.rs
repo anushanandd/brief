@@ -928,3 +928,163 @@ pub fn chapters(inputs: &Inputs) -> Vec<Chapter> {
     chapters.sort_by(|left, right| left.start.cmp(&right.start).then(left.id.cmp(&right.id)));
     chapters
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn day(text: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+    }
+
+    fn chapter(id: &str, kind: ChapterKind, start: &str, end: Option<&str>) -> Chapter {
+        Chapter {
+            id: id.into(),
+            kind,
+            title: id.into(),
+            start: day(start),
+            end: end.map(day),
+            precision: Precision::Day,
+            tier: Tier::Suggested,
+            confirmed: false,
+            state: (kind == ChapterKind::Home).then(|| "OH".into()),
+            anchors: Vec::new(),
+            members: Vec::new(),
+            programs: Vec::new(),
+            effects: Vec::new(),
+            checklist: Vec::new(),
+            planned_costs: Vec::new(),
+        }
+    }
+
+    #[test]
+    fn nothing_observed_makes_no_chapters_and_no_present() {
+        let none = BTreeSet::new();
+        let empty = BTreeMap::new();
+        let inputs = Inputs {
+            transactions: &[],
+            accounts: &[],
+            employers: &[],
+            away: &none,
+            programs: &empty,
+            endings: &empty,
+            choices: &[],
+            planned: &[],
+            today: day("2026-11-11"),
+        };
+        assert!(chapters(&inputs).is_empty());
+        assert_eq!(now(&[], day("2026-11-11")), Now::default());
+        assert!(residency(&[], day("2026-11-11")).is_empty());
+        assert_eq!(baseline(&[], day("2026-11-11")), None);
+    }
+
+    #[test]
+    fn the_present_counts_whole_months_and_includes_a_chapters_last_day() {
+        let work =
+            |start: &str, end: Option<&str>| [chapter("work", ChapterKind::Work, start, end)];
+        // The first day is month 1; a month later, to the day, month 2.
+        assert_eq!(
+            now(&work("2026-01-31", None), day("2026-01-31")).month,
+            Some(1)
+        );
+        assert_eq!(
+            now(&work("2026-01-31", None), day("2026-02-28")).month,
+            Some(1)
+        );
+        assert_eq!(
+            now(&work("2026-01-31", None), day("2026-03-31")).month,
+            Some(3)
+        );
+        assert_eq!(
+            now(&work("2025-11-11", None), day("2026-11-11")).month,
+            Some(13)
+        );
+        // A chapter that ends today is still where you are; one that ended yesterday, or
+        // starts tomorrow, isn't.
+        assert!(
+            now(&work("2026-01-01", Some("2026-11-11")), day("2026-11-11"))
+                .work
+                .is_some()
+        );
+        assert!(
+            now(&work("2026-01-01", Some("2026-11-10")), day("2026-11-11"))
+                .work
+                .is_none()
+        );
+        assert!(now(&work("2026-11-12", None), day("2026-11-11"))
+            .work
+            .is_none());
+        // A confirmed job outranks a newer suggestion.
+        let mut confirmed = chapter("confirmed", ChapterKind::Work, "2025-01-01", None);
+        confirmed.confirmed = true;
+        let newer = chapter("newer", ChapterKind::Work, "2026-06-01", None);
+        let present = now(&[confirmed, newer], day("2026-11-11"));
+        assert_eq!(present.work.as_deref(), Some("confirmed"));
+        assert_eq!(present.month, Some(23));
+    }
+
+    #[test]
+    fn residency_splits_at_each_new_year_counts_both_ends_and_stops_today() {
+        let homes = [
+            chapter(
+                "home:oh",
+                ChapterKind::Home,
+                "2023-07-01",
+                Some("2024-12-31"),
+            ),
+            {
+                let mut moved = chapter("home:wa", ChapterKind::Home, "2025-01-01", None);
+                moved.state = Some("WA".into());
+                moved
+            },
+            // A home without a state says nothing about residency.
+            {
+                let mut unknown = chapter("home:unknown", ChapterKind::Home, "2024-01-01", None);
+                unknown.state = None;
+                unknown
+            },
+            // A home that starts after today hasn't begun.
+            chapter("home:later", ChapterKind::Home, "2027-01-05", None),
+        ];
+        let spans = residency(&homes, day("2026-03-01"))
+            .into_iter()
+            .map(|span| (span.year, span.state, span.from, span.to, span.days))
+            .collect::<Vec<_>>();
+        assert_eq!(
+            spans,
+            [
+                (2023, "OH".into(), day("2023-07-01"), day("2023-12-31"), 184),
+                // A leap year has 366 days.
+                (2024, "OH".into(), day("2024-01-01"), day("2024-12-31"), 366),
+                (2025, "WA".into(), day("2025-01-01"), day("2025-12-31"), 365),
+                (2026, "WA".into(), day("2026-01-01"), day("2026-03-01"), 60),
+            ]
+        );
+    }
+
+    #[test]
+    fn only_confirmed_jobs_homes_and_shifts_by_today_move_the_baseline() {
+        let confirmed = |id: &str, kind: ChapterKind, start: &str| {
+            let mut chapter = chapter(id, kind, start, None);
+            chapter.confirmed = true;
+            chapter
+        };
+        let chapters = [
+            confirmed("work", ChapterKind::Work, "2025-03-01"),
+            confirmed("home", ChapterKind::Home, "2025-09-01"),
+            // A suggestion, a milestone, or a confirmed start still ahead never moves it.
+            chapter("shift", ChapterKind::Shift, "2026-01-01", None),
+            confirmed("milestone", ChapterKind::Milestone, "2026-02-01"),
+            confirmed("future", ChapterKind::Shift, "2026-12-01"),
+        ];
+        assert_eq!(
+            baseline(&chapters, day("2026-11-11")),
+            Some(day("2025-09-01"))
+        );
+        assert_eq!(
+            baseline(&chapters, day("2025-08-31")),
+            Some(day("2025-03-01"))
+        );
+        assert_eq!(baseline(&chapters, day("2025-02-28")), None);
+    }
+}

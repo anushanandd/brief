@@ -1,5 +1,11 @@
 use super::*;
+use crate::insights::benefits::Catalog;
 use serde_json::{json, Value};
+
+/// The policy's classification, with the example card's statement credits known.
+fn classify(t: &Transaction) -> Classification {
+    super::classify(t, &Catalog::example())
+}
 
 /// The policy over JSON rows, as the renderer reads them: the rows are rewritten classified.
 fn apply(
@@ -15,7 +21,7 @@ fn apply(
     let names = accounts
         .iter()
         .filter_map(|account| Some((account["id"].as_str()?, account["name"].as_str()?)));
-    super::apply(&mut transactions, names, annotations);
+    super::apply(&mut transactions, names, annotations, &Catalog::example());
     for (row, transaction) in rows.iter_mut().zip(&transactions) {
         *row = serde_json::to_value(transaction).map_err(|error| error.to_string())?;
     }
@@ -527,17 +533,17 @@ fn issuer_statement_credits_are_credits_whatever_plaid_files_them_under() {
     };
     for (merchant, category, detail) in [
         (
-            "AMEX CLEAR PLUS CREDIT",
+            "EXAMPLE CARD STREAMING CREDIT",
             "Transfers",
             "TRANSFER_IN_OTHER_TRANSFER_IN",
         ),
         (
-            "AMEX Airline Fee Reimbursement",
+            "Example Card Travel Reimbursement",
             "Fees",
             "BANK_FEES_OTHER_BANK_FEES",
         ),
-        ("Platinum Hotel Credit", "Travel", "TRAVEL_LODGING"),
-        ("Platinum Future Perk Credit", "Other", "OTHER_OTHER"),
+        ("Example Card Travel Credit", "Travel", "TRAVEL_LODGING"),
+        ("Example Card Future Perk Credit", "Other", "OTHER_OTHER"),
     ] {
         let credit = classified(merchant, category, detail, 25.0);
         assert_eq!(
@@ -547,7 +553,12 @@ fn issuer_statement_credits_are_credits_whatever_plaid_files_them_under() {
         );
     }
     // A reversal is a charge, and an ordinary transfer in stays a transfer.
-    let reversal = classified("Platinum Hotel Credit", "Travel", "TRAVEL_LODGING", -25.0);
+    let reversal = classified(
+        "Example Card Travel Credit",
+        "Travel",
+        "TRAVEL_LODGING",
+        -25.0,
+    );
     assert!(!reversal.credit);
     let transfer = classified(
         "Savings",
@@ -705,4 +716,260 @@ fn tags_splits_and_refund_links_apply_at_read_time_without_changing_saved_rows()
     assert!(values[0].get("tags").is_none() && values[0].get("splits").is_none());
     assert!(values[2].get("refundOf").is_none());
     assert_eq!(values[2]["category"], "Transfer In");
+}
+
+/// A purchase at `merchant`, filed by Plaid under `category`, on `date`.
+fn purchase(id: &str, merchant: &str, category: &str, date: &str) -> Transaction {
+    serde_json::from_value(json!({
+        "id": id, "merchant": merchant, "category": category, "amount": -20.0,
+        "account": "Example", "accountId": "plaid:card", "date": date, "pending": false,
+    }))
+    .unwrap()
+}
+
+fn chose(category: &str) -> Annotation {
+    Annotation {
+        category: Some(category.into()),
+        ..Default::default()
+    }
+}
+
+/// Applies `annotations`, then suggests categories, returning each id's category and source.
+fn suggest(
+    transactions: &mut [Transaction],
+    annotations: &[(&str, &str)],
+    rejections: &[(&str, &str)],
+    embedder: Option<&dyn crate::search::embeddings::Embedder>,
+) -> Vec<(String, String, CategorySource)> {
+    let annotations = annotations
+        .iter()
+        .map(|(id, category)| ((*id).to_owned(), chose(category)))
+        .collect();
+    let rejections = rejections
+        .iter()
+        .map(|(id, category)| ((*id).to_owned(), (*category).to_owned()))
+        .collect();
+    let cards = Catalog::example();
+    super::apply(transactions, [], &annotations, &cards);
+    suggest_categories(transactions, &rejections, embedder, &cards);
+    transactions
+        .iter()
+        .map(|t| (t.id.clone(), t.category.clone(), t.category_source.unwrap()))
+        .collect()
+}
+
+#[test]
+fn a_merchant_you_categorized_alike_twice_is_suggested_with_its_evidence() {
+    let mut transactions = vec![
+        purchase("a", "Example Bakery", "Shopping", "2026-07-01"),
+        purchase("b", "Example Bakery", "Shopping", "2026-08-01"),
+        purchase("c", "Example Bakery", "Shopping", "2026-09-01"),
+        purchase("d", "Other Store", "Shopping", "2026-09-02"),
+    ];
+    let result = suggest(
+        &mut transactions,
+        &[("a", "Dining"), ("b", "Dining")],
+        &[],
+        None,
+    );
+    assert_eq!(
+        result[2],
+        ("c".into(), "Dining".into(), CategorySource::Suggested)
+    );
+    let c = &transactions[2];
+    // Two of two agree: 2 / (2 + 1).
+    assert_eq!(
+        c.category_suggestion,
+        Some(CategorySuggestion {
+            confidence: 2.0 / 3.0,
+            basis: SuggestionBasis::Merchant,
+            from: vec!["b".into(), "a".into()],
+        })
+    );
+    assert_eq!(c.provider_category.as_deref(), Some("Shopping"));
+    // Classified by the chosen name, like a manual category.
+    assert_eq!(c.classification.as_ref().unwrap().kind, Kind::Expense);
+    // A merchant you never categorized, with no embedder to find similar ones, keeps Plaid's.
+    assert_eq!(
+        result[3],
+        ("d".into(), "Shopping".into(), CategorySource::Provider)
+    );
+    assert!(transactions[3].category_suggestion.is_none());
+}
+
+#[test]
+fn one_choice_or_a_conflicting_history_is_not_confident_enough() {
+    // One choice: 1 / 2.
+    let mut one = vec![
+        purchase("a", "Example Bakery", "Shopping", "2026-08-01"),
+        purchase("b", "Example Bakery", "Shopping", "2026-09-01"),
+    ];
+    let result = suggest(&mut one, &[("a", "Dining")], &[], None);
+    assert_eq!(result[1].2, CategorySource::Provider);
+    // Two votes each way: 2 / 5.
+    let mut split = vec![
+        purchase("a", "Example Bakery", "Shopping", "2026-06-01"),
+        purchase("b", "Example Bakery", "Shopping", "2026-07-01"),
+        purchase("c", "Example Bakery", "Shopping", "2026-08-01"),
+        purchase("d", "Example Bakery", "Shopping", "2026-08-15"),
+        purchase("e", "Example Bakery", "Shopping", "2026-09-01"),
+    ];
+    let result = suggest(
+        &mut split,
+        &[
+            ("a", "Dining"),
+            ("b", "Dining"),
+            ("c", "Groceries"),
+            ("d", "Groceries"),
+        ],
+        &[],
+        None,
+    );
+    assert_eq!(
+        result[4],
+        ("e".into(), "Shopping".into(), CategorySource::Provider)
+    );
+}
+
+#[test]
+fn a_rejected_suggestion_is_not_made_again_and_counts_against_the_merchant() {
+    let rows = || {
+        vec![
+            purchase("a", "Example Bakery", "Shopping", "2026-06-01"),
+            purchase("b", "Example Bakery", "Shopping", "2026-07-01"),
+            purchase("c", "Example Bakery", "Shopping", "2026-08-01"),
+            purchase("d", "Example Bakery", "Shopping", "2026-09-01"),
+        ]
+    };
+    let chosen = [("a", "Dining"), ("b", "Dining"), ("c", "Dining")];
+    // Three of three: 0.75, so the fourth is suggested.
+    let result = suggest(&mut rows(), &chosen, &[], None);
+    assert_eq!(result[3].2, CategorySource::Suggested);
+    // A category rejected for a transaction is never suggested for it again.
+    let result = suggest(&mut rows(), &chosen, &[("d", "Dining")], None);
+    assert_eq!(
+        result[3],
+        ("d".into(), "Shopping".into(), CategorySource::Provider)
+    );
+    // The rejection also counts against the category for the merchant, so a fifth purchase
+    // falls below the threshold.
+    let mut more = rows();
+    more.push(purchase("e", "Example Bakery", "Shopping", "2026-09-15"));
+    let result = suggest(&mut more, &chosen, &[("d", "Dining")], None);
+    assert_eq!(result[4].2, CategorySource::Provider);
+    // A kept suggestion becomes a manual category and votes for the next purchase.
+    let result = suggest(
+        &mut rows(),
+        &[
+            ("a", "Dining"),
+            ("b", "Dining"),
+            ("c", "Dining"),
+            ("d", "Dining"),
+        ],
+        &[],
+        None,
+    );
+    assert_eq!(result[3].2, CategorySource::Manual);
+}
+
+#[test]
+fn a_later_manual_change_moves_future_suggestions() {
+    let rows = || {
+        vec![
+            purchase("a", "Example Bakery", "Shopping", "2026-06-01"),
+            purchase("b", "Example Bakery", "Shopping", "2026-07-01"),
+            purchase("c", "Example Bakery", "Shopping", "2026-08-01"),
+            purchase("d", "Example Bakery", "Shopping", "2026-09-01"),
+        ]
+    };
+    let result = suggest(&mut rows(), &[("a", "Dining"), ("b", "Dining")], &[], None);
+    assert_eq!(result[2].1, "Dining");
+    // You file the third under Groceries: two of three agree, 2 / 4, and nothing is applied.
+    let result = suggest(
+        &mut rows(),
+        &[("a", "Dining"), ("b", "Dining"), ("c", "Groceries")],
+        &[],
+        None,
+    );
+    assert_eq!(
+        result[3],
+        ("d".into(), "Shopping".into(), CategorySource::Provider)
+    );
+}
+
+/// Embeds each name as a fixed vector: bakeries alike, a hardware store apart.
+struct Names;
+
+impl crate::search::embeddings::Embedder for Names {
+    fn embed(&self, texts: &[String]) -> Option<Vec<Vec<f32>>> {
+        Some(
+            texts
+                .iter()
+                .map(|text| {
+                    if text.contains("Bakery") || text.contains("Patisserie") {
+                        vec![1.0, 0.1]
+                    } else {
+                        vec![0.0, 1.0]
+                    }
+                })
+                .collect(),
+        )
+    }
+}
+
+#[test]
+fn similar_merchants_vote_only_where_the_merchant_has_no_history_of_its_own() {
+    let rows = || {
+        vec![
+            purchase("a", "Example Bakery", "Shopping", "2026-07-01"),
+            purchase("b", "Example Bakery", "Shopping", "2026-08-01"),
+            purchase("c", "Example Patisserie", "Shopping", "2026-09-01"),
+            purchase("d", "Example Hardware", "Shopping", "2026-09-02"),
+            purchase("e", "Example Patisserie Two", "Shopping", "2026-09-03"),
+        ]
+    };
+    let mut transactions = rows();
+    let result = suggest(
+        &mut transactions,
+        &[("a", "Dining"), ("b", "Dining")],
+        &[],
+        Some(&Names),
+    );
+    assert_eq!(
+        result[2],
+        ("c".into(), "Dining".into(), CategorySource::Suggested)
+    );
+    assert_eq!(
+        transactions[2]
+            .category_suggestion
+            .as_ref()
+            .map(|suggestion| suggestion.basis),
+        Some(SuggestionBasis::Similar)
+    );
+    // A name unlike any you categorized keeps Plaid's.
+    assert_eq!(result[3].2, CategorySource::Provider);
+    // Once a merchant has a choice of its own, neighbours' choices stop counting.
+    let result = suggest(
+        &mut rows(),
+        &[("a", "Dining"), ("b", "Dining"), ("c", "Groceries")],
+        &[],
+        Some(&Names),
+    );
+    let e = result.iter().find(|(id, ..)| id == "e").unwrap();
+    assert_eq!(e.2, CategorySource::Provider);
+    // Deterministic: the same history reads the same.
+    assert_eq!(
+        suggest(
+            &mut rows(),
+            &[("a", "Dining"), ("b", "Dining")],
+            &[],
+            Some(&Names)
+        ),
+        suggest(
+            &mut rows(),
+            &[("a", "Dining"), ("b", "Dining")],
+            &[],
+            Some(&Names)
+        ),
+    );
 }

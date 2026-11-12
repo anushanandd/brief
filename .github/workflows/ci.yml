@@ -1,0 +1,75 @@
+# The checks AGENTS.md lists, on every push to main and every pull request. Everything runs on
+# synthetic data: the frontend reads the committed seed files, and Rust's tests build their own.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  web:
+    # Needs nothing from Rust: the generated types in src/lib/bindings and the seed JSON are
+    # committed.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # No version here: the action reads packageManager (pnpm@10.17.1) from package.json.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: lts/*
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+      - name: pnpm audit (advisory)
+        run: pnpm audit --prod
+        continue-on-error: true
+
+  rust:
+    # build.rs compiles five Swift bridges (src-tauri/native/*.swift) with `xcrun --sdk macosx
+    # swiftc`, targeting macOS 14, and links Foundation, Contacts, EventKit, PDFKit, Vision,
+    # NaturalLanguage, and FoundationModels (weakly). FoundationModels needs the macOS 26 SDK
+    # (Xcode 26), so this needs a runner image whose default Xcode has it. The Apple
+    # Intelligence evals are #[ignore] and don't run here.
+    runs-on: macos-latest
+    # Not yet seen green on a runner. Remove this once it passes.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - run: xcrun --sdk macosx --show-sdk-version && swiftc --version
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+      # tauri::generate_context! expects the frontendDist folder (../dist) to exist.
+      - run: mkdir -p dist
+      - run: cargo clippy --all-targets -- -D warnings
+        working-directory: src-tauri
+      # From src-tauri, so .cargo/config.toml sends generated bindings to src/lib/bindings.
+      - run: cargo test
+        working-directory: src-tauri
+      - name: Generated bindings match what is committed
+        run: |
+          drift="$(git status --porcelain -- src/lib/bindings)"
+          if [ -n "$drift" ]; then
+            echo "$drift"
+            echo "::error::cargo test changed src/lib/bindings; commit the regenerated types."
+            exit 1
+          fi
+      - uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-audit
+      - name: cargo audit (advisory)
+        run: cargo audit --file src-tauri/Cargo.lock
+        continue-on-error: true

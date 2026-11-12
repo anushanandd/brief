@@ -1,0 +1,258 @@
+{
+  "seed|2025-09-17|2026-09-16": {
+    "accounts": [],
+    "summaries": [
+      {
+        "change": null,
+        "chart": "cash-flow",
+        "percent": null,
+        "previous": null,
+        "total": 22115.92
+      },
+      {
+        "change": null,
+        "chart": "income",
+        "percent": null,
+        "previous": null,
+        "total": 33898.86
+      },
+      {
+        "change": null,
+        "chart": "interest",
+        "percent": null,
+        "previous": null,
+        "total": 18.42
+      },
+      {
+        "change": null,
+        "chart": "fees",
+        "percent": null,
+        "previous": null,
+        "total": 28.11
+      },
+      {
+        "change": null,
+        "chart": "card-credits",
+        "percent": null,
+        "previous": null,
+        "total": 79.97
+      },
+      {
+        "change": null,
+        "chart": "dividends",
+        "percent": null,
+        "previous": null,
+        "total": 128.19
+      },
+      {
+        "change": null,
+        "chart": "realized",
+        "percent": null,
+        "previous": null,
+        "total": 515.65
+      }
+    ],
+    "window": {
+      "custom": true,
+      "end": "2026-09-16",
+      "previousEnd": "2025-09-16",
+      "previousStart": "2024-09-17",
+      "range": "month",
+      "savedEnd": "2026-08-31",
+      "start": "2025-09-17",
+      "valid": true
+    }
+  },
+  "seed|2026-09-10|2026-09-16": {
+    "accounts": [],
+    "summaries": [
+      {
+        "change": null,
+        "chart": "cash-flow",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "income",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "interest",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "fees",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "card-credits",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "dividends",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "realized",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      }
+    ],
+    "window": {
+      "custom": true,
+      "end": "2026-09-16",
+      "previousEnd": "2026-09-09",
+      "previousStart": "2026-09-03",
+      "range": "month",
+      "savedEnd": "2026-08-31",
+      "start": "2026-09-10",
+      "valid": true
+    }
+  },
+  "unknownGains|2025-09-17|2026-09-16": {
+    "accounts": [],
+    "summaries": [
+      {
+        "change": null,
+        "chart": "cash-flow",
+        "percent": null,
+        "previous": null,
+        "total": 22115.92
+      },
+      {
+        "change": null,
+        "chart": "income",
+        "percent": null,
+        "previous": null,
+        "total": 33898.86
+      },
+      {
+        "change": null,
+        "chart": "interest",
+        "percent": null,
+        "previous": null,
+        "total": 18.42
+      },
+      {
+        "change": null,
+        "chart": "fees",
+        "percent": null,
+        "previous": null,
+        "total": 28.11
+      },
+      {
+        "change": null,
+        "chart": "card-credits",
+        "percent": null,
+        "previous": null,
+        "total": 79.97
+      },
+      {
+        "change": null,
+        "chart": "dividends",
+        "percent": null,
+        "previous": null,
+        "total": 128.19
+      },
+      {
+        "change": null,
+        "chart": "realized",
+        "percent": null,
+        "previous": null,
+        "total": null
+      }
+    ],
+    "window": {
+      "custom": true,
+      "end": "2026-09-16",
+      "previousEnd": "2025-09-16",
+      "previousStart": "2024-09-17",
+      "range": "month",
+      "savedEnd": "2026-08-31",
+      "start": "2025-09-17",
+      "valid": true
+    }
+  },
+  "unknownGains|2026-09-10|2026-09-16": {
+    "accounts": [],
+    "summaries": [
+      {
+        "change": null,
+        "chart": "cash-flow",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "income",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "interest",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "fees",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "card-credits",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "dividends",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      },
+      {
+        "change": null,
+        "chart": "realized",
+        "percent": null,
+        "previous": null,
+        "total": 0.0
+      }
+    ],
+    "window": {
+      "custom": true,
+      "end": "2026-09-16",
+      "previousEnd": "2026-09-09",
+      "previousStart": "2026-09-03",
+      "range": "month",
+      "savedEnd": "2026-08-31",
+      "start": "2026-09-10",
+      "valid": true
+    }
+  }
+}

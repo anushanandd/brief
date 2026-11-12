@@ -35,7 +35,7 @@ it('exports only the selected account, retaining safe text and unchanged amounts
       kind: 'transaction',
       title: '=SUM(1,2)',
       category: 'Other',
-      location: { city: 'Portland', region: 'CA' },
+      location: { city: 'Portland', region: 'OR' },
       paymentChannel: 'in store',
       detail: 'Example "account"\nline',
       amount: -12.5,
@@ -64,12 +64,12 @@ it('exports only the selected account, retaining safe text and unchanged amounts
   vi.mocked(invoke).mockResolvedValue(true)
   await downloadActivityCsv(activities, 'cash', 'Checking')
   expect(invoke).toHaveBeenLastCalledWith('export_finance_csv', {
-    contents: activityCsv([activities[0]]),
+    contents: activityCsv(activities.slice(0, 1)),
     filename: 'Checking-activity.csv',
   })
   await downloadActivityCsv(activities, 'brokerage', 'Investments')
   expect(invoke).toHaveBeenLastCalledWith('export_finance_csv', {
-    contents: activityCsv([activities[1]]),
+    contents: activityCsv(activities.slice(1, 2)),
     filename: 'Investments-activity.csv',
   })
   await downloadActivityCsv(activities, 'missing', 'Empty')

@@ -1,4 +1,200 @@
 use super::*;
+use std::path::PathBuf;
+
+/// Writes, at `path`, a database as schema `version` left it, holding `state`: today's schema
+/// with what each later version added taken away, and the version stamped. Before version 20
+/// there is no change log, so the tables alone hold the state. Covers versions 4 and later.
+pub(crate) fn database_at(path: &Path, version: u32, state: &FinanceState) {
+    let mut database = Database::open(path).unwrap();
+    database.checkpoint(state, Reason::Start).unwrap();
+    drop(database);
+    let connection = Connection::open(path).unwrap();
+    let run = |sql: &str| connection.execute_batch(sql).unwrap();
+    if version < 24 {
+        run("DROP TABLE investment_summaries;");
+    }
+    if version < 23 {
+        run("DROP TABLE theses;");
+    }
+    if version < 22 {
+        run("DROP TABLE research_log; DROP TABLE research_sources;");
+        run("ALTER TABLE graph_facts DROP COLUMN proof_json;");
+    }
+    if version < 21 {
+        run(
+            "DROP TABLE graph_objects; DROP TABLE graph_links; DROP TABLE graph_facts;
+             DROP TABLE graph_meta;",
+        );
+    }
+    if version < 20 {
+        run("DROP TABLE changesets; DROP TABLE log_device; DROP TABLE blobs;");
+    }
+    if version < 19 {
+        run("DROP TABLE documents;");
+    }
+    if version < 17 {
+        run("DROP TABLE ledger_events;
+             ALTER TABLE statement_files DROP COLUMN confirmed_json;");
+    }
+    if version < 14 {
+        run("DROP TABLE bank_statements; DROP TABLE bank_statement_checks;");
+    }
+    // Annotation columns, by the version that added each.
+    for (added, column) in [
+        (18, "people_json"),
+        (16, "note"),
+        (15, "benefit_id"),
+        (13, "other"),
+        (7, "refund_of"),
+        (7, "splits_json"),
+        (7, "tags_json"),
+    ] {
+        if version < added {
+            run(&format!("ALTER TABLE annotations DROP COLUMN {column};"));
+        }
+    }
+    run(&format!("PRAGMA user_version = {version};"));
+}
+
+/// The database's schema version, read as SQLite stores it.
+pub(crate) fn user_version(path: &Path) -> u32 {
+    Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .unwrap()
+        .query_row("PRAGMA user_version", [], |row| row.get(0))
+        .unwrap()
+}
+
+#[test]
+fn intermediate_versions_migrate_to_the_current_schema_and_a_second_open_writes_nothing() {
+    for version in [4, 10, 15, 20, 21, 23] {
+        let path =
+            std::env::temp_dir().join(format!("brief-v{version}-{}.sqlite3", uuid::Uuid::new_v4()));
+        let mut state = crate::storage::empty_state().unwrap();
+        state.revision = 3;
+        state.annotations.insert(
+            "kept".into(),
+            Annotation {
+                category: Some("Coffee".into()),
+                reviewed: Some(true),
+                ..Default::default()
+            },
+        );
+        database_at(&path, version, &state);
+        assert_eq!(user_version(&path), version);
+
+        let database = Database::open(&path).unwrap();
+        assert_eq!(
+            user_version(&path),
+            DATABASE_SCHEMA_VERSION,
+            "from {version}"
+        );
+        let loaded = database.load().unwrap().unwrap();
+        assert_eq!(loaded.revision, 3);
+        assert!(loaded.annotations == state.annotations, "from {version}");
+        // Every later version's tables are there, empty.
+        let theses: i64 = database
+            .connection
+            .query_row("SELECT count(*) FROM theses", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(theses, 0);
+        assert!(database.research_log().unwrap().is_empty());
+        let start = chrono::NaiveDate::from_ymd_opt(2026, 10, 9).unwrap();
+        assert!(database.saved_summary("*", start).unwrap().is_none());
+        drop(database);
+        Database::validate_backup(&path).unwrap();
+
+        let bytes = fs::read(&path).unwrap();
+        drop(Database::open(&path).unwrap());
+        assert_eq!(fs::read(&path).unwrap(), bytes, "reopening {version} wrote");
+        fs::remove_file(path).unwrap();
+    }
+}
+
+#[test]
+fn a_migration_that_fails_partway_leaves_the_older_database_as_it_was() {
+    let path = std::env::temp_dir().join(format!("brief-v4-{}.sqlite3", uuid::Uuid::new_v4()));
+    database_at(&path, 4, &crate::storage::empty_state().unwrap());
+    // The scrub version 5 runs, after the schema steps, is refused.
+    Connection::open(&path)
+        .unwrap()
+        .execute_batch(
+            "CREATE TRIGGER refuse BEFORE UPDATE ON sync_runs
+               BEGIN SELECT RAISE(ABORT, 'refused'); END;
+             INSERT INTO sync_runs(id, started_at, finished_at, outcome, warnings_json, error_code,
+               details_json)
+             VALUES ('old', '2026-09-01T00:00:00Z', '2026-09-01T00:00:01Z', 'failed', '[]', NULL,
+               '{}');",
+        )
+        .unwrap();
+    let bytes = fs::read(&path).unwrap();
+    assert!(Database::open(&path).is_err());
+    assert_eq!(user_version(&path), 4);
+    assert_eq!(
+        fs::read(&path).unwrap(),
+        bytes,
+        "nothing of the migration stayed"
+    );
+    fs::remove_file(path).unwrap();
+}
+
+/// The files a crash mid-write leaves: the database and the rollback journal of a write it
+/// never committed.
+pub(crate) fn crashed_mid_write(source: &Path, crashed: &Path) {
+    let connection = Connection::open(source).unwrap();
+    connection
+        .execute_batch(
+            "CREATE TABLE IF NOT EXISTS crash_filler(bytes BLOB);
+             PRAGMA cache_size = 1;
+             BEGIN IMMEDIATE;",
+        )
+        .unwrap();
+    for _ in 0..200 {
+        connection
+            .execute("INSERT INTO crash_filler VALUES (zeroblob(4096))", [])
+            .unwrap();
+    }
+    let journal = |path: &Path| PathBuf::from(format!("{}-journal", path.display()));
+    fs::copy(source, crashed).unwrap();
+    fs::copy(journal(source), journal(crashed)).unwrap();
+    connection.execute_batch("ROLLBACK").unwrap();
+}
+
+#[test]
+fn a_crash_mid_write_leaves_a_journal_the_version_check_rolls_back() {
+    let directory = std::env::temp_dir().join(format!("brief-crash-{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&directory).unwrap();
+    let (source, crashed) = (
+        directory.join("source.sqlite3"),
+        directory.join("crashed.sqlite3"),
+    );
+    drop(Database::open(&source).unwrap());
+    crashed_mid_write(&source, &crashed);
+    assert!(PathBuf::from(format!("{}-journal", crashed.display())).exists());
+    assert_eq!(
+        Database::schema_version(&crashed).unwrap(),
+        Some(DATABASE_SCHEMA_VERSION)
+    );
+    fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
+fn a_newer_database_is_refused_unchanged() {
+    let path = std::env::temp_dir().join(format!("brief-newer-{}.sqlite3", uuid::Uuid::new_v4()));
+    drop(Database::open(&path).unwrap());
+    Connection::open(&path)
+        .unwrap()
+        .pragma_update(None, "user_version", DATABASE_SCHEMA_VERSION + 1)
+        .unwrap();
+    let bytes = fs::read(&path).unwrap();
+    assert!(Database::open(&path).is_err());
+    assert!(Database::validate_backup(&path).is_err());
+    assert_eq!(
+        Database::schema_version(&path).unwrap(),
+        Some(DATABASE_SCHEMA_VERSION + 1)
+    );
+    assert_eq!(fs::read(&path).unwrap(), bytes);
+    fs::remove_file(path).unwrap();
+}
 
 #[test]
 fn version_one_migration_preserves_data_and_the_unique_constraint() {

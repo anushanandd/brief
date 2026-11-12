@@ -20,8 +20,8 @@ export function countryFlag(code: string) {
 }
 
 /**
- * Where a purchase was made, in one line: "Sunnyvale, CA" at home in the US, "Zürich,
- * Switzerland" abroad. Rust chose the place; this only words it.
+ * Where a purchase was made, in one line: "Sunnyvale, CA" at home in the US, "Málaga, Spain"
+ * abroad. Rust chose the place; this only words it.
  */
 export function placeLabel(place: Place | undefined) {
   if (!place) return ''

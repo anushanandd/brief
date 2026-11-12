@@ -43,6 +43,9 @@ pub enum Change {
     AccountLinks(BTreeMap<String, String>),
     /// What Brief read from documents, whole; the originals live in their own database.
     Documents(Vec<crate::documents::Document>),
+    /// Investment theses, from builds that had them. The feature is gone, but a log may still
+    /// hold these changes, so they are read as they were written and change nothing.
+    Theses(serde_json::Value),
 }
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -103,6 +106,7 @@ impl Change {
             Self::Settings(_) => "settings",
             Self::AccountLinks(_) => "accountLinks",
             Self::Documents(_) => "documents",
+            Self::Theses(_) => "theses",
         }
     }
 
@@ -149,6 +153,7 @@ pub(crate) fn apply(state: &FinanceState, change: &Change) -> Result<FinanceStat
                 &state.snapshot,
                 &state.statements,
                 &state.account_links,
+                &crate::insights::benefits::Catalog::from_settings(&state.settings),
                 refresh,
             )?;
             finish_refresh(state, refresh, snapshot)
@@ -203,6 +208,7 @@ pub(crate) fn apply(state: &FinanceState, change: &Change) -> Result<FinanceStat
                 ..state.clone()
             })
         }
+        Change::Theses(_) => Ok(state.clone()),
     }
 }
 
@@ -397,6 +403,7 @@ pub(crate) fn project_refresh(
     previous: &Snapshot,
     statements: &[StatementFile],
     account_links: &BTreeMap<String, String>,
+    cards: &crate::insights::benefits::Catalog,
     refresh: &Refresh,
 ) -> Result<Snapshot, String> {
     let data = &refresh.provider_data;
@@ -415,6 +422,7 @@ pub(crate) fn project_refresh(
     crate::financial_engine::project(
         &sync,
         account_links,
+        cards,
         refresh.committed_at,
         refresh.calendar_date,
     )
@@ -478,8 +486,13 @@ pub(crate) fn reproject(
         statements: statements.clone(),
         wallet: state.provider_data.wallet.clone(),
     };
-    let mut snapshot =
-        crate::financial_engine::project(&sync, &state.account_links, now, calendar_date)?;
+    let mut snapshot = crate::financial_engine::project(
+        &sync,
+        &state.account_links,
+        &crate::insights::benefits::Catalog::from_settings(&state.settings),
+        now,
+        calendar_date,
+    )?;
     let revision = state
         .revision
         .checked_add(1)
@@ -664,7 +677,7 @@ mod tests {
             .snapshot
             .transactions
             .iter()
-            .filter(|t| !t.from_wallet() && t.wallet.is_some())
+            .filter(|t| !t.wallet_only() && t.wallet.is_some())
             .count();
         println!("provider rows with Wallet's detail: {matched_time}");
         println!(
@@ -672,7 +685,7 @@ mod tests {
             new.snapshot
                 .transactions
                 .iter()
-                .filter(|t| t.from_wallet() && t.pending)
+                .filter(|t| t.wallet_only() && t.pending)
                 .count()
         );
         if let (Some(old), Some(new)) = (&old.insights, &new.insights) {
@@ -718,6 +731,7 @@ mod tests {
             &state.snapshot,
             &state.statements,
             &state.account_links,
+            &crate::insights::benefits::Catalog::from_settings(&state.settings),
             &refresh,
         );
         match snapshot {
@@ -729,6 +743,54 @@ mod tests {
                     state.snapshot.net_worth, next.snapshot.net_worth
                 ),
             },
+        }
+    }
+
+    /// A snapshot as JSON without what each commit sets anew: its revision and what changed.
+    fn settled(snapshot: &Snapshot) -> serde_json::Value {
+        let mut value = serde_json::to_value(snapshot).unwrap();
+        let object = value.as_object_mut().unwrap();
+        object.remove("revision");
+        object.remove("lastChange");
+        value
+    }
+
+    #[test]
+    fn projecting_the_same_provider_data_twice_changes_nothing() {
+        for seed in [1, 2, 3] {
+            let life = crate::synthetic::Life::new(seed);
+            let mut state = crate::storage::empty_state().unwrap();
+            for day in life.refresh_days() {
+                let refresh = life.refresh(day);
+                let links = state.account_links.clone();
+                let cards = crate::insights::benefits::Catalog::from_settings(&state.settings);
+                let first =
+                    project_refresh(&state.snapshot, &[], &links, &cards, &refresh).unwrap();
+                state = finish_refresh(&state, &refresh, first).unwrap();
+
+                // The same fetch again, over what it just produced.
+                let again =
+                    project_refresh(&state.snapshot, &[], &links, &cards, &refresh).unwrap();
+                let repeated = finish_refresh(&state, &refresh, again).unwrap();
+                assert_eq!(
+                    settled(&repeated.snapshot),
+                    settled(&state.snapshot),
+                    "seed {seed}, {day}"
+                );
+                let change = repeated.snapshot.last_change.as_ref();
+                assert!(
+                    change.is_none_or(|change| change.new_transaction_ids.is_empty()
+                        && change.transaction_changes.is_empty()
+                        && change.backfilled == 0
+                        && crate::numeric::minor_units(change.net_worth_change) == 0
+                        && change
+                            .account_changes
+                            .iter()
+                            .all(|account| crate::numeric::minor_units(account.change) == 0)),
+                    "seed {seed}, {day}: {:?}",
+                    change.map(|change| (&change.new_transaction_ids, change.net_worth_change))
+                );
+            }
         }
     }
 

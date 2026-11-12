@@ -4,8 +4,16 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useFinance } from '../hooks/use-finance'
 import { useHoldingPrices } from '../hooks/use-holding-prices'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { formatPublicCurrency, formatSecurityName, pluralize } from '../lib/format'
+import {
+  formatInstant,
+  formatMarketTime,
+  formatPublicCurrency,
+  formatSecurityName,
+  formatUpdatedAt,
+  pluralize,
+} from '../lib/format'
 import { type ChartPeriod, chartPeriodSeconds } from '../lib/graph-preferences'
+import { type ConsolidatedPosition } from '../lib/holding-detail'
 import { holdingNewsDigest, rankHoldingNews } from '../lib/holding-news'
 import {
   holdingChartPoints,
@@ -17,7 +25,6 @@ import {
   holdingChartTime,
 } from '../lib/holding-prices'
 import { holdingHistoryRange } from '../lib/investment-range'
-import type { FinanceSnapshot } from '../lib/schema'
 import { useChartColors } from './charts'
 import { useHoldingNews } from './holding-news'
 import { Info } from './icons'
@@ -60,7 +67,8 @@ export function HoldingChart({
   ticker,
   range: period,
 }: {
-  holdings: FinanceSnapshot['holdings']
+  /** Each security once, its accounts' positions consolidated. */
+  holdings: readonly Pick<ConsolidatedPosition, 'ticker' | 'name' | 'price'>[]
   ticker: string
   range: ChartPeriod
 }) {
@@ -241,7 +249,7 @@ export function HoldingChart({
                 {history?.cached ? (
                   <p>Saved history, verifying</p>
                 ) : history && last && chartEnd !== now ? (
-                  <p>Last bar {new Date(last.time * 1000).toLocaleString()}</p>
+                  <p>Last bar {formatUpdatedAt(last.time * 1000)}</p>
                 ) : null}
               </TooltipContent>
             </Tooltip>
@@ -268,7 +276,7 @@ export function HoldingChart({
               percent={change.percent}
               ariaLabel={`${savedChange ? 'Saved bar-close change' : 'Bar-close change'}${
                 prices.savedComparison
-                  ? `, verified ${new Date(prices.savedComparison.asOf).toLocaleString()}`
+                  ? `, verified ${formatUpdatedAt(prices.savedComparison.asOf)}`
                   : ''
               }`}
             />
@@ -294,7 +302,7 @@ export function HoldingChart({
                 const right = Math.min(95, timeline.position(session.end))
                 const label =
                   session.kind === 'regular' || session.label === 'Close'
-                    ? `${session.label} ${new Date(session.start * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', timeZone: 'America/New_York' })} ET`
+                    ? `${session.label} ${formatMarketTime(session.start * 1000)}`
                     : session.label
                 return right > left ? (
                   <div
@@ -373,13 +381,14 @@ export function HoldingChart({
               scrub
               formatValue={formatPublicCurrency}
               formatTime={(time) =>
+                // Eastern, like the session marks; the crosshair has no room to say so.
                 range === 86400
-                  ? new Date(timeline.toActual(time) * 1000).toLocaleTimeString(undefined, {
+                  ? formatInstant(timeline.toActual(time) * 1000, {
                       hour: 'numeric',
                       minute: '2-digit',
                       timeZone: 'America/New_York',
                     })
-                  : new Date(timeline.toActual(time) * 1000).toLocaleDateString(undefined, {
+                  : formatInstant(timeline.toActual(time) * 1000, {
                       month: 'short',
                       day: 'numeric',
                       ...(span === 0 || span >= 365 * 86400 ? { year: 'numeric' } : {}),

@@ -3,7 +3,7 @@ import { open } from '@tauri-apps/plugin-dialog'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
-import { financeQueryKey } from '../hooks/use-finance'
+import { setFinanceSnapshot, snapshotKey } from '../hooks/use-finance'
 import { accountDisplayName, type AccountDisplayNames } from '../lib/account-names'
 import {
   confirmStatementRow,
@@ -44,7 +44,7 @@ export function StatementImports({
 }) {
   const queryClient = useQueryClient()
   const imports = useQuery({
-    queryKey: [...statementImportsQueryKey, data.revision],
+    queryKey: [...statementImportsQueryKey, ...snapshotKey(data)],
     queryFn: getStatementImports,
     enabled: isTauri(),
   })
@@ -68,7 +68,7 @@ export function StatementImports({
       : 'Unavailable account'
   }
   const committed = async (snapshot: FinanceSnapshot) => {
-    queryClient.setQueryData(financeQueryKey, snapshot)
+    setFinanceSnapshot(queryClient, snapshot)
     await queryClient.invalidateQueries({ queryKey: statementImportsQueryKey })
     await queryClient.invalidateQueries({ queryKey: ['data-health'] })
   }

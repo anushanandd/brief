@@ -645,9 +645,11 @@ fn a_withdrawal_at_a_stores_atm_is_cash_when_the_institution_says_so() {
          09/08/2026,EXAMPLE PHARMACY #0-XE10 1 MAIN ST SPRINGFIELD,ATM,-203.75\n\
          09/08/2026,EXAMPLE PHARMACY 1 MAIN ST SPRINGFIELD,Debit Card,-18.40\n",
     )];
+    let cards = crate::insights::benefits::Catalog::example();
     let snapshot = project(
         &input,
         &BTreeMap::new(),
+        &cards,
         projection_time(),
         projection_time().date_naive(),
     )
@@ -658,7 +660,7 @@ fn a_withdrawal_at_a_stores_atm_is_cash_when_the_institution_says_so() {
             .iter()
             .find(|transaction| transaction.id == id)
             .unwrap();
-        let classification = crate::transaction_policy::classify(transaction);
+        let classification = crate::transaction_policy::classify(transaction, &cards);
         (
             transaction.category.as_str(),
             transaction.category_detail.as_deref(),

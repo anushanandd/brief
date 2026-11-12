@@ -2,14 +2,30 @@
 import type { HoldingPart } from "./HoldingPart";
 
 /**
- * One security's position across accounts. A sum is none while any account's part is unknown.
+ * One security's position across accounts: the user's whole position in it, which every page
+ * about the security reads. A sum is none while any account's part is unknown, never the
+ * known parts' sum. Positions in different currencies are not added: the money sums are none
+ * and `currency` is none, while shares still sum.
  */
-export type HoldingTotal = { ticker: string, shares: number | null, 
+export type HoldingTotal = { ticker: string, 
+/**
+ * Name, kind, color, quote eligibility, and valuation note, from the first held position.
+ */
+name: string, instrumentKind: string | null, color: string, quoteEligible: boolean | null, valuationNote: string | null, 
+/**
+ * The currency every position is valued in (USD when a provider names none); none when
+ * they differ.
+ */
+currency: string | null, shares: number | null, 
 /**
  * Vested shares, counting a position without a vesting schedule as vested; none when no
  * position has one.
  */
-vestedShares: number | null, value: number | null, basis: number | null, 
+vestedShares: number | null, value: number | null, costBasis: number | null, 
+/**
+ * Value less cost basis, from the two sums.
+ */
+unrealizedGain: number | null, 
 /**
  * The gain on cost, in percent.
  */
@@ -19,9 +35,10 @@ totalChangePct: number | null, averageBasis: number | null,
  */
 weight: number | null, 
 /**
- * The day's and week's move, when every position agrees on it.
+ * The price and its day's and week's move, all from one quote: the position priced most
+ * recently (the first held on a tie), so the three never mix two quotes.
  */
-dailyChangePct: number | null, weeklyChangePct: number | null, 
+price: number | null, dailyChangePct: number | null, weeklyChangePct: number | null, marketAsOf: string | null, 
 /**
  * Each account's part, in the order first held.
  */

@@ -1,4 +1,3 @@
-import { useNavigate, useSearch } from '@tanstack/react-router'
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
@@ -7,6 +6,7 @@ import { ActivityFilterCard } from '../components/activity-filter-card'
 import { GroupedActivityList } from '../components/activity-list'
 import { ActivityQueryBar } from '../components/activity-query-bar'
 import { ActivitySelectionBar, type SelectionEdit } from '../components/activity-selection-bar'
+import { ActivityTotal } from '../components/activity-totals'
 import { PageError, PageLoading } from '../components/data-state'
 import { DateRangePicker } from '../components/date-range-picker'
 import { Download, Filter } from '../components/icons'
@@ -17,32 +17,19 @@ import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
 import { useFinanceEdits } from '../hooks/use-finance-edits'
 import { useLatest } from '../hooks/use-latest'
-import { useReports } from '../hooks/use-reports'
-import { useSearchShortcuts } from '../hooks/use-search-shortcuts'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { ActivityItem, ActivitySort } from '../lib/activity'
 import {
   activityDatePreset,
   activityDateRangeOptions,
-  activityFiltersOpen,
-  filterValue,
   type ActivityDateRange,
 } from '../lib/activity-filters'
-import {
-  activityLedger,
-  activityRows,
-  type ActivityLedger,
-  type LedgerPatch,
-  type SectionPatches,
-} from '../lib/activity-ledger'
-import { activityViewSearch, withActivityView, activityViews } from '../lib/activity-views'
+import type { ActivityLedger, LedgerPatch } from '../lib/activity-ledger'
+import { activityViews } from '../lib/activity-views'
 import { localDateKey } from '../lib/dates'
 import { errorMessage } from '../lib/errors'
 import type { FinanceSnapshot } from '../lib/schema'
-import { nextSort } from '../lib/sort'
-
-const toggled = (values: string[], value: string) =>
-  values.includes(value) ? values.filter((item) => item !== value) : [...values, value]
+import { useActivityFilters, useActivitySelection } from './activities-state'
 
 const sortColumns = [
   ['description', 'Description'],
@@ -92,22 +79,28 @@ function useFocusedActivity() {
 
 function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
   const { annotate } = useFinanceEdits()
-  const search = useSearch({ from: '/activities' })
-  const navigate = useNavigate({ from: '/activities' })
-  const update = useCallback(
-    (patch: LedgerPatch) =>
-      void navigate({ search: (current) => ({ ...current, ...patch }), replace: true }),
-    [navigate],
-  )
-  // The filters card opens with a slide and closes at once, so the ledger reclaims its width
-  // in one step instead of waiting for a fade.
-  const filtersOpen = activityFiltersOpen.use()
+  const filters = useActivityFilters(data)
+  const {
+    search,
+    navigate,
+    update,
+    filtersOpen,
+    toggleFilters,
+    draft,
+    setDraft,
+    inputRef,
+    sort,
+    toggleSort,
+    savedViews,
+    rows,
+    ledger,
+    clearAll,
+    toggleReview,
+    saveView,
+    setDates,
+  } = filters
   const focusedRow = useFocusedActivity()
-  const [draft, setDraft] = useState('')
-  const inputRef = useSearchShortcuts(draft, setDraft)
   const csv = useCsvExport()
-  const [sort, setSort] = useState<ActivitySort>({ column: 'date', direction: 'desc' })
-  const savedViews = activityViews.use()
   // Me/Other choices shown at once, by activity ID, while their save is on its way.
   const [flipped, setFlipped] = useState<Record<string, boolean>>({})
   // Ledger transactions are addressed by their bare ID; trades keep their `trade:` prefix.
@@ -119,103 +112,14 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
       : undefined,
   )
   const openerRef = useRef<HTMLElement | null>(null)
-  // Rows chosen for a bulk edit, by activity ID; only ledger transactions can be edited.
-  const [checked, setChecked] = useState<ReadonlySet<string>>(() => new Set())
-  const [bulkPending, setBulkPending] = useState(false)
-
-  // A report scopes the page to its entries on any day, as Rust chose them.
-  const reportEntries = useReports(
-    data,
-    { chart: search.analysis, range: 'all' },
-    Boolean(search.analysis),
-  ).data?.report?.entries
-  const rows = useMemo(
-    () => activityRows(data, { analysis: search.analysis, review: search.review }, reportEntries),
-    [data, reportEntries, search.analysis, search.review],
-  )
-  const today = localDateKey(Date.now() / 1000)
-  const ledger = activityLedger({ data, rows, search, draft, sort, today })
   const shown = Object.keys(flipped).length
     ? ledger.sorted.map((activity) =>
         activity.id in flipped ? { ...activity, other: flipped[activity.id] } : activity,
       )
     : ledger.sorted
-  const selected = useMemo(
-    () => (checked.size ? shown.filter(({ id }) => checked.has(id)) : []),
-    [checked, shown],
-  )
-  // A row filtered away leaves the selection, so a bulk edit only touches what is shown.
-  useEffect(() => {
-    if (selected.length !== checked.size) setChecked(new Set(selected.map(({ id }) => id)))
-  }, [checked.size, selected])
-  const toggleChecked = useCallback((id: string) => {
-    if (!id.startsWith('spending:')) return
-    setChecked((current) => {
-      const next = new Set(current)
-      if (!next.delete(id)) next.add(id)
-      return next
-    })
-  }, [])
-  const toggleAllChecked = useCallback(() => {
-    const editable = shown.filter(({ id }) => id.startsWith('spending:')).map(({ id }) => id)
-    setChecked((current) =>
-      editable.length && editable.every((id) => current.has(id)) ? new Set() : new Set(editable),
-    )
-  }, [shown])
-  const clearChecked = useCallback(() => setChecked(new Set()), [])
-  const editSelection = (edit: SelectionEdit) => {
-    if (!selected.length || bulkPending) return
-    const changes = Object.fromEntries(
-      selected.map((activity) => {
-        const id = activity.id.slice('spending:'.length)
-        if ('tag' in edit) {
-          const tags = data.transactions.find((candidate) => candidate.id === id)?.tags ?? []
-          return [id, { tags: tags.includes(edit.tag) ? tags : [...tags, edit.tag] }]
-        }
-        if ('person' in edit) {
-          const people = data.transactions.find((candidate) => candidate.id === id)?.people ?? []
-          return [id, { people: people.includes(edit.person) ? people : [...people, edit.person] }]
-        }
-        return [id, edit]
-      }),
-    )
-    setBulkPending(true)
-    void annotate(changes)
-      .then(() => toast.success(`Updated ${selected.length} transactions`))
-      .catch((error: unknown) =>
-        toast.error('Could not edit the selection', { description: errorMessage(error) }),
-      )
-      .finally(() => setBulkPending(false))
-  }
-
-  // Opening moves focus to the first filter, so the arrows and Enter continue there.
-  const toggleFilters = useCallback(() => {
-    const open = !activityFiltersOpen.get()
-    activityFiltersOpen.save(open)
-    if (open)
-      requestAnimationFrame(() =>
-        document.querySelector<HTMLElement>('.activity-filter-card [data-keyboard-row]')?.focus(),
-      )
-  }, [])
-  const toggleSort = useCallback(
-    (column: ActivitySort['column']) =>
-      setSort((current) =>
-        nextSort(current, column, column === 'date' || column === 'amount' ? 'desc' : 'asc'),
-      ),
-    [],
-  )
-  const clearAll = useCallback(() => {
-    setDraft('')
-    void navigate({ search: {}, replace: true })
-  }, [navigate])
-  const toggleReview = useCallback(
-    () =>
-      void navigate({
-        search: (current) => ({ ...current, review: current.review ? undefined : true }),
-        replace: true,
-      }),
-    [navigate],
-  )
+  const selection = useActivitySelection(data, shown)
+  const { checked, selected, toggleChecked, toggleAllChecked, clearChecked, editSelection } =
+    selection
   const openDetails = (activity: ActivityItem) => {
     if (document.activeElement instanceof HTMLElement) openerRef.current = document.activeElement
     setOpenId(activity.id)
@@ -227,12 +131,6 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
     // The row that opened the dialog takes focus back, so keyboard review continues in place.
     requestAnimationFrame(() => opener?.focus({ preventScroll: true }))
   }, [navigate])
-  const saveView = () => {
-    if (!ledger.viewName) return
-    activityViews.save(
-      withActivityView(savedViews, { name: ledger.viewName, search: activityViewSearch(search) }),
-    )
-  }
   const exportCsv = async () => {
     if (ledger.filtered.length) await csv.run(ledger.sorted, 'all', 'Brief')
   }
@@ -249,19 +147,10 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
       )
       .finally(() =>
         setFlipped(({ [activity.id]: pending, ...rest }) =>
-          pending === other ? rest : { ...rest, [activity.id]: pending },
+          pending === undefined || pending === other ? rest : { ...rest, [activity.id]: pending },
         ),
       )
   }
-  const commitDraft = () => {
-    update(ledger.committed())
-    setDraft('')
-  }
-  const setDates = (range: Exclude<ActivityDateRange, 'custom'>) => {
-    const next = activityDatePreset(range, today)
-    update({ from: next.from, to: next.to })
-  }
-
   useActivityCommands({
     ledger,
     shown,
@@ -284,14 +173,7 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
     editSelection,
   })
 
-  const sectionControls = (name: 'categories' | 'accounts' | 'methods' | 'amount') => {
-    const section: SectionPatches = ledger.sections[name]
-    return {
-      command: `activity.filters.${name}`,
-      all: section.all && section.canAll ? () => update(section.all!) : undefined,
-      clear: section.canClear ? () => update(section.clear) : undefined,
-    }
-  }
+  const { sectionControls } = filters
   const openActivity = openId ? rows.activities.find(({ id }) => id === openId) : undefined
   const neighbor = (id: string | undefined, offset: number) =>
     ledger.sorted[ledger.sorted.findIndex((activity) => activity.id === id) + offset]
@@ -327,7 +209,7 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
               label={`Filters, ${ledger.activeFilterCount} active`}
               suggestions={ledger.suggestions}
               preview={ledger.preview}
-              onCommit={commitDraft}
+              onCommit={filters.commitDraft}
               canSave={Boolean(ledger.viewName)}
               onSave={saveView}
             />
@@ -380,9 +262,7 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
             reviewCount={rows.reviewCount}
             onReview={toggleReview}
             facets={filtersOpen ? [] : ledger.facets}
-            onFacet={(category) =>
-              update({ category: filterValue([...ledger.selectedCategories, category]) })
-            }
+            onFacet={filters.addCategory}
             savedViews={savedViews}
             onOpenView={(view) => {
               setDraft('')
@@ -399,7 +279,7 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
             <ActivitySelectionBar
               data={data}
               selected={selected}
-              pending={bulkPending}
+              pending={selection.pending}
               onEdit={editSelection}
               onClear={clearChecked}
             />
@@ -420,7 +300,7 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
               referenceIso={data.updatedAt}
               emptyMessage={
                 search.review && ledger.activeFilterCount === 1
-                  ? 'Nothing to review. Brief flags possible duplicates and unusual amounts here.'
+                  ? 'Nothing to review. Brief flags possible duplicates, unusual amounts, new recurring charges and prices, fees, and paychecks outside their range here.'
                   : undefined
               }
               showColumns
@@ -434,6 +314,14 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
                 if (patch) update(patch)
               }}
               onToggleOther={toggleOther}
+              footer={
+                selected.length || ledger.activeFilterCount || draft.trim() ? (
+                  <ActivityTotal
+                    rows={selected.length ? selected : shown}
+                    selected={selected.length > 0}
+                  />
+                ) : undefined
+              }
             />
           </div>
         </ScrollCueCard>
@@ -459,29 +347,13 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
             categories={ledger.options.categories}
             included={ledger.selectedCategories}
             excluded={ledger.excludedCategories}
-            // A category hidden elsewhere (a chip, a saved view) comes back; any other is
-            // chosen or unchosen.
-            onInclude={(category) =>
-              update(
-                ledger.excludedCategories.includes(category)
-                  ? {
-                      exclude: filterValue(
-                        ledger.excludedCategories.filter((value) => value !== category),
-                      ),
-                    }
-                  : { category: filterValue(toggled(ledger.selectedCategories, category)) },
-              )
-            }
+            onInclude={filters.includeCategory}
             accounts={ledger.options.accounts}
             selectedAccounts={ledger.selectedAccounts}
-            onAccount={(id) =>
-              update({ account: filterValue(toggled(ledger.selectedAccounts, id)) })
-            }
+            onAccount={filters.toggleAccount}
             methods={ledger.options.methods}
             selectedMethods={ledger.selectedMethods}
-            onMethod={(method) =>
-              update({ method: filterValue(toggled(ledger.selectedMethods, method)) })
-            }
+            onMethod={filters.toggleMethod}
             min={search.min}
             max={search.max}
             onAmount={(min, max) => update({ min, max })}
@@ -632,10 +504,19 @@ function useActivityCommands(handlers: {
       {
         id: 'activity.review',
         title: 'Show activity to review',
-        search: 'review flagged duplicate unusual second look queue',
+        search:
+          'review flagged duplicate unusual new price fee interest paycheck second look queue',
         group: 'View',
         scope: 'page',
         run: toggleReview,
+      },
+      {
+        id: 'activity.suggested',
+        title: 'Show categories Brief chose',
+        search: 'suggested category learned chose decided for you undo keep reject',
+        group: 'View',
+        scope: 'page',
+        run: () => update({ evidence: 'suggested' }),
       },
       {
         id: 'activity.export',

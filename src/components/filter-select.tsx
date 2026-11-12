@@ -1,10 +1,33 @@
 import { Select } from '@base-ui/react/select'
-import { useRef } from 'react'
+import { Fragment, useRef } from 'react'
 
 import { Check, ChevronDown } from './icons'
 import { usePopupPortal } from './ui/popup-container'
 
-export type FilterSelectOption = { value: string; label: string }
+/** A choice; options sharing a `group` in a row are listed under its name. */
+export type FilterSelectOption = { value: string; label: string; group?: string }
+
+/** Splits options into consecutive runs with the same group (or none). */
+function optionRuns(options: FilterSelectOption[]) {
+  const runs: Array<{ group?: string; options: FilterSelectOption[] }> = []
+  for (const option of options) {
+    const last = runs.at(-1)
+    if (last && last.group === option.group) last.options.push(option)
+    else runs.push({ group: option.group, options: [option] })
+  }
+  return runs
+}
+
+function FilterSelectItem({ option }: { option: FilterSelectOption }) {
+  return (
+    <Select.Item className="ledger-select-item" value={option.value}>
+      <Select.ItemText className="ledger-select-item-text">{option.label}</Select.ItemText>
+      <Select.ItemIndicator className="ledger-select-indicator">
+        <Check size={12} aria-hidden="true" />
+      </Select.ItemIndicator>
+    </Select.Item>
+  )
+}
 
 export function FilterSelect({
   label,
@@ -94,16 +117,24 @@ export function FilterSelect({
             }}
           >
             <Select.List className="ledger-select-list">
-              {options.map((option) => (
-                <Select.Item className="ledger-select-item" key={option.value} value={option.value}>
-                  <Select.ItemText className="ledger-select-item-text">
-                    {option.label}
-                  </Select.ItemText>
-                  <Select.ItemIndicator className="ledger-select-indicator">
-                    <Check size={12} aria-hidden="true" />
-                  </Select.ItemIndicator>
-                </Select.Item>
-              ))}
+              {optionRuns(options).map(({ group, options: run }, index) =>
+                group ? (
+                  <Select.Group className="ledger-select-group" key={index}>
+                    <Select.GroupLabel className="ledger-select-group-label">
+                      {group}
+                    </Select.GroupLabel>
+                    {run.map((option) => (
+                      <FilterSelectItem option={option} key={option.value} />
+                    ))}
+                  </Select.Group>
+                ) : (
+                  <Fragment key={index}>
+                    {run.map((option) => (
+                      <FilterSelectItem option={option} key={option.value} />
+                    ))}
+                  </Fragment>
+                ),
+              )}
             </Select.List>
           </Select.Popup>
         </Select.Positioner>

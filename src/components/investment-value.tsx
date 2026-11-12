@@ -1,5 +1,7 @@
+import type { LivelinePoint } from 'liveline'
 import { useMemo } from 'react'
 
+import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useFinance } from '../hooks/use-finance'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { accountDisplayName } from '../lib/account-names'
@@ -12,13 +14,15 @@ import {
 } from '../lib/dashboard-account-views'
 import { financeSettings } from '../lib/finance-settings'
 import { type ChartPeriod, chartPeriodSeconds } from '../lib/graph-preferences'
-import { buildLiveChartData, chartPointsFromStartDate } from '../lib/live-chart'
+import { buildLiveChartData, chartPointsFromStartDate, referenceLines } from '../lib/live-chart'
 import type { FinanceSnapshot } from '../lib/schema'
 import { PerformanceChart } from './charts'
 import { ValueHistoryEmptyState } from './data-state'
 import { useInvestmentSummary } from './investment-summary-card'
 import { InvestmentRangeSelect, PeriodChange, periodStatement } from './investments-summary'
 import { AnimatedCurrency, Card } from './ui'
+
+const noPoints: LivelinePoint[] = []
 
 /**
  * The page's focal card: what the investments are worth, how the period went, and the value
@@ -37,7 +41,6 @@ export function InvestmentsPortfolio({
   const live = useLiveFinance()
   const committed = useFinance().data ?? data
   const settings = financeSettings(committed)
-  const now = Date.now() / 1_000
   const graphWindow = chartPeriodSeconds(range)
   const views = useMemo(
     () =>
@@ -55,8 +58,10 @@ export function InvestmentsPortfolio({
   // The whole portfolio; a single brokerage's view stands in when there is no total.
   const view = views.find(({ accountId }) => accountId === 'total') ?? views[0]
   // The summary's sourced events sit on the line beside the activity.
-  const { summary } = useInvestmentSummary(data, range)
-  const listed = summary.data?.events
+  const { current } = useInvestmentSummary(data, range)
+  const listed = current?.events
+  // Event labels carry formatted amounts, so they are built again when the mask changes.
+  const amountsHidden = useAmountsHidden()
   const chartEvents = useMemo(
     () =>
       view
@@ -67,45 +72,30 @@ export function InvestmentsPortfolio({
             summaryChartEvents(listed ?? []),
           )
         : [],
-    [committed, view, graphWindow, listed],
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- the mask changes what is formatted
+    [committed, view, graphWindow, listed, amountsHidden],
   )
   const total = !view || view.accountId === 'total'
   const accountId = view?.accountId ?? 'total'
   // The statement covers the combined brokerages; a single brokerage standing in has none.
   const span = accountId === 'total' ? periodStatement(data, range) : undefined
 
-  const livePoints = view ? (live.marketSeries[view.accountId] ?? []) : []
+  const livePoints = (view && live.marketSeries[view.accountId]) || noPoints
   const startDate = view ? accountStartDate(data, view.accountId, settings.accountStartDates) : ''
   const incomplete = view ? accountValueIncomplete(data, view.accountId) : true
-  const chartData = view ? buildLiveChartData(view.points, livePoints, view.currentValue, now) : []
+  // The same points give the same arrays, so the chart redraws only when a point changes.
+  const { chartData, netDeposits, benchmark } = useMemo(() => {
+    const now = Date.now() / 1_000
+    return {
+      chartData: view ? buildLiveChartData(view.points, livePoints, view.currentValue, now) : [],
+      ...referenceLines(view, now),
+    }
+  }, [view, livePoints])
   const historyIsAvailable =
     view != null &&
     !incomplete &&
     (hasValueHistory(view.points, startDate) ||
       chartPointsFromStartDate(livePoints, startDate).length > 1)
-  const valueOnly = view?.performanceMethod === 'value-only'
-  const netDeposits =
-    !view || valueOnly
-      ? undefined
-      : buildLiveChartData(
-          view.points.flatMap((point) =>
-            typeof point.netDeposits === 'number'
-              ? [{ date: point.date, value: point.netDeposits }]
-              : [],
-          ),
-          [],
-          view.points.findLast((point) => typeof point.netDeposits === 'number')?.netDeposits ?? 0,
-          now,
-        )
-  const benchmarkHistory =
-    !view || valueOnly
-      ? []
-      : view.points.flatMap((point) =>
-          typeof point.sp500 === 'number' ? [{ date: point.date, value: point.sp500 }] : [],
-        )
-  const benchmark = benchmarkHistory.length
-    ? buildLiveChartData(benchmarkHistory, [], benchmarkHistory.at(-1)?.value ?? 0, now)
-    : undefined
 
   return (
     <Card className="investments-portfolio-card brokerage-performance-card">

@@ -57,15 +57,15 @@ export const evidenceFixture: EvidenceGraph = {
   ],
   chapters: [
     {
-      id: 'home:ca:2026-04',
+      id: 'home:or:2026-04',
       kind: 'home',
       title: 'Lived in Oregon',
       start: '2026-04-01',
       precision: 'month',
       tier: 'suggested',
       confirmed: false,
-      state: 'CA',
-      anchors: [{ says: '30 of 30 in-person purchases were in CA', evidence: ['transaction:a'] }],
+      state: 'OR',
+      anchors: [{ says: '30 of 30 in-person purchases were in OR', evidence: ['transaction:a'] }],
       members: [],
       programs: [],
       effects: [],
@@ -86,16 +86,16 @@ export const evidenceFixture: EvidenceGraph = {
       checklist: ['Check the final paycheck.'],
     },
   ],
-  now: { work: 'work:example', workTitle: 'Example Employer', home: 'California', month: 6 },
+  now: { work: 'work:example', workTitle: 'Example Employer', home: 'Oregon', month: 6 },
   residency: [
     {
       year: 2026,
-      state: 'CA',
+      state: 'OR',
       from: '2026-04-01',
       to: '2026-10-17',
       days: 200,
       tier: 'suggested',
-      chapter: 'home:ca:2026-04',
+      chapter: 'home:or:2026-04',
     },
   ],
   programs: [

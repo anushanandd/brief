@@ -1,4 +1,4 @@
-import { formatCurrency, formatPercent, formatActivityName } from './format'
+import { formatCurrency, formatPercent, formatActivityName, formatInstant } from './format'
 import type { FinanceSnapshot, ListedEvent } from './schema'
 import { formatActivityDate, transactionDateKey } from './spending'
 import { isSpendingTransaction, transactionMarkKind } from './transaction-kind'
@@ -52,13 +52,7 @@ function eventLimit(windowSeconds: number) {
   return 12
 }
 
-const eventTime = (value: string) =>
-  new Date(value).toLocaleString('en-US', {
-    month: 'short',
-    day: 'numeric',
-    hour: 'numeric',
-    minute: '2-digit',
-  })
+const eventTime = (value: string) => formatInstant(value)
 
 /**
  * The summary's ranked events as chart markers, each with its three times: when it happened,

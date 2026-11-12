@@ -184,3 +184,27 @@ fn each_text_is_embedded_once_and_the_cache_clears() {
     assert!(!path.exists());
     embeddings::clear(&path).unwrap();
 }
+
+/// Queues one more text while embedding its first batch, as a read during a run does.
+struct Late(std::sync::OnceLock<embeddings::Warmer>);
+
+impl Embedder for Late {
+    fn embed(&self, texts: &[String]) -> Option<Vec<Vec<f32>>> {
+        if texts.iter().any(|text| text == "first") {
+            self.0.get()?.request(["late".to_owned()].into());
+        }
+        Some(texts.iter().map(|_| vec![1.0, 0.0]).collect())
+    }
+}
+
+#[test]
+fn a_text_queued_during_a_run_is_embedded_before_the_run_ends() {
+    let path = std::env::temp_dir().join(format!("brief-warmer-{}.sqlite3", uuid::Uuid::new_v4()));
+    let embedder = std::sync::Arc::new(Late(std::sync::OnceLock::new()));
+    let warmer = embeddings::Warmer::new(path.clone(), embedder.clone());
+    let _ = embedder.0.set(warmer.clone());
+    warmer.request(["first".to_owned()].into());
+    warmer.drain();
+    assert_eq!(warmer.generation(), 2, "both batches were embedded");
+    embeddings::clear(&path).unwrap();
+}

@@ -21,8 +21,11 @@ export function parsePageOrder(raw: string | null): PagePath[] {
 export function movePage(order: PagePath[], index: number, direction: -1 | 1) {
   const next = [...order]
   const target = index + direction
-  if (index >= 0 && index < next.length && target >= 0 && target < next.length)
-    [next[index], next[target]] = [next[target], next[index]]
+  const [moving, displaced] = [next[index], next[target]]
+  if (moving !== undefined && displaced !== undefined) {
+    next[index] = displaced
+    next[target] = moving
+  }
   return next
 }
 const pageOrder = preference('brief.pageOrder', parsePageOrder, JSON.stringify)

@@ -38,12 +38,12 @@ fn another_brand_in_another_city_is_corrected_to_the_descriptor_and_its_alias() 
 #[test]
 fn another_number_is_another_merchant() {
     let transaction = purchase(
-        "Curry 42",
-        "AplPay LS CURRY 36 BERLIN DE",
+        "Grill 42",
+        "AplPay LS GRILL 36 MADRID ES",
         "HIGH",
         json!({}),
     );
-    assert_eq!(corrected_name(&transaction).as_deref(), Some("CURRY 36"));
+    assert_eq!(corrected_name(&transaction).as_deref(), Some("GRILL 36"));
 }
 
 #[test]
@@ -93,13 +93,8 @@ fn an_unrecognized_name_takes_the_issuers_fuller_one() {
 
 #[test]
 fn an_unrecognized_name_loses_its_processor_prefix() {
-    let transaction = purchase(
-        "Ls Kumpira",
-        "AplPay LS KUMPIRA BERLIN DE",
-        "LOW",
-        json!({}),
-    );
-    assert_eq!(corrected_name(&transaction).as_deref(), Some("KUMPIRA"));
+    let transaction = purchase("Ls Tapera", "AplPay LS TAPERA MADRID ES", "LOW", json!({}));
+    assert_eq!(corrected_name(&transaction).as_deref(), Some("TAPERA"));
 }
 
 #[test]
@@ -143,7 +138,7 @@ fn wallets_name_wins_only_when_it_names_another_merchant() {
 fn remote_purchases_are_told_by_brand_words_category_and_code() {
     let subscription = purchase(
         "Example AI",
-        "EXAMPLEAI *CHAT SUBSPORTLAND OR",
+        "EXAMPLEAI *CHAT SUBSLAS VEGAS NV",
         "VERY_HIGH",
         json!({}),
     );

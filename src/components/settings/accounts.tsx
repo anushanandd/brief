@@ -1,22 +1,30 @@
-import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { open } from '@tauri-apps/plugin-dialog'
+import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { useFinance } from '../../hooks/use-finance'
+import { setFinanceSnapshot, useFinance } from '../../hooks/use-finance'
 import { useFinanceEdits } from '../../hooks/use-finance-edits'
 import { useRefreshFinance } from '../../hooks/use-refresh-finance'
 import { percent, secureWebsite } from '../../lib/account-details'
 import { accountDisplayName } from '../../lib/account-names'
 import { accountStartDate } from '../../lib/account-start-dates'
-import { saveAccountLink } from '../../lib/api'
+import { useRegisterActions, type AppAction } from '../../lib/action-system'
+import { chooseCatalogCard, readCardRules, saveAccountLink } from '../../lib/api'
+import type { CardRules } from '../../lib/bindings/CardRules'
+import { cardsWithoutRules } from '../../lib/card-drafts'
 import { errorMessage } from '../../lib/errors'
+import { getResearch } from '../../lib/evidence'
 import { defaultFinanceSettings, financeSettings, type Settings } from '../../lib/finance-settings'
-import { formatCurrency } from '../../lib/format'
+import { formatCurrency, formatShortDay } from '../../lib/format'
 import { getExternalLogosEnabled } from '../../lib/logos'
 import { manualAccountKinds, type FinanceSettings, type FinanceSnapshot } from '../../lib/schema'
 import { AccountMark } from '../account-mark'
+import { BenefitMark } from '../card-benefits'
+import { CardDraftReview, CardRulesChanges } from '../card-rules-draft'
 import { FilterSelect } from '../filter-select'
-import { Link2, Plus, Trash2, Unlink } from '../icons'
-import { BenefitMark } from '../platinum-benefits'
+import { Link2, Plus, Search, Trash2, Unlink } from '../icons'
+import { SettingsLink } from '../settings-dialog'
 import {
   SettingsBlock,
   SettingsCard,
@@ -127,7 +135,237 @@ export function AccountsSection() {
 type SaveSettings = (change: (current: Settings) => FinanceSettings) => void
 type SectionProps = { data: FinanceSnapshot; settings: Settings; save: SaveSettings }
 
-/** The spending card, other cards' benefit products, and which Platinum benefits are tracked. */
+/** Where a product's rules came from, as its row says it. */
+export function ruleOriginLabel(rules: CardRules) {
+  if (rules.origin === 'user') return 'Yours'
+  return rules.applied
+    ? `From the card catalog · applied ${formatShortDay(rules.applied)}`
+    : 'From the card catalog'
+}
+
+/**
+ * The card products Brief knows the benefit terms of. Brief applies them from the open card
+ * catalog; rules the user reviews or imports are theirs, and the catalog never changes them.
+ */
+function CardRulesBlock({ data, settings, save }: SectionProps) {
+  const client = useQueryClient()
+  const [choosing, setChoosing] = useState(false)
+  const [drafting, setDrafting] = useState<{ accountId: string; saved?: CardRules }>()
+  const research = useQuery({ queryKey: ['research'], queryFn: getResearch })
+  const rules = settings.cardRules ?? []
+  const uncovered = cardsWithoutRules(data)
+  const names = settings.accountNames
+  const cardChoices = settings.cardChoices ?? []
+  const choices = new Map(cardChoices.map((choice) => [choice.accountId, choice]))
+  const nameOf = (id: string) => {
+    const account = data.accounts.find((candidate) => candidate.id === id)
+    return account ? accountDisplayName(account.id, account.name, names) : 'this card'
+  }
+  const accountFor = (product: string) =>
+    Object.entries(settings.benefitCards ?? {}).find(([, assigned]) => assigned === product)?.[0] ??
+    settings.spendingAccountId
+  const pick = async (accountId: string, catalogId: string) => {
+    try {
+      setFinanceSnapshot(client, await chooseCatalogCard(accountId, catalogId))
+    } catch (error) {
+      toast.error('Could not apply that card', { description: errorMessage(error) })
+    }
+  }
+  const latestPick = useRef(pick)
+  latestPick.current = pick
+  const reviewable = rules.flatMap((rule) => {
+    const accountId = accountFor(rule.product)
+    return accountId ? [{ rule, accountId }] : []
+  })
+  const actionKey = JSON.stringify([
+    reviewable.map(({ rule, accountId }) => [rule.product, rule.name, accountId]),
+    cardChoices,
+    uncovered.map(({ id }) => [id, nameOf(id)]),
+  ])
+  useRegisterActions(
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed by what the actions name
+    useMemo<AppAction[]>(() => {
+      const uncoveredIds = new Set(uncovered.map(({ id }) => id))
+      return [
+        ...reviewable.map(({ rule, accountId }) => ({
+          id: `cardRules.review.${rule.product}`,
+          title: `Review the rules for ${rule.name}`,
+          search: 'card rules review benefits catalog edit',
+          group: 'Here',
+          scope: 'page' as const,
+          run: () => setDrafting({ accountId, saved: rule }),
+        })),
+        ...cardChoices
+          .filter(({ accountId }) => uncoveredIds.has(accountId))
+          .flatMap(({ accountId, candidates }) =>
+            candidates.map((card) => ({
+              id: `cardRules.choose.${accountId}.${card.id}`,
+              title: `${nameOf(accountId)} is the ${card.name}`,
+              search: 'which card is this choose catalog benefits rules',
+              group: 'Here',
+              scope: 'page' as const,
+              run: () => void latestPick.current(accountId, card.id),
+            })),
+          ),
+      ]
+    }, [actionKey]),
+  )
+  const choose = async () => {
+    setChoosing(true)
+    try {
+      const path = await open({
+        multiple: false,
+        directory: false,
+        filters: [{ name: 'Card rules', extensions: ['json'] }],
+      })
+      if (!path) return
+      const imported = await readCardRules(path)
+      save((current) => ({
+        ...current,
+        cardRules: [
+          ...(current.cardRules ?? []).filter(({ product }) => product !== imported.product),
+          imported,
+        ],
+      }))
+      toast.success(`Imported ${imported.name}`)
+    } catch (error) {
+      toast.error('Could not import card rules', { description: errorMessage(error) })
+    } finally {
+      setChoosing(false)
+    }
+  }
+  return (
+    <SettingsBlock
+      id="card-rules"
+      title="Card rules"
+      description="Each card's benefit terms, applied from the open card catalog. Rules you review or import are yours, and the catalog never changes them."
+    >
+      {settings.cardCatalogOff ? (
+        <p className="transaction-edit-note">
+          The <SettingsLink target="card-catalog">card benefits catalog</SettingsLink> is off, so
+          cards get rules only when you add them.
+        </p>
+      ) : null}
+      {rules.length ? (
+        <ul className="settings-list">
+          {rules.map((rule) => {
+            const accountId = accountFor(rule.product)
+            return (
+              <li className="settings-list-row" key={rule.product}>
+                <span className="settings-list-copy">
+                  <strong>{rule.name}</strong>
+                  <small>
+                    {rule.benefits.length} benefits · {ruleOriginLabel(rule)}
+                  </small>
+                </span>
+                {accountId ? (
+                  <Button
+                    size="compact"
+                    variant="ghost"
+                    icon={Search}
+                    data-command={`cardRules.review.${rule.product}`}
+                    onClick={() => setDrafting({ accountId, saved: rule })}
+                  >
+                    Review
+                  </Button>
+                ) : null}
+                {rule.origin === 'user' ? (
+                  <Button
+                    size="compact"
+                    variant="ghost"
+                    icon={Trash2}
+                    aria-label={`Remove the rules for ${rule.name}`}
+                    onClick={() =>
+                      save((current) => ({
+                        ...current,
+                        cardRules: (current.cardRules ?? []).filter(
+                          ({ product }) => product !== rule.product,
+                        ),
+                      }))
+                    }
+                  >
+                    Remove
+                  </Button>
+                ) : null}
+              </li>
+            )
+          })}
+        </ul>
+      ) : (
+        <EmptyState>
+          {settings.cardCatalogOff
+            ? 'No card rules yet.'
+            : 'No card rules yet. They apply after the next refresh.'}
+        </EmptyState>
+      )}
+      {uncovered.length ? (
+        <ul className="settings-list" aria-label="Cards without rules">
+          {uncovered.map((account) => {
+            const choice = choices.get(account.id)
+            return (
+              <li className="settings-list-row" key={account.id}>
+                <span className="settings-list-copy">
+                  <strong>{accountDisplayName(account.id, account.name, names)}</strong>
+                  <small>
+                    {account.institution} · {choice ? 'Which card is this?' : 'no catalog match'}
+                  </small>
+                </span>
+                {choice ? (
+                  <FilterSelect
+                    label={`Which card is ${nameOf(account.id)}?`}
+                    value=""
+                    options={[
+                      { value: '', label: 'Choose the card' },
+                      ...choice.candidates.map((card) => ({
+                        value: card.id,
+                        label: `${card.name} · ${card.issuer}`,
+                      })),
+                    ]}
+                    onValueChange={(id) => id && void pick(account.id, id)}
+                  />
+                ) : null}
+                <Button
+                  size="compact"
+                  variant={choice ? 'ghost' : undefined}
+                  icon={Search}
+                  onClick={() => setDrafting({ accountId: account.id })}
+                  disabled={drafting?.accountId === account.id}
+                >
+                  {choice ? 'Search' : 'Find rules'}
+                </Button>
+              </li>
+            )
+          })}
+        </ul>
+      ) : null}
+      {drafting ? (
+        <CardDraftReview
+          key={`${drafting.accountId}:${drafting.saved?.product ?? ''}`}
+          accountId={drafting.accountId}
+          accountName={nameOf(drafting.accountId)}
+          canReadTerms={Boolean(research.data?.enabled && research.data.connected)}
+          saved={drafting.saved}
+          save={save}
+          onDone={() => setDrafting(undefined)}
+        />
+      ) : null}
+      {rules.some(({ origin }) => origin === 'user') ? <CardRulesChanges save={save} /> : null}
+      <div className="chapter-actions">
+        <Button
+          size="compact"
+          variant="ghost"
+          icon={Plus}
+          disabled={choosing}
+          onClick={() => void choose()}
+        >
+          Import a rules file
+        </Button>
+      </div>
+    </SettingsBlock>
+  )
+}
+
+/** The spending card, other cards' benefit products, and which benefits are tracked. */
 function CardPreferences({ data, settings, save }: SectionProps) {
   const accountDisplayNames = settings.accountNames
   const spendingAccountId = settings.spendingAccountId ?? ''
@@ -166,6 +404,7 @@ function CardPreferences({ data, settings, save }: SectionProps) {
           }
         />
       </SettingsRow>
+      <CardRulesBlock data={data} settings={settings} save={save} />
       {otherCards.length ? (
         <SettingsBlock
           id="card-benefits"
@@ -232,18 +471,24 @@ function CardPreferences({ data, settings, save }: SectionProps) {
         </SettingsBlock>
       ) : null}
       <SettingsBlock
-        id="platinum-benefits"
-        title="Platinum benefits"
+        id="benefit-visibility"
+        title="Spending card benefits"
         description="Unchecked benefits are hidden from Benefits and reminders; their credits still count toward the fee."
       >
         <fieldset className="benefit-visibility-settings">
-          <legend className="sr-only">Visible Platinum benefits</legend>
+          <legend className="sr-only">Visible spending card benefits</legend>
           <div className="benefit-visibility-options">
             {(data.insights?.benefitOptions ?? []).map((benefit) => (
               <label key={benefit.id}>
-                {externalLogosEnabled ? (
-                  <BenefitMark id={benefit.id} name={benefit.name} externalLogosEnabled />
-                ) : null}
+                <BenefitMark
+                  id={benefit.id}
+                  name={benefit.name}
+                  logoDomain={benefit.logoDomain}
+                  logoUrl={benefit.logoUrl}
+                  logoBrand={benefit.logoBrand}
+                  category={benefit.category}
+                  externalLogosEnabled={externalLogosEnabled}
+                />
                 <input
                   type="checkbox"
                   checked={!hiddenBenefits.includes(benefit.id)}
@@ -267,7 +512,9 @@ function CardPreferences({ data, settings, save }: SectionProps) {
   )
 }
 
-const manualKindLabels: Record<string, string> = {
+type ManualKind = (typeof manualAccountKinds)[number]
+
+const manualKindLabels: Record<ManualKind, string> = {
   cash: 'Cash',
   brokerage: 'Investments',
   retirement: 'Retirement',
@@ -275,10 +522,13 @@ const manualKindLabels: Record<string, string> = {
   vehicle: 'Vehicle',
   loan: 'Loan',
 }
-
-type ManualKind = (typeof manualAccountKinds)[number]
 const manualKind = (value: string): ManualKind | undefined =>
   manualAccountKinds.find((kind) => kind === value)
+/** A saved kind in words; one this version doesn't know reads as saved. */
+const kindLabel = (value: string) => {
+  const known = manualKind(value)
+  return known ? manualKindLabels[known] : value
+}
 
 /** A labeled field in the manual account forms. */
 const field = (label: string, input: React.ReactNode) => (
@@ -388,7 +638,7 @@ function ManualAccounts({ data, settings, save }: SectionProps) {
                 <span className="settings-list-copy">
                   <strong>{account.name}</strong>
                   <small>
-                    {manualKindLabels[account.kind] ?? account.kind} ·{' '}
+                    {kindLabel(account.kind)} ·{' '}
                     {latest ? (
                       <>
                         {account.kind === 'loan' ? 'owed ' : ''}

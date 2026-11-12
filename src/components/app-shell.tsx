@@ -1,5 +1,7 @@
 import { Outlet, useLocation } from '@tanstack/react-router'
-import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react'
+import type { ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 
 import { useAccountJumpActions } from '../hooks/use-account-jump-actions'
 import { useFinance } from '../hooks/use-finance'
@@ -12,10 +14,12 @@ import { useAutoRefreshFinance, useWalletWatch } from '../hooks/use-refresh-fina
 import { useRegisterActions, useRegisteredActions } from '../lib/action-system'
 import { analyticsChart, analyticsCharts, analyticsGroup } from '../lib/analytics'
 import { isTauri } from '../lib/api'
-import { setAmountsHidden } from '../lib/format'
+import { announceAmountsHidden, setAmountsHidden } from '../lib/format'
+import { openModal } from '../lib/keyboard'
 import { useOrderedNavigation } from '../lib/navigation-preferences'
 import { getPrivacyPreferences, usePrivacyPreferences } from '../lib/privacy-preferences'
 import { useSettingsDialog } from '../lib/settings-dialog'
+import { CommandKeyHints } from './command-key-hints'
 import { CommandMenu } from './command-menu'
 import { FocusHints } from './focus-hints'
 import { KeyGuide } from './key-guide'
@@ -61,9 +65,10 @@ function Shell() {
   const [focusHintsOpen, setFocusHintsOpen] = useState(false)
   const privacyPreferences = usePrivacyPreferences()
   const [valuesHidden, setValuesHidden] = useState(() => getPrivacyPreferences().hideOnLaunch)
-  // Formatters read this as they run, so it's set before anything below renders; the keyed
-  // page then renders again with every amount masked or shown.
+  // Formatters read this as they run, so it's set before anything below renders. Views the
+  // shell doesn't render again, such as the routed page, hear of the change just after.
   setAmountsHidden(valuesHidden)
+  useLayoutEffect(announceAmountsHidden, [valuesHidden])
   useAutoRefreshFinance(
     finance.data?.updatedAt,
     isTauri() &&
@@ -120,11 +125,15 @@ function Shell() {
   useLayoutEffect(() => {
     if (mainContentRef.current) mainContentRef.current.scrollTop = 0
   }, [pathname])
-  // Tab never walks focus between controls. Fields that use Tab themselves, such as autofill,
-  // handle it first.
+  // Across the page, Tab never walks focus between controls: the sidebar, strips, and lists are
+  // reached by shortcuts and arrows instead. Inside a dialog Tab walks its controls, which the
+  // native modal keeps within it. Fields that use Tab themselves, such as autofill, handle it
+  // first.
   useEffect(() => {
     const blockTab = (event: KeyboardEvent) => {
-      if (event.key === 'Tab') event.preventDefault()
+      if (event.key !== 'Tab') return
+      if (event.target instanceof Element && event.target.closest('dialog[open]')) return
+      event.preventDefault()
     }
     window.addEventListener('keydown', blockTab)
     return () => window.removeEventListener('keydown', blockTab)
@@ -153,13 +162,11 @@ function Shell() {
               {finance.annotationWarning}
             </p>
           ) : null}
-          <Fragment key={valuesHidden ? 'amounts-hidden' : 'amounts-shown'}>
-            {finance.data?.recovery && !finance.data.recovery.canRestore ? null : <Outlet />}
-          </Fragment>
+          {finance.data?.recovery && !finance.data.recovery.canRestore ? null : <Outlet />}
         </main>
 
         {/* Settings opens over any page and stays usable when the snapshot can't load. */}
-        <SettingsDialog valuesHidden={valuesHidden} />
+        <SettingsDialog />
 
         {commandOpen ? (
           <CommandMenu
@@ -170,24 +177,48 @@ function Shell() {
           />
         ) : null}
         {keyboard.keyGuideOpen ? (
-          <KeyGuide
-            actions={keyboard.actions}
-            prefix={keyboard.keySequence}
-            onRun={keyboard.executeAction}
-            onClose={keyboard.closeKeyState}
-            onShowAll={() => {
-              keyboard.closeKeyState()
-              setShortcutsOpen(true)
-            }}
-          />
+          <OverModal>
+            <KeyGuide
+              actions={keyboard.guideActions}
+              prefix={keyboard.keySequence}
+              onRun={keyboard.executeAction}
+              onClose={keyboard.closeKeyState}
+              onShowAll={() => {
+                keyboard.closeKeyState()
+                setShortcutsOpen(true)
+              }}
+            />
+          </OverModal>
         ) : null}
         <ShortcutsDialog
           open={shortcutsOpen}
           actions={keyboard.actions}
           onClose={() => setShortcutsOpen(false)}
         />
-        {focusHintsOpen ? <FocusHints onClose={() => setFocusHintsOpen(false)} /> : null}
+        {focusHintsOpen ? (
+          <OverModal>
+            <FocusHints onClose={() => setFocusHintsOpen(false)} />
+          </OverModal>
+        ) : null}
+        <CommandKeyHints
+          actions={keyboard.actions}
+          paused={
+            commandOpen || focusHintsOpen || shortcutsOpen || keyboard.keyGuideOpen || settings.open
+          }
+        />
       </div>
     </>
   )
+}
+
+/**
+ * An overlay opened over a modal dialog renders inside it: the dialog sits in the top layer,
+ * above anything rendered in the page, and leaves the page inert.
+ */
+function OverModal({ children }: { children: ReactNode }) {
+  const [host] = useState(() => {
+    const modal = openModal()
+    return modal instanceof HTMLDialogElement ? modal : undefined
+  })
+  return host ? createPortal(children, host) : children
 }

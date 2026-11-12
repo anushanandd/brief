@@ -12,6 +12,25 @@ import type { FinanceSnapshot } from '../lib/schema'
 import { SecurityLink } from './security-link'
 import { Change, EmptyState, SectionHeading } from './ui'
 
+/**
+ * A row: one account's position (an account's own view), or a security's whole position across
+ * accounts, which has no account.
+ */
+export type PositionRow = Pick<
+  FinanceSnapshot['holdings'][number],
+  | 'ticker'
+  | 'name'
+  | 'shares'
+  | 'price'
+  | 'costBasis'
+  | 'value'
+  | 'unrealizedGain'
+  | 'dailyChangePct'
+  | 'weeklyChangePct'
+  | 'totalChangePct'
+  | 'valuationNote'
+> & { accountId?: string }
+
 export function PositionTable({
   title,
   positions,
@@ -23,7 +42,7 @@ export function PositionTable({
   emptyMessage = 'No positions in this account.',
 }: {
   title?: ReactNode
-  positions: FinanceSnapshot['holdings']
+  positions: readonly PositionRow[]
   externalLogosEnabled: boolean
   accountNames?: Record<string, string>
   marketLoading?: boolean
@@ -74,7 +93,11 @@ export function PositionTable({
         </thead>
         <tbody>
           {positions.map((holding) => (
-            <tr key={`${holding.accountId}:${holding.ticker}`} data-keyboard-row tabIndex={-1}>
+            <tr
+              key={`${holding.accountId ?? ''}:${holding.ticker}`}
+              data-keyboard-row
+              tabIndex={-1}
+            >
               <th scope="row">
                 <SecurityLink
                   ticker={holding.ticker}
@@ -84,7 +107,9 @@ export function PositionTable({
                 />
               </th>
               {accountNames ? (
-                <td className="holding-account-name">{accountNames[holding.accountId] ?? '—'}</td>
+                <td className="holding-account-name">
+                  {(holding.accountId ? accountNames[holding.accountId] : undefined) ?? '—'}
+                </td>
               ) : null}
               {view === 'positions' ? (
                 <>

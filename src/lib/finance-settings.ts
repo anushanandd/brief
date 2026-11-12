@@ -3,6 +3,7 @@ import { invoke } from '@tauri-apps/api/core'
 import { parseAccountDisplayNames } from './account-names'
 import { parseAccountStartDates } from './account-start-dates'
 import { getFinanceSnapshot, isTauri } from './api'
+import { rendererStorage } from './preference'
 import {
   financeSettingsSchema,
   type Account,
@@ -13,7 +14,6 @@ import {
 /** Renderer keys that older builds used before these settings moved into the finance store. */
 export const legacyFinanceSettingKeys = {
   spendingAccountId: 'brief:spending-account-id',
-  hiddenBenefitIds: 'brief:hidden-platinum-benefits',
   accountNames: 'brief.accountDisplayNames',
   accountStartDates: 'brief.accountStartDates',
 } as const
@@ -63,13 +63,12 @@ function readLegacySettings(): Partial<FinanceSettings> | undefined {
   const raw = Object.fromEntries(
     Object.entries(legacyFinanceSettingKeys).map(([field, key]) => [
       field,
-      window.localStorage.getItem(key),
+      rendererStorage.read(key),
     ]),
   )
   if (Object.values(raw).every((value) => value == null)) return undefined
   return {
     ...(raw.spendingAccountId ? { spendingAccountId: raw.spendingAccountId } : {}),
-    hiddenBenefitIds: raw.hiddenBenefitIds?.split(',').filter(Boolean) ?? [],
     accountNames: parseAccountDisplayNames(raw.accountNames),
     accountStartDates: parseAccountStartDates(raw.accountStartDates),
   }
@@ -86,14 +85,12 @@ export function hasLegacySettings() {
 }
 
 function removeLegacySettings() {
-  for (const key of Object.values(legacyFinanceSettingKeys)) window.localStorage.removeItem(key)
+  for (const key of Object.values(legacyFinanceSettingKeys)) rendererStorage.remove(key)
 }
 
 export function previewFinanceSettings(): FinanceSettings {
   try {
-    return financeSettingsSchema.parse(
-      JSON.parse(window.localStorage.getItem(previewSettingsKey) ?? '{}'),
-    )
+    return financeSettingsSchema.parse(JSON.parse(rendererStorage.read(previewSettingsKey) ?? '{}'))
   } catch {
     return defaultFinanceSettings
   }
@@ -114,7 +111,7 @@ export async function importLegacyFinanceSettings(): Promise<string | undefined>
   const imported = financeSettingsSchema.parse(legacy)
   if (!isTauri()) {
     const current = previewFinanceSettings()
-    window.localStorage.setItem(
+    rendererStorage.write(
       previewSettingsKey,
       JSON.stringify({
         ...imported,
@@ -138,7 +135,7 @@ export async function importLegacyFinanceSettings(): Promise<string | undefined>
 export async function saveFinanceSettings(settings: FinanceSettings): Promise<FinanceSnapshot> {
   const parsed = financeSettingsSchema.parse(settings)
   if (!isTauri()) {
-    window.localStorage.setItem(previewSettingsKey, JSON.stringify(parsed))
+    rendererStorage.write(previewSettingsKey, JSON.stringify(parsed))
     return getFinanceSnapshot()
   }
   return invoke<FinanceSnapshot>('save_finance_settings', { settings: parsed, importing: false })

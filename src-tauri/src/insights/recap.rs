@@ -8,7 +8,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use super::calendar::{self};
-use super::changes::{Window, WINDOWS};
+use super::period_changes::{Window, WINDOWS};
 use crate::finance_contract::Transaction;
 use crate::numeric::{from_minor, minor_units};
 use crate::transaction_policy::Kind;
@@ -241,6 +241,8 @@ mod tests {
     }
 
     #[test]
+    // Cents are written as dollars_cents.
+    #[allow(clippy::inconsistent_digit_grouping)]
     fn a_percent_needs_a_base_at_least_a_tenth_of_the_change() {
         assert_eq!(change_pct(150_00, 100_00), Some(50.0));
         // From a loss to a gain reads as an increase against the loss's size.

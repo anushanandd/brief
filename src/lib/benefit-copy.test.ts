@@ -22,6 +22,9 @@ describe('benefit copy', () => {
       'Late · allowed until Oct 27',
     )
     expect(purchaseCreditLabel({ state: 'not-credited' })).toBe('No credit')
+    expect(purchaseCreditLabel({ state: 'unlikely' })).toBe(
+      'Likely not covered: unlike every credited purchase',
+    )
     expect(purchaseCreditLabel({ state: 'over-allowance' })).toBe('Over allowance')
     expect(purchaseCreditLabel(undefined)).toBeNull()
   })
@@ -29,24 +32,24 @@ describe('benefit copy', () => {
   it('states credited progress and an exact remainder', () => {
     const benefit = benefitWindow({
       status: 'credited',
-      creditedAmount: 70,
-      remainingAmount: 30,
-      remainingRange: { low: 30, high: 30 },
+      creditedAmount: 35,
+      remainingAmount: 15,
+      remainingRange: { low: 15, high: 15 },
     })
-    expect(benefitStatus(benefit)).toEqual({ text: '$70.00 of $100.00 credited' })
-    expect(benefitNote(benefit)).toBe('$30.00 left')
+    expect(benefitStatus(benefit)).toEqual({ text: '$35.00 of $50.00 credited' })
+    expect(benefitNote(benefit)).toBe('$15.00 left')
   })
 
   it('shows a range when a credit may belong to the previous period', () => {
     const benefit = benefitWindow({
       status: 'credited',
-      creditedAmount: 50,
-      uncertainCreditAmount: 50,
+      creditedAmount: 25,
+      uncertainCreditAmount: 25,
       periodUncertain: true,
       remainingAmount: null,
-      remainingRange: { low: 50, high: 100 },
+      remainingRange: { low: 25, high: 50 },
     })
-    expect(benefitNote(benefit)).toBe('$50.00–$100.00 left · $50.00 may be last period’s')
+    expect(benefitNote(benefit)).toBe('$25.00–$50.00 left · $25.00 may be last period’s')
   })
 
   it('treats a remainder below the smallest qualifying charge as used', () => {
@@ -68,37 +71,37 @@ describe('benefit copy', () => {
   it('says where the history starts when it starts inside the window', () => {
     const benefit = benefitWindow({
       status: 'credited',
-      creditedAmount: 50,
+      creditedAmount: 25,
       historyFrom: '2026-05-09',
-      remainingAmount: 50,
-      remainingRange: { low: 50, high: 50 },
+      remainingAmount: 25,
+      remainingRange: { low: 25, high: 25 },
     })
-    expect(benefitNote(benefit)).toBe('$50.00 left · history from May 9')
+    expect(benefitNote(benefit)).toBe('$25.00 left · history from May 9')
   })
 
   it('reports an expected credit before any credit posts', () => {
     const benefit = benefitWindow({
       status: 'matched',
       awaitingCreditAmount: 13.99,
-      remainingRange: { low: 100, high: 100 },
+      remainingRange: { low: 50, high: 50 },
     })
     expect(benefitStatus(benefit)).toEqual({ text: '$13.99 credit expected' })
-    expect(benefitNote(benefit)).toBe('$100.00 left · $13.99 expected')
+    expect(benefitNote(benefit)).toBe('$50.00 left · $13.99 expected')
   })
 
-  it('never calls invisible Uber Cash use missing', () => {
+  it('never calls a partner credit missing when its use is invisible', () => {
     const external = benefitWindow({ status: 'external', remainingRange: undefined })
     expect(benefitStatus({ ...external, estimatedCreditAmount: 0 })).toEqual({
       text: 'Use not visible on the card',
     })
-    expect(benefitStatus({ ...external, estimatedCreditAmount: 15 })).toEqual({
-      text: 'Likely used · $15.00',
+    expect(benefitStatus({ ...external, estimatedCreditAmount: 10 })).toEqual({
+      text: 'Likely used · $10.00',
     })
   })
 
   it('warns about purchases whose credit is late or never came', () => {
     expect(benefitWarning(benefitWindow({ activity: [purchase({ state: 'not-credited' })] }))).toBe(
-      'No credit for Resy credit · check enrollment',
+      'No credit for Example Tables dining credit · check enrollment',
     )
     expect(
       benefitWarning(

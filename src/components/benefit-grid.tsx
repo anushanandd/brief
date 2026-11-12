@@ -1,10 +1,10 @@
-import { useCallback, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useMemo, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 
 import { useFinanceEdits } from '../hooks/use-finance-edits'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { ActivityItem } from '../lib/activity'
-import { benefitNote, benefitStatus, creditLagNote } from '../lib/benefit-copy'
+import { benefitNote, benefitStatus, creditLagNote, withoutCredit } from '../lib/benefit-copy'
 import {
   benefitRows,
   benefitYearTotals,
@@ -23,7 +23,6 @@ import {
   formatCurrencyRange,
   formatProseCurrency,
 } from '../lib/format'
-import { shortcutInput } from '../lib/keyboard'
 import { getExternalLogosEnabled } from '../lib/logos'
 import type {
   BenefitActivity,
@@ -34,15 +33,17 @@ import type {
   FinanceSnapshot,
   Transaction,
 } from '../lib/schema'
+import { useSettingsDialog } from '../lib/settings-dialog'
 import { benefitReviewItems, formatActivityDate } from '../lib/spending'
 import { ActivityList } from './activity-list'
+import { BenefitMark, FeeRecovery } from './card-benefits'
 import { ExternalLink } from './external-link'
 import { ArrowUpRight, ChevronRight, X } from './icons'
 import { Keys } from './keys'
-import { BenefitMark, FeeRecovery } from './platinum-benefits'
+import { SettingsLink } from './settings-dialog'
 import { TransactionDialog } from './transaction-dialog'
 import { Button, Card, ChartRangeSelect, EmptyState, Metric } from './ui'
-import { PopupContainerContext } from './ui/popup-container'
+import { Dialog, dialogAutofocus } from './ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -154,22 +155,34 @@ function GridCell({
   )
 }
 
+type MarkFields = { logoDomain?: string; logoUrl?: string; logoBrand?: string; category?: string }
+
 function RowName({
   id,
   name,
+  mark,
   waiting = 0,
   onOpen,
 }: {
   id: string
   name: string
+  mark: MarkFields
   waiting?: number
   onOpen: () => void
 }) {
   return (
     <th scope="row">
       <button type="button" className="benefit-row-name" data-keyboard-open onClick={onOpen}>
-        <BenefitMark id={id} name={name} externalLogosEnabled={getExternalLogosEnabled()} />
-        <span>{name}</span>
+        <BenefitMark
+          id={id}
+          name={name}
+          logoDomain={mark.logoDomain}
+          logoUrl={mark.logoUrl}
+          logoBrand={mark.logoBrand}
+          category={mark.category}
+          externalLogosEnabled={getExternalLogosEnabled()}
+        />
+        <span>{withoutCredit(name)}</span>
         {waiting ? (
           <span className="activity-badge is-warning">
             {waiting}
@@ -197,7 +210,13 @@ function GridRow({
   const totals = benefitYearTotals(benefit, year)
   return (
     <tr data-keyboard-row tabIndex={-1} aria-label={benefit.name}>
-      <RowName id={benefit.id} name={benefit.name} waiting={waiting} onOpen={() => onOpen()} />
+      <RowName
+        id={benefit.id}
+        name={benefit.name}
+        mark={benefit}
+        waiting={waiting}
+        onOpen={() => onOpen()}
+      />
       {gridCells(periodsIn(benefit, year)).map((cell, index) =>
         cell.kind === 'gap' ? (
           <td key={`gap-${index}`} colSpan={cell.span} />
@@ -230,7 +249,7 @@ function GridRow({
 function WindowRow({ benefit, onOpen }: { benefit: BenefitWindow; onOpen: () => void }) {
   return (
     <tr data-keyboard-row tabIndex={-1} aria-label={benefit.name}>
-      <RowName id={benefit.id} name={benefit.name} onOpen={onOpen} />
+      <RowName id={benefit.id} name={benefit.name} mark={benefit} onOpen={onOpen} />
       <td colSpan={12}>
         <button type="button" className="benefit-cell is-renewal" onClick={onOpen}>
           <span className="benefit-cell-text sensitive-value">
@@ -247,7 +266,8 @@ function WindowRow({ benefit, onOpen }: { benefit: BenefitWindow; onOpen: () => 
   )
 }
 
-const reviewQuestion = (item: BenefitReview, name: string) => {
+const reviewQuestion = (item: BenefitReview, benefitName: string) => {
+  const name = withoutCredit(benefitName)
   switch (item.kind) {
     case 'no-purchase':
       return `Which purchase earned this ${name} credit?`
@@ -352,8 +372,8 @@ function ReviewFlag({
                 ),
               true,
             )}
-            {action('No purchase', () =>
-              decide(transaction.id, { benefitConfirmed: true }, 'Kept without a purchase'),
+            {action('Keep unlinked', () =>
+              decide(transaction.id, { benefitConfirmed: true }, 'Kept unlinked'),
             )}
           </>
         ) : null}
@@ -434,82 +454,89 @@ function Inspector({
   children: ReactNode
 }) {
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
-  useEffect(() => {
-    if (!dialog || typeof dialog.showModal !== 'function') return
-    if (open && !dialog.open) dialog.showModal()
-    else if (!open && dialog.open) dialog.close()
-  }, [dialog, open])
-  useEffect(() => {
-    if (!open || !dialog) return undefined
-    const onKeyDown = (event: KeyboardEvent) => {
-      // A transaction opened from here sits on top and handles its own keys.
-      if (
-        event.defaultPrevented ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey ||
-        shortcutInput(event.target) ||
-        !dialog.contains(document.activeElement)
-      )
-        return
-      const rows = [...dialog.querySelectorAll<HTMLElement>('[data-keyboard-row]')].filter(
+  // Its keys run through the app's dispatcher, scoped to this dialog: a transaction opened from
+  // here sits on top and takes them over.
+  const actions = useMemo<AppAction[]>(() => {
+    const rows = () =>
+      [...(dialog?.querySelectorAll<HTMLElement>('[data-keyboard-row]') ?? [])].filter(
         (row) => row.getClientRects().length > 0,
       )
-      const current = document.activeElement?.closest<HTMLElement>('[data-keyboard-row]')
-      const step = ['j', 'ArrowDown'].includes(event.key)
-        ? 1
-        : ['k', 'ArrowUp'].includes(event.key)
-          ? -1
-          : 0
-      if (step) {
-        event.preventDefault()
-        const index = current ? rows.indexOf(current) : step > 0 ? -1 : rows.length
-        const next = rows[Math.max(0, Math.min(rows.length - 1, index + step))]
-        next?.focus()
-        next?.scrollIntoView({ block: 'nearest' })
-      } else if (event.key === 'Enter' && current && document.activeElement === current) {
-        event.preventDefault()
-        const target = current.matches('[data-keyboard-open]')
-          ? current
-          : current.querySelector<HTMLElement>('[data-keyboard-open]')
-        target?.click()
-      }
+    const focused = () => document.activeElement?.closest<HTMLElement>('[data-keyboard-row]')
+    const step = (direction: 1 | -1) => {
+      const all = rows()
+      const current = focused()
+      const index = current ? all.indexOf(current) : direction > 0 ? -1 : all.length
+      const next = all[Math.max(0, Math.min(all.length - 1, index + direction))]
+      next?.focus()
+      next?.scrollIntoView({ block: 'nearest' })
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [dialog, open])
+    return [
+      {
+        id: 'inspector.rows.next',
+        title: 'Next item',
+        group: 'Here',
+        scope: 'dialog',
+        bindings: [
+          { sequence: ['j'], label: 'J' },
+          { sequence: ['ArrowDown'], label: '↓' },
+        ],
+        run: () => step(1),
+      },
+      {
+        id: 'inspector.rows.previous',
+        title: 'Previous item',
+        group: 'Here',
+        scope: 'dialog',
+        bindings: [
+          { sequence: ['k'], label: 'K' },
+          { sequence: ['ArrowUp'], label: '↑' },
+        ],
+        run: () => step(-1),
+      },
+      {
+        id: 'inspector.rows.open',
+        title: 'Open item',
+        group: 'Here',
+        scope: 'dialog',
+        bindings: [{ sequence: ['Enter'], label: '↵' }],
+        run: () => {
+          const current = focused()
+          if (!current || document.activeElement !== current) return
+          const target = current.matches('[data-keyboard-open]')
+            ? current
+            : current.querySelector<HTMLElement>('[data-keyboard-open]')
+          target?.click()
+        },
+      },
+    ]
+  }, [dialog])
   return (
-    <dialog
+    <Dialog
       ref={setDialog}
+      open={open}
+      onClose={onClose}
+      popups
+      actions={actions}
       className="transaction-dialog"
       aria-label={label}
-      onCancel={(event) => {
-        event.preventDefault()
-        onClose()
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
     >
       {open ? (
-        <PopupContainerContext.Provider value={dialog}>
-          <article className="transaction-details">
-            {children}
-            <footer className="command-footer transaction-details-keys" aria-label="Keyboard">
-              <span className="command-footer-hint">
-                Next <Keys label="J" /> <Keys label="K" />
-              </span>
-              <span className="command-footer-hint">
-                Open <Keys label="Return" />
-              </span>
-              <span className="command-footer-hint">
-                Close <Keys label="Esc" />
-              </span>
-            </footer>
-          </article>
-        </PopupContainerContext.Provider>
+        <article className="transaction-details">
+          {children}
+          <footer className="command-footer transaction-details-keys" aria-label="Keyboard">
+            <span className="command-footer-hint">
+              Next <Keys label="J" /> <Keys label="K" />
+            </span>
+            <span className="command-footer-hint">
+              Open <Keys label="Return" />
+            </span>
+            <span className="command-footer-hint">
+              Close <Keys label="Esc" />
+            </span>
+          </footer>
+        </article>
       ) : null}
-    </dialog>
+    </Dialog>
   )
 }
 
@@ -531,7 +558,7 @@ function InspectorHeader({
       {mark}
       <div>
         {/* The title takes focus on open, so no control starts out ringed. */}
-        <h2 tabIndex={-1} autoFocus>
+        <h2 tabIndex={-1} {...dialogAutofocus}>
           {title}
         </h2>
         <p>{detail}</p>
@@ -655,7 +682,17 @@ function BenefitDetail({
   return (
     <>
       <InspectorHeader
-        mark={<BenefitMark id={id} name={name} externalLogosEnabled={getExternalLogosEnabled()} />}
+        mark={
+          <BenefitMark
+            id={id}
+            name={name}
+            logoDomain={benefit?.logoDomain ?? current?.logoDomain}
+            logoUrl={benefit?.logoUrl ?? current?.logoUrl}
+            logoBrand={benefit?.logoBrand ?? current?.logoBrand}
+            category={benefit?.category ?? current?.category}
+            externalLogosEnabled={getExternalLogosEnabled()}
+          />
+        }
         title={name}
         detail={`${current?.limit ?? year}${benefit?.recurring ? ' · via subscription' : ''}`}
         onClose={onClose}
@@ -791,7 +828,7 @@ function BenefitDetail({
                           />
                         ) : period.planned?.length ? null : (
                           <p className="benefit-period-empty">
-                            {benefit.external ? 'No Uber charge' : 'No credit or purchase'}
+                            {benefit.external ? 'No partner charge' : 'No credit or purchase'}
                           </p>
                         )}
                         {period.planned?.length ? (
@@ -861,7 +898,11 @@ export function BenefitGrid({
   onInspect: (next: BenefitInspection) => void
 }) {
   const card = data.insights?.benefits
-  const hidden = financeSettings(data).hiddenBenefitIds
+  const settings = financeSettings(data)
+  const { show: showSettings } = useSettingsDialog()
+  const hidden = settings.hiddenBenefitIds
+  const fromCatalog =
+    settings.cardRules?.find(({ product }) => product === card?.product)?.origin === 'catalog'
   const currentYear = Number(today.slice(0, 4))
   const years = benefitYears(card, today)
   const rows = benefitRows(card, year, hidden)
@@ -897,6 +938,14 @@ export function BenefitGrid({
           run: () => onInspect({ review: true }),
         },
         {
+          id: 'benefits.rules',
+          title: 'Review the card rules',
+          search: 'benefits card rules catalog review terms',
+          group: 'Here',
+          scope: 'page',
+          run: () => showSettings('card-rules'),
+        },
+        {
           id: 'benefits.close',
           title: 'Close benefit details',
           search: 'benefits close inspector details',
@@ -922,7 +971,7 @@ export function BenefitGrid({
           run: () => onYear(option),
         })),
       ],
-      [currentYear, onInspect, onYear, years],
+      [currentYear, onInspect, onYear, showSettings, years],
     ),
   )
 
@@ -1080,6 +1129,12 @@ export function BenefitGrid({
         ) : (
           <EmptyState>{`No benefits in ${year}`}</EmptyState>
         )}
+        {fromCatalog ? (
+          <p className="benefit-detail-note">
+            Rules from the open card catalog ·{' '}
+            <SettingsLink target="card-rules">Review</SettingsLink>
+          </p>
+        ) : null}
       </Card>
       <Inspector
         open={Boolean(inspection.review || inspected?.benefit || inspected?.current)}

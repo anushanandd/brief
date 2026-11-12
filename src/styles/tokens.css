@@ -156,6 +156,20 @@
   --row-height-compact: 40px;
 }
 
+/* Window widths. A media query can't read a custom property, so page layouts use these widths
+   as literals, and nothing else. The sidebar is fixed, so each is also a page width: subtract
+   216 px of sidebar and the page's gutters.
+     1350px  Home's previews and secondary grid stack.
+     1250px  Grids of many columns lose one: the trip calendar, the account lists.
+     1100px  Side-by-side panels stack: Calendar, Taxes, Chapters and Rules, Diagnostics, and
+             Data health's counts move under its verdict.
+     1050px  Compact: page gutters narrow to 32 px, the remaining two-column pages (Home,
+             Accounts, Spending, Holdings, Activity, Trips, Design) stack, and Settings' rail
+             narrows.
+   Documents stacks at 1180px, where its 360 px panel no longer fits beside the list.
+   A rule about a component's own width, such as a table dropping columns, is a container
+   query beside the component instead. */
+
 @media (-webkit-max-device-pixel-ratio: 1), (max-resolution: 1dppx) {
   :root {
     --hairline: 1px;

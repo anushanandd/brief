@@ -1,11 +1,5 @@
-import { formatCurrency } from '../lib/format'
+import { formatCurrency, formatInstant } from '../lib/format'
 import type { Account } from '../lib/schema'
-
-const dateFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-  year: 'numeric',
-})
 
 export function SnapTradeReference({ account }: { account?: Account }) {
   if (!account?.id.startsWith('snaptrade:')) return null
@@ -18,7 +12,9 @@ export function SnapTradeReference({ account }: { account?: Account }) {
     <span className="snaptrade-reference">
       SnapTrade: {formatCurrency(account.reportedBalance)}{' '}
       {timestamp ? (
-        <time dateTime={timestamp}>({dateFormatter.format(new Date(timestamp))})</time>
+        <time dateTime={timestamp}>
+          ({formatInstant(timestamp, { month: 'short', day: 'numeric', year: 'numeric' })})
+        </time>
       ) : (
         '(date unavailable)'
       )}

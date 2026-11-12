@@ -189,7 +189,10 @@ export function SpendingPaceChart({
     const lower = Math.floor(position)
     const upper = Math.min(lower + 1, pace.current.length - 1)
     const fraction = position - lower
-    return pace.current[lower] + (pace.current[upper] - pace.current[lower]) * fraction
+    const from = pace.current[lower]
+    const to = pace.current[upper]
+    if (from == null || to == null) return null
+    return from + (to - from) * fraction
   }
   const scrub = scrubState
     ? (() => {

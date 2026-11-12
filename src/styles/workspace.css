@@ -38,20 +38,6 @@
   line-height: 1.55;
   text-align: right;
 }
-.workspace-metric-grid {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  margin-top: 28px;
-  padding-top: 20px;
-  border-top: var(--hairline) solid var(--border-subtle);
-}
-.accounts-overview-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  align-items: start;
-  gap: 16px;
-  margin-top: 16px;
-}
 .account-group-card {
   min-width: 0;
   padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
@@ -256,19 +242,6 @@
   letter-spacing: -0.01em;
   line-height: 1.2;
 }
-.account-recent-preview {
-  grid-column: 2;
-}
-.account-expected-column {
-  grid-column: 3;
-}
-.account-investment-preview-column,
-.account-activity-preview-column {
-  display: grid;
-  min-width: 0;
-  align-content: start;
-  gap: 16px;
-}
 .account-expected-preview .expected-activity-list {
   max-height: 320px;
   overflow-y: auto;
@@ -376,11 +349,9 @@
   font-weight: 500;
 }
 .accounts-connection-notice small {
-  overflow: hidden;
   color: var(--text-secondary);
   font-size: var(--type-meta);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .account-group-section-heading {
   display: flex;

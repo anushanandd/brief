@@ -110,6 +110,10 @@
 .health-issue + .health-issue {
   border-top: var(--hairline) solid var(--border-subtle);
 }
+/* The issue J and K have reached; Return presses its action. */
+.health-issue:focus {
+  background: var(--sidebar-accent);
+}
 .health-issue:last-child {
   padding-bottom: 0;
 }

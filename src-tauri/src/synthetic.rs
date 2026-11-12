@@ -25,7 +25,7 @@ const DAYS: i64 = 77;
 /// Days between refreshes.
 const REFRESH_EVERY: i64 = 3;
 const HOME: (&str, &str) = ("Columbus", "OH");
-const AWAY: (&str, &str) = ("Austin", "TX");
+const AWAY: (&str, &str) = ("Portland", "OR");
 
 /// splitmix64: small, fast, and the same everywhere.
 struct Rng(u64);

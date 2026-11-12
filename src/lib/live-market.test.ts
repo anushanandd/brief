@@ -5,13 +5,16 @@ import { seedSnapshot } from '../data/fixtures/records'
 import { startMarketStream, stopMarketStream } from './api'
 import {
   applyLiveProjection,
+  forSnapshot,
   liveMarketSeries,
   subscribeLiveMarket,
   withMarketFrame,
   withMarketHistory,
   withMarketWeek,
+  type LiveMarketState,
 } from './live-market'
 import { marketSnapshotsSchema, type ChartChanges, type MarketProjection } from './schema'
+import { present } from './test-support'
 
 vi.mock('./api', () => ({
   startMarketStream: vi.fn(),
@@ -19,6 +22,7 @@ vi.mock('./api', () => ({
 }))
 const start = vi.mocked(startMarketStream)
 const stop = vi.mocked(stopMarketStream)
+const startCall = (index: number) => present(start.mock.calls[index], `start call ${index}`)
 beforeEach(() => {
   vi.useFakeTimers()
   vi.stubGlobal('window', new EventTarget())
@@ -48,7 +52,7 @@ it('rejects stale revisions and timestamps and retains immutable history referen
   expect(live.transactions).toBe(saved.transactions)
   expect(live.netWorthHistory).toBe(saved.netWorthHistory)
   saved.brokeragePerformance.forEach((account, index) =>
-    expect(live.brokeragePerformance[index].points).toBe(account.points),
+    expect(live.brokeragePerformance[index]?.points).toBe(account.points),
   )
   // The account totals are Rust's at the live values, never the saved ones.
   const totals = emptyRollup({ netWorth: 120 })
@@ -67,7 +71,7 @@ it('retains previous close and five-minute portfolio projections instead of only
     [1_260, 102],
     [1_320, 103],
     [2_400, 104],
-  ]) {
+  ] as const) {
     series = liveMarketSeries(series, {
       ...closedMarket(),
       chartPoint: { brokerage: { time, value } },
@@ -123,13 +127,13 @@ it('scopes restarts and ignores old updates, failures, and post-disposal callbac
   const update = vi.fn(),
     error = vi.fn()
   const dispose = subscribeLiveMarket(['TEST'], 10, update, error)
-  const first = start.mock.calls[0]
+  const first = startCall(0)
   window.dispatchEvent(new Event('focus'))
   expect(start).toHaveBeenCalledTimes(1)
   first[3]({ ...closedMarket(), nextTransitionAt: new Date(Date.now() + 1000).toISOString() })
   update.mockClear()
   await vi.advanceTimersByTimeAsync(2000)
-  const second = start.mock.calls[1]
+  const second = startCall(1)
   expect(second[2]).not.toBe(first[2])
   expect(stop).toHaveBeenCalledWith(first[2])
   const market = closedMarket()
@@ -152,7 +156,7 @@ it('scopes restarts and ignores old updates, failures, and post-disposal callbac
 
 it('waits for the market transition when closed and retries a failed start', async () => {
   const dispose = subscribeLiveMarket(['TEST'], 10, vi.fn(), vi.fn())
-  start.mock.calls[0][3]({
+  startCall(0)[3]({
     ...closedMarket(),
     nextTransitionAt: new Date(Date.now() + 3600000).toISOString(),
   })
@@ -160,7 +164,7 @@ it('waits for the market transition when closed and retries a failed start', asy
   expect(start).toHaveBeenCalledTimes(1)
   await vi.advanceTimersByTimeAsync(1000)
   expect(start).toHaveBeenCalledTimes(2)
-  start.mock.calls[1][4]('temporary failure')
+  startCall(1)[4]('temporary failure')
   await vi.advanceTimersByTimeAsync(60000)
   expect(start).toHaveBeenCalledTimes(3)
   dispose()
@@ -177,7 +181,7 @@ it('stops a pending startup and discards its late rejection', async () => {
   const error = vi.fn()
   const dispose = subscribeLiveMarket(['TEST'], 10, vi.fn(), error)
   dispose()
-  expect(stop).toHaveBeenCalledWith(start.mock.calls[0][2])
+  expect(stop).toHaveBeenCalledWith(startCall(0)[2])
   reject(new Error('late startup'))
   await vi.advanceTimersByTimeAsync(60000)
   expect(error).not.toHaveBeenCalled()
@@ -200,7 +204,7 @@ function closedMarket() {
 
 it('keeps the native connection across focus and REST reconciliation cadence', async () => {
   const dispose = subscribeLiveMarket(['TEST'], 10000, vi.fn(), vi.fn())
-  start.mock.calls[0][3]({
+  startCall(0)[3]({
     ...closedMarket(),
     session: 'Regular market',
     feed: 'sip',
@@ -216,7 +220,7 @@ it('keeps the native connection across focus and REST reconciliation cadence', a
 
 it('keeps annotation-aware account income and classified ledger evidence through price ticks', () => {
   const saved = { ...seedSnapshot(), revision: 4 }
-  saved.accounts[0].investmentIncomeYtd = 12
+  present(saved.accounts[0], 'an account').investmentIncomeYtd = 12
   const projection: MarketProjection = {
     rollup: emptyRollup(),
     ...saved,
@@ -227,8 +231,8 @@ it('keeps annotation-aware account income and classified ledger evidence through
     })),
   }
   const live = applyLiveProjection(saved, projection)
-  expect(live.accounts[0].value).toBe(100)
-  expect(live.accounts[0].investmentIncomeYtd).toBe(12)
+  expect(live.accounts[0]?.value).toBe(100)
+  expect(live.accounts[0]?.investmentIncomeYtd).toBe(12)
   expect(live.transactions).toBe(saved.transactions)
   expect(live.spending).toBe(saved.spending)
 })
@@ -258,7 +262,121 @@ it('shows a stream’s changes only once its week completes the lines', () => {
   expect(withMarketWeek(state, {}, day(9), 'OTHER')).toBe(state)
 })
 
-it('replaces the frame with the intraday week and keeps ticks that arrived after it', () => {
+/** The same points on Home's line and the accounts' line. */
+const lines = (points: Array<{ time: number; value: number }>) => ({
+  'net-worth': points,
+  accounts: points,
+})
+
+it('only adds detail to a line through launch and a snapshot change, and resets for new symbols', () => {
+  const minute = 60
+  // A month of half hours, then a week of five-minute bars, ending at the last saved minute.
+  const weekStart = Date.parse('2026-11-04T14:30:00Z') / 1_000
+  const now = Date.parse('2026-11-11T15:00:00Z') / 1_000
+  const month = Array.from({ length: 24 * 2 * 20 }, (_, index) => ({
+    time: weekStart - (24 * 2 * 20 - index) * 30 * minute,
+    value: 1_000 + index,
+  }))
+  const week = Array.from({ length: (now - weekStart) / (5 * minute) }, (_, index) => ({
+    time: weekStart + index * 5 * minute,
+    value: 2_000 + index,
+  }))
+  const line = [...month, ...week]
+  const base: MarketProjection = { rollup: emptyRollup(), ...seedSnapshot(), revision: 0 }
+  const frame = (revision: number, updatedAt: string, chartSeries: ReturnType<typeof lines>) => ({
+    ...closedMarket(),
+    chartSeries,
+    projection: { ...base, revision, updatedAt },
+    chartChanges: dayChange(revision),
+  })
+  // The previous close and now: a first frame for a holding without saved bars.
+  const twoPoints = lines([
+    { time: Date.parse('2026-11-10T21:00:00Z') / 1_000, value: 2_500 },
+    { time: now + 90, value: 2_600 },
+  ])
+  const corrected = present(week.at(-10), 'a week point')
+  const history = lines(
+    week.map((point) => (point === corrected ? { ...point, value: point.value + 0.5 } : point)),
+  )
+
+  let previous = { first: Infinity, last: -Infinity, length: 0 }
+  const expectWhole = (state: LiveMarketState) => {
+    for (const id of ['net-worth', 'accounts']) {
+      const times = present(state.series[id], id).map(({ time }) => time)
+      // Sorted and unique, and never covering less time or fewer points than before.
+      expect(times).toEqual([...new Set(times)].toSorted((left, right) => left - right))
+      expect(times[0]).toBeLessThanOrEqual(previous.first)
+      expect(times.at(-1)).toBeGreaterThanOrEqual(previous.last)
+      expect(times.length).toBeGreaterThanOrEqual(previous.length)
+    }
+    const times = present(state.series.accounts, 'accounts').map(({ time }) => time)
+    previous = {
+      first: present(times[0], 'a first time'),
+      last: present(times.at(-1), 'a last time'),
+      length: times.length,
+    }
+  }
+  const savedValue = (state: LiveMarketState) =>
+    state.series.accounts?.find(({ time }) => time === corrected.time)?.value
+
+  // Launch: the saved frame, the stream's two-point first frame, a tick, then its history.
+  const saved = { ...frame(1, 'A', lines(line)), cached: true }
+  let state = forSnapshot({ series: {} }, 'TEST', '1:A', saved)
+  expectWhole(state)
+  expect(state.series.accounts).toHaveLength(line.length)
+  state = withMarketFrame(state, frame(1, 'A', twoPoints), 'TEST', true)
+  expectWhole(state)
+  state = withMarketFrame(
+    state,
+    {
+      ...closedMarket(),
+      chartPoint: {
+        accounts: { time: now + 150, value: 2_610 },
+        'net-worth': { time: now + 150, value: 2_610 },
+      },
+    },
+    'TEST',
+    false,
+  )
+  expectWhole(state)
+  expect(state.changes).toBeUndefined()
+  state = withMarketWeek(state, history, dayChange(7), 'TEST')
+  expectWhole(state)
+  expect(state.changes).toEqual(dayChange(7))
+  // Rust's corrected value for a timestamp the line already had wins.
+  expect(savedValue(state)).toBe(corrected.value + 0.5)
+  // The month before the week stays; the tick after the week's last bar stays.
+  expect(state.series.accounts?.[0]).toEqual(month[0])
+  expect(state.series.accounts?.at(-1)).toEqual({ time: now + 120, value: 2_610 })
+
+  // A new snapshot of the same symbols keeps the lines but none of the old values.
+  const before = state.series
+  state = forSnapshot(state, 'TEST', '2:B', undefined)
+  expect(state.series).toBe(before)
+  expect(state.market).toBeUndefined()
+  expect(state.changes).toBeUndefined()
+  // Settled during render: the same inputs give the same state.
+  expect(forSnapshot(state, 'TEST', '2:B', undefined)).toBe(state)
+  state = withMarketFrame(state, frame(2, 'B', twoPoints), 'TEST', true)
+  expectWhole(state)
+  expect(state.changes).toBeUndefined()
+  state = withMarketWeek(
+    state,
+    lines(week.map((point) => ({ ...point, value: point.value * 2 }))),
+    undefined,
+    'TEST',
+  )
+  expectWhole(state)
+  // The new stream's history replaces every point it spans, so no old valuation survives there.
+  expect(savedValue(state)).toBe(corrected.value * 2)
+  expect(state.changes).toEqual(dayChange(2))
+
+  // Another set of symbols starts over, seeded from its own saved frame when there is one.
+  expect(forSnapshot(state, 'OTHER', '2:B', undefined).series).toEqual({})
+  expect(forSnapshot(state, 'OTHER', '2:B', saved).series.accounts).toHaveLength(line.length)
+})
+
+it('joins the intraday week to the frame and keeps ticks that arrived after it', () => {
   const current = {
     total: [
       { time: 600, value: 1 },

@@ -67,6 +67,8 @@ it('maps the inspector keys and leaves every other key to the page', () => {
   expect(inspectorKey('f')).toBe('other')
   expect(inspectorKey('u')).toBe('unlink')
   expect(inspectorKey('o')).toBe('transfer')
+  expect(inspectorKey('a')).toBe('accept')
+  expect(inspectorKey('d')).toBe('reject')
   expect(inspectorKey('x')).toBeUndefined()
   expect(inspectorKey('Enter')).toBeUndefined()
 })

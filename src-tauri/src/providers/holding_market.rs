@@ -356,17 +356,19 @@ impl Providers {
         if epoch != self.market_streams.epoch.load(Ordering::SeqCst) {
             return;
         }
-        let mut previews = self.chart_previews.lock().unwrap();
+        let mut previews = super::market_stream::recover(&self.chart_previews);
         previews.insert(
             (history.symbol.clone(), history.range),
             (epoch, history.clone()),
         );
         while previews.len() > 160 {
-            let oldest = previews
+            let Some(oldest) = previews
                 .iter()
                 .min_by_key(|(_, (_, history))| history.fetched_at)
                 .map(|(key, _)| key.clone())
-                .unwrap();
+            else {
+                break;
+            };
             previews.remove(&oldest);
         }
     }
@@ -521,9 +523,8 @@ impl Providers {
         let (_, seconds) = resolution(range)?;
         let now = Utc::now();
         let start = if range == 0 {
-            DateTime::parse_from_rfc3339("2016-01-01T00:00:00Z")
-                .unwrap()
-                .with_timezone(&Utc)
+            // 2016-01-01T00:00:00Z.
+            DateTime::from_timestamp(1_451_606_400, 0).unwrap_or(now)
         } else {
             // Include observed reference bars before weekend/holiday boundaries.
             // Seven days also bounds the renderer's permitted reference age.

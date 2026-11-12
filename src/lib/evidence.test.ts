@@ -3,7 +3,14 @@ import { describe, expect, it } from 'vitest'
 import { evidenceFixture } from '../data/fixtures/evidence'
 import { insights } from '../data/fixtures/insights'
 import { emptySnapshot } from '../data/fixtures/records'
-import { chapterSpan, emptyEvidence, explanationSpan, nowLine, sourceDue } from './evidence'
+import {
+  chapterSpan,
+  emptyEvidence,
+  explanationSpan,
+  nowLine,
+  prefilledFields,
+  sourceDue,
+} from './evidence'
 import { needView } from './needs'
 import { objectQuery } from './objects'
 import type { AttentionItem, FinanceSnapshot } from './schema'
@@ -14,11 +21,11 @@ describe('evidence words', () => {
     expect(
       nowLine({
         ...emptyEvidence,
-        now: { work: 'work:ms', workTitle: 'Example Corp', home: 'California', month: 16 },
+        now: { work: 'work:corp', workTitle: 'Example Corp', home: 'Washington', month: 16 },
       }),
     ).toBe('Example Corp · Washington · month 16')
     // Without a job, a month count would have nothing to count from.
-    expect(nowLine({ ...emptyEvidence, now: { home: 'California' } })).toBe('California')
+    expect(nowLine({ ...emptyEvidence, now: { home: 'Washington' } })).toBe('Washington')
   })
 
   it('writes spans as dates', () => {
@@ -48,14 +55,16 @@ describe('rules and chapters elsewhere', () => {
       kind: 'program-note',
       program: 'waiver',
       says,
-      subject: 'account:plaid:cashplus',
+      subject: 'account:plaid:premier',
     } as AttentionItem
     const data: FinanceSnapshot = {
       ...emptySnapshot(),
       insights: insights({
         evidence: {
           ...emptyEvidence,
-          programs: [{ ...evidenceFixture.programs[0], id: 'waiver', name: 'Employee fee waiver' }],
+          programs: evidenceFixture.programs
+            .slice(0, 1)
+            .map((program) => ({ ...program, id: 'waiver', name: 'Employee fee waiver' })),
         },
       }),
     }
@@ -67,7 +76,33 @@ describe('rules and chapters elsewhere', () => {
   })
 
   it('limits search to chapters or rules by their prefix', () => {
-    expect(objectQuery('@chapter morgan')).toEqual({ kinds: ['chapter'], text: 'morgan' })
+    expect(objectQuery('@chapter example')).toEqual({ kinds: ['chapter'], text: 'example' })
     expect(objectQuery('rule waiver')).toEqual({ kinds: ['program'], text: 'waiver' })
+  })
+
+  it('prefills only the fields a page supplied, so the rest stay for the user', () => {
+    expect(
+      prefilledFields({
+        template: 'employeeDepositWaiver',
+        name: 'Checking fee waiver',
+        organization: '',
+        summary: 'The $12 monthly fee is waived with $500 in deposits.',
+        sourceUrl: 'https://bank.example/fees',
+        sourceTitle: 'Fees',
+        effective: '2026-01-01',
+        accountName: 'Example Checking',
+        institution: 'Example Bank',
+        amount: 500,
+        fee: 12,
+      }),
+    ).toEqual({
+      name: 'Checking fee waiver',
+      summary: 'The $12 monthly fee is waived with $500 in deposits.',
+      effective: '2026-01-01',
+      accountName: 'Example Checking',
+      institution: 'Example Bank',
+      amount: '500',
+      fee: '12',
+    })
   })
 })

@@ -139,8 +139,8 @@ fn a_city_match_needs_one_location_outside_any_chain() {
 #[test]
 fn remote_purchases_and_short_names_are_never_searched() {
     let remote = purchase(
-        "EXAMPLEAI *CHAT SUBSPORTLAND OR",
-        json!({"address": "1 EXAMPLE ST", "city": "PORTLAND", "region": "CA"}),
+        "EXAMPLEAI *CHAT SUBSLAS VEGAS NV",
+        json!({"address": "1 EXAMPLE ST", "city": "LAS VEGAS", "region": "NV"}),
     );
     assert_eq!(need(&remote), None);
     let short = purchase("AplPay CAFE SAN JOSE CA", json!(null));

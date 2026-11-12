@@ -48,16 +48,29 @@
   margin: 0 0 16px;
 }
 
+/* The year never scrolls sideways: as the card narrows, Estimated and then Missed give way (both
+   stay in each benefit's inspector), the name column narrows, and cell labels wrap. */
 .benefit-grid-scroll {
-  overflow-x: auto;
+  container: benefit-grid / inline-size;
 }
 
 .benefit-grid {
   width: 100%;
-  min-width: 760px;
   border-collapse: separate;
   border-spacing: 2px;
   table-layout: fixed;
+}
+
+@container benefit-grid (max-width: 760px) {
+  .benefit-grid tr:not(.benefit-grid-group) > :nth-last-child(1) {
+    display: none;
+  }
+}
+
+@container benefit-grid (max-width: 640px) {
+  .benefit-grid tr:not(.benefit-grid-group) > :nth-last-child(2) {
+    display: none;
+  }
 }
 
 .benefit-grid thead th {
@@ -117,7 +130,7 @@
 .benefit-row-name,
 .benefit-cell {
   width: 100%;
-  height: var(--row-height-compact);
+  min-height: var(--row-height-compact);
   border: 0;
   border-radius: var(--radius-inner);
   background: none;
@@ -143,9 +156,9 @@
 
 .benefit-row-name > span:nth-child(2) {
   flex: 1;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  padding-block: 4px;
+  overflow-wrap: break-word;
 }
 
 .benefit-row-name:hover,
@@ -190,12 +203,21 @@
   );
 }
 
+/* A narrow month wraps its label between words ("$15 / of / $50"), never inside an amount. */
 .benefit-cell-text {
-  overflow: hidden;
   font-size: var(--type-micro);
   font-variant-numeric: tabular-nums;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  line-height: 1.3;
+}
+
+/* Narrow, the months take the room the name and the dropped figures gave up. */
+@container benefit-grid (max-width: 640px) {
+  .benefit-grid thead th:first-child {
+    width: 140px;
+  }
+  .benefit-cell {
+    padding: 0 2px;
+  }
 }
 
 .benefit-cell.is-partial .benefit-cell-track,
@@ -327,11 +349,10 @@
 }
 
 .benefit-period-row > small {
-  overflow: hidden;
+  padding-block: 4px;
   color: var(--text-tertiary);
   font-size: var(--type-meta);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
 .benefit-period-row > small.is-partial,
@@ -375,7 +396,7 @@
 .benefit-inspector-header h2 {
   font-family: inherit;
   font-size: var(--type-section);
-  font-weight: 600;
+  font-weight: 500;
 }
 
 .benefit-detail-metrics {

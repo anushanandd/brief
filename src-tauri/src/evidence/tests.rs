@@ -165,25 +165,22 @@ fn explanation<'a>(evidence: &'a Evidence, program: &str) -> Option<&'a Explanat
         .find(|explanation| explanation.program == program)
 }
 
-const BONUS: &str = "ms-cashplus-engagement-bonus";
+const BONUS: &str = "example-checking-loyalty-bonus";
 const WAIVER: &str = "example-premier-employee-fee-waiver";
 
 #[test]
-fn the_bonus_explains_the_card_fee_with_a_cited_proof_and_repays_it() {
+fn the_bonus_explains_the_fee_with_a_cited_proof_and_repays_it() {
     let view = career_view(&career::state());
     let evidence = evidence_of(&view);
     let offset = explanation(evidence, BONUS).unwrap();
     assert_eq!(offset.tier, Tier::Explained);
     assert_eq!(
         (offset.subject.as_str(), offset.object.as_deref()),
-        (
-            "transaction:engagement-bonus",
-            Some("transaction:membership-fee")
-        )
+        ("transaction:loyalty-bonus", Some("transaction:account-fee"))
     );
     assert_eq!(
         offset.says,
-        "The $895 engagement bonus offsets the card's $895 annual fee"
+        "The $100 loyalty bonus offsets the account's $100 annual fee"
     );
     assert!(offset
         .proof
@@ -191,28 +188,16 @@ fn the_bonus_explains_the_card_fee_with_a_cited_proof_and_repays_it() {
         .iter()
         .all(|step| step.met && !step.evidence.is_empty()));
     assert!(offset.proof.unchecked.is_empty());
-    assert!(offset
-        .proof
-        .source
-        .url
-        .starts_with("https://www.morganstanley.com/"));
-    // Applied, the bonus repays the fee rather than counting as income...
+    assert!(offset.proof.source.url.starts_with("https://bank.example/"));
+    // Applied, the bonus repays the fee rather than counting as income.
     let bonus = view
         .snapshot
         .transactions
         .iter()
-        .find(|transaction| transaction.id == "engagement-bonus")
+        .find(|transaction| transaction.id == "loyalty-bonus")
         .unwrap();
-    assert_eq!(bonus.refund_of.as_deref(), Some("membership-fee"));
+    assert_eq!(bonus.refund_of.as_deref(), Some("account-fee"));
     assert_ne!(bonus.kind(), Some(crate::transaction_policy::Kind::Income));
-    // ...and counts against the card's fee, the card known by the name its issuer reports.
-    let insights = view.insights.as_ref().unwrap();
-    let card = insights
-        .other_card_benefits
-        .iter()
-        .find(|card| card.account_id == "plaid:msplatinum")
-        .unwrap();
-    assert_eq!(card.fee.as_ref().unwrap().offsets, 895.0);
 }
 
 #[test]
@@ -223,12 +208,12 @@ fn the_employee_waiver_stays_suggested_and_watches_each_month() {
     // Enrollment online is a condition no record shows.
     assert_eq!(waiver.tier, Tier::Suggested);
     assert_eq!(waiver.proof.unchecked.len(), 1);
-    // From the account's first deposits in May through August; September fell short.
+    // From the account's first deposits in April through August; September fell short.
     assert_eq!(
         (waiver.from, waiver.to),
-        (Some(day("2026-05-01")), Some(day("2026-08-31")))
+        (Some(day("2026-04-01")), Some(day("2026-08-31")))
     );
-    assert_eq!(waiver.subject, "account:plaid:cashplus");
+    assert_eq!(waiver.subject, "account:plaid:premier");
     let watch = evidence
         .alerts
         .iter()
@@ -264,21 +249,21 @@ fn reviews_confirm_or_dismiss_a_suggestion() {
 
 #[test]
 fn a_missing_condition_concludes_nothing_and_a_missing_bonus_is_expected() {
-    // Without the issuer's name for the card, the rule can't bind the card or its fee.
+    // At another bank, the rule can't bind the account or its fee.
     let mut state = career::state();
     for account in &mut state.snapshot.accounts {
-        if account.id == "plaid:msplatinum" {
-            account.official_name = Some("Example Travel Card".into());
+        if account.id == "plaid:checking" {
+            account.institution = "Other Bank".into();
         }
     }
     assert!(explanation(evidence_of(&career_view(&state)), BONUS).is_none());
 
-    // Without the bonus, the fee's renewal still expects one, past its 60 days.
+    // Without the bonus, the fee still expects one, past its 60 days.
     let mut state = career::state();
     state
         .snapshot
         .transactions
-        .retain(|transaction| transaction.id != "engagement-bonus");
+        .retain(|transaction| transaction.id != "loyalty-bonus");
     let view = career_view(&state);
     let evidence = evidence_of(&view);
     assert!(explanation(evidence, BONUS).is_none());
@@ -301,10 +286,7 @@ fn a_missing_condition_concludes_nothing_and_a_missing_bonus_is_expected() {
 fn terms_that_dont_cover_the_date_leave_a_conclusion_suggested() {
     let view = career_view(&career::state());
     let snapshot = &view.snapshot;
-    let mut program = programs::programs(&[])
-        .into_iter()
-        .find(|program| program.id == BONUS)
-        .unwrap();
+    let mut program = career::loyalty_bonus();
     // Terms beginning after the bonus posted: a missing year is never extrapolated.
     for term in &mut program.terms {
         term.from = day("2026-08-01");
@@ -322,6 +304,58 @@ fn terms_that_dont_cover_the_date_leave_a_conclusion_suggested() {
     );
     assert_eq!(found.len(), 1);
     assert_eq!(found[0].tier, Tier::Suggested);
+}
+
+#[test]
+fn no_rule_concludes_or_alerts_from_nothing_or_before_its_records() {
+    let view = career_view(&career::state());
+    let snapshot = &view.snapshot;
+    let employers = employment::employers(&[], &snapshot.transactions, career::today());
+    for program in [career::employee_waiver(), career::loyalty_bonus()] {
+        let (found, alerts) = engine::evaluate(
+            &program,
+            &engine::Facts {
+                transactions: &[],
+                accounts: &[],
+                employers: &[],
+                today: career::today(),
+            },
+        );
+        assert!(
+            found.is_empty() && alerts.is_empty(),
+            "{} from nothing",
+            program.id
+        );
+        // The same records read on a day before any of them conclude nothing and raise no
+        // alert: a rule knows nothing dated after `today`, so nothing is Explained early.
+        let (found, alerts) = engine::evaluate(
+            &program,
+            &engine::Facts {
+                transactions: &snapshot.transactions,
+                accounts: &snapshot.accounts,
+                employers: &employers,
+                today: day("2000-01-01"),
+            },
+        );
+        assert!(
+            found.is_empty(),
+            "{} concluded before its records: {:?}",
+            program.id,
+            found
+                .iter()
+                .map(|found| (&found.says, found.from))
+                .collect::<Vec<_>>()
+        );
+        assert!(
+            alerts.is_empty(),
+            "{} before its records: {:?}",
+            program.id,
+            alerts
+                .iter()
+                .map(|alert| (&alert.says, alert.date))
+                .collect::<Vec<_>>()
+        );
+    }
 }
 
 #[test]
@@ -355,15 +389,15 @@ fn employers_come_from_pay_statements_w2s_and_payroll() {
             ),
         ]
     );
-    // Every payroll deposit joined its employer, the CashPlus split included.
-    let morgan = &employers[1];
-    assert!(morgan
+    // Each payroll deposit links to its employer, including the part split into another account.
+    let corp = &employers[1];
+    assert!(corp
         .deposits
         .iter()
-        .any(|(_, _, id)| id.starts_with("ms-pay-cashplus")));
+        .any(|(_, _, id)| id.starts_with("corp-pay-premier")));
     assert_eq!(
         employers[0].states.get(&2025).map(String::as_str),
-        Some("CO")
+        Some("TX")
     );
     // Without documents, payroll alone still finds both jobs, as inferred.
     let inferred = employment::employers(&[], &state.snapshot.transactions, career::today());
@@ -386,7 +420,10 @@ fn descriptors_name_employers_by_word_prefix_or_whole_name() {
         "Example Corp Services Group Inc."
     ));
     // One short word, or a different employer, is not a match.
-    assert!(!employment::names("UNI PAYROLL", "Example State University"));
+    assert!(!employment::names(
+        "EXA PAYROLL",
+        "Example State University"
+    ));
     assert!(!employment::names(
         "EXAMPLE ANALYTICS PAYROLL",
         "Example Bank"
@@ -408,27 +445,27 @@ fn chapters_tell_the_career() {
             (
                 "work:example-analytics-llc",
                 day("2024-12-23"),
-                Some(day("2026-03-27"))
+                Some(day("2026-02-06"))
             ),
             (
-                "home:co:2025-01",
+                "home:tx:2025-01",
                 day("2025-01-01"),
-                Some(day("2026-03-31"))
+                Some(day("2026-02-28"))
             ),
             (
                 "milestone:purchase:furniture",
                 day("2025-11-03"),
                 Some(day("2025-11-03"))
             ),
-            ("home:ca:2026-04", day("2026-04-01"), None),
+            ("home:wa:2026-03", day("2026-03-01"), None),
             (
                 "work:example-corp-services-group-inc",
                 day("2026-03-02"),
                 None
             ),
             (
-                "milestone:accounts:2026-05",
-                day("2026-05-10"),
+                "milestone:accounts:2026-04",
+                day("2026-04-15"),
                 Some(day("2026-05-15"))
             ),
         ]
@@ -437,13 +474,13 @@ fn chapters_tell_the_career() {
         .chapters
         .iter()
         .all(|chapter| chapter.tier == Tier::Suggested && !chapter.confirmed));
-    let morgan = &evidence.chapters[4];
-    assert_eq!(morgan.programs, vec![WAIVER.to_owned()]);
+    let corp = &evidence.chapters[4];
+    assert_eq!(corp.programs, vec![WAIVER.to_owned()]);
     // Accounts opened near the start are only suggested members.
-    assert!(morgan
+    assert!(corp
         .members
         .iter()
-        .any(|member| member.id == "account:plaid:cashplus" && member.tier == Tier::Suggested));
+        .any(|member| member.id == "account:plaid:premier" && member.tier == Tier::Suggested));
     // The Chicago trip says nothing about where home is.
     assert!(!evidence
         .chapters
@@ -454,8 +491,8 @@ fn chapters_tell_the_career() {
         chapters::Now {
             work: Some("work:example-corp-services-group-inc".into()),
             work_title: Some("Example Corp Services Group Inc.".into()),
-            home: Some("California".into()),
-            month: Some(6),
+            home: Some("Washington".into()),
+            month: Some(8),
         }
     );
     let residency = evidence
@@ -465,37 +502,36 @@ fn chapters_tell_the_career() {
         .collect::<Vec<_>>();
     assert_eq!(
         residency,
-        vec![(2025, "CO", 365), (2026, "CO", 90), (2026, "CA", 200)]
+        vec![(2025, "TX", 365), (2026, "TX", 59), (2026, "WA", 231)]
     );
 }
 
 #[test]
 fn a_jobs_end_lists_what_changes() {
-    // Example Corp's pay stops after July: the job ends, and the waiver with it.
+    // When payroll stops, the job's chapter ends and its fee waiver with it.
     let mut state = career::state();
     let cutoff = "2026-08-01";
     state.snapshot.transactions.retain(|transaction| {
-        !(transaction.id.starts_with("ms-pay") && transaction.date.as_str() >= cutoff)
+        !(transaction.id.starts_with("corp-pay") && transaction.date.as_str() >= cutoff)
     });
     state
         .documents
         .retain(|document| document.date.as_deref().is_none_or(|date| date < cutoff));
     let view = career_view(&state);
-    let morgan = evidence_of(&view)
+    let corp = evidence_of(&view)
         .chapters
         .iter()
         .find(|chapter| chapter.id == "work:example-corp-services-group-inc")
         .unwrap();
-    assert_eq!(morgan.end, Some(day("2026-07-31")));
+    assert_eq!(corp.end, Some(day("2026-07-31")));
     assert!(
-        morgan
-            .checklist
+        corp.checklist
             .iter()
             .any(|item| item.contains("employee waiver lapses")),
         "{:?}",
-        morgan.checklist
+        corp.checklist
     );
-    assert!(morgan
+    assert!(corp
         .checklist
         .iter()
         .any(|item| item.starts_with("Check the final paycheck")));
@@ -533,13 +569,13 @@ fn choices_confirm_dismiss_retitle_and_plan_chapters() {
     }];
     let view = career_view(&state);
     let evidence = evidence_of(&view);
-    let morgan = evidence
+    let corp = evidence
         .chapters
         .iter()
         .find(|chapter| chapter.id == "work:example-corp-services-group-inc")
         .unwrap();
     assert_eq!(
-        (morgan.title.as_str(), morgan.tier, morgan.confirmed),
+        (corp.title.as_str(), corp.tier, corp.confirmed),
         ("Example Corp", Tier::Observed, true)
     );
     // A dismissal is kept, so the chapter isn't suggested again.
@@ -610,7 +646,7 @@ fn every_explained_fact_has_a_proof_and_a_cited_source() {
             .iter()
             .any(|source| source.starts_with("program:")));
     }
-    for program in programs::programs(&[]) {
+    for program in programs::programs(&career::state().settings.programs) {
         program.validate().unwrap();
         assert!(
             !program.stale(career::today()),
@@ -629,38 +665,33 @@ fn every_explained_fact_has_a_proof_and_a_cited_source() {
     // A member only timing suggests is not a link; one a record shows is.
     let member_of = |chapter: &str| {
         graph.links.iter().any(|link| {
-            link.from == "account:plaid:cashplus"
+            link.from == "account:plaid:premier"
                 && link.relation == crate::objects::Relation::Chapter
                 && link.to == chapter
         })
     };
     assert!(!member_of("chapter:work:example-corp-services-group-inc"));
-    assert!(member_of("chapter:milestone:accounts:2026-05"));
+    assert!(member_of("chapter:milestone:accounts:2026-04"));
 }
 
 #[test]
 fn rules_are_checked_before_use() {
-    let built = programs::programs(&[]);
-    let mut broken = built[0].clone();
+    let bonus = career::loyalty_bonus();
+    let mut broken = bonus.clone();
     broken.source.url = "http://example.com".into();
     assert!(broken.validate().is_err());
-    let mut unbound = built[0].clone();
+    let mut unbound = bonus.clone();
     unbound.conclusion.object = Some("nothing".into());
     assert!(unbound.validate().is_err());
-    let mut pattern = built[0].clone();
-    if let programs::Condition::Card { official_name, .. } = &mut pattern.conditions[1] {
-        *official_name = "(".into();
+    let mut pattern = bonus.clone();
+    if let programs::Condition::Transaction { description, .. } = &mut pattern.conditions[1] {
+        *description = "(".into();
     }
     assert!(pattern.validate().is_err());
-    // An approved rule replaces the built-in rule of its id; an invalid one is left out.
-    let mut approved = built[0].clone();
-    approved.name = "Reviewed again".into();
-    let merged = programs::programs(&[approved, broken]);
-    assert_eq!(merged.len(), built.len());
-    assert!(merged
-        .iter()
-        .any(|program| program.name == "Reviewed again"));
-    let mut old = built[0].clone();
+    // An approved rule that fails its checks is left out.
+    let approved = programs::programs(&[bonus.clone(), broken]);
+    assert_eq!(approved, vec![bonus.clone()]);
+    let mut old = bonus.clone();
     old.reviewed = day("2025-01-01");
     assert!(old.stale(day("2026-10-17")));
 }
@@ -670,7 +701,7 @@ fn rules_are_checked_before_use() {
 #[ignore]
 fn career_tools() {
     let view = career_view(&career::state());
-    let ledger = crate::insights::ledger::Ledger::new(&view, career::today());
+    let ledger = crate::insights::assistant_tools::Ledger::new(&view, career::today());
     for (name, arguments) in [
         ("listAccounts", serde_json::json!({})),
         (
@@ -687,7 +718,7 @@ fn career_tools() {
         ),
         (
             "searchTransactions",
-            serde_json::json!({ "text": "engagement bonus" }),
+            serde_json::json!({ "text": "loyalty bonus" }),
         ),
         (
             "merchantHistory",

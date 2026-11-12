@@ -373,6 +373,159 @@
   white-space: pre-wrap;
 }
 
+.rules-draft .is-prefilled input {
+  border-style: dashed;
+}
+.rules-draft .is-prefilled small {
+  color: var(--text-tertiary);
+}
+
+.tier-observed {
+  border-color: var(--text-secondary);
+  color: var(--text-primary);
+}
+.tier-conflict {
+  border-color: color-mix(in oklab, var(--warning) 60%, transparent);
+  color: var(--warning);
+}
+.tier-unconfirmed {
+  border-style: dotted;
+  color: var(--text-tertiary);
+}
+
+/* A card's drafted rules: each benefit's terms, editable, with its evidence one click away. */
+.card-draft {
+  display: grid;
+  gap: 10px;
+  padding: 12px 0;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.card-draft-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+.card-draft h3 {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  font-weight: 500;
+}
+.card-draft-privacy {
+  margin: 0;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+}
+.card-draft-match {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+}
+.card-draft-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: var(--type-meta);
+}
+.card-draft-table th {
+  padding: 4px 8px;
+  color: var(--text-tertiary);
+  font-weight: 500;
+  text-align: left;
+}
+.card-draft-table td {
+  padding: 6px 8px;
+  border-top: var(--hairline) solid var(--border-subtle);
+  vertical-align: top;
+}
+.card-draft-table tr.is-left-out td {
+  color: var(--text-tertiary);
+}
+.card-draft-term {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.card-draft-table input:not([type='checkbox']),
+.card-draft-search input {
+  height: var(--control-height);
+  min-width: 0;
+  padding: 0 8px;
+  border: 1px solid var(--control-border);
+  border-radius: var(--radius-control);
+  background: var(--control-background);
+  color: var(--text-primary);
+  font: inherit;
+}
+.card-draft-amount {
+  width: 88px;
+  font-variant-numeric: tabular-nums;
+}
+.card-draft-pattern {
+  width: 100%;
+}
+.card-draft-evidence summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+}
+.card-draft-evidence ul,
+.card-draft-unmatched ul,
+.card-draft-search ul,
+.card-draft-changes {
+  display: grid;
+  gap: 6px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+.card-draft-evidence li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+}
+.card-draft-evidence blockquote {
+  flex-basis: 100%;
+  margin: 0;
+  padding: 4px 8px;
+  border-left: 2px solid var(--border-subtle);
+  color: var(--text-secondary);
+}
+.card-draft-unmatched li,
+.card-draft-search li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+.card-draft-search {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.card-draft-search ul {
+  flex-basis: 100%;
+}
+.card-draft-recheck {
+  display: grid;
+  gap: 8px;
+  justify-items: start;
+  margin-top: 8px;
+}
+.card-draft-change {
+  width: 100%;
+}
+.card-draft-changes del {
+  color: var(--text-tertiary);
+}
+
 @media (max-width: 1100px) {
   .chapters-grid,
   .rules-grid,

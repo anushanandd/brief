@@ -1,3 +1,7 @@
+/**
+ * Objects in the renderer: search, one Rust call over every object (`search_objects`); an
+ * object's raw view (Details, ⌘I); and where each kind opens.
+ */
 import type { useNavigate } from '@tanstack/react-router'
 import { invoke } from '@tauri-apps/api/core'
 
@@ -44,16 +48,16 @@ const kindNames = Object.keys(objectKinds).filter(isKind)
  * `@doc w-2`) searches documents for "w-2". A word that names no kind is searched for.
  */
 export function objectQuery(text: string): { kinds: ObjectKind[]; text: string } {
-  const match = /^@?(\w+)\s+(.*)$/s.exec(text.trimStart())
-  if (!match) return { kinds: [], text }
-  const word = match[1].toLowerCase()
+  const [, first, rest] = /^@?(\w+)\s+(.*)$/s.exec(text.trimStart()) ?? []
+  if (first === undefined || rest === undefined) return { kinds: [], text }
+  const word = first.toLowerCase()
   const kinds = kindNames.filter(
     (kind) =>
       kind.startsWith(word) ||
       objectKinds[kind].prefix.startsWith(word) ||
       objectKinds[kind].plural.toLowerCase().startsWith(word),
   )
-  return kinds.length ? { kinds, text: match[2] } : { kinds: [], text }
+  return kinds.length ? { kinds, text: rest } : { kinds: [], text }
 }
 
 type SeedGraph = { objects: GraphObject[]; links: GraphLink[]; facts: GraphFact[] }
@@ -178,7 +182,7 @@ export function openObject(
     case 'bill':
       return navigate({ to: '/spending' })
     case 'benefit':
-      return navigate({ to: '/analytics', search: { chart: 'amex-credits' } })
+      return navigate({ to: '/analytics', search: { chart: 'card-credits' } })
     case 'story': {
       const url = text(object.record?.url)
       return url ? openExternalUrl(url) : showDetails(object.id)

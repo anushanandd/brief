@@ -21,7 +21,6 @@ afterEach(() => vi.resetAllMocks())
 
 it('imports legacy renderer settings once and removes them only after the native save', async () => {
   localStorage.setItem('brief:spending-account-id', 'plaid:card')
-  localStorage.setItem('brief:hidden-platinum-benefits', 'resy,oura')
   localStorage.setItem('brief.accountDisplayNames', '{"plaid:card":" Card "}')
   localStorage.setItem('brief.accountStartDates', '{"plaid:card":"2026-01-01","bad":"x"}')
   vi.mocked(invoke).mockResolvedValue({})
@@ -31,7 +30,7 @@ it('imports legacy renderer settings once and removes them only after the native
     importing: true,
     settings: {
       spendingAccountId: 'plaid:card',
-      hiddenBenefitIds: ['resy', 'oura'],
+      hiddenBenefitIds: [],
       accountNames: { 'plaid:card': 'Card' },
       accountStartDates: { 'plaid:card': '2026-01-01' },
       accountClosedDates: {},
@@ -43,6 +42,8 @@ it('imports legacy renderer settings once and removes them only after the native
       backgroundRefresh: false,
       notifications: false,
       calendarSync: false,
+      cardCatalogOff: false,
+      cardChoices: [],
       people: [],
       tripCompanions: [],
       research: false,
@@ -74,6 +75,8 @@ it('uses empty defaults when a snapshot has no saved settings', () => {
     backgroundRefresh: false,
     notifications: false,
     calendarSync: false,
+    cardCatalogOff: false,
+    cardChoices: [],
     people: [],
     tripCompanions: [],
     research: false,

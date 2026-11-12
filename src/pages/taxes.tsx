@@ -1,5 +1,5 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
-import { useMemo } from 'react'
+import { useMemo, useRef } from 'react'
 
 import { PageError, HomeLoading } from '../components/data-state'
 import { SecurityMark } from '../components/security-mark'
@@ -11,8 +11,14 @@ import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { daySpan, evidenceOf, tierLabels } from '../lib/evidence'
 import { financeSettings } from '../lib/finance-settings'
-import { countOf, formatCurrency, formatSignedCurrency, valueTone } from '../lib/format'
-import type { FinanceSnapshot, TaxYear } from '../lib/schema'
+import {
+  countOf,
+  displayCase,
+  formatCurrency,
+  formatSignedCurrency,
+  valueTone,
+} from '../lib/format'
+import type { FinanceSnapshot, HarborMet, TaxYear, Withholding } from '../lib/schema'
 import { formatActivityDate, formatListDate } from '../lib/spending'
 import { estimateRange, taxYear } from '../lib/taxes'
 
@@ -84,7 +90,14 @@ export function TaxesPage() {
           {/* The year's answer leads: the estimate beside what the forms will say and where
               you lived. What can still change it follows. */}
           <div className="taxes-grid">
-            <EstimateCard year={selected} hasProfile={taxes.hasProfile} />
+            <EstimateCard
+              year={selected}
+              hasProfile={taxes.hasProfile}
+              withholding={
+                taxes.withholding?.year === selected.year ? taxes.withholding : undefined
+              }
+              day={day}
+            />
             <div className="taxes-side">
               <FormsCard year={selected} />
               <ResidencyCard year={selected.year} data={query.data} />
@@ -217,7 +230,139 @@ function ResidencyCard({ year, data }: { year: number; data: FinanceSnapshot | u
   )
 }
 
-function EstimateCard({ year, hasProfile }: { year: TaxYear; hasProfile: boolean }) {
+const harborLabels: Record<HarborMet, string> = {
+  currentYear: 'Met: 90% of this year’s tax',
+  priorYear: 'Met: last year’s tax',
+  smallBalance: 'Met: under $1,000 left to pay',
+  none: 'Not met',
+  unknown: 'Unknown',
+}
+
+const unavailable = <span className="muted">Unavailable</span>
+const maybeMoney = (value: number | null | undefined) =>
+  value == null ? unavailable : money(value)
+
+/**
+ * This year's federal withholding carried to December from pay statements, against the tax
+ * Rust projects and the estimated-tax safe harbors. Each figure Rust can't know reads as
+ * unavailable, and the tests sit one disclosure away (I).
+ */
+function WithholdingSection({
+  withholding,
+  day,
+}: {
+  withholding: Withholding
+  day: (date: string) => string
+}) {
+  const detailsRef = useRef<HTMLDetailsElement>(null)
+  useRegisterActions(
+    useMemo<AppAction[]>(
+      () => [
+        {
+          id: 'taxes.withholding.toggle',
+          title: 'Show or hide the safe-harbor tests',
+          search: 'withholding safe harbor estimated tax penalty prior year',
+          group: 'View',
+          scope: 'page',
+          bindings: [{ sequence: ['i'], label: 'I' }],
+          run: () => {
+            const details = detailsRef.current
+            if (details) details.open = !details.open
+          },
+        },
+      ],
+      [],
+    ),
+  )
+  const { difference, currentYear, priorYear } = withholding
+  const test = (harbor: Withholding['currentYear']) =>
+    harbor.met == null ? unavailable : harbor.met ? 'Met' : 'Not met'
+  return (
+    <section className="taxes-withholding" aria-label="Withholding">
+      <SectionHeading title="Withholding" detail="Federal only" />
+      <p className="taxes-copy">
+        {withholding.basis.length
+          ? `From ${withholding.basis
+              .map(
+                (pay) =>
+                  `${displayCase(pay.employer)}’s pay statement dated ${day(pay.date)}, ${pay.period} of ${pay.periods} pay periods`,
+              )
+              .join('; ')}. `
+          : 'A pay statement this year doesn’t print its period, gross, and withholding, so it can’t be carried forward. '}
+        {withholding.filingStatus
+          ? 'Filing status from your tax profile; investment income so far this year.'
+          : 'Add a filing status to project the tax.'}
+      </p>
+      <div className="account-summary-metrics">
+        <Metric label="Projected wages" value={maybeMoney(withholding.projectedWages)} />
+        <Metric
+          label="Projected withholding"
+          value={maybeMoney(withholding.projectedWithholding)}
+        />
+        <Metric label="Projected tax" value={maybeMoney(withholding.projectedTax)} />
+        <Metric
+          label={difference != null && difference < 0 ? 'Shortfall' : 'Overage'}
+          value={
+            difference == null ? (
+              unavailable
+            ) : (
+              <span className="sensitive-value">{formatSignedCurrency(difference)}</span>
+            )
+          }
+          tone={valueTone(difference)}
+        />
+        <Metric label="Safe harbor" value={harborLabels[withholding.met]} />
+      </div>
+      <details ref={detailsRef} className="account-details-more">
+        <summary data-command="taxes.withholding.toggle">Safe-harbor tests</summary>
+        <div className="account-summary-metrics">
+          <Metric
+            label={`${currentYear.percent}% of this year’s tax`}
+            value={
+              <>
+                {test(currentYear)}
+                {currentYear.required != null ? (
+                  <small className="metric-detail">needs {money(currentYear.required)}</small>
+                ) : null}
+              </>
+            }
+          />
+          <Metric
+            label={`${priorYear.percent}% of last year’s tax`}
+            value={
+              <>
+                {test(priorYear)}
+                <small className="metric-detail">
+                  {priorYear.tax != null ? (
+                    <>
+                      {money(priorYear.tax)} on last year’s W-2 wages; your return’s total tax is
+                      the figure that counts
+                    </>
+                  ) : (
+                    'needs every W-2 from last year'
+                  )}
+                </small>
+              </>
+            }
+          />
+        </div>
+      </details>
+    </section>
+  )
+}
+
+function EstimateCard({
+  year,
+  hasProfile,
+  withholding,
+  day,
+}: {
+  year: TaxYear
+  hasProfile: boolean
+  /** This year's withholding from pay statements; without it, the typed income is the basis. */
+  withholding?: Withholding
+  day: (date: string) => string
+}) {
   const estimate = year.estimate
   const range = estimate ? estimateRange(estimate) : undefined
   return (
@@ -243,7 +388,8 @@ function EstimateCard({ year, hasProfile }: { year: TaxYear; hasProfile: boolean
           <p className="taxes-copy">
             Next dollar: {estimate.marginalRate}% on interest, {estimate.capitalGainsRate}% on
             long-term gains.
-            {'low' in range! ? ' A range until dividends are classified.' : ''}
+            {'low' in range! ? ' A range until dividends are classified.' : ''} Stacked on the
+            taxable income you typed in your tax profile.
           </p>
           <div className="account-summary-metrics">
             <Metric label="Income tax" value={money(estimate.ordinary)} />
@@ -282,6 +428,7 @@ function EstimateCard({ year, hasProfile }: { year: TaxYear; hasProfile: boolean
       {year.partial ? (
         <p className="portfolio-note">Partial year: history starts after Jan 1.</p>
       ) : null}
+      {withholding ? <WithholdingSection withholding={withholding} day={day} /> : null}
     </Card>
   )
 }

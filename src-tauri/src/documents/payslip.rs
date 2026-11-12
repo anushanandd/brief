@@ -1,6 +1,6 @@
 //! Pay statements. Each line is a label with this period's amount and the year's, told apart by
 //! the columns the statement heads them with; a section heading such as "Tax Deductions:
-//! California" says whose withholding a line is. Taxes and deductions are kept as what was taken
+//! Oregon" says whose withholding a line is. Taxes and deductions are kept as what was taken
 //! out, so a refund reads negative; other lines keep the statement's sign. The reading checks
 //! itself: gross less what was taken, plus the other lines, must equal net pay.
 use std::{collections::BTreeMap, sync::LazyLock};

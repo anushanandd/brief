@@ -471,15 +471,11 @@ function ChapterDetail({ data, chapter }: { data: FinanceSnapshot; chapter: Chap
         <section>
           <h3>Why Brief sees it</h3>
           <ul className="chapter-facts">
-            {chapter.anchors.map((anchor) => (
-              <li key={anchor.says} data-keyboard-row>
-                <span>{anchor.says}</span>
-                {anchor.evidence[0] ? (
-                  <button
-                    type="button"
-                    className="object-link"
-                    onClick={() => showObject(anchor.evidence[0])}
-                  >
+            {chapter.anchors.map(({ says, evidence: [source] }) => (
+              <li key={says} data-keyboard-row>
+                <span>{says}</span>
+                {source ? (
+                  <button type="button" className="object-link" onClick={() => showObject(source)}>
                     Source
                   </button>
                 ) : null}

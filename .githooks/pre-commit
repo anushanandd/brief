@@ -1,0 +1,131 @@
+#!/bin/sh
+# Checks what is about to be committed, and only that (the index, not the working tree):
+#   1. gitleaks finds no secrets, when gitleaks is installed;
+#   2. no line of the private denylist appears in an added line or a staged file name;
+#   3. src/data/fixtures/insights-golden.jsonl was edited, not regenerated;
+#   4. no file is over 5 MB or is a statement, export, or database by extension.
+# Enable once per clone: git config core.hooksPath .githooks
+#
+# The denylist lives outside the repo (one string per line, # for comments) so the strings it
+# guards never enter history. Hits name the file, line, and entry number, never the string.
+set -eu
+
+cd "$(git rev-parse --show-toplevel)"
+denylist="${BRIEF_DENYLIST:-$HOME/.brief-private/denylist.txt}"
+golden=src/data/fixtures/insights-golden.jsonl
+max_bytes=5242880
+failed=0
+
+fail() {
+  echo "pre-commit: $*" >&2
+  failed=1
+}
+
+# Files added, copied, modified, or renamed in the index.
+staged() {
+  git -c core.quotePath=false diff --cached --name-only --diff-filter=ACMR
+}
+
+secrets() {
+  if ! command -v gitleaks >/dev/null 2>&1; then
+    echo "pre-commit: gitleaks not installed, secret scan skipped (brew install gitleaks)." >&2
+    return
+  fi
+  # gitleaks 8.19 replaced `protect --staged` with `git --pre-commit --staged`.
+  set -- --redact --verbose --no-banner --log-level warn
+  if gitleaks help 2>/dev/null | grep -q '^  protect'; then
+    gitleaks protect --staged "$@" || fail "gitleaks found a secret (shown redacted above)."
+  else
+    gitleaks git --pre-commit --staged "$@" || fail "gitleaks found a secret (shown redacted above)."
+  fi
+}
+
+denied() {
+  if [ ! -f "$denylist" ]; then
+    echo "pre-commit: no denylist at $denylist, personal-string check skipped." >&2
+    return
+  fi
+  hits="$(
+    {
+      staged | sed 's/^/N /'
+      git -c core.quotePath=false diff --cached -U0 --no-color --no-ext-diff --diff-filter=ACMR
+    } | awk '
+      # The denylist, lowercased; blank lines and # comments are ignored.
+      NR == FNR {
+        sub(/\r$/, "")
+        if ($0 != "" && substr($0, 1, 1) != "#") { n++; deny[n] = tolower($0) }
+        next
+      }
+      function entry(text,   i, lower) {
+        lower = tolower(text)
+        for (i = 1; i <= n; i++) if (index(lower, deny[i])) return i
+        return 0
+      }
+      /^N / {
+        if ((k = entry(substr($0, 3)))) print "a staged file name contains denylist entry #" k
+        next
+      }
+      /^diff --git / { header = 1; next }
+      header && /^\+\+\+ / {
+        path = substr($0, 5); sub(/^b\//, "", path)
+        shown = entry(path) ? "(a file whose name is denied)" : path
+        next
+      }
+      /^@@ / {
+        header = 0
+        split($3, range, ","); line = substr(range[1], 2) + 0
+        next
+      }
+      !header && /^\+/ {
+        if ((k = entry(substr($0, 2)))) print shown ":" line ": denylist entry #" k
+        line++
+      }
+    ' "$denylist" -
+  )"
+  if [ -n "$hits" ]; then
+    echo "$hits" >&2
+    fail "staged changes contain strings from $denylist."
+  fi
+}
+
+# AGENTS.md: never regenerate the golden insights; edit the records a rule change affects.
+golden_regenerated() {
+  [ "${BRIEF_ALLOW_GOLDEN:-}" = 1 ] && return 0
+  counts="$(git diff --cached --numstat -- "$golden")"
+  [ -n "$counts" ] || return 0
+  total="$(git cat-file -p ":$golden" 2>/dev/null | wc -l | tr -d ' ')"
+  # shellcheck disable=SC2086 # numstat is "added deleted path"
+  set -- $counts
+  changed=$(($1 > $2 ? $1 : $2))
+  if [ "$total" -gt 0 ] && [ $((changed * 10)) -gt "$total" ]; then
+    fail "$golden changes $changed of $total lines; it looks regenerated. Edit only the records a rule change affects, or set BRIEF_ALLOW_GOLDEN=1."
+  fi
+}
+
+private_files() {
+  staged | while IFS= read -r path; do
+    case "$(echo "$path" | tr '[:upper:]' '[:lower:]')" in
+      *.pdf | *.sqlite | *.sqlite3 | *.db | *.ofx | *.qfx)
+        echo "pre-commit: $path is a statement, export, or database file." >&2
+        echo x
+        ;;
+    esac
+  done | grep -q x && fail "private file types are staged; unstage them (git restore --staged <path>)."
+  big="$(
+    git diff --cached --raw --no-abbrev --diff-filter=ACMR |
+      awk -F '\t' '{ split($1, meta, " "); print meta[4], $NF }' |
+      git cat-file --batch-check='%(objectsize) %(rest)' |
+      awk -v max="$max_bytes" '$1 > max { sub(/^[0-9]+ /, ""); print }'
+  )"
+  if [ -n "$big" ]; then
+    echo "$big" | sed 's/^/pre-commit: over 5 MB: /' >&2
+    fail "large files are staged."
+  fi
+  return 0
+}
+
+secrets
+denied
+golden_regenerated
+private_files
+exit "$failed"

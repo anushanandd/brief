@@ -14,8 +14,14 @@ fn project_json(
     links: &BTreeMap<String, String>,
     now: DateTime<Utc>,
 ) -> Result<Value, String> {
-    serde_json::to_value(super::project(sync, links, now, now.date_naive())?)
-        .map_err(|error| error.to_string())
+    serde_json::to_value(super::project(
+        sync,
+        links,
+        &crate::insights::benefits::Catalog::example(),
+        now,
+        now.date_naive(),
+    )?)
+    .map_err(|error| error.to_string())
 }
 
 use crate::providers::{PlaidData, SnapTradeData};
@@ -36,7 +42,7 @@ fn sync() -> ProviderSync {
                 "transaction_id": "coffee", "account_id": "cash", "amount": "5.125", "name": "Coffee", "merchant_name": "Coffee",
                 "pending": false, "date": "2026-09-08", "datetime": "2026-09-08T09:10:00Z",
                 "authorized_date": "2026-09-07", "authorized_datetime": "2026-09-07T15:42:00Z",
-                "location": { "address": "123 Example St", "city": "Portland", "region": "CA", "postal_code": "94103" },
+                "location": { "address": "123 Example St", "city": "Portland", "region": "OR", "postal_code": "97205" },
                 "payment_channel": "in store",
                 "logo_url": "https://plaid-merchant-logos.plaid.com/coffee.png", "website": "https://coffee.example",
                 "personal_finance_category": {
@@ -114,8 +120,8 @@ fn native_finance_fixture_matches_typed_projection() {
     coffee["original_description"] = json!("SQ *COFFEE 0412 PORTLAND OR");
     coffee["check_number"] = json!("1042");
     coffee["account_owner"] = json!("Synthetic Holder");
-    coffee["location"]["lat"] = json!(37.7749);
-    coffee["location"]["lon"] = json!(-122.4194);
+    coffee["location"]["lat"] = json!(45.52);
+    coffee["location"]["lon"] = json!(-122.68);
     coffee["location"]["store_number"] = json!("0412");
     coffee["counterparties"] = json!([
         { "type": "merchant", "name": "Coffee", "confidence_level": "VERY_HIGH", "website": "coffee.example" },
@@ -169,10 +175,12 @@ fn native_finance_fixture_matches_typed_projection() {
     let now = DateTime::parse_from_rfc3339("2026-09-09T12:00:00Z")
         .unwrap()
         .with_timezone(&Utc);
-    let first = super::project(&input, &BTreeMap::new(), now, now.date_naive()).unwrap();
+    let cards = crate::insights::benefits::Catalog::example();
+    let first = super::project(&input, &BTreeMap::new(), &cards, now, now.date_naive()).unwrap();
     input.previous_snapshot = first;
     let later = now + Duration::hours(1);
-    let mut snapshot = super::project(&input, &BTreeMap::new(), later, later.date_naive()).unwrap();
+    let mut snapshot =
+        super::project(&input, &BTreeMap::new(), &cards, later, later.date_naive()).unwrap();
     snapshot.revision = Some(2);
     snapshot.transactions[0].benefit_confirmed = Some(false);
     snapshot.provider_status = Some(BTreeMap::from([(
@@ -240,13 +248,10 @@ fn projects_exact_totals_and_keeps_posted_and_authorized_dates() {
     assert_eq!(snapshot["netWorth"], 300.22);
     assert_eq!(snapshot["transactions"][0]["date"], "2026-09-07");
     assert_eq!(snapshot["transactions"][0]["postedOn"], "2026-09-08");
-    assert_eq!(
-        snapshot["transactions"][0]["location"]["city"],
-        "Portland"
-    );
+    assert_eq!(snapshot["transactions"][0]["location"]["city"], "Portland");
     assert_eq!(
         snapshot["transactions"][0]["location"]["postalCode"],
-        "94103"
+        "97205"
     );
     assert_eq!(snapshot["transactions"][0]["paymentChannel"], "in store");
     assert_eq!(
@@ -342,15 +347,15 @@ fn plaid_location_skips_empty_fields_and_absent_places() {
     let location = PlaidLocation {
         address: Some("  ".into()),
         city: None,
-        region: Some(" CA ".into()),
+        region: Some(" OR ".into()),
         postal_code: None,
         country: None,
-        lat: Some(37.77),
+        lat: Some(45.52),
         lon: None,
         store_number: None,
     };
     let projected = location.project().unwrap();
-    assert_eq!(projected.region.as_deref(), Some("CA"));
+    assert_eq!(projected.region.as_deref(), Some("OR"));
     assert!(projected.address.is_none());
     // A coordinate without its pair, or off the globe, is no location.
     assert!(projected.lat.is_none());
@@ -372,13 +377,13 @@ fn plaid_location_skips_empty_fields_and_absent_places() {
         region: None,
         postal_code: None,
         country: None,
-        lat: Some(37.77),
-        lon: Some(-122.42),
+        lat: Some(45.52),
+        lon: Some(-122.68),
         store_number: Some("118".into()),
     }
     .project()
     .unwrap();
-    assert_eq!((pinned.lat, pinned.lon), (Some(37.77), Some(-122.42)));
+    assert_eq!((pinned.lat, pinned.lon), (Some(45.52), Some(-122.68)));
     assert_eq!(pinned.store_number.as_deref(), Some("118"));
 }
 
@@ -846,6 +851,40 @@ fn currency_isolation_marks_totals_incomplete_without_conversion() {
         .unwrap()
         .iter()
         .any(|account| { account["id"] == "plaid:cad" && account["value"].is_null() }));
+}
+
+#[test]
+fn transactions_in_other_currencies_are_left_out_and_said_so() {
+    let mut sync = sync();
+    let row = |id: &str, iso: Option<&str>, unofficial: Option<&str>| {
+        json!({
+            "transaction_id": id, "account_id": "cash", "amount": "40", "name": "Cafe",
+            "pending": false, "date": "2026-09-08",
+            "iso_currency_code": iso, "unofficial_currency_code": unofficial,
+        })
+    };
+    sync.plaid.transactions.extend([
+        row("euros", Some("EUR"), None),
+        row("coins", None, Some("BTC")),
+        row("dollars", Some("USD"), None),
+    ]);
+    let snapshot = project_json(&sync, &BTreeMap::new(), projection_time()).unwrap();
+    // The fixture's coffee was saved without a currency, so it stays a dollar row.
+    let ids = snapshot["transactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|transaction| transaction["id"].as_str().unwrap())
+        .collect::<BTreeSet<_>>();
+    assert_eq!(ids, BTreeSet::from(["coffee", "dollars"]));
+    assert!(snapshot["syncWarnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|warning| warning
+            .as_str()
+            .unwrap()
+            .starts_with("2 transactions not in US dollars")));
 }
 
 #[test]

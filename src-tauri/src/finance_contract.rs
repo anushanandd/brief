@@ -181,8 +181,8 @@ pub struct Account {
     /// first. Its history on other days, when it tracks the S&P 500, is estimated.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub observed_on: Vec<String>,
-    /// Fund units an imported statement shows a manual account holding, at the statement's
-    /// latest price. Without a market price they stay off the holdings list.
+    /// Fund units from an imported statement, at its latest price. They have no market price,
+    /// so they aren't holdings.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub statement_positions: Vec<StatementPosition>,
     #[serde(default)]
@@ -239,7 +239,7 @@ pub struct Account {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub credit_limit: Option<f64>,
-    /// The institution's full product name, such as "Platinum Card®".
+    /// The institution's full product name, such as "Example Card®".
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub official_name: Option<String>,
@@ -496,6 +496,10 @@ pub struct Transaction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub category_source: Option<crate::transaction_policy::CategorySource>,
+    /// Why Brief chose the category, when `category_source` is suggested.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub category_suggestion: Option<crate::transaction_policy::CategorySuggestion>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub provider_category: Option<String>,
@@ -511,6 +515,12 @@ pub struct Transaction {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub recurring_id: Option<String>,
+    /// The card benefit this is a statement credit for, by id and name, as the saved card
+    /// rules identify it. The transaction policy assigns it with the rules in hand, so later
+    /// readers need none; it is never saved or sent.
+    #[serde(skip)]
+    #[ts(skip)]
+    pub benefit_credit: Option<(String, String)>,
     /// The purchase this refund repays. Its category follows that purchase.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
@@ -851,7 +861,7 @@ impl Account {
 
 impl Transaction {
     /// Whether this row exists only because of a Wallet record, on no provider's say.
-    pub fn from_wallet(&self) -> bool {
+    pub fn wallet_only(&self) -> bool {
         self.id.starts_with(SPENDING_ONLY_PREFIX)
     }
 

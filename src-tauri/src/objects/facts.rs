@@ -141,14 +141,29 @@ pub(super) fn facts(state: &FinanceState, view: &View, objects: &[Object]) -> Ve
             quality.and_then(|quality| quality.merchant.map(|evidence| evidence.grade)),
             Tier::Observed,
         );
-        let manual = transaction.category_source == Some(CategorySource::Manual);
+        // A category Brief chose from your earlier ones is a suggestion, sourced by them.
+        let (sources, tier) = match (
+            transaction.category_source,
+            &transaction.category_suggestion,
+        ) {
+            (Some(CategorySource::Manual), _) => (vec!["you".into()], Tier::Observed),
+            (Some(CategorySource::Suggested), Some(suggestion)) => (
+                suggestion
+                    .from
+                    .iter()
+                    .map(|from| Kind::Transaction.id(from))
+                    .collect(),
+                Tier::Suggested,
+            ),
+            _ => (vec![source], Tier::Observed),
+        };
         facts.add(
             &id,
             "category",
             json!(transaction.category),
-            vec![if manual { "you".into() } else { source }],
+            sources,
             quality.map(|quality| quality.category.grade),
-            Tier::Observed,
+            tier,
         );
     }
     // Your edits, as saved; the view above already shows their effect.

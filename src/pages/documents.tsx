@@ -6,7 +6,6 @@ import { toast } from 'sonner'
 
 import { AutofillField, acceptAutofill, autofillCompletion } from '../components/autofill'
 import { PageError, PageLoading } from '../components/data-state'
-import { FilterSelect } from '../components/filter-select'
 import {
   Banknote,
   Check,
@@ -27,8 +26,10 @@ import { useObjectDetailsAction } from '../components/object-details'
 import { SelectorStrip } from '../components/selector-strip'
 import { SettingsLink } from '../components/settings-dialog'
 import { Button, Card, EmptyState, SectionHeading } from '../components/ui'
+import { useDialogActions } from '../components/ui/dialog'
+import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
 import { WorkspaceHeader } from '../components/workspace-header'
-import { financeQueryKey, useFinance } from '../hooks/use-finance'
+import { setFinanceSnapshot, useFinance } from '../hooks/use-finance'
 import { useFinanceEdits } from '../hooks/use-finance-edits'
 import { useGraphAccountShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useSearchShortcuts } from '../hooks/use-search-shortcuts'
@@ -49,9 +50,20 @@ import {
 import { documentKindNames as kindNames, documentTitle as title } from '../lib/documents'
 import { errorMessage } from '../lib/errors'
 import { financeSettings } from '../lib/finance-settings'
-import { countOf, formatCurrency, formatDay, formatShortDay } from '../lib/format'
-import { documentKinds } from '../lib/schema'
-import type { BriefDocument, DocumentField, DocumentInsights, FinanceSnapshot } from '../lib/schema'
+import {
+  countOf,
+  formatCalendarDate,
+  formatCurrency,
+  formatDay,
+  formatShortDay,
+} from '../lib/format'
+import type { BriefDocument, DocumentInsights, FinanceSnapshot } from '../lib/schema'
+import {
+  DocumentDeposits,
+  DocumentDetails,
+  DocumentFigures,
+  PayPrediction,
+} from './document-panel-parts'
 
 type YearInsight = DocumentInsights['years'][number]
 
@@ -74,7 +86,7 @@ const kindStyle: Record<BriefDocument['kind'], { color: string; icon: typeof Fil
 }
 const monthInitials = ['J', 'F', 'M', 'A', 'M', 'J', 'J', 'A', 'S', 'O', 'N', 'D']
 const monthNames = Array.from({ length: 12 }, (_, month) =>
-  new Date(Date.UTC(2000, month, 1)).toLocaleString('en-US', { month: 'long', timeZone: 'UTC' }),
+  formatCalendarDate(`2000-${String(month + 1).padStart(2, '0')}-01`, { month: 'long' }),
 )
 
 /** A group's documents, newest first, as the list shows them. */
@@ -175,7 +187,7 @@ function searchText(document: BriefDocument, accountName: (id: string) => string
     .toLowerCase()
 }
 
-/** Each word of the query, with amounts typed as `$2,500.00` matching `2500.0`. */
+/** Each word of the query, with amounts typed as `$2,500.00` matching `2500.00`. */
 function searchTerms(query: string) {
   return query
     .toLowerCase()
@@ -186,7 +198,7 @@ function searchTerms(query: string) {
 
 function useCommit() {
   const client = useQueryClient()
-  return (snapshot: FinanceSnapshot) => client.setQueryData(financeQueryKey, snapshot)
+  return (snapshot: FinanceSnapshot) => setFinanceSnapshot(client, snapshot)
 }
 
 /** Reads files and folders, from a picker or dropped on the window, reporting progress. */
@@ -591,6 +603,7 @@ export function DocumentsPage() {
  */
 function DocumentViewer({ document, onClose }: { document: BriefDocument; onClose: () => void }) {
   const [shown, setShown] = useState<{ url?: string; text?: string; error?: string }>({})
+  const [viewer, setViewer] = useState<HTMLDivElement | null>(null)
   const spreadsheet = document.mediaType.includes('spreadsheet')
   useEffect(() => {
     if (spreadsheet) return undefined
@@ -614,26 +627,55 @@ function DocumentViewer({ document, onClose }: { document: BriefDocument; onClos
       if (url) URL.revokeObjectURL(url)
     }
   }, [document.id, document.mediaType, spreadsheet])
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      const typing = event.target instanceof HTMLInputElement
-      if (event.key !== 'Escape' && !(event.key === ' ' && !typing)) return
-      event.preventDefault()
-      event.stopImmediatePropagation()
-      onClose()
-    }
-    window.addEventListener('keydown', onKeyDown, true)
-    return () => window.removeEventListener('keydown', onKeyDown, true)
-  }, [onClose])
+  // Its keys run through the app's dispatcher, scoped to the viewer, which leaves Space to a
+  // control inside it. The viewer stays a docked sheet rather than a native dialog, whose
+  // backdrop and box would change how it looks.
+  useDialogActions(
+    viewer,
+    true,
+    useMemo<AppAction[]>(
+      () => [
+        {
+          id: 'documents.viewer.close',
+          title: 'Close the original',
+          group: 'View',
+          scope: 'dialog',
+          bindings: [
+            { sequence: ['Escape'], label: 'Esc' },
+            { sequence: ['Space'], label: 'Space' },
+          ],
+          run: onClose,
+        },
+      ],
+      [onClose],
+    ),
+  )
   return (
-    <div className="documents-viewer" role="dialog" aria-modal="true" aria-label={title(document)}>
+    <div
+      ref={setViewer}
+      className="documents-viewer"
+      role="dialog"
+      aria-modal="true"
+      aria-label={title(document)}
+    >
       <div className="documents-viewer-backdrop" aria-hidden="true" onClick={onClose} />
       <section className="documents-viewer-sheet">
         <header className="documents-viewer-header">
-          <span>
-            <strong>{title(document)}</strong>
-            <small>{document.fileName}</small>
-          </span>
+          {/* The header has one line for each; the tooltip holds both in full. */}
+          <Tooltip>
+            <TooltipTrigger
+              render={
+                <span>
+                  <strong>{title(document)}</strong>
+                  <small>{document.fileName}</small>
+                </span>
+              }
+            />
+            <TooltipContent className="documents-viewer-name" side="bottom" align="start">
+              <strong>{title(document)}</strong>
+              <span>{document.fileName}</span>
+            </TooltipContent>
+          </Tooltip>
           <Button
             size="compact"
             data-command="documents.open-original"
@@ -867,61 +909,10 @@ function DocumentList({
   )
 }
 
-/** One figure, edited in place; a typed value is kept over any later reading. */
-function FieldRow({
-  field,
-  payslip,
-  onChange,
-}: {
-  field: DocumentField
-  payslip: boolean
-  onChange: (field: DocumentField) => void
-}) {
-  const [draft, setDraft] = useState<{ amount?: string; ytd?: string }>({})
-  const commitValue = (key: 'amount' | 'ytd') => {
-    const text = draft[key]
-    setDraft((current) => ({ ...current, [key]: undefined }))
-    if (text === undefined) return
-    const value = text.trim() === '' ? undefined : Number(text.replace(/[$,\s]/g, ''))
-    if (value !== undefined && !Number.isFinite(value)) {
-      toast.error('Enter an amount')
-      return
-    }
-    onChange({ ...field, [key]: value, edited: true, uncertain: false })
-  }
-  const doubtful = field.uncertain && !field.edited
-  const input = (key: 'amount' | 'ytd', label: string) => (
-    <input
-      className="documents-amount sensitive-value"
-      inputMode="decimal"
-      aria-label={`${field.label} ${label}`}
-      aria-invalid={doubtful || undefined}
-      value={draft[key] ?? (field[key] != null ? field[key].toFixed(2) : '')}
-      placeholder="—"
-      onChange={(event) => setDraft((current) => ({ ...current, [key]: event.target.value }))}
-      onBlur={() => commitValue(key)}
-      onKeyDown={(event) => {
-        if (event.key === 'Enter') commitValue(key)
-      }}
-    />
-  )
-  return (
-    <li className={`documents-field${doubtful ? ' is-doubtful' : ''}${payslip ? ' has-ytd' : ''}`}>
-      <span className="documents-field-label">
-        {field.label}
-        {doubtful ? <small title="Compare with the original">Check</small> : null}
-        {field.edited ? <small>Yours</small> : null}
-      </span>
-      {field.text != null ? (
-        <span className="documents-field-text">{field.text}</span>
-      ) : (
-        input('amount', payslip ? 'this period' : 'amount')
-      )}
-      {payslip ? input('ytd', 'year to date') : null}
-    </li>
-  )
-}
-
+/**
+ * One document: what it is, what it says, and the checks and links Rust made from it, with
+ * its actions. Its metadata and figures are edited in place (document-panel-parts.tsx).
+ */
 function DocumentPanel({
   data,
   document,
@@ -962,7 +953,6 @@ function DocumentPanel({
   }
   const change = (next: DocumentChange) =>
     void run('save the document', () => updateDocument(document.id, next))
-  const payslip = document.kind === 'payslip'
   const open = toCheck(document)
   const lead = headlineField(document)
   // What the document is and whose it is: tucked away once read, open while it has no account.
@@ -1163,104 +1153,14 @@ function DocumentPanel({
           )}
         </span>
       </div>
-      <details
-        ref={detailsRef}
-        className="documents-details-disclosure"
-        open={!document.accountId && (document.kind === 'statement' || document.kind === 'export')}
-      >
-        <summary>
-          Details
-          <small>
-            {[document.issuer, document.taxYear ? `Tax year ${document.taxYear}` : null]
-              .filter(Boolean)
-              .join(' · ')}
-          </small>
-        </summary>
-        <div className="documents-details">
-          <label>
-            <span>Kind</span>
-            <FilterSelect
-              label="Kind of document"
-              command="documents.kind"
-              value={document.kind}
-              options={Object.entries(kindNames).map(([value, label]) => ({ value, label }))}
-              onValueChange={(value) => {
-                const kind = documentKinds.find((known) => known === value)
-                if (kind) change({ kind })
-              }}
-            />
-          </label>
-          <label>
-            <span>Tax year</span>
-            <input
-              className="documents-input"
-              inputMode="numeric"
-              aria-label="Tax year"
-              defaultValue={document.taxYear ?? ''}
-              onBlur={(event) => {
-                const year = Number(event.target.value)
-                if (event.target.value && year !== document.taxYear) change({ taxYear: year })
-              }}
-            />
-          </label>
-          <label>
-            <span>From</span>
-            <input
-              className="documents-input"
-              aria-label="Issuer"
-              defaultValue={document.issuer ?? ''}
-              onBlur={(event) => {
-                if (event.target.value !== (document.issuer ?? ''))
-                  change({ issuer: event.target.value })
-              }}
-            />
-          </label>
-          <label>
-            <span>Account</span>
-            <FilterSelect
-              label="Account"
-              command="documents.account"
-              value={document.accountId ?? ''}
-              options={[
-                { value: '', label: document.mask ? `None · ends ${document.mask}` : 'None' },
-                ...data.accounts
-                  .filter((account) => account.type !== 'combined')
-                  .map((account) => ({
-                    value: account.id,
-                    label: `${accountName(account.id)}${account.mask ? ` ··${account.mask}` : ''}`,
-                  })),
-              ]}
-              onValueChange={(accountId) => change({ accountId })}
-            />
-          </label>
-        </div>
-        <p className="documents-file" title={document.fileName}>
-          {document.fileName}
-        </p>
-      </details>
-      {document.fields.length ? (
-        <section className="documents-block" aria-label="What it says">
-          <header className={`documents-field documents-field-head${payslip ? ' has-ytd' : ''}`}>
-            <span>Figures</span>
-            <span>{payslip ? 'This period' : 'Amount'}</span>
-            {payslip ? <span>Year to date</span> : null}
-          </header>
-          <ul className="documents-fields">
-            {document.fields.map((field) => (
-              <FieldRow
-                key={field.key}
-                field={field}
-                payslip={payslip}
-                onChange={(next) =>
-                  change({
-                    fields: document.fields.map((item) => (item.key === next.key ? next : item)),
-                  })
-                }
-              />
-            ))}
-          </ul>
-        </section>
-      ) : null}
+      <DocumentDetails
+        document={document}
+        accounts={data.accounts}
+        accountName={accountName}
+        detailsRef={detailsRef}
+        onChange={change}
+      />
+      <DocumentFigures document={document} onChange={change} />
       {document.checks.length ? (
         <ul className="documents-checks" aria-label="Checks">
           {document.checks.map((check) => (
@@ -1271,69 +1171,8 @@ function DocumentPanel({
           ))}
         </ul>
       ) : null}
-      {pay.length ? (
-        <section className="documents-block" aria-label="Deposits">
-          <h3 className="documents-block-title">Deposits</h3>
-          <ul className="documents-checks">
-            {pay.map((link) => (
-              <li
-                key={`${link.mask}:${link.amount}`}
-                className={link.transactionId ? 'is-done' : link.accountId ? 'is-attention' : ''}
-              >
-                <span aria-hidden="true">
-                  {link.transactionId ? '✓' : link.accountId ? '!' : '·'}
-                </span>
-                <span className="sensitive-value">{formatCurrency(link.amount)}</span>
-                {link.transactionId ? (
-                  <Link
-                    to="/activities"
-                    search={{ open: link.transactionId }}
-                    data-command="navigation.open./activities"
-                  >
-                    In {link.accountId ? accountName(link.accountId) : 'your account'}
-                  </Link>
-                ) : link.accountId ? (
-                  `Not yet in ${accountName(link.accountId)}`
-                ) : (
-                  `Untracked account${link.mask ? ` ··${link.mask}` : ''}`
-                )}
-              </li>
-            ))}
-          </ul>
-        </section>
-      ) : null}
-      {prediction ? (
-        <section className="documents-block" aria-label="Against your pay statements">
-          <header className="documents-field documents-field-head has-ytd">
-            <span>Against pay statements</span>
-            <span>Pay</span>
-            <span>W-2</span>
-          </header>
-          <ul className="documents-fields">
-            {prediction.boxes.map((item) => {
-              const differs = item.actual != null && Math.abs(item.actual - item.predicted) > 1
-              return (
-                <li
-                  key={item.key}
-                  className={`documents-field has-ytd${differs ? ' is-doubtful' : ''}`}
-                >
-                  <span className="documents-field-label">{item.label}</span>
-                  <span className="documents-field-text sensitive-value">
-                    {formatCurrency(item.predicted)}
-                  </span>
-                  <span className="documents-field-text sensitive-value">
-                    {item.actual == null
-                      ? 'Not read'
-                      : differs
-                        ? formatCurrency(item.actual)
-                        : 'Matches'}
-                  </span>
-                </li>
-              )
-            })}
-          </ul>
-        </section>
-      ) : null}
+      <DocumentDeposits pay={pay} accountName={accountName} />
+      {prediction ? <PayPrediction prediction={prediction} /> : null}
       {document.statementCsv || document.kind === 'export' ? (
         <div className="documents-history">
           <span>
@@ -1364,7 +1203,9 @@ function DocumentPanel({
 }
 
 /** The year's monthly documents in rows, a cell per month, for spotting the month that's missing. */
-const coverageLanes: { title: string; kinds: BriefDocument['kind'][]; noun: string }[] = [
+type DocumentKind = BriefDocument['kind']
+// A lane takes its color from its first kind, so it has at least one.
+const coverageLanes: { title: string; kinds: [DocumentKind, ...DocumentKind[]]; noun: string }[] = [
   { title: 'Pay', kinds: ['payslip'], noun: 'pay statement' },
   { title: 'Statements', kinds: ['statement', 'export'], noun: 'statement' },
 ]

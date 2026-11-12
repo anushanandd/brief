@@ -62,7 +62,7 @@ fn weekly_references_use_the_latest_bar_on_or_before_the_target() {
                         { "t": "2026-09-02T04:00:00Z", "c": 220.0 },
                         { "t": "2026-09-03T04:00:00Z", "c": 225.0 }
                     ],
-                    "NBIS": [{ "t": "2026-09-01T04:00:00Z", "c": 25.0 }]
+                    "TEST": [{ "t": "2026-09-01T04:00:00Z", "c": 25.0 }]
                 }
             }),
             "2026-09-03"
@@ -76,7 +76,7 @@ fn weekly_references_use_the_latest_bar_on_or_before_the_target() {
                 }
             ),
             (
-                "NBIS".into(),
+                "TEST".into(),
                 WeeklyReference {
                     price: 25.0,
                     date: "2026-09-01".into()

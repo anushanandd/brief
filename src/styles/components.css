@@ -447,10 +447,36 @@
   padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
   align-self: start;
 }
-/* Position tables drop their least decision-relevant columns before Value clips.
-   Wider tables elsewhere keep scrolling inside their cards. */
+/* Position tables drop their least decision-relevant columns before Value clips. */
 .financial-table-scroll:has(> .position-table) {
   container: position-table / inline-size;
+}
+/* Realized sales keep the security, its date, and the gain longest: the sale price goes first,
+   then the FIFO basis, the share count, the proceeds, and last the date. */
+@container financial-table (max-width: 720px) {
+  .sales-table :is(th, td):nth-child(4) {
+    display: none;
+  }
+}
+@container financial-table (max-width: 600px) {
+  .sales-table :is(th, td):nth-child(6) {
+    display: none;
+  }
+}
+@container financial-table (max-width: 500px) {
+  .sales-table :is(th, td):nth-child(3) {
+    display: none;
+  }
+}
+@container financial-table (max-width: 400px) {
+  .sales-table :is(th, td):nth-child(5) {
+    display: none;
+  }
+}
+@container financial-table (max-width: 320px) {
+  .sales-table :is(th, td):nth-child(2) {
+    display: none;
+  }
 }
 /* The market view keeps Price longest: Week %, then Total %, gives way first. */
 @container position-table (max-width: 640px) {
@@ -662,15 +688,14 @@
 .position-security strong {
   font-weight: 600;
 }
+/* A long fund name wraps under its ticker rather than ending in an ellipsis. */
 .position-security small {
-  overflow: hidden;
   color: var(--text-tertiary);
   font-weight: 400;
   line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   font-size: var(--type-meta);
   max-width: 220px;
+  overflow-wrap: break-word;
 }
 .position-security:hover strong {
   color: var(--accent);
@@ -702,9 +727,7 @@
 .financial-activity-copy strong,
 .financial-activity-copy small,
 .financial-activity-meta small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .financial-activity-copy strong,
 .financial-activity-meta strong {
@@ -786,17 +809,6 @@
   min-width: 0;
   margin-bottom: 16px;
   padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
-}
-.spending-detail-note {
-  margin: 16px 0;
-  color: var(--text-tertiary);
-  font-size: var(--type-body);
-  line-height: 1.5;
-}
-.spending-detail-note a {
-  color: var(--text-primary);
-  text-decoration: underline;
-  text-underline-offset: 3px;
 }
 .transaction-description {
   white-space: normal;

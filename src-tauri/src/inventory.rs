@@ -35,6 +35,14 @@ fn purpose(name: &str) -> Option<&'static str> {
         "startup-market.sqlite3" => "The market values shown at launch; a disposable cache",
         "embeddings.sqlite3" => "Search's on-device text embeddings; a disposable cache",
         crate::storage::OPENED_STATEMENTS => "Statement PDFs opened for reading",
+        crate::storage::generations::DIRECTORY => {
+            "Copies of the finance database: one a day for the last week, and one kept before \
+             each upgrade of its format"
+        }
+        crate::storage::generations::RELEASES => {
+            "Copies of the finance database kept before a new build was installed"
+        }
+        crate::panic_log::FILE => "Failures Brief recovered from, for Data health",
         _ if name.starts_with("finance-state.retained-") && name.ends_with(".sqlite3") => {
             "A finance database kept when a restore replaced it"
         }
@@ -253,6 +261,17 @@ mod tests {
             .unwrap()
             .starts_with("SQLite's working file"));
         assert_eq!(files[2].purpose, None);
+
+        // The folders and files Brief writes besides its databases are known too.
+        fs::create_dir_all(directory.join(crate::storage::generations::DIRECTORY)).unwrap();
+        fs::create_dir_all(directory.join(crate::storage::generations::RELEASES)).unwrap();
+        fs::write(directory.join(crate::panic_log::FILE), b"").unwrap();
+        let known = super::files(&directory).unwrap();
+        assert_eq!(known.len(), 6);
+        assert!(known
+            .iter()
+            .filter(|file| file.name != "stray.sqlite3")
+            .all(|file| file.purpose.is_some()));
 
         let page = rows(&directory, "places.sqlite3", "searches", 0).unwrap();
         assert_eq!(page.columns, ["key", "data"]);

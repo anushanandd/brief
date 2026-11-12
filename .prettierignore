@@ -2,5 +2,8 @@ src/data/seed-spending.json
 src/data/seed-reports.json
 src/data/seed-view.json
 src/data/seed-objects.json
+src/data/seed-activity-totals.json
 src/data/empty-view.json
+src/data/fixtures/route-report-inputs.json
+src/data/fixtures/route-reports.json
 src/lib/bindings/

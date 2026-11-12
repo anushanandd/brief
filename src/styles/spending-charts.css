@@ -247,9 +247,8 @@ button.ranked-bars-row:hover .ranked-bars-name {
   font-size: var(--type-body);
 }
 .ranked-bars-name > span {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  min-width: 0;
+  overflow-wrap: break-word;
 }
 .ranked-bars-name > i {
   width: 8px;
@@ -373,7 +372,7 @@ button.ranked-bars-row[aria-pressed='true'] .ranked-bars-name {
 }
 .benefit-fee-recovery > p > small {
   color: var(--text-tertiary);
-  font-size: var(--type-body);
+  font-size: var(--type-meta);
 }
 .benefit-fee-meter {
   height: 6px;

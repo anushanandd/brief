@@ -10,6 +10,8 @@ pub(super) struct Gathered {
     pub evidence: Vec<Evidence>,
     pub sectors: Sectors,
     pub market_news: Vec<MarketNewsArticle>,
+    pub causes: BTreeMap<String, reading::Cause>,
+    pub reports: Vec<(String, earnings::SavedReport)>,
     pub quotes: Quotes,
     pub prices: Prices,
 }
@@ -28,6 +30,8 @@ pub(super) fn build(
         mut evidence,
         sectors,
         market_news,
+        causes,
+        reports,
         quotes,
         prices,
     } = gathered;
@@ -91,6 +95,7 @@ pub(super) fn build(
             holding.own = sessions::own_series(&records, &holding.ticker);
         }
     }
+    summary.earnings = earnings_digests(&reports, &evidence, period, ticker.as_deref());
     // Each newly made session's events, from this run's data, and whether it was quiet.
     let performance = &snapshot.brokerage_performance;
     let mut accounts = reconcile::investment_accounts(performance);
@@ -237,10 +242,22 @@ pub(super) fn build(
             ticker.as_deref(),
             &ledger.held,
             &stories,
+            &causes,
+            &summary.events,
             &summary.session,
             period.end,
         )
     });
+    // Today's summary includes earnings reported in the last two sessions.
+    if let Some(brief) = summary.brief.as_mut() {
+        let since = Session { date: period.end }.previous().date;
+        brief.earnings = summary
+            .earnings
+            .iter()
+            .filter(|digest| digest.reported_on >= since)
+            .cloned()
+            .collect();
+    }
     trace.stage(
         "brief",
         if summary.brief.is_some() {

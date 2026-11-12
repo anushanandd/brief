@@ -12,7 +12,12 @@ import {
 import type { IconComponent } from '../components/icons'
 import { preference } from './preference'
 
-export type ActionScope = 'app' | 'page' | 'region' | 'selection'
+/**
+ * Where an action's keys work: anywhere (`app`), on the page with nothing over it (`page`), in
+ * the focused list (`region`), on selected rows (`selection`), or inside one open dialog
+ * (`dialog`, which names it in `dialog`).
+ */
+export type ActionScope = 'app' | 'page' | 'region' | 'selection' | 'dialog'
 
 export type ActionBinding = {
   sequence: readonly string[]
@@ -27,6 +32,8 @@ export type AppAction = {
   detail?: string
   icon?: IconComponent
   scope: ActionScope
+  /** A `dialog` action's dialog; its keys work only while that dialog holds the keyboard. */
+  dialog?: Element | null
   bindings?: readonly ActionBinding[]
   disabled?: boolean
   disabledReason?: string
@@ -126,11 +133,18 @@ export function useRegisteredActions() {
 }
 
 export const actionScopePriority: Record<ActionScope, number> = {
-  selection: 4,
-  region: 3,
+  selection: 5,
+  region: 4,
+  dialog: 3,
   page: 2,
   app: 1,
 }
+
+/**
+ * Scopes whose single keys act at once, even one that starts a shortcut elsewhere: C is a
+ * category for the selection or in the inspector, and starts a cash account's jump otherwise.
+ */
+const immediateScopes: ReadonlySet<ActionScope> = new Set(['selection', 'dialog'])
 
 export function normalizeActionToken(event: KeyboardEvent) {
   const modifiers = [
@@ -163,27 +177,26 @@ export function resolveBinding(actions: readonly AppAction[], sequence: readonly
         actionScopePriority[right.action.scope] - actionScopePriority[left.action.scope],
     )
   const exact = candidates.find(({ binding }) => binding.sequence.length === sequence.length)
-  // While rows are selected, their keys act at once, even one that starts a shortcut elsewhere
-  // (C is a category for the selection, and starts a cash account's jump otherwise).
-  const selectionWins = exact?.action.scope === 'selection'
+  const wins = exact && immediateScopes.has(exact.action.scope) ? exact.action.scope : undefined
   const pending = candidates.some(
     ({ action, binding }) =>
-      binding.sequence.length > sequence.length && (!selectionWins || action.scope === 'selection'),
+      binding.sequence.length > sequence.length && (!wins || action.scope === wins),
   )
   return { candidates, exact, pending }
 }
 
 /**
  * Bindings that can't both work. A shortcut that is also the start of a longer one would wait
- * for a key that may never come; a selection's key is the exception, since it wins while rows
- * are selected. Two enabled actions on one key in one scope leave which runs to chance.
+ * for a key that may never come; a selection's or dialog's key is the exception, since it wins
+ * while rows are selected or the dialog is open. Two enabled actions on one key in one scope
+ * leave which runs to chance.
  */
 export function bindingConflicts(actions: readonly AppAction[]) {
   const bindings = actionBindings(actions)
   const sameKey = (left: ActionBinding, right: ActionBinding) =>
     left.sequence.length === right.sequence.length && bindingStartsWith(left, right.sequence)
   return bindings.flatMap((short, index) => [
-    ...(short.action.scope === 'selection'
+    ...(immediateScopes.has(short.action.scope)
       ? []
       : bindings
           .filter(
@@ -201,6 +214,7 @@ export function bindingConflicts(actions: readonly AppAction[]) {
         (other) =>
           other.action.id !== short.action.id &&
           other.action.scope === short.action.scope &&
+          other.action.dialog === short.action.dialog &&
           !short.action.disabled &&
           !other.action.disabled &&
           sameKey(short.binding, other.binding),
@@ -210,12 +224,17 @@ export function bindingConflicts(actions: readonly AppAction[]) {
 }
 
 export function longestCommonPrefix(values: readonly string[]) {
-  if (!values.length) return ''
-  let prefix = values[0]
-  for (const value of values.slice(1)) {
+  const [first, ...rest] = values
+  if (first === undefined) return ''
+  let prefix = first
+  for (const value of rest) {
     let index = 0
     const limit = Math.min(prefix.length, value.length)
-    while (index < limit && prefix[index].toLowerCase() === value[index].toLowerCase()) index += 1
+    while (
+      index < limit &&
+      prefix.charAt(index).toLowerCase() === value.charAt(index).toLowerCase()
+    )
+      index += 1
     prefix = prefix.slice(0, index)
     if (!prefix) break
   }
@@ -229,8 +248,9 @@ export function paletteCompletion(query: string, candidates: readonly string[]) 
   const matches = [...new Set(candidates)]
     .filter((candidate) => candidate.toLowerCase().startsWith(typed.toLowerCase()))
     .toSorted((left, right) => left.length - right.length || left.localeCompare(right))
-  if (!matches.length) return undefined
-  const target = matches.length === 1 ? matches[0] : longestCommonPrefix(matches)
+  const [only, ...others] = matches
+  if (only === undefined) return undefined
+  const target = others.length ? longestCommonPrefix(matches) : only
   if (target.length <= typed.length) return undefined
   const nextBoundary = target.slice(typed.length).search(/\s+/)
   const stepEnd = nextBoundary < 0 ? target.length : typed.length + nextBoundary + 1
@@ -252,12 +272,12 @@ const targetSelector = [
 const hintAlphabet = 'asdfghjklqwertyuiopzxcvbnm'
 
 export function hintCode(index: number, count: number) {
-  if (count <= hintAlphabet.length) return hintAlphabet[index]
+  if (count <= hintAlphabet.length) return hintAlphabet.charAt(index)
   const width = count <= hintAlphabet.length ** 2 ? 2 : 3
   let value = index
   let code = ''
   for (let position = 0; position < width; position += 1) {
-    code = hintAlphabet[value % hintAlphabet.length] + code
+    code = hintAlphabet.charAt(value % hintAlphabet.length) + code
     value = Math.floor(value / hintAlphabet.length)
   }
   return code

@@ -25,7 +25,7 @@ it('marks the last section once the scroller reaches the bottom', () => {
 })
 
 it('finds the section holding a row, and the first section otherwise', () => {
-  expect(settingsSectionFor('platinum-benefits')).toBe('accounts')
+  expect(settingsSectionFor('benefit-visibility')).toBe('accounts')
   expect(settingsSectionFor('advanced')).toBe('advanced')
   expect(settingsSectionFor(undefined)).toBe('connections')
   expect(settingsSectionFor('no-such-row')).toBe('connections')

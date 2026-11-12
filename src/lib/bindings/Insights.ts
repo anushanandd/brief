@@ -12,6 +12,7 @@ import type { CardBenefits } from "./CardBenefits";
 import type { CashTimeline } from "./CashTimeline";
 import type { ChartChanges } from "./ChartChanges";
 import type { Credit } from "./Credit";
+import type { DetectorPrecision } from "./DetectorPrecision";
 import type { DividendOutlook } from "./DividendOutlook";
 import type { Documents } from "./Documents";
 import type { EvidenceGraph } from "./EvidenceGraph";
@@ -47,9 +48,19 @@ export type Insights = { today: string, computedAt: string, expected: Array<Expe
  */
 otherCardBenefits?: Array<CardBenefits>, 
 /**
- * Card products with rule data, for assigning one to a card.
+ * Money from elsewhere filed as repaying card fees, every tracked card's `fee.offsets`
+ * together, in whole cents; none when no tracked card has a fee year.
  */
-benefitProducts: Array<BenefitOption>, benefitOptions: Array<BenefitOption>, benefitRulesVersion: string, benefitTermsReviewed: string, 
+feeOffsets?: number, 
+/**
+ * Card products with saved rules, for assigning one to a card.
+ */
+benefitProducts: Array<BenefitOption>, 
+/**
+ * The spending card's benefits, and its product's rules version and review date; none
+ * when no product's rules cover it.
+ */
+benefitOptions: Array<BenefitOption>, benefitRulesVersion?: string, benefitTermsReviewed?: string, 
 /**
  * Unlinked refunds and the one purchase each most plausibly repays.
  */
@@ -157,4 +168,8 @@ agenda: Array<AgendaItem>,
 /**
  * What program rules explain or suggest, with proofs, and life chapters.
  */
-evidence: EvidenceGraph, };
+evidence: EvidenceGraph, 
+/**
+ * Each detector's share of your answers that accepted it, for Diagnostics.
+ */
+precision?: Array<DetectorPrecision>, };

@@ -53,7 +53,7 @@ export const verbs: readonly Verb[] = [
     id: 'benefits.review',
     title: 'Review benefit matches',
     keywords: 'card credits benefits review matches',
-    page: '/analytics?chart=amex-credits',
+    page: '/analytics?chart=card-credits',
   },
   {
     id: 'account.export',
@@ -130,10 +130,10 @@ export const objectVerbs = (kind: ObjectKind) => verbs.filter((verb) => verb.obj
  * the verb and the object it names. Only catalog verbs run from a link.
  */
 export function verbLink(view: string): { verb: Verb; object?: string } | undefined {
-  const match = /^\/do\/([\w.-]+)(?:\?(.*))?$/.exec(view)
-  const verb = match ? verbById(match[1]) : undefined
+  const [, id, query] = /^\/do\/([\w.-]+)(?:\?(.*))?$/.exec(view) ?? []
+  const verb = id === undefined ? undefined : verbById(id)
   if (!verb) return undefined
-  const object = new URLSearchParams(match?.[2] ?? '').get('object') ?? undefined
+  const object = new URLSearchParams(query ?? '').get('object') ?? undefined
   if (verb.object && !object?.startsWith(`${verb.object}:`)) return undefined
   return { verb, ...(object ? { object } : {}) }
 }

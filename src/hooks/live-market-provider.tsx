@@ -1,10 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
+import { keepPreviousData, useQuery } from '@tanstack/react-query'
+import type { LivelinePoint } from 'liveline'
 import { useCallback, useEffect, useMemo, useState, type PropsWithChildren } from 'react'
 
 import { getSavedMarket, isTauri } from '../lib/api'
+import { formatUpdatedAt } from '../lib/format'
 import {
   applyLiveProjection,
   compatibleMarketProjection,
+  forSnapshot,
   subscribeLiveMarket,
   withMarketFrame,
   withMarketWeek,
@@ -14,6 +17,10 @@ import { useMarketUpdateInterval } from '../lib/market-preferences'
 import type { ChartChanges, MarketHistory, MarketSnapshots } from '../lib/schema'
 import { useFinance } from './use-finance'
 import { LiveFinanceContext } from './use-live-finance'
+
+// Stable empties, so charts reading them don't see new data each render.
+const noSeries: Record<string, LivelinePoint[]> = {}
+const noChanges: ChartChanges = []
 
 function useLiveMarketState() {
   const base = useFinance()
@@ -48,9 +55,6 @@ function useLiveMarketState() {
     return () => document.removeEventListener('visibilitychange', update)
   }, [])
   useEffect(() => {
-    setState({ series: {} })
-  }, [symbolKey, base.data?.revision, base.data?.updatedAt])
-  useEffect(() => {
     if (!enabled) return undefined
     return subscribeLiveMarket(
       symbolKey.split(','),
@@ -75,6 +79,8 @@ function useLiveMarketState() {
     enabled: Boolean(base.data && base.liveMarketEnabled && isTauri()),
     staleTime: Infinity,
     retry: false,
+    // Keep showing the last frame while the next loads; the check below ignores its values.
+    placeholderData: keepPreviousData,
   })
   const [startupFinished, setStartupFinished] = useState(false)
   const startupPending =
@@ -82,75 +88,83 @@ function useLiveMarketState() {
   useEffect(() => {
     if (!startupPending) setStartupFinished(true)
   }, [startupPending])
-  const candidate = state.market ?? saved.data ?? undefined
-  const market =
-    base.liveMarketEnabled &&
-    (state.symbolKey === symbolKey || !state.market) &&
-    base.data &&
-    compatibleMarketProjection(base.data, candidate?.projection)
-      ? candidate
+  // Values only ever come from a projection of the committed snapshot.
+  const compatible = (market: MarketSnapshots | null | undefined) =>
+    base.liveMarketEnabled && base.data && compatibleMarketProjection(base.data, market?.projection)
+      ? (market ?? undefined)
       : undefined
-  const savedMarket =
-    base.liveMarketEnabled &&
-    base.data &&
-    compatibleMarketProjection(base.data, saved.data?.projection)
-      ? saved.data
-      : undefined
+  const savedMarket = compatible(saved.data)
+  // Settled during render, so no frame paints between a snapshot change and its lines.
+  const current = forSnapshot(
+    state,
+    symbolKey,
+    `${base.data?.revision ?? 0}:${base.data?.updatedAt ?? ''}`,
+    savedMarket,
+  )
+  if (current !== state) setState(current)
+  const market = compatible(current.market) ?? savedMarket
   const data = useMemo(
     () => (base.data ? applyLiveProjection(base.data, market?.projection) : undefined),
     [base.data, market?.projection],
   )
-  const marketFeedLabel =
-    market?.feed === 'iex'
-      ? 'IEX'
-      : market?.feed === 'sip'
-        ? 'SIP'
-        : market?.feed === 'boats'
-          ? 'BOATS'
-          : market?.feed === 'delayed_sip'
-            ? 'Delayed SIP'
-            : market?.feed === 'overnight'
-              ? 'Overnight indicative'
-              : undefined
-  return {
-    ...base,
-    data,
-    valuationAsOf: market?.asOf ?? base.data?.updatedAt,
-    startupPending,
-    marketIsSaved: Boolean(market?.cached),
-    analysisReady:
-      !base.integrationStatusLoading &&
-      (!base.liveMarketEnabled || !symbolKey || !!state.market || !!state.error),
-    marketSeries: market?.cached ? (market.chartSeries ?? {}) : market ? state.series : {},
-    // Live charts' changes from Rust once their lines are whole; until then the saved frame's,
-    // else the ones the snapshot carries.
-    chartChanges:
-      (market?.cached ? market.chartChanges : market ? state.changes : undefined) ??
-      (savedMarket ? savedMarket.chartChanges : undefined) ??
-      data?.insights?.chartChanges ??
-      [],
-    marketSession: market?.session,
-    marketAsOf: market?.asOf ?? undefined,
-    marketFeedLabel,
-    marketDelayMinutes: market?.delayMinutes,
-    marketNextTransitionAt: market?.nextTransitionAt ?? undefined,
-    marketPriceState:
-      enabled && state.error
-        ? ('error' as const)
-        : enabled && (!market || market.cached)
-          ? ('loading' as const)
-          : market?.pollIntervalMs && !market.cached
-            ? ('active' as const)
-            : ('idle' as const),
-    marketPriceMessage: enabled && state.error ? state.error : undefined,
-    marketPriceNote: market
-      ? `${state.error ? 'Refresh failed; last available values. ' : ''}${market.cached ? 'Saved market observations · ' : ''}${market.session} · ${marketFeedLabel ?? 'Market data'} · ${market.asOf ? new Date(market.asOf).toLocaleString() : 'Observation time unavailable'}. Values and changes use the shared Rust valuation.`
-      : enabled && state.error
-        ? 'Market refresh failed; showing saved values.'
-        : enabled
-          ? 'Loading current values and market changes…'
-          : 'Current market values are unavailable; showing saved values.',
-  }
+  const analysisReady =
+    !base.integrationStatusLoading &&
+    (!base.liveMarketEnabled || !symbolKey || !!current.market || !!current.error)
+  // Built once per change to the snapshot, the stream, or the saved frame, so a provider
+  // render with nothing new keeps every consumer's value (and their memos) as they were.
+  return useMemo(() => {
+    const marketFeedLabel =
+      market?.feed === 'iex'
+        ? 'IEX'
+        : market?.feed === 'sip'
+          ? 'SIP'
+          : market?.feed === 'boats'
+            ? 'BOATS'
+            : market?.feed === 'delayed_sip'
+              ? 'Delayed SIP'
+              : market?.feed === 'overnight'
+                ? 'Overnight indicative'
+                : undefined
+    return {
+      ...base,
+      data,
+      valuationAsOf: market?.asOf ?? base.data?.updatedAt,
+      startupPending,
+      marketIsSaved: Boolean(market?.cached),
+      analysisReady,
+      // One line per chart from the saved frame, the stream's frames, and its history together,
+      // so each message adds detail instead of swapping the line.
+      marketSeries: base.liveMarketEnabled ? current.series : noSeries,
+      // Live charts' changes from Rust once their lines are whole; until then the saved frame's,
+      // else the ones the snapshot carries.
+      chartChanges:
+        (market?.cached ? market.chartChanges : market ? current.changes : undefined) ??
+        (savedMarket ? savedMarket.chartChanges : undefined) ??
+        data?.insights?.chartChanges ??
+        noChanges,
+      marketSession: market?.session,
+      marketAsOf: market?.asOf ?? undefined,
+      marketFeedLabel,
+      marketDelayMinutes: market?.delayMinutes,
+      marketNextTransitionAt: market?.nextTransitionAt ?? undefined,
+      marketPriceState:
+        enabled && current.error
+          ? ('error' as const)
+          : enabled && (!market || market.cached)
+            ? ('loading' as const)
+            : market?.pollIntervalMs && !market.cached
+              ? ('active' as const)
+              : ('idle' as const),
+      marketPriceMessage: enabled && current.error ? current.error : undefined,
+      marketPriceNote: market
+        ? `${current.error ? 'Refresh failed; last available values. ' : ''}${market.cached ? 'Saved market observations · ' : ''}${market.session} · ${marketFeedLabel ?? 'Market data'} · ${market.asOf ? formatUpdatedAt(market.asOf) : 'Observation time unavailable'}. Values and changes use the shared Rust valuation.`
+        : enabled && current.error
+          ? 'Market refresh failed; showing saved values.'
+          : enabled
+            ? 'Loading current values and market changes…'
+            : 'Current market values are unavailable; showing saved values.',
+    }
+  }, [base, data, market, savedMarket, current, enabled, startupPending, analysisReady])
 }
 
 export type LiveFinanceState = ReturnType<typeof useLiveMarketState>

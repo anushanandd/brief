@@ -7,7 +7,7 @@ import { useLiveFinance } from '../hooks/use-live-finance'
 import { useFinanceRefreshState } from '../hooks/use-refresh-finance'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { AnalyticsSearch, AnalyticsChart } from '../lib/analytics'
-import { formatUpdatedAt } from '../lib/format'
+import { formatMarketTime, formatUpdatedAt } from '../lib/format'
 import type { InsightsView } from '../lib/insights-views'
 import {
   marketUpdateIntervals,
@@ -237,8 +237,6 @@ export function marketPriceLabel(
   return saved ? 'Saved' : 'Not updating'
 }
 
-const timeFormatter = new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit' })
-
 function DataStatus({ showMarket, children }: { showMarket: boolean; children: ReactNode }) {
   const [open, setOpen] = useState(false)
   useRegisterActions(
@@ -320,7 +318,7 @@ function DataStatusDetail({ showMarket, close }: { showMarket: boolean; close: (
                     <span className="data-status-muted">
                       until{' '}
                       <time dateTime={live.marketNextTransitionAt}>
-                        {timeFormatter.format(new Date(live.marketNextTransitionAt))}
+                        {formatMarketTime(live.marketNextTransitionAt)}
                       </time>
                     </span>
                   ) : null}

@@ -98,6 +98,7 @@ pub fn report(snapshot: &Snapshot, sync_runs: &[SyncRun], now: DateTime<Utc>) ->
         None,
         &SummaryHealth::default(),
         None,
+        &[],
         now,
     )
 }
@@ -239,10 +240,12 @@ pub fn report_with(
     insights: Option<&Insights>,
     summary: &SummaryHealth,
     log: Option<&LogCheck>,
+    panics: &[String],
     now: DateTime<Utc>,
 ) -> HealthReport {
     let mut issues = summary_issues(summary, now);
     issues.extend(log_issues(log));
+    issues.extend(panic_issues(panics, now));
     issues.extend(recurring_issues(insights));
     issues.extend(valuation_issues(snapshot));
     issues.extend(freshness_issues(snapshot, now));
@@ -601,6 +604,45 @@ fn log_issues(log: Option<&LogCheck>) -> Vec<HealthIssue> {
     .action("Open diagnostics", "/logs")]
 }
 
+/// The most panic entries Data health shows.
+const PANICS_SHOWN: usize = 5;
+/// Panics older than this are history, not a current issue.
+const PANIC_DAYS: i64 = 7;
+
+/// Internal errors Brief recovered from in the last week, from `panic_log`'s entries, newest
+/// first. The failing command returned an error and the app kept running; what it held may
+/// stay unavailable until Brief restarts.
+fn panic_issues(panics: &[String], now: DateTime<Utc>) -> Vec<HealthIssue> {
+    let recent = panics
+        .iter()
+        .filter(|entry| {
+            entry
+                .split_whitespace()
+                .next()
+                .and_then(parse_time)
+                .is_some_and(|at| now - at <= Duration::days(PANIC_DAYS))
+        })
+        .collect::<Vec<_>>();
+    let Some(latest) = recent.first() else {
+        return Vec::new();
+    };
+    vec![issue(
+        format!("internal-error:{latest}"),
+        Severity::Error,
+        Category::Storage,
+        "Brief recovered from an internal error",
+        "One action failed and the app kept running; restart Brief if something stays unavailable",
+    )
+    .evidence(
+        recent
+            .iter()
+            .take(PANICS_SHOWN)
+            .map(|entry| (*entry).clone())
+            .collect(),
+    )
+    .action("Open diagnostics", "/logs")]
+}
+
 fn sync_issues(sync_runs: &[SyncRun]) -> Vec<HealthIssue> {
     let mut issues = Vec::new();
     if let Some(run) = sync_runs.first().filter(|run| run.outcome == "failed") {
@@ -788,6 +830,22 @@ mod tests {
     use super::*;
 
     #[test]
+    fn panics_from_the_last_week_are_reported_newest_first() {
+        let now = parse_time("2026-11-11T12:00:00Z").unwrap();
+        let panics = [
+            "2026-11-10T09:00:00Z [main] index out of bounds at src/insights/a.rs:1:1".to_owned(),
+            "2026-11-09T09:00:00Z [tokio-runtime-worker] boom at src/b.rs:2:2".to_owned(),
+            "2026-10-01T09:00:00Z [main] old at src/c.rs:3:3".to_owned(),
+        ];
+        let issues = panic_issues(&panics, now);
+        assert_eq!(issues.len(), 1);
+        assert_eq!(issues[0].severity, Severity::Error);
+        assert_eq!(issues[0].evidence, panics[..2]);
+        assert!(panic_issues(&panics[2..], now).is_empty());
+        assert!(panic_issues(&[], now).is_empty());
+    }
+
+    #[test]
     fn incomplete_values_and_duplicates_are_actionable() {
         let mut snapshot: Snapshot =
             serde_json::from_str(include_str!("../../src/data/fixtures/native-finance.json"))
@@ -832,7 +890,7 @@ mod tests {
             crate::summary::SummaryRun::synthetic(period, error, partial)
         };
         let ids = |summary: &SummaryHealth| {
-            report_with(&snapshot, &[], None, summary, None, now)
+            report_with(&snapshot, &[], None, summary, None, &[], now)
                 .issues
                 .into_iter()
                 .map(|issue| issue.id)
@@ -861,7 +919,7 @@ mod tests {
         let found = ids(&stale);
         assert_eq!(found[0], "news-stale");
         assert!(found[1].starts_with("summary-failed:"));
-        let report = report_with(&snapshot, &[], None, &stale, None, now);
+        let report = report_with(&snapshot, &[], None, &stale, None, &[], now);
         let failed = report
             .issues
             .iter()
@@ -903,5 +961,117 @@ mod tests {
             ..fresh.clone()
         };
         assert!(ids(&early).is_empty());
+    }
+
+    /// The empty snapshot with these holdings and provider statuses.
+    fn snapshot_with(holdings: serde_json::Value, statuses: serde_json::Value) -> Snapshot {
+        let mut value: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/data/empty.json")).unwrap();
+        value["holdings"] = holdings;
+        value["providerStatus"] = statuses;
+        serde_json::from_value(value).unwrap()
+    }
+
+    fn held(ticker: &str, as_of: &str, eligible: bool) -> serde_json::Value {
+        serde_json::json!({
+            "ticker": ticker, "name": ticker, "accountId": "broker", "shares": 1, "price": 10,
+            "value": 10, "costBasis": 10, "dailyChangePct": null, "totalChangePct": null,
+            "color": "#000000", "marketAsOf": as_of, "quoteEligible": eligible,
+        })
+    }
+
+    #[test]
+    fn prices_and_providers_turn_stale_after_three_days_and_critical_after_seven() {
+        let now = parse_time("2026-11-11T12:00:00Z").unwrap();
+        let snapshot = snapshot_with(
+            serde_json::json!([
+                held("EDGE", "2026-11-08T12:00:00Z", true),
+                held("STALE", "2026-11-08T11:59:59Z", true),
+                held("WEEK", "2026-11-04T12:00:00Z", true),
+                held("OLD", "2026-11-04T11:59:59Z", true),
+                // A price that isn't quoted live is never stale.
+                held("MANUAL", "2026-01-01T00:00:00Z", false),
+            ]),
+            serde_json::json!({
+                "plaid": { "updatedAt": "2026-11-08T12:00:00Z", "error": null },
+                "snaptrade": { "updatedAt": "2026-11-08T11:00:00Z", "error": null },
+                // A failed request is reported whatever its age; an unreadable time is not.
+                "alpaca": { "updatedAt": "2026-11-11T11:00:00Z", "error": "Request failed" },
+                "wallet": { "updatedAt": "yesterday", "error": null },
+            }),
+        );
+        let issues = freshness_issues(&snapshot, now);
+        let affected = |id: &str| {
+            issues
+                .iter()
+                .find(|issue| issue.id == id)
+                .map(|issue| {
+                    issue
+                        .affected_items
+                        .iter()
+                        .map(|item| item.name.clone())
+                        .collect::<Vec<_>>()
+                })
+                .unwrap_or_default()
+        };
+        assert_eq!(affected("stale-holding-prices:warning"), ["STALE", "WEEK"]);
+        assert_eq!(affected("stale-holding-prices:critical"), ["OLD"]);
+        let ids = issues
+            .iter()
+            .map(|issue| issue.id.as_str())
+            .collect::<Vec<_>>();
+        assert!(ids.contains(&"provider-error:alpaca"));
+        assert!(ids.contains(&"provider-stale:snaptrade"));
+        assert!(
+            !ids.contains(&"provider-stale:plaid"),
+            "exactly three days is not stale"
+        );
+        assert!(!ids.iter().any(|id| id.ends_with(":wallet")));
+    }
+
+    #[test]
+    fn an_empty_snapshot_reports_nothing_wrong_and_only_the_latest_refresh_counts() {
+        let now = parse_time("2026-11-11T12:00:00Z").unwrap();
+        let empty: Snapshot =
+            serde_json::from_str(include_str!("../../src/data/empty.json")).unwrap();
+        let healthy = report(&empty, &[], now);
+        assert_eq!(healthy.overall_status, "healthy", "{:?}", healthy.issues);
+        assert!(healthy.issues.is_empty());
+
+        let run = |id: &str, outcome: &str| SyncRun {
+            id: id.into(),
+            started_at: "2026-11-11T11:00:00Z".into(),
+            finished_at: "2026-11-11T11:01:00Z".into(),
+            outcome: outcome.into(),
+            warnings: Vec::new(),
+            error_code: None,
+            details: crate::database::SyncDiagnostics::default(),
+        };
+        // Runs come newest first: a failure followed by a success is history.
+        assert!(sync_issues(&[run("new", "committed"), run("old", "failed")]).is_empty());
+        let failed = sync_issues(&[run("new", "failed"), run("old", "committed")]);
+        assert_eq!(failed.len(), 1);
+        assert_eq!(failed[0].id, "latest-sync-failed:new");
+        assert_eq!(failed[0].evidence, ["2026-11-11T11:01:00Z"]);
+        let failing = report(&empty, &[run("new", "failed")], now);
+        assert_eq!(failing.overall_status, "warning");
+        assert_eq!(failing.counts.warning, 1);
+    }
+
+    #[test]
+    fn the_change_log_is_an_issue_only_when_it_does_not_match() {
+        let check = |outcome| LogCheck {
+            checked_at: "2026-11-11T12:00:00Z".into(),
+            outcome,
+            replayed: 3,
+            detail: Some("Replaying changeset 3 (refresh) gave another result".into()),
+        };
+        assert!(log_issues(None).is_empty());
+        assert!(log_issues(Some(&check(Outcome::Matches))).is_empty());
+        let differs = log_issues(Some(&check(Outcome::Differs)));
+        assert_eq!(differs[0].severity, Severity::Error);
+        assert_eq!(differs[0].evidence.len(), 1);
+        let failed = log_issues(Some(&check(Outcome::Failed)));
+        assert_eq!(failed[0].severity, Severity::Warning);
     }
 }

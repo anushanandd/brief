@@ -13,6 +13,7 @@ import {
   type ActivityItem,
   type ActivitySort,
 } from './activity'
+import { present } from './test-support'
 
 describe('financial activities', () => {
   it('searches descriptions and every Activity filter field', () => {
@@ -127,7 +128,7 @@ describe('financial activities', () => {
           merchant: 'Lunch',
           category: 'Dining',
           date: '2026-09-01',
-          location: { address: '123 Example St', city: 'Portland', region: 'CA' },
+          location: { address: '123 Example St', city: 'Portland', region: 'OR' },
           paymentChannel: 'in store',
           amount: -25,
           account: 'Card',
@@ -140,19 +141,20 @@ describe('financial activities', () => {
 
     expect(buildActivities(snapshot).map(({ kind }) => kind)).toEqual(['trade', 'spending'])
     expect(buildActivities(snapshot)[0]).toMatchObject({ title: 'Bought VTI', amount: -50 })
-    expect(activityMethod(buildActivities(snapshot)[0])).toBe('Brokerage')
-    expect(
-      activityMethod({ ...buildActivities(snapshot)[1], accountId: 'snaptrade:example' }),
-    ).toBe('Brokerage')
+    const [bought, lunch] = buildActivities(snapshot)
+    expect(activityMethod(present(bought, 'the trade'))).toBe('Brokerage')
+    expect(activityMethod({ ...present(lunch, 'the lunch'), accountId: 'snaptrade:example' })).toBe(
+      'Brokerage',
+    )
     expect(
       buildActivities({
         ...snapshot,
-        trades: [{ ...snapshot.trades[0], type: 'REINVESTMENT' }],
+        trades: snapshot.trades.map((saved) => ({ ...saved, type: 'REINVESTMENT' })),
       })[0],
     ).toMatchObject({ title: 'Reinvested VTI', amount: -50 })
     expect(buildActivities(snapshot)[1]).toMatchObject({
       title: 'Lunch',
-      location: { address: '123 Example St', city: 'Portland', region: 'CA' },
+      location: { address: '123 Example St', city: 'Portland', region: 'OR' },
       paymentChannel: 'in store',
       logoUrl: undefined,
     })
@@ -189,32 +191,28 @@ describe('financial activities', () => {
     expect(
       buildActivities({
         ...snapshot,
-        transactions: [
-          {
-            ...snapshot.transactions[0],
-            id: 'income',
-            merchant: 'Payroll',
-            category: 'Income',
-            classification: classification('income'),
-          },
-        ],
+        transactions: snapshot.transactions.map((transfer) => ({
+          ...transfer,
+          id: 'income',
+          merchant: 'Payroll',
+          category: 'Income',
+          classification: classification('income'),
+        })),
       })[0],
     ).toMatchObject({ kind: 'income', title: 'Payroll' })
     expect(
       buildActivities({
         ...snapshot,
-        transactions: [
-          {
-            ...snapshot.transactions[0],
-            id: 'credit',
-            merchant: 'Platinum Digital Entertainment Credit',
-            category: 'Entertainment',
-            amount: 15.99,
-            classification: classification('other', { credit: true }),
-          },
-        ],
+        transactions: snapshot.transactions.map((transfer) => ({
+          ...transfer,
+          id: 'credit',
+          merchant: 'Example Card Streaming Credit',
+          category: 'Entertainment',
+          amount: 15.99,
+          classification: classification('other', { credit: true }),
+        })),
       })[0],
-    ).toMatchObject({ kind: 'credit', title: 'Platinum Digital Entertainment Credit' })
+    ).toMatchObject({ kind: 'credit', title: 'Example Card Streaming Credit' })
   })
 
   it('uses local display names without changing account IDs', () => {
@@ -229,8 +227,8 @@ describe('financial activities', () => {
           category: 'Dining',
           date: '2026-09-03',
           amount: -5,
-          account: 'Platinum Card',
-          accountId: 'amex',
+          account: 'Example Card',
+          accountId: 'example-card',
           classification: classification('expense'),
           pending: false,
           website: 'https://coffee.example',
@@ -238,12 +236,12 @@ describe('financial activities', () => {
       ],
     }
 
-    expect(buildActivities(snapshot, { amex: 'Everyday card' })[0]).toMatchObject({
+    expect(buildActivities(snapshot, { 'example-card': 'Everyday card' })[0]).toMatchObject({
       account: 'Everyday card',
       detail: 'Everyday card · Dining',
       website: 'https://coffee.example',
     })
-    expect(snapshot.transactions[0].account).toBe('Platinum Card')
+    expect(snapshot.transactions[0]?.account).toBe('Example Card')
   })
 })
 
@@ -294,18 +292,19 @@ const leg = (id: string, accountId: string, account: string, date: string, amoun
     classification: classification('transfer'),
   })
 
+const walletActivity = (method: 'tap' | 'app' | 'online'): ActivityItem => ({
+  id: 'spending:wallet:one',
+  kind: 'spending',
+  title: 'Corner Market',
+  category: 'Groceries',
+  detail: '',
+  date: '2025-04-28',
+  amount: -48.73,
+  occurredAt: '2025-04-28T19:30:04-06:00',
+  wallet: { recordId: 'one', method },
+})
+
 it('names how Wallet saw a card presented and reads the clock where it happened', () => {
-  const walletActivity = (method: 'tap' | 'app' | 'online'): ActivityItem => ({
-    id: 'spending:wallet:one',
-    kind: 'spending',
-    title: 'Corner Market',
-    category: 'Groceries',
-    detail: '',
-    date: '2025-04-28',
-    amount: -48.73,
-    occurredAt: '2025-04-28T19:30:04-06:00',
-    wallet: { recordId: 'one', method },
-  })
   expect(activityMethod(walletActivity('tap'))).toBe('Tap to pay')
   expect(activityPlace(walletActivity('tap'))).toMatchObject({
     kind: 'store',
@@ -323,7 +322,7 @@ it('names how Wallet saw a card presented and reads the clock where it happened'
 })
 
 it('links each leg of a paired transfer to the account on its other side', () => {
-  const [sent, arrived, alone] = buildActivities(
+  const activities = buildActivities(
     {
       transactions: [
         {
@@ -338,6 +337,8 @@ it('links each leg of a paired transfer to the account on its other side', () =>
     },
     { 'plaid:savings': 'Rainy day' },
   )
+  const [sent, arrived, alone] = activities
+  if (!sent || !arrived || !alone) throw new Error('Expected three legs')
   expect(sent.transfer).toEqual({
     id: 'spending:arrived',
     direction: 'to',

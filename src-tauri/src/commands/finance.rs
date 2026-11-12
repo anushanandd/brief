@@ -41,6 +41,20 @@ pub(crate) fn get_spending_period(
     ))
 }
 
+/// The sums of the Activity rows in view, named by their IDs; see `insights::activity_totals`.
+#[tauri::command(async)]
+pub(crate) fn get_activity_totals(
+    ids: Vec<String>,
+    state: State<'_, AppState>,
+) -> Result<crate::insights::activity_totals::ActivityTotals, String> {
+    use crate::insights::activity_totals::{activity_totals, MAX_IDS, MAX_ID_LENGTH};
+    if ids.len() > MAX_IDS || ids.iter().any(|id| id.len() > MAX_ID_LENGTH) {
+        return Err("Invalid activity totals request".into());
+    }
+    let view = state.storage()?.read_view()?;
+    Ok(activity_totals(&view, &ids))
+}
+
 /// Money's and Investments' reports over a window and accounts; see `insights::reports`.
 #[tauri::command(async)]
 pub(crate) fn get_reports(
@@ -83,16 +97,20 @@ pub(crate) async fn get_data_health(
             storage.log_check.clone(),
         )
     };
-    let summary = state
-        .providers
-        .summary_health(&view.snapshot, calibration)
-        .await;
+    let summary = crate::summary::summary_health(
+        &state.providers,
+        &state.summary_runs,
+        &view.snapshot,
+        calibration,
+    )
+    .await;
     Ok(health::report_with(
         &view.snapshot,
         &sync_runs,
         view.insights.as_ref(),
         &summary,
         log.as_ref(),
+        &crate::panic_log::recent(),
         Utc::now(),
     ))
 }
@@ -174,8 +192,31 @@ pub(crate) fn save_finance_settings(
     let tray = app.clone();
     let _ = app.run_on_main_thread(move || notify::sync_tray(&tray, background::enabled(&tray)));
     // Sync, account names, and benefit visibility all change the Brief calendar.
-    crate::calendar::sync_in_background(app);
+    crate::event_calendar::sync_in_background(app.clone());
+    // Turning the catalog on, or removing a card's rules, leaves a card for it to cover.
+    super::card_rules::apply_in_background(app);
     Ok(saved)
+}
+
+/// Reads a card product's benefit rules from a file the user chose, and checks that they
+/// compile. Saving them is an ordinary settings save, so they reach the change log and
+/// backups like any other setting.
+#[tauri::command]
+pub(crate) async fn read_card_rules(
+    path: String,
+) -> Result<crate::insights::benefits::CardRules, String> {
+    const MAX_BYTES: usize = 64 * 1024;
+    let contents =
+        files::read_bounded(&PathBuf::from(path), MAX_BYTES).map_err(|failure| match failure {
+            files::ReadFailure::OutOfBounds => "A card rules file must be between 1 byte and 64 KB",
+            files::ReadFailure::Unreadable => "This card rules file can't be read",
+        })?;
+    let mut rules: crate::insights::benefits::CardRules = serde_json::from_slice(&contents)
+        .map_err(|error| format!("This isn't a card rules file: {error}"))?;
+    rules.origin = crate::insights::benefits::RuleOrigin::User;
+    rules.applied = None;
+    crate::insights::benefits::RuleSet::new(rules.clone())?;
+    Ok(rules)
 }
 
 /// Async so reading and parsing the file never runs on the main thread.

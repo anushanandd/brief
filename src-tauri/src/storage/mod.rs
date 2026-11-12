@@ -1,4 +1,18 @@
 //! Staging, commits, recovery, and backups for the finance database.
+//!
+//! Opening locks the app-data directory, migrates an older database after keeping a copy, and
+//! reads the state the change log holds (`change::authoritative`). A database that can't be
+//! opened opens read-only from the newest retained copy, and writes stay blocked until the user
+//! restores or starts fresh.
+//!
+//! A read derives the view and saves nothing but the object graph. The view is reused until
+//! saved data or the quarter hour changes; every time zone's offset is a whole number of
+//! quarter hours, so a local midnight anywhere starts a new view. No read waits on the network
+//! or the on-device model.
+//!
+//! Only `finance-state.sqlite3` and `documents.sqlite3` are authoritative; the other databases
+//! are caches. Files are private to the user (`protect_directory`) but not encrypted; only
+//! document originals are.
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, OpenOptions},
@@ -22,6 +36,7 @@ mod backup;
 mod bank_statements;
 pub mod change;
 pub mod documents;
+pub(crate) mod generations;
 mod legacy;
 mod statements;
 mod validate;
@@ -105,8 +120,12 @@ pub struct Storage {
     view: std::cell::RefCell<Option<CachedView>>,
     /// `places.sqlite3`, the disposable cache of Overture searches; see `places::cache`.
     pub places_path: PathBuf,
+    /// Embeds merchant names for suggested categories in the background, never during a read.
+    pub merchant_embeddings: crate::search::embeddings::Warmer,
     /// What the latest replay of the change log found, once a launch has checked.
     pub log_check: Option<change::LogCheck>,
+    /// The local calendar day, which names each day's copy in `backups/`; tests set their own.
+    today: fn() -> chrono::NaiveDate,
 }
 
 /// Insights depend on the clock as well as saved data: benefit windows roll over at midnight in
@@ -223,6 +242,7 @@ fn validate_state(data: FinanceState) -> Result<FinanceState, String> {
 /// The committed snapshot with saved edits applied, places matched, evidence graded, and its
 /// insights derived: the view as Rust reads it, and as the renderer receives it. The browser
 /// preview's seed view is made by the same function.
+#[cfg(test)]
 pub(crate) fn derive_view(
     data: &FinanceState,
     recovery: Option<Recovery>,
@@ -230,11 +250,35 @@ pub(crate) fn derive_view(
     now: chrono::DateTime<chrono::Utc>,
     zone: &dyn crate::insights::calendar::Zone,
 ) -> Result<(crate::insights::View, Value), String> {
+    derive_view_with(data, recovery, searches, None, now, zone)
+}
+
+/// `derive_view`, with an embedder for suggesting categories from merchants with similar names.
+pub(crate) fn derive_view_with(
+    data: &FinanceState,
+    recovery: Option<Recovery>,
+    searches: &BTreeMap<String, Vec<crate::places::overture::OverturePlace>>,
+    embedder: Option<&dyn crate::search::embeddings::Embedder>,
+    now: chrono::DateTime<chrono::Utc>,
+    zone: &dyn crate::insights::calendar::Zone,
+) -> Result<(crate::insights::View, Value), String> {
     let mut snapshot = data.snapshot.clone();
     snapshot.recovery = recovery;
     let closed_accounts =
         crate::financial_engine::manual::adjust_snapshot(&mut snapshot, &data.settings);
-    crate::financial_engine::apply_annotations(&mut snapshot, &data.annotations)?;
+    crate::financial_engine::apply_edits(
+        &mut snapshot,
+        &data.annotations,
+        &data
+            .settings
+            .category_reviews
+            .iter()
+            .filter(|(_, review)| !review.accepted)
+            .map(|(id, review)| (id.clone(), review.category.clone()))
+            .collect(),
+        embedder,
+        &crate::insights::benefits::Catalog::from_settings(&data.settings),
+    )?;
     crate::places::matching::apply(&mut snapshot.transactions, searches);
     let places = crate::places::matching::status(&snapshot.transactions, searches);
     crate::quality::apply(&mut snapshot);
@@ -272,6 +316,71 @@ pub(crate) fn derive_view(
     ))
 }
 
+/// A stamp of what an investment summary reads from a derived view: holdings, trades,
+/// accounts, brokerage performance, and the transactions its ledger and events read. It holds
+/// no clock and hashes the same in every launch, so a saved summary can tell whether those
+/// changed; an edit elsewhere, such as a note on a purchase, leaves it alone.
+pub fn finances_stamp(snapshot: &crate::finance_contract::Snapshot) -> Result<String, String> {
+    use crate::transaction_policy::{Kind, Mark};
+    let read = snapshot
+        .transactions
+        .iter()
+        .filter(|transaction| {
+            transaction
+                .classification
+                .as_ref()
+                .is_some_and(|classification| {
+                    classification.mark == Mark::Dividend
+                        || matches!(
+                            classification.kind,
+                            Kind::Dividend
+                                | Kind::Interest
+                                | Kind::Fee
+                                | Kind::Tax
+                                | Kind::Transfer
+                        )
+                })
+        })
+        .collect::<Vec<_>>();
+    let stamped = serde_json::to_vec(&(
+        &snapshot.holdings,
+        &snapshot.trades,
+        &snapshot.accounts,
+        &snapshot.brokerage_performance,
+        read,
+    ))
+    .map_err(|error| error.to_string())?;
+    Ok(crate::database::sha256(&stamped))
+}
+
+/// Makes the local data directory owner-only (`0700`) and its SQLite files `0600`.
+fn protect_directory(directory: &Path) -> Result<(), String> {
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(directory, fs::Permissions::from_mode(0o700))
+            .map_err(|error| format!("Could not protect local financial data: {error}"))?;
+    }
+    for name in [
+        "finance-state.sqlite3",
+        "finance-state.backup.sqlite3",
+        "market-prices.sqlite3",
+        "news.sqlite3",
+        "startup-market.sqlite3",
+    ] {
+        crate::database::secure_file(&directory.join(name))?;
+    }
+    Ok(())
+}
+
+/// Why the finance database didn't open read-write.
+enum Opening {
+    /// It can't be read, or this build can't open it.
+    Failed,
+    /// It reads, but couldn't be copied before its upgrade, so it wasn't upgraded.
+    NotCopied(String),
+}
+
 /// Opens a finance database at the state its change log holds (`change::authoritative`),
 /// bringing its tables back to the log when they strayed.
 fn load_database(path: &Path) -> Result<(Database, FinanceState), String> {
@@ -286,11 +395,30 @@ fn load_database(path: &Path) -> Result<(Database, FinanceState), String> {
     Ok((database, data))
 }
 
-/// A backup's state as its change log holds it. Opening brings an older backup's schema up
-/// to date, as before; its tables are left as they are.
-fn read_backup(path: &Path) -> Result<FinanceState, String> {
-    let (data, _) = change::authoritative(&Database::open(path)?)?;
+/// A retained copy's state as its change log holds it, read from a scratch copy in `directory`
+/// so the copy itself is never migrated or changed: it may be the only one an older build of
+/// Brief can still open.
+fn read_backup(path: &Path, directory: &Path) -> Result<FinanceState, String> {
+    Database::validate_backup(path)?;
+    let scratch = backup::Scratch::new(
+        directory.join(format!("finance-state.{}.candidate", uuid::Uuid::new_v4())),
+    );
+    Database::copy_backup(path, scratch.path())?;
+    let database = Database::open(scratch.path())?;
+    let (data, _) = change::authoritative(&database)?;
+    drop(database);
     validate_state(data)
+}
+
+/// When a retained state was last updated, in local time, for the recovery message.
+fn updated(state: &FinanceState) -> String {
+    chrono::DateTime::parse_from_rfc3339(&state.snapshot.updated_at)
+        .map(|time| {
+            time.with_timezone(&chrono::Local)
+                .format("%Y-%m-%d %H:%M")
+                .to_string()
+        })
+        .unwrap_or_else(|_| "at an unknown time".into())
 }
 
 impl Storage {
@@ -310,6 +438,31 @@ impl Storage {
             events: self.database.market_events(period.start, period.end)?,
             corporate_actions: self.data.provider_data.corporate_actions.clone(),
         })
+    }
+
+    /// The investment summary saved for the portfolio (`None`) or a holding, and a period start.
+    pub fn saved_summary(
+        &self,
+        ticker: Option<&str>,
+        start: chrono::NaiveDate,
+    ) -> Result<Option<crate::database::SavedSummary>, String> {
+        self.database
+            .saved_summary(crate::summary::saved::scope(ticker), start)
+    }
+
+    /// Saves a summary in place of the one before for its scope and period start. A recovered
+    /// copy is read-only, so nothing is saved while recovering.
+    pub fn save_summary(
+        &mut self,
+        ticker: Option<&str>,
+        start: chrono::NaiveDate,
+        saved: &crate::database::SavedSummary,
+    ) -> Result<(), String> {
+        if self.recovery.is_some() {
+            return Ok(());
+        }
+        self.database
+            .save_summary(crate::summary::saved::scope(ticker), start, saved)
     }
 
     /// Saves closed sessions' records and their events together; results, not edits, so the
@@ -474,6 +627,8 @@ impl Storage {
             .and_then(|metadata| metadata.modified())
             .ok()
             .hash(&mut hasher);
+        // Merchant names embedded since the last view change category suggestions.
+        self.merchant_embeddings.generation().hash(&mut hasher);
         serde_json::to_vec(&(
             &self.data.annotations,
             &self.data.settings,
@@ -489,13 +644,25 @@ impl Storage {
     /// renderer reads it.
     fn derive_snapshot(&self) -> Result<(crate::insights::View, Value), String> {
         let searches = crate::places::cache::read(&self.places_path);
-        derive_view(
+        // Similar merchants come from vectors already in search's cache; names not embedded yet
+        // are embedded in the background, and the view after that job reads them.
+        let embedder = crate::search::embeddings::CachedOnly::new(self.embeddings_path());
+        let derived = derive_view_with(
             &self.data,
             self.recovery.clone(),
             &searches,
+            Some(&embedder),
             chrono::Utc::now(),
             &crate::insights::calendar::LocalZone,
-        )
+        );
+        self.merchant_embeddings
+            .request(embedder.missing.into_inner());
+        derived
+    }
+
+    /// `embeddings.sqlite3`, search's disposable cache of text embeddings, beside the places cache.
+    fn embeddings_path(&self) -> PathBuf {
+        self.places_path.with_file_name("embeddings.sqlite3")
     }
 
     /// Replaces durable finance settings. An import only fills values that are still unset.
@@ -508,7 +675,9 @@ impl Storage {
             return self.snapshot();
         }
         self.ensure_writable()?;
-        let settings = settings.normalized()?;
+        let settings =
+            crate::settings::within_review_limit(settings, &self.data.snapshot.transactions)
+                .normalized()?;
         let next = if importing {
             self.data.settings.merge_missing(settings).normalized()?
         } else {
@@ -527,7 +696,7 @@ impl Storage {
         wallet: Option<crate::providers::wallet::WalletData>,
     ) -> Result<Value, String> {
         self.ensure_writable()?;
-        self.database.backup(&self.backup_path())?;
+        self.back_up()?;
         self.record(change::Change::Wallet(wallet.map(Box::new)))?;
         self.pending = None;
         self.snapshot()
@@ -587,7 +756,7 @@ impl Storage {
         }
         // Replay starts from here: earlier changes would project differently under this code.
         let next = change::reproject(&self.data, self.data.statements.clone())?;
-        self.database.backup(&self.backup_path())?;
+        self.back_up()?;
         self.database.checkpoint(&next, change::Reason::Upgrade)?;
         self.data = next;
         self.pending = None;
@@ -599,7 +768,7 @@ impl Storage {
         &mut self,
         statements: Vec<crate::statements::StatementFile>,
     ) -> Result<(), String> {
-        self.database.backup(&self.backup_path())?;
+        self.back_up()?;
         self.record(change::Change::Statements(statements))?;
         self.pending = None;
         Ok(())
@@ -648,9 +817,16 @@ impl Storage {
             .iter()
             .any(|name| directory.join(name).exists());
         let loaded = if existing {
-            load_database(&path)
+            // An older database is copied at its own version before it is migrated; one that
+            // can't be copied isn't migrated.
+            match generations::keep_before_migration(&path, &directory) {
+                Ok(_) => load_database(&path).map_err(|_| Opening::Failed),
+                Err(generations::NotKept::CopyFailed(error)) => Err(Opening::NotCopied(error)),
+                Err(generations::NotKept::Unreadable) => Err(Opening::Failed),
+            }
         } else if backup_path.exists() {
-            Err("The primary finance database is missing".into())
+            // The primary finance database is missing.
+            Err(Opening::Failed)
         } else {
             legacy_state(&directory)
                 .and_then(validate_state)
@@ -660,22 +836,58 @@ impl Storage {
                     let _ = database.backup(&backup_path);
                     Ok((database, data))
                 })
+                .map_err(|_| Opening::Failed)
+        };
+        // A database that reads but couldn't be copied before its upgrade is shown as it is,
+        // from a scratch copy, not as unreadable; reopening with space to copy upgrades it.
+        let not_copied = match &loaded {
+            Err(Opening::NotCopied(error)) => read_backup(&path, &directory)
+                .ok()
+                .map(|state| (error.clone(), state)),
+            _ => None,
         };
         let (database, data, recovery) = match loaded {
             Ok((database, data)) => (database, data, None),
+            Err(_) if not_copied.is_some() => {
+                let (error, state) = not_copied.expect("checked");
+                (
+                    Database::open(Path::new(":memory:"))?,
+                    state,
+                    Some(Recovery {
+                        message: format!(
+                            "Brief couldn't keep a copy of the database before upgrading it \
+                             ({error}), so it wasn't upgraded. Showing it read-only. Free some \
+                             disk space and reopen Brief, or restore to upgrade it now; the \
+                             original file is kept either way."
+                        ),
+                        can_restore: true,
+                    }),
+                )
+            }
             Err(_) => {
-                let backup = if backup_path.exists() {
-                    read_backup(&backup_path).ok()
-                } else {
-                    read(&directory.join("finance-state.backup.json"))
-                        .and_then(validate_state)
-                        .ok()
-                };
-                let next_step = if backup.is_some() {
-                    "Showing a retained valid snapshot, read-only, until you choose recovery."
-                } else {
-                    "No valid backup was found. Original files will be retained if you start a \
-                     new snapshot."
+                // The newest retained copy this build can read: the rolling backup, a dated or
+                // pre-migration copy, or one a release kept; else an earlier version's JSON.
+                let backup = generations::candidates(&directory)
+                    .into_iter()
+                    .find_map(|candidate| {
+                        read_backup(&candidate.path, &directory)
+                            .ok()
+                            .map(|state| (candidate.label, state))
+                    })
+                    .or_else(|| {
+                        read(&directory.join("finance-state.backup.json"))
+                            .and_then(validate_state)
+                            .ok()
+                            .map(|state| ("the copy an earlier version kept".to_owned(), state))
+                    });
+                let next_step = match &backup {
+                    Some((label, state)) => format!(
+                        "Showing {label}, last updated {}, read-only, until you choose recovery.",
+                        updated(state)
+                    ),
+                    None => "No valid backup was found. Original files will be retained if you \
+                             start a new snapshot."
+                        .to_owned(),
                 };
                 let recovery = Recovery {
                     message: format!(
@@ -686,7 +898,10 @@ impl Storage {
                 };
                 (
                     Database::open(Path::new(":memory:"))?,
-                    backup.unwrap_or(empty_state()?),
+                    match backup {
+                        Some((_, state)) => state,
+                        None => empty_state()?,
+                    },
                     Some(recovery),
                 )
             }
@@ -704,7 +919,12 @@ impl Storage {
             edit_backup: None,
             view: std::cell::RefCell::new(None),
             places_path: directory.join("places.sqlite3"),
+            merchant_embeddings: crate::search::embeddings::Warmer::new(
+                directory.join("embeddings.sqlite3"),
+                std::sync::Arc::new(crate::search::embeddings::Apple),
+            ),
             log_check: None,
+            today: || chrono::Local::now().date_naive(),
         };
         // A failure here is retried before the next write.
         let _ = storage.begin_log();
@@ -800,10 +1020,7 @@ impl Storage {
         let next = change::finish_refresh(&self.data, &pending.refresh, snapshot)
             .map_err(CommitError::Validation)?;
         let committing = Instant::now();
-        let backup_path = self.backup_path();
-        self.database
-            .backup(&backup_path)
-            .map_err(CommitError::Persistence)?;
+        self.back_up().map_err(CommitError::Persistence)?;
         self.database
             .commit(
                 &next,

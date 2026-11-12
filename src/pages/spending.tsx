@@ -2,11 +2,11 @@ import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import { PagedActivityList } from '../components/activity-list'
+import { CardBenefits } from '../components/card-benefits'
 import { SpendingBarChart } from '../components/charts'
 import { PageError, PageLoading } from '../components/data-state'
 import { ChevronRight, X } from '../components/icons'
 import { MerchantGroups, type MerchantGroup } from '../components/merchant-groups'
-import { PlatinumBenefits } from '../components/platinum-benefits'
 import { RankedBars } from '../components/ranked-bars'
 import { MoneyStrip } from '../components/report-links'
 import { SpendingAccountEmptyState } from '../components/spending-account-empty-state'
@@ -34,7 +34,13 @@ import { accountDisplayName } from '../lib/account-names'
 import { buildActivities, type ActivityItem } from '../lib/activity'
 import { daysBetween } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
-import { formatMonthYear, formatProseCurrency, pluralize, formatDay } from '../lib/format'
+import {
+  formatCalendarDate,
+  formatMonthYear,
+  formatProseCurrency,
+  pluralize,
+  formatDay,
+} from '../lib/format'
 import { getExternalLogosEnabled } from '../lib/logos'
 import type { SpendingOwner } from '../lib/schema'
 import {
@@ -43,22 +49,16 @@ import {
   spendingChartPace,
   spendingFigures,
   spendingOwnerOptions,
-  spendingScope,
   spendingCategoryColor,
+  spendingPage,
   type SpendingPeriod,
-  spendingPeriodKind,
   spendingPeriodLabel,
-  spendingPeriodForRange,
   spendingPeriodOptions,
+  spendingPeriodRequest,
   spendingRangeForPeriod,
+  type SpendingSearch,
   spendingView,
 } from '../lib/spending'
-
-const monthYearFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
 
 const spendingPeriodIndicators = spendingPeriodOptions.map(
   ({ key, label, value }): { label: string; accessibleLabel: string; value: SpendingPeriod } => ({
@@ -68,39 +68,27 @@ const spendingPeriodIndicators = spendingPeriodOptions.map(
   }),
 )
 
-function useActivityData(requested: string | undefined, requestedOwner: SpendingOwner) {
+function useActivityData(search: SpendingSearch) {
   const query = useFinance()
   const data = query.data
-  const settings = financeSettings(data)
-  const names = settings.accountNames
-  // Whose spending to count is a choice only once a purchase is someone else's.
-  const hasOthers = useMemo(
-    () => Boolean(data?.transactions.some(({ classification }) => classification.othersSpending)),
-    [data],
-  )
-  const owner = hasOthers ? requestedOwner : 'me'
-  const scope = useMemo(
-    () =>
-      data
-        ? spendingScope(
-            data.accounts,
-            data.transactions,
-            settings.spendingAccountId ?? '',
-            requested,
-          )
-        : undefined,
-    [data, requested, settings.spendingAccountId],
+  const { account, range, for: owner } = search
+  // The same page the route loaded its period for (`route-data`).
+  const page = useMemo(
+    () => (data ? spendingPage(data, { account, range, for: owner }) : undefined),
+    [data, account, range, owner],
   )
   return {
     query,
     data,
-    names,
+    names: page?.names ?? financeSettings(data).accountNames,
     // The one account in view, or undefined for every account.
-    account: scope?.selected,
-    card: scope?.card,
-    options: scope?.options ?? [],
-    hasOthers,
-    owner,
+    account: page?.account,
+    card: page?.card,
+    options: page?.options ?? [],
+    hasOthers: page?.hasOthers ?? false,
+    owner: page?.owner ?? 'me',
+    hasStatements: page?.hasStatements ?? false,
+    period: page?.period ?? 1,
   }
 }
 
@@ -127,10 +115,8 @@ function useLinkedRowInView(scroll: RefObject<HTMLElement | null>, linked: objec
 export function SpendingPage() {
   const search = useSearch({ from: '/spending' })
   const navigate = useNavigate({ from: '/spending' })
-  const { query, data, names, account, card, options, hasOthers, owner } = useActivityData(
-    search.account,
-    search.for ?? 'me',
-  )
+  const { query, data, names, account, card, options, hasOthers, owner, hasStatements, period } =
+    useActivityData(search)
   const setOwner = useCallback(
     (next: SpendingOwner) =>
       void navigate({
@@ -151,11 +137,6 @@ export function SpendingPage() {
     [navigate],
   )
   // The period lives in the URL so Money's strip opens every card on it.
-  // Statements belong to the saved card, so only its view has one; elsewhere it reads as the month.
-  const hasStatements = Boolean(card) && account?.id === card?.id
-  const ranged = spendingPeriodForRange(search.range)
-  const period =
-    ranged === 'statement' && !hasStatements ? 1 : (ranged ?? (hasStatements ? 'statement' : 1))
   const setPeriod = useCallback(
     (next: SpendingPeriod) =>
       void navigate({
@@ -226,12 +207,10 @@ export function SpendingPage() {
       ? data.insights.statement
       : undefined
   // Rust reads the period: its figures, list, merchants, pace, and each category's view.
-  const periodQuery = useSpendingPeriod(data, {
-    scope: account?.id ?? allSpendingAccounts,
-    owner,
-    kind: spendingPeriodKind(period),
-    offset: -periodOffset,
-  })
+  const periodQuery = useSpendingPeriod(
+    data,
+    spendingPeriodRequest({ account, owner, period }, periodOffset),
+  )
   const detail = periodQuery.data ?? undefined
 
   useLinkedRowInView(activityScrollRef, linked?.from === 'chart' ? linked : null)
@@ -276,7 +255,7 @@ export function SpendingPage() {
   const selectedPeriod =
     basis === 'statement' || period === 'week'
       ? formatDay(end)
-      : monthYearFormatter.format(new Date(`${end}T00:00:00Z`))
+      : formatCalendarDate(end, { month: 'long', year: 'numeric' })
   const periodLabel = spendingPeriodLabel(period, periodOffset, selectedPeriod, basis)
   const shown = detail ? spendingView(detail, focus ?? undefined) : undefined
   const figures = spendingFigures(detail, focus ?? undefined)
@@ -286,7 +265,7 @@ export function SpendingPage() {
     basis === 'statement' && period === 'statement' && owner !== 'other'
       ? (detail?.balance ?? null)
       : null
-  const spendingChange = period ? figures.change : null
+  const spendingChange = period ? (figures?.change ?? null) : null
   const closingDate =
     period === 'statement' && periodOffset === 0 ? statement?.nextClose : undefined
   const closingDays = closingDate ? daysBetween(today, closingDate) : null
@@ -442,20 +421,22 @@ export function SpendingPage() {
                           `${periodLabel}${closingLabel}`
                         )}
                       </h2>
-                      <AnimatedCurrency className="hero-number" value={figures.total} />
+                      <AnimatedCurrency className="hero-number" value={figures?.total} />
                     </div>
                     <div className="chart-summary-row">
                       {spendingChange != null ? (
                         <ChartChange
                           amount={spendingChange}
-                          percent={figures.changePct}
+                          percent={figures?.changePct ?? null}
                           favorable="decrease"
                           ariaLabel="Change versus prior period"
                         />
                       ) : null}
-                      <span className="spending-daily-average sensitive-value">
-                        {`${formatProseCurrency(figures.daily)} a day`}
-                      </span>
+                      {figures ? (
+                        <span className="spending-daily-average sensitive-value">
+                          {`${formatProseCurrency(figures.daily)} a day`}
+                        </span>
+                      ) : null}
                       {historyStart ? (
                         <span className="spending-daily-average">
                           {`Card history starts ${formatMonthYear(historyStart)}`}
@@ -753,10 +734,10 @@ export function SpendingPage() {
             {account && account.id !== card?.id ? (
               // Another card shows its own benefits only when a product is assigned to it.
               data.insights?.otherCardBenefits?.some((other) => other.accountId === account.id) ? (
-                <PlatinumBenefits accountId={account.id} />
+                <CardBenefits accountId={account.id} />
               ) : null
             ) : card ? (
-              <PlatinumBenefits />
+              <CardBenefits />
             ) : (
               <SpendingAccountEmptyState />
             )}

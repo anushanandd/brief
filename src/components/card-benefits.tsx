@@ -1,8 +1,9 @@
 import { Popover } from '@base-ui/react/popover'
 import { Link } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
+import { catalogBrands } from '../lib/api'
 import {
   benefitNote,
   benefitStatus,
@@ -12,19 +13,32 @@ import {
 } from '../lib/benefit-copy'
 import { financeSettings } from '../lib/finance-settings'
 import { formatActivityName, formatCurrency, formatDay, formatProseCurrency } from '../lib/format'
-import { brandLogoUrl, brandMarkLabel, getExternalLogosEnabled } from '../lib/logos'
+import {
+  benefitLogoUrls,
+  brandLogoUrl,
+  brandMarkLabel,
+  getExternalLogosEnabled,
+  warmBenefitLogos,
+} from '../lib/logos'
 import type { BenefitActivity, BenefitWindow, Insights } from '../lib/schema'
 import { benefitReviewItems, benefitsToUseFirst, formatActivityDate } from '../lib/spending'
 import { BrandMark } from './brand-mark'
 import { ExternalLink } from './external-link'
 import {
   BedDouble,
+  CarFront,
   ChevronRight,
+  HeartPulse,
   History,
   Info,
   MonitorPlay,
   Plane,
   ReceiptText,
+  ShieldCheck,
+  ShoppingBag,
+  ShoppingBasket,
+  Sofa,
+  UtensilsCrossed,
   X,
   type IconComponent,
 } from './icons'
@@ -34,36 +48,73 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 type Benefit = BenefitWindow
 type BenefitEvidenceItem = BenefitActivity
 
-const benefitLogoDomains: Record<string, string> = {
-  'uber-cash': 'uber.com',
-  'uber-one': 'uber.com',
-  'walmart-plus': 'walmart.com',
-  resy: 'resy.com',
-  lululemon: 'lululemon.com',
-  clear: 'clearme.com',
-  oura: 'ouraring.com',
-  equinox: 'equinox.com',
-  'global-entry': 'cbp.gov',
-  soulcycle: 'soul-cycle.com',
-  saks: 'saksfifthavenue.com',
-}
+const benefitIcons: Array<{ pattern: RegExp; Icon: IconComponent; tone: string }> = [
+  {
+    pattern: /stream|entertainment|digital|\btv\b|music/i,
+    Icon: MonitorPlay,
+    tone: 'entertainment',
+  },
+  { pattern: /hotel|resort|stay/i, Icon: BedDouble, tone: 'hotel' },
+  { pattern: /airline|flight|travel/i, Icon: Plane, tone: 'airline' },
+  { pattern: /dining|restaurant|food/i, Icon: UtensilsCrossed, tone: 'dining' },
+  { pattern: /ride|taxi|car\b/i, Icon: CarFront, tone: 'rides' },
+  { pattern: /grocer|supermarket/i, Icon: ShoppingBasket, tone: 'grocery' },
+  { pattern: /shop|store|retail/i, Icon: ShoppingBag, tone: 'shopping' },
+  { pattern: /security|trusted traveler/i, Icon: ShieldCheck, tone: 'security' },
+  { pattern: /lounge/i, Icon: Sofa, tone: 'lounge' },
+  { pattern: /fitness|gym|wellness|health/i, Icon: HeartPulse, tone: 'wellness' },
+]
 
-const benefitIcons: Partial<Record<string, { Icon: IconComponent; tone: string }>> = {
-  'digital-entertainment': { Icon: MonitorPlay, tone: 'entertainment' },
-  hotel: { Icon: BedDouble, tone: 'hotel' },
-  'airline-fee': { Icon: Plane, tone: 'airline' },
-}
-
+/**
+ * A benefit's mark: with external logos on, each logo Rust found for it in turn until one loads,
+ * else an icon for its category, else one its name suggests, else initials.
+ */
 export function BenefitMark({
   id,
   name,
+  logoDomain,
+  logoUrl,
+  logoBrand,
+  category,
   externalLogosEnabled,
 }: {
   id: string
   name: string
+  logoDomain?: string | null
+  logoUrl?: string | null
+  logoBrand?: string | null
+  category?: string | null
   externalLogosEnabled: boolean
 }) {
-  const icon = benefitIcons[id]
+  const logos = benefitLogoUrls(
+    {
+      logoDomain: logoDomain ?? undefined,
+      logoUrl: logoUrl ?? undefined,
+      logoBrand: logoBrand ?? undefined,
+    },
+    externalLogosEnabled,
+  )
+  const logosKey = logos.join(' ')
+  const [failed, setFailed] = useState({ logosKey, count: 0 })
+  const tried = failed.logosKey === logosKey ? failed.count : 0
+  const logo = logos[tried]
+  useEffect(() => {
+    void warmBenefitLogos({ external: externalLogosEnabled, brands: catalogBrands })
+  }, [externalLogosEnabled])
+  if (logo) {
+    return (
+      <BrandMark
+        className="transaction-mark benefit-mark"
+        fallback={brandMarkLabel(name)}
+        label={`${name} logo`}
+        src={logo}
+        onError={() => setFailed({ logosKey, count: tried + 1 })}
+      />
+    )
+  }
+  const icon =
+    (category ? benefitIcons.find(({ pattern }) => pattern.test(category)) : undefined) ??
+    benefitIcons.find(({ pattern }) => pattern.test(`${id} ${name}`))
   if (icon) {
     const { Icon, tone } = icon
     return (
@@ -81,7 +132,7 @@ export function BenefitMark({
       className="transaction-mark benefit-mark"
       fallback={brandMarkLabel(name)}
       label={`${name} logo`}
-      src={brandLogoUrl(name, benefitLogoDomains[id], externalLogosEnabled)}
+      src={brandLogoUrl(name, undefined, false)}
     />
   )
 }
@@ -99,7 +150,7 @@ function BenefitProgress({ benefit }: { benefit: Benefit }) {
         benefit.estimatedCreditAmount !== null
           ? benefit.estimatedCreditAmount > 0
             ? `Estimated ${formatCurrency(benefit.estimatedCreditAmount)} used`
-            : 'No Uber purchase detected'
+            : 'No qualifying purchase detected'
           : unavailable
             ? 'Unavailable'
             : undefined
@@ -241,6 +292,10 @@ function BenefitRow({
         <BenefitMark
           id={benefit.id}
           name={benefit.name}
+          logoDomain={benefit.logoDomain}
+          logoUrl={benefit.logoUrl}
+          logoBrand={benefit.logoBrand}
+          category={benefit.category}
           externalLogosEnabled={externalLogosEnabled}
         />
         <div className="benefit-title-row">
@@ -343,7 +398,8 @@ function BenefitGroups({
       {deadlines.map((deadline) => {
         // Rows keep the order they arrive in: Rust's use-first order, then the rest.
         const group = calendarBenefits.filter(({ windowEnd }) => windowEnd === deadline)
-        const first = group[0]
+        const [first] = group
+        if (!first) return null
         return (
           <section
             className="benefit-deadline-group"
@@ -462,7 +518,7 @@ export function FeeRecovery({
  * A card's benefits at a glance on Spending: the credits to use soonest, as derived by the native
  * benefit rules. The fee, what was missed, and the full year read on Benefits.
  */
-export function PlatinumBenefits({
+export function CardBenefits({
   accountId,
 }: {
   /** Another tracked card; omitted for the saved spending card. */
@@ -485,9 +541,9 @@ export function PlatinumBenefits({
         title={
           <Link
             to="/analytics"
-            search={{ chart: 'amex-credits' }}
+            search={{ chart: 'card-credits' }}
             className="section-heading-link"
-            data-command="navigation.report.amex-credits"
+            data-command="navigation.report.card-credits"
           >
             {accountId ? `${card?.productName ?? 'Card'} benefits` : 'Benefits'}{' '}
             <ChevronRight size={14} aria-hidden="true" />
@@ -498,8 +554,8 @@ export function PlatinumBenefits({
         <p className="credit-summary-note">
           <Link
             to="/analytics"
-            search={{ chart: 'amex-credits', review: true }}
-            data-command="navigation.report.amex-credits"
+            search={{ chart: 'card-credits', review: true }}
+            data-command="navigation.report.card-credits"
           >
             {review.length} {review.length === 1 ? 'match' : 'matches'} to review
           </Link>

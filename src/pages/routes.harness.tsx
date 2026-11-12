@@ -7,6 +7,7 @@ import { createMemoryHistory, createRouter, RouterProvider } from '@tanstack/rea
 import { renderToString } from 'react-dom/server'
 import { afterEach, beforeEach, vi } from 'vitest'
 
+import exampleCard from '../../src-tauri/src/insights/example-card.json'
 import { loadSettingsPanel } from '../components/settings-dialog'
 import { classification } from '../data/fixtures/classification'
 import { emptyInsightDetails } from '../data/fixtures/insights'
@@ -15,11 +16,15 @@ import { LiveMarketProvider } from '../hooks/live-market-provider'
 import { ActionCollectorContext, type AppAction } from '../lib/action-system'
 import { dayKey } from '../lib/dates'
 import { formatShortDay, setAmountsHidden } from '../lib/format'
+import { fromRust } from '../lib/rust-json'
 import { settingsSections } from '../lib/settings-search'
 import { splitParts } from '../lib/transaction-kind'
 import { router } from '../router'
-import { scenarioReports, scenarioRollup } from './routes.reports'
+import { routeFixture } from './routes.fixtures'
 import { resetScenario, scenario } from './routes.scenario'
+
+/** The invented card whose rules the scenarios' card follows; Rust ships no real card's. */
+const exampleCardRules = fromRust<import('../lib/schema').CardRules>(exampleCard)
 
 // Native insights for the synthetic scenarios below, written out as fixtures. In the app
 // Rust derives them; these tests check only how routes present them.
@@ -314,18 +319,23 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
         accountId: transaction.accountId,
         date,
       }
-      if (/resy credit/i.test(transaction.merchant))
+      if (/example tables dining credit/i.test(transaction.merchant))
         return [
           {
             ...base,
-            benefitId: 'resy',
-            benefitName: 'Resy',
+            benefitId: 'dining',
+            benefitName: 'Dining',
             kind: transaction.amount > 0 ? ('credit' as const) : ('reversal' as const),
           },
         ]
-      if (transaction.id === 'uber-purchase')
+      if (transaction.id === 'partner-purchase')
         return [
-          { ...base, benefitId: 'uber-cash', benefitName: 'Uber Cash', kind: 'purchase' as const },
+          {
+            ...base,
+            benefitId: 'partner',
+            benefitName: 'Partner credit',
+            kind: 'purchase' as const,
+          },
         ]
       return []
     })
@@ -333,15 +343,15 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
   const inWindow = (id: string, start: string, end: string) =>
     activity.filter(({ benefitId, date }) => benefitId === id && date >= start && date <= end)
   const quarter = window(Math.floor(month / 3) * 3, 3)
-  const resyActivity = inWindow('resy', quarter.windowStart, quarter.windowEnd)
-  const posted = resyActivity.filter(({ pending }) => !pending)
+  const diningActivity = inWindow('dining', quarter.windowStart, quarter.windowEnd)
+  const posted = diningActivity.filter(({ pending }) => !pending)
   const credited = posted.reduce((sum, { amount }) => sum + Math.round(amount * 100), 0) / 100
   const lastCredit = activity.find(
     ({ benefitId, kind, pending, date }) =>
-      benefitId === 'resy' && kind === 'credit' && !pending && date < quarter.windowStart,
+      benefitId === 'dining' && kind === 'credit' && !pending && date < quarter.windowStart,
   )
   const monthly = window(month, 1)
-  const uberActivity = inWindow('uber-cash', monthly.windowStart, monthly.windowEnd)
+  const partnerActivity = inWindow('partner', monthly.windowStart, monthly.windowEnd)
   const benefit = (
     id: string,
     name: string,
@@ -379,33 +389,26 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
   const reversed = posted.some(({ kind }) => kind === 'reversal')
   const windows = [
     {
-      ...benefit(
-        'digital-entertainment',
-        'Digital entertainment',
-        '$25 / month',
-        25,
-        'monthly',
-        monthly,
-      ),
+      ...benefit('streaming', 'Streaming', '$10 / month', 10, 'monthly', monthly),
     },
     {
-      ...benefit('uber-cash', 'Uber Cash', '$15 monthly · +$20 Dec', 15, 'monthly', monthly),
+      ...benefit('partner', 'Partner credit', '$10 / month', 10, 'monthly', monthly),
       status: 'external' as const,
       remainingAmount: null,
       remainingRange: undefined,
-      estimatedCreditAmount: uberActivity.some(({ pending }) => !pending) ? 15 : 0,
-      activity: uberActivity,
+      estimatedCreditAmount: partnerActivity.some(({ pending }) => !pending) ? 10 : 0,
+      activity: partnerActivity,
     },
     {
-      ...benefit('resy', 'Resy', '$100 / quarter', 100, 'quarterly', quarter),
+      ...benefit('dining', 'Dining', '$50 / quarter', 50, 'quarterly', quarter),
       status: credited > 0 ? ('credited' as const) : ('unused' as const),
       creditedAmount: credited,
       periodUncertain: reversed,
-      remainingAmount: reversed ? null : Math.max(0, 100 - credited),
+      remainingAmount: reversed ? null : Math.max(0, 50 - credited),
       remainingRange: reversed
-        ? { low: Math.max(0, 100 - credited), high: 100 }
-        : { low: Math.max(0, 100 - credited), high: Math.max(0, 100 - credited) },
-      activity: resyActivity,
+        ? { low: Math.max(0, 50 - credited), high: 50 }
+        : { low: Math.max(0, 50 - credited), high: Math.max(0, 50 - credited) },
+      activity: diningActivity,
       ...(lastCredit
         ? {
             lastCredit: {
@@ -422,10 +425,10 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
     },
     {
       ...benefit(
-        'global-entry',
-        'Global Entry / TSA PreCheck',
-        '$120 / up to $85',
-        120,
+        'renewal',
+        'Membership renewal',
+        '$100 every 4 years',
+        100,
         'renewal',
         window(0, 12),
       ),
@@ -439,7 +442,7 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
       left.name.localeCompare(right.name),
   )
   // Each benefit's periods this year: earlier periods settled, the current one open.
-  const resyWindow = windows.find(({ id }) => id === 'resy')!
+  const diningWindow = windows.find(({ id }) => id === 'dining')!
   const monthNames = [
     'Jan',
     'Feb',
@@ -456,8 +459,8 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
   ]
   const history = [
     {
-      id: 'resy',
-      name: 'Resy',
+      id: 'dining',
+      name: 'Dining',
       recurring: false,
       external: false,
       retired: false,
@@ -465,46 +468,46 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
         const current = Math.floor(month / 3)
         const range = window(quarterIndex * 3, 3)
         const label = `Q${quarterIndex + 1}`
-        if (quarterIndex > current) return scenarioPeriod(range, label, 100, { state: 'future' })
+        if (quarterIndex > current) return scenarioPeriod(range, label, 50, { state: 'future' })
         if (quarterIndex === current)
-          return scenarioPeriod(range, label, 100, {
+          return scenarioPeriod(range, label, 50, {
             state: 'open',
             credited,
-            left: resyWindow.remainingRange,
-            activityIds: resyActivity.map(({ id }) => id),
+            left: diningWindow.remainingRange,
+            activityIds: diningActivity.map(({ id }) => id),
           })
         return quarterIndex === current - 1
-          ? scenarioPeriod(range, label, 100, {
+          ? scenarioPeriod(range, label, 50, {
               state: 'partial',
-              credited: 40,
-              unused: { low: 60, high: 60 },
+              credited: 20,
+              unused: { low: 30, high: 30 },
             })
-          : scenarioPeriod(range, label, 100, { state: 'missed', unused: { low: 100, high: 100 } })
+          : scenarioPeriod(range, label, 50, { state: 'missed', unused: { low: 50, high: 50 } })
       }),
     },
     {
-      id: 'uber-cash',
-      name: 'Uber Cash',
+      id: 'partner',
+      name: 'Partner credit',
       recurring: false,
       external: true,
       retired: false,
       periods: monthNames.map((label, index) =>
-        scenarioPeriod(window(index, 1), label, 15, {
+        scenarioPeriod(window(index, 1), label, 10, {
           state:
             index < month
               ? 'not-visible'
               : index > month
                 ? 'future'
-                : uberActivity.some(({ pending }) => !pending)
+                : partnerActivity.some(({ pending }) => !pending)
                   ? 'likely-used'
                   : 'open',
-          activityIds: index === month ? uberActivity.map(({ id }) => id) : [],
+          activityIds: index === month ? partnerActivity.map(({ id }) => id) : [],
         }),
       ),
     },
     {
-      id: 'digital-entertainment',
-      name: 'Digital entertainment',
+      id: 'streaming',
+      name: 'Streaming',
       recurring: true,
       external: false,
       retired: false,
@@ -512,11 +515,11 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
         scenarioPeriod(
           window(index, 1),
           label,
-          25,
+          10,
           index < month
-            ? { state: 'full', credited: 25, unused: { low: 0, high: 0 } }
+            ? { state: 'full', credited: 10, unused: { low: 0, high: 0 } }
             : index === month
-              ? { state: 'open', left: { low: 25, high: 25 } }
+              ? { state: 'open', left: { low: 10, high: 10 } }
               : {
                   state: 'future',
                   // A streaming subscription the forecast expects each month.
@@ -524,7 +527,7 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
                     {
                       title: 'Example streaming',
                       date: window(index, 1).windowStart,
-                      amount: 13.99,
+                      amount: 9.99,
                       source: 'recurring' as const,
                     },
                   ],
@@ -533,13 +536,13 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
       ),
     },
   ]
-  // A positive Resy amount without the issuer's wording: a credit or a return.
+  // A positive dining amount without the issuer's wording: a credit or a return.
   const review = transactions.some(({ id }) => id === 'transaction-1')
     ? [
         {
           kind: 'unverified-credit' as const,
           transactionId: 'transaction-1',
-          benefitId: 'resy',
+          benefitId: 'dining',
           periodStart: window(Math.floor(month / 3) * 3, 3).windowStart,
         },
       ]
@@ -550,7 +553,7 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
     series.set(key, [...(series.get(key) ?? []), transaction])
   }
   const expected = [...series].flatMap(([recurringId, members]) => {
-    if (!recurringId.startsWith('series:') || members.length < 3) return []
+    if (!recurringId || members.length < 3) return []
     const last = members.toSorted((left, right) => left.date.localeCompare(right.date)).at(-1)!
     const next = new Date(`${last.date}T00:00:00Z`)
     next.setUTCMonth(next.getUTCMonth() + 1)
@@ -580,8 +583,8 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
     benefits: card
       ? {
           accountId: card,
-          product: 'amex-platinum',
-          productName: 'American Express Platinum',
+          product: 'example-card',
+          productName: 'Example Card',
           activity,
           windows,
           useFirst: windows
@@ -603,10 +606,10 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
           review,
         }
       : undefined,
-    benefitProducts: [{ id: 'amex-platinum', name: 'American Express Platinum' }],
+    benefitProducts: [{ id: 'example-card', name: 'Example Card' }],
     benefitOptions: windows.map(({ id, name }) => ({ id, name })),
-    benefitRulesVersion: '2026-09-20',
-    benefitTermsReviewed: 'Sep 20, 2026',
+    benefitRulesVersion: exampleCardRules.version,
+    benefitTermsReviewed: exampleCardRules.termsReviewed,
     subscriptions: { monthly: 0, items: [] },
     refundSuggestions: [],
     plan: {
@@ -634,6 +637,8 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
       cashIncomplete: true,
       days: [],
       events: [],
+      inflows: 0,
+      outflows: 0,
     },
     ...emptyInsightDetails,
     returns: [],
@@ -665,8 +670,14 @@ function scenarioTransactions(): ScenarioTransaction[] {
       ...(scenario.linkedPending && index === 0
         ? { website: 'https://example.com/', description: 'Synthetic provider description' }
         : {}),
-      merchant: `Resy credit ${index}`,
-      category: 'Credit',
+      // As income, they are paychecks Rust classifies as income, not card credits.
+      ...(scenario.creditKind === 'income'
+        ? {
+            merchant: `Example income ${index}`,
+            category: 'Income',
+            categoryDetail: 'INCOME_WAGES',
+          }
+        : { merchant: `Example Tables dining credit ${index}`, category: 'Credit' }),
       date: `2026-09-0${(index % 3) + 1}`,
       amount: scenario.benefitAmount,
       account: 'Selected card',
@@ -677,11 +688,11 @@ function scenarioTransactions(): ScenarioTransaction[] {
           : classification('other', { credit: true }),
       pending: scenario.linkedPending && index === 0,
     })),
-    ...(scenario.uberPurchase
+    ...(scenario.partnerPurchase
       ? [
           {
-            id: 'uber-purchase',
-            merchant: 'Uber',
+            id: 'partner-purchase',
+            merchant: 'Example Partner',
             category: 'Travel',
             date: '2026-09-02',
             amount: -5,
@@ -705,13 +716,23 @@ function scenarioTransactions(): ScenarioTransaction[] {
     },
     ...scenario.extraTransactions.map((extra) => ({
       ...extra,
-      recurringId: `series:${extra.accountId}:${extra.merchant}`,
+      // The series id Rust gives a plain merchant's transactions (`forecast::recurring_key`),
+      // so the expected activity below names the series Rust's reports list.
+      recurringId: JSON.stringify({
+        version: 3,
+        account: extra.accountId,
+        direction: extra.amount < 0 ? 'out' : 'in',
+        merchant: extra.merchant?.toLowerCase(),
+      }),
     })),
   ]
   return rows.map((row) => record(row))
 }
 
-vi.mock('../hooks/use-finance', () => ({ useFinance: () => scenarioFinance() }))
+vi.mock('../hooks/use-finance', async (original) => ({
+  ...(await original<typeof import('../hooks/use-finance')>()),
+  useFinance: () => scenarioFinance(),
+}))
 
 /** The scenario's finance as `useFinance` serves it, with Rust's totals over its accounts. */
 function scenarioFinance() {
@@ -819,6 +840,7 @@ function scenarioFinance() {
       settings: {
         spendingAccountId: scenario.spendingAccountId || undefined,
         hiddenBenefitIds: scenario.hiddenBenefits.split(',').filter(Boolean),
+        cardRules: [exampleCardRules],
         accountNames: {},
         accountStartDates: {},
         accountClosedDates: {},
@@ -837,9 +859,8 @@ function scenarioFinance() {
       ...data,
       insights: {
         ...data.insights,
-        rollup:
-          scenario.insights.rollup ??
-          scenarioRollup(data.accounts, data.holdings, data.netWorth, data.settings),
+        // Rust's totals over the scenario's accounts, from the fixture Rust writes.
+        rollup: scenario.insights.rollup ?? routeFixture('rollup', data),
       },
     },
   }
@@ -878,14 +899,20 @@ vi.mock('../hooks/use-spending-period', () => ({
     }
   },
 }))
-// Rust reads reports on demand; here they follow the same rules over the scenario.
+// Rust reads reports on demand; here they are Rust's reports over the scenario, from the
+// fixture Rust writes.
 vi.mock('../hooks/use-reports', () => ({
+  // Loading ahead happens in effects and on pointer or focus, which server rendering never runs.
+  reportsQuery: () => ({ queryKey: ['reports'], queryFn: () => null }),
   useReports: (
     data: import('../lib/schema').FinanceSnapshot | undefined,
     request: import('../lib/api').ReportRequest,
     enabled = true,
   ) => ({
-    data: enabled && data ? { ...scenarioReports(data, request), ...scenario.reports } : undefined,
+    data:
+      enabled && data
+        ? { ...routeFixture('reports', data, request), ...scenario.reports }
+        : undefined,
     isLoading: false,
     isError: false,
     isPlaceholderData: false,
@@ -924,14 +951,15 @@ export async function renderRoute(
   }
   vi.stubGlobal('window', { localStorage: storage })
   vi.stubGlobal('localStorage', storage)
-  const testRouter = createRouter({
-    routeTree: router.routeTree,
-    history: createMemoryHistory({ initialEntries: [path] }),
-  })
-  await testRouter.load()
   const client = new QueryClient({
     defaultOptions: { queries: { retry: false, gcTime: Infinity } },
   })
+  const testRouter = createRouter({
+    routeTree: router.routeTree,
+    history: createMemoryHistory({ initialEntries: [path] }),
+    context: { queryClient: client },
+  })
+  await testRouter.load()
   try {
     return renderToString(
       <ActionCollectorContext.Provider value={registered ?? null}>

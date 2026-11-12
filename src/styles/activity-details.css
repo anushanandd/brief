@@ -277,10 +277,9 @@ a.transaction-details-tag {
   font-variant-numeric: tabular-nums;
 }
 .transaction-details-history li > span {
-  overflow: hidden;
+  padding-block: 4px;
   color: var(--text-primary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .transaction-details-history li > small {
   color: var(--text-tertiary);

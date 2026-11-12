@@ -1,8 +1,9 @@
-import { memo, Suspense, use, useEffect, useId, useRef, useState } from 'react'
+import { memo, Suspense, use, useId, useState } from 'react'
 import type { ComponentProps, ReactNode } from 'react'
 
+import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useSettingsDialog } from '../lib/settings-dialog'
-import { PopupContainerContext } from './ui/popup-container'
+import { Dialog } from './ui/dialog'
 import { usePresence } from './ui/presence'
 
 type SettingsModule = typeof import('../pages/settings')
@@ -43,91 +44,38 @@ function SettingsPanel(props: ComponentProps<SettingsModule['SettingsPanel']>) {
   return <Panel {...props} />
 }
 
-/** Escape closes Settings from anywhere in it, except while a menu inside it is open. */
-export function escapeClosesSettings(target: EventTarget | null) {
-  return !(
-    target instanceof Element &&
-    target.closest('[role="listbox"], [role="menu"], [aria-expanded="true"]')
-  )
-}
-
-/**
- * A click lands on the dialog element itself both on the backdrop and when a menu option
- * unmounts under the pointer, which retargets the click to the common ancestor. Only a press
- * that also started on the dialog element is a backdrop click.
- */
-export function backdropClick(
-  dialog: EventTarget,
-  pressTarget: EventTarget | null,
-  clickTarget: EventTarget | null,
-) {
-  return pressTarget === dialog && clickTarget === dialog
-}
-
 /**
  * Settings as a modal over the current page, addressed by the hash (`#settings/<section-or-row>`)
  * so it opens from anywhere. The native dialog supplies the top layer, inert background, and
  * focus return to the control that opened it. Memoized so the shell's own state changes never
- * reach its sections; `valuesHidden` remounts the panel so every amount is masked or shown.
+ * reach its sections, except screen privacy, which renders the panel again in place so every
+ * amount is masked or shown without losing what's being typed.
  */
-export const SettingsDialog = memo(function SettingsDialog({
-  valuesHidden,
-}: {
-  valuesHidden: boolean
-}) {
+export const SettingsDialog = memo(function SettingsDialog() {
+  useAmountsHidden()
   const { open, target, show, close } = useSettingsDialog()
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
   const titleId = useId()
-  const pressTarget = useRef<EventTarget | null>(null)
   // The panel stays while the dialog settles back down.
   const present = usePresence(open, dialog)
 
-  useEffect(() => {
-    if (!dialog || typeof dialog.showModal !== 'function') return
-    if (open && !dialog.open) dialog.showModal()
-    else if (!open && dialog.open) dialog.close()
-  }, [dialog, open])
-
   return (
-    <dialog
+    <Dialog
       ref={setDialog}
+      open={open}
+      onClose={close}
+      escapeOnKeyDown
+      popups
       className="settings-dialog"
       aria-labelledby={titleId}
       aria-keyshortcuts="Escape"
-      onCancel={(event) => {
-        event.preventDefault()
-        close()
-      }}
-      onKeyDown={(event) => {
-        // WebKit's search field would otherwise consume Escape to clear itself.
-        if (event.key !== 'Escape' || event.nativeEvent.isComposing) return
-        if (!escapeClosesSettings(event.target)) return
-        event.preventDefault()
-        close()
-      }}
-      onPointerDown={(event) => {
-        pressTarget.current = event.target
-      }}
-      onClick={(event) => {
-        const pressed = pressTarget.current
-        pressTarget.current = null
-        if (backdropClick(event.currentTarget, pressed, event.target)) close()
-      }}
     >
       {present ? (
-        <PopupContainerContext.Provider value={dialog}>
-          <Suspense fallback={<div className="settings-panel settings-panel-loading" />}>
-            <SettingsPanel
-              key={valuesHidden ? 'amounts-hidden' : 'amounts-shown'}
-              target={target}
-              titleId={titleId}
-              onShow={show}
-              onClose={close}
-            />
-          </Suspense>
-        </PopupContainerContext.Provider>
+        <Suspense fallback={<div className="settings-panel settings-panel-loading" />}>
+          <SettingsPanel target={target} titleId={titleId} onShow={show} onClose={close} />
+        </Suspense>
       ) : null}
-    </dialog>
+    </Dialog>
   )
 })
 

@@ -114,7 +114,13 @@ pub fn notices(needs: &[AttentionItem], account_name: impl Fn(&str) -> String) -
                 // A rule's note names amounts, which notifications never show.
                 | Item::ProgramNote { .. }
                 | Item::ContributionsToConfirm { .. }
-                | Item::ContributionLimit { .. } => return None,
+                | Item::ContributionLimit { .. }
+                // Inferences never notify; they wait beside their transactions.
+                | Item::NewSeries { .. }
+                | Item::PriceChanged { .. }
+                | Item::FeesCharged { .. }
+                | Item::PayDiffers { .. }
+                | Item::UnusualCharge { .. } => return None,
             };
             Some(Notice {
                 id: need.id.clone(),
@@ -251,10 +257,10 @@ mod tests {
                 "credit",
                 Item::CreditExpiring {
                     account_id: "plaid:card".into(),
-                    benefit_id: "resy".into(),
-                    name: "Resy".into(),
-                    remaining_low: 40.0,
-                    remaining_high: 100.0,
+                    benefit_id: "dining".into(),
+                    name: "Dining".into(),
+                    remaining_low: 20.0,
+                    remaining_high: 50.0,
                     window_end: date("2026-11-06"),
                     days: 5,
                 },
@@ -289,7 +295,7 @@ mod tests {
                 "Card payment is overdue",
                 "Expected bills exceed cash",
                 "Cash may run short by Nov 20",
-                "Resy credit ends in 5 days",
+                "Dining credit ends in 5 days",
             ]
         );
         // Nothing shown on a lock screen carries a personal number.

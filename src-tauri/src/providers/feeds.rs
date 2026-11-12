@@ -1,6 +1,5 @@
-//! CNBC's RSS feeds for its market sections. Editors' headlines name causes ("Nvidia, Oracle and
-//! other AI stocks sink on OpenAI revenue report") that a ticker-tagged wire often buries under
-//! filler. The feeds are public, with no feed-specific terms found; Brief shows each story's
+//! CNBC's RSS feeds for its market sections. Editors' headlines name causes that a ticker-tagged
+//! wire often buries under filler. The feeds are public, with no feed-specific terms found; Brief shows each story's
 //! headline as published, credited, with a link to the article.
 //!
 //! RSS names companies, not tickers, so each story's tickers are read from its headline and
@@ -42,8 +41,6 @@ const NAMES: &[(&str, &str)] = &[
     ("Supermicro", "SMCI"),
     ("Dell", "DELL"),
     ("Palantir", "PLTR"),
-    ("Nebius", "NBIS"),
-    ("IREN", "IREN"),
     ("Applied Materials", "AMAT"),
     ("Lam Research", "LRCX"),
     ("ASML", "ASML"),
@@ -138,7 +135,7 @@ pub(crate) fn names(held: &[(String, String)]) -> Vec<(String, String)> {
         .collect();
     for (ticker, name) in held {
         if let Some(key) = news::company_key(name) {
-            // Headlines capitalize names: "nebius" as `Nebius`, "advanced micro" as `Advanced Micro`.
+            // Headlines capitalize names: "testco" as `Testco`, "advanced micro" as `Advanced Micro`.
             let written = key
                 .split(' ')
                 .map(|word| {
@@ -266,10 +263,10 @@ mod tests {
     use super::*;
 
     const CNBC: &str = r#"<rss><channel><title>US Top News and Analysis</title>
-      <item><link>https://www.cnbc.com/2026/10/08/open-ai-revenue-nvidia-oracle-coreweave.html</link>
+      <item><link>https://www.cnbc.com/2026/10/08/stocks-to-watch.html</link>
       <guid isPermaLink="false">1</guid><metadata:sponsored>false</metadata:sponsored>
-      <title>Nvidia, Oracle, CoreWeave and other AI stocks sink on OpenAI revenue report</title>
-      <description><![CDATA[OpenAI told investors it hit about $50 billion in annualized revenue.]]></description>
+      <title>Stocks to watch: Nvidia, Oracle and CoreWeave</title>
+      <description><![CDATA[A synthetic feed item for the parser.]]></description>
       <pubDate>Thu, 08 Oct 2026 18:18:31 GMT</pubDate></item>
       <item><link>https://www.cnbc.com/sponsored</link><metadata:sponsored>true</metadata:sponsored>
       <title>Sponsored</title><pubDate>Thu, 08 Oct 2026 18:18:31 GMT</pubDate></item>
@@ -279,23 +276,23 @@ mod tests {
 
     #[test]
     fn rss_stories_carry_the_tickers_their_headlines_name() {
-        let held = [("NBIS".to_string(), "Nebius Group N.V.".to_string())];
+        let held = [("TEST".to_string(), "Testco Group N.V.".to_string())];
         let stories = parse_rss(CNBC, "CNBC", &names(&held));
         assert_eq!(stories.len(), 1);
         let story = &stories[0];
         assert_eq!(story.symbols, ["CRWV", "NVDA", "ORCL"]);
         assert_eq!(story.source, "CNBC");
         assert_eq!(story.created_at, "2026-10-08T18:18:31+00:00");
-        assert!(story.summary.starts_with("OpenAI told investors"));
+        assert!(story.summary.starts_with("A synthetic feed item"));
     }
 
     #[test]
     fn names_match_whole_capitalized_words_and_written_tickers() {
-        let held = [("NBIS".to_string(), "Nebius Group N.V.".to_string())];
+        let held = [("TEST".to_string(), "Testco Group N.V.".to_string())];
         let names = names(&held);
         assert_eq!(
-            named_tickers("Nebius (NBIS) and $IREN slide; Metaverse fades", &names),
-            ["IREN", "NBIS"]
+            named_tickers("Testco (TEST) and $PEER slide; Metaverse fades", &names),
+            ["PEER", "TEST"]
         );
         // A private company's symbol and crypto have no stock price.
         assert!(named_tickers("OpenAI (OPAI.PVT) and bitcoin (BTC)", &names).is_empty());

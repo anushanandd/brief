@@ -12,6 +12,18 @@ pub fn minor_units(value: f64) -> i64 {
     js_round(value * 100.0) as i64
 }
 
+/// How one return compares with another, in percent: within 0.05 points reads as `inline`,
+/// else `ahead` or `behind`. Account returns and today's portfolio move both read it.
+pub fn compare_returns(you: f64, benchmark: f64) -> &'static str {
+    if (you - benchmark).abs() < 0.05 {
+        "inline"
+    } else if you > benchmark {
+        "ahead"
+    } else {
+        "behind"
+    }
+}
+
 /// A figure to two decimal places (dollars to whole cents), rounding halves up as
 /// `minor_units` does.
 pub fn round2(value: f64) -> f64 {

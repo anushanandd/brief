@@ -28,6 +28,20 @@ const PORTFOLIO_NEWS_INTERVAL: i64 = 10 * MINUTE;
 const SAVED_STORIES: usize = 120;
 /// Stories from CNBC's market feeds are kept this many days.
 const MARKET_NEWS_DAYS: i64 = 3;
+/// Article text is kept this many days: long enough to read it again later.
+const BODY_DAYS: i64 = 45;
+/// Model readings are kept this many days after they were made.
+const READING_DAYS: i64 = 120;
+
+/// A saved article's text with what identifies it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SavedBody {
+    pub url: String,
+    pub symbols: Vec<String>,
+    pub headline: String,
+    pub created_at: String,
+    pub body: String,
+}
 
 #[derive(Debug, Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
@@ -78,6 +92,11 @@ impl NewsCache {
             CREATE TABLE IF NOT EXISTS portfolio_news (id INTEGER PRIMARY KEY CHECK(id=1), attempted INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS insider_trades (url TEXT PRIMARY KEY, payload TEXT NOT NULL, saved INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS market_news (url TEXT PRIMARY KEY, created TEXT NOT NULL, payload TEXT NOT NULL);
+            CREATE TABLE IF NOT EXISTS bodies (url TEXT PRIMARY KEY, symbols TEXT NOT NULL, headline TEXT NOT NULL, created TEXT NOT NULL, body TEXT NOT NULL, saved INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS readings (key TEXT PRIMARY KEY, payload TEXT NOT NULL, reader TEXT NOT NULL, saved INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS reported_quarters (symbol TEXT PRIMARY KEY, payload TEXT NOT NULL, saved INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS releases (accession TEXT PRIMARY KEY, symbol TEXT NOT NULL, url TEXT NOT NULL, text TEXT NOT NULL, saved INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS estimates (symbol TEXT PRIMARY KEY, payload TEXT NOT NULL, saved INTEGER NOT NULL);
             DROP TABLE IF EXISTS assessments;
             DROP TABLE IF EXISTS explanations;
             DROP TABLE IF EXISTS period_explanations;")
@@ -138,6 +157,11 @@ impl NewsCache {
             "portfolio_news",
             "insider_trades",
             "market_news",
+            "bodies",
+            "readings",
+            "reported_quarters",
+            "releases",
+            "estimates",
         ] {
             transaction
                 .execute(&format!("DELETE FROM {table}"), [])
@@ -375,6 +399,252 @@ impl NewsCache {
             .execute("DELETE FROM market_news WHERE created < ?1", [cutoff])
             .map_err(|_| "Could not bound saved news")?;
         Ok(())
+    }
+
+    /// Saves articles' text, keeping the last `BODY_DAYS` days. An article saved again keeps
+    /// its first text, so a reading of it stays a reading of what is saved.
+    pub fn save_bodies(&self, bodies: &[SavedBody], now: i64) -> Result<(), String> {
+        for body in bodies.iter().filter(|body| !body.body.trim().is_empty()) {
+            let symbols =
+                serde_json::to_string(&body.symbols).map_err(|_| "Could not save news")?;
+            self.0
+                .execute(
+                    "INSERT OR IGNORE INTO bodies VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+                    params![
+                        body.url,
+                        symbols,
+                        body.headline,
+                        body.created_at,
+                        body.body,
+                        now
+                    ],
+                )
+                .map_err(|_| "Could not save news")?;
+        }
+        let cutoff = chrono::DateTime::from_timestamp(now - BODY_DAYS * DAY, 0)
+            .map(|at| at.to_rfc3339())
+            .unwrap_or_default();
+        self.0
+            .execute("DELETE FROM bodies WHERE created < ?1", [cutoff])
+            .map_err(|_| "Could not bound saved news")?;
+        Ok(())
+    }
+
+    /// The saved text of one article.
+    pub fn body(&self, url: &str) -> Result<Option<String>, String> {
+        self.0
+            .query_row("SELECT body FROM bodies WHERE url=?1", [url], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(|_| "News storage is unavailable".into())
+    }
+
+    /// Articles with saved text published at or after `since`, newest first.
+    pub fn bodies_since(&self, since: &str) -> Result<Vec<SavedBody>, String> {
+        let mut statement = self
+            .0
+            .prepare(
+                "SELECT url, symbols, headline, created, body FROM bodies WHERE created >= ?1
+                 ORDER BY created DESC, url",
+            )
+            .map_err(|_| "News storage is unavailable")?;
+        let rows = statement
+            .query_map([since], |row| {
+                Ok(SavedBody {
+                    url: row.get(0)?,
+                    symbols: serde_json::from_str(&row.get::<_, String>(1)?).unwrap_or_default(),
+                    headline: row.get(2)?,
+                    created_at: row.get(3)?,
+                    body: row.get(4)?,
+                })
+            })
+            .map_err(|_| "News storage is unavailable")?;
+        Ok(rows.filter_map(Result::ok).collect())
+    }
+
+    /// A saved model reading, by its key (`cause:<url>`, for instance), with who read it.
+    pub fn reading(&self, key: &str) -> Result<Option<(Value, String)>, String> {
+        let row: Option<(String, String)> = self
+            .0
+            .query_row(
+                "SELECT payload, reader FROM readings WHERE key=?1",
+                [key],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|_| "News storage is unavailable")?;
+        Ok(row.and_then(|(payload, reader)| {
+            serde_json::from_str(&payload)
+                .ok()
+                .map(|payload| (payload, reader))
+        }))
+    }
+
+    /// Saves a model reading, replacing any earlier one, and drops readings older than
+    /// `READING_DAYS`.
+    pub fn save_reading(
+        &self,
+        key: &str,
+        payload: &Value,
+        reader: &str,
+        now: i64,
+    ) -> Result<(), String> {
+        self.0
+            .execute(
+                "INSERT OR REPLACE INTO readings VALUES (?1, ?2, ?3, ?4)",
+                params![key, payload.to_string(), reader, now],
+            )
+            .map_err(|_| "Could not save a reading")?;
+        self.0
+            .execute(
+                "DELETE FROM readings WHERE saved < ?1",
+                [now - READING_DAYS * DAY],
+            )
+            .map_err(|_| "Could not bound saved readings")?;
+        Ok(())
+    }
+
+    /// Saves a company's reported quarters, replacing the last ones.
+    pub fn save_reported_quarters(
+        &self,
+        symbol: &str,
+        quarters: &[super::earnings::ReportedQuarter],
+        now: i64,
+    ) -> Result<(), String> {
+        let payload = serde_json::to_string(quarters).map_err(|_| "Could not save earnings")?;
+        self.0
+            .execute(
+                "INSERT OR REPLACE INTO reported_quarters VALUES (?1, ?2, ?3)",
+                params![symbol, payload, now],
+            )
+            .map_err(|_| "Could not save earnings")?;
+        Ok(())
+    }
+
+    /// A company's saved reported quarters, newest first, with when they were saved.
+    #[allow(clippy::type_complexity)]
+    pub fn reported_quarters(
+        &self,
+        symbol: &str,
+    ) -> Result<Option<(Vec<super::earnings::ReportedQuarter>, i64)>, String> {
+        let row: Option<(String, i64)> = self
+            .0
+            .query_row(
+                "SELECT payload, saved FROM reported_quarters WHERE symbol=?1",
+                [symbol],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|_| "Earnings storage is unavailable")?;
+        Ok(row.and_then(|(payload, saved)| {
+            serde_json::from_str(&payload)
+                .ok()
+                .map(|quarters| (quarters, saved))
+        }))
+    }
+
+    /// Saves a company's latest estimates, replacing the last ones.
+    pub fn save_estimates(
+        &self,
+        symbol: &str,
+        estimates: &[super::expectations::EstimateTrend],
+        now: i64,
+    ) -> Result<(), String> {
+        let payload = serde_json::to_string(estimates).map_err(|_| "Could not save estimates")?;
+        self.0
+            .execute(
+                "INSERT OR REPLACE INTO estimates VALUES (?1, ?2, ?3)",
+                params![symbol, payload, now],
+            )
+            .map_err(|_| "Could not save estimates")?;
+        Ok(())
+    }
+
+    /// A company's saved estimates, with when they were saved.
+    #[allow(clippy::type_complexity)]
+    pub fn saved_estimates(
+        &self,
+        symbol: &str,
+    ) -> Result<Option<(Vec<super::expectations::EstimateTrend>, i64)>, String> {
+        let row: Option<(String, i64)> = self
+            .0
+            .query_row(
+                "SELECT payload, saved FROM estimates WHERE symbol=?1",
+                [symbol],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|_| "Estimates storage is unavailable")?;
+        Ok(row.and_then(|(payload, saved)| {
+            serde_json::from_str(&payload)
+                .ok()
+                .map(|estimates| (estimates, saved))
+        }))
+    }
+
+    /// Readings whose keys start with `prefix`, by key.
+    pub fn readings_like(&self, prefix: &str) -> Result<Vec<(String, Value)>, String> {
+        let mut statement = self
+            .0
+            .prepare("SELECT key, payload FROM readings WHERE substr(key, 1, length(?1)) = ?1 ORDER BY key")
+            .map_err(|_| "News storage is unavailable")?;
+        let rows = statement
+            .query_map([prefix], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+            })
+            .map_err(|_| "News storage is unavailable")?;
+        Ok(rows
+            .filter_map(Result::ok)
+            .filter_map(|(key, payload)| Some((key, serde_json::from_str(&payload).ok()?)))
+            .collect())
+    }
+
+    /// When a reading was saved, if it was.
+    pub fn reading_saved(&self, key: &str) -> Result<Option<i64>, String> {
+        self.0
+            .query_row("SELECT saved FROM readings WHERE key=?1", [key], |row| {
+                row.get(0)
+            })
+            .optional()
+            .map_err(|_| "News storage is unavailable".into())
+    }
+
+    /// Saves an earnings release's text by its filing's accession number. Releases older than
+    /// `READING_DAYS` are dropped.
+    pub fn save_release(
+        &self,
+        accession: &str,
+        symbol: &str,
+        url: &str,
+        text: &str,
+        now: i64,
+    ) -> Result<(), String> {
+        self.0
+            .execute(
+                "INSERT OR REPLACE INTO releases VALUES (?1, ?2, ?3, ?4, ?5)",
+                params![accession, symbol, url, text, now],
+            )
+            .map_err(|_| "Could not save a release")?;
+        self.0
+            .execute(
+                "DELETE FROM releases WHERE saved < ?1",
+                [now - READING_DAYS * DAY],
+            )
+            .map_err(|_| "Could not bound saved releases")?;
+        Ok(())
+    }
+
+    /// A saved release's link and text.
+    pub fn release(&self, accession: &str) -> Result<Option<(String, String)>, String> {
+        self.0
+            .query_row(
+                "SELECT url, text FROM releases WHERE accession=?1",
+                [accession],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .optional()
+            .map_err(|_| "Earnings storage is unavailable".into())
     }
 
     /// Stories from CNBC's market feeds published at or after `since`, oldest first.

@@ -1,7 +1,7 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useRef, useState } from 'react'
 
-import { financeQueryKey } from '../hooks/use-finance'
+import { setFinanceSnapshot } from '../hooks/use-finance'
 import { recoverFinanceState } from '../lib/api'
 import type { FinanceSnapshot } from '../lib/schema'
 import { FilePlus, History } from './icons'
@@ -22,7 +22,7 @@ export function RecoveryNotice({ recovery }: { recovery: Recovery }) {
     mutationFn: recoverFinanceState,
     onSuccess: (snapshot) => {
       setConfirming(false)
-      client.setQueryData(financeQueryKey, snapshot)
+      setFinanceSnapshot(client, snapshot)
       void client.invalidateQueries({ queryKey: ['transaction-annotations'] })
       void client.invalidateQueries({ queryKey: ['market-snapshots'] })
     },

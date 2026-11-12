@@ -21,8 +21,8 @@ use super::returns::{
 };
 use crate::finance_contract::{Holding, Performance, Snapshot, Trade, Transaction};
 use crate::numeric::{from_minor, minor_units, round2};
-use crate::providers::closes::{CloseSeries, DailyCloses};
 use crate::session::is_trading_day;
+use crate::session::{CloseSeries, DailyCloses};
 use crate::transaction_policy::Kind;
 
 /// Sessions in a year, for annualizing daily volatility.
@@ -287,7 +287,9 @@ fn risk(days: &[Day]) -> Risk {
         drawdown = drawdown.min(index / peak - 1.0);
     }
     // Sessions only: a weekend's flat day isn't a day of risk.
-    let sessions: Vec<(f64, Option<f64>)> = days[1..]
+    let sessions: Vec<(f64, Option<f64>)> = days
+        .get(1..)
+        .unwrap_or_default()
         .iter()
         .zip(portfolio.iter().zip(&benchmark))
         .filter(|(day, _)| is_trading_day(day.date))

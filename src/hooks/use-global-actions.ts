@@ -23,10 +23,17 @@ import { errorMessage } from '../lib/errors'
 import { exportLotsCsv, exportUpcomingCalendar } from '../lib/exports'
 import { analyticsNavigation, settingsNavigation } from '../lib/navigation'
 import { useOrderedNavigation } from '../lib/navigation-preferences'
+import {
+  numberKeyPreference,
+  numberKeys,
+  resolveNumberKeys,
+  withNumberKeys,
+} from '../lib/number-keys'
 import { useSettingsDialog } from '../lib/settings-dialog'
 import { useFinance } from './use-finance'
 import { useFinanceEdits } from './use-finance-edits'
 import { useFindPlaces } from './use-find-places'
+import { useNumberKeyDestinations } from './use-number-keys'
 import { useFinanceRefreshState, useRefreshFinance } from './use-refresh-finance'
 
 /** `g` followed by these keys opens the page; pages without one take their sidebar number. */
@@ -50,7 +57,7 @@ const reportSequences: Record<AnalyticsChart, string> = {
   income: 'i',
   interest: 'n',
   fees: 'e',
-  'amex-credits': 'b',
+  'card-credits': 'b',
   dividends: 'd',
   realized: 'p',
 }
@@ -66,8 +73,8 @@ export type ShellControls = {
 }
 
 /**
- * The actions available everywhere: navigation with its shortcuts, the palette and help
- * overlays, refreshing, privacy, and appearance.
+ * The actions available everywhere: navigation with its shortcuts and the user's number keys,
+ * the palette and help overlays, refreshing, privacy, and appearance.
  */
 export function useGlobalActions(controls: ShellControls): AppAction[] {
   const pages = useOrderedNavigation()
@@ -90,7 +97,8 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
   } = useFindPlaces()
   const { openPalette, openShortcuts, openKeyGuide, openFocusHints, valuesHidden, toggleValues } =
     controls
-  return useMemo<AppAction[]>(
+  const savedNumberKeys = numberKeyPreference.use()
+  const actions = useMemo<AppAction[]>(
     () => [
       ...pages.map((page, index) => ({
         id: `navigation.open.${page.to}`,
@@ -367,4 +375,30 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
       valuesHidden,
     ],
   )
+  const destinations = useNumberKeyDestinations(actions)
+  return useMemo(() => {
+    const resolved = resolveNumberKeys(savedNumberKeys, destinations)
+    // A page or report takes its key as a binding; anything else gets an action for the key.
+    const bookmarks = numberKeys.flatMap((key): AppAction[] => {
+      const destination = resolved[key]
+      const target = destination?.target
+      if (!destination || !target || target.kind === 'page') return []
+      const search = destination.search
+      return [
+        {
+          id: `navigation.number.${key}`,
+          title: destination.title,
+          search: `go ${destination.label}`,
+          group: 'Navigate',
+          scope: 'app',
+          bindings: [{ sequence: [key], label: key }],
+          run: () =>
+            target.kind === 'ticker'
+              ? navigate({ to: '/holdings/$ticker', params: { ticker: target.ticker } })
+              : navigate({ to: '/accounts', search }),
+        },
+      ]
+    })
+    return [...withNumberKeys(actions, resolved), ...bookmarks]
+  }, [actions, destinations, navigate, savedNumberKeys])
 }

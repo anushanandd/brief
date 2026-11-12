@@ -9,7 +9,7 @@ import type { CalendarSource } from './bindings/CalendarSource'
 import type { CalendarStatus } from './bindings/CalendarStatus'
 import type { ListedCalendar } from './bindings/ListedCalendar'
 import { addDays, validDate } from './dates'
-import { displayCase } from './format'
+import { displayCase, formatInstant } from './format'
 import { preference } from './preference'
 import type { AgendaItem, EarningsEvent } from './schema'
 
@@ -110,7 +110,8 @@ export const monthOf = (date: string) => date.slice(0, 7)
 export const firstOfMonth = (month: string) => `${month}-01`
 
 export function shiftMonth(month: string, by: number) {
-  const [year, index] = month.split('-').map(Number)
+  // A malformed month stays NaN, an invalid date, rather than becoming a real one.
+  const [year = NaN, index = NaN] = month.split('-').map(Number)
   const shifted = new Date(Date.UTC(year, index - 1 + by, 1))
   return shifted.toISOString().slice(0, 7)
 }
@@ -261,5 +262,5 @@ export function eventTime(event: CalendarEvent) {
   const time = new Date(event.start)
   return Number.isNaN(time.getTime())
     ? null
-    : time.toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })
+    : formatInstant(time, { hour: 'numeric', minute: '2-digit' })
 }

@@ -66,7 +66,7 @@ it('shows each day’s activity by default, in the month and the day’s list', 
   const html = await renderRoute('/calendar?day=2026-09-01')
   // Purchases wear their category's color in the month.
   expect(html).toMatch(/calendar-chip is-activity" style="--chip-color:var\(--/)
-  expect(html).toMatch(/Resy credit \d/)
+  expect(html).toMatch(/Example Tables dining credit \d/)
   // The day's activity uses the shared rows, which open the activity's details.
   expect(html).toContain('financial-activity-row is-openable')
   expect(html).toContain('href="/activities?from=2026-09-01&amp;to=2026-09-01"')

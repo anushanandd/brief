@@ -38,6 +38,7 @@ it('scrolls the strip, not the page, to keep the active selection visible', asyn
   await act(async () => root.render(<Selector />))
   const nav = container.querySelector('nav')!
   const [first, second] = container.querySelectorAll('button')
+  if (!first || !second) throw new Error('The strip has two items')
   // A 100px strip holding two 80px items: the second starts out of view.
   Object.defineProperty(nav, 'scrollWidth', { value: 160 })
   Object.defineProperty(nav, 'clientWidth', { value: 100 })

@@ -134,7 +134,7 @@ it('preserves pending status, merchant links, categories and descriptions across
     <ActivityList activities={activities} referenceIso={referenceIso} showDescriptions />,
   )
   // Pending is a badge beside the merchant, not a suffix on the date.
-  expect(html).toContain('<span class="activity-badge" title="Pending">Pending</span>')
+  expect(html).toContain('title="Pending">Pending</span>')
   expect(html).toContain('<small>Dec 31, 2025</small>')
   expect(html).toContain('Synthetic card · Dining')
   expect(html).toContain('Original provider description')
@@ -195,8 +195,8 @@ it('notes native benefit credits on purchase and credit rows and marks linked ro
     insights: insights({
       benefits: {
         accountId: 'card',
-        product: 'amex-platinum',
-        productName: 'American Express Platinum',
+        product: 'example-card',
+        productName: 'Example Card',
         windows: [],
         useFirst: [],
         history: [],
@@ -209,7 +209,7 @@ it('notes native benefit credits on purchase and credit rows and marks linked ro
             merchant: 'Synthetic stream',
             date: '2026-08-15',
             amount: -13.99,
-            benefitName: 'Digital entertainment',
+            benefitName: 'Streaming',
             pairedId: 'credit',
             credit: { state: 'credited', amount: 13.99 },
           }),
@@ -217,7 +217,7 @@ it('notes native benefit credits on purchase and credit rows and marks linked ro
             id: 'credit',
             date: '2026-08-17',
             amount: 13.99,
-            benefitName: 'Digital entertainment',
+            benefitName: 'Streaming',
             pairedId: 'purchase',
           }),
         ],
@@ -232,11 +232,7 @@ it('notes native benefit credits on purchase and credit rows and marks linked ro
     />,
   )
   // A short badge beside the merchant, the full note behind it.
-  expect(html).toContain(
-    'title="Digital entertainment · Credited $13.99">Credited<span class="sr-only">',
-  )
-  expect(html).toContain(
-    'title="Digital entertainment credit for Synthetic stream on Aug 15">Benefit credit',
-  )
+  expect(html).toContain('title="Streaming · Credited $13.99">Credited<span class="sr-only">')
+  expect(html).toContain('title="Streaming credit for Synthetic stream on Aug 15">Benefit credit')
   expect(html.match(/data-highlighted="true"/g)).toHaveLength(1)
 })

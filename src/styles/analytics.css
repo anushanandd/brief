@@ -101,12 +101,11 @@
   gap: 8px;
 }
 .expected-activity-merchant {
-  overflow: hidden;
+  min-width: 0;
   color: var(--text-primary);
   font-size: var(--type-body);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .expected-activity-merchant:hover {
   color: var(--accent);

@@ -1,11 +1,11 @@
-import { useIsFetching, useQueryClient } from '@tanstack/react-query'
+import { useIsFetching, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { listen } from '@tauri-apps/api/event'
 import { createElement, useCallback, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 
 import { RefreshProgress, type RefreshProgressTask } from '../components/refresh-progress'
 import { isTauri, refreshFinanceSnapshot, syncWallet } from '../lib/api'
-import { financeQueryKey } from './use-finance'
+import { setFinanceSnapshot } from './use-finance'
 
 const refreshQueryKey = ['refresh-finance'] as const
 const AUTO_REFRESH_INTERVAL_MS = 60 * 60 * 1_000
@@ -23,7 +23,29 @@ export function isFinanceSyncStale(updatedAt: string, now = Date.now()) {
 }
 
 export function useFinanceRefreshState() {
-  return useIsFetching({ queryKey: refreshQueryKey, exact: true }) > 0
+  return useIsFetching({ queryKey: refreshQueryKey }) > 0
+}
+
+const refreshKey = (live: boolean) => [...refreshQueryKey, live ? 'live' : 'saved'] as const
+const startRefresh = (client: QueryClient, live: boolean) =>
+  client.fetchQuery({
+    queryKey: refreshKey(live),
+    queryFn: () => refreshFinanceSnapshot({ liveBalances: live }),
+    staleTime: 0,
+  })
+
+/**
+ * Runs one refresh at a time. Asking while one runs joins it, except a live-balance refresh
+ * asked for during an ordinary one: that waits for it to finish, then runs live, so what was
+ * asked for happens. An ordinary request joins a live one already running, which is fresher.
+ * Live balances are billed, so only an explicit `live` request ever fetches them.
+ */
+export async function refreshOnce(client: QueryClient, live: boolean) {
+  const running = (mode: boolean) => client.isFetching({ queryKey: refreshKey(mode), exact: true })
+  if (running(true)) return startRefresh(client, true)
+  if (!live || !running(false)) return startRefresh(client, live)
+  await startRefresh(client, false).catch(() => undefined)
+  return refreshOnce(client, true)
 }
 
 export function useRefreshFinance() {
@@ -67,12 +89,8 @@ export function useRefreshFinance() {
       }
 
       try {
-        const { snapshot, warnings } = await queryClient.fetchQuery({
-          queryKey: refreshQueryKey,
-          queryFn: () => refreshFinanceSnapshot({ liveBalances }),
-          staleTime: 0,
-        })
-        queryClient.setQueryData(financeQueryKey, snapshot)
+        const { snapshot, warnings } = await refreshOnce(queryClient, liveBalances)
+        setFinanceSnapshot(queryClient, snapshot)
         if (!silent && warnings.length) {
           toast.warning('Refresh completed with notices', {
             id: toastId,
@@ -116,7 +134,7 @@ export function useWalletWatch(enabled: boolean) {
       if (document.visibilityState !== 'visible') return
       void syncWallet(true)
         .then((view) => {
-          if (view) client.setQueryData(financeQueryKey, view)
+          if (view) setFinanceSnapshot(client, view)
         })
         .catch(() => undefined)
     }

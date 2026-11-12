@@ -3,7 +3,7 @@ import { renderToString } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 
 import empty from '../data/empty.json'
-import { LogsPage } from './logs'
+import { detectorLabel, LogsPage } from './logs'
 
 const market = vi.hoisted(() => ({ state: 'active', saved: false }))
 vi.mock('../components/workspace-header', () => ({ WorkspaceHeader: () => <h1>Diagnostics</h1> }))
@@ -121,4 +121,47 @@ it('shows what each provider used and how long each stage took', () => {
   expect(html).toContain('Plaid 4.2 s 7 requests 1 retry 312 KB')
   expect(html).toContain('Alpaca 2 requests 1 KB')
   expect(html).toContain('fetch 6.4 s · project 0.8 s · save 0.1 s · snapshot 2.4 MB')
+})
+
+it('makes every Diagnostics list a keyboard region whose rows J and K step through', () => {
+  market.state = 'active'
+  market.saved = false
+  const html = renderLogs([
+    {
+      id: 'run',
+      startedAt: '2026-09-18T20:00:00Z',
+      finishedAt: '2026-09-18T20:00:01Z',
+      outcome: 'committed',
+      warnings: [],
+      details: { phase: 'committed', warningCount: 0, providers: [], stages: {} },
+    },
+  ])
+  const regions = [...html.matchAll(/<[a-z]+[^>]*\sdata-keyboard-region="true"[^>]*>/g)].map(
+    ([tag]) => /aria-label="([^"]+)"/.exec(tag)?.[1],
+  )
+  expect(regions).toEqual(
+    expect.arrayContaining([
+      'Connections',
+      'Quote timestamps',
+      'Sync history',
+      'Summary runs',
+      'Calibration',
+      'Change log',
+      'Runtime activity',
+      'Source timestamps',
+    ]),
+  )
+  // Each provider, the quoted symbol, and the refresh are rows.
+  expect(html).toMatch(/class="market-data-row" data-keyboard-row="true" tabindex="-1"/i)
+  expect(html).toMatch(/class="activity-log-row" data-keyboard-row="true" tabindex="-1"/i)
+  expect(html.match(/class="connection-row" data-keyboard-row="true"/g)).toHaveLength(6)
+})
+
+it('names each detector whose precision Diagnostics shows, and says when there is none', () => {
+  expect(detectorLabel('rule:bonus', [{ id: 'bonus', name: 'Example bonus' }])).toBe(
+    'Rule · Example bonus',
+  )
+  expect(detectorLabel('chapter:home')).toBe('Chapters · home')
+  expect(detectorLabel('category-suggestion')).toBe('Suggested categories')
+  expect(renderLogs()).toContain('No answers to Brief’s suggestions yet.')
 })

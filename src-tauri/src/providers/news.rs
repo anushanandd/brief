@@ -7,6 +7,8 @@ use std::sync::LazyLock;
 
 const MAX_HEADLINE_CHARS: usize = 500;
 const MAX_SUMMARY_CHARS: usize = 1_200;
+/// An article's text is cut here: past it are related links and disclaimers.
+const MAX_BODY_CHARS: usize = 16_000;
 /// A story naming more tickers than this is a roundup, not news about one company.
 const ROUNDUP_TICKERS: usize = 5;
 pub(crate) const MARKET_FUND: (&str, &str) = ("SPY", "S&P 500");
@@ -71,10 +73,16 @@ impl Providers {
                         ("symbols", symbol.as_str()),
                         ("limit", "50"),
                         ("sort", "desc"),
+                        ("include_content", "true"),
                     ],
                 )
                 .await
-                .and_then(|payload| parse_alpaca_news(&payload, &symbol))
+                .and_then(|payload| {
+                    Ok((
+                        parse_alpaca_news(&payload, &symbol)?,
+                        parse_alpaca_bodies(&payload),
+                    ))
+                })
             },
             async {
                 match &contact {
@@ -89,7 +97,10 @@ impl Providers {
         let cache = self.news_cache().await?;
         let now = Utc::now().timestamp();
         let warning = match fetched {
-            Ok(articles) => cache.save(&symbol, &articles, now).err(),
+            Ok((articles, bodies)) => cache
+                .save_bodies(&bodies, now)
+                .and_then(|()| cache.save(&symbol, &articles, now))
+                .err(),
             Err(error) => Some(error),
         };
         if let Some(ref warning) = warning {
@@ -132,7 +143,7 @@ impl Providers {
         snapshot: &crate::finance_contract::Snapshot,
     ) -> Result<PortfolioNews, String> {
         let held = held_securities(&snapshot.holdings);
-        let stocks = crate::summary::modeled(&held, None);
+        let stocks = super::portfolio::modeled(&held, None);
         let skipped = PortfolioNews {
             refreshed: false,
             stories: 0,
@@ -157,11 +168,13 @@ impl Providers {
         let symbols = stocks.join(",");
         let since = (Utc::now() - Duration::days(PORTFOLIO_NEWS_DAYS)).to_rfc3339();
         let mut stories = Vec::new();
+        let mut bodies = Vec::new();
         let query = [
             ("symbols", symbols.as_str()),
             ("limit", "50"),
             ("sort", "desc"),
             ("start", since.as_str()),
+            ("include_content", "true"),
         ];
         self.alpaca_pages(
             &credentials,
@@ -170,6 +183,7 @@ impl Providers {
             PORTFOLIO_NEWS_PAGES,
             |payload| {
                 stories.extend(parse_alpaca_stories(payload)?);
+                bodies.extend(parse_alpaca_bodies(payload));
                 Ok(())
             },
         )
@@ -188,6 +202,7 @@ impl Providers {
         let stale: Vec<String> = {
             let cache = self.news_cache().await?;
             cache.save_market_news(&feed, now)?;
+            cache.save_bodies(&bodies, now)?;
             for symbol in &stocks {
                 let own: Vec<MarketNewsArticle> = stories
                     .iter()
@@ -252,7 +267,22 @@ fn bounded(text: &str, limit: usize) -> String {
 pub(super) fn plain_text(value: &str) -> String {
     static TAGS: LazyLock<regex::Regex> =
         LazyLock::new(|| regex::Regex::new(r"<[^>]*>").expect("valid pattern"));
+    static NUMERIC: LazyLock<regex::Regex> = LazyLock::new(|| {
+        regex::Regex::new(r"&#(x[0-9a-fA-F]{1,6}|[0-9]{1,7});").expect("valid pattern")
+    });
     let text = TAGS.replace_all(value, " ");
+    // `&#8217;` and `&#x2019;`, as article bodies write curly quotes and dashes.
+    let text = NUMERIC.replace_all(&text, |captures: &regex::Captures| {
+        let code = &captures[1];
+        let value = match code.strip_prefix('x') {
+            Some(hex) => u32::from_str_radix(hex, 16).ok(),
+            None => code.parse().ok(),
+        };
+        value
+            .and_then(char::from_u32)
+            .filter(|character| !character.is_control())
+            .map_or_else(|| " ".to_owned(), String::from)
+    });
     let text = text
         .replace("&nbsp;", " ")
         .replace("&quot;", "\"")
@@ -325,6 +355,13 @@ static TAGS: LazyLock<Vec<(NewsTag, regex::Regex)>> = LazyLock::new(|| {
     .map(|(tag, source)| (tag, pattern(source)))
     .collect()
 });
+/// Whether a headline is a same-day explainer of a move (Benzinga's "Why It's Moving"), which
+/// says why only in its text.
+pub(crate) fn explainer(headline: &str) -> bool {
+    TAGS.iter()
+        .any(|(tag, pattern)| *tag == NewsTag::Explainer && pattern.is_match(headline))
+}
+
 /// Some summaries are the start of an article body rather than a summary.
 static BODY_SUMMARY: LazyLock<regex::Regex> =
     LazyLock::new(|| pattern(r"click here|note the following"));
@@ -370,7 +407,7 @@ pub(super) fn classify(article: MarketNewsArticle, symbol: &str) -> Option<Marke
 pub(crate) const RELEVANT: u8 = 40;
 
 /// The word or words headlines use for a company: its EDGAR name without legal suffixes,
-/// "NVIDIA CORP" as `nvidia`, "Nebius Group N.V." as `nebius`. A generic first word keeps the
+/// "NVIDIA CORP" as `nvidia`, "Testco Group N.V." as `testco`. A generic first word keeps the
 /// next one ("Advanced Micro Devices" as `advanced micro`).
 pub(super) fn company_key(name: &str) -> Option<String> {
     const LEGAL: &[&str] = &[
@@ -431,7 +468,7 @@ pub(super) fn company_key(name: &str) -> Option<String> {
     }
 }
 
-/// Whether `text` names the company: its ticker as a word (`NBIS`, `$NBIS`, `BRK.B`), or its
+/// Whether `text` names the company: its ticker as a word (`TEST`, `$TEST`, `BRK.B`), or its
 /// name's key, ignoring case and punctuation.
 fn mentions(text: &str, symbol: &str, key: Option<&str>) -> bool {
     let ticker = symbol.len() >= 2
@@ -453,8 +490,8 @@ fn mentions(text: &str, symbol: &str, key: Option<&str>) -> bool {
 /// How much a story is about the company, from 0 to 100, from what is checkable in the story
 /// itself, in the manner of RavenPack's relevance score: a story tagged with few tickers that
 /// names the company in its headline is about it; one tagged with many, or that names it only
-/// in passing, is about something else. Broker research about another company (a Morgan Stanley
-/// note on a peer) and market roundups fall below `RELEVANT`.
+/// in passing, is about something else. Broker research about another company (a bank's note
+/// on a peer) and market roundups fall below `RELEVANT`.
 pub(super) fn relevance(article: &MarketNewsArticle, symbol: &str, key: Option<&str>) -> u8 {
     let breadth: u8 = match article.symbols.len() {
         0 | 1 => 50,
@@ -498,6 +535,45 @@ pub(super) fn parse_alpaca_news(
         .into_iter()
         .filter(|article| safe_article(article, symbol))
         .collect())
+}
+
+/// Each story's text in one page of Alpaca news, when Alpaca sent it (`include_content`), as
+/// plain text, for reading why a stock moved and what a company said.
+pub(super) fn parse_alpaca_bodies(payload: &Value) -> Vec<news_cache::SavedBody> {
+    let Some(news) = payload.get("news").and_then(Value::as_array) else {
+        return Vec::new();
+    };
+    news.iter()
+        .filter_map(|item| {
+            let body = bounded(&plain_text(item["content"].as_str()?), MAX_BODY_CHARS);
+            let url = item["url"].as_str()?.trim();
+            let created_at = DateTime::parse_from_rfc3339(item["created_at"].as_str()?)
+                .ok()?
+                .with_timezone(&Utc)
+                .to_rfc3339();
+            (url.starts_with("https://") && !body.is_empty()).then(|| news_cache::SavedBody {
+                url: url.into(),
+                symbols: normalize_stock_symbols(
+                    item["symbols"]
+                        .as_array()
+                        .map(|symbols| {
+                            symbols
+                                .iter()
+                                .filter_map(Value::as_str)
+                                .map(str::to_owned)
+                                .collect()
+                        })
+                        .unwrap_or_default(),
+                ),
+                headline: bounded(
+                    &plain_text(item["headline"].as_str().unwrap_or("")),
+                    MAX_HEADLINE_CHARS,
+                ),
+                created_at,
+                body,
+            })
+        })
+        .collect()
 }
 
 /// Every story in one page of Alpaca news, whatever tickers it names.
@@ -596,6 +672,30 @@ mod tests {
     }
 
     #[test]
+    fn article_text_is_kept_as_plain_text_only_for_safe_links() {
+        let item = json!({
+            "headline": "Why Is Test Corp Stock Rising?", "created_at": "2026-09-21T12:00:00Z",
+            "content": "<p>Test Corp&#8217;s shares rose&#x2014;sharply&nbsp;today.</p><p>More.</p>",
+            "symbols": ["TEST"], "url": "https://example.com/story"
+        });
+        let mut insecure = item.clone();
+        insecure["url"] = "http://example.com/story".into();
+        let mut empty = item.clone();
+        empty["content"] = "".into();
+        empty["url"] = "https://example.com/empty".into();
+        let bodies = parse_alpaca_bodies(&json!({ "news": [item, insecure, empty] }));
+        assert_eq!(bodies.len(), 1);
+        assert_eq!(
+            bodies[0].body,
+            "Test Corp\u{2019}s shares rose\u{2014}sharply today. More."
+        );
+        assert_eq!(bodies[0].symbols, ["TEST"]);
+        assert_eq!(bodies[0].created_at, "2026-09-21T12:00:00+00:00");
+        // A control character written as an entity is dropped.
+        assert_eq!(plain_text("a&#7;b"), "a b");
+    }
+
+    #[test]
     fn stories_are_filtered_scoped_and_tagged_from_their_headlines() {
         for headline in [
             "Synthetic Bank Maintains Overweight on TEST, Lowers Price Target to $355",
@@ -613,7 +713,7 @@ mod tests {
         // Launches and contract wins are what most often move smaller companies.
         let launch = classify(
             story(
-                "Nebius Rolls Out Agentic Open Model Beam: 501B Total Parameters, 23B Active",
+                "Testco Rolls Out Agentic Open Model: 500B Total Parameters, 20B Active",
                 &["TEST"],
             ),
             "TEST",
@@ -662,7 +762,7 @@ mod tests {
     #[test]
     fn company_names_reduce_to_the_words_headlines_use() {
         assert_eq!(company_key("NVIDIA CORP").as_deref(), Some("nvidia"));
-        assert_eq!(company_key("Nebius Group N.V.").as_deref(), Some("nebius"));
+        assert_eq!(company_key("Testco Group N.V.").as_deref(), Some("testco"));
         assert_eq!(company_key("Amazon Com Inc").as_deref(), Some("amazon"));
         assert_eq!(
             company_key("Advanced Micro Devices Inc").as_deref(),
@@ -676,32 +776,32 @@ mod tests {
         let scored = |headline: &str, summary: &str, symbols: &[&str]| {
             let mut article = story(headline, symbols);
             article.summary = summary.into();
-            classify_story(article, "NBIS", Some("nebius"))
+            classify_story(article, "TEST", Some("testco"))
                 .unwrap()
                 .relevance
         };
         // Named in the headline, tagged with it alone, and an event: about the company.
         let launch = scored(
-            "Nebius Rolls Out Agentic Open Model Beam: 501B Total Parameters, 23B Active",
+            "Testco Rolls Out Agentic Open Model: 500B Total Parameters, 20B Active",
             "",
-            &["NBIS"],
+            &["TEST"],
         );
         assert_eq!(launch, 100);
         // Broker research about a peer that mentions the company only in passing.
         let peer = scored(
-            "Morgan Stanley Raises CoreWeave Price Objective On AI Demand",
-            "The firm also cited Nebius among neocloud peers.",
-            &["CRWV", "MS", "NBIS"],
+            "Synthetic Bank Raises Peerco Price Objective On AI Demand",
+            "The firm also cited Testco among cloud peers.",
+            &["PEER", "SYNB", "TEST"],
         );
         assert!(peer < RELEVANT, "peer note scored {peer}");
         // A roundup never counts as company news, however it is tagged.
-        let roundup = scored("Nebius, Oracle Lead Stocks to Watch", "", &["NBIS", "ORCL"]);
+        let roundup = scored("Testco, Peerco Lead Stocks to Watch", "", &["TEST", "PEER"]);
         assert!(roundup <= 25);
         // Tagged only with the company, a story is about it even without naming it.
-        assert!(scored("AI Cloud Provider Expands In Finland", "", &["NBIS"]) >= RELEVANT);
+        assert!(scored("AI Cloud Provider Expands Abroad", "", &["TEST"]) >= RELEVANT);
         // The ticker counts as a name, as a whole word only.
-        assert!(scored("NBIS Shares Jump", "", &["NBIS", "NVDA"]) >= RELEVANT);
-        assert!(scored("NBISX Fund Update", "", &["NBIS", "NVDA"]) < RELEVANT);
+        assert!(scored("TEST Shares Jump", "", &["TEST", "OTHER"]) >= RELEVANT);
+        assert!(scored("TESTX Fund Update", "", &["TEST", "OTHER"]) < RELEVANT);
     }
 
     #[test]

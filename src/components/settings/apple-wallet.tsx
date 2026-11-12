@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
-import { financeQueryKey, useFinance } from '../../hooks/use-finance'
+import { setFinanceSnapshot, useFinance } from '../../hooks/use-finance'
 import { useFinanceEdits } from '../../hooks/use-finance-edits'
 import { confirmWalletRow, isTauri, syncWallet } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
@@ -43,7 +43,7 @@ export function AppleWalletOption() {
   const enabled = Boolean(financeSettings(data).appleWallet)
   const failure = data?.providerStatus?.wallet?.error
   const apply = (view: FinanceSnapshot | null) => {
-    if (view) client.setQueryData(financeQueryKey, view)
+    if (view) setFinanceSnapshot(client, view)
   }
   const toggle = async (checked: boolean) => {
     setSaving(true)

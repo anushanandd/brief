@@ -4,7 +4,9 @@ import {
   displayCase,
   formatActivityName,
   formatCurrency,
+  formatCurrencyRange,
   formatProsePercent,
+  formatShare,
   formatShortDay,
 } from './format'
 import type { AttentionItem, FinanceSnapshot } from './schema'
@@ -27,9 +29,33 @@ export type NeedView = {
     | { to: '/insights'; search: { view: 'rules' } }
     | {
         to: '/analytics'
-        search: { chart: 'amex-credits'; benefit?: string; review?: true }
+        search: { chart: 'card-credits'; benefit?: string; review?: true }
       }
   urgent: boolean
+  /** How sure Rust is of an inferred need, 0 to 1; a need read from records has none. */
+  confidence?: number
+  /** The transactions an inferred need read, which Activity lists. */
+  evidence?: string[]
+}
+
+/** How sure, in words a row can carry beside its detail. */
+export const confidenceLabel = (confidence: number) => `${formatShare(confidence * 100, 0)} sure`
+
+export type InferredNeed = Extract<AttentionItem, { confidence: number }>
+
+/**
+ * The transactions each inferred need is about, so its row and inspector can carry it: every
+ * fee a fees need counts, and otherwise the one transaction it names. The rest of its evidence
+ * is history the inspector cites, not something to look at again.
+ */
+export function inferredNeedSubjects(needs: readonly AttentionItem[]) {
+  const subjects = new Map<string, InferredNeed>()
+  for (const need of needs) {
+    if (!('confidence' in need)) continue
+    for (const id of need.kind === 'fees-charged' ? need.evidence : [need.transactionId])
+      if (!subjects.has(id)) subjects.set(id, need)
+  }
+  return subjects
 }
 
 const inDays = (days: number) =>
@@ -57,7 +83,7 @@ export function needView(need: AttentionItem, data: FinanceSnapshot): NeedView {
     search: { benefit?: string; review?: true },
   ): NeedView['link'] =>
     accountId === data.insights?.benefits?.accountId
-      ? { to: '/analytics', search: { chart: 'amex-credits', ...search } }
+      ? { to: '/analytics', search: { chart: 'card-credits', ...search } }
       : { to: '/accounts', search: { account: accountId } }
   switch (need.kind) {
     case 'payment-due':
@@ -114,7 +140,7 @@ export function needView(need: AttentionItem, data: FinanceSnapshot): NeedView {
         id: need.id,
         date: need.closesOn,
         title: `${accountName(need.accountId)} closes ${inDays(need.days)}`,
-        detail: `${need.utilization.toFixed(0)}% of limit used · balance below · pay before it closes`,
+        detail: `${formatShare(need.utilization, 0)} of limit used · balance below · pay before it closes`,
         amount: -need.balance,
         link: { to: '/accounts', search: { account: need.accountId } },
         urgent,
@@ -215,6 +241,66 @@ export function needView(need: AttentionItem, data: FinanceSnapshot): NeedView {
           'A rule Brief knows',
         link: { to: '/insights', search: { view: 'rules' } },
         urgent,
+      }
+    // Inferences: each says how sure it is and opens the transaction it is about.
+    case 'new-series':
+      return {
+        id: need.id,
+        date: need.firstSeen,
+        title: `New ${need.frequency.toLowerCase()} ${need.event === 'income' ? 'deposit' : 'charge'} from ${formatActivityName(need.title)}`,
+        detail: `First seen ${formatShortDay(need.firstSeen)}${need.accountId ? ` · ${accountName(need.accountId)}` : ''}`,
+        amount: need.amount,
+        link: { to: '/activities', search: { open: need.transactionId } },
+        urgent,
+        confidence: need.confidence,
+        evidence: need.evidence,
+      }
+    case 'price-changed':
+      return {
+        id: need.id,
+        date: need.changedOn,
+        title: `${formatActivityName(need.title)} ${Math.abs(need.latest) > Math.abs(need.previous) ? 'raised' : 'lowered'} its price`,
+        detail: `Was ${formatCurrency(Math.abs(need.previous))}`,
+        amount: need.latest,
+        link: { to: '/activities', search: { open: need.transactionId } },
+        urgent,
+        confidence: need.confidence,
+        evidence: need.evidence,
+      }
+    case 'fees-charged':
+      return {
+        id: need.id,
+        date: need.since,
+        title: `${need.count === 1 ? 'A fee' : `${need.count} fees`} charged since ${formatShortDay(need.since)}`,
+        detail: 'Bank fees, card interest, and foreign transaction fees',
+        amount: need.amount,
+        link: { to: '/activities', search: { open: need.transactionId } },
+        urgent,
+        confidence: need.confidence,
+        evidence: need.evidence,
+      }
+    case 'pay-differs':
+      return {
+        id: need.id,
+        date: need.date,
+        title: `${formatActivityName(need.title)} paid ${need.amount > need.high ? 'more' : 'less'} than usual`,
+        detail: `Usually ${formatCurrencyRange(need)}`,
+        amount: need.amount,
+        link: { to: '/activities', search: { open: need.transactionId } },
+        urgent,
+        confidence: need.confidence,
+        evidence: need.evidence,
+      }
+    case 'unusual-charge':
+      return {
+        id: need.id,
+        title: `Unusual charge at ${formatActivityName(need.merchant)}`,
+        detail: `Usually ${formatCurrency(Math.abs(need.usual))} · ${need.observations} earlier charges`,
+        amount: need.amount,
+        link: { to: '/activities', search: { open: need.transactionId } },
+        urgent,
+        confidence: need.confidence,
+        evidence: need.evidence,
       }
     default: {
       const unknown: never = need

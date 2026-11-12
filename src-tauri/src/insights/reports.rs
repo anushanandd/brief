@@ -1,8 +1,9 @@
 //! Money's and Investments' reports, read on demand: income, interest, fees, card credits,
 //! dividends, realized gains, and cash flow, each over a window and the accounts the person
-//! picks. A window is a chart period ending today, or a custom pair of days; each report sums its
-//! entries beside the window before, by group, by day, month, or year, and by account. The
-//! renderer only draws and lists what this returns.
+//! picks. A window is a chart period ending today, the same trailing days every chart and Home's
+//! recap mean by it, or a custom pair of days; each report sums its entries beside the window
+//! before, by group, by day, month, or year, and by account. The renderer only draws and lists
+//! what this returns.
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::LazyLock;
 
@@ -25,7 +26,7 @@ pub enum Chart {
     Income,
     Interest,
     Fees,
-    AmexCredits,
+    CardCredits,
     Dividends,
     Realized,
 }
@@ -36,7 +37,7 @@ impl Chart {
         Chart::Income,
         Chart::Interest,
         Chart::Fees,
-        Chart::AmexCredits,
+        Chart::CardCredits,
         Chart::Dividends,
         Chart::Realized,
     ];
@@ -201,6 +202,17 @@ pub struct FlowItem {
     pub value: f64,
     /// Newest first.
     pub children: Vec<FlowTransaction>,
+    /// The groups an "Other" item holds, largest first; empty for any other item.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub parts: Vec<FlowPart>,
+}
+
+/// One group folded into an "Other" item.
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct FlowPart {
+    pub label: String,
+    pub value: f64,
 }
 
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
@@ -212,15 +224,22 @@ pub struct FlowTransaction {
     pub date: NaiveDate,
 }
 
-/// Where the window's money came from and went: sources by payer, purchases by category, fees,
-/// taxes, and what was left over or had to be found.
+/// Where the window's money came from and went, and the surplus or shortfall. Each side lists
+/// its largest groups and folds the rest into one "Other", named in its `parts`, so the chart
+/// stays short.
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CashFlow {
+    /// Income by the Income report's groups (payroll, payment apps, interest, a payer), and
+    /// refunds that came to more than what they repaid in the window.
     pub sources: Vec<FlowItem>,
+    /// Spending by category, net of the refunds and reimbursements that repaid it, as Spending
+    /// counts it.
     pub purchases: Vec<FlowItem>,
-    pub fees: f64,
-    pub taxes: f64,
+    /// Fees and taxes together, net of their refunds; none when they came to nothing.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub charges: Option<FlowItem>,
     pub inflow: f64,
     pub outflow: f64,
     /// More went out than came in.
@@ -255,9 +274,9 @@ pub struct Reports {
 }
 
 static BROKERAGE_TRANSFER: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\btransfer\s+money\s+from\s+brokerage\b").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)\btransfer\s+money\s+from\s+brokerage\b").expect("valid"));
 static PAYROLL: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?i)\bpayroll\b|\bpaycheck\b|\bsalary\b").unwrap());
+    LazyLock::new(|| Regex::new(r"(?i)\bpayroll\b|\bpaycheck\b|\bsalary\b").expect("valid"));
 
 /// The groups income is listed under: payment apps, brokerage transfers, dividends, interest,
 /// payroll, or the payer as written.
@@ -360,7 +379,7 @@ impl Reader<'_> {
                     })
                 })
                 .collect(),
-            Chart::AmexCredits => {
+            Chart::CardCredits => {
                 // Native benefit rules classify the saved card's activity; this only scopes it.
                 let insights = self.view.insights.as_ref();
                 let benefits = insights
@@ -638,6 +657,9 @@ fn window(
     let snapshot = &view.snapshot;
     let end = request.to.filter(|to| *to < today).unwrap_or(today);
     let range = request.range.unwrap_or(Range::Month);
+    // Each period is the trailing days every chart and Home's recap mean by it
+    // (`period_changes::WINDOWS`), so a figure opens on the report that sums it. A calendar
+    // year, as Benefits reads, is a pair of custom days.
     let start = request.from.unwrap_or_else(|| match range {
         Range::All => snapshot
             .transactions
@@ -648,7 +670,7 @@ fn window(
             .filter(|date| *date <= end)
             .min()
             .unwrap_or(end),
-        Range::Year => calendar::first_of_month(end.year(), 1),
+        Range::Year => end - Duration::days(364),
         Range::Day => end,
         Range::Week => end - Duration::days(6),
         Range::Quarter => end - Duration::days(89),
@@ -667,15 +689,22 @@ fn window(
     }
 }
 
-/// Where the money in `entries` came from and went.
+/// Each side of the cash flow shows this many of its largest groups; more fold into one.
+const FLOW_GROUPS: usize = 5;
+
+/// Where the money in `entries` came from and went. Income is grouped as the Income report
+/// groups it. Refunds and reimbursements reduce the category they repay, as Spending counts
+/// them; fee and tax refunds reduce fees and taxes; a group refunded below zero counts as money
+/// in. Values are in whole cents, so the surplus or shortfall equals the report's total.
 fn cash_flow(view: &View, entries: &[Entry]) -> CashFlow {
     let ids = entries
         .iter()
         .map(|entry| entry.id.as_str())
         .collect::<BTreeSet<_>>();
-    let mut sources = Vec::<(String, FlowTransaction)>::new();
-    let mut purchases = Vec::<(String, FlowTransaction)>::new();
-    let (mut fees, mut taxes) = (0, 0);
+    let mut income = Vec::<(String, FlowTransaction)>::new();
+    // Money out is positive: a purchase adds to its category, and a refund takes away.
+    let mut spending = Vec::<(String, FlowTransaction)>::new();
+    let mut charges = Vec::<(String, FlowTransaction)>::new();
     for transaction in &view.snapshot.transactions {
         let Some(classification) = transaction.classification.as_ref() else {
             continue;
@@ -684,90 +713,142 @@ fn cash_flow(view: &View, entries: &[Entry]) -> CashFlow {
             continue;
         }
         let date = calendar::transaction_date(transaction.posted_date()).unwrap_or_default();
-        let amount = minor_units(transaction.amount.abs());
-        let kind = &classification.kind;
-        if transaction.amount > 0.0
-            && matches!(
-                kind,
-                Kind::Income
-                    | Kind::Dividend
-                    | Kind::Interest
-                    | Kind::Reimbursement
-                    | Kind::Fee
-                    | Kind::Tax
-            )
-        {
-            let source = Some(transaction.merchant.trim())
+        let named = |fallback: &str| {
+            Some(transaction.merchant.trim())
                 .filter(|merchant| !merchant.is_empty())
-                .unwrap_or("Unknown source")
-                .to_owned();
-            let label = transaction
-                .description
-                .as_deref()
-                .map(str::trim)
-                .filter(|description| !description.is_empty())
-                .map_or_else(|| source.clone(), str::to_owned);
-            sources.push((
-                source,
+                .or_else(|| transaction.description.as_deref().map(str::trim))
+                .filter(|label| !label.is_empty())
+                .unwrap_or(fallback)
+                .to_owned()
+        };
+        match classification.kind {
+            Kind::Income | Kind::Dividend | Kind::Interest => income.push((
+                income_group(transaction, &classification.mark, classification.zelle),
                 FlowTransaction {
                     id: format!("source-transaction:{}", transaction.id),
-                    label,
-                    value: from_minor(amount),
+                    // The description says which payment it was, where the payer is the group.
+                    label: transaction
+                        .description
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|description| !description.is_empty())
+                        .map_or_else(|| named("Income"), str::to_owned),
+                    value: from_minor(minor_units(transaction.amount)),
                     date,
                 },
-            ));
-        } else if *kind == Kind::Expense {
-            for (index, (category, part)) in transaction.parts().into_iter().enumerate() {
-                let label = Some(transaction.merchant.trim())
-                    .filter(|merchant| !merchant.is_empty())
-                    .or_else(|| transaction.description.as_deref().map(str::trim))
-                    .filter(|label| !label.is_empty())
-                    .unwrap_or("Purchase")
-                    .to_owned();
-                purchases.push((
-                    Some(category.trim())
-                        .filter(|category| !category.is_empty())
-                        .unwrap_or("Other")
-                        .to_owned(),
-                    FlowTransaction {
-                        id: if index == 0 {
-                            format!("purchase-transaction:{}", transaction.id)
-                        } else {
-                            format!("purchase-transaction:{}:{index}", transaction.id)
+            )),
+            Kind::Expense | Kind::Reimbursement => {
+                for (index, (category, part)) in transaction.parts().into_iter().enumerate() {
+                    spending.push((
+                        Some(category.trim())
+                            .filter(|category| !category.is_empty())
+                            .unwrap_or("Other")
+                            .to_owned(),
+                        FlowTransaction {
+                            id: if index == 0 {
+                                format!("purchase-transaction:{}", transaction.id)
+                            } else {
+                                format!("purchase-transaction:{}:{index}", transaction.id)
+                            },
+                            label: named("Purchase"),
+                            value: from_minor(-minor_units(part)),
+                            date,
                         },
-                        label,
-                        value: from_minor(minor_units(part.abs())),
-                        date,
-                    },
-                ));
+                    ));
+                }
             }
-        } else if *kind == Kind::Fee {
-            fees += amount;
-        } else if *kind == Kind::Tax {
-            taxes += amount;
+            Kind::Fee | Kind::Tax => charges.push((
+                "Fees and taxes".to_owned(),
+                FlowTransaction {
+                    id: format!("charge-transaction:{}", transaction.id),
+                    label: named("Charge"),
+                    value: from_minor(-minor_units(transaction.amount)),
+                    date,
+                },
+            )),
+            _ => {}
         }
     }
-    let sources = flow_items(sources, "source");
-    let purchases = flow_items(purchases, "purchase");
-    let positive = |items: &[FlowItem]| -> i64 {
+    // What refunds left below nothing came in: each such group, its transactions turned to
+    // money in.
+    let mut refunded = Vec::new();
+    let mut out = |items: Vec<FlowItem>| {
         items
-            .iter()
-            .map(|item| minor_units(item.value))
-            .filter(|value| *value > 0)
-            .sum()
+            .into_iter()
+            .filter_map(|item| match minor_units(item.value) {
+                value if value > 0 => Some(item),
+                0 => None,
+                _ => {
+                    refunded.extend(item.children.into_iter().map(|child| {
+                        (
+                            "Refunds and repayments".to_owned(),
+                            FlowTransaction {
+                                value: from_minor(-minor_units(child.value)),
+                                ..child
+                            },
+                        )
+                    }));
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
     };
-    let inflow = positive(&sources);
-    let outflow = positive(&purchases) + fees + taxes;
+    let purchases = out(flow_items(spending, "purchase"));
+    let charges = out(flow_items(charges, "charges")).pop();
+    income.extend(refunded);
+    let sources = folded(flow_items(income, "source"), "source", "Other income");
+    let purchases = folded(purchases, "purchase", "Other categories");
+    let cents =
+        |items: &[FlowItem]| -> i64 { items.iter().map(|item| minor_units(item.value)).sum() };
+    let inflow = cents(&sources);
+    let outflow = cents(&purchases) + charges.as_ref().map_or(0, |item| minor_units(item.value));
     CashFlow {
         sources,
         purchases,
-        fees: from_minor(fees),
-        taxes: from_minor(taxes),
+        charges,
         inflow: from_minor(inflow),
         outflow: from_minor(outflow),
         gap: from_minor((outflow - inflow).max(0)),
         retained: from_minor((inflow - outflow).max(0)),
     }
+}
+
+/// The largest groups, and the rest as one "Other" holding their transactions, newest first,
+/// with each group it holds named in `parts`. One group left over shows as itself.
+fn folded(mut items: Vec<FlowItem>, prefix: &str, label: &str) -> Vec<FlowItem> {
+    if items.len() <= FLOW_GROUPS + 1 {
+        return items;
+    }
+    let rest = items.split_off(FLOW_GROUPS);
+    let value = from_minor(rest.iter().map(|item| minor_units(item.value)).sum());
+    let parts = rest
+        .iter()
+        .map(|item| FlowPart {
+            label: item.label.clone(),
+            value: item.value,
+        })
+        .collect();
+    let mut children = rest
+        .into_iter()
+        .flat_map(|item| item.children)
+        .collect::<Vec<_>>();
+    children.sort_by(newest_first);
+    items.push(FlowItem {
+        id: format!("{prefix}-other"),
+        label: label.to_owned(),
+        value,
+        children,
+        parts,
+    });
+    items
+}
+
+fn newest_first(left: &FlowTransaction, right: &FlowTransaction) -> std::cmp::Ordering {
+    right
+        .date
+        .cmp(&left.date)
+        .then_with(|| right.value.total_cmp(&left.value))
+        .then_with(|| left.label.cmp(&right.label))
 }
 
 /// Transactions by group, largest first, each newest first.
@@ -782,18 +863,13 @@ fn flow_items(entries: Vec<(String, FlowTransaction)>, prefix: &str) -> Vec<Flow
     let mut items = groups
         .into_iter()
         .map(|(label, mut children)| {
-            children.sort_by(|left, right| {
-                right
-                    .date
-                    .cmp(&left.date)
-                    .then_with(|| right.value.total_cmp(&left.value))
-                    .then_with(|| left.label.cmp(&right.label))
-            });
+            children.sort_by(newest_first);
             FlowItem {
                 id: format!("{prefix}:{label}"),
                 value: from_minor(children.iter().map(|child| minor_units(child.value)).sum()),
                 label,
                 children,
+                parts: Vec::new(),
             }
         })
         .collect::<Vec<_>>();

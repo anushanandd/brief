@@ -1,5 +1,11 @@
 //! Read-only ledger queries over the annotation-aware snapshot. They are the only figures
 //! Apple Intelligence may cite: every amount is computed here, in whole cents.
+//!
+//! A new tool goes in `TOOLS` with its hint words, in the Swift bridge
+//! (`native/FoundationModelBridge.swift`), and in `assistant-evals.jsonl`, whose tests run every
+//! tool call against the synthetic career (`synthetic/career.rs`) and check the bridge defines
+//! it. `assistant_answers_the_eval_set` (ignored) asks the on-device model the set and appends
+//! its pass rate to the private `notes/assistant-eval-history.jsonl`.
 use std::collections::BTreeMap;
 
 use chrono::{Datelike, Duration, NaiveDate};
@@ -14,9 +20,10 @@ use crate::transaction_policy::Kind;
 
 const MAX_ROWS: usize = 25;
 
-/// Every tool, with words a question that needs it is likely to use. The on-device model
-/// reads about 4,096 tokens per question, and every tool's definition takes some of them, so
-/// a question is offered only the tools its words point to.
+/// Every tool, with words a question that needs it is likely to use; a hint with a space is a
+/// phrase. The on-device model reads about 4,096 tokens per question, and every tool's
+/// definition takes some of them, so a question is offered only the tools its words point to
+/// (`assistant_planner::plan`).
 pub const TOOLS: [(&str, &[&str]); 15] = [
     (
         "listAccounts",
@@ -24,9 +31,7 @@ pub const TOOLS: [(&str, &[&str]); 15] = [
             "account",
             "accounts",
             "balance",
-            "checking",
             "savings",
-            "cashplus",
             "brokerage",
             "worth",
             "bank",
@@ -40,7 +45,9 @@ pub const TOOLS: [(&str, &[&str]); 15] = [
         &[
             "category",
             "categories",
-            "on",
+            "spend on",
+            "spent on",
+            "went to",
             "food",
             "dining",
             "groceries",
@@ -78,18 +85,27 @@ pub const TOOLS: [(&str, &[&str]); 15] = [
     ),
     (
         "merchantHistory",
-        &["paid", "merchant", "history", "every", "monthly", "much"],
+        &["pay", "paid", "merchant", "history", "every", "monthly"],
     ),
     (
         "upcomingActivity",
         &[
-            "next", "upcoming", "due", "expected", "paycheck", "bill", "bills", "coming",
+            "when is", "next", "upcoming", "due", "expected", "paycheck", "bill", "bills", "coming",
         ],
     ),
     (
         "monthPlan",
         &[
-            "month", "cash", "runway", "typical", "budget", "far", "cover", "covers",
+            "month",
+            "cash",
+            "runway",
+            "typical",
+            "budget",
+            "far",
+            "cover",
+            "covers",
+            "so far",
+            "typical monthly",
         ],
     ),
     (
@@ -118,7 +134,15 @@ pub const TOOLS: [(&str, &[&str]); 15] = [
     ),
     (
         "taxSummary",
-        &["tax", "taxes", "gains", "wash", "taxable", "interest"],
+        &[
+            "tax",
+            "taxes",
+            "gains",
+            "wash",
+            "wash sale",
+            "taxable",
+            "interest",
+        ],
     ),
     (
         "trips",
@@ -128,11 +152,18 @@ pub const TOOLS: [(&str, &[&str]); 15] = [
         "subscriptions",
         &["subscription", "subscriptions", "streaming"],
     ),
-    ("dividendIncome", &["dividend", "dividends"]),
+    (
+        "dividendIncome",
+        &["dividend", "dividends", "dividend income"],
+    ),
     (
         "explanations",
         &[
             "why",
+            "why did",
+            "fee waived",
+            "fee waiver",
+            "anything wrong",
             "waive",
             "waived",
             "waiver",
@@ -151,6 +182,8 @@ pub const TOOLS: [(&str, &[&str]); 15] = [
     (
         "chapters",
         &[
+            "when",
+            "my job",
             "live",
             "lived",
             "work",
@@ -175,87 +208,67 @@ pub const TOOLS: [(&str, &[&str]); 15] = [
     ),
 ];
 
-fn words_of(text: &str) -> Vec<String> {
-    text.to_lowercase()
+/// The chapter a phrase such as "since I moved" or "Example Corp" names: the chapter whose
+/// title or state names the most of its words (the latest when tied), else for a move or home
+/// the latest home chapter, and for a job the latest work chapter.
+pub fn chapter_named<'a>(
+    evidence: &'a crate::evidence::Evidence,
+    name: &str,
+) -> Option<&'a crate::evidence::chapters::Chapter> {
+    use crate::evidence::chapters::{state_name, ChapterKind};
+    let name = name.to_lowercase();
+    let words = name
         .split(|c: char| !c.is_alphanumeric())
-        .filter(|word| word.len() > 2)
-        .map(str::to_owned)
-        .collect()
-}
-
-/// The tools offered for a question: those its words point to most, at most four. Names the
-/// saved data holds point too: a trip's city to trips, a chapter's title to chapters, an
-/// account's name to accounts. A question that points to none gets the general ones.
-pub fn tools_for(question: &str, view: &View) -> Vec<&'static str> {
-    let words = words_of(question);
-    let named = |names: Vec<String>| {
-        let known = names
+        .filter(|word| word.len() > 1)
+        .collect::<Vec<_>>();
+    let has = |options: &[&str]| words.iter().any(|word| options.contains(word));
+    let latest = |kind: ChapterKind| {
+        evidence
+            .chapters
             .iter()
-            .flat_map(|name| words_of(name))
-            .collect::<Vec<_>>();
-        words.iter().filter(|word| known.contains(word)).count()
+            .filter(|chapter| chapter.kind == kind)
+            .max_by_key(|chapter| chapter.start)
     };
-    let insights = view.insights.as_ref();
-    let data = [
-        (
-            "trips",
-            named(insights.map_or_else(Vec::new, |insights| {
-                insights
-                    .trips
-                    .trips
-                    .iter()
-                    .map(|trip| trip.destination.clone())
-                    .collect()
-            })),
-        ),
-        (
-            "chapters",
-            named(insights.map_or_else(Vec::new, |insights| {
-                insights
-                    .evidence
-                    .chapters
-                    .iter()
-                    .map(|chapter| chapter.title.clone())
-                    .collect()
-            })),
-        ),
-        (
-            "listAccounts",
-            named(
-                view.snapshot
-                    .accounts
-                    .iter()
-                    .map(|account| account.name.clone())
-                    .collect(),
-            ),
-        ),
-    ];
-    let mut scored = TOOLS
+    let named = evidence
+        .chapters
         .iter()
-        .enumerate()
-        .map(|(order, (name, hints))| {
-            let hinted = words
+        .map(|chapter| {
+            let title = chapter.title.to_lowercase();
+            let state = chapter
+                .state
+                .as_deref()
+                .and_then(state_name)
+                .unwrap_or_default()
+                .to_lowercase();
+            let score = words
                 .iter()
-                .filter(|word| hints.contains(&word.as_str()))
+                .filter(|word| {
+                    ![
+                        "the", "of", "at", "in", "since", "my", "job", "work", "joined", "joining",
+                    ]
+                    .contains(*word)
+                        && (title
+                            .split_whitespace()
+                            .any(|part| part.starts_with(**word))
+                            || state.split_whitespace().any(|part| part == **word))
+                })
                 .count();
-            let from_data = data
-                .iter()
-                .find(|(tool, _)| tool == name)
-                .map_or(0, |(_, count)| *count * 2);
-            (hinted + from_data, order, *name)
+            (score, chapter.start, chapter)
         })
         .filter(|(score, _, _)| *score > 0)
-        .collect::<Vec<_>>();
-    scored.sort_by_key(|(score, order, _)| (std::cmp::Reverse(*score), *order));
-    let mut tools = scored
-        .into_iter()
-        .take(4)
-        .map(|(_, _, name)| name)
-        .collect::<Vec<_>>();
-    if tools.is_empty() {
-        tools = vec!["listAccounts", "cashFlow", "searchTransactions", "chapters"];
-    }
-    tools
+        .max_by_key(|(score, start, _)| (*score, *start))
+        .map(|(_, _, chapter)| chapter);
+    named
+        .or_else(|| {
+            has(&["move", "moved", "moving", "home", "lived", "live"])
+                .then(|| latest(ChapterKind::Home))
+                .flatten()
+        })
+        .or_else(|| {
+            has(&["job", "work", "joined", "joining", "started", "employer"])
+                .then(|| latest(ChapterKind::Work))
+                .flatten()
+        })
 }
 
 fn to_json(value: &impl serde::Serialize) -> Result<Value, String> {
@@ -741,73 +754,17 @@ impl<'a> Ledger<'a> {
     }
 
     /// `chapters` given a name: the dates a phrase like "since I moved" or "since joining
-    /// Morgan Stanley" means, kept small for the on-device model's context. A
+    /// Example Corp" means, kept small for the on-device model's context. A
     /// move or home is the latest home chapter, a job the latest work chapter, and anything
     /// else the chapter whose title or state names it.
     fn chapter_span(&self, arguments: &Value) -> Result<Value, String> {
-        use crate::evidence::chapters::{state_name, ChapterKind};
         let evidence = &self.insights()?.evidence;
         let name = arguments["name"]
             .as_str()
             .map(str::trim)
             .filter(|name| !name.is_empty() && name.len() <= 100)
-            .ok_or("Name the chapter, such as a move, a job, or an employer")?
-            .to_lowercase();
-        let words = name
-            .split(|c: char| !c.is_alphanumeric())
-            .filter(|word| word.len() > 1)
-            .collect::<Vec<_>>();
-        let has = |options: &[&str]| words.iter().any(|word| options.contains(word));
-        let latest = |kind: ChapterKind| {
-            evidence
-                .chapters
-                .iter()
-                .filter(|chapter| chapter.kind == kind)
-                .max_by_key(|chapter| chapter.start)
-        };
-        // The chapter naming the most of the phrase's words, the latest when tied.
-        let named = evidence
-            .chapters
-            .iter()
-            .map(|chapter| {
-                let title = chapter.title.to_lowercase();
-                let state = chapter
-                    .state
-                    .as_deref()
-                    .and_then(state_name)
-                    .unwrap_or_default()
-                    .to_lowercase();
-                let score = words
-                    .iter()
-                    .filter(|word| {
-                        ![
-                            "the", "of", "at", "in", "since", "my", "job", "work", "joined",
-                            "joining",
-                        ]
-                        .contains(*word)
-                            && (title
-                                .split_whitespace()
-                                .any(|part| part.starts_with(**word))
-                                || state.split_whitespace().any(|part| part == **word))
-                    })
-                    .count();
-                (score, chapter.start, chapter)
-            })
-            .filter(|(score, _, _)| *score > 0)
-            .max_by_key(|(score, start, _)| (*score, *start))
-            .map(|(_, _, chapter)| chapter);
-        let chapter = named
-            .or_else(|| {
-                has(&["move", "moved", "moving", "home", "lived", "live"])
-                    .then(|| latest(ChapterKind::Home))
-                    .flatten()
-            })
-            .or_else(|| {
-                has(&["job", "work", "joined", "joining", "started", "employer"])
-                    .then(|| latest(ChapterKind::Work))
-                    .flatten()
-            })
-            .ok_or("No chapter matches that name")?;
+            .ok_or("Name the chapter, such as a move, a job, or an employer")?;
+        let chapter = chapter_named(evidence, name).ok_or("No chapter matches that name")?;
         Ok(json!({
             "title": chapter.title,
             "kind": chapter.kind,
@@ -822,7 +779,9 @@ impl<'a> Ledger<'a> {
             .as_u64()
             .map_or(10, |limit| limit as usize)
             .clamp(1, MAX_ROWS);
-        let mut holdings = self.view.snapshot.holdings.iter().collect::<Vec<_>>();
+        // One row per security, its accounts' positions summed, so a ticker held in two
+        // accounts is listed once at its whole value.
+        let mut holdings = crate::insights::rollup::holding_totals(&self.view.snapshot.holdings);
         holdings.sort_by(|left, right| {
             right
                 .value
@@ -835,7 +794,11 @@ impl<'a> Ledger<'a> {
                 "name": holding.name,
                 "value": holding.value,
                 "totalChangePercent": holding.total_change_pct,
-                "account": self.account_name(Some(&holding.account_id)),
+                "accounts": holding
+                    .accounts
+                    .iter()
+                    .map(|part| self.account_name(Some(&part.account_id)))
+                    .collect::<Vec<_>>(),
             })).collect::<Vec<_>>(),
         })
     }
@@ -919,8 +882,7 @@ mod tests {
             .find(|row| row["category"] == "Entertainment")
             .unwrap()
             .clone();
-        // July: Spotify 11.99, Netflix 15.49, Disney Plus 13.99.
-        assert_eq!(entertainment["spending"], 41.47);
+        assert_eq!(entertainment["spending"], 37.47);
         assert_eq!(entertainment["transactions"], 3);
         let flow = ledger.call(
             "cashFlow",

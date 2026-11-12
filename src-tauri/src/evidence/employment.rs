@@ -1,8 +1,8 @@
 //! Who paid you, and when: employers from pay statements (exact days, and the deposits each
 //! names), W-2s (a tax year and the state that withheld), and payroll deposits. A bank
 //! descriptor joins an employer when a pay statement names that deposit, or when its words
-//! begin the employer's words, as banks truncate them ("EXAMPLE STATE UNIV" for "University
-//! of Austin"). Payroll that matches no document stands as its own employer, named by its
+//! begin the employer's words, as banks truncate them ("EXAMPLE STATE UNIV" for "Example
+//! State University"). Payroll that matches no document stands as its own employer, named by its
 //! descriptor.
 use std::collections::BTreeMap;
 
@@ -170,8 +170,8 @@ fn name_words(name: &str) -> Vec<String> {
 }
 
 /// Whether a descriptor names an employer: its words begin the employer's words in order
-/// ("example state univ" for "example state university"), or the employer's whole name appears in
-/// it ("book transfer b/o sample global inc"). One short word alone never matches.
+/// ("example state univ" for "example state university"), or the employer's whole name
+/// appears in it ("book transfer b/o sample global inc"). One short word alone never matches.
 pub fn names(descriptor: &str, employer: &str) -> bool {
     let theirs = name_words(employer);
     let ours = words(descriptor)

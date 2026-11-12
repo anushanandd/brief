@@ -3,14 +3,14 @@ import { Link } from '@tanstack/react-router'
 
 import { PageError, PageLoading } from '../components/data-state'
 import { AlertCircle, ChevronRight, Info, ShieldCheck } from '../components/icons'
-import { SettingsLink } from '../components/settings-dialog'
 import { Card, SectionHeading, StatusDot } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
-import { getDataHealth } from '../lib/api'
 import { countOf } from '../lib/format'
 import type { HealthReport } from '../lib/schema'
+import { settingsHash } from '../lib/settings-dialog'
 import { settingsHashForPath } from '../lib/settings-search'
+import { dataHealthQuery } from '../route-data'
 
 const labels = {
   critical: 'Critical',
@@ -19,25 +19,35 @@ const labels = {
   info: 'Information',
 } as const
 
+const actionClass = 'button-base button-secondary button-compact'
+
+/** The issue's fix; Return on its row presses it (`data-keyboard-open`). */
 function IssueLink({ issue }: { issue: HealthReport['issues'][number] }) {
   const route = issue.action.route
   if (route.startsWith('/settings'))
+    // Settings opens over this page through the URL hash, as `SettingsLink` does.
     return (
-      <SettingsLink
-        className="button-base button-secondary button-compact"
-        target={settingsHashForPath(route)}
+      <Link
+        className={actionClass}
+        to="."
+        search
+        hash={settingsHash(settingsHashForPath(route))}
+        replace
+        data-command="settings.open"
+        data-keyboard-open
       >
         {issue.action.label}
-      </SettingsLink>
+      </Link>
     )
   if (route.startsWith('/activities')) {
     // The route carries the filter Rust chose, such as `?evidence=conflict`.
     const query = new URLSearchParams(route.split('?')[1] ?? '')
     return (
       <Link
-        className="button-base button-secondary button-compact"
+        className={actionClass}
         to="/activities"
         search={Object.fromEntries(query)}
+        data-keyboard-open
       >
         {issue.action.label}
       </Link>
@@ -45,12 +55,12 @@ function IssueLink({ issue }: { issue: HealthReport['issues'][number] }) {
   }
   if (route === '/accounts' || route === '/holdings' || route === '/logs')
     return (
-      <Link className="button-base button-secondary button-compact" to={route}>
+      <Link className={actionClass} to={route} data-keyboard-open>
         {issue.action.label}
       </Link>
     )
   return (
-    <Link className="button-base button-secondary button-compact" to="/">
+    <Link className={actionClass} to="/" data-keyboard-open>
       {issue.action.label}
     </Link>
   )
@@ -58,11 +68,7 @@ function IssueLink({ issue }: { issue: HealthReport['issues'][number] }) {
 
 export function HealthPage() {
   const finance = useFinance()
-  const health = useQuery({
-    queryKey: ['data-health', finance.data?.revision],
-    queryFn: getDataHealth,
-    enabled: Boolean(finance.data),
-  })
+  const health = useQuery({ ...dataHealthQuery(finance.data), enabled: Boolean(finance.data) })
   if (finance.isLoading || health.isPending) return <PageLoading />
   if (finance.isError || health.isError || !health.data) return <PageError />
 
@@ -120,9 +126,20 @@ export function HealthPage() {
               title={labels[severity]}
               action={<span className="health-section-count">{issues.length}</span>}
             />
-            <div className="health-issue-list">
+            <div
+              className="health-issue-list"
+              role="group"
+              aria-label={labels[severity]}
+              tabIndex={0}
+              data-keyboard-region
+            >
               {issues.map((issue) => (
-                <article className={`health-issue health-issue-${severity}`} key={issue.id}>
+                <article
+                  className={`health-issue health-issue-${severity}`}
+                  key={issue.id}
+                  data-keyboard-row
+                  tabIndex={-1}
+                >
                   <span className="health-issue-mark" aria-hidden="true">
                     <Icon size={14} />
                   </span>

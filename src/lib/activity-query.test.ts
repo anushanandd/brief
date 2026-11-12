@@ -11,7 +11,7 @@ import {
 
 const vocabulary = {
   accounts: [
-    { id: 'amex', label: 'Platinum Card' },
+    { id: 'everyday', label: 'Everyday Card' },
     { id: 'chase', label: 'Chase Checking' },
     { id: 'savings', label: 'Chase Savings' },
   ],
@@ -23,9 +23,9 @@ const today = '2026-09-16'
 describe('parseActivityQuery', () => {
   it('reads filters the way they are said and keeps the rest as text', () => {
     expect(
-      parseActivityQuery('dining over $50 last month on platinum blue bottle', vocabulary, today),
+      parseActivityQuery('dining over $50 last month on everyday blue bottle', vocabulary, today),
     ).toEqual({
-      accounts: ['amex'],
+      accounts: ['everyday'],
       categories: ['Dining'],
       methods: [],
       from: '2026-08-01',
@@ -87,6 +87,7 @@ describe('activityQuerySuggestions', () => {
 
   it('replaces only the fragment it completes', () => {
     const [dining] = activityQuerySuggestions('coffee din', vocabulary)
+    if (!dining) throw new Error('Expected a Dining suggestion')
     expect(completeActivityQuery('coffee din', dining)).toBe('coffee Dining ')
     const lastMonth = activityQuerySuggestions('coffee last m', vocabulary).find(
       ({ label }) => label === 'Last month',

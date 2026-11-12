@@ -11,9 +11,9 @@ const year = {
   left: { low: 0, high: 0 },
 }
 
-const resy: BenefitHistory = {
-  id: 'resy',
-  name: 'Resy',
+const dining: BenefitHistory = {
+  id: 'dining',
+  name: 'Dining',
   recurring: false,
   external: false,
   retired: false,
@@ -22,8 +22,11 @@ const resy: BenefitHistory = {
 }
 
 it("reads a benefit's year as Rust summed it, nothing for a year without periods", () => {
-  expect(benefitYearTotals(resy, 2026)).toBe(year)
-  expect(benefitYearTotals(resy, 2025)).toMatchObject({ captured: 0, missed: { low: 0, high: 0 } })
+  expect(benefitYearTotals(dining, 2026)).toBe(year)
+  expect(benefitYearTotals(dining, 2025)).toMatchObject({
+    captured: 0,
+    missed: { low: 0, high: 0 },
+  })
   expect(benefitYearTotals(undefined, 2026).planned).toBe(0)
 })
 

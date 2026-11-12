@@ -42,11 +42,13 @@ export function TripsCalendar({
     >
       {months.map((month, index) => {
         const weekday = new Date(Date.UTC(year, index, 1)).getUTCDay()
+        const length = lengths[index]
+        if (length == null) return null
         return (
           <div key={month} className="trips-calendar-month">
             <span className="trips-calendar-label">{month}</span>
             <div className="trips-calendar-days">
-              {Array.from({ length: lengths[index] }, (_, day) => {
+              {Array.from({ length }, (_, day) => {
                 const iso = `${year}-${pad(index + 1)}-${pad(day + 1)}`
                 const column = (weekday + day) % 7
                 const trip = away.get(iso)
@@ -65,9 +67,7 @@ export function TripsCalendar({
                   )
                 const ends = [
                   iso === trip.start || column === 0 || day === 0 ? ' is-run-start' : '',
-                  iso === trip.end || column === 6 || day === lengths[index] - 1
-                    ? ' is-run-end'
-                    : '',
+                  iso === trip.end || column === 6 || day === length - 1 ? ' is-run-end' : '',
                   hovered === trip.id ? ' is-picked' : '',
                 ].join('')
                 return (

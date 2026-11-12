@@ -2,10 +2,25 @@
 import type { FlowItem } from "./FlowItem";
 
 /**
- * Where the window's money came from and went: sources by payer, purchases by category, fees,
- * taxes, and what was left over or had to be found.
+ * Where the window's money came from and went, and the surplus or shortfall. Each side lists
+ * its largest groups and folds the rest into one "Other", named in its `parts`, so the chart
+ * stays short.
  */
-export type CashFlow = { sources: Array<FlowItem>, purchases: Array<FlowItem>, fees: number, taxes: number, inflow: number, outflow: number, 
+export type CashFlow = { 
+/**
+ * Income by the Income report's groups (payroll, payment apps, interest, a payer), and
+ * refunds that came to more than what they repaid in the window.
+ */
+sources: Array<FlowItem>, 
+/**
+ * Spending by category, net of the refunds and reimbursements that repaid it, as Spending
+ * counts it.
+ */
+purchases: Array<FlowItem>, 
+/**
+ * Fees and taxes together, net of their refunds; none when they came to nothing.
+ */
+charges?: FlowItem, inflow: number, outflow: number, 
 /**
  * More went out than came in.
  */

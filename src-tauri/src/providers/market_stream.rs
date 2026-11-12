@@ -92,6 +92,15 @@ fn stream_price(item: &Value, feed: &str) -> Option<f64> {
     }
 }
 
+/// The guarded market state even after a panic poisoned its lock. It holds quotes, bars,
+/// and which feeds run, each replaced as the stream moves on, so a panic elsewhere never
+/// leaves the stream unable to stop, restart, or publish.
+pub(super) fn recover<T>(mutex: &std::sync::Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    mutex
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 pub struct Feed {
     pub state: Arc<Mutex<FeedState>>,
     pub events: broadcast::Sender<Vec<Value>>,
@@ -99,7 +108,7 @@ pub struct Feed {
 }
 impl MarketStreams {
     pub fn start(&self, symbols: Vec<String>) {
-        let mut registry = self.inner.lock().unwrap();
+        let mut registry = recover(&self.inner);
         for feed in registry.feeds.values() {
             let _ = feed.cancel.send(true);
         }
@@ -109,7 +118,7 @@ impl MarketStreams {
         self.epoch.fetch_add(1, Ordering::SeqCst);
     }
     pub fn stop(&self) {
-        let mut registry = self.inner.lock().unwrap();
+        let mut registry = recover(&self.inner);
         registry.enabled = false;
         for feed in registry.feeds.values() {
             let _ = feed.cancel.send(true);
@@ -117,7 +126,7 @@ impl MarketStreams {
         registry.feeds.clear();
     }
     pub fn symbols(&self) -> Vec<String> {
-        self.inner.lock().unwrap().symbols.clone()
+        recover(&self.inner).symbols.clone()
     }
     pub(super) fn acquire(
         &self,
@@ -129,7 +138,7 @@ impl MarketStreams {
             return Err("Market data is paused".into());
         }
         if let Some(existing) = registry.feeds.get(feed) {
-            if !existing.state.lock().unwrap().finished {
+            if !recover(&existing.state).finished {
                 return Ok(existing.clone());
             }
         }
@@ -180,7 +189,7 @@ impl MarketStreams {
                 result = work => result,
             };
             epoch.fetch_add(1, Ordering::SeqCst);
-            let mut current = state.lock().unwrap();
+            let mut current = recover(&state);
             current.finished = true;
             current.subscribed.clear();
             current.quotes.clear();
@@ -291,7 +300,7 @@ where
                                 .map(str::to_owned)
                                 .collect();
                             subscribed = !accepted.is_empty();
-                            state.lock().unwrap().subscribed = accepted;
+                            recover(state).subscribed = accepted;
                             durable.push(item);
                         }
                         Some("q" | "t") => {
@@ -306,7 +315,7 @@ where
                             {
                                 continue;
                             }
-                            if state.lock().unwrap().observe(symbol, &item, time) {
+                            if recover(state).observe(symbol, &item, time) {
                                 pending.insert(symbol.into(), item);
                             }
                         }
@@ -314,12 +323,12 @@ where
                             let symbol = item["S"].as_str().unwrap_or_default();
                             epoch.fetch_add(1, Ordering::SeqCst);
                             pending.remove(symbol);
-                            state.lock().unwrap().forget(symbol);
+                            recover(state).forget(symbol);
                             durable.push(item);
                         }
                         Some("b" | "u") if listed(&item, &requested).is_some() => {
                             if let (Some(symbol), Some(time)) = (item["S"].as_str(), stamp(&item)) {
-                                if state.lock().unwrap().record_bar(symbol, &item, time) {
+                                if recover(state).record_bar(symbol, &item, time) {
                                     epoch.fetch_add(1, Ordering::SeqCst);
                                 }
                             }

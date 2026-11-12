@@ -2,13 +2,38 @@ import { Liveline } from 'liveline'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { ChartRangeSelector, formatLiveTime, PerformanceChart, SpendingBarChart } from './charts'
+import {
+  cashSteps,
+  ChartRangeSelector,
+  formatLiveTime,
+  PerformanceChart,
+  SpendingBarChart,
+} from './charts'
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ['Date'] })
   vi.setSystemTime(new Date('2026-09-03T12:00:00Z'))
 })
 afterEach(() => vi.useRealTimers())
+
+const noon = (date: string) => Date.parse(`${date}T12:00:00Z`) / 1_000
+
+it('draws cash days as steps that hold each balance until the next change', () => {
+  expect(
+    cashSteps(
+      [
+        { date: '2026-09-03', value: 1_000 },
+        { date: '2026-09-10', value: 400 },
+      ],
+      '2026-12-02',
+    ),
+  ).toEqual([
+    { time: noon('2026-09-03'), value: 1_000 },
+    { time: noon('2026-09-10') - 1, value: 1_000 },
+    { time: noon('2026-09-10'), value: 400 },
+    { time: noon('2026-12-02') - 1, value: 400 },
+  ])
+})
 
 it('renders accessible category-stacked spending bars with five axis labels', () => {
   const html = renderToStaticMarkup(

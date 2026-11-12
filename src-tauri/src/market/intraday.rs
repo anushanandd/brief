@@ -312,7 +312,7 @@ pub(super) fn intraday_series(
         let Some(holdings) = market_day(time).and_then(|day| held.on(day)) else {
             continue;
         };
-        let projection = super::project(holdings, settings, &quotes, true)?;
+        let projection = super::project(holdings, settings, &quotes, true, today)?;
         for (id, point) in super::market_chart_values(&projection, settings, time) {
             if let Some(value) = point["value"].as_f64().filter(|value| value.is_finite()) {
                 raw.entry(id).or_default().push((time, value));

@@ -40,6 +40,9 @@ mod macos {
 
     use super::Access;
 
+    // The Swift bridge (native/ContactsBridge.swift). Each `*mut c_char` it returns is null or a
+    // NUL-terminated string from `strdup`, owned by the caller until `brief_contacts_free`;
+    // each `*const c_char` it takes is only read during the call.
     unsafe extern "C" {
         fn brief_contacts_status() -> i32;
         fn brief_contacts_request(
@@ -52,6 +55,8 @@ mod macos {
     }
 
     pub fn access() -> Access {
+        // SAFETY: takes nothing and returns an integer; reading the authorization status has no
+        // preconditions.
         match unsafe { brief_contacts_status() } {
             0 => Access::NotAsked,
             1 => Access::Restricted,
@@ -61,6 +66,8 @@ mod macos {
     }
 
     extern "C" fn granted(context: *mut c_void, granted: i32, _error: *const c_char) {
+        // SAFETY: `context` is the `Box<Sender<bool>>` that `request` leaked, handed back
+        // unchanged; Contacts calls the completion once, so the box is reclaimed exactly once.
         let sender = unsafe { Box::from_raw(context.cast::<oneshot::Sender<bool>>()) };
         let _ = sender.send(granted == 1);
     }
@@ -68,6 +75,8 @@ mod macos {
     pub async fn request() -> Result<Access, String> {
         let (sender, receiver) = oneshot::channel::<bool>();
         let context = Box::into_raw(Box::new(sender)).cast::<c_void>();
+        // SAFETY: the bridge only carries `context` back to `granted`, which takes ownership;
+        // `granted` matches the callback signature the bridge declares.
         unsafe { brief_contacts_request(context, granted) };
         receiver
             .await
@@ -81,13 +90,18 @@ mod macos {
         function: unsafe extern "C" fn(*const c_char) -> *mut c_char,
     ) -> Option<String> {
         let input = CString::new(input).ok()?;
+        // SAFETY: `function` is one of the bridge's JSON functions, which only read the
+        // NUL-terminated `input` during the call; `input` outlives it.
         let output = unsafe { function(input.as_ptr()) };
         if output.is_null() {
             return None;
         }
+        // SAFETY: a non-null result is a NUL-terminated `strdup` string the bridge handed over,
+        // read before it is freed.
         let text = unsafe { CStr::from_ptr(output) }
             .to_string_lossy()
             .into_owned();
+        // SAFETY: freed once, by the bridge's own `free`, and never read again.
         unsafe { brief_contacts_free(output) };
         Some(text)
     }

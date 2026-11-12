@@ -26,6 +26,8 @@ export function ActivityDateSlider({
   const [values, setValues] = useState<number[]>([start, end])
 
   useEffect(() => setValues([start, end]), [start, end])
+  // The slider has two thumbs; a side without one is open to the edge of the history.
+  const range = (thumbs: readonly number[]) => [thumbs[0] ?? min, thumbs[1] ?? max] as const
 
   if (min === max)
     return <span className="ledger-date-single">Only {formatDay(minDate)} available</span>
@@ -40,15 +42,21 @@ export function ActivityDateSlider({
       step={1}
       thumbAlignment="edge"
       thumbCollisionBehavior="none"
-      onValueCommitted={(next) => onChange(dayKey(next[0] * dayMs), dayKey(next[1] * dayMs))}
+      onValueCommitted={(next) => {
+        const [low, high] = range(next)
+        onChange(dayKey(low * dayMs), dayKey(high * dayMs))
+      }}
     >
       <Slider.Value className="ledger-date-slider-values">
-        {(_, current) => (
-          <>
-            <span>{formatDay(dayKey(current[0] * dayMs))}</span>
-            <span>{formatDay(dayKey(current[1] * dayMs))}</span>
-          </>
-        )}
+        {(_, current) => {
+          const [low, high] = range(current)
+          return (
+            <>
+              <span>{formatDay(dayKey(low * dayMs))}</span>
+              <span>{formatDay(dayKey(high * dayMs))}</span>
+            </>
+          )
+        }}
       </Slider.Value>
       <Slider.Control className="ledger-date-slider-control">
         <Slider.Track className="ledger-date-slider-track">

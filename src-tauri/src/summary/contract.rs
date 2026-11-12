@@ -40,6 +40,10 @@ pub struct InvestmentSummary {
     /// Whether the latest session was quiet for the portfolio and which holdings were.
     pub quiet: Option<Quiet>,
     pub fundamentals: Option<Fundamentals>,
+    /// Earnings reports in the period (on a holding's page, its latest), newest first.
+    pub earnings: Vec<EarningsDigest>,
+    /// What analysts and the options market expect of each stock.
+    pub expectations: Vec<Expectation>,
     /// A holding's open-market insider trades in the period, newest first.
     pub insiders: Vec<InsiderTrade>,
     /// The latest session's move: the portfolio's, with the holdings that moved it, or the
@@ -52,6 +56,59 @@ pub struct InvestmentSummary {
     pub brief: Option<Brief>,
     /// Parts that could not be loaded or were left out, each with the symbols affected.
     pub unavailable: Vec<Unavailable>,
+    /// A summary saved earlier, made from inputs that have since changed: shown whole, as it
+    /// was at `generated_at`, while Brief makes the new one in the background and says when
+    /// it is ready (`investment-summary-updated`). Never shown as current.
+    pub refreshing: bool,
+}
+
+/// A holding's earnings report: what it reported against what analysts expected, what its
+/// release said in its own sentences, and how the stock's own move answered.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct EarningsDigest {
+    pub ticker: String,
+    /// The day it reported: the 8-K's, else Alpha Vantage's.
+    pub reported_on: NaiveDate,
+    pub fiscal_date_ending: Option<String>,
+    /// `pre-market` or `post-market`, when known.
+    pub report_time: Option<String>,
+    pub eps: Option<f64>,
+    /// Analysts' consensus, from Alpha Vantage.
+    pub eps_estimate: Option<f64>,
+    pub surprise_pct: Option<f64>,
+    /// The release's sentence about revenue, quoted.
+    pub revenue: Option<String>,
+    /// The release's sentences giving guidance, quoted; empty when it gave none or wasn't read.
+    pub guidance: Vec<String>,
+    /// Who chose the guidance sentences: `apple`, `local:<model>`, or `rule`.
+    pub guidance_by: Option<String>,
+    /// Whether the release has been read, so no guidance is told apart from not read yet.
+    pub release_read: bool,
+    pub release_url: Option<String>,
+    pub filing_url: Option<String>,
+    /// The stock's move net of its market and sector over the two sessions after the report,
+    /// in percent, beside its typical two-session move.
+    pub reaction_pct: Option<f64>,
+    pub reaction_typical_pct: Option<f64>,
+    /// The move the options market priced in before the report, in percent either way.
+    pub expected_move_pct: Option<f64>,
+    /// What management said about the outlook on the call, quoted, when a local model read it.
+    pub call_guidance: Vec<String>,
+    pub call_guidance_by: Option<String>,
+    /// The report in a line, in Rust's words.
+    pub line: Vec<brief::Span>,
+}
+
+/// What others expect of a holding, labeled as theirs: analysts' estimates and how they've
+/// moved, and the move the options market prices in around its next report.
+#[derive(Clone, Debug, PartialEq, Serialize, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct Expectation {
+    pub ticker: String,
+    pub estimates: Vec<crate::providers::expectations::EstimateTrend>,
+    pub next_report: Option<String>,
+    pub expected_move_pct: Option<f64>,
 }
 
 /// A part of the summary that could not be loaded or was left out, never silently.
@@ -207,6 +264,8 @@ impl InvestmentSummary {
             activity: Activity::default(),
             events: Vec::new(),
             fundamentals: None,
+            earnings: Vec::new(),
+            expectations: Vec::new(),
             insiders: Vec::new(),
             today: None,
             coverage: Vec::new(),
@@ -215,6 +274,7 @@ impl InvestmentSummary {
             ahead: Vec::new(),
             quiet: None,
             unavailable: Vec::new(),
+            refreshing: false,
         }
     }
 

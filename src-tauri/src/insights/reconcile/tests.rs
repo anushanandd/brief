@@ -350,3 +350,9 @@ fn exposure_counts_effective_holdings_and_the_top_five() {
     assert_eq!(exposure.effective_holdings, 5.0);
     assert_eq!(exposure.top_five_pct, 66.7);
 }
+
+#[test]
+fn risk_over_no_days_is_unknown_rather_than_a_panic() {
+    let risk = risk(&[]);
+    assert_eq!((risk.volatility_pct, risk.beta.is_none()), (None, true));
+}

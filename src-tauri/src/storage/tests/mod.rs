@@ -473,14 +473,14 @@ fn settings_and_annotations_persist_apply_at_read_time_and_are_erased() {
         .save_settings(
             FinanceSettings {
                 spending_account_id: Some("plaid:legacy".into()),
-                hidden_benefit_ids: vec!["resy".into()],
+                hidden_benefit_ids: vec!["dining".into()],
                 ..Default::default()
             },
             true,
         )
         .unwrap();
     assert_eq!(imported["settings"]["spendingAccountId"], "plaid:card");
-    assert_eq!(imported["settings"]["hiddenBenefitIds"][0], "resy");
+    assert_eq!(imported["settings"]["hiddenBenefitIds"][0], "dining");
 
     let view = |snapshot: &Value| {
         snapshot["transactions"]
@@ -824,6 +824,105 @@ fn a_repeated_read_reuses_the_derived_view_and_every_edit_is_visible_at_once() {
     fs::remove_dir_all(directory).unwrap();
 }
 
+/// Embeds bakeries alike and everything else apart, counting each call.
+struct CountingNames(std::sync::atomic::AtomicUsize);
+
+impl crate::search::embeddings::Embedder for CountingNames {
+    fn embed(&self, texts: &[String]) -> Option<Vec<Vec<f32>>> {
+        self.0.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Some(
+            texts
+                .iter()
+                .map(|text| {
+                    if text.contains("Bakery") || text.contains("Patisserie") {
+                        vec![1.0, 0.1]
+                    } else {
+                        vec![0.0, 1.0]
+                    }
+                })
+                .collect(),
+        )
+    }
+}
+
+#[test]
+fn deriving_the_view_never_calls_the_embedder_and_a_background_job_fills_the_cache() {
+    let directory = directory();
+    let mut storage = Storage::new(directory.clone()).unwrap();
+    storage.data.snapshot = serde_json::from_str(include_str!(
+        "../../../../src/data/fixtures/native-finance.json"
+    ))
+    .unwrap();
+    let coffee = storage
+        .data
+        .snapshot
+        .transactions
+        .iter()
+        .find(|t| t.id == "coffee")
+        .unwrap()
+        .clone();
+    let purchase = |id: &str, merchant: &str, date: &str| {
+        let mut t = coffee.clone();
+        t.id = id.into();
+        t.merchant = merchant.into();
+        t.merchant_entity_id = None;
+        t.category = "Shopping".into();
+        t.date = date.into();
+        t
+    };
+    storage.data.snapshot.transactions.extend([
+        purchase("bakery-1", "Example Bakery", "2026-07-01"),
+        purchase("bakery-2", "Example Bakery", "2026-08-01"),
+        purchase("patisserie", "Example Patisserie", "2026-09-01"),
+    ]);
+    storage.data.annotations = ["bakery-1", "bakery-2"]
+        .into_iter()
+        .map(|id| {
+            (
+                id.to_owned(),
+                Annotation {
+                    category: Some("Dining".into()),
+                    ..Default::default()
+                },
+            )
+        })
+        .collect();
+    storage
+        .database
+        .checkpoint(&storage.data, change::Reason::Start)
+        .unwrap();
+    let embedder = std::sync::Arc::new(CountingNames(Default::default()));
+    storage.merchant_embeddings = crate::search::embeddings::Warmer::new(
+        directory.join("embeddings.sqlite3"),
+        embedder.clone(),
+    );
+    let category = |snapshot: &Value| {
+        snapshot["transactions"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|t| t["id"] == "patisserie")
+            .map(|t| (t["category"].clone(), t["categorySource"].clone()))
+            .unwrap()
+    };
+
+    // The first view reads an empty cache and leaves the unknown merchant as the provider's.
+    let first = storage.snapshot().unwrap();
+    assert_eq!(embedder.0.load(std::sync::atomic::Ordering::SeqCst), 0);
+    assert_eq!(category(&first), ("Shopping".into(), "provider".into()));
+
+    // The background job embeds the names the view missed, and the next view uses them.
+    storage.merchant_embeddings.warm();
+    assert_eq!(embedder.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    let second = storage.snapshot().unwrap();
+    assert_eq!(category(&second), ("Dining".into(), "suggested".into()));
+    // Reading again never embeds again.
+    storage.snapshot().unwrap();
+    storage.merchant_embeddings.warm();
+    assert_eq!(embedder.0.load(std::sync::atomic::Ordering::SeqCst), 1);
+    fs::remove_dir_all(directory).unwrap();
+}
+
 #[test]
 fn portable_backup_round_trips_edits_and_invalid_restore_preserves_state() {
     use crate::settings::FinanceSettings;
@@ -879,8 +978,64 @@ fn portable_backup_round_trips_edits_and_invalid_restore_preserves_state() {
     fs::remove_dir_all(root).unwrap();
 }
 
+#[test]
+fn a_note_on_a_purchase_leaves_investment_summaries_current() {
+    let cards = crate::insights::benefits::Catalog::default();
+    let row = |id: &str, merchant: &str, category: &str, amount: f64| {
+        let mut transaction: crate::finance_contract::Transaction =
+            serde_json::from_value(serde_json::json!({
+                "id": id, "merchant": merchant, "category": category, "amount": amount,
+                "account": "Brokerage", "accountId": "plaid:brokerage",
+                "date": "2026-09-01", "pending": false,
+            }))
+            .unwrap();
+        transaction.classification =
+            Some(crate::transaction_policy::classify(&transaction, &cards));
+        transaction
+    };
+    let mut snapshot = empty_state().unwrap().snapshot;
+    snapshot.transactions = vec![
+        row("lunch", "Example Cafe", "Food and Drink", -12.0),
+        row("dividend", "Example Fund dividend", "Income", 40.0),
+    ];
+    let stamp = finances_stamp(&snapshot).unwrap();
+    snapshot.transactions[0].note = Some("with a friend".into());
+    assert_eq!(finances_stamp(&snapshot).unwrap(), stamp);
+    snapshot.transactions[1].amount = 41.0;
+    assert_ne!(finances_stamp(&snapshot).unwrap(), stamp);
+}
+
+#[test]
+fn answering_a_suggestion_past_the_review_cap_still_saves() {
+    let directory = directory();
+    let mut storage = Storage::new(directory.clone()).unwrap();
+    let mut settings = storage.data.settings.clone();
+    settings.category_reviews = (0..=2_000)
+        .map(|index| {
+            (
+                format!("gone-{index:04}"),
+                crate::settings::CategoryReview {
+                    category: "Dining".into(),
+                    accepted: index % 2 == 0,
+                },
+            )
+        })
+        .collect();
+    storage.save_settings(settings, false).unwrap();
+    assert_eq!(storage.data.settings.category_reviews.len(), 2_000);
+    // The oldest goes: with no saved transaction to date them, the first by id.
+    assert!(!storage
+        .data
+        .settings
+        .category_reviews
+        .contains_key("gone-0000"));
+    drop(storage);
+    fs::remove_dir_all(directory).unwrap();
+}
+
 mod annotations;
 mod documents;
+mod generations;
 mod replay;
 mod sessions;
 mod statements;

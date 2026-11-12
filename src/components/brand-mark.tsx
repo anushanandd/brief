@@ -8,12 +8,14 @@ export function BrandMark({
   label,
   src,
   style,
+  onError,
 }: {
   className: string
   fallback: ReactNode
   label: string
   src?: string
   style?: CSSProperties
+  onError?: () => void
 }) {
   const [failed, setFailed] = useState(false)
   // A logo drawn on a white margin is zoomed so its artwork fills the circle.
@@ -29,7 +31,10 @@ export function BrandMark({
           alt=""
           aria-hidden="true"
           loading="lazy"
-          onError={() => setFailed(true)}
+          onError={() => {
+            setFailed(true)
+            onError?.()
+          }}
           style={
             crop
               ? { transform: `translate(${crop.x}%, ${crop.y}%) scale(${crop.scale})` }

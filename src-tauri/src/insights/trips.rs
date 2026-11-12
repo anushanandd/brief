@@ -768,20 +768,12 @@ mod tests {
     fn finds_a_trip_abroad_from_descriptors_when_the_provider_sends_no_location() {
         let mut transactions = home_life();
         transactions.extend([
-            charged("berlin", "2026-09-26", "AplPay EXAMPLE CAFE BERLIN DE"),
-            charged("munich", "2026-09-28", "AplPay SUMUP*EXAMPLE MUENCHEN DE"),
-            // A subscription billed from home in the middle of the trip doesn't end it.
-            charged(
-                "software",
-                "2026-09-29",
-                "EXAMPLE SOFTWARE SUBPORTLAND OR",
-            ),
-            charged("zurich", "2026-10-01", "AplPay EXAMPLE KIOSK ZÜRICH CH"),
-            charged(
-                "grindelwald",
-                "2026-10-02",
-                "AplPay EXAMPLE RAILWAY GRINDELWALD CH",
-            ),
+            charged("lisbon", "2026-09-26", "AplPay EXAMPLE CAFE LISBOA PT"),
+            charged("porto", "2026-09-28", "AplPay SUMUP*EXAMPLE PORTO PT"),
+            // A subscription billed from back in the US in the middle of the trip doesn't end it.
+            charged("software", "2026-09-29", "EXAMPLE SOFTWARE SUBLAS VEGAS NV"),
+            charged("madrid", "2026-10-01", "AplPay EXAMPLE KIOSK MADRID ES"),
+            charged("sevilla", "2026-10-02", "AplPay EXAMPLE RAILWAY SEVILLA ES"),
             purchase(
                 "back",
                 "2026-10-06",
@@ -800,7 +792,7 @@ mod tests {
         assert!(trip.abroad && trip.flew);
         assert_eq!(
             trip.transaction_ids,
-            ["berlin", "grindelwald", "munich", "zurich"]
+            ["lisbon", "madrid", "porto", "sevilla"]
         );
         // Each city is a stop, in the order first visited when the purchases tie.
         let stops = trip
@@ -811,10 +803,10 @@ mod tests {
         assert_eq!(
             stops,
             [
-                (Some("Berlin"), "DE"),
-                (Some("Munich"), "DE"),
-                (Some("Zürich"), "CH"),
-                (Some("Grindelwald"), "CH")
+                (Some("Lisbon"), "PT"),
+                (Some("Porto"), "PT"),
+                (Some("Madrid"), "ES"),
+                (Some("Sevilla"), "ES")
             ]
         );
     }
@@ -841,18 +833,24 @@ mod tests {
                 )
             })
             .collect::<Vec<_>>();
-        let sf = json!({ "city": "Portland", "region": "CA", "country": "US", "lat": 37.77, "lon": -122.42 });
+        let vegas = json!({ "city": "Las Vegas", "region": "NV", "country": "US", "lat": 36.17, "lon": -115.14 });
         transactions.push(purchase(
-            "sf-1",
+            "vegas-1",
             "2026-09-18",
             -80.0,
             "Dining",
-            Some(sf.clone()),
+            Some(vegas.clone()),
         ));
-        transactions.push(purchase("sf-2", "2026-09-19", -60.0, "Dining", Some(sf)));
+        transactions.push(purchase(
+            "vegas-2",
+            "2026-09-19",
+            -60.0,
+            "Dining",
+            Some(vegas),
+        ));
         let result = trips(&transactions, day("2026-09-20"));
         assert_eq!(result.trips.len(), 1);
-        assert_eq!(result.trips[0].destination, "Portland, OR");
+        assert_eq!(result.trips[0].destination, "Las Vegas, NV");
         assert!(result.trips[0].ongoing);
         // Under 800 km from home with no airline charge: likely driven.
         assert!(!result.trips[0].flew);
@@ -871,7 +869,6 @@ mod tests {
 
     #[test]
     fn after_a_move_both_homes_are_home() {
-        // Six months in Austin, then six in Seattle, with a weekend in Chicago.
         let mut transactions = Vec::new();
         for month in 1..=12 {
             for day in [3, 9, 15, 21, 27] {
@@ -893,7 +890,7 @@ mod tests {
             transactions.push(purchase(id, date, -40.0, "Dining", at("Chicago", "IL")));
         }
         let result = trips(&transactions, day("2026-12-31"));
-        assert_eq!(result.home, ["CA, US", "CO, US"]);
+        assert_eq!(result.home, ["TX, US", "WA, US"]);
         assert_eq!(
             result
                 .trips

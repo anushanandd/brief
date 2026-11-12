@@ -14,7 +14,7 @@ use crate::finance_contract::Transaction;
 static AUTOPAY: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)\bautopay payment(?: received)?\s*-?\s*thank you\b").expect("valid pattern")
 });
-/// Amex autopay posts about fifteen days after the statement closes.
+/// Card autopay usually posts about fifteen days after the statement closes.
 const CLOSE_LEAD_DAYS: i64 = 15;
 
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]

@@ -3,4 +3,4 @@
 /**
  * What became of a qualifying purchase's credit, as of the snapshot day.
  */
-export type PurchaseCredit = { "state": "credited", amount: number, } | { "state": "expected", amount: number, by: string, } | { "state": "late", amount: number, by: string, } | { "state": "not-credited" } | { "state": "over-allowance" };
+export type PurchaseCredit = { "state": "credited", amount: number, } | { "state": "expected", amount: number, by: string, } | { "state": "late", amount: number, by: string, } | { "state": "not-credited" } | { "state": "unlikely" } | { "state": "over-allowance" };

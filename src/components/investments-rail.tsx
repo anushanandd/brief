@@ -28,8 +28,9 @@ export function InvestmentsRail({
   value: number | null
 }) {
   const span = periodStatement(data, range)
-  const { summary } = useInvestmentSummary(data, range)
-  const contributions = summary.data?.report?.attribution?.contributions ?? []
+  // Each holding's dollars come only from a current summary, never one being brought up to date.
+  const { current } = useInvestmentSummary(data, range)
+  const contributions = current?.report?.attribution?.contributions ?? []
   const securities = data.insights?.securities ?? []
   // Holdings without insights (no USD value) still get a card, after the valued ones.
   const tickers = [
@@ -69,7 +70,8 @@ export function InvestmentsRail({
             mark: <SecurityMark ticker={ticker} name={security?.name} />,
             link: { to: '/holdings/$ticker' as const, params: { ticker } },
             current: selected === ticker,
-            value: security?.value ?? holdingDetail(data, ticker).value ?? null,
+            // The whole position across accounts, at the values shown.
+            value: holdingDetail(data, ticker).value,
             change: contributions.find((item) => item.key === ticker)?.dollars ?? null,
           }
         }),

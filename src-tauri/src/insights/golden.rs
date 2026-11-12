@@ -1,26 +1,40 @@
 //! Replays calls recorded from the renderer implementation these modules replaced, so the
 //! native port is held to the same results on every recorded scenario. The fixture is
-//! synthetic test data and is never regenerated from real financial data.
+//! synthetic test data and is never regenerated, only edited by hand where a rule changes on
+//! purpose.
+//!
+//! The records that exercise a real card's benefit rules are kept with those rules, outside
+//! the repository (`notes/`), since the rules are the user's own data; they run when present.
 use chrono::NaiveDate;
 use serde_json::{json, Value};
 
-use super::benefits::{credit_summary, PLATINUM};
+use super::benefits::{credit_summary, CardRules, Catalog};
 use super::calendar::{self, NamedZone, Zone};
 use super::{forecast, statement, AccountView};
 use crate::finance_contract::Transaction;
 
-fn transaction(value: &Value) -> Transaction {
+/// A recorded transaction, with the benefit credit the transaction policy would assign it.
+fn transaction(value: &Value, cards: &Catalog) -> Transaction {
     let mut value = value.clone();
     for (field, fallback) in [("account", json!("")), ("pending", json!(false))] {
         if value.get(field).is_none() {
             value[field] = fallback;
         }
     }
-    serde_json::from_value(value).expect("recorded transaction")
+    let mut transaction: Transaction = serde_json::from_value(value).expect("recorded transaction");
+    transaction.benefit_credit = (transaction.amount > 0.0)
+        .then(|| cards.credit_identity(&transaction))
+        .flatten();
+    transaction
 }
 
-fn transactions(value: &Value) -> Vec<Transaction> {
-    value.as_array().unwrap().iter().map(transaction).collect()
+fn transactions(value: &Value, cards: &Catalog) -> Vec<Transaction> {
+    value
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|item| transaction(item, cards))
+        .collect()
 }
 
 fn date(value: &Value) -> NaiveDate {
@@ -48,10 +62,15 @@ fn reference_today(record: &Value) -> NaiveDate {
         .unwrap_or_else(|| date(&json!(data["updatedAt"].as_str().unwrap()[..10])))
 }
 
-fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
+fn check(record: &Value, zone: &dyn Zone, cards: &Catalog) -> Result<(), String> {
     let args = &record["args"];
     let expected = &record["result"];
     let mismatch = |actual: Value| Err(format!("expected {expected}\n  actual {actual}"));
+    let card = || {
+        cards
+            .only()
+            .ok_or_else(|| "a card record needs exactly one card's rules".to_owned())
+    };
     match record["name"].as_str().unwrap() {
         "transactionDateKey" => {
             let actual = calendar::transaction_date(args[0].as_str().unwrap())
@@ -62,24 +81,24 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
             }
         }
         "recurringMoneyKey" => {
-            let actual = forecast::recurring_key(&transaction(&args[0]));
+            let actual = forecast::recurring_key(&transaction(&args[0], cards));
             if expected != &json!(actual) {
                 return mismatch(json!(actual));
             }
         }
-        "platinumBenefitCreditIdentity" => {
-            let actual = PLATINUM
-                .credit_identity(&transaction(&args[0]))
+        "cardBenefitCreditIdentity" => {
+            let actual = card()?
+                .credit_identity(&transaction(&args[0], cards))
                 .map(|(id, name)| json!({ "id": id, "name": name }))
                 .unwrap_or(Value::Null);
             if expected != &actual {
                 return mismatch(actual);
             }
         }
-        "getPlatinumBenefitActivity" => {
-            let items = transactions(&args[0]);
+        "getCardBenefitActivity" => {
+            let items = transactions(&args[0], cards);
             let refs = items.iter().collect::<Vec<_>>();
-            let actual = PLATINUM.activity(&refs, args[1].as_str().unwrap());
+            let actual = card()?.activity(&refs, args[1].as_str().unwrap());
             let shape = |id: &Value, date: &Value, benefit: &Value, kind: &Value| {
                 json!([id, date, benefit, kind])
             };
@@ -125,7 +144,7 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
                 })
                 .unwrap_or_default();
             let actual = forecast::expected_events(
-                &transactions(&data["transactions"]),
+                &transactions(&data["transactions"], cards),
                 &accounts,
                 data["updatedAt"].as_str().unwrap(),
                 reference_today(record),
@@ -165,12 +184,12 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
                 }
             }
         }
-        "buildPlatinumBenefitTracker" => {
-            let items = transactions(&args[0]);
+        "buildCardBenefitTracker" => {
+            let items = transactions(&args[0], cards);
             let refs = items.iter().collect::<Vec<_>>();
             let reference = args[1].as_str().unwrap();
             let snapshot = args.get(2).and_then(Value::as_str).unwrap_or(reference);
-            let actual = PLATINUM.tracker(&refs, reference, snapshot, zone);
+            let actual = card()?.tracker(&refs, reference, snapshot, zone);
             let expected = expected.as_array().unwrap();
             if expected.len() != actual.len() {
                 return mismatch(serde_json::to_value(&actual).unwrap());
@@ -231,8 +250,8 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
                 }
             }
         }
-        "recognizedAmexAutopays" => {
-            let items = transactions(&args[0]);
+        "recognizedAutopays" => {
+            let items = transactions(&args[0], cards);
             let refs = items.iter().collect::<Vec<_>>();
             let actual = statement::autopays(&refs, args[1].as_str().unwrap());
             let expected_items = expected.as_array().unwrap();
@@ -249,7 +268,7 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
             }
         }
         "autopayStatementBoundaries" => {
-            let items = transactions(&args[0]);
+            let items = transactions(&args[0], cards);
             let refs = items.iter().collect::<Vec<_>>();
             let actual = serde_json::to_value(statement::autopay_boundaries(
                 &refs,
@@ -260,17 +279,18 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
                 return mismatch(actual);
             }
         }
-        "buildPlatinumCreditSummary" => {
-            let items = transactions(&args[0]);
+        "buildCardCreditSummary" => {
+            let items = transactions(&args[0], cards);
             let refs = items.iter().collect::<Vec<_>>();
             let reference = args[1].as_str().unwrap();
             let (start, end) = (date(&args[2]), date(&args[3]));
-            let activity = PLATINUM.activity(&refs, reference);
+            let card = card()?;
+            let activity = card.activity(&refs, reference);
             let history_start = refs
                 .iter()
                 .filter_map(|transaction| calendar::transaction_date(transaction.posted_date()))
                 .min();
-            let history = PLATINUM.history(
+            let history = card.history(
                 &activity,
                 history_start,
                 calendar::transaction_date(reference).unwrap(),
@@ -286,16 +306,15 @@ fn check(record: &Value, zone: &dyn Zone) -> Result<(), String> {
     Ok(())
 }
 
-#[test]
-fn native_insights_reproduce_every_recorded_renderer_result() {
-    let fixture = include_str!("../../../src/data/fixtures/insights-golden.jsonl");
+/// Checks every record, failing with the first few that differ.
+fn replay(fixture: &str, cards: &Catalog, at_least: usize) {
     let mut failures = Vec::new();
     let mut checked = 0;
     for (line, text) in fixture.lines().enumerate() {
         let record: Value = serde_json::from_str(text).unwrap();
         let zone = NamedZone::parse(record["tz"].as_str().unwrap()).expect("recorded zone");
         checked += 1;
-        if let Err(error) = check(&record, &zone) {
+        if let Err(error) = check(&record, &zone, cards) {
             failures.push(format!(
                 "line {} {} {}: {error}",
                 line + 1,
@@ -304,7 +323,7 @@ fn native_insights_reproduce_every_recorded_renderer_result() {
             ));
         }
     }
-    assert!(checked > 800, "fixture is unexpectedly small");
+    assert!(checked >= at_least, "fixture is unexpectedly small");
     assert!(
         failures.is_empty(),
         "{} of {checked} recorded results differ:\n{}",
@@ -315,5 +334,40 @@ fn native_insights_reproduce_every_recorded_renderer_result() {
             .cloned()
             .collect::<Vec<_>>()
             .join("\n")
+    );
+}
+
+#[test]
+fn native_insights_reproduce_every_recorded_renderer_result() {
+    replay(
+        include_str!("../../../src/data/fixtures/insights-golden.jsonl"),
+        &Catalog::example(),
+        580,
+    );
+}
+
+/// The records for a real card, read with that card's rules, when this Mac keeps both:
+/// `notes/golden-card-benefits.jsonl` and one rules file in `notes/card-rules/`.
+#[test]
+fn private_card_records_reproduce_with_their_rules() {
+    let notes = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../notes");
+    let Ok(fixture) = std::fs::read_to_string(notes.join("golden-card-benefits.jsonl")) else {
+        eprintln!("no private card records on this Mac; skipped");
+        return;
+    };
+    let rules = std::fs::read_dir(notes.join("card-rules"))
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter(|entry| entry.path().extension().is_some_and(|ext| ext == "json"))
+        .map(|entry| {
+            let text = std::fs::read_to_string(entry.path()).expect("readable card rules");
+            serde_json::from_str::<CardRules>(&text).expect("valid card rules")
+        })
+        .collect::<Vec<_>>();
+    replay(
+        &fixture,
+        &Catalog::new(&rules).expect("card rules compile"),
+        1,
     );
 }

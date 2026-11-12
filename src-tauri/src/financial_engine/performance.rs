@@ -1,5 +1,12 @@
 //! Each investment account's value history beside the benchmark, and each cash account's
 //! reconstructed balance history.
+//!
+//! A brokerage account's history is rebuilt from its records: from today's shares and cash,
+//! each earlier day undoes the later cash movements and split-restated share changes, and
+//! prices what was then held at Alpaca's close. The provider's own balance history can be wrong
+//! by the size of a transfer, so it is used only when the records don't explain the account
+//! (fewer than no shares, or shares Alpaca can't price) or activity didn't load. Shares a stock
+//! plan allocates arrive with no cash amount, so they count as a deposit worth that day's close.
 use super::*;
 
 /// Every investment account's performance record, sorted by account id, with the external

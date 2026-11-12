@@ -123,9 +123,7 @@
 
 .account-row-name > strong,
 .account-row-name > small {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 
 .account-row-name > small {
@@ -159,15 +157,15 @@
   color: var(--accent);
 }
 
-/* Room for row hover to bleed, given back in the margin so cells align with the heading. */
+/* Room for row hover to bleed, given back in the margin so cells align with the heading. Tables
+   never scroll sideways: each drops its least needed columns as its container narrows. */
 .financial-table-scroll {
   width: calc(100% + 8px);
   max-width: none;
   min-width: 0;
   margin: 12px -4px 0;
   padding: 4px;
-  overflow-x: auto;
-  overscroll-behavior-x: contain;
+  container: financial-table / inline-size;
 }
 
 .financial-table-scroll-titled {
@@ -209,10 +207,12 @@
   padding-bottom: 8px;
 }
 
+/* Figures stay on one line; the name in the first column wraps instead. */
 .financial-table th:first-child,
 .financial-table td:first-child {
   padding-left: 0;
   text-align: left;
+  white-space: normal;
 }
 
 .financial-table th:last-child,
@@ -238,11 +238,11 @@
   font-weight: 500;
 }
 
-.holding-account-name {
+.financial-table .holding-account-name {
   max-width: 180px;
-  overflow: hidden;
   color: var(--text-secondary);
-  text-overflow: ellipsis;
+  overflow-wrap: break-word;
+  white-space: normal;
 }
 
 .financial-activity-copy .transaction-description {

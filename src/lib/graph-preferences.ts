@@ -31,8 +31,8 @@ export function graphWindowForKey(key: string) {
 
 export function adjacentGraphWindow(current: number, direction: -1 | 1) {
   const index = graphWindows.findIndex(({ secs }) => secs === current)
-  return graphWindows[(Math.max(0, index) + direction + graphWindows.length) % graphWindows.length]
-    .secs
+  const next = (Math.max(0, index) + direction + graphWindows.length) % graphWindows.length
+  return graphWindows[next]?.secs ?? current
 }
 
 export function parseGraphWindow(value: unknown) {
@@ -74,6 +74,9 @@ export function useGraphWindow() {
     setSessionWindow,
   ] as const
 }
+
+/** The range chosen this session, outside React: what a route loads before its page renders. */
+export const chosenGraphWindow = () => sessionWindow
 
 /** The range chosen this session, or undefined until one is; a page with its own default uses it. */
 export function useChosenGraphWindow() {

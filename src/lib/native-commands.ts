@@ -32,13 +32,14 @@ const acceleratorKeys: Record<string, string> = {
  * Command-Control arrows edit nothing, so they keep theirs.
  */
 export function menuAccelerator(binding: ActionBinding | undefined) {
-  if (!binding || binding.sequence.length !== 1) return null
-  const parts = binding.sequence[0].split('+')
+  const [chord, ...more] = binding?.sequence ?? []
+  if (chord === undefined || more.length) return null
+  const parts = chord.split('+')
   const key = parts.at(-1) ?? ''
   const modifiers = parts.slice(0, -1)
   const arrow = key.startsWith('Arrow')
   if (!modifiers.includes('Meta') || (arrow && !modifiers.includes('Control'))) return null
-  if (staticMenuBindings.has(binding.sequence[0])) return null
+  if (staticMenuBindings.has(chord)) return null
   const named =
     acceleratorKeys[key] ?? (arrow ? key : /^[a-z0-9]$/i.test(key) ? key.toUpperCase() : undefined)
   if (!named) return null
@@ -120,7 +121,7 @@ export function rowAmountText(row: HTMLElement) {
 export function openedViewHref(view: string, routes: readonly string[]) {
   if (!view.startsWith('/')) return undefined
   if (view.startsWith('/settings')) return `/#${view.slice(1)}`
-  const path = view.split('?')[0]
+  const [path = view] = view.split('?')
   return routes.some((route) =>
     route.includes('$') ? path.startsWith(route.slice(0, route.indexOf('$'))) : path === route,
   )

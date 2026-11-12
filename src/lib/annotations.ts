@@ -3,6 +3,7 @@ import { z } from 'zod'
 
 import { isTauri } from './api'
 import type { AnnotationsSaved } from './bindings/AnnotationsSaved'
+import { rendererStorage } from './preference'
 import type { FinanceSnapshot } from './schema'
 
 /** What an edit returns, with the view typed as the renderer reads it. */
@@ -79,7 +80,7 @@ const legacyAnnotationKeys = ['brief:transaction-categories', 'brief:reviewed-tr
 /** Whether renderer storage still holds annotations from before they moved to Rust. */
 export function hasLegacyAnnotations() {
   try {
-    return legacyAnnotationKeys.some((key) => localStorage.getItem(key) != null)
+    return legacyAnnotationKeys.some((key) => rendererStorage.read(key) != null)
   } catch {
     return false
   }
@@ -93,7 +94,7 @@ function legacyAnnotations(warnings: string[]): TransactionAnnotations {
   ] as const) {
     let values: unknown
     try {
-      const raw = localStorage.getItem(key)
+      const raw = rendererStorage.read(key)
       if (!raw) continue
       values = JSON.parse(raw)
     } catch {
@@ -134,7 +135,7 @@ export async function loadTransactionAnnotations(): Promise<{
     try {
       annotations = {
         ...changes,
-        ...annotationsSchema.parse(JSON.parse(localStorage.getItem('brief:annotations') ?? '{}')),
+        ...annotationsSchema.parse(JSON.parse(rendererStorage.read('brief:annotations') ?? '{}')),
       }
     } catch {
       warnings.push('Couldn’t read saved annotations')

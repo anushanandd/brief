@@ -27,11 +27,12 @@ export type AccountJump = { sequence: [string, string]; title: string; search: A
 export function accountJumps(groups: AccountGroup[], names: Record<string, string>): AccountJump[] {
   return groups.flatMap((group) => {
     const letter = jumpLetters[group.type]
-    if (!letter || !group.accounts.length) return []
+    const [only, ...more] = group.accounts
+    if (!letter || !only) return []
     const total: AccountJump = {
       sequence: [letter, '0'],
       title: `Open all ${group.label.toLowerCase()} accounts`,
-      search: group.accounts.length > 1 ? { group: group.type } : { account: group.accounts[0].id },
+      search: more.length ? { group: group.type } : { account: only.id },
     }
     return [
       total,

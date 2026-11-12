@@ -1,19 +1,13 @@
 import type { ActivityItem } from '../lib/activity'
-import { countOf, formatActivityName, formatCurrency } from '../lib/format'
+import { countOf, formatActivityName, formatCalendarDate, formatCurrency } from '../lib/format'
 import type { Trip } from '../lib/schema'
 import { tripPeakDay, tripTitle } from '../lib/trips'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
-const weekday = new Intl.DateTimeFormat('en-US', { weekday: 'narrow', timeZone: 'UTC' })
-const dayOfMonth = new Intl.DateTimeFormat('en-US', { day: 'numeric', timeZone: 'UTC' })
-const longDay = new Intl.DateTimeFormat('en-US', {
-  weekday: 'short',
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-})
-
-const at = (date: string) => new Date(`${date}T12:00:00Z`)
+const weekday = (date: string) => formatCalendarDate(date, { weekday: 'narrow' })
+const dayOfMonth = (date: string) => formatCalendarDate(date, { day: 'numeric' })
+const longDay = (date: string) =>
+  formatCalendarDate(date, { weekday: 'short', month: 'short', day: 'numeric' })
 
 /**
  * A trip day by day: one bar per calendar day, the biggest day set apart, and the purchases
@@ -51,7 +45,7 @@ export function TripDaysChart({
       aria-label={
         mini
           ? `${tripTitle(trip)} day by day`
-          : `${tripTitle(trip)} day by day: ${peak ? `most on ${longDay.format(at(peak.date))}, ${formatCurrency(Math.abs(peak.spent))}` : 'nothing bought'}`
+          : `${tripTitle(trip)} day by day: ${peak ? `most on ${longDay(peak.date)}, ${formatCurrency(Math.abs(peak.spent))}` : 'nothing bought'}`
       }
       style={{ color }}
     >
@@ -65,8 +59,8 @@ export function TripDaysChart({
             <span className="trip-day-bar" style={{ height }} />
             {!mini && index % labelEvery === 0 ? (
               <span className="trip-day-label">
-                <small>{weekday.format(at(day.date))}</small>
-                {dayOfMonth.format(at(day.date))}
+                <small>{weekday(day.date)}</small>
+                {dayOfMonth(day.date)}
               </span>
             ) : !mini ? (
               <span className="trip-day-label" />
@@ -85,7 +79,7 @@ export function TripDaysChart({
             <TooltipTrigger render={<span className="trip-day-slot" />}>{bar}</TooltipTrigger>
             <TooltipContent className="treemap-tooltip" sideOffset={8}>
               <div className="treemap-tooltip-heading">
-                <strong>{longDay.format(at(day.date))}</strong>
+                <strong>{longDay(day.date)}</strong>
                 <span className="sensitive-value">{formatCurrency(Math.abs(day.spent))}</span>
               </div>
               {items.length ? (

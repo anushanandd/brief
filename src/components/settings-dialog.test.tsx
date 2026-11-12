@@ -2,7 +2,7 @@
 
 import { expect, it } from 'vitest'
 
-import { backdropClick, escapeClosesSettings } from './settings-dialog'
+import { backdropClick, escapeClosesDialog as escapeClosesSettings } from './ui/dialog'
 
 it('closes Settings on Escape from fields and controls but not from an open menu', () => {
   document.body.innerHTML = `

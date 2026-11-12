@@ -1,8 +1,8 @@
 //! Program rules: published terms (a fee waiver, a bonus) as data. Each names its source and
 //! the dates its terms hold, and lists conditions every one of which must be met by what Brief
-//! observed before a conclusion is Explained. Built-in rules live in `programs.json`; rules the
-//! user approves from research join them through settings, checked the same way.
-use std::{collections::BTreeMap, sync::LazyLock};
+//! observed before a conclusion is Explained. Rules come from settings: the user approves them
+//! from research.
+use std::collections::BTreeMap;
 
 use chrono::NaiveDate;
 use regex::Regex;
@@ -323,33 +323,12 @@ pub fn matcher(pattern: &str) -> Option<Regex> {
     Regex::new(&format!("(?i){pattern}")).ok()
 }
 
-#[derive(Deserialize)]
-struct File {
-    programs: Vec<Program>,
-}
-
-static BUILT_IN: LazyLock<Vec<Program>> = LazyLock::new(|| {
-    let file: File = serde_json::from_str(include_str!("programs.json"))
-        .expect("programs.json is valid program data");
-    for program in &file.programs {
-        program.validate().expect("built-in programs are valid");
-    }
-    file.programs
-});
-
-/// The built-in rules, then those the user approved, which replace a built-in rule of the
-/// same id. A user rule that fails its checks is left out.
+/// The rules the user approved that pass their checks. Brief ships none: a program describes
+/// a particular bank or employer, so it is the user's data.
 pub fn programs(approved: &[Program]) -> Vec<Program> {
-    let mut programs = BUILT_IN
+    approved
         .iter()
-        .filter(|program| !approved.iter().any(|approved| approved.id == program.id))
+        .filter(|program| program.validate().is_ok())
         .cloned()
-        .collect::<Vec<_>>();
-    programs.extend(
-        approved
-            .iter()
-            .filter(|program| program.validate().is_ok())
-            .cloned(),
-    );
-    programs
+        .collect()
 }

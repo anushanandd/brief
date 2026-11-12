@@ -1,13 +1,26 @@
 {
-  "version": "2026-10-07",
+  "version": "2026-11-11",
   "sources": [
     "Rev. Proc. 2024-40, sections 3.01 and 3.03 (taxable years beginning in 2025)",
     "Rev. Proc. 2025-32, sections 4.01 and 4.03 (taxable years beginning in 2026)",
     "26 U.S.C. 1411 (net investment income tax thresholds, not indexed)",
     "26 U.S.C. 1211(b) (capital loss limit)",
     "P.L. 119-21, section 70102 (2025 standard deduction); Rev. Proc. 2025-32, section 4.14 (2026)",
-    "SSA, contribution and benefit base for 2025 and 2026"
+    "SSA, contribution and benefit base for 2025 and 2026",
+    "26 U.S.C. 6654(d)(1)(B)-(C) and 6654(e)(1) (estimated-tax safe harbors, not indexed)"
   ],
+  "safeHarbor": {
+    "currentYearPercent": 90,
+    "priorYearPercent": 100,
+    "highIncomePriorYearPercent": 110,
+    "highIncomeAgi": {
+      "single": 150000,
+      "marriedJoint": 150000,
+      "marriedSeparate": 75000,
+      "headOfHousehold": 150000
+    },
+    "smallBalance": 1000
+  },
   "niitRate": 3.8,
   "niitThresholds": {
     "single": 200000,

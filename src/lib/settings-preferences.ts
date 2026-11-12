@@ -1,9 +1,14 @@
 import { homePreferenceKeys } from './home-preferences'
+import { rendererStorage } from './preference'
 import { privacyPreferenceKeys } from './privacy-preferences'
 
 export const themePreferenceKeys = [...homePreferenceKeys] as const
 export const chartPreferenceKeys = ['brief.defaultGraphWindow'] as const
-export const navigationPreferenceKeys = ['brief.pageOrder', 'brief.activitySavedViews'] as const
+export const navigationPreferenceKeys = [
+  'brief.pageOrder',
+  'brief.numberKeys',
+  'brief.activitySavedViews',
+] as const
 
 export const appearancePreferenceKeys = [
   ...themePreferenceKeys,
@@ -17,7 +22,6 @@ const legacyAccountPreferenceKeys = [
   'brief.accountDisplayNames',
   'brief.accountStartDates',
   'brief:spending-account-id',
-  'brief:hidden-platinum-benefits',
 ] as const
 
 export const dataPreferenceKeys = ['brief.externalLogosEnabled', ...privacyPreferenceKeys] as const
@@ -44,7 +48,7 @@ export function exportSettingsPreferences(): SettingsPreferencesFile {
     exportedAt: new Date().toISOString(),
     preferences: Object.fromEntries(
       settingsPreferenceKeys.flatMap((key) => {
-        const value = window.localStorage.getItem(key)
+        const value = rendererStorage.read(key)
         return value == null ? [] : [[key, value]]
       }),
     ),
@@ -79,12 +83,11 @@ export function parseSettingsPreferences(value: unknown): SettingsPreferencesFil
 }
 
 export function importSettingsPreferences(file: SettingsPreferencesFile) {
-  for (const key of allowedKeys) window.localStorage.removeItem(key)
-  for (const [key, value] of Object.entries(file.preferences))
-    window.localStorage.setItem(key, value)
+  for (const key of allowedKeys) rendererStorage.remove(key)
+  for (const [key, value] of Object.entries(file.preferences)) rendererStorage.write(key, value)
 }
 
 export function clearSettingsPreferences(keys: readonly string[]) {
-  for (const key of keys) window.localStorage.removeItem(key)
+  for (const key of keys) rendererStorage.remove(key)
   window.location.reload()
 }

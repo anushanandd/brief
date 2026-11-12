@@ -1,3 +1,9 @@
+//! A refresh: every provider fetched into temporary state, projected, validated, and committed
+//! as one change, or nothing. One runs at a time, under one 120-second deadline.
+//!
+//! A provider that fails keeps its last usable cache and adds a notice. The redacted
+//! diagnostic (counts and times, never names or amounts) is saved separately, so it can never
+//! block a valid commit. Billed Plaid products run only when the user chose them.
 use std::time::{Duration as StdDuration, Instant};
 
 use chrono::{DateTime, Duration, Utc};
@@ -195,10 +201,17 @@ pub(crate) async fn refresh_finance_snapshot(
         statements,
     } = prepared;
     state.storage()?.note_usage(&sync_id, usage, fetch_ms);
-    let account_links = state.storage()?.data.account_links.clone();
+    let (account_links, settings) = {
+        let storage = state.storage()?;
+        (
+            storage.data.account_links.clone(),
+            storage.data.settings.clone(),
+        )
+    };
     let projecting = Instant::now();
     let projection = tauri::async_runtime::spawn_blocking(move || {
-        change::project_refresh(&previous, &statements, &account_links, &refresh)
+        let cards = crate::insights::benefits::Catalog::from_settings(&settings);
+        change::project_refresh(&previous, &statements, &account_links, &cards, &refresh)
     });
     let projected = tokio::time::timeout_at(deadline, projection).await;
     state
@@ -235,7 +248,8 @@ pub(crate) async fn refresh_finance_snapshot(
     .await
     .map_err(|_| "Local refresh worker failed".to_string())?;
     if committed.is_ok() {
-        crate::calendar::sync_in_background(app.clone());
+        crate::event_calendar::sync_in_background(app.clone());
+        crate::commands::card_rules::apply_in_background(app.clone());
         crate::bank_statements::sync_in_background(app);
     }
     committed
@@ -250,6 +264,20 @@ pub(crate) fn save_account_link(
     state
         .storage()?
         .save_account_link(plaid_account_id, snaptrade_account_id)
+}
+
+/// What a refresh asks of Plaid: the billed products the user turned on in settings, and live
+/// balances only when this refresh asked for them.
+pub(crate) fn plaid_options(
+    settings: &crate::settings::FinanceSettings,
+    live_balances: bool,
+) -> providers::PlaidSyncOptions {
+    providers::PlaidSyncOptions {
+        live_balances,
+        liabilities: settings.plaid_liabilities,
+        investment_transactions: settings.plaid_investment_transactions,
+        recurring: settings.plaid_recurring,
+    }
 }
 
 async fn prepare_refresh(
@@ -271,12 +299,7 @@ async fn prepare_refresh(
             storage.data.provider_data.clone(),
             storage.data.revision,
             storage.data.snapshot.clone(),
-            providers::PlaidSyncOptions {
-                live_balances,
-                liabilities: settings.plaid_liabilities,
-                investment_transactions: settings.plaid_investment_transactions,
-                recurring: settings.plaid_recurring,
-            },
+            plaid_options(settings, live_balances),
             settings.apple_wallet,
         )
     };

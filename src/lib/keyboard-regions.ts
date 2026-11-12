@@ -19,12 +19,20 @@ export function adjacentRowIndex(current: number, length: number, direction: -1 
   return (current + direction + length) % length
 }
 
+const rowControl =
+  'button:not(:disabled), a[href], input:not(:disabled), select:not(:disabled), textarea:not(:disabled), [tabindex="0"]'
+
+/**
+ * Opens the focused row through its `data-keyboard-open` target. A row without one, such as a
+ * setting, is entered instead: its first control takes focus, ready for Space or Return.
+ */
 export function openFocusedKeyboardRow() {
   const row = document.activeElement?.closest<HTMLElement>('[data-keyboard-row]')
   const target = row?.matches('[data-keyboard-open]')
     ? row
     : row?.querySelector<HTMLElement>('[data-keyboard-open]')
-  target?.click()
+  if (target) target.click()
+  else if (document.activeElement === row) row?.querySelector<HTMLElement>(rowControl)?.focus()
 }
 
 /** Motions over the focused list's rows: next, previous, to either end, and open. */
@@ -34,12 +42,12 @@ export function contextualListActions(region: HTMLElement | undefined): AppActio
   // Rows are read when an action runs, since a list can grow or shrink while focus stays in it.
   const move = (direction: -1 | 1) => {
     const rows = visibleKeyboardRows(region)
-    if (!rows.length) return
     const current = document.activeElement?.closest<HTMLElement>('[data-keyboard-row]')
     const index = current ? rows.indexOf(current) : direction > 0 ? -1 : 0
-    const next = adjacentRowIndex(index, rows.length, direction)
-    rows[next].focus()
-    rows[next].scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    const next = rows[adjacentRowIndex(index, rows.length, direction)]
+    if (!next) return
+    next.focus()
+    next.scrollIntoView({ block: 'nearest', inline: 'nearest' })
   }
   const edge = (position: 'first' | 'last') => {
     const rows = visibleKeyboardRows(region)

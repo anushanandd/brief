@@ -1,5 +1,9 @@
 //! Links credits to the purchases that earned them and places each credit in a window.
 //!
+//! Terms are often vague, so a benefit's history refines them both ways: it also covers a
+//! merchant linked by hand or whose same-amount charges keep preceding its credits, and a
+//! purchase unlike every credited one expects no credit and raises no question.
+//!
 //! The issuer applies a credit to the window of the purchase's transaction date, which may
 //! close before either posts, and dates the credit the same. A credit pairs with the closest
 //! earlier unpaired purchase it fits, within the terms' posting limit, preferring an exact
@@ -12,7 +16,8 @@ use std::collections::{HashMap, HashSet};
 
 use chrono::{Duration, NaiveDate};
 
-use super::{ActivityKind, BenefitActivity, Period, PurchaseCredit, Rule};
+use super::{calendar, Transaction};
+use super::{ActivityKind, BenefitActivity, MerchantAmount, Period, PurchaseCredit, Rule};
 use crate::numeric::from_minor;
 use crate::numeric::minor_units;
 
@@ -75,8 +80,14 @@ impl CreditLag {
     }
 }
 
-/// Pairs, places, and settles one rule's activity as of `today`.
-pub(super) fn attribute(rule: &Rule, activity: &mut [BenefitActivity], today: NaiveDate) {
+/// Pairs, places, and settles one rule's activity as of `today`. `transactions` are the card's,
+/// by ID.
+pub(super) fn attribute(
+    rule: &Rule,
+    activity: &mut [BenefitActivity],
+    transactions: &HashMap<&str, &Transaction>,
+    today: NaiveDate,
+) {
     let mut ours = (0..activity.len())
         .filter(|&index| activity[index].benefit_id == rule.data.id)
         .collect::<Vec<_>>();
@@ -92,8 +103,130 @@ pub(super) fn attribute(rule: &Rule, activity: &mut [BenefitActivity], today: Na
     let lag = CreditLag::observe(rule, activity);
     let used = place_credits(rule, activity, &ours, lag);
     if rule.data.issuer_credits {
-        settle_purchases(rule, activity, &ours, lag, &used, today);
+        settle_purchases(rule, activity, &ours, lag, &used, transactions, today);
     }
+}
+
+/// Whether the benefit's credited purchases contradict the terms matching a purchase: at
+/// least `LEARNING_PAIRS` of them share a spending category it isn't in, or came from its
+/// merchant at one amount it doesn't have. One linked or confirmed by hand never is.
+fn contradicted<'a>(
+    activity: &[BenefitActivity],
+    ours: &[usize],
+    transactions: &'a HashMap<&str, &Transaction>,
+) -> impl Fn(&BenefitActivity) -> bool + 'a {
+    let credited = ours
+        .iter()
+        .map(|&index| &activity[index])
+        .filter(|item| item.kind == ActivityKind::Purchase && item.paired_id.is_some())
+        .filter_map(|item| {
+            let transaction = transactions.get(item.id.as_str())?;
+            Some((
+                item.merchant.trim().to_lowercase(),
+                minor_units(item.amount),
+                transaction.category.clone(),
+            ))
+        })
+        .collect::<Vec<_>>();
+    let category = credited
+        .first()
+        .map(|(_, _, category)| category.clone())
+        .filter(|category| {
+            credited.len() >= LEARNING_PAIRS
+                && credited.iter().all(|(_, _, other)| other == category)
+        });
+    move |item: &BenefitActivity| {
+        let Some(transaction) = transactions.get(item.id.as_str()) else {
+            return false;
+        };
+        if transaction.benefit_id.is_some() || transaction.benefit_confirmed == Some(true) {
+            return false;
+        }
+        let merchant = item.merchant.trim().to_lowercase();
+        let amounts = credited
+            .iter()
+            .filter(|(other, _, _)| *other == merchant)
+            .map(|(_, amount, _)| *amount)
+            .collect::<Vec<_>>();
+        category
+            .as_ref()
+            .is_some_and(|category| *category != transaction.category)
+            || (amounts.len() >= LEARNING_PAIRS
+                && amounts.iter().all(|amount| *amount == amounts[0])
+                && minor_units(item.amount) != amounts[0])
+    }
+}
+
+/// The merchants, at exact amounts, a rule's terms don't name but its history shows it covers:
+/// a charge linked to it by hand, or one whose same-amount charges precede its credits at
+/// least twice and at least half the time. `activity` is the history read without them.
+pub(super) fn learned_merchants(
+    rule: &Rule,
+    transactions: &[&Transaction],
+    activity: &[BenefitActivity],
+) -> Vec<MerchantAmount> {
+    let classified = activity
+        .iter()
+        .map(|item| item.id.as_str())
+        .collect::<HashSet<_>>();
+    let credits = activity
+        .iter()
+        .filter(|item| item.benefit_id == rule.data.id && posted(item, ActivityKind::Credit))
+        .collect::<Vec<_>>();
+    let mut charges = HashMap::<(String, i64), Vec<NaiveDate>>::new();
+    let mut learned = HashSet::new();
+    for transaction in transactions.iter().filter(|transaction| {
+        transaction.amount < 0.0
+            && !transaction.pending
+            && transaction.benefit_confirmed != Some(false)
+    }) {
+        let key = (
+            transaction.merchant.trim().to_lowercase(),
+            -minor_units(transaction.amount),
+        );
+        if key.0.is_empty() {
+            continue;
+        }
+        if transaction.benefit_id.as_deref() == Some(rule.data.id.as_str()) {
+            learned.insert(key);
+        } else if !classified.contains(transaction.id.as_str()) {
+            if let Some(date) = calendar::transaction_date(transaction.occurred_date()) {
+                charges.entry(key).or_default().push(date);
+            }
+        }
+    }
+    let delay = -EARLY_CREDIT_DAYS..=rule.data.typical_delay_days;
+    let first = credits.iter().map(|credit| credit.date).min();
+    for (key, dates) in charges {
+        let explained = credits
+            .iter()
+            .filter(|credit| {
+                minor_units(credit.amount) == key.1
+                    && dates
+                        .iter()
+                        .any(|date| delay.contains(&(credit.date - *date).num_days()))
+            })
+            .count();
+        let since_first = dates
+            .iter()
+            .filter(|date| first.is_some_and(|first| (first - **date).num_days() <= *delay.end()))
+            .count();
+        if explained >= 2 && explained * 2 >= since_first {
+            learned.insert(key);
+        }
+    }
+    let mut learned = learned
+        .into_iter()
+        .map(|(merchant, amount)| MerchantAmount {
+            merchant,
+            amount: from_minor(-amount),
+        })
+        .collect::<Vec<_>>();
+    learned.sort_by(|left, right| {
+        (&left.merchant, minor_units(left.amount))
+            .cmp(&(&right.merchant, minor_units(right.amount)))
+    });
+    learned
 }
 
 fn posted(item: &BenefitActivity, kind: ActivityKind) -> bool {
@@ -254,6 +387,7 @@ fn settle_purchases(
     ours: &[usize],
     lag: CreditLag,
     used: &HashMap<NaiveDate, i64>,
+    transactions: &HashMap<&str, &Transaction>,
     today: NaiveDate,
 ) {
     let credits = ours
@@ -261,6 +395,7 @@ fn settle_purchases(
         .map(|&index| (activity[index].id.clone(), activity[index].amount))
         .collect::<HashMap<_, _>>();
     let limit = rule.data.posting_delay_days;
+    let contradicted = contradicted(activity, ours, transactions);
     for &index in ours {
         let item = &activity[index];
         if !posted(item, ActivityKind::Purchase) {
@@ -268,6 +403,7 @@ fn settle_purchases(
         }
         let credit = match item.paired_id.as_ref().and_then(|id| credits.get(id)) {
             Some(&amount) => PurchaseCredit::Credited { amount },
+            None if contradicted(item) => PurchaseCredit::Unlikely,
             None => {
                 let period = rule.period(item.date);
                 // Without a dollar allowance (such as one plus tax), the purchase sets it.

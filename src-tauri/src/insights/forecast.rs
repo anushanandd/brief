@@ -8,7 +8,6 @@ use regex::Regex;
 use serde::Serialize;
 use ts_rs::TS;
 
-use super::benefits::PLATINUM;
 use super::calendar;
 use super::AccountView;
 use crate::finance_contract::Transaction;
@@ -194,9 +193,7 @@ fn recurring_merchant(transaction: &Transaction) -> String {
 
 /// A stable series identity: account, direction, and merchant (or recognized benefit).
 pub fn recurring_key(transaction: &Transaction) -> String {
-    let benefit = (transaction.amount > 0.0)
-        .then(|| PLATINUM.credit_identity(transaction))
-        .flatten();
+    let benefit = transaction.benefit_credit.as_ref();
     let string = |value: &str| serde_json::to_string(value).expect("strings serialize");
     format!(
         "{{\"version\":3,\"account\":{},\"direction\":{},\"merchant\":{}}}",
@@ -212,7 +209,7 @@ pub fn recurring_key(transaction: &Transaction) -> String {
             "in"
         }),
         string(&match benefit {
-            Some((id, _)) => format!("platinum-benefit:{id}"),
+            Some((id, _)) => format!("card-benefit:{id}"),
             None => recurring_merchant(transaction),
         }),
     )
@@ -313,7 +310,7 @@ fn evidence(transaction: &Transaction, with_code: bool) -> String {
 fn repriced_at(transactions: &[&Transaction]) -> Option<Option<usize>> {
     let amounts = transactions
         .iter()
-        .map(|transaction| money(transaction.amount))
+        .map(|transaction| crate::numeric::minor_units(transaction.amount))
         .collect::<Vec<_>>();
     let changes = (1..amounts.len())
         .filter(|index| amounts[*index] != amounts[index - 1])
@@ -326,7 +323,9 @@ fn repriced_at(transactions: &[&Transaction]) -> Option<Option<usize>> {
 }
 
 fn fixed_charge(transactions: &[&Transaction], cadence: Cadence, traits: &Traits) -> bool {
-    let last = transactions[transactions.len() - 1];
+    let Some(last) = transactions.last() else {
+        return false;
+    };
     matches!(
         cadence,
         Cadence::Monthly | Cadence::Quarterly | Cadence::Annual
@@ -381,9 +380,7 @@ struct Traits {
 fn traits(transaction: &Transaction) -> Traits {
     let evidence = evidence(transaction, false);
     let kind = transaction.kind();
-    let benefit_credit = (transaction.amount > 0.0)
-        .then(|| PLATINUM.credit_identity(transaction))
-        .flatten();
+    let benefit_credit = transaction.benefit_credit.clone();
     let debt_payment = transaction.amount < 0.0
         && kind == Some(Kind::Transfer)
         && DEBT_PAYMENT.is_match(&evidence);
@@ -477,8 +474,9 @@ fn cadence_for<'a>(values: &[&'a Transaction], strong_annual_evidence: bool) -> 
         .map(|(date, _)| *date)
         .collect::<Option<Vec<_>>>()?;
     let mut selected: Option<(Cadence, usize)> = None;
+    let last = ordered.len().checked_sub(1)?;
     for cadence in CADENCES {
-        let mut start = ordered.len() - 1;
+        let mut start = last;
         while start > 0 && matches_cadence(dates[start - 1], dates[start], cadence) {
             start -= 1;
         }
@@ -764,7 +762,7 @@ fn candidate(
     horizon: &Horizon,
 ) -> Option<(Vec<String>, ExpectedEvent)> {
     let (today, horizon_days) = (horizon.today, horizon.horizon_days);
-    let latest = transactions[transactions.len() - 1];
+    let latest = *transactions.last()?;
     let traits = traits(latest);
     if !traits.income && !traits.credit && traits.habitual && !traits.subscription {
         return None;
@@ -776,7 +774,8 @@ fn candidate(
         !super::people::person_to_person(latest)
             && (traits.income || traits.credit || traits.subscription || traits.variable_bill),
     )?;
-    let last = run.transactions[run.transactions.len() - 1];
+    let last = *run.transactions.last()?;
+    let last_seen = *run.dates.last()?;
     let expected = next_occurrence(&run.dates, run.cadence, last);
     // A late posting can be pending, but a missed occurrence never advances a cycle.
     let missed =
@@ -851,7 +850,7 @@ fn candidate(
             amount_high: money(amounts.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
             frequency: run.cadence.label(),
             observations: run.transactions.len(),
-            last_seen: run.dates[run.dates.len() - 1],
+            last_seen,
             state: if missed {
                 EventState::Missed
             } else if expected < today {
@@ -866,6 +865,210 @@ fn candidate(
             per_year: run.cadence.per_year(),
         },
     ))
+}
+
+/// A series is new while its first posting is this recent.
+pub const NEW_SERIES_DAYS: i64 = 100;
+/// The account must have history from at least this long before a series' first posting, or
+/// the series may only be as old as the account's history and not new at all.
+const NEW_SERIES_PRIOR_DAYS: i64 = 45;
+/// A paycheck is worth raising while it is this recent.
+pub const PAY_RECENT_DAYS: i64 = 35;
+/// A paycheck's band needs this many earlier paychecks.
+const PAY_HISTORY_MINIMUM: usize = 3;
+
+/// A recurring series seen for the first time: every posting it has made is the run the
+/// forecast found, the first of them is recent, and its account was read well before it.
+#[derive(Clone, Debug, PartialEq)]
+pub struct NewSeries {
+    pub recurring_id: String,
+    pub title: String,
+    pub kind: EventKind,
+    pub frequency: &'static str,
+    pub account_id: Option<String>,
+    /// The forecast's typical amount, signed.
+    pub amount: f64,
+    pub first_seen: NaiveDate,
+    /// The latest posting, which marking reviewed dismisses.
+    pub transaction_id: String,
+    /// Every posting in the series, oldest first.
+    pub evidence: Vec<String>,
+    /// The rule of succession over the run: after `n` postings on cadence, the chance the
+    /// next one follows is (n + 1) / (n + 2).
+    pub confidence: f64,
+}
+
+/// A paycheck whose amount falls outside the range its series' earlier paychecks span.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PayChange {
+    pub recurring_id: String,
+    pub title: String,
+    pub account_id: Option<String>,
+    pub amount: f64,
+    /// The earlier paychecks' smallest and largest amounts.
+    pub low: f64,
+    pub high: f64,
+    pub date: NaiveDate,
+    pub transaction_id: String,
+    /// The earlier paychecks, oldest first, then this one.
+    pub evidence: Vec<String>,
+    /// For `n` earlier amounts drawn alike, the chance another lands outside their range is
+    /// 2 / (n + 1), so the confidence that this one differs is (n − 1) / (n + 1).
+    pub confidence: f64,
+}
+
+/// Posted transactions of each series a forecast names, oldest first.
+fn series_postings<'a>(
+    transactions: &'a [Transaction],
+    events: &[ExpectedEvent],
+) -> HashMap<String, Vec<(NaiveDate, &'a Transaction)>> {
+    let wanted = events
+        .iter()
+        .map(|event| event.recurring_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let mut series = HashMap::<String, Vec<(NaiveDate, &Transaction)>>::new();
+    for transaction in transactions
+        .iter()
+        .filter(|transaction| !transaction.pending)
+    {
+        let key = recurring_key(transaction);
+        if !wanted.contains(key.as_str()) {
+            continue;
+        }
+        if let Some(date) = date_of(transaction) {
+            series.entry(key).or_default().push((date, transaction));
+        }
+    }
+    for postings in series.values_mut() {
+        postings.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
+    }
+    series
+}
+
+/// Series in `events` (the forecast) that began within `NEW_SERIES_DAYS`. A card credit is
+/// a benefit, not a commitment, so it never counts.
+pub fn new_series(
+    transactions: &[Transaction],
+    events: &[ExpectedEvent],
+    today: NaiveDate,
+) -> Vec<NewSeries> {
+    let postings = series_postings(transactions, events);
+    // Each account's first posted day, so a series as old as the history isn't new.
+    let mut first_by_account = HashMap::<&str, NaiveDate>::new();
+    for transaction in transactions
+        .iter()
+        .filter(|transaction| !transaction.pending)
+    {
+        if let (Some(account), Some(date)) =
+            (transaction.account_id.as_deref(), date_of(transaction))
+        {
+            let first = first_by_account.entry(account).or_insert(date);
+            *first = (*first).min(date);
+        }
+    }
+    let mut found = events
+        .iter()
+        .filter(|event| event.kind != EventKind::Credit)
+        .filter_map(|event| {
+            let series = postings.get(&event.recurring_id)?;
+            let (first_seen, _) = *series.first()?;
+            let (_, latest) = *series.last()?;
+            let account = event.account_id.as_deref()?;
+            let read_before = first_by_account.get(account).is_some_and(|first| {
+                calendar::days_between(*first, first_seen) >= NEW_SERIES_PRIOR_DAYS
+            });
+            let n = series.len();
+            (n == event.observations
+                && read_before
+                && calendar::days_between(first_seen, today) <= NEW_SERIES_DAYS)
+                .then(|| NewSeries {
+                    recurring_id: event.recurring_id.clone(),
+                    title: event.title.clone(),
+                    kind: event.kind,
+                    frequency: event.frequency,
+                    account_id: event.account_id.clone(),
+                    amount: event.amount,
+                    first_seen,
+                    transaction_id: latest.id.clone(),
+                    evidence: series
+                        .iter()
+                        .map(|(_, posting)| posting.id.clone())
+                        .collect(),
+                    confidence: (n as f64 + 1.0) / (n as f64 + 2.0),
+                })
+        })
+        .collect::<Vec<_>>();
+    found.sort_by(|left, right| {
+        right
+            .first_seen
+            .cmp(&left.first_seen)
+            .then(left.recurring_id.cmp(&right.recurring_id))
+    });
+    found.dedup_by(|left, right| left.recurring_id == right.recurring_id);
+    found
+}
+
+/// Paychecks in the last `PAY_RECENT_DAYS` outside their series' band: below the smallest or
+/// above the largest of up to eleven earlier paychecks by more than a dollar and 1% of their
+/// median, so rounding and a cent of tax drift never count. Only wages count; interest and
+/// dividends vary by nature.
+pub fn pay_changes(
+    transactions: &[Transaction],
+    events: &[ExpectedEvent],
+    today: NaiveDate,
+) -> Vec<PayChange> {
+    let postings = series_postings(transactions, events);
+    let mut found = events
+        .iter()
+        .filter(|event| event.kind == EventKind::Income && event.amount > 0.0)
+        .filter_map(|event| {
+            let series = postings.get(&event.recurring_id)?;
+            let series = &series[series.len().saturating_sub(12)..];
+            let (&(date, latest), earlier) = series.split_last()?;
+            if latest.kind() != Some(Kind::Income)
+                || latest.amount <= 0.0
+                || earlier.len() < PAY_HISTORY_MINIMUM
+                || calendar::days_between(date, today) > PAY_RECENT_DAYS
+            {
+                return None;
+            }
+            let mut cents = earlier
+                .iter()
+                .map(|(_, posting)| crate::numeric::minor_units(posting.amount))
+                .collect::<Vec<_>>();
+            let (low, high) = (*cents.iter().min()?, *cents.iter().max()?);
+            let usual = crate::numeric::median_i64(&mut cents)?;
+            let tolerance = (usual.abs() / 100).max(100);
+            let amount = crate::numeric::minor_units(latest.amount);
+            if amount >= low - tolerance && amount <= high + tolerance {
+                return None;
+            }
+            let n = earlier.len() as f64;
+            Some(PayChange {
+                recurring_id: event.recurring_id.clone(),
+                title: event.title.clone(),
+                account_id: latest.account_id.clone(),
+                amount: crate::numeric::from_minor(amount),
+                low: crate::numeric::from_minor(low),
+                high: crate::numeric::from_minor(high),
+                date,
+                transaction_id: latest.id.clone(),
+                evidence: series
+                    .iter()
+                    .map(|(_, posting)| posting.id.clone())
+                    .collect(),
+                confidence: (n - 1.0) / (n + 1.0),
+            })
+        })
+        .collect::<Vec<_>>();
+    found.sort_by(|left, right| {
+        right
+            .date
+            .cmp(&left.date)
+            .then(left.recurring_id.cmp(&right.recurring_id))
+    });
+    found.dedup_by(|left, right| left.recurring_id == right.recurring_id);
+    found
 }
 
 /// Forecasts with the pending transaction each awaits, when exactly one matches it and no other

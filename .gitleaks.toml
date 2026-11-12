@@ -1,0 +1,8 @@
+# gitleaks: the default rules, plus the synthetic placeholders Brief's tests and fixtures use.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Synthetic test tokens and generated files"
+regexes = ['''(access|item|checking|wallet)-synthetic[A-Za-z0-9_-]*''']
+paths = ['''pnpm-lock\.yaml$''', '''Cargo\.lock$''', '''^src/lib/bindings/''']

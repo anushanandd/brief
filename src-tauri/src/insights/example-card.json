@@ -1,0 +1,49 @@
+{
+  "product": "example-card",
+  "name": "Example Card",
+  "version": "2026-01-01",
+  "termsReviewed": "Jan 1, 2026",
+  "annualFee": 250,
+  "annualFeeMatches": "annual fee",
+  "officialNames": "^(?:the\\s+)?example card\\b",
+  "issuerCreditMatches": "^\\s*example card\\b.*\\b(?:credit|reimbursement)\\b",
+  "benefits": [
+    {
+      "id": "streaming",
+      "name": "Streaming",
+      "limit": "$10 / month",
+      "cap": 10,
+      "cadence": "monthly",
+      "matches": "streaming|example tv|example news|example music",
+      "creditMatches": "streaming.*credit",
+      "instruction": "Pay Example TV, Example News, or Example Music directly with the card.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://example.com/card/streaming",
+      "recurring": true
+    },
+    {
+      "id": "dining",
+      "name": "Dining",
+      "limit": "$50 / quarter",
+      "cap": 50,
+      "cadence": "quarterly",
+      "matches": "example tables",
+      "creditMatches": "dining.*credit",
+      "instruction": "Book a table through Example Tables.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://example.com/card/dining"
+    },
+    {
+      "id": "travel",
+      "name": "Travel",
+      "limit": "$100 / year",
+      "cap": 100,
+      "cadence": "annual",
+      "matches": "travel credit|example air|example hotels",
+      "creditMatches": "travel credit",
+      "instruction": "Book a flight or hotel through Example Air or Example Hotels.",
+      "effectiveFrom": "2025-01-01",
+      "url": "https://example.com/card/travel"
+    }
+  ]
+}

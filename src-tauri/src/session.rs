@@ -13,6 +13,12 @@ use crate::insights::calendar::{last_weekday, nth_weekday, NamedZone};
 
 const NEW_YORK: NamedZone = NamedZone::NewYork;
 
+/// A symbol's daily closes by session, oldest first.
+pub type CloseSeries = [(NaiveDate, f64)];
+/// Each symbol's daily closes by session, oldest first. Providers fetch them; the summary and
+/// insights read them.
+pub type DailyCloses = std::collections::BTreeMap<String, Vec<(NaiveDate, f64)>>;
+
 /// The wall-clock time in New York at `instant`.
 pub fn new_york(instant: DateTime<Utc>) -> NaiveDateTime {
     NEW_YORK.local(instant)

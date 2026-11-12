@@ -1,87 +1,65 @@
 import { Link } from '@tanstack/react-router'
-import { useEffect, useId, useState } from 'react'
-import { toast } from 'sonner'
+import { useId, useMemo, useState } from 'react'
 
-import { useFinanceEdits } from '../hooks/use-finance-edits'
-import {
-  activityLocationText,
-  activityMethod,
-  activityPlace,
-  activityTime,
-  type ActivityItem,
-} from '../lib/activity'
+import type { AppAction } from '../lib/action-system'
+import { activityLocationText, activityTime, type ActivityItem } from '../lib/activity'
 import { documentTitle, transactionDocuments } from '../lib/documents'
-import {
-  displayCase,
-  formatActivityName,
-  formatCurrency,
-  formatProseCurrency,
-  valueTone,
-} from '../lib/format'
-import { shortcutInput } from '../lib/keyboard'
+import { formatActivityName, formatCurrency, formatProseCurrency, valueTone } from '../lib/format'
 import { activityObjectId } from '../lib/objects'
-import { placeLabel, placeMapsUrl, placeSource } from '../lib/places'
-import type { BenefitActivity, FinanceSnapshot, QualityEvidence, Transaction } from '../lib/schema'
+import { placeLabel } from '../lib/places'
+import type { FinanceSnapshot, QualityEvidence, Transaction } from '../lib/schema'
 import { formatActivityDate } from '../lib/spending'
-import { mapsUrl, transactionDetail } from '../lib/transaction-detail'
+import { transactionDetail } from '../lib/transaction-detail'
 import { ActivityMark } from './activity-list'
 import { PlaceMark } from './activity-method-mark'
 import { CategoryMark } from './category-mark'
-import { ExternalLink } from './external-link'
-import {
-  AlertCircle,
-  ArrowUpRight,
-  Check,
-  FileText,
-  Globe2,
-  MapPinned,
-  Repeat2,
-  ShieldCheck,
-  Unlink,
-  X,
-} from './icons'
-import { Keys } from './keys'
+import { ArrowUpRight, FileText, Repeat2, X } from './icons'
 import { useShowObject } from './object-details'
-import { escapeClosesSettings } from './settings-dialog'
+import {
+  BenefitLinkFlag,
+  CategorySuggestionFlag,
+  InspectorKeysFooter,
+  MerchantHistory,
+  RawRecord,
+  ReviewFlag,
+  TransactionHero,
+  VerifiedFact,
+  WhereFacts,
+} from './transaction-details-sections'
 import { TransactionEdits } from './transaction-edits'
-import { AnimatedCurrency, Button } from './ui'
-import { PopupContainerContext } from './ui/popup-container'
+import { Button } from './ui'
+import { Dialog, dialogAutofocus } from './ui/dialog'
 import { usePresence } from './ui/presence'
 
 /**
  * The inspector's own keys: J and K step through the list; C, T, P, N, and S start an edit; F
  * switches between yours and someone else's; R marks a flagged transaction reviewed; U unlinks
- * a benefit match; O opens a transfer's other side.
+ * a benefit match; O opens a transfer's other side; A keeps a suggested category and D declines
+ * it. Each edit key presses the control marked
+ * with its `data-inspector-key`, when the transaction has one.
  */
+const inspectorKeys = [
+  { id: 'next', title: 'Next transaction', keys: ['j', 'ArrowDown'] },
+  { id: 'previous', title: 'Previous transaction', keys: ['k', 'ArrowUp'] },
+  { id: 'category', title: 'Change category', keys: ['c'] },
+  { id: 'tag', title: 'Add a tag', keys: ['t'] },
+  { id: 'people', title: 'Choose people', keys: ['p'] },
+  { id: 'note', title: 'Write a note', keys: ['n'] },
+  { id: 'split', title: 'Split', keys: ['s'] },
+  { id: 'other', title: 'Switch between mine and someone else’s', keys: ['f'] },
+  { id: 'reviewed', title: 'Mark reviewed', keys: ['r'] },
+  { id: 'unlink', title: 'Unlink the benefit match', keys: ['u'] },
+  { id: 'transfer', title: 'Open the other side of the transfer', keys: ['o'] },
+  { id: 'accept', title: 'Keep the suggested category', keys: ['a'] },
+  { id: 'reject', title: 'Decline the suggested category', keys: ['d'] },
+] as const
+
+const keyLabel = (key: string) =>
+  key === 'ArrowDown' ? '↓' : key === 'ArrowUp' ? '↑' : key.toUpperCase()
+
+/** Which inspector key `key` presses, if any. */
 export function inspectorKey(key: string) {
-  switch (key) {
-    case 'j':
-    case 'ArrowDown':
-      return 'next'
-    case 'k':
-    case 'ArrowUp':
-      return 'previous'
-    case 'c':
-      return 'category'
-    case 't':
-      return 'tag'
-    case 'p':
-      return 'people'
-    case 'n':
-      return 'note'
-    case 's':
-      return 'split'
-    case 'f':
-      return 'other'
-    case 'r':
-      return 'reviewed'
-    case 'u':
-      return 'unlink'
-    case 'o':
-      return 'transfer'
-    default:
-      return undefined
-  }
+  return inspectorKeys.find(({ keys }) => keys.some((bound) => bound === key))?.id
 }
 
 /**
@@ -110,91 +88,72 @@ export function TransactionDialog({
   const titleId = useId()
   // The last activity stays in view while the inspector slides back to the edge.
   const shown = usePresence(activity, dialog)
-  useEffect(() => {
-    if (!dialog || typeof dialog.showModal !== 'function') return
-    if (activity && !dialog.open) dialog.showModal()
-    else if (!activity && dialog.open) dialog.close()
-  }, [activity, dialog])
 
-  // App shortcuts pause while a dialog is open, so the inspector handles its own keys. The
-  // listener is on the window so a key still works after stepping replaces the focused content.
-  const open = Boolean(activity)
+  // The inspector's keys run through the app's dispatcher, scoped to this dialog, so they show
+  // in the key guide and the palette. They read the dialog when they run, so a key still works
+  // after stepping replaces the focused content.
   const showObject = useShowObject()
   const objectId = activity ? activityObjectId(activity.id) : undefined
-  useEffect(() => {
-    if (!open || !dialog) return undefined
-    const onKeyDown = (event: KeyboardEvent) => {
-      // ⌘I: everything stored about this transaction, over the inspector.
-      if (
-        objectId &&
-        event.metaKey &&
-        !event.ctrlKey &&
-        !event.altKey &&
-        event.key.toLowerCase() === 'i'
-      ) {
-        event.preventDefault()
-        showObject(objectId)
-        return
-      }
-      if (
-        event.defaultPrevented ||
-        event.isComposing ||
-        event.metaKey ||
-        event.ctrlKey ||
-        event.altKey ||
-        shortcutInput(event.target)
+  const actions = useMemo<AppAction[]>(() => {
+    const step = (direction: 1 | -1) => {
+      onStep?.(direction)
+      requestAnimationFrame(() =>
+        dialog?.querySelector<HTMLElement>('.transaction-details-header h2')?.focus(),
       )
-        return
-      const key = inspectorKey(event.key)
-      if (!key) return
-      event.preventDefault()
-      if (key === 'next' || key === 'previous') {
-        onStep?.(key === 'next' ? 1 : -1)
-        requestAnimationFrame(() =>
-          dialog.querySelector<HTMLElement>('.transaction-details-header h2')?.focus(),
-        )
-      } else dialog.querySelector<HTMLElement>(`[data-inspector-key="${key}"]`)?.click()
     }
-    window.addEventListener('keydown', onKeyDown)
-    return () => window.removeEventListener('keydown', onKeyDown)
-  }, [dialog, objectId, onStep, open, showObject])
+    return [
+      ...inspectorKeys
+        .filter(({ id }) => onStep || (id !== 'next' && id !== 'previous'))
+        .map(({ id, title, keys }) => ({
+          id: `inspector.${id}`,
+          title,
+          group: 'Here',
+          scope: 'dialog' as const,
+          bindings: keys.map((key) => ({ sequence: [key], label: keyLabel(key) })),
+          run: () =>
+            id === 'next' || id === 'previous'
+              ? step(id === 'next' ? 1 : -1)
+              : dialog?.querySelector<HTMLElement>(`[data-inspector-key="${id}"]`)?.click(),
+        })),
+      // ⌘I: everything stored about this transaction, over the inspector.
+      ...(objectId
+        ? [
+            {
+              id: 'inspector.details',
+              title: 'Show details',
+              group: 'Here',
+              scope: 'dialog' as const,
+              bindings: [{ sequence: ['Meta+i'], label: '⌘I' }],
+              run: () => showObject(objectId),
+            },
+          ]
+        : []),
+    ]
+  }, [dialog, objectId, onStep, showObject])
 
   return (
-    <dialog
+    <Dialog
       ref={setDialog}
+      open={Boolean(activity)}
+      onClose={onClose}
+      escapeOnKeyDown
+      popups
+      actions={actions}
       className="transaction-dialog"
       aria-labelledby={titleId}
-      onCancel={(event) => {
-        event.preventDefault()
-        onClose()
-      }}
-      onKeyDown={(event) => {
-        if (event.nativeEvent.isComposing) return
-        if (event.key === 'Escape') {
-          if (!escapeClosesSettings(event.target)) return
-          event.preventDefault()
-          onClose()
-          return
-        }
-      }}
-      onClick={(event) => {
-        if (event.target === event.currentTarget) onClose()
-      }}
     >
       {shown ? (
-        <PopupContainerContext.Provider value={dialog}>
-          <TransactionDetails
-            key={shown.id}
-            activity={shown}
-            data={data}
-            titleId={titleId}
-            onClose={onClose}
-            onReviewed={onReviewed}
-            onOpenActivity={onOpenActivity}
-          />
-        </PopupContainerContext.Provider>
+        <TransactionDetails
+          key={shown.id}
+          activity={shown}
+          data={data}
+          titleId={titleId}
+          onClose={onClose}
+          onReviewed={onReviewed}
+          onOpenActivity={onOpenActivity}
+        />
       ) : null}
-    </dialog>
+    </Dialog>
   )
 }
 
@@ -215,85 +174,21 @@ function TransactionDetails({
 }) {
   const detail = transactionDetail(data, activity.id)
   const transaction = detail?.transaction
-  const place = activityPlace(activity)
   const transfer = activity.transfer
-  const address = activityLocationText(activity.location)
-  const method = activityMethod(activity)
   const posted = transaction?.postedOn ?? activity.date
-  const occurred = transaction?.occurredOn
   const time = activityTime(activity)
-  const atTime = time ? ` at ${time}` : ''
   const wallet = transaction?.wallet
   const merchant = formatActivityName(activity.title)
-  const coordinates = transaction?.location
-  // The matched business leads, then the resolved place; the bank's own location stays one
-  // click away, in Bank details.
-  const resolved = transaction?.place ?? activity.place
-  const business = transaction?.business
-  const street =
-    business?.address ??
-    resolved?.address ??
-    (resolved?.precision === 'exact' ? transaction?.location?.address : undefined)
-  const remote = transaction?.presence === 'remote'
-  const billedFrom = remote
-    ? [
-        transaction?.issuer?.city ?? transaction?.location?.city,
-        transaction?.issuer?.region ?? transaction?.location?.region,
-      ]
-        .filter(Boolean)
-        .join(', ')
-    : ''
-  const businessFacts = [
-    business?.category ? categoryLabel(business.category) : '',
-    business?.phone ?? wallet?.phone,
-    business?.closed ? 'Listed as closed' : '',
-  ].filter(Boolean)
   // Documents that state this transaction: a statement lists it, or a pay statement paid it.
   const evidence = transaction ? transactionDocuments(data, transaction.id) : []
   const onStatement = evidence.some(({ kind }) => kind === 'statement')
   const onPayStatement = evidence.some(({ kind }) => kind === 'pay')
-  const website = business?.website ?? transaction?.website
-  // How it was paid, beside what Wallet saw at the terminal.
-  const paid = transaction
-    ? [
-        wallet?.terminalAmount != null
-          ? `Approved for ${formatCurrency(Math.abs(wallet.terminalAmount))} at the terminal`
-          : '',
-        wallet?.reward && wallet.reward.amount > 0
-          ? `Earned ${formatCurrency(wallet.reward.amount)} Daily Cash · ${wallet.reward.percent}%`
-          : '',
-      ].filter(Boolean)
-    : []
   // Who else recorded it: Wallet at the terminal, a statement, or a pay statement.
   const sources = [
     wallet && !activity.pending && !transaction?.id.startsWith('wallet:') ? 'Apple Wallet' : '',
     onStatement ? 'the statement' : onPayStatement ? 'the pay statement' : '',
   ].filter(Boolean)
   const quality = transaction ? evidenceDetails(transaction) : []
-  // Google Maps opens the business's card from its name and street address, when known.
-  const mapsHref = resolved
-    ? placeMapsUrl(
-        business?.name ?? merchant,
-        business
-          ? { ...resolved, lat: business.lat, lon: business.lon, precision: 'exact' }
-          : resolved,
-        street,
-      )
-    : !remote && (address || coordinates?.lat != null)
-      ? mapsUrl(address || merchant, coordinates)
-      : undefined
-  const { annotate } = useFinanceEdits()
-  const [dismissing, setDismissing] = useState(false)
-  const [reviewFailed, setReviewFailed] = useState(false)
-  const markReviewed = () => {
-    if (!transaction || dismissing) return
-    setDismissing(true)
-    setReviewFailed(false)
-    void annotate({ [transaction.id]: { reviewed: true } })
-      .then(() => onReviewed?.(activity.id))
-      .catch(() => setReviewFailed(true))
-      .finally(() => setDismissing(false))
-  }
   const details = transaction ? bankDetails(transaction) : []
   const walletFacts = transaction ? walletDetails(transaction) : []
   // Details whose sources disagree, until the user marks the transaction reviewed.
@@ -305,11 +200,13 @@ function TransactionDetails({
   const categoryOrigin =
     detail?.categoryOrigin === 'manual'
       ? 'Set by you'
-      : wallet?.categorized
-        ? 'From the card network'
-        : transaction?.providerCategory && transaction.providerCategory !== activity.category
-          ? `Bank says ${transaction.providerCategory}`
-          : 'From the bank'
+      : detail?.categoryOrigin === 'suggested'
+        ? 'Suggested from your choices'
+        : wallet?.categorized
+          ? 'From the card network'
+          : transaction?.providerCategory && transaction.providerCategory !== activity.category
+            ? `Bank says ${transaction.providerCategory}`
+            : 'From the bank'
 
   return (
     <article className="transaction-details">
@@ -317,7 +214,7 @@ function TransactionDetails({
         <ActivityMark activity={activity} />
         <div>
           {/* The title takes focus on open, so no control starts out ringed. */}
-          <h2 id={titleId} tabIndex={-1} autoFocus>
+          <h2 id={titleId} tabIndex={-1} {...dialogAutofocus}>
             {merchant}
           </h2>
           <p>
@@ -334,108 +231,30 @@ function TransactionDetails({
         />
       </header>
 
-      <section className="transaction-details-hero" aria-label="Amount">
-        <AnimatedCurrency
-          className={`hero-number sensitive-value ${valueTone(activity.amount)}`}
-          value={activity.amount}
-        />
-        <p>
-          {occurred && occurred !== posted ? (
-            <>
-              Purchased {formatActivityDate(occurred)}
-              {atTime}
-              <span aria-hidden="true"> · </span>
-              posted {formatActivityDate(posted)}
-            </>
-          ) : (
-            `${formatActivityDate(posted)}${atTime}`
-          )}
-          {detail?.duplicate ? (
-            <span className="transaction-details-tag is-warning">
-              <AlertCircle size={12} aria-hidden="true" />
-              Possible duplicate
-            </span>
-          ) : null}
-          {detail?.unusual ? (
-            <span className="transaction-details-tag is-warning">
-              <AlertCircle size={12} aria-hidden="true" />
-              Unusual amount
-            </span>
-          ) : null}
-          {conflicts.length ? (
-            <span className="transaction-details-tag is-warning">
-              <AlertCircle size={12} aria-hidden="true" />
-              Sources disagree
-            </span>
-          ) : null}
-          {detail?.priceChange ? (
-            <span className="transaction-details-tag is-warning">
-              Was{' '}
-              <span className="sensitive-value">
-                {formatCurrency(Math.abs(detail.priceChange.previous))}
-              </span>
-            </span>
-          ) : null}
-          {detail?.benefits.map((benefit) => (
-            // Opens the benefit's year on Benefits, where its periods and evidence live.
-            <Link
-              className="transaction-details-tag is-positive"
-              key={`${benefit.benefitId}:${benefit.kind}`}
-              to="/analytics"
-              search={{ chart: 'amex-credits', benefit: benefit.benefitId }}
-              data-command="navigation.report.amex-credits"
-              onClick={onClose}
-            >
-              {benefit.kind === 'credit'
-                ? `${benefit.benefitName} credit`
-                : `Counts toward ${benefit.benefitName}`}
-              <ArrowUpRight size={12} aria-hidden="true" />
-            </Link>
-          ))}
-        </p>
-      </section>
+      <TransactionHero
+        activity={activity}
+        detail={detail}
+        posted={posted}
+        occurred={transaction?.occurredOn}
+        atTime={time ? ` at ${time}` : ''}
+        disagree={conflicts.length > 0}
+        onClose={onClose}
+      />
 
       <div className="transaction-details-body">
-        {detail?.duplicate || detail?.unusual || conflicts.length ? (
-          <div className="transaction-details-flag" role="note">
-            <p>
-              {detail?.duplicate ? (
-                'Same amount, same day. If you paid once, dispute one with the issuer.'
-              ) : detail?.unusual ? (
-                <>
-                  Usually{' '}
-                  <span className="sensitive-value">
-                    {formatProseCurrency(Math.abs(detail.unusual.usual))}
-                  </span>{' '}
-                  here.
-                </>
-              ) : (
-                <>
-                  {transaction
-                    ? conflicts.map((label) => conflictNote(transaction, label)).join(' ')
-                    : null}{' '}
-                  If that’s right, mark it reviewed.
-                </>
-              )}
-            </p>
-            <Button
-              icon={Check}
-              size="compact"
-              disabled={dismissing}
-              aria-busy={dismissing || undefined}
-              aria-keyshortcuts="R"
-              data-inspector-key="reviewed"
-              onClick={markReviewed}
-            >
-              {detail?.duplicate ? 'Not a duplicate' : 'Looks right'}
-            </Button>
-            {reviewFailed ? (
-              <p className="transaction-details-error" role="alert">
-                Couldn’t save. Try again.
-              </p>
-            ) : null}
-          </div>
-        ) : null}
+        <ReviewFlag
+          activity={activity}
+          data={data}
+          detail={detail}
+          transaction={transaction}
+          conflictText={
+            transaction && conflicts.length
+              ? conflicts.map((label) => conflictNote(transaction, label)).join(' ')
+              : undefined
+          }
+          onReviewed={onReviewed}
+        />
+        <CategorySuggestionFlag data={data} transaction={transaction} />
         {detail ? <BenefitLinkFlag data={data} benefits={detail.benefits} /> : null}
         <dl className="transaction-details-facts">
           {transaction ? null : (
@@ -499,66 +318,7 @@ function TransactionDetails({
                   <dd>Not matched to another of your accounts</dd>
                 </div>
               ) : null}
-              <div>
-                <dt>Where</dt>
-                <dd>
-                  <span className="transaction-details-value">
-                    {place.kind === 'none' ? null : <PlaceMark kind={place.kind} />}
-                    <span>
-                      {place.kind === 'none' ? 'Not reported by the bank' : place.primary}
-                      {resolved ? (
-                        <small>
-                          {street ? `${displayCase(street)} · ` : ''}
-                          {business ? 'From Overture Maps' : placeSource(resolved)}
-                        </small>
-                      ) : billedFrom ? (
-                        <small>Billed from {displayCase(billedFrom)}</small>
-                      ) : address && address !== place.primary && !remote ? (
-                        <small>{address}</small>
-                      ) : null}
-                      {businessFacts.length ? <small>{businessFacts.join(' · ')}</small> : null}
-                      {!transaction &&
-                      place.kind !== 'place' &&
-                      method &&
-                      method !== place.primary ? (
-                        <small>{method}</small>
-                      ) : null}
-                    </span>
-                  </span>
-                  {mapsHref || website ? (
-                    <span className="transaction-details-links">
-                      {mapsHref ? (
-                        <ExternalLink className="transaction-details-link" href={mapsHref}>
-                          <MapPinned size={12} aria-hidden="true" />
-                          Open in Google Maps
-                        </ExternalLink>
-                      ) : null}
-                      {website ? (
-                        <ExternalLink
-                          className="transaction-details-link"
-                          href={/^https?:\/\//.test(website) ? website : `https://${website}`}
-                        >
-                          <Globe2 size={12} aria-hidden="true" />
-                          {website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
-                        </ExternalLink>
-                      ) : null}
-                    </span>
-                  ) : null}
-                </dd>
-              </div>
-              {transaction && (method || paid.length) ? (
-                <div>
-                  <dt>Paid</dt>
-                  <dd>
-                    {method || 'With the card'}
-                    {paid.map((line) => (
-                      <small key={line} className="sensitive-value">
-                        {line}
-                      </small>
-                    ))}
-                  </dd>
-                </div>
-              ) : null}
+              <WhereFacts activity={activity} transaction={transaction} />
             </>
           )}
           {detail?.expected ? (
@@ -639,36 +399,7 @@ function TransactionDetails({
             </div>
           ) : null}
           {transaction ? (
-            <div>
-              <dt>Verified</dt>
-              <dd>
-                <span className="transaction-details-value">
-                  {sources.length ? (
-                    <ShieldCheck size={14} aria-hidden="true" className="positive" />
-                  ) : null}
-                  <span>
-                    {sources.length
-                      ? `${activity.pending ? 'Pending' : 'Posted'} and confirmed by ${sources.join(' and ')}`
-                      : activity.pending
-                        ? 'Pending with the bank'
-                        : 'Reported by the bank'}
-                  </span>
-                </span>
-                {quality.length ? (
-                  <details className="transaction-details-why">
-                    <summary>How Brief knows</summary>
-                    <dl className="transaction-details-facts">
-                      {quality.map(({ label, value, conflict }) => (
-                        <div key={label}>
-                          <dt>{label}</dt>
-                          <dd className={conflict ? 'is-warning' : undefined}>{value}</dd>
-                        </div>
-                      ))}
-                    </dl>
-                  </details>
-                ) : null}
-              </dd>
-            </div>
+            <VerifiedFact activity={activity} sources={sources} quality={quality} />
           ) : null}
         </dl>
 
@@ -682,52 +413,13 @@ function TransactionDetails({
         ) : null}
 
         {detail ? (
-          <section className="transaction-details-history" aria-labelledby={`${titleId}-history`}>
-            <h3 id={`${titleId}-history`}>
-              At {merchant}
-              <span>
-                {detail.historyCount ? `${detail.historyCount + 1} visits` : 'First time here'}
-              </span>
-            </h3>
-            <ul>
-              {detail.expected ? (
-                <li className="is-expected">
-                  <span>{formatActivityDate(detail.expected.date)}</span>
-                  <small>Expected · {detail.expected.frequency.toLowerCase()}</small>
-                  <strong className="sensitive-value">
-                    {detail.expected.amountHigh - detail.expected.amountLow >
-                    Math.max(5, Math.abs(detail.expected.amount) * 0.1)
-                      ? '≈ '
-                      : ''}
-                    {formatCurrency(detail.expected.amount)}
-                  </strong>
-                </li>
-              ) : null}
-              <li className="is-current">
-                <span>{formatActivityDate(posted)}</span>
-                <small>This one</small>
-                <strong className={`sensitive-value ${valueTone(activity.amount)}`}>
-                  {formatCurrency(activity.amount)}
-                </strong>
-              </li>
-              {detail.history.map((item) => (
-                <li key={item.id}>
-                  <span>{formatActivityDate(item.postedOn ?? item.date)}</span>
-                  <small>
-                    {[
-                      item.pending ? 'Pending' : '',
-                      item.account !== activity.account ? item.account : '',
-                    ]
-                      .filter(Boolean)
-                      .join(' · ')}
-                  </small>
-                  <strong className={`sensitive-value ${valueTone(item.amount)}`}>
-                    {formatCurrency(item.amount)}
-                  </strong>
-                </li>
-              ))}
-            </ul>
-          </section>
+          <MerchantHistory
+            activity={activity}
+            detail={detail}
+            merchant={merchant}
+            posted={posted}
+            titleId={titleId}
+          />
         ) : null}
 
         {walletFacts.length || details.length ? (
@@ -738,32 +430,7 @@ function TransactionDetails({
           </details>
         ) : null}
       </div>
-      <footer className="command-footer transaction-details-keys" aria-label="Keyboard">
-        <span className="command-footer-hint">
-          Next <Keys label="J" /> <Keys label="K" />
-        </span>
-        {detail?.duplicate || detail?.unusual ? (
-          <span className="command-footer-hint">
-            Reviewed <Keys label="R" />
-          </span>
-        ) : null}
-        {detail && benefitLink(detail.benefits) ? (
-          <span className="command-footer-hint">
-            Unlink <Keys label="U" />
-          </span>
-        ) : null}
-        {/* The edit rows' first letters: Category, For, Tags, People, Note, Split. */}
-        <span className="command-footer-hint">
-          Edit <Keys label="C" /> <Keys label="F" /> <Keys label="T" /> <Keys label="P" />{' '}
-          <Keys label="N" /> <Keys label="S" />
-        </span>
-        <span className="command-footer-hint">
-          Details <Keys label="⌘I" />
-        </span>
-        <span className="command-footer-hint">
-          Close <Keys label="Esc" />
-        </span>
-      </footer>
+      <InspectorKeysFooter detail={detail} />
     </article>
   )
 }
@@ -783,115 +450,6 @@ const counterpartyLabels: Record<string, string> = {
   income_source: 'Income source',
 }
 
-/** One source's raw record, under Raw records. */
-function RawRecord({
-  title,
-  rows,
-}: {
-  title: string
-  rows: { label: string; value: string; raw?: boolean }[]
-}) {
-  return (
-    <section className="transaction-details-record" aria-label={title}>
-      <h4>{title}</h4>
-      <dl className="transaction-details-facts">
-        {rows.map(({ label, value, raw }) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd className={raw ? 'transaction-details-raw' : undefined}>{value}</dd>
-          </div>
-        ))}
-      </dl>
-    </section>
-  )
-}
-
-/** The purchase a benefit match rests on: this one, or the one a credit was paired with. */
-function benefitLink(benefits: readonly BenefitActivity[]) {
-  const match = benefits.find(
-    ({ kind, pairedId }) => kind === 'purchase' || (kind === 'credit' && pairedId),
-  )
-  if (!match) return undefined
-  return { match, purchaseId: match.kind === 'purchase' ? match.id : match.pairedId! }
-}
-
-/**
- * Which purchase a benefit counts, with a way to undo a wrong match: unlinking takes the
- * purchase out of every benefit, so its credit asks again which purchase earned it.
- */
-function BenefitLinkFlag({
-  data,
-  benefits,
-}: {
-  data: FinanceSnapshot
-  benefits: readonly BenefitActivity[]
-}) {
-  const { annotate, undo } = useFinanceEdits()
-  const [pending, setPending] = useState(false)
-  const [failed, setFailed] = useState(false)
-  const link = benefitLink(benefits)
-  if (!link) return null
-  const { match, purchaseId } = link
-  const paired = match.pairedId
-    ? data.transactions.find(({ id }) => id === match.pairedId)
-    : undefined
-  const unlink = () => {
-    if (pending) return
-    setPending(true)
-    setFailed(false)
-    void annotate({ [purchaseId]: { benefitId: '', benefitConfirmed: false } })
-      .then(() =>
-        toast.success(`Unlinked from ${match.benefitName}`, {
-          action: {
-            label: 'Undo',
-            onClick: () => void undo().catch(() => toast.error('Couldn’t undo that')),
-          },
-        }),
-      )
-      .catch(() => setFailed(true))
-      .finally(() => setPending(false))
-  }
-  return (
-    <div className="transaction-details-flag" role="note">
-      <p>
-        {match.kind === 'credit' && paired ? (
-          <>
-            Credit for {formatActivityName(paired.merchant)} ·{' '}
-            {formatActivityDate(paired.postedOn ?? paired.date)}
-          </>
-        ) : match.pairedId ? (
-          `Earned the ${match.benefitName} credit`
-        ) : (
-          `Counts toward ${match.benefitName}`
-        )}
-      </p>
-      <Button
-        icon={Unlink}
-        size="compact"
-        variant="ghost"
-        disabled={pending}
-        aria-busy={pending || undefined}
-        aria-keyshortcuts="U"
-        data-inspector-key="unlink"
-        onClick={unlink}
-      >
-        Unlink
-      </Button>
-      {failed ? (
-        <p className="transaction-details-error" role="alert">
-          Couldn’t save. Try again.
-        </p>
-      ) : null}
-    </div>
-  )
-}
-
-/** Overture's category code in words: `sporting_goods_store` reads "Sporting goods store". */
-function categoryLabel(code: string) {
-  const words = code.replaceAll('_', ' ')
-  return words[0].toUpperCase() + words.slice(1)
-}
-
 const evidenceLabels: Record<QualityEvidence['basis'], string> = {
   statement: 'Matches the statement',
   statementDiffers: 'The statement shows another amount',
@@ -899,6 +457,7 @@ const evidenceLabels: Record<QualityEvidence['basis'], string> = {
   pending: 'Pending; may change when it posts',
   wallet: 'Apple Wallet recorded it',
   merchantCode: 'The card network’s merchant code',
+  suggested: 'Brief followed your earlier choices',
   provider: 'Posted by the bank',
   providerConfident: 'Plaid is sure',
   providerUnsure: 'Plaid isn’t sure',

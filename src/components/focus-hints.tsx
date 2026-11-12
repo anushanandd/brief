@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useState } from 'react'
 
 import { visibleActionTargets } from '../lib/action-system'
+import { openModal } from '../lib/keyboard'
 
 export function FocusHints({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState('')
-  const targets = useMemo(() => visibleActionTargets(), [])
+  // Over a modal dialog only its own controls can take focus.
+  const targets = useMemo(() => visibleActionTargets(openModal() ?? document), [])
   const matching = targets.filter(({ code }) => code.startsWith(query))
 
   useEffect(() => {
@@ -26,9 +28,10 @@ export function FocusHints({ onClose }: { onClose: () => void }) {
       event.stopImmediatePropagation()
       const nextQuery = `${query}${event.key.toLowerCase()}`
       const next = targets.filter(({ code }) => code.startsWith(nextQuery))
-      if (next.length === 1 && next[0].code === nextQuery) {
-        next[0].element.focus({ preventScroll: false })
-        next[0].element.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      const [only] = next
+      if (only && next.length === 1 && only.code === nextQuery) {
+        only.element.focus({ preventScroll: false })
+        only.element.scrollIntoView({ block: 'nearest', inline: 'nearest' })
         onClose()
       } else if (next.length) setQuery(nextQuery)
     }

@@ -73,7 +73,7 @@ export function paletteReducer(state: PaletteState, event: PaletteEvent): Palett
     case 'stepTab': {
       const index = paletteTabs.findIndex(({ id }) => id === state.tabId)
       const next = paletteTabs[(index + event.offset + paletteTabs.length) % paletteTabs.length]
-      return { ...state, tabId: next.id, selected: '' }
+      return next ? { ...state, tabId: next.id, selected: '' } : state
     }
     case 'chooseField':
       return { ...state, filterStep: event.field, query: '', selected: '' }

@@ -396,10 +396,8 @@
   gap: 8px;
 }
 .trips-split-legend li > span:not(.trips-split-swatch) {
-  overflow: hidden;
   color: var(--text-secondary);
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .trips-split-legend strong {
   font-weight: 500;

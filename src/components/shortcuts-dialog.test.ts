@@ -48,9 +48,9 @@ it('groups bound actions like the app and keeps at most two bindings each', () =
     'Lists',
     'Command palette',
   ])
-  expect(sections[0].rows).toEqual([{ title: 'Open command palette', keys: ['⌘K'] }])
-  expect(sections[1].rows).toEqual([{ title: 'Open Home', keys: ['⌘1', 'g h'] }])
-  expect(sections[2].rows).toEqual([{ title: 'Show Week', keys: ['W'] }])
+  expect(sections[0]?.rows).toEqual([{ title: 'Open command palette', keys: ['⌘K'] }])
+  expect(sections[1]?.rows).toEqual([{ title: 'Open Home', keys: ['⌘1', 'g h'] }])
+  expect(sections[2]?.rows).toEqual([{ title: 'Show Week', keys: ['W'] }])
   expect(sections.flatMap(({ rows }) => rows).some(({ title }) => title === 'No keys')).toBe(false)
   expect(
     sections.flatMap(({ rows }) => rows).some(({ title }) => title.startsWith('Next item in')),

@@ -85,6 +85,83 @@ fn pct(value: f64) -> Span {
     }
 }
 
+/// "+6.1%", signed with a true minus.
+fn signed_pct(value: f64) -> Span {
+    let rounded = round1(value);
+    Span::Figure {
+        text: format!("{}{:.1}%", sign(rounded), rounded.abs()),
+        tone: tone(value),
+        sensitive: false,
+    }
+}
+
+/// "$2.95" or "−$0.18": earnings per share, a public figure.
+fn eps(value: f64) -> String {
+    let cents = (value * 100.0).round() / 100.0;
+    format!(
+        "{}${:.2}",
+        if cents < 0.0 { "\u{2212}" } else { "" },
+        cents.abs()
+    )
+}
+
+/// An earnings report in a line: what the company earned per share against the consensus,
+/// then how the stock's own move answered, when it was more than ordinary.
+pub(super) fn earnings_line(
+    ticker: &str,
+    reported: Option<f64>,
+    estimate: Option<f64>,
+    reaction: Option<(f64, f64)>,
+) -> Vec<Span> {
+    let mut line = vec![subject(ticker)];
+    match (reported, estimate) {
+        (Some(reported), Some(estimate)) => {
+            let (reported_text, estimate_text) = (eps(reported), eps(estimate));
+            line.push(text(" reported "));
+            line.push(Span::Figure {
+                text: reported_text.clone(),
+                tone: Tone::Flat,
+                sensitive: false,
+            });
+            line.push(text(" a share, "));
+            line.push(text(if reported_text == estimate_text {
+                "matching the "
+            } else if reported > estimate {
+                "above the "
+            } else {
+                "below the "
+            }));
+            line.push(Span::Figure {
+                text: estimate_text,
+                tone: Tone::Flat,
+                sensitive: false,
+            });
+            line.push(text(" analysts expected."));
+        }
+        (Some(reported), None) => {
+            line.push(text(" reported "));
+            line.push(Span::Figure {
+                text: eps(reported),
+                tone: Tone::Flat,
+                sensitive: false,
+            });
+            line.push(text(" a share."));
+        }
+        _ => line.push(text(" reported its quarter.")),
+    }
+    if let Some((own, typical)) = reaction.filter(|(_, typical)| *typical > 0.0) {
+        let times = own.abs() / typical;
+        if times >= 1.0 {
+            line.push(text(" Its own move over the next two sessions was "));
+            line.push(signed_pct(own));
+            line.push(text(format!(", {times:.1}× a typical two days.")));
+        } else {
+            line.push(text(" Its own move after was ordinary."));
+        }
+    }
+    line
+}
+
 /// "−$1,240", whole dollars with a true minus; a personal amount.
 fn signed_money(value: f64) -> Span {
     let whole = value.round();
@@ -134,13 +211,23 @@ fn joined(spans: Vec<Vec<Span>>) -> Vec<Span> {
     out
 }
 
-/// The day's figures and headlines.
+/// The day in three parts: the market's wrap, your move with the reasons for the holdings that
+/// led it, and what changed.
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "DayBrief")]
 pub struct Brief {
+    /// The market's wrap as published, with its summary, when the S&P 500 moved enough to
+    /// have one.
+    pub market: Option<Headline>,
     pub lines: Vec<Vec<Span>>,
+    /// A reason for each holding that led the day by its own move, quoted from a story.
     pub headlines: Vec<Headline>,
+    /// The period's events that changed something: filings, corporate actions, and company
+    /// news not already quoted, most consequential first.
+    pub changed: Vec<super::ListedEvent>,
+    /// Earnings reported in the latest two sessions, newest first.
+    pub earnings: Vec<super::EarningsDigest>,
 }
 
 /// The holdings that led the day: moving its way, largest dollars first, each a real share.
@@ -304,7 +391,7 @@ mod tests {
             -1_240.4,
             &[
                 ("NVDA", -2.1, -610.0),
-                ("NBIS", -3.4, -410.0),
+                ("TEST", -3.4, -410.0),
                 ("VTI", -0.4, -120.0),
                 ("BND", 0.2, 30.0),
             ],
@@ -315,7 +402,7 @@ mod tests {
             written,
             [
                 "Your investments fell 0.9% (\u{2212}$1,240) today, more than the S&P 500\u{2019}s 0.7%.",
-                "NVDA and NBIS led the drop."
+                "NVDA and TEST led the drop."
             ]
         );
         // Personal dollars are maskable; prices aren't.
@@ -324,6 +411,26 @@ mod tests {
             tone: Tone::Down,
             sensitive: true
         }));
+    }
+
+    #[test]
+    fn an_earnings_report_reads_against_the_consensus_and_the_stocks_own_answer() {
+        assert_eq!(
+            written(&earnings_line("TEST", Some(0.42), Some(0.38), Some((6.1, 2.6)))),
+            "TEST reported $0.42 a share, above the $0.38 analysts expected. Its own move over the next two sessions was +6.1%, 2.3× a typical two days."
+        );
+        assert_eq!(
+            written(&earnings_line("TEST", Some(-0.18), Some(-0.18), Some((0.4, 2.6)))),
+            "TEST reported \u{2212}$0.18 a share, matching the \u{2212}$0.18 analysts expected. Its own move after was ordinary."
+        );
+        assert_eq!(
+            written(&earnings_line("TEST", Some(1.0), None, None)),
+            "TEST reported $1.00 a share."
+        );
+        assert_eq!(
+            written(&earnings_line("TEST", None, Some(1.0), None)),
+            "TEST reported its quarter."
+        );
     }
 
     #[test]

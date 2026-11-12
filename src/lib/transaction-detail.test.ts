@@ -54,9 +54,9 @@ it('gathers merchant history, the expected schedule, benefit evidence, and the c
       ],
       benefits: {
         accountId: 'card',
-        product: 'amex-platinum',
-        productName: 'American Express Platinum',
-        activity: [benefitActivity({ id: 'sep', benefitName: 'Digital entertainment' })],
+        product: 'example-card',
+        productName: 'Example Card',
+        activity: [benefitActivity({ id: 'sep', benefitName: 'Streaming' })],
         windows: [],
         useFirst: [],
         history: [],
@@ -68,7 +68,7 @@ it('gathers merchant history, the expected schedule, benefit evidence, and the c
   const detail = transactionDetail(data, 'spending:sep')!
   expect(detail.history.map(({ id }) => id)).toEqual(['aug', 'jul'])
   expect(detail.expected?.frequency).toBe('Monthly')
-  expect(detail.benefits.map(({ benefitName }) => benefitName)).toEqual(['Digital entertainment'])
+  expect(detail.benefits.map(({ benefitName }) => benefitName)).toEqual(['Streaming'])
   expect(detail.categoryOrigin).toBe('manual')
   // A grouping key alone does not make a transaction recurring.
   expect(transactionDetail(data, 'spending:other')?.expected).toBeUndefined()
@@ -77,8 +77,8 @@ it('gathers merchant history, the expected schedule, benefit evidence, and the c
 })
 
 it('builds a Google Maps link only from the address it is given', () => {
-  expect(mapsUrl('1 Market St · Portland, OR')).toBe(
-    'https://www.google.com/maps/search/?api=1&query=1%20Market%20St%20%C2%B7%20San%20Francisco%2C%20CA',
+  expect(mapsUrl('410 Example Ave · Portland, OR')).toBe(
+    'https://www.google.com/maps/search/?api=1&query=410%20Example%20Ave%20%C2%B7%20Portland%2C%20OR',
   )
 })
 
@@ -128,7 +128,7 @@ it('finds what Rust flagged about a transaction and opens Maps at its coordinate
   expect(transactionDetail(data, 'spending:b')?.duplicate?.otherId).toBe('a')
   expect(transactionDetail(data, 'spending:trip-dinner')?.trip?.destination).toBe('Austin, TX')
   expect(transactionDetail(data, 'spending:a')?.unusual).toBeUndefined()
-  expect(mapsUrl('Cafe', { lat: 37.77, lon: -122.42 })).toBe(
-    'https://www.google.com/maps/search/?api=1&query=37.77%2C-122.42',
+  expect(mapsUrl('Cafe', { lat: 45.52, lon: -122.68 })).toBe(
+    'https://www.google.com/maps/search/?api=1&query=45.52%2C-122.68',
   )
 })

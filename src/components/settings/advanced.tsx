@@ -14,6 +14,7 @@ import {
   saveMarketUpdateInterval,
 } from '../../lib/market-preferences'
 import { advancedPreferenceKeys } from '../../lib/settings-preferences'
+import { ExternalLink } from '../external-link'
 import { ChevronRight, Palette, ScrollText, ShieldCheck } from '../icons'
 import { Keys } from '../keys'
 import {
@@ -203,6 +204,15 @@ export function AdvancedSection() {
             <div>
               <span>Place data</span>
               <strong>Overture Maps · CDLA-Permissive-2.0, Apache-2.0, CC0</strong>
+            </div>
+            <div>
+              <span>Card benefits data</span>
+              <strong>
+                <ExternalLink href="https://github.com/tiepnv2508/us-credit-card-benefits">
+                  us-credit-card-benefits
+                </ExternalLink>{' '}
+                by tiepnv2508 · MIT License
+              </strong>
             </div>
           </div>
         </SettingsBlock>

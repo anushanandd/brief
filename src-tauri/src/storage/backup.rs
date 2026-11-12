@@ -16,21 +16,21 @@ use crate::database::Database;
 use crate::documents::{crypto::DocumentKey, files::DocumentFiles};
 
 /// A file that is removed when dropped unless kept, so a failed step leaves nothing behind.
-struct Scratch {
+pub(super) struct Scratch {
     path: PathBuf,
     kept: bool,
 }
 
 impl Scratch {
-    fn new(path: PathBuf) -> Self {
+    pub(super) fn new(path: PathBuf) -> Self {
         Self { path, kept: false }
     }
 
-    fn path(&self) -> &Path {
+    pub(super) fn path(&self) -> &Path {
         &self.path
     }
 
-    fn keep(mut self) {
+    pub(super) fn keep(mut self) {
         self.kept = true;
     }
 }
@@ -46,6 +46,22 @@ impl Drop for Scratch {
 impl Storage {
     pub(super) fn backup_path(&self) -> PathBuf {
         self.path.with_file_name("finance-state.backup.sqlite3")
+    }
+
+    /// Backs the database up before a durable write: the rolling copy every time, and the
+    /// day's dated copy in `backups/` on the day's first write.
+    pub(super) fn back_up(&self) -> Result<(), String> {
+        // While recovering, the open database is an empty stand-in, not the user's data; the
+        // originals are retained instead, and a copy of it would replace the rolling backup.
+        if self.recovery.is_some() {
+            return Ok(());
+        }
+        self.database.backup(&self.backup_path())?;
+        let directory = self
+            .path
+            .parent()
+            .ok_or("Local data directory unavailable")?;
+        super::generations::keep_daily(&self.database, directory, (self.today)())
     }
 
     pub fn recover(&mut self, restore: bool) -> Result<Value, String> {
@@ -87,10 +103,12 @@ impl Storage {
         self.recovery = None;
         self.pending = None;
         // Primary is now valid. A failed backup is safe to retry on the next durable write.
-        let _ = self.database.backup(&self.backup_path());
+        let _ = self.back_up();
         self.snapshot()
     }
 
+    /// Erases every copy of the user's finance data Brief keeps, and every cache derived from
+    /// it. Keychain credentials stay: removing them is a separate action.
     pub fn erase(&mut self) -> Result<Value, String> {
         self.ensure_writable()?;
         let directory = self
@@ -121,11 +139,15 @@ impl Storage {
                 copy.then(|| entry.path())
             }));
         }
+        // A panic's message may quote what it was handling.
+        removable.push(directory.join(crate::panic_log::FILE));
         for path in removable {
             if path.exists() {
                 fs::remove_file(path).map_err(|_| "Could not remove retained financial data")?;
             }
         }
+        // The dated and pre-migration copies, and those a release kept.
+        super::generations::erase(directory)?;
         let opened = self.opened_directory()?;
         if opened.exists() {
             fs::remove_dir_all(opened).map_err(|_| "Could not remove opened statements")?;
@@ -156,7 +178,7 @@ impl Storage {
         {
             return Ok(());
         }
-        self.database.backup(&self.backup_path())?;
+        self.back_up()?;
         self.edit_backup = Some((Instant::now(), revision));
         Ok(())
     }
@@ -286,7 +308,7 @@ impl Storage {
         } else {
             self.database.backup(&retained)?;
         }
-        self.database.backup(&self.backup_path())?;
+        self.back_up()?;
         if self.recovery.is_some() {
             drop(database);
             fs::rename(temporary.path(), &self.path).map_err(|_| "Could not install backup")?;

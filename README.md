@@ -1,69 +1,80 @@
 # Brief
 
-Brief is a private finance app for macOS. It reads your bank, card, and brokerage accounts, your statements, and your tax documents, keeps all of it on your Mac, and shows where you stand: net worth, spending, holdings, bills, card benefits, and taxes. There is no server, and every provider is read-only.
+A personal finance app for macOS. It reads bank, card, and brokerage accounts, statements, and tax documents, keeps every record on the Mac, and computes every figure in Rust.
+
+[![CI](https://github.com/anushanandd/brief/actions/workflows/ci.yml/badge.svg)](https://github.com/anushanandd/brief/actions/workflows/ci.yml)
+
+<!--
+Screenshot: take one from the browser preview (`pnpm dev`, synthetic data only), save it as
+docs/screenshot.png, and replace this comment with:
+
+![Brief's Home page, showing synthetic data](docs/screenshot.png)
+-->
+
+There is no server. Brief is a Tauri 2 app: a Rust backend in `src-tauri/`, a React 19 and TypeScript interface in `src/`, and SQLite on the Mac. Every provider is read-only.
 
 ## What it does
 
-- **Home:** net worth, what needs attention, what's coming up, and recent activity.
-- **Money:** spending by category and merchant, recurring bills, cash flow, income, interest, fees, and card benefits.
-- **Investments:** live portfolio value, each holding with its news and filings, retirement accounts, dividends, and realized gains.
-- **Activity:** every transaction in one ledger, with search, filters, edits, splits, and the evidence behind each field.
-- **Documents and taxes:** pay statements and tax forms read on the Mac, a 1099 preview, wash sales, and an estimated tax.
-- **Keyboard first:** ⌘K reaches every command; ⌘H hides amounts on screen.
+- **Home:** net worth over time, what needs attention, and what's coming up.
+- **Money:** spending by period, category, and merchant; cash flow; recurring bills; a 90-day cash forecast; card statements and benefit credits.
+- **Activity:** one ledger of every transaction, with search, edits, splits, and the evidence behind each field.
+- **Investments:** live portfolio value, holdings with their news and SEC filings, returns beside the S&P 500, tax lots, and dividends.
+- **Documents and taxes:** pay statements and tax forms read on the Mac and matched to deposits; realized gains, wash sales, and an estimated tax.
+- **Assistant:** questions answered on-device by Apple Intelligence, quoting only figures Rust computed.
 
-## How it works
+It is built for the keyboard: a command palette reaches every page, record, and action.
+
+## How it's built
 
 ```text
-Plaid · SnapTrade · Alpaca · SEC EDGAR · statements · documents
+Plaid · SnapTrade · Alpaca · SEC EDGAR · Alpha Vantage · statements · documents
               │  read-only, retried, bounded
               ▼
    Rust: typed records, decimal math, one validated commit
               │
               ▼
-   SQLite on your Mac  ──►  insights derived on every read
-              │  Tauri IPC
+   SQLite change log + snapshot  ──►  insights derived on every read
+              │  Tauri IPC, types generated from Rust
               ▼
    React: formats what Rust computed
 ```
 
-Rust owns everything that touches money or secrets; the interface only formats. See [ARCHITECTURE.md](ARCHITECTURE.md) for the details.
+**Rust computes, React displays.** Every total, forecast, and classification is computed in Rust with decimal math. The interface's types are generated from the Rust structs ([ts-rs](https://github.com/Aleph-Alpha/ts-rs)), and CI fails if they drift.
 
-## Three problems worth reading the code for
+**The change log is the source of truth.** Every write is one change, applied by the same function live and in replay, and saved with a hash of the state it produced in one SQLite transaction. A test runs a generated person's life through the real refresh and edit paths and requires the log to rebuild the saved tables exactly ([`storage/change.rs`](src-tauri/src/storage/change.rs), [`storage/tests/replay.rs`](src-tauri/src/storage/tests/replay.rs)).
 
-1. **Statements reconciled against Plaid.** An imported bank or card statement is matched row by row to what Plaid reported, amounts that disagree are flagged, and a row Plaid never sent joins history only after you confirm it ([`statements/`](src-tauri/src/statements)).
-2. **Every field carries its evidence.** A purchase's merchant, place, and category are resolved from the issuer's export, the bank's descriptor, and Plaid in a fixed order of trust, and each field is graded as confirmed, supported, weak, or conflicting ([`merchants.rs`](src-tauri/src/merchants.rs), [`quality.rs`](src-tauri/src/quality.rs)).
-3. **A refresh commits completely or not at all.** Providers are fetched into staging under one deadline, projected with decimal math, validated, and committed in a single SQLite transaction; a failure leaves the last good state untouched ([`refresh.rs`](src-tauri/src/refresh.rs)).
+**A refresh commits completely or not at all.** Every provider is fetched into staging under one deadline, then projected, validated, and committed in a single transaction. A provider that fails keeps its last good data ([`refresh.rs`](src-tauri/src/refresh.rs)).
+
+**The database recovers itself.** Migrations run in one transaction after a copy of the old version is kept, every write is preceded by a backup, and a database that can't be read opens its newest readable copy read-only ([`storage/generations.rs`](src-tauri/src/storage/generations.rs)).
+
+**Live market data survives corrections.** One shared socket per feed serves the whole app, keeps timestamps in order, and treats a corrected or cancelled trade as something to reconcile ([`providers/market_stream.rs`](src-tauri/src/providers/market_stream.rs)).
+
+**The assistant can't make up a number.** Apple's on-device model sees about 4,096 tokens, so Rust plans each question first: it resolves the dates, offers the model at most four tools, and answers a clear question itself. Every figure in an answer is checked against what the tools returned ([`assistant_planner.rs`](src-tauri/src/insights/assistant_planner.rs), [`foundation_model/figures.rs`](src-tauri/src/foundation_model/figures.rs)). An 81-question eval set checks the routing in CI.
+
+**Tests run on synthetic lives.** Results depend only on the data and the local day, so tests pin both. Over 800 Rust tests and 600 frontend tests run on generated people, and none on real data.
+
+[ARCHITECTURE.md](ARCHITECTURE.md) has the rules every part keeps and a map of the code, and [docs/decisions/](docs/decisions/) records why the main choices were made.
 
 ## Privacy
 
-- Credentials and provider tokens live only in macOS Keychain.
-- Financial data lives in SQLite files readable only by your user. **They aren't encrypted**, so use FileVault. Document originals are encrypted.
-- Backups are complete copies of your data. Exporting or restoring one requires macOS authentication.
-- Logos are off by default; turning them on sends tickers and merchant and institution domains to Logo.dev and Plaid.
-- Billed Plaid products run only when you turn them on.
+Credentials live only in macOS Keychain. Financial data is in SQLite files readable only by your user; they aren't encrypted, so use FileVault. Document originals are sealed with AES-256-GCM under a key in Keychain.
 
-## Develop
+Data leaves the Mac only for the providers that supply it. Logos, place lookups, and web research are off until you turn them on, and there is no telemetry.
 
-Requirements: macOS 14 or later, Xcode, Rust 1.89 or later, Node, and pnpm. Apple Intelligence needs macOS 26.
+## Run it
+
+You need macOS 14 or later, Xcode, Rust 1.89 or later, Node, and pnpm. Apple Intelligence needs macOS 26.
 
 ```sh
 pnpm install
-pnpm dev          # browser preview with synthetic data
-pnpm tauri dev    # native app with real providers
-pnpm check        # format, lint, test, build
-pnpm release      # build, sign, and replace /Applications/Brief.app
-cargo test --manifest-path src-tauri/Cargo.toml
+pnpm dev          # browser preview with synthetic data, no credentials
+pnpm tauri dev    # native app; add provider credentials in Settings → Connections
+pnpm check        # format, lint, test, and build the interface
+(cd src-tauri && cargo test)
 ```
 
-Add provider credentials in Settings → Connections. Native dev builds are code-signed so Keychain access survives rebuilds; with several Apple Development identities, set `APPLE_SIGNING_IDENTITY`.
-
-## Documentation
-
-- [PRINCIPLES.md](PRINCIPLES.md): what Brief is for and how it decides
-- [DESIGN.md](DESIGN.md): how it should look and move
-- [ARCHITECTURE.md](ARCHITECTURE.md): how the system fits together
-- [AGENTS.md](AGENTS.md): guidance for coding agents
+Native dev builds are code-signed so Keychain access survives rebuilds; with several Apple Development identities, set `APPLE_SIGNING_IDENTITY`. Run `git config core.hooksPath .githooks` once per clone to scan each commit for secrets and run the checks before each push.
 
 ## License
 
-[PolyForm Noncommercial 1.0.0](LICENSE). You may read, run, and modify Brief for personal, noncommercial use.
+Brief is a personal project and isn't accepting contributions. [PolyForm Noncommercial 1.0.0](LICENSE): you may read, run, and modify it for personal, noncommercial use.

@@ -150,21 +150,17 @@ fn a_pay_statements_deposit_is_found_in_the_account_it_names_or_raised_when_miss
     let documents = vec![
         payslip(
             "a",
-            "2026-06-18",
+            "2026-06-19",
             2_500.0,
             "1234",
-            [
-                16_000.0, 600.0, 600.0, 2_000.0, 992.0, 232.0, 800.0,
-            ],
+            [16_000.0, 600.0, 600.0, 2_000.0, 992.0, 232.0, 800.0],
         ),
         payslip(
             "b",
-            "2026-07-02",
+            "2026-07-03",
             2_500.0,
             "1234",
-            [
-                20_000.0, 800.0, 800.0, 2_500.0, 1_240.0, 290.0, 1_000.0,
-            ],
+            [20_000.0, 800.0, 800.0, 2_500.0, 1_240.0, 290.0, 1_000.0],
         ),
         // Paid to an account Brief doesn't track: noted, never raised.
         payslip(
@@ -172,9 +168,7 @@ fn a_pay_statements_deposit_is_found_in_the_account_it_names_or_raised_when_miss
             "2026-07-17",
             100.0,
             "9999",
-            [
-                20_000.0, 800.0, 800.0, 2_500.0, 1_240.0, 290.0, 1_000.0,
-            ],
+            [20_000.0, 800.0, 800.0, 2_500.0, 1_240.0, 290.0, 1_000.0],
         ),
     ];
     let transactions = vec![
@@ -182,7 +176,7 @@ fn a_pay_statements_deposit_is_found_in_the_account_it_names_or_raised_when_miss
         row(
             "pay",
             "cash",
-            "2026-06-17",
+            "2026-06-18",
             "EXAMPLE PAYROLL DEPOSIT",
             2_500.0,
             TransactionKind::Income,
@@ -190,7 +184,7 @@ fn a_pay_statements_deposit_is_found_in_the_account_it_names_or_raised_when_miss
         row(
             "elsewhere",
             "broker",
-            "2026-07-02",
+            "2026-07-03",
             "Transfer",
             2_500.0,
             TransactionKind::Transfer,
@@ -210,7 +204,7 @@ fn a_pay_statements_deposit_is_found_in_the_account_it_names_or_raised_when_miss
     let needs = super::needs(&result, &documents, day("2026-07-20"));
     assert_eq!(needs.len(), 1);
     assert!(
-        matches!(&needs[0].item, super::super::attention::Item::PayMissing { date, .. } if *date == day("2026-07-02"))
+        matches!(&needs[0].item, super::super::attention::Item::PayMissing { date, .. } if *date == day("2026-07-03"))
     );
 }
 
@@ -219,21 +213,17 @@ fn the_latest_pay_statement_predicts_the_w2_and_a_differing_w2_is_raised() {
     let documents = vec![
         payslip(
             "a",
-            "2026-07-02",
+            "2026-07-03",
             1.0,
             "1234",
-            [
-                20_000.0, 800.0, 800.0, 2_500.0, 1_240.0, 290.0, 1_000.0,
-            ],
+            [20_000.0, 800.0, 800.0, 2_500.0, 1_240.0, 290.0, 1_000.0],
         ),
         payslip(
             "b",
             "2026-09-11",
             1.0,
             "1234",
-            [
-                28_000.0, 1_200.0, 1_100.0, 3_500.0, 1_736.0, 406.0, 1_400.0,
-            ],
+            [28_000.0, 1_200.0, 1_100.0, 3_500.0, 1_736.0, 406.0, 1_400.0],
         ),
     ];
     let year = &run(&documents, &[], &accounts(), "2026-10-15").years[0];
@@ -305,7 +295,7 @@ fn contractor_pay_carries_self_employment_tax_and_a_1099_nec_states_it() {
             "own",
             "cash",
             "2026-08-13",
-            "DIRECT DEP FUNDS RECVD JPMorgan Chase Ext Trnsfr",
+            "DIRECT DEP FUNDS RECVD Example Bank Ext Trnsfr",
             5_000.0,
             TransactionKind::Income,
         ),
@@ -432,4 +422,86 @@ fn documents_say_how_long_to_keep_them() {
     let result = run(&[w2, roth], &[], &accounts(), "2026-10-15");
     assert_eq!(result.keep[0].until, Some(day("2029-04-15")));
     assert_eq!(result.keep[1].until, None);
+}
+
+/// A pay statement for the period `start` to `end`, paid on `date`, with the period's gross,
+/// 401(k) deferral, and federal withholding beside their year-to-date amounts.
+fn pay_period(
+    id: &str,
+    (start, end, date): (&str, &str, &str),
+    period: [f64; 3],
+    ytd: [f64; 3],
+) -> Document {
+    let [gross, deferral, federal] = period;
+    let [gross_ytd, deferral_ytd, federal_ytd] = ytd;
+    Document {
+        period_start: Some(start.into()),
+        period_end: Some(end.into()),
+        fields: vec![
+            field("gross", Some(gross), Some(gross_ytd)),
+            field("pretax401k", Some(deferral), Some(deferral_ytd)),
+            field("federalWithholding", Some(federal), Some(federal_ytd)),
+        ],
+        ..document(
+            id,
+            Kind::Payslip,
+            "Pay statement",
+            "Example Employer",
+            2026,
+            date,
+        )
+    }
+}
+
+#[test]
+fn pay_carries_to_december_from_the_latest_statement_and_its_cadence() {
+    let earlier = pay_period(
+        "a",
+        ("2026-09-01", "2026-09-15", "2026-09-15"),
+        [4_000.0, 400.0, 500.0],
+        [68_000.0, 6_800.0, 8_500.0],
+    );
+    let latest = pay_period(
+        "b",
+        ("2026-09-16", "2026-09-30", "2026-09-30"),
+        [4_000.0, 400.0, 500.0],
+        [72_000.0, 7_200.0, 9_000.0],
+    );
+    let projections = pay_projections(2026, &[earlier, latest]).unwrap();
+    assert_eq!(projections.len(), 1);
+    let pay = &projections[0];
+    // Twice a month: September 30 is the 18th of 24 periods, so six are left.
+    assert_eq!((pay.period, pay.periods), (18, 24));
+    assert_eq!(pay.document_id, format!("{:0>64}", "b"));
+    assert_eq!(
+        (pay.wages_to_date, pay.withheld_to_date),
+        (64_800.0, 9_000.0)
+    );
+    assert_eq!(pay.projected_wages, 64_800.0 + 6.0 * 3_600.0);
+    assert_eq!(pay.projected_withholding, 9_000.0 + 6.0 * 500.0);
+
+    // Every two weeks, read by the period's length; a check on Oct 9 is the 21st of 26.
+    let biweekly = pay_period(
+        "c",
+        ("2026-09-26", "2026-10-09", "2026-10-09"),
+        [3_000.0, 0.0, 300.0],
+        [63_000.0, 0.0, 6_300.0],
+    );
+    let pay = &pay_projections(2026, &[biweekly]).unwrap()[0];
+    assert_eq!((pay.period, pay.periods), (21, 26));
+    assert_eq!(pay.projected_withholding, 6_300.0 + 5.0 * 300.0);
+
+    // A statement without its period can't be carried forward: unavailable, never partial.
+    let undated = Document {
+        period_start: None,
+        ..pay_period(
+            "d",
+            ("2026-09-16", "2026-09-30", "2026-09-30"),
+            [4_000.0, 400.0, 500.0],
+            [72_000.0, 7_200.0, 9_000.0],
+        )
+    };
+    assert_eq!(pay_projections(2026, &[undated]), None);
+    // No pay statement this year is nothing to project.
+    assert_eq!(pay_projections(2025, &[]), Some(Vec::new()));
 }

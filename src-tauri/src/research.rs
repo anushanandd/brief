@@ -36,7 +36,7 @@ use crate::{
 pub enum EntryKind {
     /// A search for a gap's terms.
     Search,
-    /// A rule's source read again.
+    /// A page read by its address: a rule's source again, or a card's terms.
     Recheck,
 }
 
@@ -226,9 +226,14 @@ fn covered(programs: &[Program], name: &str) -> bool {
     })
 }
 
-/// The gaps in what rules cover: cards with neither benefit rules nor a program, employers no
-/// program names, and deposit accounts at institutions no program names.
-pub fn gaps(accounts: &[Account], chapters: &[Chapter], programs: &[Program]) -> Vec<Gap> {
+/// The gaps in what rules cover: cards with neither saved benefit rules (`cards`) nor a
+/// program, employers no program names, and deposit accounts at institutions no program names.
+pub fn gaps(
+    accounts: &[Account],
+    chapters: &[Chapter],
+    programs: &[Program],
+    cards: &benefits::Catalog,
+) -> Vec<Gap> {
     let mut gaps = BTreeMap::<String, Gap>::new();
     let mut add = |kind: GapKind, name: String, query: String| {
         let id = format!(
@@ -253,7 +258,7 @@ pub fn gaps(accounts: &[Account], chapters: &[Chapter], programs: &[Program]) ->
                 let Some(official) = account.official_name.as_deref() else {
                     continue;
                 };
-                if benefits::named_product(Some(official)).is_some() {
+                if cards.named_product(Some(official)).is_some() {
                     continue;
                 }
                 if let Some(name) = public_name(official).filter(|name| !covered(programs, name)) {
@@ -326,7 +331,7 @@ pub struct Draft {
     pub source_title: String,
     /// The day the terms begin; earlier dates are never covered.
     pub effective: NaiveDate,
-    /// The account's name as it shows, such as "Platinum CashPlus".
+    /// The account's name as it shows, such as "Premier Checking".
     pub account_name: String,
     pub institution: String,
     /// For a bonus: the card's official name, as Plaid reports it.

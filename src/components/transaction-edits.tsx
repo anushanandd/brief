@@ -332,7 +332,13 @@ export function TransactionEdits({
                   disabled={pending}
                   onClick={() => {
                     const amounts = evenSplit(transaction.amount, draft.length)
-                    setDraft(draft.map((item, index) => ({ ...item, amount: amounts[index] })))
+                    // One amount per part; a part without one keeps what it holds.
+                    setDraft(
+                      draft.map((item, index) => ({
+                        ...item,
+                        amount: amounts[index] ?? item.amount,
+                      })),
+                    )
                   }}
                 >
                   Split evenly

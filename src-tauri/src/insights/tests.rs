@@ -405,7 +405,7 @@ fn a_card_credit_belongs_to_whoever_its_purchase_was_for() {
             "classification": classified(kind, mark, credit),
         })
     };
-    let mut theirs = card_txn("theirs", "2026-07-15", "Disney Plus", -13.99);
+    let mut theirs = card_txn("theirs", "2026-07-15", "Example TV", -13.99);
     theirs["other"] = true.into();
     theirs["classification"] = classified("owed", "initial", false);
     let mut snapshot = json!({
@@ -415,13 +415,14 @@ fn a_card_credit_belongs_to_whoever_its_purchase_was_for() {
         "accounts": [{ "id": "plaid:card", "name": "Card", "institution": "Bank", "type": "credit", "value": -100.0, "currency": "USD" }],
         "transactions": [
             theirs,
-            card_txn("their-credit", "2026-07-18", "Platinum Digital Entertainment Credit", 13.99),
-            card_txn("mine", "2026-08-15", "Disney Plus", -13.99),
-            card_txn("my-credit", "2026-08-18", "Platinum Digital Entertainment Credit", 13.99),
+            card_txn("their-credit", "2026-07-18", "Example Card Streaming Credit", 13.99),
+            card_txn("mine", "2026-08-15", "Example TV", -13.99),
+            card_txn("my-credit", "2026-08-18", "Example Card Streaming Credit", 13.99),
         ],
     });
     let settings = FinanceSettings {
         spending_account_id: Some("plaid:card".into()),
+        card_rules: vec![benefits::example_rules()],
         ..Default::default()
     };
     let now = DateTime::parse_from_rfc3339("2026-09-16T12:00:00Z")
@@ -500,22 +501,21 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
         .unwrap()
     };
     let mut transactions = history();
-    // The card used its monthly streaming credit in August and not yet in September, but a
-    // subscription spends that on its own, so only the quarter's lululemon credit asks.
-    transactions.push(card_txn("disney", "2026-08-15", "Disney Plus", -13.99));
+    // A credit a subscription uses up by itself raises no reminder; an unused dining credit does.
+    transactions.push(card_txn("streaming", "2026-08-15", "Example TV", -13.99));
     transactions.push(card_txn(
-        "disney-credit",
+        "streaming-credit",
         "2026-08-18",
-        "Digital Entertainment Credit",
+        "Streaming Credit",
         13.99,
     ));
     // The card's history covers the whole quarter, so what is left is known exactly.
     transactions.push(card_txn("coffee", "2026-06-20", "Coffee", -4.0));
-    transactions.push(card_txn("leggings", "2026-08-20", "lululemon", -40.0));
+    transactions.push(card_txn("dinner", "2026-08-20", "Example Tables", -40.0));
     transactions.push(card_txn(
-        "leggings-credit",
+        "dinner-credit",
         "2026-08-21",
-        "Platinum lululemon Credit",
+        "Example Tables Dining Credit",
         40.0,
     ));
     let account = |id: &str, kind: &str, value: f64| -> Account {
@@ -527,7 +527,7 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
     };
     let settings = FinanceSettings {
         spending_account_id: Some("plaid:card".into()),
-        hidden_benefit_ids: vec!["resy".into()],
+        card_rules: vec![benefits::example_rules()],
         ..Default::default()
     };
     let brief = |cash: f64, settings: &FinanceSettings| {
@@ -566,24 +566,44 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
                 attention::Item::PayMissing { .. } => "pay-missing",
                 attention::Item::W2Differs { .. } => "w2-differs",
                 attention::Item::ProgramNote { .. } => "program-note",
+                attention::Item::NewSeries { .. } => "new-series",
+                attention::Item::PriceChanged { .. } => "price-changed",
+                attention::Item::FeesCharged { .. } => "fees-charged",
+                attention::Item::PayDiffers { .. } => "pay-differs",
+                attention::Item::UnusualCharge { .. } => "unusual-charge",
             })
             .collect::<Vec<_>>()
     };
 
     // Rent on Oct 1 exceeds cash: the urgent shortfall leads, and the later low is the
     // same problem, so it is not listed twice.
+    // A charge far above five earlier ones at the same merchant is flagged.
     let short = brief(1_200.10, &settings);
-    assert_eq!(kinds(&short), vec!["coverage-short", "credit-expiring"]);
+    assert_eq!(
+        kinds(&short),
+        vec!["coverage-short", "credit-expiring", "unusual-charge"]
+    );
+    assert!(matches!(
+        &short.needs[2].item,
+        attention::Item::UnusualCharge { transaction_id, confidence, evidence, .. }
+            if transaction_id == "dining-big"
+                && (*confidence - 4.0 / 6.0).abs() < 1e-9
+                && evidence.len() == 6
+                && evidence.last().map(String::as_str) == Some("dining-big")
+    ));
     assert!(matches!(
         &short.needs[1].item,
         attention::Item::CreditExpiring { benefit_id, remaining_low, remaining_high, days, .. }
-            if benefit_id == "lululemon"
-                && *remaining_low == 35.0 && *remaining_high == 35.0 && *days == 4
+            if benefit_id == "dining"
+                && *remaining_low == 10.0 && *remaining_high == 10.0 && *days == 4
     ));
 
     // Cash covers the next 30 days but not three months of rent.
     let later = brief(2_000.0, &settings);
-    assert_eq!(kinds(&later), vec!["cash-low", "credit-expiring"]);
+    assert_eq!(
+        kinds(&later),
+        vec!["cash-low", "credit-expiring", "unusual-charge"]
+    );
     assert!(matches!(
         later.needs[0].item,
         attention::Item::CashLow { expected, .. } if expected == -2_500.0
@@ -591,10 +611,200 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
 
     // A hidden benefit never asks for attention.
     let hidden = FinanceSettings {
-        hidden_benefit_ids: vec!["resy".into(), "lululemon".into()],
+        hidden_benefit_ids: vec!["dining".into()],
         ..settings.clone()
     };
-    assert!(kinds(&brief(9_000.0, &hidden)).is_empty());
+    assert_eq!(kinds(&brief(9_000.0, &hidden)), vec!["unusual-charge"]);
+}
+
+/// The inferred needs over one checking account's history: rent since April, a paycheck every
+/// two weeks since April, a video subscription since May, a music subscription since July, and
+/// two fees in September.
+fn signal_history() -> Vec<Transaction> {
+    let mut transactions = Vec::new();
+    for month in ["04", "05", "06", "07", "08", "09"] {
+        transactions.push(txn(
+            &format!("rent-{month}"),
+            &format!("2026-{month}-01"),
+            "Example Property",
+            "Rent And Utilities",
+            -1_500.0,
+            Kind::Expense,
+        ));
+    }
+    let start = NaiveDate::from_ymd_opt(2026, 4, 3).unwrap();
+    for index in 0..13 {
+        let date = start + chrono::Duration::days(14 * index);
+        // The last paycheck, on Sep 11, is $400 above the twelve before it.
+        let amount = if index == 12 { 2_400.0 } else { 2_000.0 };
+        transactions.push(txn(
+            &format!("pay-{index}"),
+            &date.to_string(),
+            "Example Employer Payroll",
+            "Income",
+            amount,
+            Kind::Income,
+        ));
+    }
+    for (month, amount) in [
+        ("05", -10.0),
+        ("06", -10.0),
+        ("07", -10.0),
+        ("08", -10.0),
+        ("09", -12.0),
+    ] {
+        transactions.push(txn(
+            &format!("video-{month}"),
+            &format!("2026-{month}-08"),
+            "Example Video Streaming",
+            "Entertainment",
+            amount,
+            Kind::Expense,
+        ));
+    }
+    for month in ["07", "08", "09"] {
+        transactions.push(txn(
+            &format!("music-{month}"),
+            &format!("2026-{month}-14"),
+            "Example Music Subscription",
+            "Entertainment",
+            -9.99,
+            Kind::Expense,
+        ));
+    }
+    transactions.push(txn(
+        "fx-fee",
+        "2026-09-05",
+        "Foreign Transaction Fee",
+        "Fees",
+        -3.0,
+        Kind::Fee,
+    ));
+    // A fee with no other evidence, at Plaid's default confidence, stays below the threshold.
+    transactions.push(txn(
+        "service",
+        "2026-09-06",
+        "Monthly Service",
+        "Fees",
+        -12.0,
+        Kind::Fee,
+    ));
+    transactions
+}
+
+fn inferred_needs(transactions: &[Transaction]) -> Vec<attention::AttentionItem> {
+    compute(
+        transactions,
+        &[account("plaid:checking", "cash", 9_000.0)],
+        &FinanceSettings::default(),
+        "2026-09-16T12:00:00Z",
+        now(),
+        &NamedZone::Utc,
+    )
+    .brief
+    .needs
+    .into_iter()
+    .filter(|need| need.item.confidence().is_some())
+    .collect()
+}
+
+#[test]
+fn inferred_needs_carry_their_confidence_and_evidence() {
+    let needs = inferred_needs(&signal_history());
+    let ids = needs
+        .iter()
+        .map(|need| need.id.as_str())
+        .collect::<Vec<_>>();
+    // Rent and pay are as old as the account's history, so only the music is new.
+    assert_eq!(
+        ids.iter()
+            .filter(|id| id.starts_with("new-series:"))
+            .count(),
+        1
+    );
+    let item = |prefix: &str| {
+        &needs
+            .iter()
+            .find(|need| need.id.starts_with(prefix))
+            .unwrap_or_else(|| panic!("{prefix} in {ids:?}"))
+            .item
+    };
+    assert!(matches!(
+        item("new-series:"),
+        attention::Item::NewSeries { title, transaction_id, confidence, evidence, first_seen, .. }
+            if title == "Example Music Subscription"
+                && transaction_id == "music-09"
+                && *confidence == 0.8
+                && evidence == &["music-07", "music-08", "music-09"]
+                && first_seen.to_string() == "2026-07-14"
+    ));
+    // A price change's confidence grows with how many charges held the old price.
+    assert!(matches!(
+        item("price-changed:"),
+        attention::Item::PriceChanged { previous, latest, confidence, evidence, .. }
+            if *previous == -10.0 && *latest == -12.0 && *confidence == 0.8
+                && evidence.len() == 5
+    ));
+    // A paycheck outside the range of the series' earlier ones is flagged.
+    assert!(matches!(
+        item("pay-differs:"),
+        attention::Item::PayDiffers { amount, low, high, transaction_id, confidence, evidence, .. }
+            if *amount == 2_400.0 && *low == 2_000.0 && *high == 2_000.0
+                && transaction_id == "pay-12"
+                && (*confidence - 10.0 / 12.0).abs() < 1e-9
+                && evidence.len() == 12
+    ));
+    // Only the fee its descriptor names counts; the unnamed one stays in the Fees report.
+    assert!(matches!(
+        item("fees:"),
+        attention::Item::FeesCharged { count, amount, evidence, confidence, .. }
+            if *count == 1 && *amount == -3.0 && evidence == &["fx-fee"] && *confidence == 0.9
+    ));
+    // Bills and card closings appear only in Coming up.
+    assert!(needs.iter().all(|need| !matches!(
+        need.item,
+        attention::Item::MissedBill { .. } | attention::Item::UtilizationHigh { .. }
+    )));
+}
+
+#[test]
+fn reviewing_an_inference_dismisses_it_and_thin_evidence_raises_nothing() {
+    let mut transactions = signal_history();
+    for transaction in &mut transactions {
+        if ["music-09", "video-09", "pay-12", "fx-fee"].contains(&transaction.id.as_str()) {
+            transaction.reviewed = Some(true);
+        }
+    }
+    assert!(inferred_needs(&transactions).is_empty());
+
+    // With three earlier paychecks, a different one is only half sure: not raised.
+    let thin = signal_history()
+        .into_iter()
+        .filter(|transaction| {
+            !transaction.id.starts_with("pay-")
+                || ["pay-9", "pay-10", "pay-11", "pay-12"].contains(&transaction.id.as_str())
+        })
+        .collect::<Vec<_>>();
+    let pay = forecast::pay_changes(
+        &thin,
+        &forecast::forecast_within(
+            &thin,
+            &[AccountView {
+                id: "plaid:checking".into(),
+                activity_as_of: None,
+                balance_fetched_at: Some("2026-09-16T12:00:00Z".into()),
+            }],
+            "2026-09-16T12:00:00Z",
+            NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
+            subscriptions::HORIZON_DAYS,
+        ),
+        NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
+    );
+    assert_eq!(pay.len(), 1);
+    assert_eq!(pay[0].confidence, 0.5);
+    assert!(inferred_needs(&thin)
+        .iter()
+        .all(|need| !need.id.starts_with("pay-differs:")));
 }
 
 #[test]
@@ -613,14 +823,14 @@ fn each_assigned_card_is_tracked_under_its_own_product_and_account() {
             &format!("{account}-buy"),
             account,
             "2026-08-15",
-            "Disney Plus",
+            "Example TV",
             -13.99,
         ));
         transactions.push(card_txn(
             &format!("{account}-credit"),
             account,
             "2026-08-18",
-            "Digital Entertainment Credit",
+            "Streaming Credit",
             13.99,
         ));
     }
@@ -633,8 +843,8 @@ fn each_assigned_card_is_tracked_under_its_own_product_and_account() {
     };
     let settings = FinanceSettings {
         spending_account_id: Some("plaid:card".into()),
-        benefit_cards: [("plaid:second".to_owned(), "amex-platinum".to_owned())].into(),
-        hidden_benefit_ids: vec!["resy".into()],
+        benefit_cards: [("plaid:second".to_owned(), "example-card".to_owned())].into(),
+        card_rules: vec![benefits::example_rules()],
         ..Default::default()
     };
     let insights = compute(
@@ -655,7 +865,7 @@ fn each_assigned_card_is_tracked_under_its_own_product_and_account() {
     assert_eq!(insights.benefits.as_ref().unwrap().account_id, "plaid:card");
     assert_eq!(
         insights.benefits.as_ref().unwrap().product_name,
-        "American Express Platinum"
+        "Example Card"
     );
     assert_eq!(
         insights
@@ -689,21 +899,21 @@ fn each_assigned_card_is_tracked_under_its_own_product_and_account() {
     assert_eq!(
         expiring,
         vec![
+            ("credit-expiring:plaid:card:dining:2026-09-30", "plaid:card"),
             (
-                "credit-expiring:plaid:card:lululemon:2026-09-30",
-                "plaid:card"
-            ),
-            (
-                "credit-expiring:plaid:second:lululemon:2026-09-30",
+                "credit-expiring:plaid:second:dining:2026-09-30",
                 "plaid:second"
             ),
         ]
     );
-    assert_eq!(benefits::products().len(), 1);
+    assert_eq!(
+        benefits::Catalog::from_settings(&settings).products().len(),
+        1
+    );
 
     // A card the issuer names as the product is tracked without an assignment.
     let mut named = account("plaid:unassigned");
-    named.official_name = Some("Morgan Stanley Platinum Card®".into());
+    named.official_name = Some("The Example Card®".into());
     let insights = compute(
         &transactions,
         &[account("plaid:card"), named],

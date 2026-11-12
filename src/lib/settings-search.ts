@@ -24,7 +24,7 @@ export type SettingsSection = {
 }
 
 // One index drives filtering, the section rail, and deep links. Each entry id is
-// rendered as the element id of its row, so links like #platinum-benefits work.
+// rendered as the element id of its row, so links like #benefit-visibility work.
 export const settingsSections: readonly SettingsSection[] = [
   {
     id: 'connections',
@@ -70,6 +70,11 @@ export const settingsSections: readonly SettingsSection[] = [
         keywords: 'research exa web search bank employer terms programs rules log queries',
       },
       {
+        id: 'card-catalog',
+        title: 'Card benefits catalog',
+        keywords: 'card benefits catalog credits rules download github open',
+      },
+      {
         id: 'plaid-live-balances',
         title: 'Live bank balances',
         keywords: 'plaid real-time balance refresh now billed cost',
@@ -100,7 +105,12 @@ export const settingsSections: readonly SettingsSection[] = [
       {
         id: 'spending-account',
         title: 'Spending account',
-        keywords: 'credit card amex statement spending page',
+        keywords: 'credit card statement spending page',
+      },
+      {
+        id: 'card-rules',
+        title: 'Card rules',
+        keywords: 'card benefits terms rules catalog review import product credits which card',
       },
       {
         id: 'card-benefits',
@@ -108,9 +118,9 @@ export const settingsSections: readonly SettingsSection[] = [
         keywords: 'second card product credits track additional',
       },
       {
-        id: 'platinum-benefits',
-        title: 'Platinum benefits',
-        keywords: 'amex credits uber resy hotel airline clear visible hide',
+        id: 'benefit-visibility',
+        title: 'Spending card benefits',
+        keywords: 'card credits benefits hotel travel dining visible hide',
       },
       {
         id: 'manual-accounts',
@@ -203,6 +213,12 @@ export const settingsSections: readonly SettingsSection[] = [
     keywords: 'order sidebar',
     entries: [
       { id: 'page-order', title: 'Page order', keywords: 'sidebar pages reorder shortcuts' },
+      {
+        id: 'number-keys',
+        title: 'Number keys',
+        keywords:
+          'digits bookmarks keyboard shortcuts keys pages reports accounts holdings tickers open go 1 2 3 4 5 6 7 8 9 0',
+      },
     ],
   },
   {
@@ -334,6 +350,11 @@ const normalize = (value: string) =>
 
 const tokens = (query: string) => normalize(query).split(/\s+/).filter(Boolean)
 
+const knownSectionIds = new Set<string>(settingsSections.map(({ id }) => id))
+
+/** Whether an element id names a Settings section, as the panel's section elements do. */
+export const isSettingsSectionId = (id: string): id is SettingsSectionId => knownSectionIds.has(id)
+
 export type SettingsSearchResult = {
   query: string
   entryIds: ReadonlySet<string>
@@ -394,7 +415,7 @@ const legacyHashes: Record<string, string> = { 'data-sources': 'connections' }
 
 /** Maps former Settings detail routes (still emitted by native health checks) to anchors. */
 export function settingsHashForPath(path: string) {
-  const [pathname, hash] = path.split('#')
+  const [pathname = path, hash] = path.split('#')
   if (hash) return legacyHashes[hash] ?? hash
   return legacySettingsPaths[pathname]
 }

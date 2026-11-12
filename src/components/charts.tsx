@@ -1,9 +1,17 @@
 import { Liveline, type LivelinePoint, type LivelineSeries } from 'liveline'
-import { useLayoutEffect, useState } from 'react'
+import { useLayoutEffect, useMemo, useState } from 'react'
 
 import type { ActivityItem } from '../lib/activity'
 import { type ChartEventGroup, chartEventGroupLabel } from '../lib/chart-events'
-import { formatActivityName, formatCompactCurrency, formatCurrency, formatDay } from '../lib/format'
+import {
+  formatActivityName,
+  formatCalendarDate,
+  formatCompactCurrency,
+  formatCurrency,
+  formatDay,
+  formatInstant,
+  formatShortDay,
+} from '../lib/format'
 import { graphWindows } from '../lib/graph-preferences'
 import { chartPointAtOrAfter, chartPointsFromStartDate, splitAtEstimate } from '../lib/live-chart'
 import type { SpendingBar } from '../lib/spending'
@@ -14,24 +22,7 @@ import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 const DAY_SECONDS = 24 * 60 * 60
 const WEEK_SECONDS = 7 * DAY_SECONDS
 const YEAR_SECONDS = 365 * DAY_SECONDS
-// Axis labels read in the user's own time zone. Session boundaries are the exception: the
-// holding chart marks them in Eastern time and says so.
-const timeFormatter = new Intl.DateTimeFormat('en-US', {
-  hour: 'numeric',
-  minute: '2-digit',
-})
-const weekdayFormatter = new Intl.DateTimeFormat('en-US', {
-  weekday: 'short',
-})
-const dateFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  day: 'numeric',
-})
-const shortYearFormatter = new Intl.DateTimeFormat('en-US', { year: '2-digit' })
-const monthFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'short',
-  timeZone: 'UTC',
-})
+const monthOf = (month: string) => formatCalendarDate(`${month}-01`, { month: 'short' })
 const spendingCategoryAmount = (name: string, value: number) =>
   formatCurrency(name === 'Credits' ? Math.abs(value) : value)
 
@@ -61,16 +52,26 @@ export function useChartColors() {
   return { ...colors, theme: 'dark' as const }
 }
 
+/**
+ * Axis labels read in the user's own time zone. Session boundaries are the exception: the
+ * holding chart marks them in Eastern time and says so.
+ */
 export function formatLiveTime(time: number, windowSeconds: number) {
   const date = new Date(time * 1_000)
-  if (windowSeconds <= DAY_SECONDS) return timeFormatter.format(date)
-  if (windowSeconds <= WEEK_SECONDS) return weekdayFormatter.format(date)
+  if (windowSeconds <= DAY_SECONDS)
+    return formatInstant(date, { hour: 'numeric', minute: '2-digit' })
+  if (windowSeconds <= WEEK_SECONDS) return formatInstant(date, { weekday: 'short' })
   // A year or more repeats months, so its labels and crosshair name the year, kept short
   // enough that the axis doesn't drop labels to fit them.
-  return windowSeconds < YEAR_SECONDS
-    ? dateFormatter.format(date)
-    : `${dateFormatter.format(date)} ’${shortYearFormatter.format(date)}`
+  const day = formatInstant(date, { month: 'short', day: 'numeric' })
+  if (windowSeconds < YEAR_SECONDS) return day
+  // The digits alone: newer locale data writes a two-digit year with its own apostrophe.
+  const year = formatInstant(date, { year: '2-digit' }).replace(/\D/g, '')
+  return `${day} ’${year}`
 }
+
+const barLabel = ({ from, to }: SpendingBar) =>
+  from === to ? formatShortDay(from) : `${formatShortDay(from)}–${formatShortDay(to)}`
 
 export function SpendingBarChart({
   data,
@@ -95,11 +96,6 @@ export function SpendingBarChart({
   const labelEvery = Math.max(1, Math.ceil(data.length / 8))
   const colors = new Map(categories.map(({ name, color }) => [name, color]))
   const axis = Array.from({ length: 5 }, (_, index) => maximum - (span * index) / 4)
-  const barLabel = ({ from, to }: (typeof data)[number]) => {
-    const start = dateFormatter.format(new Date(`${from}T12:00:00Z`))
-    const end = dateFormatter.format(new Date(`${to}T12:00:00Z`))
-    return from === to ? start : `${start}–${end}`
-  }
 
   return (
     <div className="analytics-plot spending-bar-chart">
@@ -216,10 +212,7 @@ export function MonthlyBarChart({
 }) {
   const maximum = Math.max(0, ...data.map(({ value }) => value))
   const description = data
-    .map(
-      ({ month, value }) =>
-        `${monthFormatter.format(new Date(`${month}-01T00:00:00Z`))} ${formatCurrency(value)}`,
-    )
+    .map(({ month, value }) => `${monthOf(month)} ${formatCurrency(value)}`)
     .join(', ')
 
   return (
@@ -238,7 +231,7 @@ export function MonthlyBarChart({
               style={{ height: maximum && value ? `${Math.max(3, (value / maximum) * 100)}%` : 0 }}
             />
           </div>
-          <small>{monthFormatter.format(new Date(`${month}-01T00:00:00Z`))}</small>
+          <small>{monthOf(month)}</small>
         </div>
       ))}
     </div>
@@ -264,6 +257,124 @@ export function ChartRangeSelector({
       value={value}
       onValueChange={onValueChange}
     />
+  )
+}
+
+/** A calendar day at noon UTC, the time every saved day is drawn at. */
+const noonOf = (date: string) => Date.parse(`${date}T12:00:00Z`) / 1_000
+
+/**
+ * Rust's cash days as steps: each day holds its balance until the next change, and the last
+ * holds through the horizon, so the line never slopes between two bills.
+ */
+export function cashSteps(
+  days: ReadonlyArray<{ date: string; value: number }>,
+  through: string,
+): LivelinePoint[] {
+  return days.flatMap(({ date, value }, index) => {
+    const next = days[index + 1]?.date ?? through
+    const point = { time: noonOf(date), value }
+    return next > date ? [point, { time: noonOf(next) - 1, value }] : [point]
+  })
+}
+
+/**
+ * Cash ahead: the expected balance over the forecast's days, between the balance if every bill
+ * is its largest and every deposit its smallest and the reverse, with the low point marked.
+ */
+export function CashAheadChart({
+  days,
+  through,
+  lowest,
+}: {
+  days: ReadonlyArray<{ date: string; expected: number; low: number; high: number }>
+  /** The horizon's last day. */
+  through: string
+  lowest?: { date: string; expected: number }
+}) {
+  const colors = useChartColors()
+  const expected = useMemo(
+    () =>
+      cashSteps(
+        days.map(({ date, expected: value }) => ({ date, value })),
+        through,
+      ),
+    [days, through],
+  )
+  const series = useMemo(
+    (): LivelineSeries[] => [
+      {
+        id: 'Expected',
+        data: expected,
+        value: expected.at(-1)?.value ?? 0,
+        color: colors.value,
+      },
+      ...(['low', 'high'] as const).map((bound) => {
+        const data = cashSteps(
+          days.map(({ date, [bound]: value }) => ({ date, value })),
+          through,
+        )
+        return {
+          id: bound === 'low' ? 'Low' : 'High',
+          data,
+          value: data.at(-1)?.value ?? 0,
+          color: colors.deposits,
+          dash: [1, 5],
+        }
+      }),
+    ],
+    [days, expected, through, colors.value, colors.deposits],
+  )
+  const first = expected[0]?.time ?? 0
+  const end = noonOf(through)
+  const last = expected.at(-1)?.value ?? 0
+  const windowSeconds = Math.max(DAY_SECONDS + 1, end - first)
+  return (
+    <div
+      className="chart-container performance-chart live-performance-chart"
+      role="group"
+      tabIndex={0}
+      aria-label={`Expected cash through ${formatDay(through)}, between its low and high range${lowest ? `, lowest ${formatDay(lowest.date)}` : ''}`}
+    >
+      <Liveline
+        className="liveline-chart-canvas"
+        data={expected}
+        value={last}
+        valueTime={end}
+        endTime={end}
+        series={series}
+        theme={colors.theme}
+        color={colors.value}
+        window={windowSeconds}
+        badge
+        badgeVariant="minimal"
+        currentLine={false}
+        grid
+        minValueRange={Math.max(1, Math.abs(last) * 0.05)}
+        markers={
+          lowest
+            ? [
+                {
+                  id: `lowest:${lowest.date}`,
+                  time: noonOf(lowest.date),
+                  value: lowest.expected,
+                  color: colors.benchmark,
+                  label: `Lowest · ${formatDay(lowest.date)}`,
+                },
+              ]
+            : []
+        }
+        scrub
+        formatValue={formatCurrency}
+        formatTime={(time) => formatLiveTime(time, windowSeconds)}
+        pulse={false}
+        continuous={false}
+        momentum={false}
+        lerpSpeed={0.25}
+        lineWidth={1.75}
+        style={{ flex: 1, minHeight: 0, height: 'auto' }}
+      />
+    </div>
   )
 }
 
@@ -298,18 +409,14 @@ export function PerformanceChart({
   estimatedAfter?: string
 }) {
   const colors = useChartColors()
-  const chartData = chartPointsFromStartDate(data, startDate)
+  // Liveline animates toward each new data set, so the lines keep their identity until a point
+  // changes.
+  const chartData = useMemo(() => chartPointsFromStartDate(data, startDate), [data, startDate])
   const plottedValue = chartData.at(-1)?.value ?? value
   const minValueRange = Math.max(1, Math.abs(value) * 0.05)
   const firstTime = chartData[0]?.time ?? 0
   const lastTime = chartData.at(-1)?.time ?? firstTime
   const historyWindow = Math.max(DAY_SECONDS + 1, (lastTime - firstTime) / 0.935)
-  const visibleSeries = (points: LivelinePoint[]) => {
-    const startedPoints = chartPointsFromStartDate(points, startDate)
-    return selectedWindow === 0
-      ? startedPoints.filter((point) => point.time >= firstTime)
-      : startedPoints
-  }
   const windowSeconds = selectedWindow || historyWindow
   const eventColors = { in: colors.positive, out: colors.negative, none: colors.benchmark }
   const referenceTime = Date.parse(referenceIso) / 1_000
@@ -320,13 +427,15 @@ export function PerformanceChart({
         : Date.parse(`${group.date}T12:00:00Z`) / 1_000
     if (!Number.isFinite(eventTime) || eventTime < firstTime - DAY_SECONDS) return []
     const point = chartPointAtOrAfter(chartData, eventTime)
-    if (!point) return []
+    // The group's color is its leading event's.
+    const [lead] = group.events
+    if (!point || !lead) return []
     return [
       {
         id: group.id,
         time: point.time,
         value: point.value,
-        color: eventColors[group.events[0].direction],
+        color: eventColors[lead.direction],
         label: chartEventGroupLabel(group),
       },
     ]
@@ -347,51 +456,60 @@ export function PerformanceChart({
         ]
       : []
   })
-  // After the last observation the value is an estimate, drawn as its own dashed line.
-  const { observed: observedData, estimated: estimatedData } = splitAtEstimate(
+  const markers = [...observationMarkers, ...eventMarkers]
+  const series = useMemo((): LivelineSeries[] => {
+    // After the last observation the value is an estimate, drawn as its own dashed line.
+    const { observed, estimated } = splitAtEstimate(chartData, estimatedAfter)
+    const visibleSeries = (points: LivelinePoint[]) => {
+      const startedPoints = chartPointsFromStartDate(points, startDate)
+      return selectedWindow === 0
+        ? startedPoints.filter((point) => point.time >= firstTime)
+        : startedPoints
+    }
+    const layer = (
+      id: string,
+      points: LivelinePoint[] | undefined,
+      color: string,
+      dash: number[],
+    ): LivelineSeries[] =>
+      points?.length
+        ? [{ id, data: visibleSeries(points), value: points.at(-1)!.value, color, dash }]
+        : []
+    return [
+      {
+        id: 'Value',
+        data: observed,
+        value: observed.at(-1)?.value ?? plottedValue,
+        color: colors.value,
+      },
+      ...(estimated.length >= 2
+        ? [
+            {
+              id: 'Estimated',
+              label: 'Estimated · S&P 500',
+              data: estimated,
+              value: plottedValue,
+              color: colors.value,
+              dash: [4, 4],
+            },
+          ]
+        : []),
+      ...layer('Net deposits', netDeposits, colors.deposits, [1, 5]),
+      ...layer('S&P 500', benchmark, colors.benchmark, [1, 5]),
+    ]
+  }, [
     chartData,
     estimatedAfter,
-  )
-  const markers = [...observationMarkers, ...eventMarkers]
-  const layer = (
-    id: string,
-    points: LivelinePoint[] | undefined,
-    color: string,
-    dash: number[],
-  ): LivelineSeries[] =>
-    points?.length
-      ? [
-          {
-            id,
-            data: visibleSeries(points),
-            value: points.at(-1)!.value,
-            color,
-            dash,
-          },
-        ]
-      : []
-  const series: LivelineSeries[] = [
-    {
-      id: 'Value',
-      data: observedData,
-      value: observedData.at(-1)?.value ?? plottedValue,
-      color: colors.value,
-    },
-    ...(estimatedData.length >= 2
-      ? [
-          {
-            id: 'Estimated',
-            label: 'Estimated · S&P 500',
-            data: estimatedData,
-            value: plottedValue,
-            color: colors.value,
-            dash: [4, 4],
-          },
-        ]
-      : []),
-    ...layer('Net deposits', netDeposits, colors.deposits, [1, 5]),
-    ...layer('S&P 500', benchmark, colors.benchmark, [1, 5]),
-  ]
+    startDate,
+    selectedWindow,
+    firstTime,
+    plottedValue,
+    netDeposits,
+    benchmark,
+    colors.value,
+    colors.deposits,
+    colors.benchmark,
+  ])
   const comparisonSeries = series.length > 1 ? series : undefined
   const lineNames = series
     .filter(({ id }) => id !== 'Value' && id !== 'Estimated')

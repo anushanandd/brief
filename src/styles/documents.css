@@ -137,20 +137,19 @@
   overflow-y: auto;
   overscroll-behavior: contain;
 }
+.documents-layout.is-single {
+  grid-template-columns: minmax(0, 1fr);
+}
+/* The one width outside the named set in tokens.css: the panel needs 360 px beside the list. */
 @media (max-width: 1180px) {
+  .documents-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
   .documents-layout > .documents-panel,
   .documents-layout > .documents-summary {
     position: static;
     max-height: none;
     overflow: visible;
-  }
-}
-.documents-layout.is-single {
-  grid-template-columns: minmax(0, 1fr);
-}
-@media (max-width: 1180px) {
-  .documents-layout {
-    grid-template-columns: minmax(0, 1fr);
   }
 }
 .documents-list,
@@ -200,11 +199,9 @@
   min-width: 0;
 }
 .documents-row-copy > strong {
-  overflow: hidden;
   color: var(--text-primary);
   font-weight: 500;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: anywhere;
 }
 .documents-row-copy > small {
   color: var(--text-tertiary);
@@ -679,6 +676,13 @@
   font-size: var(--type-meta);
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+.documents-viewer-name {
+  display: grid;
+  gap: 2px;
+}
+.documents-viewer-name > span {
+  color: var(--text-secondary);
 }
 .documents-viewer-body {
   display: grid;

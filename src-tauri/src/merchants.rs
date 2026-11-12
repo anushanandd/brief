@@ -1,6 +1,6 @@
 //! Who a card purchase was with, and whether the cardholder was there, from every record of
-//! it: the card issuer's export, the bank's descriptor, and Plaid's enrichment, trusted in that
-//! order.
+//! it: what Apple Wallet recorded at the purchase, the card issuer's export, the bank's
+//! descriptor, and Plaid's enrichment, trusted in that order.
 //!
 //! Plaid's merchant name stands unless the bank's own records contradict it: another brand
 //! when the issuer's export, Plaid's own location, or Plaid's low confidence backs the records;
@@ -386,7 +386,7 @@ pub fn plaid_sure(transaction: &Transaction) -> bool {
 /// The name the bank's own records give, when they contradict Plaid's.
 pub fn corrected_name(transaction: &Transaction) -> Option<String> {
     // Plaid named none of Wallet's rows, so there is nothing of Plaid's to correct.
-    if transaction.from_wallet() {
+    if transaction.wallet_only() {
         return None;
     }
     // Wallet saw the purchase, so its name outranks Plaid's when they name different merchants,

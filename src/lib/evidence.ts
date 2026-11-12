@@ -63,7 +63,7 @@ export const daySpan = (from: string, to: string) =>
     ? `${formatShortDay(from)} – ${formatDay(to)}`
     : `${formatDay(from)} – ${formatDay(to)}`
 
-/** A chapter's span as words: "Apr 20 – Jul 31, 2026", or "Since Mar 2, 2026". */
+/** A chapter's span as words: "Mar 2 – Jul 31, 2026", or "Since Mar 2, 2026". */
 export const chapterSpan = (chapter: Pick<Chapter, 'start' | 'end'>) =>
   chapter.end ? daySpan(chapter.start, chapter.end) : `Since ${formatDay(chapter.start)}`
 
@@ -118,6 +118,28 @@ export async function acknowledgeProgramSource(url: string): Promise<void> {
 export async function draftProgram(draft: ProgramDraft): Promise<Program> {
   if (!isTauri()) throw new Error('Research is available in the Brief app')
   return invoke<Program>('draft_program', { draft })
+}
+
+/** A prefilled draft as the form's text fields, keeping only what the page supplied. */
+export function prefilledFields(draft: ProgramDraft): Record<string, string> {
+  const values: Record<string, string | number | undefined> = {
+    name: draft.name,
+    organization: draft.organization,
+    summary: draft.summary,
+    effective: draft.effective,
+    accountName: draft.accountName,
+    institution: draft.institution,
+    cardName: draft.cardName,
+    bonusWords: draft.bonusWords,
+    amount: draft.amount || undefined,
+    fee: draft.fee || undefined,
+    unobservable: draft.unobservable,
+  }
+  return Object.fromEntries(
+    Object.entries(values).flatMap(([key, value]) =>
+      value === undefined || value === '' ? [] : [[key, String(value)]],
+    ),
+  )
 }
 
 /** Whether a source's monthly check is due: never read, or read 30 or more days ago. */

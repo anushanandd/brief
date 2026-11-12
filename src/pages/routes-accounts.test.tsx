@@ -53,6 +53,19 @@ it('shows a type of account in place, under the same menu, with only figures Rus
   expect(html).toMatch(/href="\/activities\?account=[^"]*other/)
 })
 
+it('shows cash ahead and runway on Cash, with the line behind its disclosure', async () => {
+  scenario.accountType = 'cash'
+  scenario.otherAccountType = 'cash'
+  const html = await renderRoute('/accounts?group=cash', '')
+  expect(html).toContain('<h2>Cash details</h2>')
+  expect(html).toContain('<span>Lowest ahead</span>')
+  expect(html).toContain('<span>Runway</span>')
+  // The cash line and its drivers sit behind a disclosure that I opens.
+  expect(html).toContain('data-command="account.details.toggle">Cash ahead')
+  // Bills stay listed only in Coming up.
+  expect(html).toContain('<h2>Coming up</h2>')
+})
+
 it('shows all-account investment figures in their own card before Coming up', async () => {
   scenario.accountType = 'brokerage'
   scenario.partialBasis = true
@@ -96,7 +109,7 @@ it('lists the spending card on Accounts apart from the totals, and opens it', as
   const page = card.slice(card.indexOf('class="page accounts-workspace-page"'))
   expect(page).toContain('Spending card, not in totals')
   // Its own page shows its activity, which All accounts leaves to Money.
-  expect(page).toContain('Resy credit')
+  expect(page).toContain('Example Tables dining credit')
 })
 
 it('offers CSV for matching Activity results and disables it for an empty date filter', async () => {
@@ -119,7 +132,7 @@ it('opens the complete activity ledger with the originating account selected', a
   )
   expect(html).toContain('>Activity</a>')
   expect(html).toContain('role="region" aria-label="Activity results" tabindex="0"')
-  expect(html.match(/<strong>Resy credit \d<\/strong>/g)).toHaveLength(7)
+  expect(html.match(/<strong>Example Tables dining credit \d<\/strong>/g)).toHaveLength(7)
   expect(html).not.toContain('Other account transaction')
   expect(html).toContain('aria-label="Search and filter activity"')
   expect(html).toContain('class="financial-activity-header"')
@@ -165,8 +178,8 @@ it('filters activity by method and shows its removable tag', async () => {
   expect(html).toContain('aria-label="Filters, 1 active"')
   expect(html).toContain('aria-label="Remove method filter: Online"')
   expect(html).toContain('aria-label="Filter by method: Online"')
-  expect(html).toContain('Resy credit 0')
-  expect(html).not.toContain('Resy credit 1')
+  expect(html).toContain('Example Tables dining credit 0')
+  expect(html).not.toContain('Example Tables dining credit 1')
 })
 
 it('keeps incomplete aggregate balances qualified in the account overview', async () => {
@@ -230,7 +243,7 @@ it('combines account and category filters without dropping selected filters', as
   expect(byCategory).toContain('aria-label="Filters, 1 active"')
   expect(byCategory).toContain('aria-label="Remove category filter: Food"')
   expect(byCategory).toContain('Other account transaction')
-  expect(byCategory).not.toContain('Resy credit 0')
+  expect(byCategory).not.toContain('Example Tables dining credit 0')
 
   const byAccount = await renderRoute('/activities?account=selected')
   expect(byAccount).toContain('aria-label="Filters, 1 active"')
@@ -265,18 +278,18 @@ it('opens a description search from the Activity URL', async () => {
   scenario.linkedPending = true
   const html = await renderRoute('/activities?q=description%3Aprovider')
   expect(html).toContain('aria-label="Remove text filter: “description:provider”"')
-  expect(html).toContain('<strong>Resy credit 0</strong>')
-  expect(html).not.toContain('<strong>Resy credit 1</strong>')
+  expect(html).toContain('<strong>Example Tables dining credit 0</strong>')
+  expect(html).not.toContain('<strong>Example Tables dining credit 1</strong>')
 })
 
-it('opens the exact Amex evidence in Activity and keeps empty account scopes empty', async () => {
-  const html = await renderRoute('/activities?analysis=amex-credits&from=2026-09-01&to=2026-09-03')
-  expect(html).toContain('Resy credit 0')
+it('opens the exact card credit evidence in Activity and keeps empty account scopes empty', async () => {
+  const html = await renderRoute('/activities?analysis=card-credits&from=2026-09-01&to=2026-09-03')
+  expect(html).toContain('Example Tables dining credit 0')
   expect(html).not.toContain('<strong>Other account transaction</strong>')
   expect(html).toContain('aria-label="Remove report filter:')
-  const other = await renderRoute('/activities?analysis=amex-credits&account=other')
+  const other = await renderRoute('/activities?analysis=card-credits&account=other')
   expect(other).toContain('No activity matches these filters.')
-  const unknown = await renderRoute('/activities?analysis=amex-credits&account=missing')
+  const unknown = await renderRoute('/activities?analysis=card-credits&account=missing')
   expect(unknown).toContain('No activity matches these filters.')
 })
 
@@ -311,10 +324,10 @@ it('shows the dated SnapTrade total on individual brokerage graphs only', async 
 it('uses the chart’s posted date when opening Activity evidence', async () => {
   scenario.postingDate = '2026-08-31'
   const posted = await renderRoute(
-    '/activities?analysis=amex-credits&from=2026-08-31&to=2026-08-31',
+    '/activities?analysis=card-credits&from=2026-08-31&to=2026-08-31',
   )
-  expect(posted).toContain('<strong>Resy credit 0</strong>')
-  expect(posted).not.toContain('<strong>Resy credit 1</strong>')
+  expect(posted).toContain('<strong>Example Tables dining credit 0</strong>')
+  expect(posted).not.toContain('<strong>Example Tables dining credit 1</strong>')
   const original = await renderRoute('/activities?from=2026-08-31&to=2026-08-31')
-  expect(original).not.toContain('<strong>Resy credit 0</strong>')
+  expect(original).not.toContain('<strong>Example Tables dining credit 0</strong>')
 })

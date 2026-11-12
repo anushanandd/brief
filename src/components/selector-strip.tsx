@@ -51,7 +51,8 @@ export function SelectorStrip({
         0,
         items.findIndex(({ current }) => current),
       )
-      void navigate(items[(index + direction + items.length) % items.length].link)
+      const target = items[(index + direction + items.length) % items.length]
+      if (target) void navigate(target.link)
     },
     [items, navigate],
   )
@@ -63,8 +64,12 @@ export function SelectorStrip({
   const neighbours =
     index < 0 || items.length < 2
       ? []
-      : [items[(index - 1 + items.length) % items.length], items[(index + 1) % items.length]]
-  const neighbourKey = neighbours.map(({ id }) => id).join(' ')
+      : [
+          items[(index - 1 + items.length) % items.length],
+          items[(index + 1) % items.length],
+        ].filter((item) => item !== undefined)
+  // A new period changes what the neighbours open on, so it loads them again.
+  const neighbourKey = JSON.stringify(neighbours.map(({ id, link }) => [id, link.search]))
   const latestNeighbours = useRef(neighbours)
   latestNeighbours.current = neighbours
   useEffect(() => {

@@ -7,7 +7,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use crate::finance_contract::{Performance, PerformancePoint};
-use crate::numeric::round2;
+use crate::numeric::{compare_returns as compare, round2};
 
 #[derive(Clone, Copy, Debug, Serialize, PartialEq, TS, Eq)]
 #[serde(rename_all = "kebab-case")]
@@ -57,17 +57,6 @@ pub struct WindowReturn {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub vs_benchmark: Option<&'static str>,
-}
-
-/// How one return compares with another: within 0.05 points reads as in line.
-pub fn compare(you: f64, benchmark: f64) -> &'static str {
-    if (you - benchmark).abs() < 0.05 {
-        "inline"
-    } else if you > benchmark {
-        "ahead"
-    } else {
-        "behind"
-    }
 }
 
 #[derive(Clone, Debug, Serialize, TS)]

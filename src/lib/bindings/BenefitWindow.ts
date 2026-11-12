@@ -4,7 +4,24 @@ import type { BenefitActivity } from "./BenefitActivity";
 import type { Cadence } from "./Cadence";
 import type { LastCredit } from "./LastCredit";
 
-export type BenefitWindow = { id: string, name: string, limit: string, cap: number, cadence: Cadence, instruction: string, url: string, deadlineNote?: string, 
+export type BenefitWindow = { id: string, name: string, 
+/**
+ * The benefit's merchant domain, for its logo (see `BenefitLogo`).
+ */
+logoDomain?: string, 
+/**
+ * The logo of the purchase it last covered.
+ */
+logoUrl?: string, 
+/**
+ * The brand it names, to look a logo up by when neither of those loads.
+ */
+logoBrand?: string, category?: string, limit: string, cap: number, cadence: Cadence, 
+/**
+ * The benefit follows the cardmember year, but no annual fee charge is saved to date it,
+ * so its periods follow the calendar.
+ */
+anniversaryUnknown?: boolean, instruction: string, url: string, deadlineNote?: string, 
 /**
  * Some credits may belong to this window or the previous one.
  */

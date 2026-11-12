@@ -2,10 +2,13 @@
 //!
 //! A card no provider reports (Apple Card) is Wallet's alone: its purchases take the shape of
 //! Plaid records, so categories, the transaction policy, and every insight treat them like any
-//! other. It joins as a spending-only account, because the user doesn't pay its bill.
+//! other. It joins as a spending-only account with no value: Wallet's balance is the whole
+//! account's, and no payment to the card reaches Brief, so it can't be read as a liability. Its
+//! purchases are spending, but never in net worth, debt, net cash flow, or the forecast.
 //!
-//! A card a provider reports (Amex) stays the provider's. Each Wallet record is matched to the
-//! transaction it describes, which gains Wallet's exact time. Until the provider reports a
+//! A card a provider also reports stays the provider's. Each Wallet record is matched to the
+//! transaction it describes, which gains Wallet's exact time. The network's merchant code sets
+//! the category only when Plaid is unsure, since a confident Plaid category is usually finer. Until the provider reports a
 //! charge, its record stands in as pending; past that window it joins history only once the
 //! user confirms it, and only while the provider still hasn't reported it, so a late posting is
 //! never counted twice.
@@ -174,6 +177,8 @@ fn record(
         original_description: None,
         check_number: None,
         account_owner: None,
+        iso_currency_code: Some("USD".into()),
+        unofficial_currency_code: None,
     }
 }
 
@@ -227,10 +232,14 @@ fn repays(refund: &Transaction, purchase: &Transaction) -> bool {
     if !days.is_some_and(|days| (0..=REFUND_DAYS).contains(&days)) {
         return false;
     }
+    let (paid, repaid) = (
+        crate::numeric::minor_units(-purchase.amount),
+        crate::numeric::minor_units(refund.amount),
+    );
     if refund.merchant == "Dispute credit" {
-        purchase.amount.abs() == refund.amount
+        paid == repaid
     } else {
-        purchase.merchant == refund.merchant && purchase.amount.abs() >= refund.amount
+        purchase.merchant == refund.merchant && paid >= repaid
     }
 }
 
@@ -401,7 +410,10 @@ impl Projected {
         Transaction {
             occurred_at: matched.occurred_at,
             wallet: Some(WalletDetail {
-                terminal_amount: terminal_amount.filter(|amount| *amount != transaction.amount),
+                terminal_amount: terminal_amount.filter(|amount| {
+                    crate::numeric::minor_units(*amount)
+                        != crate::numeric::minor_units(transaction.amount)
+                }),
                 ..matched.detail
             }),
             // Edits made while the record stood in carry over.
@@ -568,20 +580,20 @@ mod tests {
             place: Some(WalletPlace {
                 street: Some("100 Main St".into()),
                 city: Some("Austin".into()),
-                region: Some("CO".into()),
+                region: Some("TX".into()),
                 country: Some("US".into()),
-                lat: Some(39.75),
-                lon: Some(-105.0),
+                lat: Some(30.27),
+                lon: Some(-97.74),
                 ..WalletPlace::default()
             }),
             ..WalletRow::default()
         }
     }
 
-    fn amex(id: &str, date: &str, cents: i64, merchant: &str) -> WalletRow {
+    fn issued(id: &str, date: &str, cents: i64, merchant: &str) -> WalletRow {
         WalletRow {
             id: id.into(),
-            issuer: "American Express".into(),
+            issuer: "Example Bank".into(),
             amount: cents * 100,
             date: date.into(),
             merchant: Some(merchant.into()),
@@ -592,9 +604,9 @@ mod tests {
 
     fn accounts() -> Vec<Account> {
         vec![Account {
-            id: "plaid:amex".into(),
-            name: "Platinum".into(),
-            institution: "American Express".into(),
+            id: "plaid:issued".into(),
+            name: "Rewards".into(),
+            institution: "Example Bank".into(),
             r#type: "credit".into(),
             ..Account::default()
         }]
@@ -602,7 +614,7 @@ mod tests {
 
     fn plaid(id: &str, date: &str, amount: f64, name: &str, pending: bool) -> PlaidTransaction {
         serde_json::from_value(json!({
-            "transaction_id": id, "account_id": "amex", "amount": amount, "pending": pending,
+            "transaction_id": id, "account_id": "issued", "amount": amount, "pending": pending,
             "date": date, "name": name, "merchant_name": name,
             "personal_finance_category": {
                 "primary": "FOOD_AND_DRINK", "detailed": "FOOD_AND_DRINK_GROCERIES"
@@ -710,7 +722,7 @@ mod tests {
     fn a_matched_record_adds_its_time_to_the_providers_transaction_and_counts_once() {
         let records = [plaid("p1", "2026-10-13", 27.65, "Corner Market", false)];
         let mut projected = project_wallet(
-            Some(&data(vec![amex(
+            Some(&data(vec![issued(
                 "one",
                 "2026-10-13",
                 2765,
@@ -749,7 +761,7 @@ mod tests {
             false,
         )];
         let mut projected = project_wallet(
-            Some(&data(vec![amex("one", "2026-10-13", 3000, "CHILIS")])),
+            Some(&data(vec![issued("one", "2026-10-13", 3000, "CHILIS")])),
             &accounts(),
             &records,
             today(),
@@ -777,7 +789,7 @@ mod tests {
         let mut records = [sure("VERY_HIGH"), sure("LOW")];
         let dining = |id: &str| WalletRow {
             merchant_code: Some(5812),
-            ..amex(id, "2026-10-13", 2765, "Corner Market")
+            ..issued(id, "2026-10-13", 2765, "Corner Market")
         };
         let mut projected = project_wallet(
             Some(&data(vec![dining("one"), dining("two")])),
@@ -817,7 +829,7 @@ mod tests {
         record.name = Some("EXAMPLE LABS* PRO PORTLAND".into());
         record.original_description = Some("EXAMPLE LABS* PRO PORTLAND OR".into());
         let projected = project_wallet(
-            Some(&data(vec![amex(
+            Some(&data(vec![issued(
                 "one",
                 "2026-10-13",
                 9567,
@@ -839,8 +851,8 @@ mod tests {
         ];
         let projected = project_wallet(
             Some(&data(vec![
-                amex("a", "2026-10-10", 500, "CORNER MARKET"),
-                amex("b", "2026-10-12", 500, "CORNER MARKET"),
+                issued("a", "2026-10-10", 500, "CORNER MARKET"),
+                issued("b", "2026-10-12", 500, "CORNER MARKET"),
             ])),
             &accounts(),
             &records,
@@ -855,7 +867,7 @@ mod tests {
     fn a_charge_the_provider_hasnt_reported_stands_in_as_pending_filed_like_its_history() {
         let records = [plaid("p1", "2026-10-12", 30.42, "Safeway", false)];
         let projected = project_wallet(
-            Some(&data(vec![amex("new", "2026-10-29", 1599, "SAFEWAY")])),
+            Some(&data(vec![issued("new", "2026-10-29", 1599, "SAFEWAY")])),
             &accounts(),
             &records,
             today(),
@@ -864,9 +876,9 @@ mod tests {
             panic!("one transaction");
         };
         assert!(transaction.pending);
-        assert!(transaction.from_wallet());
+        assert!(transaction.wallet_only());
         assert!(!transaction.paid_by_someone_else());
-        assert_eq!(transaction.account_id.as_deref(), Some("plaid:amex"));
+        assert_eq!(transaction.account_id.as_deref(), Some("plaid:issued"));
         assert_eq!(transaction.merchant, "Safeway");
         assert_eq!(transaction.category, "Groceries");
         assert_eq!(projected.summary.unwrap().cards[0].waiting, 1);
@@ -874,7 +886,7 @@ mod tests {
 
     #[test]
     fn past_the_window_a_record_leaves_totals_until_the_user_confirms_it() {
-        let row = amex("late", "2026-10-20", 1599, "SAFEWAY");
+        let row = issued("late", "2026-10-20", 1599, "SAFEWAY");
         let unconfirmed = project_wallet(Some(&data(vec![row.clone()])), &accounts(), &[], today());
         assert!(unconfirmed.transactions.is_empty());
         let summary = unconfirmed.summary.unwrap();
@@ -890,7 +902,7 @@ mod tests {
 
     #[test]
     fn a_late_posting_replaces_a_confirmed_record_rather_than_joining_it() {
-        let mut saved = data(vec![amex("late", "2026-10-20", 1599, "SAFEWAY")]);
+        let mut saved = data(vec![issued("late", "2026-10-20", 1599, "SAFEWAY")]);
         saved.confirmed.insert("late".into());
         let records = [plaid("p1", "2026-10-22", 15.99, "Safeway", false)];
         let projected = project_wallet(Some(&saved), &accounts(), &records, today());
@@ -902,11 +914,11 @@ mod tests {
     fn a_card_no_single_provider_account_answers_for_stays_unplaced() {
         let mut two = accounts();
         two.push(Account {
-            id: "plaid:amex-two".into(),
+            id: "plaid:issued-two".into(),
             ..two[0].clone()
         });
         let projected = project_wallet(
-            Some(&data(vec![amex("new", "2026-10-29", 1599, "SAFEWAY")])),
+            Some(&data(vec![issued("new", "2026-10-29", 1599, "SAFEWAY")])),
             &two,
             &[],
             today(),

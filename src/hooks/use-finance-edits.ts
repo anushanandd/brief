@@ -9,12 +9,12 @@ import {
 import { completeSettings, saveFinanceSettings, type Settings } from '../lib/finance-settings'
 import type { FinanceSettings, FinanceSnapshot } from '../lib/schema'
 import { rememberEdit, takeLastEdit, useUndoStack } from '../lib/undo'
-import { financeQueryKey, useFinance } from './use-finance'
+import { financeQueryKey, setFinanceSnapshot, useFinance } from './use-finance'
 
 /** A few words for what an edit changed, for the undo action's title. */
 function describeEdit(changes: TransactionAnnotationChanges) {
   const ids = Object.keys(changes)
-  const fields = new Set(ids.flatMap((id) => Object.keys(changes[id])))
+  const fields = new Set(Object.values(changes).flatMap((change) => Object.keys(change)))
   const field = [...fields][0]
   const what =
     fields.size !== 1
@@ -50,7 +50,7 @@ export function useFinanceEdits() {
   const undoStack = useUndoStack()
   const commit = useCallback(
     (snapshot: FinanceSnapshot) => {
-      client.setQueryData(financeQueryKey, snapshot)
+      setFinanceSnapshot(client, snapshot)
       return snapshot
     },
     [client],

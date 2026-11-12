@@ -52,6 +52,8 @@ it('shows a matched pending amount without treating it as posted evidence', asyn
       classification: classification('expense'),
     }),
   )
+  const [bill] = posted
+  if (!bill) throw new Error('The series has posted bills')
   const data: FinanceSnapshot = {
     ...emptySnapshot(),
     updatedAt: '2026-09-18T12:00:00Z',
@@ -59,7 +61,7 @@ it('shows a matched pending amount without treating it as posted evidence', asyn
     accounts: [],
     transactions: [
       ...posted,
-      { ...posted[0], id: 'phone-pending', date: '2026-09-18', amount: -102, pending: true },
+      { ...bill, id: 'phone-pending', date: '2026-09-18', amount: -102, pending: true },
     ],
   }
 

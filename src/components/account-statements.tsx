@@ -3,7 +3,7 @@ import { open as chooseFile } from '@tauri-apps/plugin-dialog'
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
 
-import { financeQueryKey } from '../hooks/use-finance'
+import { setFinanceSnapshot } from '../hooks/use-finance'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import {
   getBankStatements,
@@ -14,7 +14,7 @@ import {
   previewStatementImport,
 } from '../lib/api'
 import { errorMessage } from '../lib/errors'
-import { formatShortDay } from '../lib/format'
+import { formatCalendarDate, formatShortDay } from '../lib/format'
 import type { BankStatement, FinanceSnapshot, StatementPreview } from '../lib/schema'
 import { statementCountsLabel, statementDateRange } from '../lib/statement-import'
 import { Upload, X } from './icons'
@@ -22,15 +22,12 @@ import { SettingsLink } from './settings-dialog'
 import { statementImportsQueryKey } from './statement-imports'
 import { Button } from './ui'
 
-const monthFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
-
 /** `August 2026`. */
 export const statementMonth = ({ year, month }: Pick<BankStatement, 'year' | 'month'>) =>
-  monthFormatter.format(new Date(Date.UTC(year, month - 1, 1)))
+  formatCalendarDate(`${year}-${String(month).padStart(2, '0')}-01`, {
+    month: 'long',
+    year: 'numeric',
+  })
 
 const size = (bytes: number) =>
   bytes >= 1_000_000 ? `${(bytes / 1_000_000).toFixed(1)} MB` : `${Math.ceil(bytes / 1_000)} KB`
@@ -86,7 +83,7 @@ export function AccountStatements({ accountId }: { accountId: string }) {
     setError(undefined)
     try {
       const snapshot: FinanceSnapshot = await importStatement(preview.draftId, accountId)
-      queryClient.setQueryData(financeQueryKey, snapshot)
+      setFinanceSnapshot(queryClient, snapshot)
       await queryClient.invalidateQueries({ queryKey: statementImportsQueryKey })
       await queryClient.invalidateQueries({ queryKey: ['data-health'] })
       setPreview(undefined)

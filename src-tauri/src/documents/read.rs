@@ -68,18 +68,23 @@ impl Reading {
 pub fn read_file(path: &std::path::Path, recognize: bool) -> Result<Reading, String> {
     use std::ffi::{c_char, CStr, CString};
 
+    // The Swift bridge (native/DocumentBridge.swift): the result is null or a NUL-terminated
+    // `strdup` string, owned by the caller until `brief_document_free`.
     unsafe extern "C" {
         fn brief_document_read(path: *const c_char, recognize: i32) -> *mut c_char;
         fn brief_document_free(value: *mut c_char);
     }
     let path = CString::new(path.to_string_lossy().as_bytes()).map_err(|_| "Invalid file path")?;
+    // SAFETY: the bridge only reads the NUL-terminated `path` during the call; it outlives it.
     let output = unsafe { brief_document_read(path.as_ptr(), i32::from(recognize)) };
     if output.is_null() {
         return Err("Brief can't read this file".into());
     }
+    // SAFETY: a non-null result is a NUL-terminated `strdup` string, read before it is freed.
     let text = unsafe { CStr::from_ptr(output) }
         .to_string_lossy()
         .into_owned();
+    // SAFETY: freed once, by the bridge's own `free`, and never read again.
     unsafe { brief_document_free(output) };
     serde_json::from_str(&text).map_err(|_| "Brief can't read this file".into())
 }
@@ -180,7 +185,7 @@ pub fn rows(lines: &[Line]) -> Vec<Vec<&Line>> {
     rows
 }
 
-/// What a file's own name says, as people and institutions name them: `W-2 2025 Forge
+/// What a file's own name says, as people and institutions name them: `W-2 2025 Sample
 /// Global.jpeg`, or `20250430-statements-5678-.pdf` with the account's last four digits.
 #[derive(Debug, Default, PartialEq)]
 pub struct FileHints {
@@ -262,7 +267,7 @@ pub fn printed_year(reading: &Reading) -> Option<i32> {
 static MASK: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"(?i)(?:x{2,}|\*{2,}|\.{3})\s*-?(\d{3,4})\b").expect("valid"));
 
-/// An account number printed masked, such as `XXXXX1234` or `...0000`: its last digits.
+/// An account number printed masked, such as `XXXXX1234` or `...5678`: its last digits.
 pub fn masked(text: &str) -> Option<String> {
     MASK.captures(text).map(|found| found[1].to_owned())
 }

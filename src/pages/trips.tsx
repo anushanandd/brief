@@ -35,7 +35,7 @@ import {
 } from '../lib/calendar'
 import { addDays } from '../lib/dates'
 import { errorMessage } from '../lib/errors'
-import { countOf, formatCurrency, formatShortDay } from '../lib/format'
+import { countOf, formatCalendarDate, formatCurrency, formatShortDay } from '../lib/format'
 import { peopleById, withTripCompanions } from '../lib/people'
 import { countryFlag, countryName } from '../lib/places'
 import type { FinanceSnapshot, Trip } from '../lib/schema'
@@ -58,12 +58,8 @@ import {
 
 const inYear = (option: number) => (trip: Trip) => Number(trip.start.slice(0, 4)) === option
 
-const longDay = new Intl.DateTimeFormat('en-US', {
-  weekday: 'long',
-  month: 'short',
-  day: 'numeric',
-  timeZone: 'UTC',
-})
+const longDay = (date: string) =>
+  formatCalendarDate(date, { weekday: 'long', month: 'short', day: 'numeric' })
 
 const tripSearch = (trip: Trip) => ({ trip: trip.id })
 
@@ -148,7 +144,10 @@ function YearView({ data, trips }: { data: FinanceSnapshot; trips: Trip[] }) {
           bindings: [{ sequence: ['ArrowLeft'], label: '←' }],
           disabled: yearIndex >= years.length - 1,
           disabledReason: 'No earlier year with trips',
-          run: () => setYear(years[Math.min(years.length - 1, yearIndex + 1)]),
+          run: () => {
+            const earlier = years[Math.min(years.length - 1, yearIndex + 1)]
+            if (earlier !== undefined) setYear(earlier)
+          },
         },
         {
           id: 'trips.year.next',
@@ -158,7 +157,10 @@ function YearView({ data, trips }: { data: FinanceSnapshot; trips: Trip[] }) {
           bindings: [{ sequence: ['ArrowRight'], label: '→' }],
           disabled: yearIndex <= 0,
           disabledReason: 'Already showing this year',
-          run: () => setYear(years[Math.max(0, yearIndex - 1)]),
+          run: () => {
+            const later = years[Math.max(0, yearIndex - 1)]
+            if (later !== undefined) setYear(later)
+          },
         },
         ...shown.map((trip) => ({
           id: `trips.open.${trip.id}`,
@@ -520,7 +522,7 @@ function TripView({
           <TripDaysChart trip={trip} color={color} activities={activities} />
           <p className="trips-year-note sensitive-value">
             {peak && peak.spent !== 0
-              ? `Most on ${longDay.format(new Date(`${peak.date}T12:00:00Z`))}: ${formatCurrency(Math.abs(peak.spent))} over ${countOf(peak.purchases, 'purchase')}.`
+              ? `Most on ${longDay(peak.date)}: ${formatCurrency(Math.abs(peak.spent))} over ${countOf(peak.purchases, 'purchase')}.`
               : 'Nothing was bought on this trip.'}
           </p>
         </Card>

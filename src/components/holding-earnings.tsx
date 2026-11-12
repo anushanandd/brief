@@ -3,10 +3,9 @@ import { useMemo } from 'react'
 
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { getEarningsCalendar, isTauri } from '../lib/api'
+import { formatShortDay } from '../lib/format'
 import { RefreshCw } from './icons'
 import { Button } from './ui'
-
-const dateFormat = new Intl.DateTimeFormat('en-US', { month: 'short', day: 'numeric' })
 
 export function HoldingEarnings({ symbols, connected }: { symbols: string[]; connected: boolean }) {
   const native = typeof window !== 'undefined' && isTauri()
@@ -58,7 +57,7 @@ export function HoldingEarnings({ symbols, connected }: { symbols: string[]; con
         <strong className="holding-earnings-dates">
           {earnings.data.map((event) => (
             <time key={`${event.symbol}:${event.reportDate}`} dateTime={event.reportDate}>
-              {dateFormat.format(new Date(`${event.reportDate}T12:00:00`))}
+              {formatShortDay(event.reportDate)}
             </time>
           ))}
         </strong>

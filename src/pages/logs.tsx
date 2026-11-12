@@ -10,7 +10,7 @@ import { useFinanceRefreshState } from '../hooks/use-refresh-finance'
 import { accountDisplayName } from '../lib/account-names'
 import { getCalibration, getChangeLog, getSummaryRuns, getSyncRuns } from '../lib/api'
 import { financeSettings } from '../lib/finance-settings'
-import { countOf } from '../lib/format'
+import { countOf, formatShare } from '../lib/format'
 import { providerCatalog } from '../lib/providers'
 import type { SummaryRun, SyncRun } from '../lib/schema'
 
@@ -98,6 +98,35 @@ const summaryRunDetail = (run: SummaryRun) =>
   ]
     .filter(Boolean)
     .join(' · ')
+
+// The source table's time columns; at narrow widths each cell shows its column name.
+const sourceTimeColumns = ['Balance', 'Positions', 'Activity', 'Fetched'] as const
+
+/** A log list J and K step through, named for the key guide. */
+const logRegion = (label: string) => ({
+  className: 'activity-log',
+  role: 'group',
+  'aria-label': label,
+  tabIndex: 0,
+  'data-keyboard-region': true,
+})
+
+/** A detector's name in words: `rule:<program>` by the rule's name, `chapter:<kind>`, and the others. */
+export function detectorLabel(
+  detector: string,
+  programs: ReadonlyArray<{ id: string; name: string }> = [],
+) {
+  const [kind, rest] = detector.split(/:(.*)/s)
+  if (kind === 'rule') return `Rule · ${programs.find(({ id }) => id === rest)?.name ?? rest}`
+  if (kind === 'chapter') return `Chapters · ${rest}`
+  return (
+    {
+      'benefit-match': 'Benefit matches',
+      'category-suggestion': 'Suggested categories',
+      'second-look': 'Second looks',
+    }[detector] ?? detector
+  )
+}
 
 export function LogsPage() {
   const query = useFinance()
@@ -240,7 +269,13 @@ export function LogsPage() {
               </span>
             }
           />
-          <div className="connection-list">
+          <div
+            className="connection-list"
+            role="group"
+            aria-label="Connections"
+            tabIndex={0}
+            data-keyboard-region
+          >
             {connections.map(({ id, name, configured, accounts, health }) => {
               const error = health?.error
               const state = error
@@ -253,7 +288,7 @@ export function LogsPage() {
                       : 'Configured'
                   : 'Not configured'
               return (
-                <div className="connection-row" key={id}>
+                <div className="connection-row" key={id} data-keyboard-row tabIndex={-1}>
                   <div>
                     <strong>{name}</strong>
                     {error ? (
@@ -276,9 +311,15 @@ export function LogsPage() {
             title="Quote timestamps"
             action={<span className="logs-count">{countOf(quoteUpdates.length, 'symbol')}</span>}
           />
-          <div className="market-data-list">
+          <div
+            className="market-data-list"
+            role="group"
+            aria-label="Quote timestamps"
+            tabIndex={0}
+            data-keyboard-region
+          >
             {quoteUpdates.map(({ ticker, updatedAt }) => (
-              <div className="market-data-row" key={ticker}>
+              <div className="market-data-row" key={ticker} data-keyboard-row tabIndex={-1}>
                 <strong>{ticker}</strong>
                 <time dateTime={updatedAt}>{formatTime(updatedAt)}</time>
               </div>
@@ -290,9 +331,9 @@ export function LogsPage() {
         </Card>
         <ScrollCueCard className="logs-card" scrollSelector=".activity-log">
           <SectionHeading title="Sync history" />
-          <div className="activity-log">
+          <div {...logRegion('Sync history')}>
             {syncRuns.data?.map((run) => (
-              <div className="activity-log-row" key={run.id}>
+              <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={run.id}>
                 <StatusDot tone={run.outcome === 'committed' ? 'positive' : 'negative'} />
                 <div>
                   <strong>{run.outcome === 'committed' ? 'Committed' : 'Failed safely'}</strong>
@@ -311,9 +352,9 @@ export function LogsPage() {
         </ScrollCueCard>
         <ScrollCueCard className="logs-card" scrollSelector=".activity-log">
           <SectionHeading title="Summary runs" />
-          <div className="activity-log">
+          <div {...logRegion('Summary runs')}>
             {summaryRuns.data?.map((run) => (
-              <div className="activity-log-row" key={run.id}>
+              <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={run.id}>
                 <StatusDot
                   tone={
                     run.outcome === 'ok'
@@ -347,10 +388,10 @@ export function LogsPage() {
               ) : undefined
             }
           />
-          <div className="activity-log">
+          <div {...logRegion('Calibration')}>
             {calibration.data?.sessions ? (
               <>
-                <div className="activity-log-row">
+                <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
                   <StatusDot tone="neutral" />
                   <div>
                     <strong>Per session</strong>
@@ -364,7 +405,7 @@ export function LogsPage() {
                       : null}
                   </span>
                 </div>
-                <div className="activity-log-row">
+                <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
                   <StatusDot tone="neutral" />
                   <div>
                     <strong>Quiet sessions</strong>
@@ -373,7 +414,7 @@ export function LogsPage() {
                   <span>{calibration.data.quiet}</span>
                 </div>
                 {calibration.data.perFund.map((rate) => (
-                  <div className="activity-log-row" key={rate.fund}>
+                  <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={rate.fund}>
                     <StatusDot tone="neutral" />
                     <div>
                       <strong>{rate.fund}</strong>
@@ -392,6 +433,34 @@ export function LogsPage() {
             )}
           </div>
         </ScrollCueCard>
+        <ScrollCueCard className="logs-card" scrollSelector=".activity-log">
+          <SectionHeading title="Detector precision" />
+          <div {...logRegion('Detector precision')}>
+            {data.insights?.precision?.length ? (
+              data.insights.precision.map((row) => (
+                <div
+                  className="activity-log-row"
+                  data-keyboard-row
+                  tabIndex={-1}
+                  key={row.detector}
+                >
+                  <StatusDot tone={row.low ? 'warning' : 'neutral'} />
+                  <div>
+                    <strong>{detectorLabel(row.detector, data.insights?.evidence.programs)}</strong>
+                    <small>
+                      {row.acceptsObserved
+                        ? `${row.accepted} kept · ${row.rejected} turned down in the last ${countOf(row.accepted + row.rejected, 'answer')}${row.low ? ' · wrong too often' : ''}`
+                        : `${countOf(row.rejected, 'dismissal')}; only dismissals are recorded`}
+                    </small>
+                  </div>
+                  <span>{row.precision != null ? formatShare(row.precision * 100, 0) : '—'}</span>
+                </div>
+              ))
+            ) : (
+              <EmptyState>No answers to Brief’s suggestions yet.</EmptyState>
+            )}
+          </div>
+        </ScrollCueCard>
         <Card className="logs-card">
           <SectionHeading
             title="Change log"
@@ -403,10 +472,10 @@ export function LogsPage() {
               ) : undefined
             }
           />
-          <div className="activity-log">
+          <div {...logRegion('Change log')}>
             {changeLog.data ? (
               <>
-                <div className="activity-log-row">
+                <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
                   <StatusDot
                     tone={
                       !changeLog.data.check
@@ -439,7 +508,7 @@ export function LogsPage() {
                     </time>
                   ) : null}
                 </div>
-                <div className="activity-log-row">
+                <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
                   <StatusDot tone="neutral" />
                   <div>
                     <strong>Stored</strong>
@@ -450,7 +519,7 @@ export function LogsPage() {
                   <span>{size(changeLog.data.summary.storedBytes)}</span>
                 </div>
                 {changeLog.data.summary.firstRecordedAt ? (
-                  <div className="activity-log-row">
+                  <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
                     <StatusDot tone="neutral" />
                     <div>
                       <strong>Kept since</strong>
@@ -471,10 +540,10 @@ export function LogsPage() {
         </Card>
         <ScrollCueCard className="logs-card" scrollSelector=".activity-log">
           <SectionHeading title="Runtime activity" />
-          <div className="activity-log" aria-live="polite">
+          <div {...logRegion('Runtime activity')} aria-live="polite">
             {query.runtimeLog.length ? (
               query.runtimeLog.map((entry) => (
-                <div className="activity-log-row" key={entry.id}>
+                <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={entry.id}>
                   <StatusDot tone={entry.tone} />
                   <div>
                     <strong>{entry.message}</strong>
@@ -494,11 +563,17 @@ export function LogsPage() {
       </div>
       <Card className="logs-card market-data-card">
         <SectionHeading title="Source timestamps" />
-        <div className="settings-table-scroll">
+        <div
+          className="settings-table-scroll"
+          role="region"
+          aria-label="Source timestamps"
+          tabIndex={0}
+          data-keyboard-region
+        >
           <table className="source-time-table">
             <thead>
               <tr>
-                {['Account', 'Balance', 'Positions', 'Activity', 'Fetched'].map((label) => (
+                {['Account', ...sourceTimeColumns].map((label) => (
                   <th scope="col" key={label}>
                     {label}
                   </th>
@@ -509,7 +584,7 @@ export function LogsPage() {
               {data.accounts
                 .filter(({ id }) => id !== 'all')
                 .map((account) => (
-                  <tr key={account.id}>
+                  <tr key={account.id} data-keyboard-row tabIndex={-1}>
                     <th scope="row">
                       {accountDisplayName(account.id, account.name, accountDisplayNames)}
                     </th>
@@ -519,7 +594,7 @@ export function LogsPage() {
                       account.activityAsOf,
                       account.balanceFetchedAt,
                     ].map((time, index) => (
-                      <td key={index}>
+                      <td key={index} data-label={sourceTimeColumns[index]}>
                         <time dateTime={time ?? undefined}>{formatTime(time)}</time>
                       </td>
                     ))}

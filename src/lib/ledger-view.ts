@@ -84,9 +84,10 @@ export function ledgerView({ name, arguments: args, result }: LedgerCall): Ledge
     (value): value is Record<string, unknown>[] =>
       Array.isArray(value) && value.length > 0 && value.every(isRow),
   )
-  const columns = list
-    ? Object.keys(list[0])
-        .filter((key) => cell(key, list[0][key]) !== undefined)
+  const first = list?.[0]
+  const columns = first
+    ? Object.keys(first)
+        .filter((key) => cell(key, first[key]) !== undefined)
         .slice(0, MAX_COLUMNS)
     : []
   return {

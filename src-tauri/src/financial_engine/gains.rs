@@ -155,15 +155,16 @@ pub(super) fn adjust_for_splits(trades: &mut [Trade], holdings: &[Holding], spli
                 .map(|split| split.ratio)
                 .product::<Decimal>()
         };
+        // A buy or sell without its units can't explain the shares held either way.
         let signed = |trade: &Trade| {
             let kind = trade.r#type.to_ascii_uppercase();
-            let units = trade.units.and_then(decimal_f64).unwrap_or_default().abs();
+            let units = || trade.units.and_then(decimal_f64).map(|units| units.abs());
             if kind.contains("BUY") || kind.contains("REINVEST") {
-                units
+                units()
             } else if kind.contains("SELL") {
-                -units
+                units().map(|units| -units)
             } else {
-                Decimal::ZERO
+                Some(Decimal::ZERO)
             }
         };
         if indices
@@ -172,14 +173,20 @@ pub(super) fn adjust_for_splits(trades: &mut [Trade], holdings: &[Holding], spli
         {
             continue;
         }
-        let recorded = indices
+        let Some(recorded) = indices
             .iter()
             .map(|index| signed(&trades[*index]))
-            .sum::<Decimal>();
-        let restated = indices
+            .sum::<Option<Decimal>>()
+        else {
+            continue;
+        };
+        let Some(restated) = indices
             .iter()
-            .map(|index| signed(&trades[*index]) * factor(&trades[*index]))
-            .sum::<Decimal>();
+            .map(|index| Some(signed(&trades[*index])? * factor(&trades[*index])))
+            .sum::<Option<Decimal>>()
+        else {
+            continue;
+        };
         let held = positions(holdings, &account, &ticker)
             .filter_map(|holding| holding.shares.and_then(decimal_f64))
             .sum::<Decimal>();
@@ -351,5 +358,239 @@ pub(super) fn reconciled_acquisitions(
         transfers
     } else {
         Vec::new()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn day(text: &str) -> NaiveDate {
+        NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap()
+    }
+
+    fn trade(id: usize, kind: &str, date: NaiveDate, units: f64, amount: f64) -> Trade {
+        serde_json::from_value(serde_json::json!({
+            "id": format!("t{id:03}"), "type": kind, "date": date.to_string(), "amount": amount,
+            "account": "Brokerage", "accountId": "broker", "ticker": "EXMP",
+            "description": null, "units": units, "price": amount / units,
+        }))
+        .unwrap()
+    }
+
+    fn holding(shares: f64, cost_basis: f64) -> Holding {
+        serde_json::from_value(serde_json::json!({
+            "ticker": "EXMP", "name": "Example Fund", "accountId": "broker", "shares": shares,
+            "price": 10.0, "value": shares * 10.0, "costBasis": cost_basis,
+            "dailyChangePct": null, "totalChangePct": null, "color": "#000000",
+        }))
+        .unwrap()
+    }
+
+    /// A generated history in today's shares: buys of whole multiples of six shares, and sales
+    /// that never sell more than is held, two weeks apart from 2024-01-02. Returns the trades
+    /// and what stays held, in shares and basis.
+    fn history(seed: u64) -> (Vec<Trade>, f64, Decimal) {
+        let mut state = seed.wrapping_mul(0x2545_F491_4F6C_DD1D) | 1;
+        let mut next = move |bound: u64| {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state % bound
+        };
+        let mut lots: VecDeque<(Decimal, Decimal)> = VecDeque::new();
+        let mut trades = Vec::new();
+        for index in 0..24 {
+            let date = day("2024-01-02") + chrono::Duration::days(14 * index as i64);
+            let held: Decimal = lots.iter().map(|(units, _)| *units).sum();
+            let units = Decimal::from(6 * (1 + next(5)));
+            let amount = units * Decimal::from(5 + next(20));
+            if held >= units && next(3) == 0 {
+                trades.push(trade(
+                    index,
+                    "SELL",
+                    date,
+                    units.try_into().unwrap(),
+                    amount.try_into().unwrap(),
+                ));
+                let mut remaining = units;
+                while remaining > Decimal::ZERO {
+                    let (available, cost) = lots.pop_front().unwrap();
+                    let used = available.min(remaining);
+                    if available > used {
+                        lots.push_front((available - used, cost));
+                    }
+                    remaining -= used;
+                }
+            } else {
+                trades.push(trade(
+                    index,
+                    "BUY",
+                    date,
+                    units.try_into().unwrap(),
+                    amount.try_into().unwrap(),
+                ));
+                lots.push_back((units, amount / units));
+            }
+        }
+        let shares = lots.iter().map(|(units, _)| *units).sum::<Decimal>();
+        let basis = lots
+            .iter()
+            .map(|(units, cost)| *units * *cost)
+            .sum::<Decimal>();
+        (trades, shares.try_into().unwrap(), basis)
+    }
+
+    /// Each sale's estimated gain, by trade id.
+    fn gains(trades: &[Trade]) -> Vec<(String, Option<f64>, Option<f64>)> {
+        trades
+            .iter()
+            .filter(|trade| trade.r#type == "SELL")
+            .map(|trade| {
+                (
+                    trade.id.clone(),
+                    trade.estimated_realized_gain,
+                    trade.estimated_long_term_gain,
+                )
+            })
+            .collect()
+    }
+
+    #[test]
+    fn gains_are_the_same_wherever_a_split_falls_and_however_the_broker_records_it() {
+        for seed in 1..=10 {
+            let (today, shares, basis) = history(seed);
+            let holdings = [holding(shares, basis.try_into().unwrap())];
+            let mut expected = today.clone();
+            add_estimated_realized_gains(&mut expected, &holdings, &|_| true);
+            let expected = gains(&expected);
+            assert!(
+                expected.iter().all(|(_, gain, _)| gain.is_some()),
+                "seed {seed}"
+            );
+            // Realized gains plus what stays held account for every dollar in and out.
+            let realized: Decimal = expected
+                .iter()
+                .map(|(_, gain, _)| decimal_f64(gain.unwrap()).unwrap())
+                .sum();
+            let paid: Decimal = today
+                .iter()
+                .map(|trade| {
+                    let amount = decimal_f64(trade.amount).unwrap();
+                    if trade.r#type == "SELL" {
+                        amount
+                    } else {
+                        -amount
+                    }
+                })
+                .sum();
+            assert_eq!(
+                rounded(realized - paid - basis),
+                Decimal::ZERO,
+                "seed {seed}"
+            );
+
+            for ratio in [2, 3] {
+                for position in 1..today.len() {
+                    let ex_date =
+                        NaiveDate::parse_from_str(&today[position].date, "%Y-%m-%d").unwrap();
+                    let split = Split {
+                        symbol: "EXMP".into(),
+                        ex_date,
+                        ratio: Decimal::from(ratio),
+                    };
+                    // The broker reports trades from before the split unadjusted.
+                    let mut recorded = today
+                        .iter()
+                        .enumerate()
+                        .map(|(index, trade)| {
+                            let mut trade = trade.clone();
+                            if index < position {
+                                trade.units = trade.units.map(|units| units / ratio as f64);
+                                trade.price = trade.price.map(|price| price * ratio as f64);
+                            }
+                            trade
+                        })
+                        .collect::<Vec<_>>();
+                    adjust_for_splits(&mut recorded, &holdings, std::slice::from_ref(&split));
+                    add_estimated_realized_gains(&mut recorded, &holdings, &|_| true);
+                    assert_eq!(
+                        gains(&recorded),
+                        expected,
+                        "seed {seed}, 1:{ratio} at {position}"
+                    );
+                    // History the broker already adjusted for the split isn't adjusted again.
+                    let mut restated = today.clone();
+                    adjust_for_splits(&mut restated, &holdings, std::slice::from_ref(&split));
+                    assert!(restated.iter().all(|trade| trade.split_ratio.is_none()));
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn a_sale_of_more_than_is_held_leaves_every_sale_unestimated() {
+        for seed in 1..=10 {
+            let (mut trades, shares, basis) = history(seed);
+            let Some(sale) = trades.iter().position(|trade| trade.r#type == "SELL") else {
+                continue;
+            };
+            let held_then: f64 = trades[..sale]
+                .iter()
+                .map(|trade| trade.units.unwrap() * if trade.r#type == "SELL" { -1.0 } else { 1.0 })
+                .sum();
+            trades[sale].units = Some(held_then + 6.0);
+            add_estimated_realized_gains(
+                &mut trades,
+                &[holding(shares, basis.try_into().unwrap())],
+                &|_| true,
+            );
+            assert!(
+                gains(&trades).iter().all(|(_, gain, _)| gain.is_none()),
+                "seed {seed}: a sale beyond what was held was estimated"
+            );
+        }
+
+        // Selling what's held empties the lots exactly; one more share is beyond them.
+        let mut state = FifoState::default();
+        state
+            .lots
+            .push_back((Decimal::from(10), Decimal::from(5), day("2025-01-02")));
+        state.sell(0, Decimal::from(4), Decimal::from(40), day("2025-02-03"));
+        state.sell(1, Decimal::from(6), Decimal::from(60), day("2025-02-04"));
+        assert!(state.lots.is_empty() && !state.invalid && state.sales.len() == 2);
+        state.sell(2, Decimal::ONE, Decimal::from(10), day("2025-02-05"));
+        assert!(state.invalid && state.sales.is_empty());
+    }
+
+    #[test]
+    fn a_lot_turns_long_term_the_day_after_its_first_anniversary() {
+        assert!(!held_long_term(day("2025-03-15"), day("2026-03-15")));
+        assert!(held_long_term(day("2025-03-15"), day("2026-03-16")));
+        // A leap day's anniversary falls on the last day of February.
+        assert!(!held_long_term(day("2024-02-29"), day("2025-02-28")));
+        assert!(held_long_term(day("2024-02-29"), day("2025-03-01")));
+
+        // One sale across a lot a year and a day old and one bought later: only the first
+        // lot's share of the gain is long-term.
+        let mut state = FifoState::default();
+        state
+            .lots
+            .push_back((Decimal::from(10), Decimal::from(10), day("2025-01-10")));
+        state
+            .lots
+            .push_back((Decimal::from(10), Decimal::from(20), day("2025-06-10")));
+        state.sell(0, Decimal::from(20), Decimal::from(600), day("2026-01-11"));
+        let sale = &state.sales[0];
+        assert_eq!(sale.basis, Decimal::from(300));
+        assert_eq!(sale.gain, Decimal::from(300));
+        assert_eq!(sale.long_term_gain, Decimal::from(200));
+        // A day earlier, none of it is.
+        let mut state = FifoState::default();
+        state
+            .lots
+            .push_back((Decimal::from(10), Decimal::from(10), day("2025-01-10")));
+        state.sell(0, Decimal::from(10), Decimal::from(300), day("2026-01-10"));
+        assert_eq!(state.sales[0].long_term_gain, Decimal::ZERO);
     }
 }

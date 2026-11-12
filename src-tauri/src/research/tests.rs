@@ -39,12 +39,12 @@ fn work(title: &str) -> Chapter {
 #[test]
 fn public_names_drop_what_records_add() {
     assert_eq!(
-        public_name("Platinum CashPlus - 1234").as_deref(),
-        Some("Platinum CashPlus")
+        public_name("Example Savings - 1234").as_deref(),
+        Some("Example Savings")
     );
     assert_eq!(
-        public_name("Morgan Stanley Platinum Card®").as_deref(),
-        Some("Morgan Stanley Platinum Card")
+        public_name("Example Rewards Card®").as_deref(),
+        Some("Example Rewards Card")
     );
     assert_eq!(
         public_name("ACME 401K Plan #12 Acme").as_deref(),
@@ -57,33 +57,27 @@ fn public_names_drop_what_records_add() {
 #[test]
 fn gaps_are_what_no_rule_covers_and_queries_carry_no_digits() {
     let accounts = [
-        // The card's benefits are known, and Morgan Stanley's program covers the account.
+        // Covered: the card has saved rules, and a program names the cash account's bank.
         account(
             "a",
             "credit",
             "Card",
-            "American Express",
-            Some("Morgan Stanley Platinum Card®"),
+            "Example Issuer",
+            Some("The Example Card®"),
         ),
-        account(
-            "b",
-            "cash",
-            "Platinum CashPlus - 1234",
-            "Morgan Stanley",
-            None,
-        ),
+        account("b", "cash", "Savings - 1234", "Example Bank", None),
         // Neither of these has a rule.
         account(
             "c",
             "credit",
-            "Card 4421",
-            "Chase",
-            Some("Sapphire Reserve 4421"),
+            "Card 5678",
+            "Other Bank",
+            Some("Travel Rewards 5678"),
         ),
         account(
             "d",
             "cash",
-            "Everyday Checking ...0042",
+            "Everyday Checking ...0000",
             "Wells Fargo",
             Some("Everyday Checking"),
         ),
@@ -93,7 +87,15 @@ fn gaps_are_what_no_rule_covers_and_queries_carry_no_digits() {
         work("Example Corp Services Group Inc"),
         work("Example State University"),
     ];
-    let gaps = gaps(&accounts, &chapters, &programs(&[]));
+    // A rule the user saved covers the first employer.
+    let mut employer_rule = crate::synthetic::career::employee_waiver();
+    employer_rule.organization = "Example Corp".into();
+    let gaps = gaps(
+        &accounts,
+        &chapters,
+        &programs(&[employer_rule, crate::synthetic::career::loyalty_bonus()]),
+        &crate::insights::benefits::Catalog::example(),
+    );
     let found = gaps
         .iter()
         .map(|gap| (gap.kind, gap.name.as_str()))
@@ -102,14 +104,14 @@ fn gaps_are_what_no_rule_covers_and_queries_carry_no_digits() {
         found,
         vec![
             (GapKind::Account, "Wells Fargo Everyday Checking"),
-            (GapKind::Card, "Sapphire Reserve"),
+            (GapKind::Card, "Travel Rewards"),
             (GapKind::Employer, "Example State University"),
         ]
     );
     for gap in &gaps {
         // Template words aside, nothing in a query came with a digit.
         assert!(
-            !gap.query.contains("4421") && !gap.query.contains("0042"),
+            !gap.query.contains("5678") && !gap.query.contains("0000"),
             "{}",
             gap.query
         );

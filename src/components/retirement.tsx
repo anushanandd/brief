@@ -79,7 +79,7 @@ function Contributions({ retirement, name }: { retirement: Retirement; name: Nam
       <ul className="retirement-limits">
         {workplace ? (
           <LimitRow
-            title={`${workplace.accountIds.length > 1 ? 'Workplace plans' : name(workplace.accountIds[0])} · ${retirement.year}`}
+            title={`${workplace.accountIds.length === 1 && workplace.accountIds[0] ? name(workplace.accountIds[0]) : 'Workplace plans'} · ${retirement.year}`}
             used={workplace.deferred}
             limit={workplace.limit}
             details={[
@@ -375,12 +375,8 @@ export function RetirementView({ data }: { data: FinanceSnapshot }) {
   return (
     <>
       <div className="investments-hero">
-        <div className="investments-main">
-          <Contributions retirement={retirement} name={name} />
-        </div>
-        <div className="investments-side">
-          <Savings retirement={retirement} />
-        </div>
+        <Contributions retirement={retirement} name={name} />
+        <Savings retirement={retirement} />
       </div>
       <div className="investments-pair">
         <Buckets retirement={retirement} name={name} />

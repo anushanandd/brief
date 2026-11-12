@@ -6,9 +6,12 @@ import {
   countOf,
   displayCase,
   formatActivityName,
+  formatCalendarDate,
   formatCompactCurrency,
   formatCurrency,
+  formatMarketTime,
   formatPercent,
+  formatRate,
   formatSecurityName,
   formatShare,
   formatSignedCompactCurrency,
@@ -84,5 +87,22 @@ describe('financial formatting', () => {
     expect(formatSecurityName('Vanguard Total Stock Market ETF')).toBe(
       'Vanguard Total Stock Market ETF',
     )
+  })
+})
+
+describe('dates and times', () => {
+  it('reads a calendar day as that day, whatever the time zone', () => {
+    expect(formatCalendarDate('2026-01-01', { month: 'long', day: 'numeric' })).toBe('January 1')
+    expect(formatCalendarDate('2026-12-31', { weekday: 'short' })).toBe('Thu')
+  })
+
+  it('marks market session times in Eastern time and says so', () => {
+    expect(formatMarketTime('2026-07-01T13:30:00Z')).toBe('9:30 AM ET')
+    expect(formatMarketTime(Date.parse('2026-12-01T21:00:00Z'))).toBe('4:00 PM ET')
+  })
+
+  it('keeps a rate as given, with two decimals', () => {
+    expect(formatRate(24.99)).toBe('24.99%')
+    expect(formatRate(4)).toBe('4.00%')
   })
 })

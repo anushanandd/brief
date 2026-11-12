@@ -227,9 +227,11 @@ export function toggleFavorite(ids: readonly string[], id: string) {
 export function moveFavorite(ids: readonly string[], id: string, offset: -1 | 1) {
   const index = ids.indexOf(id)
   const target = index + offset
-  if (index < 0 || target < 0 || target >= ids.length) return [...ids]
   const next = [...ids]
-  ;[next[index], next[target]] = [next[target], next[index]]
+  const displaced = next[target]
+  if (index < 0 || displaced === undefined) return next
+  next[index] = displaced
+  next[target] = id
   return next
 }
 

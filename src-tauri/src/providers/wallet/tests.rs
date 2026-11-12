@@ -58,7 +58,7 @@ impl Drop for Store {
     }
 }
 
-/// Wallet's tables with synthetic rows: an Apple Card tap, an online charge, and an Amex charge.
+/// Wallet's tables with synthetic rows: an Apple Card tap, an online charge, and a bank card's charge.
 fn store() -> Store {
     let path = std::env::temp_dir().join(format!("wallet-{}.sqlite", uuid::Uuid::new_v4()));
     let connection = Connection::open(&path).unwrap();
@@ -85,10 +85,10 @@ fn store() -> Store {
              CREATE TABLE peanuts (last_updated_date INTEGER);
              CREATE TABLE gooseberry (pid INTEGER);
              CREATE TABLE cloud_store_zone (zone_name TEXT, zone_owner TEXT);
-             INSERT INTO pass VALUES (10, 'Apple Card', NULL), (11, 'American Express', 2);
+             INSERT INTO pass VALUES (10, 'Apple Card', NULL), (11, 'Example Bank', 2);
              INSERT INTO payment_application VALUES (1, 10);
              INSERT INTO maps_merchant VALUES (5, 'Corner Market', '+1 555 0100', 'https://corner.test',
-               39.75, -105.0,
+               30.27, -97.74,
                '{\"street\":\"100 Main St\",\"city\":\"Austin\",\"state\":\"TX\",\"postalCode\":\"78701\",\"ISOCountryCode\":\"US\"}');
              INSERT INTO oranges VALUES (100000000, 90000000, 10000000);
              INSERT INTO gooseberry VALUES (1), (2);
@@ -113,8 +113,8 @@ fn store() -> Store {
                 "Corner Mkt",
                 "corner mkt #12",
                 5411,
-                39.7501,
-                -105.0001,
+                30.2701,
+                -97.7401,
                 Option::<String>::None,
                 Option::<i64>::None,
                 Option::<String>::None,
@@ -135,12 +135,12 @@ fn store() -> Store {
                 1,
                 0,
                 1,
-                "Harder Kulm",
-                "harder kulm",
+                "Example Funicular",
+                "example funicular",
                 4789,
                 0.0,
                 0.0,
-                "CHF",
+                "EUR",
                 190_000,
                 "1.18",
                 Option::<i64>::None
@@ -234,9 +234,9 @@ fn store() -> Store {
         "Transaction",
         archive(&[
             ("cardType", wrapped_text("digital")),
-            ("merchantCity", wrapped_text("Interlaken")),
-            ("merchantState", wrapped_text("CHE")),
-            ("merchantRawCountry", wrapped_text("CHE")),
+            ("merchantCity", wrapped_text("Sevilla")),
+            ("merchantState", wrapped_text("ESP")),
+            ("merchantRawCountry", wrapped_text("ESP")),
         ]),
     );
     connection
@@ -274,11 +274,11 @@ fn reads_amounts_times_and_how_a_tap_was_paid() {
     let tap = row(&data, "tap");
     assert_eq!(tap.issuer, "Apple Card");
     assert_eq!(tap.amount().round_dp(2).to_string(), "48.73");
-    // The evening of the 28th in Austin, though it is the 29th in UTC.
+    // An evening purchase keeps its local date after UTC has moved to the next day.
     assert_eq!(tap.date, "2025-04-28");
     assert_eq!(
         tap.occurred_at.as_deref(),
-        Some("2025-04-28T19:00:00-06:00")
+        Some("2025-04-28T20:00:00-05:00")
     );
     assert_eq!(tap.posted_on.as_deref(), Some("2025-04-29"));
     assert_eq!(tap.method, Some(WalletMethod::Tap));
@@ -299,7 +299,7 @@ fn the_mapped_address_leads_and_the_network_record_keeps_only_what_is_named() {
     assert_eq!(place.street.as_deref(), Some("100 Main St"));
     assert_eq!(place.city.as_deref(), Some("Austin"));
     assert_eq!(place.country.as_deref(), Some("US"));
-    assert_eq!(place.lat, Some(39.75));
+    assert_eq!(place.lat, Some(30.27));
     let network = tap.network.as_ref().unwrap();
     assert_eq!(network.merchant_id.as_deref(), Some("M1"));
     assert_eq!(network.terminal_id.as_deref(), Some("T1"));
@@ -318,15 +318,15 @@ fn abroad_keeps_the_charged_currency_and_ignores_a_country_printed_as_a_region()
     assert_eq!(
         abroad.foreign,
         Some(WalletForeign {
-            currency: "CHF".into(),
+            currency: "EUR".into(),
             amount: 19.0,
             rate: Some(1.18),
         })
     );
     let place = abroad.place.as_ref().unwrap();
-    assert_eq!(place.city.as_deref(), Some("Interlaken"));
+    assert_eq!(place.city.as_deref(), Some("Sevilla"));
     assert_eq!(place.region, None);
-    assert_eq!(place.country.as_deref(), Some("CH"));
+    assert_eq!(place.country.as_deref(), Some("ES"));
 }
 
 #[test]
@@ -334,7 +334,7 @@ fn a_live_record_takes_the_macs_time_and_an_old_one_without_a_zone_has_none() {
     let store = store();
     let data = read_store(&store.0, now()).unwrap();
     assert!(row(&data, "live").occurred_at.is_some());
-    assert_eq!(row(&data, "live").issuer, "American Express");
+    assert_eq!(row(&data, "live").issuer, "Example Bank");
     assert_eq!(row(&data, "abroad").occurred_at, None);
     // A record for no card on this Mac isn't kept.
     assert!(data.rows.iter().all(|row| row.id != "gone"));

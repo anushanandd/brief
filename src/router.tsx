@@ -1,5 +1,5 @@
 import {
-  createRootRoute,
+  createRootRouteWithContext,
   createRoute,
   createRouter,
   lazyRouteComponent,
@@ -7,6 +7,8 @@ import {
 } from '@tanstack/react-router'
 
 import { AppShell } from './components/app-shell'
+import { PageLoading } from './components/data-state'
+import { maskedPage } from './hooks/use-amounts-hidden'
 import type { LedgerSearch } from './lib/activity-ledger'
 import { analyticsChart, analyticsSearch } from './lib/analytics'
 import { calendarSearch } from './lib/calendar'
@@ -15,13 +17,22 @@ import { insightsSearch } from './lib/insights-views'
 import { settingsHash } from './lib/settings-dialog'
 import { settingsHashForPath } from './lib/settings-search'
 import { spendingRanges, type SpendingRange } from './lib/spending'
+import { queryClient } from './query-client'
+import { loadAnalytics, loadDataHealth, loadSpending, type RouterContext } from './route-data'
 
-const rootRoute = createRootRoute({ component: AppShell })
+const rootRoute = createRootRouteWithContext<RouterContext>()({ component: AppShell })
+
+/**
+ * A page's data loads before the page opens (see `route-data`): the router holds the current
+ * page until it arrives, every time the route is entered or its search changes, including
+ * after a preload, since the snapshot may have changed since. A loaded query returns at once.
+ */
+const beforeOpening = { staleReloadMode: 'blocking', preloadStaleTime: 0 } as const
 
 const homeRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  component: lazyRouteComponent(() => import('./pages/overview'), 'OverviewPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/overview'), 'OverviewPage')),
 })
 // Overview became Home; keep old links working.
 const overviewRoute = createRoute({
@@ -41,14 +52,14 @@ const accountsRoute = createRoute({
     typeof search.group === 'string' && search.group
       ? { group: search.group }
       : accountSearch(search),
-  component: lazyRouteComponent(() => import('./pages/accounts'), 'AccountsPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/accounts'), 'AccountsPage')),
 })
 /** A non-negative amount from a search parameter. */
 const amountBound = (value: unknown) => {
   const amount = typeof value === 'number' ? value : typeof value === 'string' ? Number(value) : NaN
   return Number.isFinite(amount) && amount >= 0 ? amount : undefined
 }
-const evidenceValues = ['statement', 'unlisted', 'conflict', 'unsure'] as const
+const evidenceValues = ['statement', 'unlisted', 'conflict', 'unsure', 'suggested'] as const
 const ledgerSearch = (search: Record<string, unknown>): LedgerSearch => {
   const from = validDate(search.from)
   const to = validDate(search.to)
@@ -88,7 +99,7 @@ const holdingsRoute = createRoute({
     if (search.ticker)
       throw redirect({ to: '/holdings/$ticker', params: { ticker: search.ticker }, replace: true })
   },
-  component: lazyRouteComponent(() => import('./pages/holdings'), 'HoldingsPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/holdings'), 'HoldingsPage')),
 })
 const holdingsIndexRoute = createRoute({ getParentRoute: () => holdingsRoute, path: '/' })
 const performanceRoute = createRoute({
@@ -105,7 +116,7 @@ const activitiesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/activities',
   validateSearch: ledgerSearch,
-  component: lazyRouteComponent(() => import('./pages/activities'), 'ActivitiesPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/activities'), 'ActivitiesPage')),
 })
 const spendingRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -122,19 +133,25 @@ const spendingRoute = createRoute({
       ...(owner ? { for: owner } : {}),
     }
   },
-  component: lazyRouteComponent(() => import('./pages/spending'), 'SpendingPage'),
+  loaderDeps: ({ search }) => search,
+  loader: {
+    handler: ({ context, deps }) => loadSpending(context, deps),
+    staleReloadMode: beforeOpening.staleReloadMode,
+  },
+  preloadStaleTime: beforeOpening.preloadStaleTime,
+  component: maskedPage(lazyRouteComponent(() => import('./pages/spending'), 'SpendingPage')),
 })
 const insightsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/insights',
   validateSearch: insightsSearch,
-  component: lazyRouteComponent(() => import('./pages/insights'), 'InsightsPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/insights'), 'InsightsPage')),
 })
 const calendarRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/calendar',
   validateSearch: calendarSearch,
-  component: lazyRouteComponent(() => import('./pages/calendar'), 'CalendarPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/calendar'), 'CalendarPage')),
 })
 const documentsRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -148,7 +165,7 @@ const documentsRoute = createRoute({
         : {}),
     }
   },
-  component: lazyRouteComponent(() => import('./pages/documents'), 'DocumentsPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/documents'), 'DocumentsPage')),
 })
 // Trips moved under Insights; keep old links working.
 const tripsRoute = createRoute({
@@ -167,13 +184,6 @@ const recurringRoute = createRoute({
     throw redirect({ to: '/spending', replace: true })
   },
 })
-const platinumBenefitsRoute = createRoute({
-  getParentRoute: () => rootRoute,
-  path: '/spending/platinum',
-  beforeLoad: () => {
-    throw redirect({ to: '/analytics', search: { chart: 'amex-credits' } })
-  },
-})
 const moneyRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/money',
@@ -185,7 +195,13 @@ const analyticsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/analytics',
   validateSearch: analyticsSearch,
-  component: lazyRouteComponent(() => import('./pages/analytics'), 'AnalyticsPage'),
+  loaderDeps: ({ search }) => search,
+  loader: {
+    handler: ({ context, deps }) => loadAnalytics(context, deps),
+    staleReloadMode: beforeOpening.staleReloadMode,
+  },
+  preloadStaleTime: beforeOpening.preloadStaleTime,
+  component: maskedPage(lazyRouteComponent(() => import('./pages/analytics'), 'AnalyticsPage')),
 })
 const spendingActivityRoute = createRoute({
   getParentRoute: () => rootRoute,
@@ -203,7 +219,7 @@ const taxesRoute = createRoute({
     const year = typeof search.year === 'number' ? search.year : Number(search.year)
     return Number.isInteger(year) && year > 2000 && year < 2100 ? { year } : {}
   },
-  component: lazyRouteComponent(() => import('./pages/taxes'), 'TaxesPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/taxes'), 'TaxesPage')),
 })
 const settingsRedirect = (path: string) => {
   throw redirect({
@@ -231,17 +247,22 @@ const legacySettingsRoutes = (
 const designRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings/design',
-  component: lazyRouteComponent(() => import('./pages/design'), 'DesignPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/design'), 'DesignPage')),
 })
 const logsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/logs',
-  component: lazyRouteComponent(() => import('./pages/logs'), 'LogsPage'),
+  component: maskedPage(lazyRouteComponent(() => import('./pages/logs'), 'LogsPage')),
 })
 const healthRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/health',
-  component: lazyRouteComponent(() => import('./pages/health'), 'HealthPage'),
+  loader: {
+    handler: ({ context }) => loadDataHealth(context),
+    staleReloadMode: beforeOpening.staleReloadMode,
+  },
+  preloadStaleTime: beforeOpening.preloadStaleTime,
+  component: maskedPage(lazyRouteComponent(() => import('./pages/health'), 'HealthPage')),
 })
 
 const routeTree = rootRoute.addChildren([
@@ -253,7 +274,6 @@ const routeTree = rootRoute.addChildren([
   activitiesRoute,
   spendingRoute,
   recurringRoute,
-  platinumBenefitsRoute,
   insightsRoute,
   calendarRoute,
   documentsRoute,
@@ -269,7 +289,14 @@ const routeTree = rootRoute.addChildren([
   healthRoute,
 ])
 
-export const router = createRouter({ routeTree, defaultPreload: 'intent' })
+export const router = createRouter({
+  routeTree,
+  defaultPreload: 'intent',
+  // A page whose data takes longer than a second shows its loading state instead of holding.
+  defaultPendingComponent: PageLoading,
+  // Tests give their own client when they build a router from this tree.
+  context: { queryClient },
+})
 
 declare module '@tanstack/react-router' {
   interface Register {

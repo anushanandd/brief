@@ -237,6 +237,17 @@ impl ProviderError {
         })
     }
 
+    /// A provider's refusal with `code`, as `from_response` reads one.
+    #[cfg(test)]
+    pub fn refused(provider: &str, endpoint: &str, code: &str) -> Self {
+        Self {
+            kind: "provider",
+            http_status: Some(400),
+            error_code: Some(code.into()),
+            ..Self::invalid_response(provider, endpoint, 1)
+        }
+    }
+
     pub fn code(&self) -> Option<&str> {
         self.error_code.as_deref()
     }

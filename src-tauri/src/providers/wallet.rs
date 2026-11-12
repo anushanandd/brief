@@ -1,9 +1,12 @@
-//! Apple Wallet's local transaction store, read only.
+//! Apple Wallet's local transaction store, read only, and off until turned on in Settings. It
+//! is read on each refresh and, while the window is visible, within a minute of Wallet
+//! writing; each read is a `Wallet` change that projects saved data again.
 //!
 //! `~/Library/Passes/passes*.sqlite` is the private database behind Wallet. Apple Card arrives
-//! there through a CloudKit zone with its whole history, and a card whose issuer runs a
-//! notification service (Amex) arrives within seconds of a charge, from the day this Mac
-//! registered with it. Chase's service reports only Apple Pay on this Mac, so it stays empty.
+//! there through a CloudKit zone with its whole history (its records' `CKEncrypted*` values
+//! are plain protobuf wrappers on disk), and a card whose issuer runs its own notification
+//! service arrives within seconds of a charge, from the day this Mac registered with it. An
+//! issuer that relies on the network's token service reports only Apple Pay, if anything.
 //!
 //! The same database holds card tokens and notification credentials, so every query here names
 //! its columns and a test keeps them off the list; nothing is read with `select *`. Apple's
@@ -125,7 +128,7 @@ pub struct WalletPlace {
 #[serde(default, rename_all = "camelCase")]
 pub struct WalletRow {
     pub id: String,
-    /// The card, as its pass names its organization: "Apple Card", "American Express".
+    /// The card, as its pass names its organization: "Apple Card", "Example Bank".
     pub issuer: String,
     /// Ten-thousandths of the account's currency: positive for a purchase, as Wallet has it.
     pub amount: i64,

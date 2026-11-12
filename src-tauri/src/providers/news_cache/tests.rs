@@ -21,6 +21,85 @@ fn story(url: &str, created_at: &str) -> MarketNewsArticle {
 }
 
 #[test]
+fn article_text_keeps_its_first_reading_and_ages_out_with_its_story() {
+    let cache = NewsCache::new(None).unwrap();
+    // Sep 21, 2026.
+    let now = 1_789_992_000;
+    let body = |url: &str, created_at: &str, text: &str| SavedBody {
+        url: url.into(),
+        symbols: vec!["TEST".into()],
+        headline: "Why Is Test Corp Stock Rising?".into(),
+        created_at: created_at.into(),
+        body: text.into(),
+    };
+    cache
+        .save_bodies(
+            &[
+                body(
+                    "https://example.com/new",
+                    "2026-09-20T15:00:00+00:00",
+                    "First text.",
+                ),
+                body(
+                    "https://example.com/old",
+                    "2026-07-01T15:00:00+00:00",
+                    "Old text.",
+                ),
+                body(
+                    "https://example.com/empty",
+                    "2026-09-20T15:00:00+00:00",
+                    " ",
+                ),
+            ],
+            now,
+        )
+        .unwrap();
+    // A story saved again keeps the text a reading was made from.
+    cache
+        .save_bodies(
+            &[body(
+                "https://example.com/new",
+                "2026-09-20T15:00:00+00:00",
+                "Edited text.",
+            )],
+            now,
+        )
+        .unwrap();
+    assert_eq!(
+        cache.body("https://example.com/new").unwrap().as_deref(),
+        Some("First text.")
+    );
+    // Past its keeping, and empty text, aren't saved.
+    assert_eq!(cache.body("https://example.com/old").unwrap(), None);
+    assert_eq!(cache.body("https://example.com/empty").unwrap(), None);
+    let recent = cache.bodies_since("2026-09-01T00:00:00+00:00").unwrap();
+    assert_eq!(recent.len(), 1);
+    assert_eq!(recent[0].symbols, ["TEST"]);
+    // A reading is saved with who made it, and replaced by a later one.
+    let key = "cause:https://example.com/new";
+    assert_eq!(cache.reading(key).unwrap(), None);
+    cache
+        .save_reading(key, &serde_json::json!({ "sentence": null }), "rule", now)
+        .unwrap();
+    cache
+        .save_reading(
+            key,
+            &serde_json::json!({ "sentence": "It rose." }),
+            "apple",
+            now,
+        )
+        .unwrap();
+    let (reading, reader) = cache.reading(key).unwrap().unwrap();
+    assert_eq!(reading["sentence"], "It rose.");
+    assert_eq!(reader, "apple");
+    // Clearing news storage clears both.
+    let mut cache = cache;
+    cache.clear().unwrap();
+    assert_eq!(cache.reading(key).unwrap(), None);
+    assert!(cache.bodies_since("").unwrap().is_empty());
+}
+
+#[test]
 fn reported_quarters_are_reused_for_a_week_and_failures_wait_a_day() {
     let cache = NewsCache::new(None).unwrap();
     let now = 1_789_992_000;

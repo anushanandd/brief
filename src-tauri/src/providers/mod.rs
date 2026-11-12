@@ -21,9 +21,12 @@ use uuid::Uuid;
 
 pub mod alpaca;
 pub mod alpha_vantage;
+pub mod card_catalog;
 pub mod closes;
 pub mod corporate_actions;
+pub mod earnings;
 pub mod exa;
+pub mod expectations;
 pub mod feeds;
 pub mod fundamentals;
 pub mod holding_market;
@@ -34,6 +37,7 @@ pub mod news;
 pub mod news_cache;
 pub mod plaid;
 pub mod portfolio;
+pub mod reading;
 pub mod sec;
 pub mod snaptrade;
 pub mod vault;
@@ -187,8 +191,11 @@ pub struct EarningsEvent {
     pub name: String,
     pub report_date: String,
     pub fiscal_date_ending: Option<String>,
+    /// Analysts' consensus earnings per share.
     pub estimate: Option<f64>,
     pub currency: Option<String>,
+    /// `pre-market` or `post-market`, when the calendar says.
+    pub time_of_day: Option<String>,
 }
 
 #[derive(Clone, Debug, Serialize)]
@@ -601,8 +608,12 @@ pub struct Providers {
     /// The disposable news database, opened on first use; see `news_cache`.
     news: tokio::sync::Mutex<Option<news_cache::NewsCache>>,
     news_cache_path: Option<std::path::PathBuf>,
-    /// The latest summary runs, for the Logs page and Data health.
-    pub summary_runs: crate::summary::SummaryRuns,
+    card_catalog: tokio::sync::Mutex<
+        Option<(
+            std::time::Instant,
+            std::sync::Arc<card_catalog::CardCatalog>,
+        )>,
+    >,
 }
 
 impl Providers {
@@ -626,7 +637,7 @@ impl Providers {
             weekly_closes: Mutex::new(WeeklyCloseCache::default()),
             news: tokio::sync::Mutex::new(None),
             news_cache_path: None,
-            summary_runs: crate::summary::SummaryRuns::default(),
+            card_catalog: tokio::sync::Mutex::new(None),
         })
     }
 

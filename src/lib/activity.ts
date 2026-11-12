@@ -1,8 +1,9 @@
 import { accountDisplayName, type AccountDisplayNames } from './account-names'
 import { activityBenefitNote, type ActivityBenefitNote } from './benefit-copy'
 import { daysBetween } from './dates'
-import { asciiMinus, displayCase, formatCurrency } from './format'
+import { asciiMinus, displayCase, formatCalendarDate, formatCurrency } from './format'
 import { stockLogoUrl, transactionLogoUrl } from './logos'
+import { inferredNeedSubjects } from './needs'
 import { placeLabel } from './places'
 import type { FinanceSnapshot, Transaction } from './schema'
 import { transactionDateKey } from './spending'
@@ -49,9 +50,10 @@ export type ActivityItem = {
   splitCategories?: string[]
   /** Whether a transaction is someone else's money; absent on trades, which can't be. */
   other?: boolean
-  /** A second look Rust suggests: a possible duplicate, an unusual amount, or details whose
-   * sources disagree. */
-  flag?: 'duplicate' | 'unusual' | 'conflict'
+  /** A second look Rust suggests: a possible duplicate, an unusual amount, details whose
+   * sources disagree, or an inferred need (a new series, a new price, a fee, a paycheck
+   * outside its band). */
+  flag?: 'duplicate' | 'unusual' | 'conflict' | 'new' | 'price' | 'fee' | 'pay'
   /** What Rust's grading and statement reconciliation say backs the transaction. */
   evidence?: ActivityEvidence[]
   /** The other leg of a move between your accounts, as Rust paired them. */
@@ -71,10 +73,11 @@ export type ActivityTransfer = {
 
 /**
  * How a transaction stands against its evidence: on an imported statement, inside a
- * statement's days but missing from it, with sources that disagree, or categorized or named
- * by Plaid without confidence.
+ * statement's days but missing from it, with sources that disagree, categorized or named
+ * by Plaid without confidence, or categorized by Brief from your earlier choices (so every
+ * category it chose for you is listed, to keep or undo).
  */
-export type ActivityEvidence = 'statement' | 'unlisted' | 'conflict' | 'unsure'
+export type ActivityEvidence = 'statement' | 'unlisted' | 'conflict' | 'unsure' | 'suggested'
 
 function activityEvidence(transaction: Transaction, unlisted: ReadonlySet<string>) {
   const quality = transaction.quality
@@ -85,6 +88,7 @@ function activityEvidence(transaction: Transaction, unlisted: ReadonlySet<string
   if (quality?.grade === 'conflict') tags.push('conflict')
   if (quality?.category.basis === 'providerUnsure' || quality?.merchant?.basis === 'providerUnsure')
     tags.push('unsure')
+  if (transaction.categorySource === 'suggested') tags.push('suggested')
   return tags.length ? tags : undefined
 }
 
@@ -185,7 +189,7 @@ export function activityPlace(activity: ActivityItem): {
 
 export function paymentChannelLabel(channel?: string) {
   const value = channel?.trim().replaceAll(/[_-]+/g, ' ')
-  return value ? value[0].toUpperCase() + value.slice(1).toLowerCase() : ''
+  return value ? value.charAt(0).toUpperCase() + value.slice(1).toLowerCase() : ''
 }
 
 const walletMethods = {
@@ -230,13 +234,14 @@ export function activityMatchesSearch(activity: ActivityItem, query: string) {
     amount: `${activity.amount} ${formatCurrency(activity.amount)} ${asciiMinus(formatCurrency(activity.amount))}`,
     date: activity.date,
   }
-  const scoped =
-    /^(description|account|category|tag|person|method|location|amount|date):\s*(.*)$/.exec(text)
-  if (scoped && !scoped[2].trim()) return false
+  const [scoped, field, value = ''] =
+    /^(description|account|category|tag|person|method|location|amount|date):\s*(.*)$/.exec(text) ??
+    []
+  if (scoped && !value.trim()) return false
   const source = scoped
-    ? (Object.entries(fields).find(([name]) => name === scoped[1])?.[1] ?? '')
+    ? (Object.entries(fields).find(([name]) => name === field)?.[1] ?? '')
     : `${Object.values(fields).join(' ')} ${activity.detail}`
-  const terms = (scoped ? scoped[2] : text).split(/\s+/).filter(Boolean)
+  const terms = (scoped ? value : text).split(/\s+/).filter(Boolean)
   return terms.every((term) => source.toLocaleLowerCase().includes(term))
 }
 
@@ -302,15 +307,23 @@ export function buildActivities(
     data.insights?.anomalies.unusual.map(({ transactionId }) => transactionId),
   )
   const unlisted = new Set((data.statementReconciliation ?? []).flatMap(({ extra }) => extra))
+  const inferred = inferredNeedSubjects(data.insights?.brief.needs ?? [])
+  const inferredFlags = {
+    'new-series': 'new',
+    'price-changed': 'price',
+    'fees-charged': 'fee',
+    'pay-differs': 'pay',
+    'unusual-charge': 'unusual',
+  } as const
   // A conflict the user reviewed stays graded but no longer asks for a look.
-  const flag = (transaction: Transaction) =>
-    duplicates.has(transaction.id)
-      ? ('duplicate' as const)
-      : unusual.has(transaction.id)
-        ? ('unusual' as const)
-        : transaction.quality?.grade === 'conflict' && !transaction.reviewed
-          ? ('conflict' as const)
-          : undefined
+  const flag = (transaction: Transaction) => {
+    if (duplicates.has(transaction.id)) return 'duplicate' as const
+    if (unusual.has(transaction.id)) return 'unusual' as const
+    if (transaction.quality?.grade === 'conflict' && !transaction.reviewed)
+      return 'conflict' as const
+    const need = inferred.get(transaction.id)
+    return need ? inferredFlags[need.kind] : undefined
+  }
   const benefitNote = (id: string) => {
     const item = benefitActivity.get(id)
     if (!item) return undefined
@@ -438,13 +451,6 @@ export function buildActivities(
   )
 }
 
-const monthFormatter = new Intl.DateTimeFormat('en-US', { month: 'long', timeZone: 'UTC' })
-const monthYearFormatter = new Intl.DateTimeFormat('en-US', {
-  month: 'long',
-  year: 'numeric',
-  timeZone: 'UTC',
-})
-
 export function activityDateGroup(date: string, referenceIso: string) {
   const activityDay = transactionDateKey(date)
   const referenceDay = transactionDateKey(referenceIso)
@@ -455,9 +461,10 @@ export function activityDateGroup(date: string, referenceIso: string) {
   if (daysAgo === 1) return 'Yesterday'
   if (!activityDay) return 'Unknown date'
   if (daysAgo <= 7 && activityDay.slice(0, 7) === referenceDay.slice(0, 7)) return 'Last week'
-  const formatter =
-    activityDay.slice(0, 4) === referenceDay.slice(0, 4) ? monthFormatter : monthYearFormatter
-  return formatter.format(new Date(`${activityDay}T00:00:00Z`))
+  return formatCalendarDate(activityDay, {
+    month: 'long',
+    ...(activityDay.slice(0, 4) === referenceDay.slice(0, 4) ? {} : { year: 'numeric' }),
+  })
 }
 
 export function groupActivitiesByDate(activities: ActivityItem[], referenceIso: string) {

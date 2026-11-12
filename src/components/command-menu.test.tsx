@@ -189,6 +189,27 @@ async function mountMenu(
   return { container, input, type, press, labels, selectedLabel, footer, activeTab, cleanup }
 }
 
+it('gives the query field focus as it opens, so typing goes straight into it', async () => {
+  // Like WebKit: opening focuses the dialog's first control, here the Search mode button.
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true
+    this.querySelector<HTMLElement>('button, input')?.focus()
+  }
+  const menu = await mountMenu(<RegisteredMenu />)
+  expect(menu.container.querySelector('dialog')?.open).toBe(true)
+  expect(document.activeElement).toBe(menu.input())
+  // What has focus receives the typing.
+  await act(async () => {
+    const focused = document.activeElement
+    if (!(focused instanceof HTMLInputElement)) throw new Error('A field has focus')
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set?.call(focused, 'dark')
+    focused.dispatchEvent(new Event('input', { bubbles: true }))
+  })
+  expect(menu.input().value).toBe('dark')
+  expect(menu.labels()).toContain('Switch to Dark theme')
+  await menu.cleanup()
+})
+
 it('renders an accessible combobox linked to its list of commands', () => {
   const html = renderMenu()
   const listId = html.match(/aria-controls="([^"]+)"/)?.[1]

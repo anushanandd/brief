@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 
-import { useFinance } from '../hooks/use-finance'
+import { snapshotKey, useFinance } from '../hooks/use-finance'
 import { isTauri, ledgerQuery } from '../lib/api'
 import { ledgerView } from '../lib/ledger-view'
 import { savePins, usePins, type Pin } from '../lib/pins'
@@ -9,11 +9,11 @@ import { LedgerResult } from './ledger-result'
 import { Button, Card, SectionHeading } from './ui'
 
 function PinnedCard({ pin, onRemove }: { pin: Pin; onRemove: () => void }) {
-  const revision = useFinance().data?.revision
+  const snapshot = useFinance().data
   const native = typeof window !== 'undefined' && isTauri()
   // Recomputed from saved data whenever it changes; the language model is not involved.
   const result = useQuery({
-    queryKey: ['ledger-query', pin.name, pin.arguments, revision],
+    queryKey: ['ledger-query', pin.name, pin.arguments, ...snapshotKey(snapshot)],
     queryFn: () => ledgerQuery(pin.name, pin.arguments),
     enabled: native,
     retry: false,

@@ -39,7 +39,12 @@ const dataColors = Array.from({ length: 7 }, (_, index) => `var(--data-${index +
  */
 export function tripColors(trips: Trip[]) {
   const ordered = trips.toSorted((left, right) => left.start.localeCompare(right.start))
-  return new Map(ordered.map((trip, index) => [trip.id, dataColors[index % dataColors.length]]))
+  return new Map(
+    ordered.map((trip, index) => [
+      trip.id,
+      dataColors[index % dataColors.length] ?? 'var(--chart-secondary)',
+    ]),
+  )
 }
 
 /** Every day of the year spent on one of the trips, keyed by ISO date. */

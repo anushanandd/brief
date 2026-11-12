@@ -136,7 +136,7 @@ describe('native explanation cancellation', () => {
     const result = generateFoundationExplanation('What changed?', controller.signal)
     const rejected = expect(result).rejects.toMatchObject({ name: 'AbortError' })
     await Promise.resolve()
-    const args = mockedInvoke.mock.calls[0][1]
+    const args = mockedInvoke.mock.calls[0]?.[1]
     if (
       !args ||
       Array.isArray(args) ||

@@ -1,4 +1,4 @@
-import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { QueryClientProvider } from '@tanstack/react-query'
 import { RouterProvider } from '@tanstack/react-router'
 import { StrictMode, useEffect, useLayoutEffect } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -13,15 +13,10 @@ import { ActionProvider } from './lib/action-system'
 import { revealMainWindow } from './lib/api'
 import { navigation } from './lib/navigation'
 import { measureNavigation } from './lib/navigation-performance'
+import { queryClient } from './query-client'
 import { router } from './router'
 
 import './styles.css'
-
-const queryClient = new QueryClient({
-  defaultOptions: {
-    queries: { retry: 1, refetchOnWindowFocus: false },
-  },
-})
 
 // The page waits, held at its first frame, until the window is on screen, then arrives once.
 const root = document.documentElement

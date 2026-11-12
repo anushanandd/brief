@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router'
 
 import { formatCurrency, formatPercent, valueTone } from '../lib/format'
 import type { ChangeWindow, FinanceSnapshot } from '../lib/schema'
+import { spendingRanges } from '../lib/spending'
 import { Metric } from './ui'
 
 const periodLabels: Record<ChangeWindow, string> = {
@@ -27,10 +28,12 @@ function PeriodChange({ value, favorable }: { value?: number; favorable: 'up' | 
 }
 
 /** Income, spending, and net over the period the chart shows, each with its change from the
-    period before, all from native insights for that window. */
+    period before, all from native insights for that window. Each opens on the same period:
+    a report's periods are the recap's trailing days. Spending has no day, so the day opens it
+    on its own period. */
 export function PeriodTotals({ data, window }: { data: FinanceSnapshot; window: ChangeWindow }) {
   const recap = data.insights?.recap.find((item) => item.window === window)
-  const range = recap ? { from: recap.start, to: recap.end } : {}
+  const spendingRange = spendingRanges.find((range) => range === window)
   return (
     // The chart's range names the period, so the section carries it only as its accessible name.
     <section className="period-totals" aria-label={periodLabels[window]}>
@@ -47,7 +50,7 @@ export function PeriodTotals({ data, window }: { data: FinanceSnapshot; window: 
               <span className="period-totals-value">
                 <Link
                   to="/analytics"
-                  search={{ chart: 'income', ...range }}
+                  search={{ chart: 'income', range: window }}
                   className="metric-link sensitive-value"
                 >
                   {formatCurrency(recap.income)}
@@ -64,7 +67,11 @@ export function PeriodTotals({ data, window }: { data: FinanceSnapshot; window: 
           value={
             recap ? (
               <span className="period-totals-value">
-                <Link to="/spending" className="metric-link sensitive-value">
+                <Link
+                  to="/spending"
+                  search={spendingRange ? { range: spendingRange } : {}}
+                  className="metric-link sensitive-value"
+                >
                   {formatCurrency(recap.spending)}
                 </Link>
                 <PeriodChange value={recap.spendingChangePct} favorable="down" />
@@ -81,7 +88,7 @@ export function PeriodTotals({ data, window }: { data: FinanceSnapshot; window: 
               <span className="period-totals-value">
                 <Link
                   to="/analytics"
-                  search={{ chart: 'cash-flow', ...range }}
+                  search={{ chart: 'cash-flow', range: window }}
                   className="metric-link sensitive-value"
                 >
                   {formatCurrency(recap.net)}

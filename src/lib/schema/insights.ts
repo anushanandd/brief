@@ -13,6 +13,8 @@ export type { Spent as SpendingFigures } from '../bindings/Spent'
 export type { SpendingPeriod as SpendingPeriodJudgment } from '../bindings/SpendingPeriod'
 export type { SpendingPeriodDetail } from '../bindings/SpendingPeriodDetail'
 export type { TaxYear } from '../bindings/TaxYear'
+export type { HarborMet } from '../bindings/HarborMet'
+export type { Withholding } from '../bindings/Withholding'
 
 /** Each value chart's change over each window. */
 export type ChartChanges = Insights['chartChanges']

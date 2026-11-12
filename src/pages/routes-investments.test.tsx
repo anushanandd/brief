@@ -138,10 +138,10 @@ it('gives each holding its own page, and lists every security once on the overvi
   expect(html).not.toContain('holdings-table')
   expect(await renderRoute('/holdings/ZZZ')).toContain('ZZZ isn’t held')
 
-  // The holding's summary sits under its price chart, beside the position, before the news.
-  expect(html.indexOf('holding-chart-card')).toBeLessThan(html.indexOf('investment-summary-card'))
-  expect(html.indexOf('investment-summary-card')).toBeLessThan(html.indexOf('position-card'))
-  expect(html.indexOf('position-card')).toBeLessThan(html.indexOf('holding-news-card'))
+  // The price chart sits beside the position, the summary under them, then the news.
+  expect(html.indexOf('holding-chart-card')).toBeLessThan(html.indexOf('position-card'))
+  expect(html.indexOf('position-card')).toBeLessThan(html.indexOf('investment-summary-card'))
+  expect(html.indexOf('investment-summary-card')).toBeLessThan(html.indexOf('holding-news-card'))
   const summaryCard = html.slice(html.indexOf('investment-summary-card'))
   expect(summaryCard).toContain('<h2>Summary</h2>')
   // It needs the desktop app, and the preview says so instead of inventing a period.
@@ -173,6 +173,63 @@ it('gives each holding its own page, and lists every security once on the overvi
   expect(overview).not.toContain('position-card')
 })
 
+it('shows a security held in two accounts once, at its whole position, with each account behind a disclosure', async () => {
+  const position = {
+    ticker: 'AAA',
+    name: 'Alpha fund',
+    price: 50,
+    dailyChangePct: 1,
+    weeklyChangePct: null,
+    weeklyReferencePrice: null,
+    weeklyReferenceDate: null,
+    instrumentKind: 'equity',
+    color: '#fff',
+  }
+  scenario.holdings = [
+    {
+      ...position,
+      accountId: 'selected',
+      shares: 2,
+      value: 100,
+      costBasis: 80,
+      unrealizedGain: 20,
+      totalChangePct: 25,
+    },
+    {
+      ...position,
+      accountId: 'other',
+      shares: 1,
+      value: 50,
+      costBasis: 30,
+      unrealizedGain: 20,
+      totalChangePct: 66.67,
+    },
+  ]
+  const home = await renderRoute('/')
+  const preview = home.slice(
+    home.indexOf('brokerage-holdings-card'),
+    home.indexOf('accounts-overview-card'),
+  )
+  // One row for the ticker, at the two accounts' summed value, as Rust totaled it.
+  expect(preview.match(/href="\/holdings\/AAA"/g)).toHaveLength(1)
+  expect(preview).toContain('$150.00')
+  expect(preview).not.toContain('$100.00')
+
+  const page = await renderRoute('/holdings/AAA')
+  const card = page.slice(page.indexOf('position-card'), page.indexOf('investment-summary-card'))
+  // The whole position: value, gain on the summed cost, and shares across both accounts.
+  expect(card).toContain('$150.00')
+  expect(card).toContain('+$40.00')
+  expect(card).toContain('+36.36%')
+  // Each account's part sits behind a disclosure, reachable from the keyboard.
+  const parts = card.slice(card.indexOf('<details'), card.indexOf('</details>'))
+  expect(parts).toContain('data-command="holding.accounts.toggle"')
+  expect(parts).toContain('In 2 accounts')
+  expect(parts).toContain('aria-label="Your AAA position by account"')
+  for (const part of ['$100.00', '$80.00', '$50.00', '$30.00', '$20.00'])
+    expect(parts).toContain(part)
+})
+
 it('shows a saved date and provider warning without claiming fresh data', async () => {
   scenario.providerError = true
   const html = await renderRoute('/holdings')
@@ -184,7 +241,7 @@ it('shows a saved date and provider warning without claiming fresh data', async 
   expect(html).toContain('dateTime="2026-09-03T12:00:00Z"')
 })
 
-it('heads the page with its holdings, puts the summary under the chart and the period beside them, then every holding, then exposure beside performance', async () => {
+it('heads the page with its holdings, puts the period beside the chart and the summary under them, then every holding beside what needs you, then exposure beside performance', async () => {
   scenario.insights = {
     investmentAttention: {
       flags: [{ kind: 'concentrated', ticker: 'AAA', percent: 40 }],
@@ -194,15 +251,15 @@ it('heads the page with its holdings, puts the summary under the chart and the p
   const overview = await renderRoute('/holdings')
   const order = [
     'investments-portfolio-card',
-    'investment-summary-card',
     'investments-side-card',
-    '<h2>Needs you</h2>',
+    'investment-summary-card',
     'holdings-table-card',
+    '<h2>Needs you</h2>',
     '<h2>Exposure</h2>',
     '<h2>Performance</h2>',
   ]
   const positions = order.map((marker) => overview.indexOf(marker))
-  expect(Object.fromEntries(order.map((marker, index) => [marker, positions[index] > -1]))).toEqual(
+  expect(Object.fromEntries(order.map((marker) => [marker, overview.includes(marker)]))).toEqual(
     Object.fromEntries(order.map((marker) => [marker, true])),
   )
   expect(positions).toEqual(positions.toSorted((a, b) => a - b))
@@ -304,6 +361,55 @@ it('shows an estimate as a range while dividends are unclassified', async () => 
   expect(html).toContain('27% on interest, 20% on')
   expect(html).toContain('A range until dividends are classified.')
   expect(html).not.toContain('Add tax profile')
+  // Without a pay statement this year, the typed income is the only basis.
+  expect(html).toContain('Stacked on the taxable income you typed')
+  expect(html).not.toContain('aria-label="Withholding"')
+})
+
+it('projects withholding from pay statements, with each test that can’t run unavailable', async () => {
+  scenario.insights = {
+    taxes: {
+      years: [taxYear2026],
+      harvest: [],
+      washWindows: [],
+      hasProfile: true,
+      tablesVersion: '2026-10-07',
+      sources: [],
+      withholding: {
+        year: 2026,
+        basis: [
+          {
+            employer: 'EXAMPLE EMPLOYER',
+            documentId: 'a'.repeat(64),
+            date: '2026-09-30',
+            period: 18,
+            periods: 24,
+            wagesToDate: 64_800,
+            withheldToDate: 9_000,
+            projectedWages: 86_400,
+            projectedWithholding: 12_000,
+          },
+        ],
+        projectedWages: 86_400,
+        projectedWithholding: 12_000,
+        filingStatus: 'single',
+        projectedTax: 10_000,
+        difference: 2_000,
+        currentYear: { percent: 90, tax: 10_000, required: 9_000, met: true },
+        priorYear: { percent: 100 },
+        met: 'currentYear',
+      },
+    },
+  }
+  const html = (await renderRoute('/taxes')).replaceAll('<!-- -->', '')
+  expect(html).toContain('aria-label="Withholding"')
+  expect(html).toContain('pay statement dated')
+  expect(html).toContain('18 of 24 pay periods')
+  expect(html).toContain('Filing status from your tax profile')
+  expect(html).toContain('Met: 90% of this year’s tax')
+  // Last year's tax isn't known, so its test says what it needs.
+  expect(html).toContain('needs every W-2 from last year')
+  expect(html).toContain('data-command="taxes.withholding.toggle"')
 })
 
 it('opens Retirement from the strip with each limit, what waits for a choice, and what is unavailable', async () => {

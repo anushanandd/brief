@@ -69,6 +69,19 @@ pub struct UnusualCharge {
     pub usual: f64,
     /// How many earlier charges the usual amount comes from.
     pub observations: usize,
+    /// Those earlier charges, oldest first; not part of the contract.
+    #[serde(skip)]
+    pub earlier: Vec<String>,
+}
+
+impl UnusualCharge {
+    /// For `n` earlier charges drawn alike, the chance another lands outside their range is
+    /// 2 / (n + 1); this one lies well beyond it, so (n − 1) / (n + 1) is a floor on how sure
+    /// Brief is that it differs.
+    pub fn confidence(&self) -> f64 {
+        let n = self.observations as f64;
+        (n - 1.0) / (n + 1.0)
+    }
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
@@ -167,13 +180,17 @@ pub fn anomalies(
                 && unreviewed(transaction)
                 && !CHOSEN_BASKET.contains(&transaction.category.as_str())
         }) {
-            let mut earlier = history
+            let mut prior = history
                 .iter()
                 .filter(|(other, _)| {
                     other < date
                         && *other >= *date - Duration::days(HISTORY_DAYS)
                         && since.is_none_or(|since| *other >= since)
                 })
+                .collect::<Vec<_>>();
+            prior.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
+            let mut earlier = prior
+                .iter()
                 .map(|(_, other)| -minor_units(other.amount))
                 .collect::<Vec<_>>();
             if earlier.len() < HISTORY_MINIMUM {
@@ -201,6 +218,7 @@ pub fn anomalies(
                     amount: -amount as f64 / 100.0,
                     usual: -usual as f64 / 100.0,
                     observations,
+                    earlier: prior.iter().map(|(_, other)| other.id.clone()).collect(),
                 });
             }
         }

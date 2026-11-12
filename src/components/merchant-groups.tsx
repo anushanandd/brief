@@ -44,7 +44,8 @@ export function MerchantGroups({
     <div className="merchant-groups" role="group" aria-label="Spending by merchant">
       {groups.map((group, index) => {
         // One activity has nothing to open into, so it reads as itself.
-        if (group.activities.length === 1)
+        const [lead] = group.activities
+        if (!lead || group.activities.length === 1)
           return (
             <div key={group.key} className="merchant-group merchant-group-single">
               <ActivityList
@@ -67,7 +68,7 @@ export function MerchantGroups({
               aria-controls={panel}
               onClick={() => toggle(group.key)}
             >
-              <ActivityMark activity={group.activities[0]} />
+              <ActivityMark activity={lead} />
               <span className="financial-activity-copy">
                 <span className="financial-activity-title" title={group.name}>
                   <strong>{displayCase(group.name)}</strong>
