@@ -359,8 +359,9 @@ public func briefFoundationModelGenerate(
       let tools = ledgerTools(host).filter { offered.contains($0.name) }
       let session = LanguageModelSession(tools: tools, instructions: instructions)
       // Greedy sampling gives the same answer to the same question over the same data, for a
-      // given version of the on-device model.
-      let options = GenerationOptions(samplingMode: .greedy)
+      // given version of the on-device model. Xcode 27 renames `sampling:` to `samplingMode:`, but
+      // CI builds with Xcode 26, which has only `sampling:`.
+      let options = GenerationOptions(sampling: .greedy)
       let reply: Reply
       do {
         reply = try await session.respond(to: prompt, generating: Reply.self, options: options)
@@ -439,7 +440,7 @@ public func briefFoundationModelSummarize(
       let session = LanguageModelSession(instructions: instructions)
       let reply = try await session.respond(
         to: "Document text:\n\(documentText)",
-        options: GenerationOptions(samplingMode: .greedy)
+        options: GenerationOptions(sampling: .greedy)
       ).content
       try Task.checkCancellation()
       generationTask.finish(id: requestID)
@@ -502,7 +503,7 @@ public func briefFoundationModelRead(
   generationTask.start(id: requestID) {
     do {
       let session = LanguageModelSession(instructions: instructionText)
-      let options = GenerationOptions(samplingMode: .greedy)
+      let options = GenerationOptions(sampling: .greedy)
       let result: String
       switch taskName {
       case "cause":

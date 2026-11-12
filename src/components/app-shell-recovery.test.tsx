@@ -21,6 +21,7 @@ vi.mock('@tanstack/react-router', () => ({
 }))
 vi.mock('../hooks/use-finance', () => ({
   financeQueryKey: ['finance'],
+  snapshotKey: () => [null, null],
   setFinanceSnapshot: (client: QueryClient, next: unknown) =>
     client.setQueryData(['finance'], next),
   useFinance: () => ({
