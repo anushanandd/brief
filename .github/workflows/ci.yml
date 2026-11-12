@@ -1,10 +1,9 @@
-# The checks AGENTS.md lists, on every push to main and every pull request. Everything runs on
-# synthetic data: the frontend reads the committed seed files, and Rust's tests build their own.
+# The checks AGENTS.md lists, on every pull request; the pre-push hook runs them before a push to
+# main. Everything runs on synthetic data: the frontend reads the committed seed files, and Rust's
+# tests build their own.
 name: CI
 
 on:
-  push:
-    branches: [main]
   pull_request:
 
 permissions:
@@ -45,9 +44,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: xcrun --sdk macosx --show-sdk-version && swiftc --version
-      - uses: dtolnay/rust-toolchain@stable
-        with:
-          components: rustfmt, clippy
+      # Installs the version rust-toolchain.toml pins.
+      - run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
