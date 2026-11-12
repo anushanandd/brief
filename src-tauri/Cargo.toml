@@ -12,6 +12,9 @@ crate-type = ["rlib"]
 
 [profile.dev]
 debug = "line-tables-only"
+# macOS otherwise keeps every build's object files for the debugger, and target/ grows without
+# bound; packed writes one .dSYM per link instead.
+split-debuginfo = "packed"
 
 [profile.dev.package."*"]
 debug = false
@@ -24,6 +27,11 @@ debug = false
 lto = "thin"
 codegen-units = 16
 strip = true
+
+# Xcode 27's strip leaves proc-macro libraries that fail to load ("mis-aligned LINKEDIT string
+# pool"), and build-time code never ships, so only the app is stripped.
+[profile.release.build-override]
+strip = false
 
 # `cargo clippy --all-targets -- -D warnings` holds these. Test code may unwrap and compare floats
 # exactly (clippy.toml and lib.rs allow it there); the app's code may not.
