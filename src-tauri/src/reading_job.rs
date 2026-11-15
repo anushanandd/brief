@@ -111,36 +111,17 @@ async fn run(app: &AppHandle) {
 
 async fn read(app: &AppHandle) {
     let state = app.state::<AppState>();
-    let saved = state.storage().and_then(|storage| {
-        Ok((
-            storage.data.settings.local_model.clone(),
-            storage.read_view()?,
-        ))
-    });
-    if let Ok((local_model, view)) = saved {
-        let local = crate::providers::reading::local_model(local_model.as_deref());
+    if let Ok(view) = state.storage().and_then(|storage| storage.read_view()) {
         let stocks = crate::providers::portfolio::modeled(
             &crate::providers::portfolio::held_securities(&view.snapshot.holdings),
             None,
         );
-        let read = state
-            .providers
-            .read_causes(&stocks, local)
-            .await
-            .unwrap_or(0)
+        let read = state.providers.read_causes(&stocks).await.unwrap_or(0)
+            + state.providers.read_stories(&stocks).await.unwrap_or(0)
+            + state.providers.read_earnings(&stocks).await.unwrap_or(0)
             + state
                 .providers
-                .read_stories(&stocks, local)
-                .await
-                .unwrap_or(0)
-            + state
-                .providers
-                .read_earnings(&stocks, local)
-                .await
-                .unwrap_or(0)
-            + state
-                .providers
-                .read_expectations(&stocks, local)
+                .read_expectations(&stocks)
                 .await
                 .unwrap_or(0);
         // What was read changes the summaries that quote it.

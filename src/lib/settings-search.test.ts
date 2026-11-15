@@ -19,10 +19,9 @@ it('requires every word and matches titles, keywords, and section names', () => 
   expect([...keychain.sectionIds]).toEqual(['connections'])
 
   const privacy = searchSettings('PRIVACY')!
-  expect(privacy.counts.get('privacy')).toBe(5)
-  expect(privacy.total).toBe(5)
+  expect(privacy.counts.get('privacy')).toBe(4)
+  expect(privacy.total).toBe(4)
 
-  expect(searchSettings('ollama')!.entryIds.has('local-model')).toBe(true)
   expect(searchSettings('rename')!.entryIds.has('account-details')).toBe(true)
   expect(searchSettings('zzz-not-a-setting')!.total).toBe(0)
 })

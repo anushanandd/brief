@@ -230,11 +230,6 @@ export const settingsSections: readonly SettingsSection[] = [
         title: 'Apple Intelligence',
         keywords: 'ai on-device model explanations',
       },
-      {
-        id: 'local-model',
-        title: 'Local model',
-        keywords: 'ollama ai llm earnings releases calls read on this mac',
-      },
     ],
   },
   {

@@ -1,8 +1,7 @@
 //! What others expect, labeled as theirs: analysts' estimates and how they've moved (Alpha
 //! Vantage's free `EARNINGS_ESTIMATES`), the move the options market prices in around a report
-//! (the at-the-money straddle in Alpaca's free indicative options feed), and, with a local
-//! model, what management said about the outlook on the earnings call. Brief predicts nothing;
-//! after a report it puts the outcome beside these.
+//! (the at-the-money straddle in Alpaca's free indicative options feed). Brief predicts
+//! nothing; after a report it puts the outcome beside these.
 use super::*;
 use chrono::Datelike;
 use serde_json::json;
@@ -17,10 +16,6 @@ const ESTIMATES_PER_RUN: usize = 3;
 const EXPECTED_MOVE_DAYS: i64 = 14;
 /// An expected move is read again after this long.
 const EXPECTED_MOVE_HOURS: i64 = 6;
-/// A transcript's management remarks are cut here; a local model reads them whole.
-const MAX_TRANSCRIPT_CHARS: usize = 80_000;
-/// Sentences offered a local model when reading guidance from a call.
-const CALL_CANDIDATES: usize = 120;
 
 /// Analysts' consensus for one fiscal period now and 30 days ago, with revision counts.
 #[derive(Clone, Debug, Deserialize, PartialEq, Serialize, TS)]
@@ -165,31 +160,6 @@ pub(super) fn expected_move(
     Some((expiry, (straddle / price * 1_000.0).round() / 10.0))
 }
 
-/// Management's remarks in a call transcript: the executives' turns, not the analysts'.
-pub(super) fn management_remarks(payload: &Value) -> Option<String> {
-    let turns = payload["transcript"].as_array()?;
-    let text: String = turns
-        .iter()
-        .filter(|turn| {
-            let title = turn["title"].as_str().unwrap_or("").to_lowercase();
-            [
-                "ceo",
-                "cfo",
-                "chief",
-                "president",
-                "chair",
-                "officer",
-                "founder",
-            ]
-            .iter()
-            .any(|role| title.contains(role))
-        })
-        .filter_map(|turn| turn["content"].as_str())
-        .collect::<Vec<_>>()
-        .join(" ");
-    (!text.trim().is_empty()).then(|| text.chars().take(MAX_TRANSCRIPT_CHARS).collect())
-}
-
 /// The calendar quarter a fiscal period ends in, as Alpha Vantage names transcripts: `2026Q3`.
 pub(super) fn transcript_quarter(fiscal_date_ending: &str) -> Option<String> {
     let date = NaiveDate::parse_from_str(fiscal_date_ending, "%Y-%m-%d").ok()?;
@@ -248,14 +218,9 @@ impl Providers {
         Ok(payload)
     }
 
-    /// Reads what's expected of the holdings, a few per run: estimates weekly, the expected
-    /// move before each report in the next two weeks, and, with a local model, the latest
-    /// call's guidance.
-    pub async fn read_expectations(
-        &self,
-        stocks: &[String],
-        local: Option<&str>,
-    ) -> Result<usize, String> {
+    /// Reads what's expected of the holdings, a few per run: estimates weekly, and the expected
+    /// move before each report in the next two weeks.
+    pub async fn read_expectations(&self, stocks: &[String]) -> Result<usize, String> {
         let now = Utc::now();
         let today = crate::session::new_york_date(now);
         let mut done = 0;
@@ -369,67 +334,7 @@ impl Providers {
                 }
             }
         }
-        // The latest call's guidance, only when a local model can read a whole call.
-        let Some(model) = local else {
-            return Ok(done);
-        };
-        for symbol in stocks {
-            let quarter = self
-                .news_cache()
-                .await?
-                .reported_quarters(symbol)?
-                .and_then(|(quarters, _)| quarters.into_iter().next())
-                .filter(|quarter| {
-                    NaiveDate::parse_from_str(&quarter.reported_date, "%Y-%m-%d")
-                        .is_ok_and(|day| (today - day).num_days() <= 30)
-                })
-                .and_then(|quarter| transcript_quarter(&quarter.fiscal_date_ending));
-            let Some(quarter) = quarter else {
-                continue;
-            };
-            let key = call_key(symbol, &quarter);
-            if self.news_cache().await?.reading(&key)?.is_some() || !self.background_budget().await
-            {
-                continue;
-            }
-            let Ok(payload) = self
-                .alpha_vantage_json(&[
-                    ("function", "EARNINGS_CALL_TRANSCRIPT"),
-                    ("symbol", symbol),
-                    ("quarter", &quarter),
-                ])
-                .await
-            else {
-                break;
-            };
-            let candidates = management_remarks(&payload)
-                .map(|remarks| earnings::guidance_candidates(&reading::sentences(&remarks)))
-                .unwrap_or_default();
-            let (guidance, reader) = if candidates.is_empty() {
-                (Vec::new(), reading::RULE.to_owned())
-            } else {
-                let offered: Vec<String> = candidates.into_iter().take(CALL_CANDIDATES).collect();
-                let input = reading::numbered("Call sentences:", &offered, MAX_TRANSCRIPT_CHARS);
-                match self.local_guidance(model, input).await {
-                    Ok(reply) => (reading::listed(&reply, &offered), format!("local:{model}")),
-                    Err(_) => continue,
-                }
-            };
-            self.news_cache().await?.save_reading(
-                &key,
-                &json!({ "sentences": guidance, "quarter": quarter }),
-                &reader,
-                now.timestamp(),
-            )?;
-            done += 1;
-        }
         Ok(done)
-    }
-
-    async fn local_guidance(&self, model: &str, input: String) -> Result<Value, String> {
-        self.read_text(reading::Task::Guidance, input, Some(model))
-            .await
-            .map(|(reply, _)| reply)
     }
 }
 
@@ -563,17 +468,7 @@ mod tests {
     }
 
     #[test]
-    fn a_call_is_read_from_managements_remarks() {
-        let payload = json!({ "symbol": "TEST", "quarter": "2026Q3", "transcript": [
-            { "speaker": "Operator", "title": "Operator", "content": "Welcome to the call." },
-            { "speaker": "Jane Doe", "title": "CEO", "content": "We expect revenue growth to continue next quarter." },
-            { "speaker": "Sam Analyst", "title": "Analyst, Example Bank", "content": "Do you expect margins to rise next year?" },
-            { "speaker": "John Roe", "title": "Chief Financial Officer", "content": "For the fourth quarter we expect revenue of about $1.3 billion." }
-        ]});
-        let remarks = management_remarks(&payload).unwrap();
-        assert!(remarks.contains("We expect revenue growth"));
-        assert!(remarks.contains("For the fourth quarter"));
-        assert!(!remarks.contains("Do you expect margins"));
+    fn a_transcript_is_named_by_its_calendar_quarter() {
         assert_eq!(transcript_quarter("2026-09-30").as_deref(), Some("2026Q3"));
         assert_eq!(transcript_quarter("2027-01-31").as_deref(), Some("2027Q1"));
     }

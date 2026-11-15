@@ -318,11 +318,7 @@ impl Providers {
     /// per run, then reads the releases of reports from the last `RECENT_REPORT_DAYS`. Alpha
     /// Vantage's quarters say when a company reported, whatever form it filed; without them,
     /// only an 8-K reporting Item 2.02 says so.
-    pub async fn read_earnings(
-        &self,
-        stocks: &[String],
-        local: Option<&str>,
-    ) -> Result<usize, String> {
+    pub async fn read_earnings(&self, stocks: &[String]) -> Result<usize, String> {
         let now = Utc::now();
         let companies: Vec<(String, Vec<sec::SecFiling>)> = {
             let cache = self.news_cache().await?;
@@ -444,18 +440,14 @@ impl Providers {
             let (guidance, reader) = if candidates.is_empty() {
                 (Vec::new(), reading::RULE.to_owned())
             } else {
-                // A local model reads every candidate at once; Apple's, a window at a time.
-                let limit = if local.is_some() {
-                    reading::LOCAL_CHARS
-                } else {
-                    reading::APPLE_CHARS
-                };
+                // Apple's model reads the candidates a window at a time.
+                let limit = reading::APPLE_CHARS;
                 let mut picked = Vec::new();
                 let mut reader = reading::RULE.to_owned();
                 let mut unread = false;
                 for chunk in reading::chunks("Release sentences:", &candidates, limit) {
                     let input = reading::numbered("Release sentences:", &chunk, limit);
-                    match self.read_text(reading::Task::Guidance, input, local).await {
+                    match self.read_text(reading::Task::Guidance, input).await {
                         Ok((reply, by)) => {
                             picked.extend(reading::listed(&reply, &chunk));
                             reader = by;

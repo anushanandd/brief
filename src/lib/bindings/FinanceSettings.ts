@@ -131,8 +131,6 @@ categoryReviews?: { [key in string]: CategoryReview },
  */
 research: boolean, 
 /**
- * An Ollama model on this Mac that reads long documents whole, such as an earnings
- * release; unset leaves reading to Apple Intelligence and rules. Reached only on the
- * loopback address, so nothing leaves the Mac.
+ * Unused since Ollama was removed; it goes with Phase 3's storage changes.
  */
 localModel?: string, };

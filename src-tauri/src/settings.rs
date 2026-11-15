@@ -133,9 +133,7 @@ pub struct FinanceSettings {
     pub category_reviews: BTreeMap<String, CategoryReview>,
     /// Opt-in web lookups of a card's published terms, each logged, only when on.
     pub research: bool,
-    /// An Ollama model on this Mac that reads long documents whole, such as an earnings
-    /// release; unset leaves reading to Apple Intelligence and rules. Reached only on the
-    /// loopback address, so nothing leaves the Mac.
+    /// Unused since Ollama was removed; it goes with Phase 3's storage changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub local_model: Option<String>,
@@ -679,14 +677,6 @@ impl FinanceSettings {
             Some(_) => return Err(invalid("calendar")),
             None => None,
         };
-        let local_model = match self.local_model.as_deref().map(str::trim) {
-            None | Some("") => None,
-            Some(name) => Some(
-                crate::providers::reading::local_model(Some(name))
-                    .ok_or_else(|| invalid("local model"))?
-                    .to_owned(),
-            ),
-        };
         if self.category_reviews.len() > MAX_REVIEWS
             || self.category_reviews.iter().any(|(id, review)| {
                 !valid_id(id) || review.category.trim().is_empty() || review.category.len() > 100
@@ -763,7 +753,7 @@ impl FinanceSettings {
                 })
                 .collect(),
             research: self.research,
-            local_model,
+            local_model: None,
             retired_merchant_sites: None,
             retired_mac_sources: None,
             retired_link_reviews: None,
@@ -925,6 +915,15 @@ mod tests {
             .unwrap();
         let read = serde_json::to_value(settings).unwrap();
         assert!(keeps(&saved, &read), "{read:#}");
+    }
+
+    #[test]
+    fn a_saved_local_model_is_dropped_on_the_next_save() {
+        let settings = FinanceSettings {
+            local_model: Some("example-model".into()),
+            ..Default::default()
+        };
+        assert_eq!(settings.normalized().unwrap().local_model, None);
     }
 
     #[test]

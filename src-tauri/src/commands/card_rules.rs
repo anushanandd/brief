@@ -117,10 +117,6 @@ async fn model_picks(
     draft: &CardDraft,
     text: &str,
 ) -> BTreeMap<String, Vec<usize>> {
-    let local = state
-        .storage()
-        .ok()
-        .and_then(|storage| storage.settings().local_model.clone());
     let sentences = reading::sentences(text);
     let offered = terms::candidates(&sentences);
     let shown = offered
@@ -137,11 +133,7 @@ async fn model_picks(
             &shown,
             reading::APPLE_CHARS,
         );
-        let Ok((reply, _)) = state
-            .providers
-            .read_text(Task::Benefit, input, reading::local_model(local.as_deref()))
-            .await
-        else {
+        let Ok((reply, _)) = state.providers.read_text(Task::Benefit, input).await else {
             continue;
         };
         let listed = reading::listed(&reply, &shown);

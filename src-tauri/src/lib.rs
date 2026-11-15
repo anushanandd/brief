@@ -354,7 +354,6 @@ pub fn run() {
             investments::get_earnings_calendar,
             investments::get_calibration,
             investments::get_summary_runs,
-            commands::documents::get_local_models,
             background::get_login_item,
             background::set_login_item,
             native_menu::set_command_menu,

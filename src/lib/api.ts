@@ -10,7 +10,6 @@ import type { CardDraft } from './bindings/CardDraft'
 import type { CardRulesChange } from './bindings/CardRulesChange'
 import type { CatalogCard } from './bindings/CatalogCard'
 import type { DocumentImport as NativeDocumentImport } from './bindings/DocumentImport'
-import type { LocalModels } from './bindings/LocalModels'
 import type { PeriodAsOf } from './bindings/PeriodAsOf'
 import type { ResearchState } from './bindings/ResearchState'
 import { previewFinanceSettings } from './finance-settings'
@@ -675,12 +674,6 @@ export async function warmInvestmentSummaries(start: string) {
 export async function getPortfolioSectors(): Promise<SectorExposure> {
   if (!isTauri()) throw new Error('Desktop app only')
   return invoke<SectorExposure>('get_portfolio_sectors')
-}
-
-/** The models Ollama has on this Mac, for Settings' local model. */
-export async function getLocalModels(): Promise<LocalModels> {
-  if (!isTauri()) return { running: false, models: [] }
-  return invoke<LocalModels>('get_local_models')
 }
 
 export async function getEarningsCalendar(symbols: string[]): Promise<EarningsEvent[]> {

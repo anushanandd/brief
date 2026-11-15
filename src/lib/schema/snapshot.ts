@@ -154,7 +154,7 @@ const financeSettingsShape = {
     .record(z.string(), z.object({ category: z.string(), accepted: z.boolean() }))
     .optional(),
   research: z.boolean().default(false),
-  /** An Ollama model on this Mac that reads long documents; Rust checks the name. */
+  /** Unused since Ollama was removed; it goes with Phase 3's storage changes. */
   localModel: z.string().max(100).optional(),
 } satisfies Record<keyof FinanceSettings, z.ZodType>
 

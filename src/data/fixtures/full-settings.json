@@ -148,6 +148,5 @@
       "accepted": true
     }
   },
-  "research": true,
-  "localModel": "example-model"
+  "research": true
 }
