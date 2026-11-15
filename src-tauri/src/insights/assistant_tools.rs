@@ -573,6 +573,8 @@ impl<'a> Ledger<'a> {
         let dividends = &self.insights()?.dividends;
         Ok(json!({
             "annualIncome": dividends.annual_income,
+            // Payers whose shares an account doesn't report, so the income leaves them out.
+            "uncountedTickers": dividends.uncounted,
             "upcoming": dividends.upcoming.iter().take(MAX_ROWS).map(|next| json!({
                 "ticker": next.ticker,
                 "exDate": next.dividend.ex_date,

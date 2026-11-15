@@ -53,6 +53,8 @@ export function PositionCard({
   const dividends = data.insights?.dividends.securities.find(
     (item) => item.ticker.toUpperCase() === ticker.toUpperCase(),
   )
+  // A payer held where shares aren't reported has income Rust can't count.
+  const dividendsUncounted = data.insights?.dividends.uncounted.includes(ticker.toUpperCase())
   const vested = detail.vestedShares
   const bond = held.find(({ fixedIncome }) => fixedIncome)?.fixedIncome
   const option = held.find((holding) => holding.option)?.option
@@ -151,10 +153,13 @@ export function PositionCard({
                   {dividends.yieldPercent != null
                     ? `/yr · ${formatRate(dividends.yieldPercent)} yield`
                     : '/yr'}
+                  {dividendsUncounted ? ' · more where shares are unknown' : ''}
                 </small>
               </>
             }
           />
+        ) : dividendsUncounted ? (
+          <Metric label="Dividend income" value="Unavailable: shares unknown" />
         ) : null}
         {dividends?.next ? (
           <Metric

@@ -21,7 +21,7 @@ export const emptyInsightDetails = {
     tablesVersion: '',
     sources: [],
   },
-  dividends: { securities: [], annualIncome: 0, upcoming: [] },
+  dividends: { securities: [], annualIncome: 0, upcoming: [], uncounted: [] },
   retirement: {
     year: 2026,
     ira: [],

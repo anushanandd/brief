@@ -59,6 +59,8 @@ pub struct DividendOutlook {
     pub annual_income: f64,
     /// Announced payments still to come, soonest first.
     pub upcoming: Vec<UpcomingDividend>,
+    /// Dividend payers held in an account that doesn't report shares, left out of the income.
+    pub uncounted: Vec<String>,
 }
 
 fn date(value: &str) -> Option<NaiveDate> {
@@ -70,20 +72,27 @@ pub fn outlook(
     holdings: &[Holding],
     today: NaiveDate,
 ) -> DividendOutlook {
-    let mut held = BTreeMap::<String, (f64, Option<f64>)>::new();
+    // Each ticker's known shares, its price, and whether an account held it without shares.
+    let mut held = BTreeMap::<String, (f64, Option<f64>, bool)>::new();
     for holding in holdings
         .iter()
         .filter(|holding| holding.currency.as_deref().is_none_or(|code| code == "USD"))
     {
         let entry = held
             .entry(holding.ticker.trim().to_ascii_uppercase())
-            .or_insert((0.0, holding.price));
-        entry.0 += holding.shares.unwrap_or(0.0);
+            .or_insert((0.0, holding.price, false));
+        match holding.shares {
+            Some(shares) => entry.0 += shares,
+            None => entry.2 = true,
+        }
     }
     let year_ago = today - Duration::days(365);
     let mut outlook = DividendOutlook::default();
     let mut annual = 0_i64;
-    for (ticker, (shares, price)) in held.into_iter().filter(|(_, (shares, _))| *shares > 0.0) {
+    for (ticker, (shares, price, unknown)) in held
+        .into_iter()
+        .filter(|(_, (shares, _, unknown))| *shares > 0.0 || *unknown)
+    {
         let own = records
             .iter()
             .filter(|record| record.symbol.eq_ignore_ascii_case(&ticker))
@@ -112,6 +121,12 @@ pub fn outlook(
                 special: record.special,
             });
         if trailing.is_empty() && next.is_none() {
+            continue;
+        }
+        if unknown {
+            outlook.uncounted.push(ticker.clone());
+        }
+        if shares <= 0.0 {
             continue;
         }
         let income = minor_units(trailing_rate * shares);
@@ -211,5 +226,17 @@ mod tests {
         assert_eq!((next.ex_date, next.amount), (day("2026-09-18"), 92.0));
         assert_eq!(result.annual_income, 362.0);
         assert_eq!(result.securities.len(), 1);
+        assert!(result.uncounted.is_empty());
+
+        // An account that doesn't report shares leaves its payers out of the income, by name.
+        let mut unreported = holding("NONE", "c", 0.0, 50.0);
+        unreported.shares = None;
+        let result = outlook(
+            &records,
+            &[holdings[0].clone(), unreported],
+            day("2026-09-20"),
+        );
+        assert_eq!(result.uncounted, vec!["NONE"]);
+        assert_eq!(result.annual_income, 217.2);
     }
 }

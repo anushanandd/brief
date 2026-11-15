@@ -10,4 +10,8 @@ securities: Array<SecurityDividends>, annualIncome: number,
 /**
  * Announced payments still to come, soonest first.
  */
-upcoming: Array<UpcomingDividend>, };
+upcoming: Array<UpcomingDividend>, 
+/**
+ * Dividend payers held in an account that doesn't report shares, left out of the income.
+ */
+uncounted: Array<string>, };

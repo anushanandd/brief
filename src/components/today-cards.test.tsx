@@ -341,6 +341,7 @@ it('lists what’s coming in the next month and nothing when there is none', asy
         securities: [],
         annualIncome: 0,
         upcoming: [dividend('2026-09-20', '2026-09-30'), dividend('2026-12-20', '2026-12-30')],
+        uncounted: [],
       },
     },
   )
