@@ -337,7 +337,7 @@ pub fn people(transactions: &[Transaction], people: &[Person], trips: &[Trip]) -
         .flat_map(|person| &person.match_names)
         .collect::<BTreeSet<_>>();
     for t in transactions {
-        let date = NaiveDate::parse_from_str(t.posted_date(), "%Y-%m-%d").ok();
+        let date = super::calendar::parse_date(t.posted_date());
         let paid = person_to_person(t);
         for id in &t.people {
             let Some(tally) = tallies.get_mut(id.as_str()) else {

@@ -1,9 +1,6 @@
 //! Calendar rules shared by forecasts, statements, and benefit windows. Dates are plain
 //! calendar days; an instant becomes a day only through an explicit `Zone`.
-use std::sync::LazyLock;
-
 use chrono::{DateTime, Datelike, Duration, NaiveDate, Utc, Weekday};
-use regex::Regex;
 
 use crate::finance_contract::Transaction;
 
@@ -186,8 +183,30 @@ pub fn long_label(date: NaiveDate) -> String {
     date.format("%b %-d, %Y").to_string()
 }
 
-static ISO_PREFIX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").expect("valid pattern"));
+/// The year, month, and day digits of a `YYYY-MM-DD` that starts `value`.
+fn iso_fields(value: &str) -> Option<(i32, u32, u32)> {
+    let bytes = value.as_bytes().get(..10)?;
+    let number = |range: std::ops::Range<usize>| {
+        bytes[range].iter().try_fold(0, |number, &byte| {
+            byte.is_ascii_digit()
+                .then(|| number * 10 + u32::from(byte - b'0'))
+        })
+    };
+    if bytes[4] != b'-' || bytes[7] != b'-' {
+        return None;
+    }
+    Some((number(0..4)? as i32, number(5..7)?, number(8..10)?))
+}
+
+/// `NaiveDate::parse_from_str(value, "%Y-%m-%d")`, without chrono's format parser for the
+/// padded dates nearly every record writes.
+pub fn parse_date(value: &str) -> Option<NaiveDate> {
+    match iso_fields(value).filter(|_| value.len() == 10) {
+        Some((year, month, day)) => NaiveDate::from_ymd_opt(year, month, day),
+        // Chrono also reads unpadded fields and signed years.
+        None => NaiveDate::parse_from_str(value, "%Y-%m-%d").ok(),
+    }
+}
 
 /// An ISO instant or date; a date alone is its UTC midnight.
 pub fn parse_instant(value: &str) -> Option<DateTime<Utc>> {
@@ -195,7 +214,7 @@ pub fn parse_instant(value: &str) -> Option<DateTime<Utc>> {
         return Some(instant.with_timezone(&Utc));
     }
     if value.len() == 10 {
-        if let Ok(date) = NaiveDate::parse_from_str(value, "%Y-%m-%d") {
+        if let Some(date) = parse_date(value) {
             return Some(date.and_hms_opt(0, 0, 0)?.and_utc());
         }
     }
@@ -209,8 +228,8 @@ pub fn calendar_date(reference: &str, zone: &dyn Zone) -> Option<NaiveDate> {
 
 /// A transaction's calendar day: an ISO date as written, or an RFC 2822 instant's UTC day.
 pub fn transaction_date(value: &str) -> Option<NaiveDate> {
-    if ISO_PREFIX.is_match(value) {
-        return NaiveDate::parse_from_str(&value[..10], "%Y-%m-%d").ok();
+    if let Some((year, month, day)) = iso_fields(value) {
+        return NaiveDate::from_ymd_opt(year, month, day);
     }
     DateTime::parse_from_rfc2822(value)
         .ok()
@@ -260,6 +279,10 @@ fn dated_through<'a>(
 
 #[cfg(test)]
 mod tests {
+    use std::sync::LazyLock;
+
+    use regex::Regex;
+
     use super::*;
 
     fn date(value: &str) -> NaiveDate {
@@ -361,5 +384,101 @@ mod tests {
         assert_eq!(transaction_date("Dec 31"), None);
         assert_eq!(parse_instant("Aug 21"), None);
         assert_eq!(transaction_date("unknown"), None);
+    }
+
+    /// What `transaction_date` was before the byte-level reader, kept to compare against.
+    static ISO_PREFIX: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"^\d{4}-\d{2}-\d{2}").expect("valid pattern"));
+
+    fn regex_transaction_date(value: &str) -> Option<NaiveDate> {
+        if ISO_PREFIX.is_match(value) {
+            return NaiveDate::parse_from_str(&value[..10], "%Y-%m-%d").ok();
+        }
+        DateTime::parse_from_rfc2822(value)
+            .ok()
+            .map(|instant| instant.with_timezone(&Utc).date_naive())
+    }
+
+    /// Fixed cases, then a few thousand strings near the ISO and RFC 2822 shapes.
+    fn date_inputs() -> Vec<String> {
+        let mut inputs = [
+            "2026-09-16",
+            "2026-09-16T10:00:00Z",
+            "2026-09-16 10:00",
+            "2026-09-16x",
+            "2024-02-29",
+            "2026-02-29",
+            "2026-02-30",
+            "2026-13-01",
+            "2026-00-10",
+            "2026-01-00",
+            "0000-01-01",
+            "9999-12-31",
+            "2026-9-16",
+            "2026-09-6",
+            "2026-09-1 ",
+            "2026- 9-16",
+            " 2026-09-16",
+            "+2026-09-16",
+            "-2026-09-16",
+            "20260916",
+            "2026/09/16",
+            "2026-09",
+            "2026-09-1",
+            "",
+            "-",
+            "Dec 31",
+            "unknown",
+            "Tue, 1 Sep 2026 23:30:00 -0700",
+            "1 Sep 2026 10:00:00 +0000",
+            "Wed, 31 Feb 2026 10:00:00 +0000",
+        ]
+        .map(str::to_owned)
+        .to_vec();
+        let mut seed = 0x2545_f491_4f6c_dd1d_u64;
+        let mut next = |bound: usize| {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            (seed % bound as u64) as usize
+        };
+        let alphabet = b"0123456789--- T:+Z,SepTueDec";
+        for _ in 0..4000 {
+            let mut text = match next(3) {
+                0 => format!("{:04}-{:02}-{:02}", next(10_000), next(15), next(34)),
+                1 => format!("{} Sep 2026 1{}:00:00 -0{}00", next(40), next(10), next(10)),
+                _ => String::new(),
+            };
+            for _ in 0..next(12) {
+                let at = next(text.len() + 1);
+                text.insert(at, alphabet[next(alphabet.len())] as char);
+            }
+            if next(4) == 0 && !text.is_empty() {
+                text.truncate(next(text.len()));
+            }
+            inputs.push(text);
+        }
+        inputs
+    }
+
+    #[test]
+    fn byte_level_dates_read_like_the_regex_and_chrono() {
+        let mut read = 0;
+        for input in date_inputs() {
+            assert_eq!(
+                transaction_date(&input),
+                regex_transaction_date(&input),
+                "{input:?}"
+            );
+            assert_eq!(
+                parse_date(&input),
+                NaiveDate::parse_from_str(&input, "%Y-%m-%d").ok(),
+                "{input:?}"
+            );
+            read += usize::from(transaction_date(&input).is_some());
+        }
+        assert!(read > 100, "{read}");
+        assert_eq!(transaction_date("2026-9-16"), None);
+        assert_eq!(parse_date("2026-9-16"), Some(date("2026-09-16")));
     }
 }

@@ -180,7 +180,7 @@ pub(super) fn spending(transactions: &[Transaction], month_start: NaiveDate) -> 
     let mut by_category = BTreeMap::<String, Decimal>::new();
     for transaction in transactions {
         let Some(date) = iso_date(transaction.posted_on.as_deref())
-            .and_then(|posted| NaiveDate::parse_from_str(&posted, "%Y-%m-%d").ok())
+            .and_then(|posted| crate::insights::calendar::parse_date(&posted))
         else {
             continue;
         };

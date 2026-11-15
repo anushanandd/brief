@@ -172,9 +172,7 @@ struct Booked {
 }
 
 fn day_of(value: &str) -> Option<NaiveDate> {
-    value
-        .get(..10)
-        .and_then(|day| NaiveDate::parse_from_str(day, "%Y-%m-%d").ok())
+    value.get(..10).and_then(super::calendar::parse_date)
 }
 
 /// The points from the latest on or before `start` through the last.

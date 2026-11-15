@@ -126,7 +126,7 @@ fn histories(
             .iter()
             .filter_map(|point| {
                 Some((
-                    NaiveDate::parse_from_str(point.date.get(..10)?, "%Y-%m-%d").ok()?,
+                    calendar::parse_date(point.date.get(..10)?)?,
                     minor_units(point.value),
                 ))
             })

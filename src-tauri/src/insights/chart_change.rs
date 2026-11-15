@@ -222,12 +222,7 @@ fn first_activity(snapshot: &Snapshot) -> BTreeMap<&str, NaiveDate> {
 fn daily(points: impl IntoIterator<Item = (String, f64)>) -> Vec<(NaiveDate, f64)> {
     points
         .into_iter()
-        .filter_map(|(date, value)| {
-            Some((
-                NaiveDate::parse_from_str(date.get(..10)?, "%Y-%m-%d").ok()?,
-                value,
-            ))
-        })
+        .filter_map(|(date, value)| Some((calendar::parse_date(date.get(..10)?)?, value)))
         .collect()
 }
 

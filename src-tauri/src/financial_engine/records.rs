@@ -602,9 +602,7 @@ pub(super) fn parse_records<T: for<'de> Deserialize<'de>>(
 
 pub(super) fn iso_date(value: Option<&str>) -> Option<String> {
     let date = value?.get(..10)?;
-    NaiveDate::parse_from_str(date, "%Y-%m-%d")
-        .ok()
-        .map(|_| date.to_string())
+    crate::insights::calendar::parse_date(date).map(|_| date.to_string())
 }
 
 pub(super) fn plaid_posted_date(transaction: &PlaidTransaction) -> Option<String> {

@@ -80,7 +80,7 @@ pub(super) fn days(points: &[PerformancePoint]) -> Option<Vec<Day>> {
         .iter()
         .map(|point| {
             Some(Day {
-                date: NaiveDate::parse_from_str(point.date.get(..10)?, "%Y-%m-%d").ok()?,
+                date: super::calendar::parse_date(point.date.get(..10)?)?,
                 value: point.value,
                 deposits: point.net_deposits?,
                 benchmark: point.sp500,

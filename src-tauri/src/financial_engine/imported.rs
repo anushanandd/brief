@@ -6,6 +6,7 @@ use crate::{
     finance_contract::{
         AmountDifference, ContributionYear, MissingStatementRow, StatementReconciliation,
     },
+    insights::calendar,
     providers::{PlaidData, SnapTradeData},
     statements::{self, Activity, IssuerDetail, ProviderActivity, StatementFile, StatementRow},
 };
@@ -41,8 +42,8 @@ fn activity_from(
         .iter()
         .filter(|transaction| !transaction.pending)
     {
-        let Some(date) = plaid_posted_date(transaction)
-            .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok())
+        let Some(date) =
+            plaid_posted_date(transaction).and_then(|date| calendar::parse_date(&date))
         else {
             continue;
         };
@@ -62,10 +63,7 @@ fn activity_from(
     }
     for (account, activities) in snap_activities {
         for item in activities {
-            let Some(date) = item
-                .date()
-                .and_then(|date| NaiveDate::parse_from_str(&date, "%Y-%m-%d").ok())
-            else {
+            let Some(date) = item.date().and_then(|date| calendar::parse_date(&date)) else {
                 continue;
             };
             activity
