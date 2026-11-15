@@ -55,6 +55,8 @@ function useLiveMarketState() {
     document.addEventListener('visibilitychange', update)
     return () => document.removeEventListener('visibilitychange', update)
   }, [])
+  // Restarts only when the held symbols change: each tick projects against the snapshot Rust
+  // holds then, so a refresh needs no new socket or re-downloaded history.
   useEffect(() => {
     if (!enabled) return undefined
     return subscribeLiveMarket(
@@ -64,15 +66,7 @@ function useLiveMarketState() {
       rejectMarket,
       acceptHistory,
     )
-  }, [
-    enabled,
-    symbolKey,
-    base.data?.revision,
-    base.data?.updatedAt,
-    acceptMarket,
-    rejectMarket,
-    acceptHistory,
-  ])
+  }, [enabled, symbolKey, acceptMarket, rejectMarket, acceptHistory])
   const saved = useQuery({
     queryKey: ['startup-market', base.data?.revision, base.data?.updatedAt],
     queryFn: getSavedMarket,
