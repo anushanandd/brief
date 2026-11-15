@@ -9,8 +9,6 @@ use news_cache::NewsCache;
 pub const NOTABLE_DAY_PERCENT: f64 = 1.0;
 /// One sector above this share of the stocks and funds held dominates the portfolio.
 pub const SECTOR_CONCENTRATED_PERCENT: f64 = 40.0;
-/// EDGAR is asked about at most this many unclassified stocks per request.
-const SECTOR_LOOKUPS: usize = 40;
 /// Stocks modeled for the portfolio, largest first; one price request covers them.
 const MODELED_HOLDINGS: usize = 40;
 
@@ -272,8 +270,8 @@ pub(super) fn sector_exposure(
 }
 
 impl Providers {
-    /// Sector exposure for held stocks. Stocks EDGAR has not been asked about are looked up
-    /// once, and the answer is saved with their filings.
+    /// Sector exposure for held stocks, from the companies saved with their filings. `news_job`
+    /// looks each one up, so opening a page never asks EDGAR.
     pub async fn portfolio_sectors(
         &self,
         held: Vec<HeldSecurity>,
@@ -289,31 +287,6 @@ impl Providers {
                 Ok(None)
             }
         };
-        let missing: Vec<String> = {
-            let cache = self.news_cache().await?;
-            let mut missing = Vec::new();
-            for security in &held {
-                if !fund_or_other(security.kind.as_deref())
-                    && alpaca::stock_symbol(&security.ticker).is_ok()
-                    && saved(&security.ticker, &cache)?.is_none()
-                {
-                    missing.push(security.ticker.clone());
-                }
-            }
-            missing
-        };
-        if let Some(contact) = &contact {
-            for ticker in missing.iter().take(SECTOR_LOOKUPS) {
-                // A failed lookup leaves the stock unclassified and is asked again next time.
-                if let Ok(company) = self.sec_company(contact, ticker).await {
-                    self.news_cache().await?.save_filings(
-                        ticker,
-                        company.as_ref(),
-                        Utc::now().timestamp(),
-                    )?;
-                }
-            }
-        }
         let cache = self.news_cache().await?;
         let mut sic = BTreeMap::new();
         for security in &held {

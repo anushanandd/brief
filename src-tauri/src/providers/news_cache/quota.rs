@@ -127,11 +127,12 @@ impl NewsCache {
         Ok(())
     }
 
-    pub fn earnings(&self, now: i64) -> Result<Option<String>, String> {
+    /// The saved earnings calendar when it is under `max_age` seconds old.
+    pub fn earnings(&self, now: i64, max_age: i64) -> Result<Option<String>, String> {
         self.0
             .query_row(
                 "SELECT body FROM earnings WHERE id=1 AND saved <= ?1 AND saved > ?2",
-                params![now, now - 6 * 3600],
+                params![now, now - max_age],
                 |r| r.get(0),
             )
             .optional()

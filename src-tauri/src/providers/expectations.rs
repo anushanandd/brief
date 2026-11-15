@@ -298,7 +298,7 @@ impl Providers {
         let calendar = self
             .news_cache()
             .await?
-            .earnings(now.timestamp())?
+            .earnings(now.timestamp(), alpha_vantage::SHOWN_EARNINGS)?
             .and_then(|body| alpha_vantage::parse_earnings_csv(&body).ok())
             .unwrap_or_default();
         let upcoming: Vec<EarningsEvent> = calendar

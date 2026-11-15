@@ -101,6 +101,10 @@ async fn tick(app: &AppHandle, now: DateTime<Utc>) {
                     changed = true;
                 }
             }
+            // Saved for six hours, so this asks Alpha Vantage a few times a day at most.
+            let held = crate::providers::portfolio::held_securities(&view.snapshot.holdings);
+            let symbols = held.into_iter().map(|security| security.ticker).collect();
+            let _ = state.providers.earnings_calendar(symbols).await;
         }
     }
     if changed || step {

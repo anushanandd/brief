@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { holdingNewsDigest, newsNeedsRefresh, rankHoldingNews } from './holding-news'
+import { holdingNewsDigest, rankHoldingNews } from './holding-news'
 import type { MarketNewsArticle } from './schema'
 
 const article = (overrides: Partial<MarketNewsArticle> = {}): MarketNewsArticle => ({
@@ -118,12 +118,4 @@ it('ranks recent company stories by events and coverage for chart markers', () =
   ])
   expect(digest.storyCount).toBe(2)
   expect(holdingNewsDigest([], now)).toEqual({ top: [], storyCount: 0 })
-})
-
-it('refreshes saved news only when it is missing or half an hour old', () => {
-  const now = Date.parse('2026-09-20T18:00:00Z')
-  expect(newsNeedsRefresh(null, now)).toBe(true)
-  expect(newsNeedsRefresh('not a date', now)).toBe(true)
-  expect(newsNeedsRefresh('2026-09-20T17:30:00Z', now)).toBe(true)
-  expect(newsNeedsRefresh('2026-09-20T17:30:01Z', now)).toBe(false)
 })

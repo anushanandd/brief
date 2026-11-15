@@ -135,11 +135,7 @@ function Holding({
         <InvestmentSummaryCard data={data} range={range} ticker={ticker} />
       </div>
       <div className="holding-layout">
-        <HoldingNews
-          ticker={ticker}
-          connected={integrations.alpaca}
-          secConnected={integrations.sec}
-        />
+        <HoldingNews ticker={ticker} connected={integrations.alpaca} />
         <div className="holding-side">
           <HoldingAccounts data={data} ticker={ticker} />
           {fund ? null : <EarningsReport data={today} ticker={ticker} range={range} />}

@@ -38,7 +38,7 @@ pub(crate) async fn get_earnings_calendar(
     symbols: Vec<String>,
     state: State<'_, AppState>,
 ) -> Result<Vec<providers::EarningsEvent>, String> {
-    state.providers.earnings_calendar(symbols).await
+    state.providers.saved_earnings_calendar(symbols).await
 }
 
 /// The portfolio's, or one holding's, day and period: the brief and its headlines, moves,

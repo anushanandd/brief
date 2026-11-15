@@ -90,11 +90,3 @@ export function holdingNewsDigest(groups: NewsGroup[], now: number, limit = 3) {
     .map(({ group }) => group)
   return { top, storyCount: recent.length }
 }
-
-/** Saved stories older than this refresh on their own when a holding is opened. */
-export const newsRefreshMinutes = 30
-
-export function newsNeedsRefresh(savedAt: string | null | undefined, now: number) {
-  const saved = savedAt ? Date.parse(savedAt) : Number.NaN
-  return !Number.isFinite(saved) || now - saved >= newsRefreshMinutes * 60_000
-}

@@ -1,6 +1,20 @@
 use super::*;
 
+/// A fetched calendar is used for six hours, then fetched again.
+const FRESH_EARNINGS: i64 = 6 * 3600;
+/// A page shows a saved calendar up to a week old; it spans three months.
+pub(super) const SHOWN_EARNINGS: i64 = 7 * 24 * 3600;
+
+/// `events` for `symbols` alone.
+fn for_symbols(events: Vec<EarningsEvent>, symbols: &BTreeSet<String>) -> Vec<EarningsEvent> {
+    events
+        .into_iter()
+        .filter(|event| symbols.contains(&event.symbol))
+        .collect()
+}
+
 impl Providers {
+    /// Fetches the earnings calendar when the saved one is stale, as `news_job` does.
     pub async fn earnings_calendar(
         &self,
         symbols: Vec<String>,
@@ -13,10 +27,27 @@ impl Providers {
         }
         let credentials = self.alpha_vantage_credentials()?;
         let events = self.alpha_vantage_earnings(None, &credentials).await?;
-        Ok(events
+        Ok(for_symbols(events, &symbols))
+    }
+
+    /// The saved earnings calendar for `symbols`, which a page shows; opening a page never
+    /// spends Alpha Vantage's daily budget.
+    pub async fn saved_earnings_calendar(
+        &self,
+        symbols: Vec<String>,
+    ) -> Result<Vec<EarningsEvent>, String> {
+        let symbols = normalize_stock_symbols(symbols)
             .into_iter()
-            .filter(|event| symbols.contains(&event.symbol))
-            .collect())
+            .collect::<BTreeSet<_>>();
+        if symbols.is_empty() {
+            return Ok(Vec::new());
+        }
+        let body = self
+            .news_cache()
+            .await?
+            .earnings(Utc::now().timestamp(), SHOWN_EARNINGS)?
+            .ok_or("Earnings dates aren't saved yet; Brief fetches them in the background")?;
+        Ok(for_symbols(parse_earnings_csv(&body)?, &symbols))
     }
 
     pub(super) async fn alpha_vantage_earnings(
@@ -29,7 +60,7 @@ impl Providers {
         let mut cache = self.news_cache().await?;
         let now = Utc::now().timestamp();
         if symbol.is_none() {
-            if let Some(body) = cache.earnings(now)? {
+            if let Some(body) = cache.earnings(now, FRESH_EARNINGS)? {
                 return parse_earnings_csv(&body);
             }
         }

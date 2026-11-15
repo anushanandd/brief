@@ -98,7 +98,7 @@ it('shows filings among company stories, and folds away stories that only mentio
   try {
     const html = renderToString(
       <QueryClientProvider client={client}>
-        <HoldingNews ticker="TEST" connected secConnected />
+        <HoldingNews ticker="TEST" connected />
       </QueryClientProvider>,
     )
     expect(html).toContain('TEST Announces Synthetic Acquisition')
@@ -123,7 +123,7 @@ it('shows filings among company stories, and folds away stories that only mentio
     expect(client.getQueryCache().find({ queryKey: ['foundation-model-status'] })).toBeUndefined()
     const disconnected = renderToString(
       <QueryClientProvider client={client}>
-        <HoldingNews ticker="TEST" connected={false} secConnected={false} />
+        <HoldingNews ticker="TEST" connected={false} />
       </QueryClientProvider>,
     )
     expect(disconnected).toContain('TEST Announces Synthetic Acquisition')

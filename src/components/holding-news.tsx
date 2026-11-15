@@ -1,16 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useMemo } from 'react'
+import { useMemo } from 'react'
 
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { getMarketNews, isTauri } from '../lib/api'
 import { pluralize } from '../lib/format'
-import {
-  newsNeedsRefresh,
-  newsRefreshMinutes,
-  rankHoldingNews,
-  RELEVANT,
-} from '../lib/holding-news'
+import { rankHoldingNews, RELEVANT } from '../lib/holding-news'
 import type { MarketNewsResult } from '../lib/schema'
 import { RefreshCw } from './icons'
 import { NewsList } from './news-list'
@@ -30,22 +25,12 @@ export function useHoldingNews(ticker: string) {
   })
 }
 
-// When each ticker last refreshed on its own, so a failed or empty fetch waits before retrying.
-const autoRefreshed = new Map<string, number>()
-
 /**
  * A holding's news: stories about the company, newest first, with stories that only mention it
- * (broker notes on peers, roundups) folded away. Why it moved lives in the summary.
+ * (broker notes on peers, roundups) folded away. Why it moved lives in the summary. Opening a
+ * holding reads what `news_job` saved; only Refresh asks the network.
  */
-export function HoldingNews({
-  ticker,
-  connected,
-  secConnected,
-}: {
-  ticker: string
-  connected: boolean
-  secConnected: boolean
-}) {
+export function HoldingNews({ ticker, connected }: { ticker: string; connected: boolean }) {
   const native = typeof window !== 'undefined' && isTauri()
   const client = useQueryClient()
   const newsScrollRef = useViewportScroll(48)
@@ -60,18 +45,7 @@ export function HoldingNews({
     onSuccess: save,
   })
   const saved = news.data
-  const { mutate: refreshNews, isPending: refreshPending } = refresh
-  useEffect(() => {
-    if (!native || !connected || !saved?.canRefresh || refreshPending) return
-    const now = Date.now()
-    const last = autoRefreshed.get(ticker)
-    if (last != null && now - last < newsRefreshMinutes * 60_000) return
-    // A saved SEC contact loads filings on the first visit, even when stories are fresh.
-    const filingsMissing = secConnected && !saved.filingsSavedAt
-    if (!filingsMissing && !newsNeedsRefresh(saved.savedAt, now)) return
-    autoRefreshed.set(ticker, now)
-    refreshNews(ticker)
-  }, [native, connected, secConnected, saved, refreshPending, ticker, refreshNews])
+  const { mutate: refreshNews } = refresh
   const refreshing = refresh.variables === ticker && refresh.isPending
   const canRefresh =
     native &&
