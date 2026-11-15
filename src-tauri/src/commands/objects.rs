@@ -107,13 +107,9 @@ pub(crate) async fn search_objects(
             &texts,
         )?);
     }
-    let meaning = embeddings::embed_cached(
-        &cache,
-        &embeddings::Apple,
-        &[(0, query.text.trim().to_owned())],
-    )?
-    .pop()
-    .map(|(_, vector)| vector);
+    // A query is embedded each time and never saved, so what was typed isn't kept.
+    let meaning = embeddings::Embedder::embed(&embeddings::Apple, &[query.text.trim().to_owned()])
+        .and_then(|mut vectors| vectors.pop());
     index.search(&query, limit, meaning)
 }
 
