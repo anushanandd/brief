@@ -7,8 +7,7 @@
 //! tip and a new id, and one hold is dropped without posting, as Plaid reports them. Every
 //! name and amount is invented and the same seed gives the same life, so tests can replay it
 //! exactly. The replay test (Gate A) runs it through the real refresh and edit paths.
-use std::collections::BTreeMap;
-
+//! `Life::sized` makes a longer, busier life with several brokerages, for the scale test.
 pub(crate) mod career;
 
 use chrono::{Duration, NaiveDate, TimeZone, Utc};
@@ -112,27 +111,63 @@ impl Purchase {
     }
 }
 
-/// The person's whole life: every transaction, fund price, and purchase of the fund.
-pub(crate) struct Life {
-    start: NaiveDate,
-    purchases: Vec<Purchase>,
+/// One brokerage account holding one fund, bought each month.
+struct Fund {
+    account: String,
+    symbol: String,
+    description: String,
     /// The fund's close each day.
     prices: Vec<(NaiveDate, f64)>,
     /// Monthly purchases of the fund: (date, units, price).
     buys: Vec<(NaiveDate, f64, f64)>,
 }
 
+/// The person's whole life: every transaction, fund price, and purchase of a fund.
+pub(crate) struct Life {
+    start: NaiveDate,
+    days: i64,
+    purchases: Vec<Purchase>,
+    funds: Vec<Fund>,
+}
+
 impl Life {
     pub(crate) fn new(seed: u64) -> Self {
+        Self::sized(seed, DAYS, 3, 1)
+    }
+
+    /// A life of `days` days, with fewer than `shops` card purchases a day and `brokerages`
+    /// accounts, each holding its own fund.
+    pub(crate) fn sized(seed: u64, days: i64, shops: u64, brokerages: usize) -> Self {
         let mut rng = Rng(seed);
+        let mut fund_rngs = (1..brokerages)
+            .map(|index| Rng(seed ^ ((index as u64) << 32)))
+            .collect::<Vec<_>>();
         let start = NaiveDate::from_ymd_opt(START.0, START.1, START.2).unwrap_or_default();
         let mut purchases = Vec::new();
         let mut add = |purchase: Purchase| purchases.push(purchase);
-        let mut prices = Vec::new();
-        let mut price = 100.0_f64;
-        let mut buys = Vec::new();
+        let mut funds = (0..brokerages)
+            .map(|index| Fund {
+                account: if index == 0 {
+                    "brokerage".into()
+                } else {
+                    format!("brokerage-{index}")
+                },
+                symbol: if index == 0 {
+                    "TEST".into()
+                } else {
+                    format!("TEST{index}")
+                },
+                description: if index == 0 {
+                    "Example Index Fund".into()
+                } else {
+                    format!("Example Fund {index}")
+                },
+                prices: Vec::new(),
+                buys: Vec::new(),
+            })
+            .collect::<Vec<_>>();
         let trip = start + Duration::days(40);
-        for offset in 0..DAYS {
+        for offset in 0..days {
             let date = start + Duration::days(offset);
             let day = date.format("%d").to_string();
             let id = |kind: &str| format!("{kind}-{}", date.format("%Y%m%d"));
@@ -209,7 +244,7 @@ impl Life {
             }
             let away = date >= trip && date < trip + Duration::days(4);
             let place = Some(if away { AWAY } else { HOME });
-            for index in 0..rng.below(3) {
+            for index in 0..rng.below(shops) {
                 let (name, category, low, high) = match rng.below(4) {
                     0 => (
                         "Example Grocer",
@@ -268,24 +303,32 @@ impl Life {
                     )
                 });
             }
-            price = (price * (1.0 + (rng.below(301) as f64 - 150.0) / 10_000.0) * 100.0).round()
-                / 100.0;
-            prices.push((date, price));
-            if day == "05" {
-                buys.push((date, 3.0, price));
+            for (index, fund) in funds.iter_mut().enumerate() {
+                // The first fund draws from the life's own stream, so a seed's life stays the same.
+                let draw = match index.checked_sub(1) {
+                    None => rng.below(301),
+                    Some(other) => fund_rngs[other].below(301),
+                };
+                let last = fund.prices.last().map_or(100.0, |(_, price)| *price);
+                let price =
+                    (last * (1.0 + (draw as f64 - 150.0) / 10_000.0) * 100.0).round() / 100.0;
+                fund.prices.push((date, price));
+                if day == "05" {
+                    fund.buys.push((date, 3.0, price));
+                }
             }
         }
         Self {
             start,
+            days,
             purchases,
-            prices,
-            buys,
+            funds,
         }
     }
 
     /// The days the person refreshes, oldest first.
     pub(crate) fn refresh_days(&self) -> Vec<NaiveDate> {
-        (REFRESH_EVERY..DAYS)
+        (REFRESH_EVERY..self.days)
             .step_by(REFRESH_EVERY as usize)
             .map(|offset| self.start + Duration::days(offset))
             .collect()
@@ -348,14 +391,10 @@ impl Life {
             ..PlaidData::default()
         };
         let snaptrade = self.brokerage(today, &fetched);
-        let prices = self
-            .prices
-            .iter()
-            .filter(|(date, _)| *date <= today)
-            .collect::<Vec<_>>();
-        let points = |scale: f64| {
-            prices
+        let points = |fund: &Fund, scale: f64| {
+            fund.prices
                 .iter()
+                .filter(|(date, _)| *date <= today)
                 .map(|(date, price)| json!({ "date": date, "value": (price * scale * 100.0).round() / 100.0 }))
                 .collect::<Vec<_>>()
         };
@@ -368,7 +407,11 @@ impl Life {
         let mut provider_data = ProviderDataCache {
             plaid: Some(plaid),
             snaptrade: Some(snaptrade),
-            security_history: BTreeMap::from([("TEST".to_owned(), points(1.0))]),
+            security_history: self
+                .funds
+                .iter()
+                .map(|fund| (fund.symbol.clone(), points(fund, 1.0)))
+                .collect(),
             security_history_adjustment: Some("split".into()),
             market_history_refreshed_at: Some(fetched.clone()),
             ..ProviderDataCache::default()
@@ -386,98 +429,109 @@ impl Life {
             committed_at,
             calendar_date: today,
             balances_fresh: true,
-            refreshed_account_ids: vec![
-                "plaid:checking".into(),
-                "plaid:savings".into(),
-                "plaid:card".into(),
-                "snaptrade:brokerage".into(),
-            ],
-            benchmark: Value::Array(points(4.5)),
+            refreshed_account_ids: ["plaid:checking", "plaid:savings", "plaid:card"]
+                .map(String::from)
+                .into_iter()
+                .chain(
+                    self.funds
+                        .iter()
+                        .map(|fund| format!("snaptrade:{}", fund.account)),
+                )
+                .collect(),
+            benchmark: Value::Array(points(&self.funds[0], 4.5)),
             warnings: Vec::new(),
             plaid_cache,
             provider_data,
         }
     }
 
-    /// The brokerage as SnapTrade reports it on `today`: the fund bought each month, cash
-    /// left from each month's deposit, and a daily balance history.
+    /// The brokerages as SnapTrade reports them on `today`: each one's fund bought each month,
+    /// cash left from each month's deposit, and a daily balance history.
     fn brokerage(&self, today: NaiveDate, fetched: &str) -> SnapTradeData {
-        let bought = self
-            .buys
-            .iter()
-            .filter(|(date, ..)| *date <= today)
-            .collect::<Vec<_>>();
-        let units = 10.0 + bought.iter().map(|(_, units, _)| units).sum::<f64>();
-        let deposits = 500.0 * bought.len() as f64;
-        let spent: f64 = bought.iter().map(|(_, units, price)| units * price).sum();
-        let cash = ((1000.0 + deposits - spent) * 100.0).round() / 100.0;
-        let close = |day: NaiveDate| {
-            self.prices
-                .iter()
-                .rev()
-                .find(|(date, _)| *date <= day)
-                .map_or(100.0, |(_, price)| *price)
-        };
-        let price = close(today);
-        let mut activities = Vec::new();
-        for (date, units, price) in &bought {
-            activities.push(json!({
-                "id": format!("deposit-{date}"), "type": "CONTRIBUTION", "amount": 500,
-                "trade_date": date, "currency": { "code": "USD" }
-            }));
-            activities.push(json!({
-                "id": format!("buy-{date}"), "type": "BUY",
-                "amount": (units * price * 100.0).round() / 100.0,
-                "trade_date": date, "units": units, "price": price,
-                "symbol": { "symbol": "TEST" }, "currency": { "code": "USD" }
-            }));
-        }
-        let history = (0..=(today - self.start).num_days())
-            .map(|offset| {
-                let day = self.start + Duration::days(offset);
-                let held = 10.0
-                    + self
-                        .buys
-                        .iter()
-                        .filter(|(date, ..)| *date <= day)
-                        .map(|(_, units, _)| units)
-                        .sum::<f64>();
-                let invested: f64 = self
-                    .buys
-                    .iter()
-                    .filter(|(date, ..)| *date <= day)
-                    .map(|(_, units, price)| 500.0 - units * price)
-                    .sum();
-                json!({
-                    "date": day,
-                    "total_value": ((held * close(day) + 1000.0 + invested) * 100.0).round() / 100.0
-                })
-            })
-            .collect();
-        let total = ((units * price + cash) * 100.0).round() / 100.0;
-        SnapTradeData {
-            accounts: vec![json!({
-                "id": "brokerage", "name": "Example Brokerage", "institution_name": "Example Broker",
-                "balance": { "total": { "amount": total, "currency": "USD" } },
-                "sync_status": { "holdings": { "last_successful_sync": fetched } }
-            })],
-            positions: BTreeMap::from([(
-                "brokerage".into(),
-                vec![json!({
-                    "units": units, "price": price, "cost_basis": 95, "currency": "USD",
-                    "instrument": { "kind": "etf", "symbol": "TEST", "description": "Example Index Fund" }
-                })],
-            )]),
-            cash_balances: BTreeMap::from([(
-                "brokerage".into(),
-                vec![json!({ "currency": { "code": "USD" }, "cash": cash })],
-            )]),
-            positions_as_of: BTreeMap::from([("brokerage".into(), Some(fetched.to_owned()))]),
-            activities: BTreeMap::from([("brokerage".into(), activities)]),
-            balance_history: BTreeMap::from([("brokerage".into(), history)]),
+        let mut data = SnapTradeData {
             history_complete: true,
             activity_complete: true,
             ..SnapTradeData::default()
+        };
+        for fund in &self.funds {
+            let account = fund.account.clone();
+            let suffix = account.trim_start_matches("brokerage");
+            let bought = fund
+                .buys
+                .iter()
+                .filter(|(date, ..)| *date <= today)
+                .collect::<Vec<_>>();
+            let units = 10.0 + bought.iter().map(|(_, units, _)| units).sum::<f64>();
+            let deposits = 500.0 * bought.len() as f64;
+            let spent: f64 = bought.iter().map(|(_, units, price)| units * price).sum();
+            let cash = ((1000.0 + deposits - spent) * 100.0).round() / 100.0;
+            // Prices are daily from the first day, so a day's close sits at its offset.
+            let close = |day: NaiveDate| {
+                let offset = (day - self.start).num_days().max(0) as usize;
+                fund.prices
+                    .get(offset)
+                    .or(fund.prices.last())
+                    .map_or(100.0, |(_, price)| *price)
+            };
+            let price = close(today);
+            let mut activities = Vec::new();
+            for (date, units, price) in &bought {
+                activities.push(json!({
+                    "id": format!("deposit{suffix}-{date}"), "type": "CONTRIBUTION", "amount": 500,
+                    "trade_date": date, "currency": { "code": "USD" }
+                }));
+                activities.push(json!({
+                    "id": format!("buy{suffix}-{date}"), "type": "BUY",
+                    "amount": (units * price * 100.0).round() / 100.0,
+                    "trade_date": date, "units": units, "price": price,
+                    "symbol": { "symbol": fund.symbol }, "currency": { "code": "USD" }
+                }));
+            }
+            let history = (0..=(today - self.start).num_days())
+                .map(|offset| {
+                    let day = self.start + Duration::days(offset);
+                    let held = 10.0
+                        + fund
+                            .buys
+                            .iter()
+                            .filter(|(date, ..)| *date <= day)
+                            .map(|(_, units, _)| units)
+                            .sum::<f64>();
+                    let invested: f64 = fund
+                        .buys
+                        .iter()
+                        .filter(|(date, ..)| *date <= day)
+                        .map(|(_, units, price)| 500.0 - units * price)
+                        .sum();
+                    json!({
+                        "date": day,
+                        "total_value": ((held * close(day) + 1000.0 + invested) * 100.0).round() / 100.0
+                    })
+                })
+                .collect();
+            let total = ((units * price + cash) * 100.0).round() / 100.0;
+            data.accounts.push(json!({
+                "id": account, "name": format!("Example Brokerage{suffix}"),
+                "institution_name": "Example Broker",
+                "balance": { "total": { "amount": total, "currency": "USD" } },
+                "sync_status": { "holdings": { "last_successful_sync": fetched } }
+            }));
+            data.positions.insert(
+                account.clone(),
+                vec![json!({
+                    "units": units, "price": price, "cost_basis": 95, "currency": "USD",
+                    "instrument": { "kind": "etf", "symbol": fund.symbol, "description": fund.description }
+                })],
+            );
+            data.cash_balances.insert(
+                account.clone(),
+                vec![json!({ "currency": { "code": "USD" }, "cash": cash })],
+            );
+            data.positions_as_of
+                .insert(account.clone(), Some(fetched.to_owned()));
+            data.activities.insert(account.clone(), activities);
+            data.balance_history.insert(account, history);
         }
+        data
     }
 }

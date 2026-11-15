@@ -1037,6 +1037,7 @@ mod annotations;
 mod documents;
 mod generations;
 mod replay;
+mod scale;
 mod sessions;
 mod statements;
 
