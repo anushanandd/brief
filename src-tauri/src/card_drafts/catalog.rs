@@ -237,7 +237,6 @@ fn check(field: &str, value: String, confidence: Confidence, note: Option<&str>)
         value,
         confidence,
         source: (confidence == Confidence::Suggested).then_some(SourceKind::Catalog),
-        sentence: None,
         quote: None,
         note: note.map(str::to_owned),
     }
@@ -431,8 +430,6 @@ pub fn draft(card: &CatalogCardEntry, account: Option<&Account>, today: NaiveDat
         candidates: Vec::new(),
         rules,
         benefits,
-        terms_url: None,
-        sentences: Vec::new(),
         unmatched_credits: Vec::new(),
         warnings,
     }

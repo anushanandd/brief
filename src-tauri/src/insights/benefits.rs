@@ -1,7 +1,8 @@
 //! Card benefits: a card product's rules, and the engine that reads its activity against them.
 //!
-//! Rules are data (`CardRules`) saved in settings, imported from a file or drafted by research;
-//! none are compiled in. `example-card.json` is a generic card for the preview and fixtures.
+//! Rules are data (`CardRules`) saved in settings, imported from a file or drafted from the
+//! open catalog; none are compiled in. `example-card.json` is a generic card for the preview
+//! and fixtures.
 //!
 //! An unknown issuer descriptor stays unverified rather than being guessed from a merchant's
 //! name. The feed never links a credit to its purchase, so `attribution` pairs them by amount
@@ -170,7 +171,7 @@ pub enum Alignment {
 pub enum SourceKind {
     /// The open card benefits catalog.
     Catalog,
-    /// A sentence of the issuer's published terms.
+    // shortcut: unused since Exa was removed; drop with the Phase 3 storage change.
     Terms,
     /// Credits that posted on the user's card.
     History,
@@ -252,7 +253,7 @@ pub struct CardRules {
     /// The catalog entry these rules were drafted from, if any.
     #[serde(default)]
     pub catalog: Option<CatalogRef>,
-    /// The issuer's terms page these rules were checked against, and its text's hash then.
+    // shortcut: unused since Exa was removed; drop with the Phase 3 storage change.
     #[serde(default)]
     pub terms_url: Option<String>,
     #[serde(default)]

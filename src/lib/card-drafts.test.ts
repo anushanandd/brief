@@ -25,14 +25,14 @@ import { defaultFinanceSettings } from './finance-settings'
 describe('card drafts', () => {
   it('finds a term by any field name Rust gives it, and the weakest evidence', () => {
     const drafted = benefitDraft('streaming', [
-      termCheck('cap', 'explained'),
+      termCheck('cap', 'suggested'),
       termCheck('creditMatches', 'observed'),
     ])
-    expect(termFor(drafted, 'cap')?.confidence).toBe('explained')
+    expect(termFor(drafted, 'cap')?.confidence).toBe('suggested')
     expect(termFor(drafted, 'credit')?.confidence).toBe('observed')
-    expect(weakest(drafted.terms)).toBe('explained')
-    expect(weakest([termCheck('cap', 'observed'), termCheck('cadence', 'conflict')])).toBe(
-      'conflict',
+    expect(weakest(drafted.terms)).toBe('suggested')
+    expect(weakest([termCheck('cap', 'observed'), termCheck('cadence', 'unconfirmed')])).toBe(
+      'unconfirmed',
     )
     expect(weakest([])).toBeUndefined()
   })

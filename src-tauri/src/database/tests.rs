@@ -10,6 +10,13 @@ pub(crate) fn database_at(path: &Path, version: u32, state: &FinanceState) {
     drop(database);
     let connection = Connection::open(path).unwrap();
     let run = |sql: &str| connection.execute_batch(sql).unwrap();
+    if (22..26).contains(&version) {
+        run(
+            "CREATE TABLE research_log (id TEXT PRIMARY KEY, query TEXT NOT NULL) STRICT;
+             CREATE TABLE research_sources (url TEXT PRIMARY KEY) STRICT;
+             INSERT INTO research_log VALUES ('one', 'Example card terms');",
+        );
+    }
     if version < 24 {
         run("DROP TABLE investment_summaries;");
     }
@@ -17,7 +24,6 @@ pub(crate) fn database_at(path: &Path, version: u32, state: &FinanceState) {
         run("DROP TABLE theses;");
     }
     if version < 22 {
-        run("DROP TABLE research_log; DROP TABLE research_sources;");
         run("ALTER TABLE graph_facts DROP COLUMN proof_json;");
     }
     if version < 21 {
@@ -66,7 +72,7 @@ pub(crate) fn user_version(path: &Path) -> u32 {
 
 #[test]
 fn intermediate_versions_migrate_to_the_current_schema_and_a_second_open_writes_nothing() {
-    for version in [4, 10, 15, 20, 21, 23] {
+    for version in [4, 10, 15, 20, 21, 23, 25] {
         let path =
             std::env::temp_dir().join(format!("brief-v{version}-{}.sqlite3", uuid::Uuid::new_v4()));
         let mut state = crate::storage::empty_state().unwrap();
@@ -97,7 +103,16 @@ fn intermediate_versions_migrate_to_the_current_schema_and_a_second_open_writes_
             .query_row("SELECT count(*) FROM theses", [], |row| row.get(0))
             .unwrap();
         assert_eq!(theses, 0);
-        assert!(database.research_log().unwrap().is_empty());
+        // The research log is gone, with the queries it held.
+        let research: i64 = database
+            .connection
+            .query_row(
+                "SELECT count(*) FROM sqlite_schema WHERE name LIKE 'research%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(research, 0, "from {version}");
         let start = chrono::NaiveDate::from_ymd_opt(2026, 10, 9).unwrap();
         assert!(database.saved_summary("*", start).unwrap().is_none());
         drop(database);
@@ -438,7 +453,7 @@ fn normalized_store_round_trips_and_rejects_duplicate_entity_ids() {
 }
 
 #[test]
-fn version_twenty_two_keeps_proofs_and_a_research_log() {
+fn version_twenty_two_keeps_proofs() {
     let path =
         std::env::temp_dir().join(format!("brief-migration-{}.sqlite3", uuid::Uuid::new_v4()));
     let mut db = Database::open(&path).unwrap();
@@ -447,7 +462,7 @@ fn version_twenty_two_keeps_proofs_and_a_research_log() {
     // Version 21's facts table, with no proofs and a saved graph hash.
     db.connection
         .execute_batch(
-            "DROP TABLE graph_facts; DROP TABLE research_log; DROP TABLE research_sources;
+            "DROP TABLE graph_facts;
              CREATE TABLE graph_facts (
                subject TEXT NOT NULL, predicate TEXT NOT NULL,
                value_json TEXT NOT NULL CHECK (json_valid(value_json)),
@@ -479,41 +494,6 @@ fn version_twenty_two_keeps_proofs_and_a_research_log() {
     };
     db.write_graph(&graph, &graph.hash().unwrap()).unwrap();
     assert_eq!(db.graph_facts(None).unwrap(), graph.facts);
-
-    // The log shows a query before it runs and what came back after, newest first.
-    let now = chrono::Utc::now();
-    let mut entry = crate::research::Entry::begin(
-        crate::research::EntryKind::Search,
-        "Example Bank checking fee waiver".into(),
-        Some("account:example-bank".into()),
-        now,
-    );
-    db.begin_research(&entry).unwrap();
-    assert_eq!(
-        db.research_log().unwrap()[0].status,
-        crate::research::Status::Running
-    );
-    entry.finish(
-        Ok(vec![crate::providers::exa::Page {
-            url: "https://bank.example/fees".into(),
-            title: "Fees".into(),
-            text: "No monthly fee with $500 in deposits.".into(),
-            published: None,
-        }]),
-        now,
-    );
-    db.finish_research(&entry).unwrap();
-    assert_eq!(db.research_log().unwrap(), vec![entry]);
-    let check = crate::research::checked(None, "https://bank.example/fees", "text", now);
-    db.save_source_check(&check).unwrap();
-    assert_eq!(
-        db.source_check("https://bank.example/fees").unwrap(),
-        Some(check)
-    );
-    // Erasure clears the log with everything else.
-    let mut db = db;
-    db.erase(&crate::storage::empty_state().unwrap()).unwrap();
-    assert!(db.research_log().unwrap().is_empty() && db.source_checks().unwrap().is_empty());
     drop(db);
     fs::remove_file(path).unwrap();
 }

@@ -1,10 +1,9 @@
 //! Drafting a card product's benefit rules. A draft starts from the open card benefits
-//! catalog, is checked against the issuer's published terms, and is confirmed by the credits
-//! that posted on the user's card. `apply` saves clear matches without asking.
+//! catalog and is confirmed by the credits that posted on the user's card. `apply` saves clear
+//! matches without asking.
 pub mod apply;
 pub mod catalog;
 pub mod history;
-pub mod terms;
 #[cfg(test)]
 mod tests;
 
@@ -19,12 +18,8 @@ use crate::insights::benefits::{CardRule, CardRules, SourceKind};
 pub enum Confidence {
     /// A credit that posted on the card matches it.
     Observed,
-    /// A sentence of the issuer's terms states it.
-    Explained,
     /// Only the catalog says so.
     Suggested,
-    /// The terms say something different from the draft.
-    Conflict,
     /// Nothing supports it yet.
     Unconfirmed,
 }
@@ -38,8 +33,6 @@ pub struct TermCheck {
     pub value: String,
     pub confidence: Confidence,
     pub source: Option<SourceKind>,
-    /// The terms sentence it cites, by its index in `CardDraft::sentences`.
-    pub sentence: Option<usize>,
     pub quote: Option<String>,
     pub note: Option<String>,
 }
@@ -80,9 +73,6 @@ pub struct CardDraft {
     /// The rules as drafted, ready to save once approved.
     pub rules: CardRules,
     pub benefits: Vec<BenefitDraft>,
-    /// The issuer's terms, split into the sentences terms cite.
-    pub terms_url: Option<String>,
-    pub sentences: Vec<String>,
     /// Descriptors of credits on the card that no drafted benefit explains.
     pub unmatched_credits: Vec<String>,
     pub warnings: Vec<String>,
@@ -98,14 +88,13 @@ pub struct TermChange {
     pub after: Option<String>,
 }
 
-/// Saved rules whose catalog entry or terms page changed since they were approved.
+/// Saved rules whose catalog entry changed since they were approved.
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(export)]
 pub struct CardRulesChange {
     pub product: String,
     pub name: String,
-    /// What changed: the catalog entry, the terms page, or both.
     pub reason: String,
     pub draft: CardDraft,
     pub changes: Vec<TermChange>,

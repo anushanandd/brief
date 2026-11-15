@@ -28,7 +28,6 @@ import { localDateKey } from '../lib/dates'
 import { errorMessage } from '../lib/errors'
 import { formatCurrency } from '../lib/format'
 import type { FinanceSettings } from '../lib/schema'
-import { ExternalLink } from './external-link'
 import { FilterSelect } from './filter-select'
 import { Check, RefreshCw, Search, X } from './icons'
 import { Button, EmptyState } from './ui'
@@ -101,7 +100,7 @@ export function DraftTable({
                 />
               </td>
               <td>
-                <BenefitEvidence benefit={benefit} sentences={draft.sentences} />
+                <BenefitEvidence benefit={benefit} />
               </td>
               <TermCell term={termFor(benefit, 'cap') ?? termFor(benefit, 'cadence')}>
                 <input
@@ -144,7 +143,7 @@ export function DraftTable({
   )
 }
 
-function BenefitEvidence({ benefit, sentences }: { benefit: BenefitDraft; sentences: string[] }) {
+function BenefitEvidence({ benefit }: { benefit: BenefitDraft }) {
   const level = weakest(benefit.terms)
   return (
     <details className="card-draft-evidence">
@@ -165,11 +164,7 @@ function BenefitEvidence({ benefit, sentences }: { benefit: BenefitDraft; senten
             </span>
             <ConfidenceChip confidence={term.confidence} />
             {term.source ? <small>{sourceLabels[term.source]}</small> : null}
-            {term.sentence != null && sentences[term.sentence] ? (
-              <blockquote>{sentences[term.sentence]}</blockquote>
-            ) : term.quote ? (
-              <blockquote>{term.quote}</blockquote>
-            ) : null}
+            {term.quote ? <blockquote>{term.quote}</blockquote> : null}
             {term.note ? <small>{term.note}</small> : null}
           </li>
         ))}
@@ -186,22 +181,18 @@ function BenefitEvidence({ benefit, sentences }: { benefit: BenefitDraft; senten
 export function CardDraftReview({
   accountId,
   accountName,
-  canReadTerms,
   saved,
   save,
   onDone,
 }: {
   accountId: string
   accountName: string
-  /** Research is on and Exa is connected. */
-  canReadTerms: boolean
   saved?: CardRules
   save: Save
   onDone: () => void
 }) {
   // The rules as they were when the review opened; a later save doesn't restart it.
   const [opened] = useState(saved)
-  const [readTerms, setReadTerms] = useState(false)
   const [catalogId, setCatalogId] = useState(opened?.catalog?.id)
   const [draft, setDraft] = useState<CardDraft>()
   const [edits, setEdits] = useState<DraftEdits>({})
@@ -212,7 +203,7 @@ export function CardDraftReview({
     let current = true
     setLoading(true)
     setError(undefined)
-    draftCardRules({ accountId, catalogId, readTerms })
+    draftCardRules({ accountId, catalogId })
       .then((next) => {
         if (!current) return
         setDraft(next)
@@ -223,7 +214,7 @@ export function CardDraftReview({
     return () => {
       current = false
     }
-  }, [accountId, catalogId, readTerms, opened])
+  }, [accountId, catalogId, opened])
   const edit = useCallback(
     (id: string, change: BenefitEdit) =>
       setEdits((current) => ({ ...current, [id]: { ...current[id], ...change } })),
@@ -304,17 +295,6 @@ export function CardDraftReview({
           onCancel={() => setSearching(false)}
         />
       ) : null}
-      {canReadTerms ? (
-        <label className="settings-inline-check">
-          <input
-            type="checkbox"
-            checked={readTerms}
-            onChange={(event) => setReadTerms(event.target.checked)}
-          />
-          Also read the issuer’s terms page. Only the card’s public name and the page’s address
-          leave the Mac.
-        </label>
-      ) : null}
       {loading ? <EmptyState>Drafting…</EmptyState> : null}
       {draft && !loading ? (
         <>
@@ -329,11 +309,6 @@ export function CardDraftReview({
             <EmptyState>No benefits to draft for this card.</EmptyState>
           )}
           <UnmatchedCredits draft={draft} edits={edits} onEdit={edit} />
-          {draft.termsUrl ? (
-            <p className="card-draft-match">
-              Checked against <ExternalLink href={draft.termsUrl}>the issuer’s terms</ExternalLink>
-            </p>
-          ) : null}
           <div className="chapter-actions">
             <Button
               size="compact"
@@ -478,8 +453,8 @@ export function ChangeList({ change }: { change: CardRulesChange }) {
 }
 
 /**
- * The user's rules whose catalog entry or terms page changed since they saved them. Applying a
- * change keeps the old allowance as the terms before today.
+ * The user's rules whose catalog entry changed since they saved them. Applying a change keeps
+ * the old allowance as the terms before today.
  */
 export function CardRulesChanges({ save }: { save: Save }) {
   const [changes, setChanges] = useState<CardRulesChange[]>()

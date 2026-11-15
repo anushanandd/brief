@@ -8,7 +8,7 @@ import { useFinance } from '../hooks/use-finance'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { useFinanceRefreshState } from '../hooks/use-refresh-finance'
 import { accountDisplayName } from '../lib/account-names'
-import { getCalibration, getChangeLog, getResearch, getSummaryRuns, getSyncRuns } from '../lib/api'
+import { getCalibration, getChangeLog, getSummaryRuns, getSyncRuns } from '../lib/api'
 import { financeSettings } from '../lib/finance-settings'
 import { countOf, formatShare } from '../lib/format'
 import { providerCatalog } from '../lib/providers'
@@ -131,7 +131,6 @@ export function LogsPage() {
   const runtimeLog = useRuntimeLog()
   const syncRuns = useQuery({ queryKey: ['sync-runs', data?.revision], queryFn: getSyncRuns })
   const summaryRuns = useQuery({ queryKey: ['summary-runs'], queryFn: getSummaryRuns })
-  const lookups = useQuery({ queryKey: ['research'], queryFn: getResearch })
   const calibration = useQuery({ queryKey: ['calibration'], queryFn: getCalibration })
   const changeLog = useQuery({ queryKey: ['change-log', data?.revision], queryFn: getChangeLog })
 
@@ -373,40 +372,6 @@ export function LogsPage() {
             {summaryRuns.isError ? <EmptyState>Summary runs are unavailable.</EmptyState> : null}
             {!summaryRuns.isPending && !summaryRuns.isError && !summaryRuns.data?.length ? (
               <EmptyState>No summaries made since launch.</EmptyState>
-            ) : null}
-          </div>
-        </ScrollCueCard>
-        {/* Exactly what Brief sent to Exa, logged before each query ran, newest first. */}
-        <ScrollCueCard className="logs-card" scrollSelector=".activity-log">
-          <SectionHeading title="Web lookups" />
-          <div {...logRegion('Web lookups')}>
-            {lookups.data?.log.map((entry) => (
-              <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={entry.id}>
-                <StatusDot
-                  tone={
-                    entry.status === 'done'
-                      ? 'positive'
-                      : entry.status === 'failed'
-                        ? 'negative'
-                        : 'neutral'
-                  }
-                />
-                <div>
-                  <strong>{entry.query}</strong>
-                  <small>
-                    {entry.status === 'failed'
-                      ? (entry.error ?? 'Failed')
-                      : entry.status === 'running'
-                        ? 'Running'
-                        : countOf(entry.pages.length, 'page')}
-                  </small>
-                </div>
-                <time dateTime={entry.startedAt}>{formatTime(entry.startedAt)}</time>
-              </div>
-            ))}
-            {lookups.isError ? <EmptyState>Web lookups are unavailable.</EmptyState> : null}
-            {!lookups.isPending && !lookups.isError && !lookups.data?.log.length ? (
-              <EmptyState>Nothing looked up on the web.</EmptyState>
             ) : null}
           </div>
         </ScrollCueCard>

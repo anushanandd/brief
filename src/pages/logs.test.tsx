@@ -16,7 +16,7 @@ vi.mock('../hooks/use-finance', () => ({
       snaptrade: true,
       alpaca: true,
       alphaVantage: true,
-      sec: true,
+      sec: false,
     },
     marketSymbols: ['TEST'],
   }),
@@ -48,7 +48,7 @@ it('reads current market status and observation times and counts every configure
   const html = renderLogs()
   expect(html).toContain('<strong>Live</strong>')
   expect(html).toContain('dateTime="2026-09-18T20:00:00Z"')
-  expect(html.replaceAll('<!-- -->', '')).toContain('5 of 6 configured')
+  expect(html.replaceAll('<!-- -->', '')).toContain('4 of 5 configured')
 })
 
 it('keeps a failed market refresh visible when saved observations remain available', () => {
@@ -153,7 +153,7 @@ it('makes every Diagnostics list a keyboard region whose rows J and K step throu
   // Each provider, the quoted symbol, and the refresh are rows.
   expect(html).toMatch(/class="market-data-row" data-keyboard-row="true" tabindex="-1"/i)
   expect(html).toMatch(/class="activity-log-row" data-keyboard-row="true" tabindex="-1"/i)
-  expect(html.match(/class="connection-row" data-keyboard-row="true"/g)).toHaveLength(6)
+  expect(html.match(/class="connection-row" data-keyboard-row="true"/g)).toHaveLength(5)
 })
 
 it('names each detector whose precision Diagnostics shows, and says when there is none', () => {

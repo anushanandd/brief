@@ -22,9 +22,7 @@ export function cardsWithoutRules(data: FinanceSnapshot) {
 
 export const confidenceLabels: Record<Confidence, { label: string; detail: string }> = {
   observed: { label: 'Observed', detail: 'A credit on your card matches it' },
-  explained: { label: 'Explained', detail: "A sentence of the issuer's terms states it" },
   suggested: { label: 'Suggested', detail: 'Only the catalog says so' },
-  conflict: { label: 'Conflict', detail: 'The terms say something different' },
   unconfirmed: { label: 'Unconfirmed', detail: 'Nothing supports it yet' },
 }
 
@@ -63,7 +61,7 @@ export function termFor(benefit: BenefitDraft, column: keyof typeof fieldNames) 
 
 /** The weakest evidence among a benefit's terms, for its row. */
 export function weakest(terms: readonly TermCheck[]): Confidence | undefined {
-  const order: Confidence[] = ['conflict', 'unconfirmed', 'suggested', 'explained', 'observed']
+  const order: Confidence[] = ['unconfirmed', 'suggested', 'observed']
   return order.find((level) => terms.some(({ confidence }) => confidence === level))
 }
 

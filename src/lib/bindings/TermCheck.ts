@@ -6,8 +6,4 @@ import type { SourceKind } from "./SourceKind";
  * One drafted term of a benefit (its cap, cadence, reset, merchants, or credit wording) and
  * what it rests on.
  */
-export type TermCheck = { field: string, value: string, confidence: Confidence, source: SourceKind | null, 
-/**
- * The terms sentence it cites, by its index in `CardDraft::sentences`.
- */
-sentence: number | null, quote: string | null, note: string | null, };
+export type TermCheck = { field: string, value: string, confidence: Confidence, source: SourceKind | null, quote: string | null, note: string | null, };

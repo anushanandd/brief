@@ -131,7 +131,7 @@ pub struct FinanceSettings {
     /// is saved as your category, so here it only feeds the detector's precision.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub category_reviews: BTreeMap<String, CategoryReview>,
-    /// Opt-in web lookups of a card's published terms, each logged, only when on.
+    // shortcut: unused since Exa was removed; drop with the Phase 3 storage change.
     pub research: bool,
     /// Unused since Ollama was removed; it goes with Phase 3's storage changes.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -821,8 +821,7 @@ impl FinanceSettings {
         if next.trip_companions.is_empty() {
             next.trip_companions = imported.trip_companions;
         }
-        // Reviews join by id; research stays as set here, since turning it on is a choice about
-        // this Mac's queries.
+        // Reviews join by id.
         for (id, review) in imported.category_reviews {
             next.category_reviews.entry(id).or_insert(review);
         }

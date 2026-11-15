@@ -3,4 +3,4 @@
 /**
  * How sure a drafted term is, by its best evidence.
  */
-export type Confidence = "observed" | "explained" | "suggested" | "conflict" | "unconfirmed";
+export type Confidence = "observed" | "suggested" | "unconfirmed";

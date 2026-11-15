@@ -10,7 +10,6 @@ import type { CardRulesChange } from './bindings/CardRulesChange'
 import type { CatalogCard } from './bindings/CatalogCard'
 import type { DocumentImport as NativeDocumentImport } from './bindings/DocumentImport'
 import type { PeriodAsOf } from './bindings/PeriodAsOf'
-import type { ResearchState } from './bindings/ResearchState'
 import { previewFinanceSettings } from './finance-settings'
 import { ledgerCallSchema, type LedgerCall } from './ledger-view'
 import { fromRust } from './rust-json'
@@ -76,7 +75,7 @@ export async function openExternalUrl(url: string): Promise<void> {
   window.open(safeUrl, '_blank', 'noopener,noreferrer')
 }
 
-export type CredentialProvider = 'plaid' | 'snaptrade' | 'alpaca' | 'alphavantage' | 'sec' | 'exa'
+export type CredentialProvider = 'plaid' | 'snaptrade' | 'alpaca' | 'alphavantage' | 'sec'
 
 export async function getSyncRuns(): Promise<SyncRun[]> {
   if (!isTauri()) return []
@@ -321,13 +320,12 @@ export async function catalogBrands(): Promise<string[]> {
 export async function draftCardRules(request: {
   accountId: string
   catalogId?: string
-  readTerms: boolean
 }): Promise<CardDraft> {
   if (!isTauri()) throw new Error('Desktop app only')
   return invoke<CardDraft>('draft_card_rules', request)
 }
 
-/** Saved card rules whose catalog entry or terms page changed since they were approved. */
+/** Saved card rules whose catalog entry changed since they were approved. */
 export async function recheckCardRules(): Promise<CardRulesChange[]> {
   if (!isTauri()) throw new Error('Desktop app only')
   return invoke<CardRulesChange[]>('recheck_card_rules')
@@ -340,12 +338,6 @@ export async function chooseCatalogCard(
 ): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
   return invoke<FinanceSnapshot>('choose_catalog_card', { accountId, catalogId })
-}
-
-/** Whether web lookups are on and connected, and what was looked up; the preview has none. */
-export async function getResearch(): Promise<ResearchState> {
-  if (!isTauri()) return { enabled: false, connected: false, log: [] }
-  return invoke<ResearchState>('get_research')
 }
 
 /** Reads and checks a statement file. Rust keeps the bytes until `importStatement`. */
@@ -526,7 +518,6 @@ export async function getIntegrationStatus(): Promise<IntegrationStatus> {
       alpaca: false,
       alphaVantage: false,
       sec: false,
-      exa: false,
     }
   return invoke<IntegrationStatus>('get_integration_status')
 }

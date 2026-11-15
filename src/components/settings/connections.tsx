@@ -90,10 +90,6 @@ const providerDetails: Record<
     description: 'Sector comparison and company filings; the SEC requires a contact email',
     fields: [{ key: 'clientId', label: 'Contact email', placeholder: 'you@example.com' }],
   },
-  exa: {
-    description: 'Reads card issuers’ published terms, only when looking up terms is on',
-    fields: [{ key: 'clientId', label: 'API key', placeholder: 'Exa API key', secret: true }],
-  },
 }
 
 const providers: ProviderDefinition[] = providerCatalog.map((provider) => ({
@@ -316,7 +312,6 @@ export function ConnectionsSection() {
       </SettingsCard>
       <PlaidOptions configured={configured('plaid')} />
       <AppleWalletOption />
-      <ResearchOption />
       <CardCatalogOption />
     </SettingsSection>
   )
@@ -345,37 +340,6 @@ function CardCatalogOption() {
                 toast.error('Could not save the catalog setting', {
                   description: errorMessage(error),
                 }),
-            )
-          }
-        />
-      </SettingsRow>
-    </SettingsCard>
-  )
-}
-
-/**
- * Opt-in lookups of card terms, off by default: even a card's name reveals something about
- * you. Every query is logged before and after it runs, in the research log Storage shows.
- */
-function ResearchOption() {
-  const finance = useFinance()
-  const { updateSettings } = useFinanceEdits()
-  const settings = financeSettings(finance.data)
-  return (
-    <SettingsCard>
-      <SettingsRow
-        id="research"
-        title="Look up card terms online"
-        description="Reads a card issuer’s published terms through Exa, by the card’s public name only. Each query is logged."
-      >
-        <SettingsSwitch
-          labelledBy="research-title"
-          describedBy="research-description"
-          checked={settings.research}
-          disabled={!isTauri() || Boolean(finance.data?.recovery)}
-          onCheckedChange={(checked) =>
-            void updateSettings((current) => ({ ...current, research: checked })).catch((error) =>
-              toast.error('Could not save research', { description: errorMessage(error) }),
             )
           }
         />

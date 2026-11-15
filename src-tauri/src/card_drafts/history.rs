@@ -117,7 +117,7 @@ pub fn observe(draft: &mut CardDraft, transactions: &[Transaction]) {
         benefit.credits_seen = credits.len();
         for term in &mut benefit.terms {
             let observed = term.field == CREDIT || (term.field == "cap" && full);
-            if observed && term.confidence != Confidence::Conflict {
+            if observed {
                 term.confidence = Confidence::Observed;
                 term.source = Some(SourceKind::History);
                 term.quote = Some(example.clone());
@@ -170,7 +170,6 @@ pub fn observe(draft: &mut CardDraft, transactions: &[Transaction]) {
                 value: domain,
                 confidence: Confidence::Observed,
                 source: Some(SourceKind::History),
-                sentence: None,
                 quote: Some(merchant),
                 note: Some("From where you used it on this card.".into()),
             });

@@ -6,26 +6,26 @@ import { ChangeList, ConfidenceChip, DraftTable, UnmatchedCredits } from './card
 
 const drafted = cardDraft([
   benefitDraft('streaming', [
-    termCheck('cap', 'explained', { sentence: 0, source: 'terms' }),
     termCheck('alignment', 'suggested'),
     termCheck('creditMatches', 'observed', {
       source: 'history',
       quote: 'TEST BANK STREAMING CREDIT',
     }),
   ]),
-  benefitDraft('dining', [termCheck('cap', 'conflict', { note: 'The terms say $25' })], false),
+  benefitDraft(
+    'dining',
+    [termCheck('cap', 'unconfirmed', { note: 'No credit has posted yet' })],
+    false,
+  ),
 ])
 
-it('labels each drafted term by its evidence and cites the sentence or credit behind it', () => {
+it('labels each drafted term by its evidence and cites the credit behind it', () => {
   const html = renderToStaticMarkup(<DraftTable draft={drafted} edits={{}} onEdit={() => {}} />)
-  for (const label of ['Explained', 'Suggested', 'Observed', 'Conflict']) {
+  for (const label of ['Suggested', 'Observed', 'Unconfirmed']) {
     expect(html).toContain(`>${label}</span>`)
   }
-  expect(html).toContain(
-    '<blockquote>You get up to $10 each month in streaming credits.</blockquote>',
-  )
   expect(html).toContain('<blockquote>TEST BANK STREAMING CREDIT</blockquote>')
-  expect(html).toContain('The terms say $25')
+  expect(html).toContain('No credit has posted yet')
   // A benefit the draft leaves out reads as left out, unchecked.
   expect(html).toMatch(/<tr[^>]*class="is-left-out"/)
   expect(html).toMatch(/aria-label="Keep streaming" checked=""/)

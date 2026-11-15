@@ -37,11 +37,7 @@ issuerCreditMatches: string | null, benefits: Array<CardRule>,
 /**
  * The catalog entry these rules were drafted from, if any.
  */
-catalog: CatalogRef | null, 
-/**
- * The issuer's terms page these rules were checked against, and its text's hash then.
- */
-termsUrl: string | null, termsHash: string | null, 
+catalog: CatalogRef | null, termsUrl: string | null, termsHash: string | null, 
 /**
  * Whether Brief applied these rules from the catalog, which it keeps current, or the user
  * edited or imported them, which it never changes.

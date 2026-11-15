@@ -1,22 +1,14 @@
 //! Card rules through IPC. The catalog is downloaded whole, at most daily, so no request names
 //! a card. After each refresh and at launch, clear catalog matches are applied in the
-//! background; a terms page is read only with research on and logged like any research query.
-use std::collections::BTreeMap;
-
+//! background.
 use serde_json::Value;
 use tauri::{AppHandle, Emitter, Manager, State};
 
-use super::research::{begin, enabled, finish};
 use crate::{
-    card_drafts::{self, catalog, history, terms, CardDraft, CardRulesChange, CatalogCard},
+    card_drafts::{self, catalog, history, CardDraft, CardRulesChange, CatalogCard},
     finance_contract::{Account, Transaction},
     insights::benefits::{CardRules, RuleOrigin},
-    providers::{
-        card_catalog::CatalogCardEntry,
-        exa::Page,
-        reading::{self, Task},
-    },
-    research::{self, Entry, EntryKind},
+    providers::card_catalog::CatalogCardEntry,
     AppState,
 };
 
@@ -48,141 +40,23 @@ fn saved(state: &State<'_, AppState>) -> Result<(Vec<Account>, Vec<Transaction>)
     ))
 }
 
-/// Whether a terms page may be read now, or why not.
-fn can_read_terms(state: &State<'_, AppState>) -> Result<(), String> {
-    enabled(state)?;
-    if state.providers.integration_status()?.exa {
-        Ok(())
-    } else {
-        Err("Connect Exa in Settings to check the issuer's terms".into())
-    }
-}
-
-/// Reads a card's terms page and logs it; the log keeps how the page began.
-async fn read_terms_page(
-    app: &AppHandle,
-    state: &State<'_, AppState>,
-    card: &CatalogCardEntry,
-) -> Result<Page, String> {
-    let now = chrono::Utc::now();
-    let url = match card.url.clone().filter(|url| url.starts_with("https://")) {
-        Some(url) => url,
-        None => {
-            let query = format!(
-                "{} card benefits, annual fee, and statement credit terms",
-                card.name
-            );
-            let mut entry =
-                Entry::begin(EntryKind::Search, query.clone(), Some(card.id.clone()), now);
-            begin(app, state, &entry)?;
-            let result = state.providers.exa_search(&query).await;
-            let url = result
-                .as_ref()
-                .ok()
-                .and_then(|pages| pages.first())
-                .map(|page| page.url.clone());
-            entry.finish(result, chrono::Utc::now());
-            finish(app, state, &entry)?;
-            url.ok_or("No page with the card's terms was found")?
-        }
-    };
-    let mut entry = Entry::begin(EntryKind::Recheck, url.clone(), Some(card.id.clone()), now);
-    begin(app, state, &entry)?;
-    let result = state.providers.exa_terms_page(&url).await;
-    if let Ok(page) = &result {
-        let storage = state.storage()?;
-        let check = research::checked(storage.source_check(&url)?.as_ref(), &url, &page.text, now);
-        storage.save_source_check(&check)?;
-    }
-    entry.finish(
-        result
-            .as_ref()
-            .map(|page| {
-                vec![Page {
-                    text: page.text.chars().take(400).collect(),
-                    ..page.clone()
-                }]
-            })
-            .map_err(Clone::clone),
-        chrono::Utc::now(),
-    );
-    finish(app, state, &entry)?;
-    result
-}
-
-/// Sentence picks from a model for the benefits the rule couldn't find evidence for. A model
-/// that isn't available, or an answer that doesn't read, leaves the rule's result as it is.
-async fn model_picks(
-    state: &State<'_, AppState>,
-    draft: &CardDraft,
-    text: &str,
-) -> BTreeMap<String, Vec<usize>> {
-    let sentences = reading::sentences(text);
-    let offered = terms::candidates(&sentences);
-    let shown = offered
-        .iter()
-        .map(|index| sentences[*index].clone())
-        .collect::<Vec<_>>();
-    let mut picks = BTreeMap::new();
-    for rule in &draft.rules.benefits {
-        if terms::evidence(rule, &sentences, 0..sentences.len()).is_some() || shown.is_empty() {
-            continue;
-        }
-        let input = reading::numbered(
-            &format!("Benefit: {}", rule.name),
-            &shown,
-            reading::APPLE_CHARS,
-        );
-        let Ok((reply, _)) = state.providers.read_text(Task::Benefit, input).await else {
-            continue;
-        };
-        let listed = reading::listed(&reply, &shown);
-        let indexes = listed
-            .iter()
-            .filter_map(|sentence| sentences.iter().position(|candidate| candidate == sentence))
-            .collect::<Vec<_>>();
-        picks.insert(rule.id.clone(), terms::verified(&sentences, &indexes));
-    }
-    picks
-}
-
-async fn drafted(
-    app: &AppHandle,
-    state: &State<'_, AppState>,
+fn drafted(
     card: &CatalogCardEntry,
     account: Option<&Account>,
     transactions: &[Transaction],
-    read_terms: bool,
-) -> Result<CardDraft, String> {
-    let today = chrono::Local::now().date_naive();
-    let mut draft = catalog::draft(card, account, today);
+) -> CardDraft {
+    let mut draft = catalog::draft(card, account, chrono::Local::now().date_naive());
     history::observe(&mut draft, transactions);
-    if read_terms {
-        match can_read_terms(state) {
-            Err(why) => draft.warnings.push(why),
-            Ok(()) => match read_terms_page(app, state, card).await {
-                Err(error) => draft
-                    .warnings
-                    .push(format!("The terms couldn't be read: {error}")),
-                Ok(page) => {
-                    let picks = model_picks(state, &draft, &page.text).await;
-                    terms::apply(&mut draft, &page.url, &page.text, &picks, today);
-                }
-            },
-        }
-    }
-    Ok(draft)
+    draft
 }
 
 /// Rules drafted for a credit card from its catalog entry (the best match unless one is
-/// given), its posted credits, and, when asked and research allows, the issuer's terms.
+/// given) and its posted credits.
 #[tauri::command]
 pub(crate) async fn draft_card_rules(
-    app: AppHandle,
     state: State<'_, AppState>,
     account_id: String,
     catalog_id: Option<String>,
-    read_terms: bool,
 ) -> Result<CardDraft, String> {
     let (accounts, transactions) = saved(&state)?;
     let account = accounts
@@ -198,7 +72,7 @@ pub(crate) async fn draft_card_rules(
     let Some(card) = chosen else {
         return Err("No catalog card matches this account; search the catalog for it".into());
     };
-    let mut draft = drafted(&app, &state, card, Some(account), &transactions, read_terms).await?;
+    let mut draft = drafted(card, Some(account), &transactions);
     draft.candidates = candidates
         .into_iter()
         .filter(|candidate| candidate.id != card.id)
@@ -301,11 +175,10 @@ fn account_for<'a>(
     accounts.iter().find(|account| account.id == id)
 }
 
-/// Saved rules whose catalog entry changed, or whose terms page changed when it was due for a
-/// read, each with a fresh draft and its differences from what was approved.
+/// Saved rules whose catalog entry changed, each with a fresh draft and its differences from
+/// what was approved.
 #[tauri::command]
 pub(crate) async fn recheck_card_rules(
-    app: AppHandle,
     state: State<'_, AppState>,
 ) -> Result<Vec<CardRulesChange>, String> {
     let saved_rules = state.storage()?.settings().card_rules.clone();
@@ -314,8 +187,6 @@ pub(crate) async fn recheck_card_rules(
     }
     let (accounts, transactions) = saved(&state)?;
     let catalog = state.providers.card_catalog(true).await?;
-    let can_read = can_read_terms(&state).is_ok();
-    let now = chrono::Utc::now();
     let mut changes = Vec::new();
     // Rules Brief applied follow the catalog by themselves; only the user's are rechecked.
     for rules in saved_rules
@@ -328,34 +199,16 @@ pub(crate) async fn recheck_card_rules(
         let Some(card) = catalog.card(&reference.id) else {
             continue;
         };
-        let mut reasons = Vec::new();
-        if card.hash != reference.hash {
-            reasons.push("the catalog entry");
-        }
-        let due = match &rules.terms_url {
-            Some(url) if can_read => {
-                research::due(state.storage()?.source_check(url)?.as_ref(), now)
-            }
-            _ => false,
-        };
-        let account = account_for(&rules, &accounts, &state);
-        let mut draft = drafted(&app, &state, card, account, &transactions, due).await?;
-        if due && draft.rules.terms_hash.is_some() && draft.rules.terms_hash != rules.terms_hash {
-            reasons.push("the terms page");
-        }
-        if reasons.is_empty() {
+        if card.hash == reference.hash {
             continue;
         }
+        let account = account_for(&rules, &accounts, &state);
+        let mut draft = drafted(card, account, &transactions);
         draft.candidates = Vec::new();
         changes.push(CardRulesChange {
             product: rules.product.clone(),
             name: rules.name.clone(),
-            reason: match reasons.as_slice() {
-                [_, _] => "The catalog entry and the issuer's terms page changed since you saved these rules.",
-                ["the terms page"] => "The issuer's terms page changed since you saved these rules.",
-                _ => "The catalog entry changed since you saved these rules.",
-            }
-            .into(),
+            reason: "The catalog entry changed since you saved these rules.".into(),
             changes: card_drafts::diff(&rules, &draft.rules),
             draft,
         });

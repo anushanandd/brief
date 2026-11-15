@@ -3,10 +3,6 @@ import type { CardDraft } from "./CardDraft";
 import type { TermChange } from "./TermChange";
 
 /**
- * Saved rules whose catalog entry or terms page changed since they were approved.
+ * Saved rules whose catalog entry changed since they were approved.
  */
-export type CardRulesChange = { product: string, name: string, 
-/**
- * What changed: the catalog entry, the terms page, or both.
- */
-reason: string, draft: CardDraft, changes: Array<TermChange>, };
+export type CardRulesChange = { product: string, name: string, reason: string, draft: CardDraft, changes: Array<TermChange>, };

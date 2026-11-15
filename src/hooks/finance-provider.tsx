@@ -161,7 +161,6 @@ const noIntegrations = {
   alpaca: false,
   alphaVantage: false,
   sec: false,
-  exa: false,
 }
 
 export type FinanceState = ReturnType<typeof useBaseFinanceState>

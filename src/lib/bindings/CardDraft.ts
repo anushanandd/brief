@@ -16,10 +16,6 @@ catalog: CatalogCard | null, candidates: Array<CatalogCard>,
  */
 rules: CardRules, benefits: Array<BenefitDraft>, 
 /**
- * The issuer's terms, split into the sentences terms cite.
- */
-termsUrl: string | null, sentences: Array<string>, 
-/**
  * Descriptors of credits on the card that no drafted benefit explains.
  */
 unmatchedCredits: Array<string>, warnings: Array<string>, };

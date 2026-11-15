@@ -36,10 +36,6 @@
   border-color: var(--text-secondary);
   color: var(--text-primary);
 }
-.tier-conflict {
-  border-color: color-mix(in oklab, var(--warning) 60%, transparent);
-  color: var(--warning);
-}
 .tier-unconfirmed {
   border-style: dotted;
   color: var(--text-tertiary);

@@ -24,7 +24,6 @@ mod changesets;
 mod graph;
 mod journal;
 mod migrations;
-mod research;
 mod summaries;
 
 pub use bank_statements::{BankStatement, StatementCheck};
@@ -46,7 +45,7 @@ const COLLECTIONS: [&str; 11] = [
     "brokeragePerformance",
     "possibleDuplicateAccounts",
 ];
-pub(crate) const DATABASE_SCHEMA_VERSION: u32 = 25;
+pub(crate) const DATABASE_SCHEMA_VERSION: u32 = 26;
 const DATABASE_APPLICATION_ID: u32 = 0x4252_4946; // BRIF
 
 pub struct Database {
@@ -567,7 +566,6 @@ impl Database {
             .execute("DELETE FROM market_events", [])
             .map_err(db_error)?;
         Self::clear_graph(&transaction)?;
-        Self::clear_research(&transaction)?;
         Self::clear_summaries(&transaction)?;
         transaction
             .execute("DELETE FROM bank_statements", [])

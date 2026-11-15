@@ -57,16 +57,6 @@ export const settingsSections: readonly SettingsSection[] = [
         keywords: 'filings 8-k 6-k sec edgar contact email news events sector industry',
       },
       {
-        id: 'connection-exa',
-        title: 'Exa',
-        keywords: 'research web search card terms api key keychain',
-      },
-      {
-        id: 'research',
-        title: 'Look up card terms online',
-        keywords: 'research exa web search card issuer terms benefits log queries',
-      },
-      {
         id: 'card-catalog',
         title: 'Card benefits catalog',
         keywords: 'card benefits catalog credits rules download github open',

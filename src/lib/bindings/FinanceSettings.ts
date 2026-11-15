@@ -125,11 +125,7 @@ dataFolder?: DataFolder,
  * suggested for that transaction again and counts against it for the merchant; a kept one
  * is saved as your category, so here it only feeds the detector's precision.
  */
-categoryReviews?: { [key in string]: CategoryReview }, 
-/**
- * Opt-in web lookups of a card's published terms, each logged, only when on.
- */
-research: boolean, 
+categoryReviews?: { [key in string]: CategoryReview }, research: boolean, 
 /**
  * Unused since Ollama was removed; it goes with Phase 3's storage changes.
  */

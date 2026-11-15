@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { useQueryClient } from '@tanstack/react-query'
 import { open } from '@tauri-apps/plugin-dialog'
 import { useMemo, useRef, useState } from 'react'
 import { toast } from 'sonner'
@@ -10,7 +10,7 @@ import { percent, secureWebsite } from '../../lib/account-details'
 import { accountDisplayName } from '../../lib/account-names'
 import { accountStartDate } from '../../lib/account-start-dates'
 import { useRegisterActions, type AppAction } from '../../lib/action-system'
-import { chooseCatalogCard, getResearch, readCardRules, saveAccountLink } from '../../lib/api'
+import { chooseCatalogCard, readCardRules, saveAccountLink } from '../../lib/api'
 import type { CardRules } from '../../lib/bindings/CardRules'
 import { cardsWithoutRules } from '../../lib/card-drafts'
 import { snapshotToday } from '../../lib/dates'
@@ -167,7 +167,6 @@ function CardRulesList({ data, settings, save }: SectionProps) {
   const [choosing, setChoosing] = useState(false)
   const [drafting, setDrafting] = useState<{ accountId: string; saved?: CardRules }>()
   const review = (accountId: string, saved?: CardRules) => setDrafting({ accountId, saved })
-  const research = useQuery({ queryKey: ['research'], queryFn: getResearch })
   const rules = settings.cardRules ?? []
   const uncovered = cardsWithoutRules(data)
   const names = settings.accountNames
@@ -386,7 +385,6 @@ function CardRulesList({ data, settings, save }: SectionProps) {
           key={`${drafting.accountId}:${drafting.saved?.product ?? ''}`}
           accountId={drafting.accountId}
           accountName={nameOf(drafting.accountId)}
-          canReadTerms={Boolean(research.data?.enabled && research.data.connected)}
           saved={drafting.saved}
           save={save}
           onDone={() => setDrafting(undefined)}

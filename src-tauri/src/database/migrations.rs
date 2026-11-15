@@ -148,7 +148,6 @@ fn migrate_schema(connection: &Connection, version: u32) -> Result<(), String> {
             .and_then(|()| connection.execute_batch(super::blobs::SCHEMA))
             .and_then(|()| connection.execute_batch(super::changesets::SCHEMA))
             .and_then(|()| connection.execute_batch(super::graph::SCHEMA))
-            .and_then(|()| connection.execute_batch(super::research::SCHEMA))
             .and_then(|()| connection.execute_batch(THESES_SCHEMA))
             .and_then(|()| connection.execute_batch(super::summaries::SCHEMA))
             .map_err(db_error);
@@ -335,10 +334,10 @@ fn migrate_schema(connection: &Connection, version: u32) -> Result<(), String> {
             )
             .map_err(db_error)?;
     }
-    // Version 22 also keeps the log of research queries, which the user sees before and after
-    // each one runs.
+    // Version 22 also kept a log of web research; version 26 drops it, since its queries named
+    // the user's cards.
     connection
-        .execute_batch(super::research::SCHEMA)
+        .execute_batch("DROP TABLE IF EXISTS research_log; DROP TABLE IF EXISTS research_sources;")
         .map_err(db_error)?;
     // Version 23 kept investment theses. The feature is gone; the table stays so a database
     // that holds them keeps them, and nothing reads or writes it.

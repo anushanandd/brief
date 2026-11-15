@@ -35,7 +35,6 @@ mod providers;
 mod quality;
 mod reading_job;
 mod refresh;
-mod research;
 mod search;
 mod session;
 mod settings;
@@ -315,7 +314,6 @@ pub fn run() {
             document_commands::add_document_history,
             finance::export_finance_csv,
             place_commands::find_places,
-            commands::research::get_research,
             commands::card_rules::search_card_catalog,
             commands::card_rules::catalog_brands,
             commands::card_rules::draft_card_rules,

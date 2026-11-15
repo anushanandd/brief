@@ -71,7 +71,6 @@ export const termCheck = (
   value: '',
   confidence,
   source: 'catalog',
-  sentence: null,
   quote: null,
   note: null,
   ...fields,
@@ -101,8 +100,6 @@ export function cardDraft(
     candidates: [],
     rules,
     benefits,
-    termsUrl: null,
-    sentences: ['You get up to $10 each month in streaming credits.'],
     unmatchedCredits: ['TEST BANK STREAMING CREDIT'],
     warnings: [],
   }

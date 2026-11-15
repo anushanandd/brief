@@ -511,7 +511,7 @@ public func briefFoundationModelRead(
           to: inputText, generating: SentencePick.self, options: options
         ).content
         result = json(["sentence": pick.sentence])
-      case "guidance", "benefit":
+      case "guidance":
         let picks = try await session.respond(
           to: inputText, generating: SentencePicks.self, options: options
         ).content

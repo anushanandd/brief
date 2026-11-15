@@ -25,7 +25,6 @@ pub mod card_catalog;
 pub mod closes;
 pub mod corporate_actions;
 pub mod earnings;
-pub mod exa;
 pub mod expectations;
 pub mod feeds;
 pub mod fundamentals;
@@ -71,7 +70,6 @@ const SNAPTRADE_CREDENTIALS_KEY: &str = "snaptrade-credentials";
 const ALPACA_CREDENTIALS_KEY: &str = "alpaca-credentials";
 const ALPHA_VANTAGE_CREDENTIALS_KEY: &str = "alpha-vantage-credentials";
 const SEC_CONTACT_KEY: &str = "sec-contact";
-const EXA_CREDENTIALS_KEY: &str = "exa-credentials";
 const PLAID_ITEM_CONCURRENCY: usize = 4;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -84,7 +82,6 @@ pub struct IntegrationStatus {
     pub alpaca: bool,
     pub alpha_vantage: bool,
     pub sec: bool,
-    pub exa: bool,
 }
 
 #[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]

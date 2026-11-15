@@ -153,6 +153,7 @@ const financeSettingsShape = {
   categoryReviews: z
     .record(z.string(), z.object({ category: z.string(), accepted: z.boolean() }))
     .optional(),
+  // shortcut: unused since Exa was removed; drop with the Phase 3 storage change.
   research: z.boolean().default(false),
   /** Unused since Ollama was removed; it goes with Phase 3's storage changes. */
   localModel: z.string().max(100).optional(),
