@@ -60,9 +60,8 @@ pub async fn sync(
         if !force && !due(&check.listed_at, LIST_EVERY) {
             continue;
         }
-        // Adding statements fetches two years of them, so the first check only starts the clock.
         let mut requested_at = None;
-        if check.requested_at.is_none() {
+        if starts_clock(check.requested_at.as_deref()) {
             requested_at = Some(now.to_rfc3339());
         } else if requests_refresh(check.requested_at.as_deref().and_then(parsed), now, force) {
             let today = now.date_naive();
@@ -160,6 +159,12 @@ fn requests_refresh(requested_at: Option<DateTime<Utc>>, now: DateTime<Utc>, for
     force && requested_at.is_some_and(|at| now - at >= REQUEST_EVERY)
 }
 
+/// Whether a check only starts the monthly clock: adding statements fetches two years of them,
+/// so the first check waits a month, as does one whose last ask can't be read.
+fn starts_clock(requested_at: Option<&str>) -> bool {
+    requested_at.and_then(parsed).is_none()
+}
+
 fn record(
     state: &AppState,
     item_id: &str,
@@ -203,5 +208,12 @@ mod tests {
         assert!(!requests_refresh(Some(now - Duration::days(10)), now, true));
         // A connection never asked before only starts the clock.
         assert!(!requests_refresh(None, now, true));
+    }
+
+    #[test]
+    fn an_unreadable_last_ask_starts_the_clock_again() {
+        assert!(starts_clock(None));
+        assert!(starts_clock(Some("not a date")));
+        assert!(!starts_clock(Some("2026-06-01T12:00:00Z")));
     }
 }
