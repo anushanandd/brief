@@ -443,6 +443,10 @@ pub(super) fn combined_performance(accounts: &[Performance]) -> Vec<Performance>
             .collect::<Option<Vec<_>>>()
             .map(|values| values.into_iter().sum::<Decimal>())
     };
+    let sorted = accounts
+        .iter()
+        .map(|account| account.points.is_sorted_by_key(|point| &point.date))
+        .collect::<Vec<_>>();
     let mut previous_value: Option<Decimal> = None;
     let points = dates
         .into_iter()
@@ -451,12 +455,9 @@ pub(super) fn combined_performance(accounts: &[Performance]) -> Vec<Performance>
             // point has no market change of its own; the account's next point reports it.
             let account_points = accounts
                 .iter()
-                .filter_map(|account| {
-                    account
-                        .points
-                        .iter()
-                        .rev()
-                        .find(|point| point.date <= date)
+                .zip(&sorted)
+                .filter_map(|(account, &sorted)| {
+                    last_on_or_before(&account.points, sorted, &date, |point| &point.date)
                         .map(|point| (point, point.date == date))
                 })
                 .collect::<Vec<_>>();

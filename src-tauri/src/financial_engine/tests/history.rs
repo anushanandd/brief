@@ -265,6 +265,26 @@ fn totals_start_at_the_earliest_account_history() {
 }
 
 #[test]
+fn the_last_point_on_or_before_a_date_is_the_one_a_reverse_scan_finds() {
+    let sorted = ["2026-09-01", "2026-09-03", "2026-09-03", "2026-09-05"];
+    let unsorted = ["2026-09-03", "2026-09-01", "2026-09-05", "2026-09-02"];
+    for points in [sorted, unsorted] {
+        let in_order = points.is_sorted();
+        for day in 0..7 {
+            let date = format!("2026-09-{day:02}");
+            let found = last_on_or_before(&points, in_order, &date, |point| point)
+                .map(|point| point as *const &str);
+            let scanned = points
+                .iter()
+                .rev()
+                .find(|point| **point <= date.as_str())
+                .map(|point| point as *const &str);
+            assert_eq!(found, scanned, "{date}");
+        }
+    }
+}
+
+#[test]
 fn combined_brokerages_start_at_the_earliest_account_history() {
     let older = series(
         "snaptrade:older",

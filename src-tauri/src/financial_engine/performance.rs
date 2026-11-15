@@ -46,13 +46,9 @@ pub(super) fn investment_performance(
             )
         })
         .collect::<BTreeMap<_, _>>();
+    // `parse_points` sorts each ticker's closes by date.
     let close = |ticker: &str, date: &str| {
-        closes
-            .get(ticker)?
-            .iter()
-            .rev()
-            .find(|(day, _)| day.as_str() <= date)
-            .map(|(_, price)| *price)
+        last_on_or_before(closes.get(ticker)?, true, date, |(day, _)| day).map(|(_, price)| *price)
     };
     for account in &parsed.snap_accounts {
         let Some(valuation) = parsed.calculated_snap_values.get(&account.id).copied() else {

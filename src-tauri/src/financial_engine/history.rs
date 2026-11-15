@@ -46,6 +46,21 @@ pub(super) fn holding_history(
         .collect()
 }
 
+/// The last of `points` dated on or before `date`, as a scan back from the end finds it; a binary
+/// search when `sorted` says the points are in date order.
+pub(super) fn last_on_or_before<'a, T>(
+    points: &'a [T],
+    sorted: bool,
+    date: &str,
+    day: impl Fn(&T) -> &str,
+) -> Option<&'a T> {
+    if sorted {
+        points[..points.partition_point(|point| day(point) <= date)].last()
+    } else {
+        points.iter().rev().find(|point| day(point) <= date)
+    }
+}
+
 /// Sums value histories from the earliest date any of them starts. Each history counts from its
 /// first point, carrying its last value across dates it skips, so one late-starting account or
 /// holding doesn't cut the total's history short. A history of today's value alone says nothing
@@ -60,17 +75,18 @@ pub(super) fn combine_value_histories(
         .iter()
         .flat_map(|history| history.iter().map(|point| point.0.clone()))
         .collect::<BTreeSet<_>>();
+    let sorted = histories
+        .iter()
+        .map(|history| history.is_sorted_by_key(|point| &point.0))
+        .collect::<Vec<_>>();
     dates
         .into_iter()
         .map(|date| {
             let value = histories
                 .iter()
-                .filter_map(|history| {
-                    history
-                        .iter()
-                        .rev()
-                        .find(|point| point.0 <= date)
-                        .map(|point| point.1)
+                .zip(&sorted)
+                .filter_map(|(history, &sorted)| {
+                    last_on_or_before(history, sorted, &date, |point| &point.0).map(|point| point.1)
                 })
                 .sum();
             (date, rounded(value))
