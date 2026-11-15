@@ -4,20 +4,32 @@ import { useCallback, useMemo, useRef, useState } from 'react'
 
 import { ActivityList } from '../components/activity-list'
 import { FilterSelect } from '../components/filter-select'
-import { Plane, Plus, X } from '../components/icons'
+import { Plane, Plus, Search, X } from '../components/icons'
 import { Keys } from '../components/keys'
 import { ContactLinker, PeoplePicker, useContactsAccess } from '../components/people-picker'
 import { PersonAvatar } from '../components/person-avatar'
+import { SortHeadings } from '../components/sort-headings'
 import { TransactionDialog } from '../components/transaction-dialog'
-import { Button, Card, EmptyState, Metric, ScrollCueCard, SectionHeading } from '../components/ui'
+import {
+  AnimatedCurrency,
+  Button,
+  Card,
+  EmptyState,
+  Metric,
+  ScrollCueCard,
+  SectionHeading,
+} from '../components/ui'
 import { useContactPhotos } from '../hooks/use-contact-photos'
 import { useFinanceEdits } from '../hooks/use-finance-edits'
+import { useSearchShortcuts } from '../hooks/use-search-shortcuts'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { ActivityItem } from '../lib/activity'
 import { matchContacts, requestContactsAccess } from '../lib/contacts'
+import { daysBetween } from '../lib/dates'
 import { errorMessage } from '../lib/errors'
 import { countOf, formatCurrency } from '../lib/format'
 import {
+  filterPeople,
   identities,
   monthlyMoments,
   personColor,
@@ -29,6 +41,7 @@ import {
   type Identity,
 } from '../lib/people'
 import type { FinanceSnapshot, Insights, Person } from '../lib/schema'
+import { nextSort, type SortState } from '../lib/sort'
 import { formatListDate } from '../lib/spending'
 import { tripDates, tripFlags, tripTitle } from '../lib/trips'
 
@@ -81,18 +94,105 @@ export function PeopleView({
   )
 }
 
+type Column = 'person' | 'received' | 'sent'
+type Row = { person: Person; summary: PersonSummary }
+
+const columns: ReadonlyArray<{ id: Column; label: string }> = [
+  { id: 'person', label: 'Person' },
+  { id: 'received', label: 'Received' },
+  { id: 'sent', label: 'Sent' },
+]
+
+/** Most recent first until a column is chosen; ties fall back to the name. */
+function comparePeople(left: Row, right: Row, sort: SortState<Column> | undefined) {
+  const byName = left.person.name.localeCompare(right.person.name)
+  if (!sort) return (right.summary.last ?? '').localeCompare(left.summary.last ?? '') || byName
+  const sign = sort.direction === 'asc' ? 1 : -1
+  if (sort.column === 'person') return sign * byName
+  const value = ({ summary }: Row) =>
+    sort.column === 'received' ? summary.received : Math.abs(summary.sent)
+  return sign * (value(left) - value(right)) || byName
+}
+
+function Amount({ value }: { value: number }) {
+  return value ? (
+    <span className="sensitive-value">{formatCurrency(value)}</span>
+  ) : (
+    <span className="muted">—</span>
+  )
+}
+
 /**
- * The roster: names in payments to settle, a line each, then everyone as one table, most
- * recent first.
+ * Everyone you have history with. The orbit shows who is close now: you at the centre, nearer
+ * the more recently you exchanged anything, clockwise by when it began, larger the more has
+ * passed between you. Beside it, a table of what you received from and sent to each, searched
+ * with / and sorted by its columns. Pointing at or stepping to a row picks that person out in
+ * the orbit, with lines to whoever shared a trip with them; Return opens them.
  */
 function PeopleList({ data, photos }: { data: FinanceSnapshot; photos: Record<string, string> }) {
   const navigate = useNavigate({ from: '/insights' })
   const people = data.settings?.people ?? []
   const summaries = data.insights?.people.people ?? []
   const suggestions = data.insights?.people.suggestions ?? []
-  const byId = new Map(people.map((person) => [person.id, person]))
   const field = useRef<HTMLInputElement>(null)
+  const list = useRef<HTMLOListElement>(null)
   const access = useContactsAccess().data
+  const [query, setQuery] = useState('')
+  const [sort, setSort] = useState<SortState<Column>>()
+  const [cursor, setCursor] = useState<string>()
+  const searchRef = useSearchShortcuts(query, setQuery)
+  const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
+
+  // Someone with nothing tagged has nothing to show here; Find or add still reaches them.
+  const known = useMemo(() => {
+    const byId = new Map(people.map((person) => [person.id, person]))
+    return summaries.flatMap((summary) => {
+      const person = byId.get(summary.id)
+      return person && summary.transactionCount > 0 ? [{ person, summary }] : []
+    })
+  }, [people, summaries])
+  const rows = useMemo(() => {
+    const matching = new Set(
+      filterPeople(
+        known.map(({ person }) => person),
+        query,
+      ).map(({ id }) => id),
+    )
+    return known
+      .filter(({ person }) => matching.has(person.id))
+      .toSorted((left, right) => comparePeople(left, right, sort))
+  }, [known, query, sort])
+
+  const toggle = useCallback(
+    (column: Column) =>
+      setSort((current) => {
+        const first = column === 'person' ? 'asc' : 'desc'
+        return current ? nextSort(current, column, first) : { column, direction: first }
+      }),
+    [],
+  )
+  const rowOf = useCallback(
+    (id: string) =>
+      list.current?.querySelector<HTMLElement>(`[data-person-id="${CSS.escape(id)}"]`),
+    [],
+  )
+  const focusPerson = useCallback(
+    (id: string) => {
+      setCursor(id)
+      const row = rowOf(id)
+      row?.focus()
+      row?.scrollIntoView({ block: 'nearest' })
+    },
+    [rowOf],
+  )
+  // Pointing at someone in the orbit brings their row into view without taking focus.
+  const pointAt = useCallback(
+    (id: string) => {
+      setCursor(id)
+      rowOf(id)?.scrollIntoView({ block: 'nearest' })
+    },
+    [rowOf],
+  )
 
   useRegisterActions(
     useMemo<AppAction[]>(
@@ -106,6 +206,14 @@ function PeopleList({ data, photos }: { data: FinanceSnapshot; photos: Record<st
           bindings: [{ sequence: ['n'], label: 'N' }],
           run: () => field.current?.focus(),
         },
+        ...columns.map(({ id, label }) => ({
+          id: `people.sort.${id}`,
+          title: `Sort people by ${label}`,
+          search: `order people column ${label}`,
+          group: 'View',
+          scope: 'page' as const,
+          run: () => toggle(id),
+        })),
         ...people.map((person) => ({
           id: `people.open.${person.id}`,
           title: `Open ${person.name}`,
@@ -115,155 +223,318 @@ function PeopleList({ data, photos }: { data: FinanceSnapshot; photos: Record<st
           run: () => void navigate({ search: personSearch(person) }),
         })),
       ],
-      [navigate, people],
+      [navigate, people, toggle],
     ),
   )
 
-  const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
-  const most = Math.max(0, ...summaries.flatMap(({ sent, received }) => [Math.abs(sent), received]))
+  const picker = (
+    <PeoplePicker
+      label="Find or add a person"
+      chosen={[]}
+      people={people}
+      photos={photos}
+      pending={false}
+      inputRef={field}
+      onChange={async ([id]) => {
+        if (id) await navigate({ search: { view: 'people', person: id } })
+      }}
+    />
+  )
+  const contactsNote =
+    access === 'unavailable' ? (
+      <p className="trips-year-note">Contacts photos are available in the Brief app.</p>
+    ) : access === 'denied' || access === 'restricted' ? (
+      <p className="trips-year-note">
+        Contacts access is off in System Settings › Privacy & Security, so people show initials.
+      </p>
+    ) : null
+
+  if (!known.length) {
+    return (
+      <div className="trips-main">
+        {suggestions.length ? (
+          <WhoIsThis data={data} suggestions={suggestions} people={people} photos={photos} />
+        ) : null}
+        <Card className="people-card">
+          <SectionHeading title="People" action={picker} />
+          <EmptyState>
+            {data.insights
+              ? 'Add someone you pay or travel with. Payments that name them are tagged by name.'
+              : 'People are unavailable for this snapshot.'}
+          </EmptyState>
+          {contactsNote}
+        </Card>
+      </div>
+    )
+  }
+
+  const sent = known.reduce((total, { summary }) => total + Math.abs(summary.sent), 0)
+  const received = known.reduce((total, { summary }) => total + summary.received, 0)
+  const thisMonth = known.filter(
+    ({ summary }) => summary.last && daysBetween(summary.last, today) <= 30,
+  ).length
+  // When the pointer leaves, the orbit returns to the row holding focus, or to everyone.
+  const settle = () => {
+    const focused = document.activeElement
+    setCursor(focused instanceof HTMLElement ? focused.dataset.personId : undefined)
+  }
 
   return (
     <div className="trips-main">
       {suggestions.length ? (
         <WhoIsThis data={data} suggestions={suggestions} people={people} photos={photos} />
       ) : null}
-      <Card className="people-card">
-        <SectionHeading
-          title="People"
-          action={
-            <PeoplePicker
-              label="Find or add a person"
-              chosen={[]}
-              people={people}
-              photos={photos}
-              pending={false}
-              inputRef={field}
-              onChange={async ([id]) => {
-                if (id) await navigate({ search: { view: 'people', person: id } })
-              }}
-            />
-          }
-        />
-        {access === 'unavailable' ? (
-          <p className="transaction-edit-note">Contacts are available in the Brief app.</p>
-        ) : access === 'denied' || access === 'restricted' ? (
-          <p className="transaction-edit-note">
-            Contacts access is off in System Settings › Privacy & Security.
-          </p>
-        ) : null}
-        {summaries.length ? (
-          <Roster
-            summaries={summaries}
-            people={byId}
+      <div className="people-layout">
+        <Card className="people-card people-orbit-card">
+          <div className="trips-year-top">
+            <header className="trips-year-summary">
+              <h2 className="balance-label">Sent to people</h2>
+              <AnimatedCurrency className="hero-number sensitive-value" value={sent} />
+              <p className="trips-year-line sensitive-value">
+                {`${formatCurrency(received)} came back from ${countOf(known.length, 'person', 'people')}.`}
+              </p>
+            </header>
+            <div className="trips-year-stats">
+              <Metric label="People" value={String(known.length)} />
+              <Metric label="This month" value={String(thisMonth)} />
+            </div>
+            <div className="people-orbit-find">{picker}</div>
+          </div>
+          <PeopleOrbit
+            known={known}
             photos={photos}
             today={today}
-            most={most}
-            onOpen={(person) => void navigate({ search: personSearch(person) })}
+            chosen={cursor}
+            onPoint={pointAt}
+            onLeave={settle}
           />
-        ) : (
-          <EmptyState>
-            {data.insights
-              ? 'Add someone you pay or travel with. Payments that name them are tagged by name.'
-              : 'People are unavailable for this snapshot.'}
-          </EmptyState>
-        )}
-      </Card>
+          <p className="trips-year-note">
+            Nearer means more recent and larger means more money, in the order you met, clockwise
+            from the top. Point at someone to see who you travelled with.
+          </p>
+          {contactsNote}
+        </Card>
+        <Card className="people-card people-list-card">
+          <SectionHeading
+            title="Everyone"
+            action={
+              <label className="documents-search people-search">
+                <Search size={15} aria-hidden="true" />
+                <input
+                  ref={searchRef}
+                  type="text"
+                  aria-label="Search people"
+                  placeholder="Search"
+                  autoComplete="off"
+                  autoCorrect="off"
+                  autoCapitalize="off"
+                  spellCheck={false}
+                  data-command="search.focus"
+                  value={query}
+                  onChange={(event) => setQuery(event.target.value)}
+                  onKeyDown={(event) => {
+                    // Down from the search steps into the list it filters.
+                    if (event.key !== 'ArrowDown' || !rows[0]) return
+                    event.preventDefault()
+                    focusPerson(rows[0].person.id)
+                  }}
+                />
+              </label>
+            }
+          />
+          <div className="people-table">
+            <div className="people-table-head">
+              <SortHeadings columns={columns} sort={sort} command="people.sort." onSort={toggle} />
+            </div>
+            {rows.length ? (
+              <ol className="people-table-body" aria-label="People" data-keyboard-region ref={list}>
+                {rows.map(({ person, summary }) => (
+                  <li key={person.id}>
+                    <Link
+                      className={`people-table-row${person.id === cursor ? ' is-current' : ''}`}
+                      to="/insights"
+                      search={personSearch(person)}
+                      data-keyboard-row
+                      data-keyboard-open
+                      data-person-id={person.id}
+                      style={{ '--person-color': personColor(person.id) }}
+                      onFocus={() => setCursor(person.id)}
+                      onPointerEnter={() => setCursor(person.id)}
+                      onPointerLeave={settle}
+                    >
+                      <span className="people-table-name">
+                        <PersonAvatar person={person} photos={photos} />
+                        <strong>{person.name}</strong>
+                      </span>
+                      <Amount value={summary.received} />
+                      <Amount value={Math.abs(summary.sent)} />
+                    </Link>
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <EmptyState>{`No one matches “${query}”.`}</EmptyState>
+            )}
+          </div>
+        </Card>
+      </div>
     </div>
   )
 }
 
+const ORBIT_CENTRE = 320
+/** Days past which everyone sits on the outer edge. */
+const ORBIT_REACH = 1460
+const orbitRadius = (days: number) =>
+  58 + 236 * Math.sqrt(Math.min(Math.max(days, 0), ORBIT_REACH) / ORBIT_REACH)
+const orbitRings = [
+  { days: 30, label: 'A month' },
+  { days: 90, label: '3 months' },
+  { days: 365, label: 'A year' },
+  { days: 1095, label: '3 years' },
+]
+
+const firstName = (person: Person) => person.name.trim().split(/\s+/)[0] ?? person.name
+
+/** A first name, with the last name's initial when two people share it. */
+function shortNames(people: readonly Person[]) {
+  const first = firstName
+  const counts = new Map<string, number>()
+  for (const person of people) counts.set(first(person), (counts.get(first(person)) ?? 0) + 1)
+  return new Map(
+    people.map((person) => {
+      const name = first(person)
+      const last = person.name.trim().split(/\s+/).slice(1).at(-1)
+      return [person.id, (counts.get(name) ?? 0) > 1 && last ? `${name} ${last[0]}.` : name]
+    }),
+  )
+}
+
+/** A point in the orbit's 640-unit square, as a share of its side. */
+const share = (value: number) => `${(value / (ORBIT_CENTRE * 2)) * 100}%`
+
 /**
- * Everyone as one table, most recent first. Sent and received share one centre line down the
- * whole table, drawn to one scale, so who you exchange the most with reads at a glance. Return
- * on a row opens that person.
+ * Everyone with something tagged, around you: nearer the more recently, clockwise from the
+ * top by when it began, larger the more has passed between you. Each is their avatar, named
+ * underneath. Pointing at someone fades everyone but them and the people they travelled with.
  */
-function Roster({
-  summaries,
-  people,
+function PeopleOrbit({
+  known,
   photos,
   today,
-  most,
-  onOpen,
+  chosen,
+  onPoint,
+  onLeave,
 }: {
-  summaries: PersonSummary[]
-  people: Map<string, Person>
+  known: readonly Row[]
   photos: Record<string, string>
   today: string
-  most: number
-  onOpen: (person: Person) => void
+  chosen?: string
+  onPoint: (id: string) => void
+  onLeave: () => void
 }) {
-  const share = (value: number) => `${most ? Math.max(value ? 3 : 0, (value / most) * 100) : 0}%`
+  const labels = shortNames(known.map(({ person }) => person))
+  const placed = known
+    .flatMap(({ person, summary }) =>
+      summary.first && summary.last
+        ? [{ summary, person, name: person.name, first: summary.first, last: summary.last }]
+        : [],
+    )
+    .toSorted((left, right) => left.first.localeCompare(right.first))
+    .map((entry, rank, all) => {
+      const angle = (rank / all.length) * Math.PI * 2 - Math.PI / 2
+      const distance = orbitRadius(daysBetween(entry.last, today))
+      const volume =
+        Math.abs(entry.summary.sent) + entry.summary.received + entry.summary.transactionCount * 20
+      return {
+        ...entry,
+        x: ORBIT_CENTRE + Math.cos(angle) * distance,
+        y: ORBIT_CENTRE + Math.sin(angle) * distance,
+        // An avatar's diameter in pixels, the same at any width.
+        size: Math.round(20 + Math.min(24, Math.sqrt(volume) / 2.5)),
+      }
+    })
+  const at = new Map(placed.map((node) => [node.summary.id, node]))
+  const from = chosen ? at.get(chosen) : undefined
+  const tied = new Set(
+    from
+      ? placed
+          .filter(
+            (node) =>
+              node !== from && node.summary.tripIds.some((id) => from.summary.tripIds.includes(id)),
+          )
+          .map((node) => node.summary.id)
+      : [],
+  )
+  const state = (id: string) =>
+    !from ? '' : id === from.summary.id ? ' is-chosen' : tied.has(id) ? ' is-tied' : ' is-faded'
   return (
-    <table className="people-roster" aria-label="People" data-keyboard-region>
-      <thead>
-        <tr>
-          <th scope="col">Person</th>
-          <th scope="col">Last together</th>
-          <th scope="col" className="is-number">
-            Tagged
-          </th>
-          <th scope="col" className="is-number">
-            Trips
-          </th>
-          <th scope="col" className="is-sent">
-            Sent
-          </th>
-          <th scope="col" className="is-received">
-            Received
-          </th>
-        </tr>
-      </thead>
-      <tbody>
-        {summaries.flatMap((summary) => {
-          const person = people.get(summary.id)
-          if (!person) return []
-          const sent = Math.abs(summary.sent)
-          return [
-            <tr
-              key={person.id}
-              data-keyboard-row
-              tabIndex={-1}
-              style={{ '--person-color': personColor(person.id) }}
-              onClick={(event) => {
-                // The name is a link of its own; anywhere else on the row opens them too.
-                if (!(event.target instanceof Element) || !event.target.closest('a')) onOpen(person)
-              }}
-            >
-              <td>
-                <Link
-                  to="/insights"
-                  search={personSearch(person)}
-                  className="people-roster-person"
-                  data-keyboard-open
-                >
-                  <PersonAvatar person={person} photos={photos} size="medium" />
-                  <strong>{person.name}</strong>
-                </Link>
-              </td>
-              <td className="is-muted">
-                {summary.last ? timeAgo(summary.last, today) : 'Nothing tagged yet'}
-              </td>
-              <td className="is-number">{summary.transactionCount}</td>
-              <td className="is-number">{summary.tripIds.length || null}</td>
-              <td className="is-sent">
-                <span className="people-roster-bar">
-                  {sent ? <small className="sensitive-value">{formatCurrency(sent)}</small> : null}
-                  <span style={{ width: share(sent) }} aria-hidden="true" />
-                </span>
-              </td>
-              <td className="is-received">
-                <span className="people-roster-bar">
-                  <span style={{ width: share(summary.received) }} aria-hidden="true" />
-                  {summary.received ? (
-                    <small className="sensitive-value">{formatCurrency(summary.received)}</small>
-                  ) : null}
-                </span>
-              </td>
-            </tr>,
-          ]
-        })}
-      </tbody>
-    </table>
+    <div
+      className="people-orbit"
+      role="group"
+      aria-label="People by how recently and how much"
+      onPointerLeave={onLeave}
+    >
+      <svg viewBox="0 0 640 640" aria-hidden="true">
+        {orbitRings.map((ring) => (
+          <circle
+            key={ring.days}
+            className="people-orbit-ring"
+            cx={ORBIT_CENTRE}
+            cy={ORBIT_CENTRE}
+            r={orbitRadius(ring.days)}
+          />
+        ))}
+        {from
+          ? placed
+              .filter((node) => tied.has(node.summary.id))
+              .map((node) => (
+                <line
+                  key={node.summary.id}
+                  className="people-orbit-tie"
+                  x1={from.x}
+                  y1={from.y}
+                  x2={node.x}
+                  y2={node.y}
+                />
+              ))
+          : null}
+      </svg>
+      {orbitRings.map((ring) => {
+        // Each ring is named where it crosses the line up and to the right of you.
+        const reach = orbitRadius(ring.days) * Math.SQRT1_2
+        return (
+          <span
+            key={ring.days}
+            className="people-orbit-ring-label"
+            style={{ left: share(ORBIT_CENTRE + reach), top: share(ORBIT_CENTRE - reach) }}
+          >
+            {ring.label}
+          </span>
+        )
+      })}
+      <span className="people-orbit-you">You</span>
+      {placed.map((node) => (
+        <Link
+          key={node.summary.id}
+          to="/insights"
+          search={personSearch(node.person)}
+          tabIndex={-1}
+          className={`people-orbit-node${state(node.summary.id)}`}
+          style={{
+            left: share(node.x),
+            top: share(node.y),
+            '--node': `${node.size}px`,
+            '--person-color': personColor(node.summary.id),
+          }}
+          title={`${node.name}, ${timeAgo(node.last, today)}`}
+          onPointerEnter={() => onPoint(node.summary.id)}
+        >
+          <PersonAvatar person={node.person} photos={photos} />
+          <span className="people-orbit-label">{labels.get(node.summary.id)}</span>
+        </Link>
+      ))}
+    </div>
   )
 }
 

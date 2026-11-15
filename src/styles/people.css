@@ -207,85 +207,226 @@
   margin-right: 4px;
 }
 
-/* The roster: everyone in one table. Sent and received meet at one centre line down it. */
-.people-roster {
+/* Everyone: the orbit leads, and the table beside it ends where the orbit's section does. */
+.people-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(320px, 1fr);
+}
+.people-orbit-find {
+  align-self: flex-end;
+}
+/* The orbit is drawn in the page's own type and avatars over a square of faint rings, so its
+   names read like every other name in Brief at any width. */
+.people-orbit {
+  position: relative;
+  width: min(100%, max(400px, calc(100vh - 360px)));
+  aspect-ratio: 1;
+  margin: 32px auto 8px;
+}
+.people-orbit > svg {
+  position: absolute;
+  inset: 0;
   width: 100%;
-  margin-top: 12px;
-  border-collapse: collapse;
-  font-size: var(--type-body);
+  height: 100%;
+  overflow: visible;
 }
-.people-roster th {
-  padding: 8px;
-  border-bottom: var(--hairline) solid var(--border-subtle);
+.people-orbit-ring {
+  fill: none;
+  stroke: var(--border-subtle);
+  stroke-width: 1;
+  vector-effect: non-scaling-stroke;
+}
+.people-orbit-tie {
+  stroke: var(--text-tertiary);
+  stroke-width: 1;
+  stroke-dasharray: 3 4;
+  vector-effect: non-scaling-stroke;
+}
+.people-orbit-ring-label,
+.people-orbit-you,
+.people-orbit-label {
+  position: absolute;
   color: var(--text-tertiary);
-  font-size: var(--type-meta);
-  font-weight: 500;
-  text-align: left;
+  font-size: var(--type-micro);
   white-space: nowrap;
+  pointer-events: none;
+  /* A ring of page color keeps a name readable where it crosses a ring or a line. */
+  text-shadow:
+    0 0 2px var(--background),
+    0 0 4px var(--background),
+    0 0 6px var(--background);
 }
-.people-roster td {
-  padding: 6px 8px;
-  border-bottom: var(--hairline) solid var(--border-subtle);
-  white-space: nowrap;
+.people-orbit-ring-label {
+  transform: translate(6px, -50%);
 }
-.people-roster tbody tr {
-  outline: 0;
-  cursor: pointer;
-  transition: background var(--duration-quick) var(--ease-out);
-}
-.people-roster tbody tr:hover,
-.people-roster tbody tr:focus {
-  background: var(--hover-wash);
-}
-.people-roster .is-number {
-  width: 64px;
-  text-align: right;
-  font-variant-numeric: tabular-nums;
-}
-.people-roster .is-muted {
+.people-orbit-you {
+  top: 50%;
+  left: 50%;
+  display: grid;
+  width: 40px;
+  height: 40px;
+  place-items: center;
+  border: var(--hairline) solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--paper-inset);
   color: var(--text-secondary);
+  font-size: var(--type-meta);
+  text-shadow: none;
+  transform: translate(-50%, -50%);
 }
-.people-roster .is-sent,
-.people-roster .is-received {
-  width: 22%;
-}
-.people-roster th.is-sent {
-  text-align: right;
-}
-.people-roster td.is-sent {
-  border-right: var(--hairline) solid var(--border-strong);
-}
-.people-roster-person {
-  display: inline-flex;
-  align-items: center;
-  gap: 10px;
+.people-orbit-node {
+  position: absolute;
+  z-index: 1;
+  width: var(--node);
+  height: var(--node);
   color: inherit;
   text-decoration: none;
+  transform: translate(-50%, -50%);
+  transition: opacity var(--duration-quick) var(--ease-out);
 }
-.people-roster-person > strong {
-  font-weight: 500;
+.people-orbit-node > .person-avatar {
+  width: 100%;
+  height: 100%;
+  /* Solid, so the rings behind never show through a face. */
+  background: color-mix(in oklab, var(--person-color) 22%, var(--background));
+  font-size: var(--type-meta);
+  transition: box-shadow var(--duration-quick) var(--ease-out);
 }
-.people-roster-bar {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-.is-sent > .people-roster-bar {
-  justify-content: flex-end;
-}
-.people-roster-bar > span {
-  flex: none;
-  height: 8px;
-  border-radius: 999px;
-  background: var(--person-color);
-}
-.is-sent > .people-roster-bar > span {
-  opacity: 0.55;
-}
-.people-roster-bar > small {
+.people-orbit-label {
+  top: calc(100% + 4px);
+  left: 50%;
   color: var(--text-secondary);
   font-size: var(--type-meta);
+  transform: translateX(-50%);
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.people-orbit-node:hover,
+.people-orbit-node.is-chosen {
+  z-index: 2;
+}
+.people-orbit-node.is-chosen > .person-avatar {
+  box-shadow:
+    0 0 0 2px var(--background),
+    0 0 0 4px var(--person-color);
+}
+.people-orbit-node.is-chosen .people-orbit-label,
+.people-orbit-node.is-tied .people-orbit-label {
+  color: var(--text-primary);
+}
+.people-orbit-node.is-chosen .people-orbit-label {
+  font-weight: 500;
+}
+.people-orbit-node.is-faded {
+  opacity: 0.28;
+}
+@media (prefers-reduced-motion: reduce) {
+  .people-orbit-node,
+  .people-orbit-node > .person-avatar,
+  .people-orbit-label {
+    transition: none;
+  }
+}
+/* The table, as Holdings draws its own: sortable headings, then a row per person. Its size
+   is left out of the row's, so the section ends with the orbit's and scrolls inside. */
+.people-list-card {
+  display: flex;
+  min-height: 0;
+  padding-bottom: var(--card-padding-end);
+  flex-direction: column;
+  gap: 8px;
+  contain: size;
+}
+.people-search {
+  width: 200px;
+}
+.people-table {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
   font-variant-numeric: tabular-nums;
+}
+@media (max-width: 1180px) {
+  .people-layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .people-list-card {
+    max-height: 70vh;
+    contain: none;
+  }
+}
+.people-table-head,
+.people-table-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) repeat(2, minmax(80px, auto));
+  align-items: center;
+  column-gap: 16px;
+}
+.people-table-head {
+  min-height: 36px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+}
+.people-table-head > button {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-tertiary);
+  font: inherit;
+  font-size: var(--type-meta);
+  font-weight: 500;
+  cursor: pointer;
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.people-table-head > button:first-child {
+  justify-content: flex-start;
+}
+.people-table-head > button:hover,
+.people-table-head > button[aria-pressed='true'] {
+  color: var(--text-primary);
+}
+.people-table-body {
+  min-height: 0;
+  flex: 1;
+  margin: 0 -8px;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+.people-table-row {
+  min-height: var(--row-height);
+  padding: 6px 8px;
+  border-radius: var(--radius-control);
+  color: inherit;
+  font-size: var(--type-body);
+  text-decoration: none;
+  transition: background-color var(--duration-quick) var(--ease-out);
+}
+.people-table-row:hover,
+.people-table-row.is-current {
+  background: var(--hover-wash);
+}
+.people-table-row > :not(:first-child) {
+  justify-self: end;
+  text-align: right;
+  white-space: nowrap;
+}
+.people-table-name {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+.people-table-name strong {
+  font-weight: 500;
+  transition: color var(--duration-quick) var(--ease-out);
+}
+.people-table-row:hover .people-table-name strong {
+  color: var(--accent);
 }
 
 /* One person. */
