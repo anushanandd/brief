@@ -250,6 +250,8 @@ pub struct Status {
     pub unsearched: usize,
 }
 
+/// What `apply` returns, worked out alone; tests check the two agree.
+#[cfg(test)]
 pub fn status(
     transactions: &[Transaction],
     searches: &BTreeMap<String, Vec<OverturePlace>>,

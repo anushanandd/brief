@@ -756,7 +756,7 @@ fn pair_transfers(transactions: &mut [Transaction]) {
                     Kind::Other => true,
                     _ => false,
                 };
-            let date = chrono::NaiveDate::parse_from_str(t.posted_date(), "%Y-%m-%d").ok()?;
+            let date = crate::insights::calendar::parse_date(t.posted_date())?;
             let account = t.account_id.clone()?;
             ((transfer || filed) && !payment_app && !t.pending && !t.other && cents != 0).then_some(
                 Leg {

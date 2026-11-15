@@ -294,8 +294,7 @@ pub(crate) fn derive_view_with(
         embedder,
         &cards,
     )?;
-    crate::places::matching::apply(&mut snapshot.transactions, searches);
-    let places = crate::places::matching::status(&snapshot.transactions, searches);
+    let places = crate::places::matching::apply(&mut snapshot.transactions, searches);
     crate::quality::apply(&mut snapshot);
     // Insights are a view of saved data; failing to derive them never hides the snapshot.
     let insights = crate::insights::derive_with_documents(
