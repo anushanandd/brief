@@ -777,39 +777,10 @@ pub(crate) async fn start_holding_chart(
             }
             let _ = app.emit("holding-chart-update", payload);
         };
-        let initial = selection.borrow().clone();
-        if let Some(history) =
-            providers::holding_market::cached_history(&cache, &initial.symbol, initial.range)
-        {
-            publish(
-                initial
-                    .tag(serde_json::json!({"kind":"history", "history":history, "startedAt":0})),
-            );
-        }
-        let mut cancellation = receiver.clone();
-        loop {
-            if *cancellation.borrow() {
-                break;
-            }
-            let result = tokio::select! {
-                _ = cancellation.changed() => break,
-                result = state.providers.run_holding_chart(selection.clone(), &cache,
-                    receiver.clone(), &publish) => result,
-            };
-            if result.is_ok() {
-                break;
-            }
-            publish(
-                selection
-                    .borrow()
-                    .tag(serde_json::json!({"kind":"error", "message":
-                "Market data unavailable; retrying"})),
-            );
-            tokio::select! {
-                _ = cancellation.changed() => break,
-                _ = tokio::time::sleep(StdDuration::from_secs(30)) => {},
-            }
-        }
+        state
+            .providers
+            .run_holding_chart(selection, &cache, receiver.clone(), &publish)
+            .await;
     });
     Ok(())
 }

@@ -1,6 +1,7 @@
-//! A selected chart while it is open: its history kept current over REST, the other held
-//! symbols' histories warmed for switching, and its live bars and quotes streamed. Each part
-//! runs until the chart is cancelled.
+//! A selected chart while it is open: each selection's saved copy at once, its history kept
+//! current over REST, the other held symbols' histories warmed for switching, and its live
+//! bars and quotes streamed. Each part runs until the chart is cancelled, and a history goes to
+//! the renderer only when it hasn't been sent already.
 use super::*;
 
 /// A chart's feed access: SIP is the paid consolidated feed, BOATS the overnight one.
@@ -24,15 +25,116 @@ struct ChartRun<'a, F> {
     credentials: AlpacaCredentials,
     access: Access,
     publish: &'a F,
+    sent: &'a Sent,
+    /// The request whose selected chart has its first REST result; warming waits for it.
+    ready: tokio::sync::watch::Sender<String>,
+}
+
+/// When a history was fetched, and whether it was verified rather than saved.
+type Version = (i64, bool);
+
+/// Each history this run sent, by symbol and range: the request it went to, and its version.
+#[derive(Default)]
+struct Sent(std::sync::Mutex<BTreeMap<(String, u64), (String, Version)>>);
+
+impl Sent {
+    /// Whether to send a history, recording it if so: one newer than what this run sent, or the
+    /// selected chart's first under its request, since each request listens on its own.
+    fn admit(&self, request_id: &str, history: &PriceHistory, selected: bool) -> bool {
+        let version = (history.fetched_at, !history.cached);
+        let mut sent = market_stream::recover(&self.0);
+        let key = (history.symbol.clone(), history.range);
+        if sent
+            .get(&key)
+            .is_some_and(|(request, seen)| *seen >= version && (!selected || request == request_id))
+        {
+            return false;
+        }
+        sent.insert(key, (request_id.into(), version));
+        true
+    }
 }
 
 impl Providers {
+    /// Runs a chart until it's cancelled: each selection's saved copy as soon as it's chosen,
+    /// and beside it the live chart, started again 30 seconds after a failure.
     pub async fn run_holding_chart<F>(
         &self,
         selection: tokio::sync::watch::Receiver<ChartSelection>,
         cache: &Path,
         cancel: tokio::sync::watch::Receiver<bool>,
         publish: F,
+    ) where
+        F: Fn(Value) + Send + Sync,
+    {
+        let sent = Sent::default();
+        let live =
+            async {
+                let mut cancelled = cancel.clone();
+                loop {
+                    if *cancelled.borrow() {
+                        return;
+                    }
+                    let run =
+                        self.live_chart(selection.clone(), cache, cancel.clone(), &sent, &publish);
+                    let result = tokio::select! {
+                        _ = cancelled.changed() => return,
+                        result = run => result,
+                    };
+                    if result.is_ok() {
+                        return;
+                    }
+                    publish(selection.borrow().tag(
+                        json!({"kind": "error", "message": "Market data unavailable; retrying"}),
+                    ));
+                    tokio::select! {
+                        _ = cancelled.changed() => return,
+                        _ = tokio::time::sleep(StdDuration::from_secs(30)) => {},
+                    }
+                }
+            };
+        let saved = self.saved_charts(selection.clone(), cache, cancel.clone(), &sent, &publish);
+        tokio::join!(saved, live);
+    }
+
+    /// The selected chart's copy from memory or the price cache the moment it's chosen, so a
+    /// switch shows bars without waiting on credentials or the network.
+    async fn saved_charts<F: Fn(Value)>(
+        &self,
+        mut selection: tokio::sync::watch::Receiver<ChartSelection>,
+        cache: &Path,
+        mut cancel: tokio::sync::watch::Receiver<bool>,
+        sent: &Sent,
+        publish: &F,
+    ) {
+        loop {
+            let selected = selection.borrow_and_update().clone();
+            let saved = self
+                .fresh_chart(&selected.symbol, selected.range)
+                .or_else(|| cached_history(cache, &selected.symbol, selected.range));
+            if let Some(history) = saved.filter(|h| sent.admit(&selected.request_id, h, true)) {
+                publish(
+                    selected.tag(json!({"kind": "history", "history": history, "startedAt": 0})),
+                );
+            }
+            tokio::select! {
+                _ = cancel.changed() => return,
+                changed = selection.changed() => {
+                    if changed.is_err() {
+                        return;
+                    }
+                },
+            }
+        }
+    }
+
+    async fn live_chart<F>(
+        &self,
+        selection: tokio::sync::watch::Receiver<ChartSelection>,
+        cache: &Path,
+        cancel: tokio::sync::watch::Receiver<bool>,
+        sent: &Sent,
+        publish: &F,
     ) -> Result<(), String>
     where
         F: Fn(Value) + Send + Sync,
@@ -46,7 +148,9 @@ impl Providers {
             cache,
             credentials,
             access: Access { sip, boats },
-            publish: &publish,
+            publish,
+            sent,
+            ready: tokio::sync::watch::channel(String::new()).0,
         };
         let (repair, repairs) = tokio::sync::watch::channel((0_u64, 0_u64));
         tokio::join!(
@@ -62,8 +166,9 @@ impl<F> ChartRun<'_, F>
 where
     F: Fn(Value) + Send + Sync,
 {
-    /// The selected chart's history: the saved copy first, then REST on the market's schedule
-    /// and whenever the stream asks for a repair. Starts over when the selection changes.
+    /// The selected chart's history over REST, on the market's schedule and whenever the stream
+    /// asks for a repair, after `saved_charts` sent its saved copy. Starts over when the
+    /// selection changes.
     async fn histories(
         &self,
         mut selection: tokio::sync::watch::Receiver<ChartSelection>,
@@ -83,9 +188,6 @@ where
                 let mut previous = providers
                     .fresh_chart(&symbol, range)
                     .or_else(|| cached_history(self.cache, &symbol, range));
-                if let Some(history) = previous.as_ref() {
-                    publish(json!({"kind": "history", "history": history, "startedAt": 0}));
-                }
                 let mut previous_epoch = providers.market_streams.epoch.load(Ordering::SeqCst);
                 let mut verified_repair = 0;
                 // Start REST without waiting for the socket. Subscription confirmation requests
@@ -109,7 +211,7 @@ where
                         .then(|| providers.fresh_chart(&symbol, range))
                         .flatten();
                     let result = if let Some(history) = fresh {
-                        Ok(history)
+                        Ok((history, false))
                     } else {
                         let download = providers.chart_history(
                             &self.credentials,
@@ -120,33 +222,41 @@ where
                         );
                         tokio::select! {
                             _ = cancel.changed() => return,
-                            result = download => result,
+                            result = download => result.map(|history| (history, true)),
                         }
                     };
                     let succeeded = result.is_ok();
                     match result {
-                        Ok(history) => {
+                        Ok((history, downloaded)) => {
                             if epoch != providers.market_streams.epoch.load(Ordering::SeqCst) {
                                 previous = None;
                                 continue;
                             }
-                            providers.remember_chart(&history, epoch);
-                            let cache_warning = save_history(self.cache, &history).err();
+                            // A copy from memory was saved by the download that fetched it.
+                            let cache_warning = if downloaded {
+                                providers.remember_chart(&history, epoch);
+                                save_history(self.cache, &history).err()
+                            } else {
+                                None
+                            };
                             previous = Some(history.clone());
                             verified_repair = full_repair;
                             previous_epoch = epoch;
-                            publish(json!({
-                                "kind": "history",
-                                "history": history,
-                                "startedAt": started_at.min(history.fetched_at),
-                                "warning": cache_warning,
-                            }));
+                            if self.sent.admit(&selected.request_id, &history, true) {
+                                publish(json!({
+                                    "kind": "history",
+                                    "history": history,
+                                    "startedAt": started_at.min(history.fetched_at),
+                                    "warning": cache_warning,
+                                }));
+                            }
                         }
                         Err(_) => publish(json!({
                             "kind": "history-error",
                             "message": "History refresh failed; retaining the last verified chart.",
                         })),
                     }
+                    self.ready.send_replace(selected.request_id.clone());
                     let now = Utc::now();
                     let schedule = tokio::select! {
                         _ = cancel.changed() => return,
@@ -182,61 +292,31 @@ where
     }
 
     /// The other streamed symbols' histories at the selected range, nearest neighbors first,
-    /// so switching charts shows bars at once. Waits for the next selection once done.
+    /// so switching charts shows bars at once. Starts once the selected chart has its first REST
+    /// result, downloads only copies from before today, and waits for the next selection once done.
     async fn warming(
         &self,
         mut selection: tokio::sync::watch::Receiver<ChartSelection>,
         mut cancel: tokio::sync::watch::Receiver<bool>,
     ) {
         let providers = self.providers;
+        let mut ready = self.ready.subscribe();
         loop {
             let selected = selection.borrow_and_update().clone();
             let ordered = warm_order(&selected, providers.market_streams.symbols());
-            let work =
-                stream::iter(ordered).for_each_concurrent(2, |symbol| {
+            let ready = &mut ready;
+            let work = async {
+                if ready
+                    .wait_for(|request| *request == selected.request_id)
+                    .await
+                    .is_ok()
+                {
                     let selected = &selected;
-                    async move {
-                        let target = ChartSelection {
-                            symbol: symbol.clone(),
-                            ..selected.clone()
-                        };
-                        let range = selected.range;
-                        let previous = providers
-                            .fresh_chart(&symbol, range)
-                            .or_else(|| cached_history(self.cache, &symbol, range));
-                        if let Some(history) = &previous {
-                            (self.publish)(target.tag(
-                                json!({"kind": "history", "history": history, "startedAt": 0}),
-                            ));
-                        }
-                        if previous.as_ref().is_some_and(|history| !history.cached) {
-                            return;
-                        }
-                        let epoch = providers.market_streams.epoch.load(Ordering::SeqCst);
-                        let started_at = Utc::now().timestamp_millis();
-                        let reusable = previous.as_ref().filter(|h| !h.cached || epoch <= 1);
-                        let Ok(history) = providers
-                            .chart_history(
-                                &self.credentials,
-                                &symbol,
-                                range,
-                                self.access.realtime(range),
-                                reusable,
-                            )
-                            .await
-                        else {
-                            return;
-                        };
-                        if epoch != providers.market_streams.epoch.load(Ordering::SeqCst) {
-                            return;
-                        }
-                        let _ = save_history(self.cache, &history);
-                        providers.remember_chart(&history, epoch);
-                        (self.publish)(target.tag(
-                            json!({"kind": "history", "history": history, "startedAt": started_at}),
-                        ));
-                    }
-                });
+                    stream::iter(ordered)
+                        .for_each_concurrent(2, |symbol| self.warm(selected, symbol))
+                        .await;
+                }
+            };
             tokio::select! {
                 _ = cancel.changed() => return,
                 changed = selection.changed() => {
@@ -256,6 +336,57 @@ where
                 },
             }
         }
+    }
+
+    /// One neighbor's history: its saved copy, then a download unless that copy is from today.
+    async fn warm(&self, selected: &ChartSelection, symbol: String) {
+        let providers = self.providers;
+        let range = selected.range;
+        let target = ChartSelection {
+            symbol: symbol.clone(),
+            ..selected.clone()
+        };
+        let send =
+            |history: &PriceHistory, started_at: i64| {
+                let sent = self.sent.admit(&target.request_id, history, false);
+                if sent {
+                    (self.publish)(target.tag(
+                        json!({"kind": "history", "history": history, "startedAt": started_at}),
+                    ));
+                }
+                sent
+            };
+        let previous = providers
+            .fresh_chart(&symbol, range)
+            .or_else(|| cached_history(self.cache, &symbol, range));
+        // Let a switch or a live bar through between neighbors.
+        if previous.as_ref().is_some_and(|history| send(history, 0)) {
+            tokio::task::yield_now().await;
+        }
+        let now = Utc::now().timestamp_millis();
+        if previous.as_ref().is_some_and(|history| {
+            history.fetched_at <= now && history.fetched_at / 86_400_000 == now / 86_400_000
+        }) {
+            return;
+        }
+        let epoch = providers.market_streams.epoch.load(Ordering::SeqCst);
+        let reusable = previous.as_ref().filter(|h| !h.cached || epoch <= 1);
+        let download = providers.chart_history(
+            &self.credentials,
+            &symbol,
+            range,
+            self.access.realtime(range),
+            reusable,
+        );
+        let Ok(history) = download.await else {
+            return;
+        };
+        if epoch != providers.market_streams.epoch.load(Ordering::SeqCst) {
+            return;
+        }
+        let _ = save_history(self.cache, &history);
+        providers.remember_chart(&history, epoch);
+        send(&history, now);
     }
 
     /// Live bars and quotes for the selected symbol from the shared feed for the current

@@ -408,3 +408,177 @@ async fn ticker_and_range_changes_reuse_shared_feed_and_reject_old_quotes() {
     // Chart selection/cleanup leaves the shared transport and all symbols intact.
     assert_eq!(feed.state.lock().unwrap().subscribed.len(), 2);
 }
+
+/// A minute chart saved just now, with one bar an hour ago.
+fn minute_history(symbol: &str) -> PriceHistory {
+    let now = Utc::now();
+    let time = (now.timestamp() - 3600) / 60 * 60;
+    PriceHistory {
+        symbol: symbol.into(),
+        range: 86400,
+        resolution: 60,
+        start: time - 86400,
+        end: time + 60,
+        fetched_at: now.timestamp_millis(),
+        full_verified_at: now.timestamp_millis(),
+        calendar: None,
+        bars: vec![PriceBar {
+            time,
+            end_time: time + 60,
+            open: 100.0,
+            high: 101.0,
+            low: 99.0,
+            close: 100.0,
+            volume: 1000.0,
+            trades: 10,
+            feed: "sip".into(),
+        }],
+        feeds: vec!["sip".into(), "boats".into()],
+        delay_minutes: 15,
+        adjustment: "split".into(),
+        cached: false,
+    }
+}
+
+/// Providers that run a chart without the Keychain or the network: Alpaca's keys, their feed
+/// access, and a market closed for hours are already known, and the symbols are streamed.
+fn offline_providers(symbols: &[&str]) -> Providers {
+    let providers = Providers::new().unwrap();
+    *providers.alpaca_cache.lock().unwrap() = Some((
+        0,
+        AlpacaCredentials {
+            key_id: "synthetic".into(),
+            secret_key: "synthetic".into(),
+        },
+    ));
+    *providers.market_access.lock().unwrap() = Some(MarketAccess {
+        generation: 0,
+        checked: Instant::now(),
+        sip: false,
+        boats: false,
+    });
+    *providers.market_schedule.lock().unwrap() = Some(AlpacaMarketSchedule {
+        session: AlpacaMarketSession::Closed,
+        next_transition_at: Utc::now() + Duration::hours(6),
+    });
+    providers
+        .market_streams
+        .start(symbols.iter().map(|s| s.to_string()).collect());
+    providers
+}
+
+fn selection(symbol: &str, request_id: &str) -> ChartSelection {
+    ChartSelection {
+        symbol: symbol.into(),
+        range: 86400,
+        request_id: request_id.into(),
+        warm_symbols: ["AAA", "BBB", "CCC"].map(String::from).to_vec(),
+    }
+}
+
+/// The request and symbol of each history a chart sends until it goes quiet.
+async fn settled_histories(
+    observed: &mut tokio::sync::mpsc::UnboundedReceiver<Value>,
+) -> Vec<(String, String)> {
+    let mut histories = Vec::new();
+    while let Ok(Some(event)) =
+        tokio::time::timeout(StdDuration::from_millis(300), observed.recv()).await
+    {
+        if event["kind"] == "history" {
+            histories.push((
+                event["requestId"].as_str().unwrap().to_owned(),
+                event["symbol"].as_str().unwrap().to_owned(),
+            ));
+        }
+    }
+    histories
+}
+
+#[tokio::test]
+async fn a_chart_sends_each_history_once_and_saves_only_downloads() {
+    let directory = std::env::temp_dir().join(format!("brief-price-test-{}", Uuid::new_v4()));
+    std::fs::create_dir(&directory).unwrap();
+    let cache = directory.join("prices.sqlite3");
+    let providers = offline_providers(&["AAA", "BBB", "CCC"]);
+    // A download would wait here forever instead of reaching the network.
+    let _downloads = providers.chart_requests.try_acquire_many(2).unwrap();
+    let epoch = providers.market_streams.epoch.load(Ordering::SeqCst);
+    for symbol in ["AAA", "BBB"] {
+        providers.remember_chart(&minute_history(symbol), epoch);
+    }
+    save_history(&cache, &minute_history("CCC")).unwrap();
+    let (selection_tx, selected) = tokio::sync::watch::channel(selection("AAA", "first"));
+    let (cancel_tx, cancel) = tokio::sync::watch::channel(false);
+    let (observed_tx, mut observed) = tokio::sync::mpsc::unbounded_channel();
+    let publish = |value: Value| {
+        let _ = observed_tx.send(value);
+    };
+    let run = providers.run_holding_chart(selected, &cache, cancel, publish);
+    let driver = async {
+        let opened = settled_histories(&mut observed).await;
+        selection_tx.send_replace(selection("BBB", "second"));
+        let switched = settled_histories(&mut observed).await;
+        cancel_tx.send_replace(true);
+        (opened, switched)
+    };
+    let (_, (opened, switched)) = tokio::time::timeout(StdDuration::from_secs(10), async {
+        tokio::join!(run, driver)
+    })
+    .await
+    .unwrap();
+    let pair = |request: &str, symbol: &str| (request.to_owned(), symbol.to_owned());
+    assert_eq!(
+        opened,
+        [
+            pair("first", "AAA"),
+            pair("first", "BBB"),
+            pair("first", "CCC")
+        ]
+    );
+    // The neighbors were already sent; only the newly selected chart goes again.
+    assert_eq!(switched, [pair("second", "BBB")]);
+    // Nothing was downloaded, so nothing was saved.
+    assert!(cached_history(&cache, "AAA", 86400).is_none());
+    assert!(cached_history(&cache, "BBB", 86400).is_none());
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[tokio::test]
+async fn a_switch_shows_the_saved_chart_while_market_data_is_unavailable() {
+    let directory = std::env::temp_dir().join(format!("brief-price-test-{}", Uuid::new_v4()));
+    std::fs::create_dir(&directory).unwrap();
+    let cache = directory.join("prices.sqlite3");
+    save_history(&cache, &minute_history("BBB")).unwrap();
+    let providers = offline_providers(&["BBB"]);
+    // An unreadable first symbol fails the live chart, which then waits to retry.
+    let (selection_tx, selected) = tokio::sync::watch::channel(selection("A B", "first"));
+    let (cancel_tx, cancel) = tokio::sync::watch::channel(false);
+    let (observed_tx, mut observed) = tokio::sync::mpsc::unbounded_channel();
+    let publish = |value: Value| {
+        let _ = observed_tx.send(value);
+    };
+    let run = providers.run_holding_chart(selected, &cache, cancel, publish);
+    let driver = async {
+        tokio::time::sleep(StdDuration::from_millis(100)).await;
+        selection_tx.send_replace(selection("BBB", "second"));
+        let history = loop {
+            match tokio::time::timeout(StdDuration::from_secs(2), observed.recv()).await {
+                Ok(Some(event)) if event["kind"] == "history" => break Some(event),
+                Ok(Some(_)) => continue,
+                _ => break None,
+            }
+        };
+        cancel_tx.send_replace(true);
+        history
+    };
+    let (_, history) = tokio::time::timeout(StdDuration::from_secs(10), async {
+        tokio::join!(run, driver)
+    })
+    .await
+    .unwrap();
+    let history = history.expect("the saved chart is sent");
+    assert_eq!(history["requestId"], "second");
+    assert_eq!(history["history"]["symbol"], "BBB");
+    assert_eq!(history["history"]["cached"], true);
+    std::fs::remove_dir_all(directory).unwrap();
+}
