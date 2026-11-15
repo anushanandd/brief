@@ -58,7 +58,8 @@ subcategory?: string, categoryConfidence?: string, counterpartyType?: string, tr
  */
 pendingTransactionId?: string, 
 /**
- * View-time fields assigned by `transaction_policy::apply`; committed rows omit them.
+ * View-time fields assigned by `transaction_policy::apply`. Committed rows carry the last
+ * projection's, which every read decides again from the provider's values.
  */
 categorySource?: CategorySource, 
 /**

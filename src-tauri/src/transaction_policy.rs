@@ -585,6 +585,10 @@ pub fn apply<'a>(
                 .as_ref()
                 .and_then(|pending| annotations.get(pending))
         });
+        // A committed row carries the last read's category; decide again from the provider's.
+        if let Some(original) = t.provider_category.take() {
+            t.category = original;
+        }
         let (category, source) = match annotation.and_then(|a| a.category.as_ref()) {
             Some(category) => (category.clone(), CategorySource::Manual),
             None if payment_to_person(t) => (PEOPLE_CATEGORY.to_owned(), CategorySource::Provider),

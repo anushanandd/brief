@@ -973,3 +973,63 @@ fn similar_merchants_vote_only_where_the_merchant_has_no_history_of_its_own() {
         ),
     );
 }
+
+#[test]
+fn reading_committed_rows_gives_what_reading_the_providers_rows_gives() {
+    // A refresh commits the policy's output, and every read applies the policy again.
+    let row = |id: &str, account: &str, amount: f64, category: &str, code: &str| {
+        let mut value = serde_json::to_value(transaction("Example", category, amount)).unwrap();
+        value["id"] = id.into();
+        value["accountId"] = account.into();
+        value["categoryDetail"] = code.into();
+        value
+    };
+    let mut zelle = row(
+        "zelle",
+        "plaid:checking",
+        -60.0,
+        "Transfers",
+        "TRANSFER_OUT_ACCOUNT_TRANSFER",
+    );
+    zelle["description"] = "Zelle payment to Example".into();
+    let raw = vec![
+        zelle,
+        // Plaid filed this move out of brokerage cash as spending.
+        row(
+            "moved",
+            "plaid:brokerage-cash",
+            -400.0,
+            "Other",
+            "GENERAL_SERVICES_OTHER_GENERAL_SERVICES",
+        ),
+        row(
+            "received",
+            "plaid:checking",
+            400.0,
+            "Transfers",
+            "TRANSFER_IN_ACCOUNT_TRANSFER",
+        ),
+    ];
+    let mut committed = raw.clone();
+    apply(&mut committed, &[], &BTreeMap::new()).unwrap();
+    assert_eq!(committed[1]["category"], "Transfers");
+
+    let mut again = committed.clone();
+    apply(&mut again, &[], &BTreeMap::new()).unwrap();
+    assert_eq!(again, committed);
+
+    // Marking the arrival someone else's breaks the pair, so the filed leg is what Plaid said.
+    let edits = BTreeMap::from([(
+        "received".into(),
+        Annotation {
+            other: Some(true),
+            ..Default::default()
+        },
+    )]);
+    let (mut read, mut fresh) = (committed.clone(), raw.clone());
+    apply(&mut read, &[], &edits).unwrap();
+    apply(&mut fresh, &[], &edits).unwrap();
+    assert_eq!(read, fresh);
+    assert_eq!(read[1]["category"], "Other");
+    assert_eq!(read[0]["providerCategory"], "Transfers");
+}
