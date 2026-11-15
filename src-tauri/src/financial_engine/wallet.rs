@@ -62,7 +62,7 @@ fn category(code: &str) -> PlaidCategory {
 
 /// The record's amount in cents, positive for money out as Plaid's are.
 fn outflow(row: &WalletRow) -> Decimal {
-    row.amount().round_dp(2)
+    crate::numeric::cents(row.amount())
 }
 
 fn day(value: &str) -> Option<NaiveDate> {

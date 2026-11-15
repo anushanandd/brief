@@ -13,7 +13,7 @@ use ts_rs::TS;
 use super::calendar::{self, Zone};
 use super::statement::StatementCycle;
 use crate::finance_contract::{Account, Transaction};
-use crate::numeric::{from_minor, js_round, minor_units, round2};
+use crate::numeric::{from_minor, minor_units, round2};
 
 mod detail;
 pub use detail::PeriodDetail;
@@ -380,7 +380,7 @@ fn typical(
             .map(|(category, cents)| {
                 (
                     category,
-                    js_round(cents as f64 / windows.len() as f64) / 100.0,
+                    (cents as f64 / windows.len() as f64).round() / 100.0,
                 )
             })
             .collect()

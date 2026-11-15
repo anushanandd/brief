@@ -11,7 +11,7 @@ use ts_rs::TS;
 use super::calendar;
 use super::AccountView;
 use crate::finance_contract::Transaction;
-use crate::numeric::js_round;
+use crate::numeric::{minor_units, round2};
 use crate::transaction_policy::Kind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -215,6 +215,8 @@ pub fn recurring_key(transaction: &Transaction) -> String {
     )
 }
 
+/// The upper middle of `values`: for an even count, an amount that was charged, not an average
+/// of two.
 fn median(values: &[f64]) -> f64 {
     let mut sorted = values.to_vec();
     sorted.sort_by(f64::total_cmp);
@@ -225,10 +227,6 @@ fn median_day(values: &[u32]) -> u32 {
     let mut sorted = values.to_vec();
     sorted.sort_unstable();
     sorted[sorted.len() / 2]
-}
-
-fn money(value: f64) -> f64 {
-    js_round(value * 100.0) / 100.0
 }
 
 fn matches_cadence(left: NaiveDate, right: NaiveDate, cadence: Cadence) -> bool {
@@ -626,10 +624,7 @@ fn forecast(
             .enumerate()
             .map(|(index, mut event)| {
                 if !single {
-                    event.id = format!(
-                        "{key}:amount:{}:{index}",
-                        js_round(event.amount.abs() * 100.0) as i64
-                    );
+                    event.id = format!("{key}:amount:{}:{index}", minor_units(event.amount.abs()));
                 }
                 event
             })
@@ -845,9 +840,9 @@ fn candidate(
                 EventKind::Payment
             },
             date: expected,
-            amount: money(if last.amount > 0.0 { typical } else { -typical }),
-            amount_low: money(amounts.iter().copied().fold(f64::INFINITY, f64::min)),
-            amount_high: money(amounts.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
+            amount: round2(if last.amount > 0.0 { typical } else { -typical }),
+            amount_low: round2(amounts.iter().copied().fold(f64::INFINITY, f64::min)),
+            amount_high: round2(amounts.iter().copied().fold(f64::NEG_INFINITY, f64::max)),
             frequency: run.cadence.label(),
             observations: run.transactions.len(),
             last_seen,
@@ -1107,7 +1102,7 @@ fn match_pending(events: Vec<ExpectedEvent>, pending: &[&Transaction]) -> Vec<Ex
                 })
             });
             if let Some(matched) = unambiguous {
-                event.amount = money(matched.amount);
+                event.amount = round2(matched.amount);
                 event.state = EventState::Pending;
                 event.matched_transaction_id = Some(matched.id.clone());
             }

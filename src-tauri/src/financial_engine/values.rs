@@ -22,7 +22,7 @@ pub(super) fn decimal_f64(value: f64) -> Option<Decimal> {
 }
 
 pub(super) fn rounded(value: Decimal) -> Decimal {
-    value.round_dp_with_strategy(2, RoundingStrategy::MidpointAwayFromZero)
+    crate::numeric::cents(value)
 }
 
 /// Dollars to whole cents, as the snapshot carries them.

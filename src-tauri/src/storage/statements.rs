@@ -71,7 +71,7 @@ fn confirmed_rows(saved: &[(&StatementFile, Parsed)]) -> std::collections::BTree
 }
 
 fn amount(value: Decimal) -> f64 {
-    value.round_dp(2).to_f64().unwrap_or_default()
+    crate::numeric::cents(value).to_f64().unwrap_or_default()
 }
 
 /// Words that identify an account, for matching a statement's label to an account name.

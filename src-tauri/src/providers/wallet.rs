@@ -318,7 +318,6 @@ fn optional<T>(
 
 fn dollars(value: i64) -> f64 {
     Decimal::new(value, AMOUNT_DIGITS)
-        .round_dp(2)
         .to_f64()
         .unwrap_or_default()
 }
