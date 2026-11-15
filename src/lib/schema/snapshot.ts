@@ -72,8 +72,11 @@ const personSchema = z.object({
   matchNames: z.array(z.string()).optional(),
 })
 
-/** Settings as the renderer edits, stores, and imports them; Rust validates them again. */
-export const financeSettingsSchema: z.ZodType<FinanceSettings> = z.object({
+/**
+ * Settings as the renderer edits, stores, and imports them; Rust validates them again. Every
+ * key Rust has must appear here, since parsing drops the keys it doesn't name.
+ */
+const financeSettingsShape = {
   spendingAccountId: z.string().optional(),
   /** More cards used for spending; like the saved one, they stay out of the accounts total. */
   spendingCards: z.array(z.string()).optional(),
@@ -146,7 +149,13 @@ export const financeSettingsSchema: z.ZodType<FinanceSettings> = z.object({
     .default([]),
   /** Where Brief writes its readable copy; off when absent. */
   dataFolder: z.object({ path: z.string(), masked: z.boolean() }).optional(),
+  /** Your answer to each suggested category, by suggestion. */
+  categoryReviews: z
+    .record(z.string(), z.object({ category: z.string(), accepted: z.boolean() }))
+    .optional(),
   research: z.boolean().default(false),
   /** An Ollama model on this Mac that reads long documents; Rust checks the name. */
   localModel: z.string().max(100).optional(),
-})
+} satisfies Record<keyof FinanceSettings, z.ZodType>
+
+export const financeSettingsSchema: z.ZodType<FinanceSettings> = z.object(financeSettingsShape)

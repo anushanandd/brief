@@ -6,6 +6,7 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import {
   financeSettings,
   importLegacyFinanceSettings,
+  saveFinanceSettings,
   withoutAccountPreferences,
 } from './finance-settings'
 import type { FinanceSettings } from './schema'
@@ -86,6 +87,13 @@ it('uses empty defaults when a snapshot has no saved settings', () => {
     tripCompanions: [],
     research: false,
   })
+})
+
+it('saving keeps your answers to suggested categories', async () => {
+  vi.mocked(invoke).mockResolvedValue({})
+  const categoryReviews = { suggestion: { category: 'Groceries', accepted: false } }
+  await saveFinanceSettings({ ...financeSettings(undefined), categoryReviews })
+  expect(vi.mocked(invoke).mock.calls[0]?.[1]).toMatchObject({ settings: { categoryReviews } })
 })
 
 it('resetting account preferences keeps every other setting', () => {
