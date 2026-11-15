@@ -3,7 +3,13 @@ import { type RefObject, useCallback, useEffect, useMemo, useRef, useState } fro
 
 import { PagedActivityList } from '../components/activity-list'
 import { CardBenefits } from '../components/card-benefits'
-import { SpendingBarChart } from '../components/charts'
+import {
+  ExpandableChart,
+  expandOnClick,
+  expandOnEnter,
+  SpendingBarChart,
+  useWheelSteps,
+} from '../components/charts'
 import { PageError, PageLoading } from '../components/data-state'
 import { ChevronRight, X } from '../components/icons'
 import { MerchantGroups, type MerchantGroup } from '../components/merchant-groups'
@@ -222,7 +228,9 @@ export function SpendingPage() {
   const canCompareTypical = period !== 0 && periodCategories.some(({ typical }) => typical != null)
   const comparison = canCompareTypical ? chosenComparison : 'previous'
 
-  useSpendingActions({
+  // Back stops where the saved history does, and waits for the period it is leaving.
+  const hasEarlier = Boolean(detail?.earlier) && !periodQuery.isPlaceholderData
+  const spendingActions = useSpendingActions({
     accounts: accountChoices,
     account: account?.id ?? allSpendingAccounts,
     chooseAccount,
@@ -233,8 +241,7 @@ export function SpendingPage() {
     focus,
     period,
     periodOffset,
-    // Back stops where the saved history does, and waits for the period it is leaving.
-    hasEarlier: Boolean(detail?.earlier) && !periodQuery.isPlaceholderData,
+    hasEarlier,
     choosePeriod,
     setPeriodOffset,
     clearFocus,
@@ -244,6 +251,15 @@ export function SpendingPage() {
     breakdown,
     setBreakdown,
   })
+  // Scrolling over the chart steps through its periods, as [ and ] do.
+  const [chartRegion, setChartRegion] = useState<HTMLDivElement | null>(null)
+  const [expandedRegion, setExpandedRegion] = useState<HTMLDivElement | null>(null)
+  const stepPeriod = (direction: -1 | 1) => {
+    if (direction < 0 ? period !== 0 && hasEarlier : periodOffset < 0)
+      setPeriodOffset((current) => Math.min(0, current + direction))
+  }
+  useWheelSteps(chartRegion, stepPeriod)
+  useWheelSteps(expandedRegion, stepPeriod)
 
   if (query.isLoading || (options.length > 0 && periodQuery.isLoading)) return <PageLoading />
   if (query.isError || periodQuery.isError || !data) return <PageError />
@@ -362,11 +378,11 @@ export function SpendingPage() {
   return (
     <div className="page spending-workspace-page">
       <WorkspaceHeader
-        title="Money"
+        title="Spending"
         breadcrumbs={
           search.account
             ? [
-                { label: 'Money', to: '/spending', search: { range: search.range } },
+                { label: 'Spending', to: '/spending', search: { range: search.range } },
                 {
                   label: account
                     ? accountDisplayName(account.id, account.name, names)
@@ -390,176 +406,186 @@ export function SpendingPage() {
         <div className="spending-overview-grid">
           <div className="spending-main">
             <Card className="workspace-brief-card spending-brief-card spending-hero-card">
-              <section
-                className="spending-total-panel"
-                aria-keyshortcuts={`${hasStatements ? 'S ' : ''}W M Q Y A ${hasOthers ? 'F ' : ''}ArrowLeft ArrowRight`}
-              >
-                <header className="workspace-brief-heading">
-                  <div>
-                    <div className="spending-balance-stack">
-                      <h2
-                        className="balance-label"
-                        aria-description={
-                          basis === 'statement'
-                            ? statement?.source === 'issuer'
-                              ? 'Period from issuer-reported statement dates'
-                              : 'Period inferred from recurring posted autopay dates'
-                            : undefined
-                        }
-                      >
-                        {focus ? (
-                          `${periodLabel} · ${focus}`
-                        ) : statementBalance != null ? (
-                          <>
-                            {periodOffset === 0 ? 'Balance ' : `${periodLabel} · balance `}
-                            <span className="sensitive-value">
-                              {formatProseCurrency(statementBalance)}
-                            </span>
-                            {closingLabel}
-                          </>
-                        ) : (
-                          `${periodLabel}${closingLabel}`
-                        )}
-                      </h2>
-                      <AnimatedCurrency className="hero-number" value={figures?.total} />
-                    </div>
-                    <div className="chart-summary-row">
-                      {spendingChange != null ? (
-                        <ChartChange
-                          amount={spendingChange}
-                          percent={figures?.changePct ?? null}
-                          favorable="decrease"
-                          ariaLabel="Change versus prior period"
-                        />
-                      ) : null}
-                      {figures ? (
-                        <span className="spending-daily-average sensitive-value">
-                          {`${formatProseCurrency(figures.daily)} a day`}
-                        </span>
-                      ) : null}
-                      {historyStart ? (
-                        <span className="spending-daily-average">
-                          {`Card history starts ${formatMonthYear(historyStart)}`}
-                        </span>
-                      ) : null}
-                      {focus ? (
-                        <button
-                          type="button"
-                          className="spending-focus-chip"
-                          onClick={clearFocus}
-                          aria-label={`Show all categories instead of ${focus}`}
-                          aria-keyshortcuts="Escape"
-                        >
-                          <i style={{ background: focusColor }} aria-hidden="true" />
-                          {focus}
-                          <X size={12} aria-hidden="true" />
-                        </button>
-                      ) : null}
-                    </div>
-                  </div>
-                  <span className="spending-heading-controls">
-                    {options.length > 1 ? (
-                      <ChartRangeSelect
-                        command="spending.account."
-                        label={`Spending account. Showing: ${accountChoices.find(({ value }) => value === (account?.id ?? allSpendingAccounts))?.label}`}
-                        options={accountChoices.map(({ value, label }) => ({
-                          label,
-                          accessibleLabel: label,
-                          value,
-                        }))}
-                        value={account?.id ?? allSpendingAccounts}
-                        onValueChange={chooseAccount}
-                      />
-                    ) : null}
-                    {hasOthers ? (
-                      <ChartRangeSelect
-                        command="spending.for."
-                        label={`Whose spending. Showing: ${spendingOwnerOptions.find(({ value }) => value === owner)!.label}`}
-                        options={spendingOwnerOptions.map(({ value, label }) => ({
-                          label,
-                          accessibleLabel: label,
-                          value,
-                        }))}
-                        value={owner}
-                        onValueChange={setOwner}
-                      />
-                    ) : null}
-                    <ChartRangeSelect
-                      command="spending.period."
-                      label={`Spending range. Active period: ${periodLabel}`}
-                      options={
-                        hasStatements
-                          ? spendingPeriodIndicators
-                          : spendingPeriodIndicators.filter(({ value }) => value !== 'statement')
-                      }
-                      value={period}
-                      onValueChange={choosePeriod}
-                    />
-                  </span>
-                </header>
-                <div
-                  className="spending-chart-region"
-                  role="region"
-                  aria-label="Spending chart"
-                  tabIndex={0}
-                  data-range-focus-region
-                >
-                  {period === 0 ? (
-                    <SpendingBarChart
-                      data={bars}
-                      label={focus ? `${periodLabel} · ${focus}` : periodLabel}
-                      categories={
-                        focus
-                          ? chartCategories.filter(({ name }) => name === focus)
-                          : chartCategories
-                      }
-                      activities={activityById}
-                    />
-                  ) : (
-                    <SpendingPaceChart
-                      pace={pace}
-                      color={focusColor}
-                      highlightedIds={linked?.from === 'list' ? linked.ids : undefined}
-                      onSelectRange={(from, to) =>
-                        void navigate({
-                          to: '/activities',
-                          search: {
-                            account: account?.id,
-                            category: focus ?? undefined,
-                            for: hasOthers && owner !== 'all' ? owner : undefined,
-                            from,
-                            to,
-                          },
-                        })
-                      }
-                      onScrubDay={(ids) =>
-                        setLinked(ids ? { ids: new Set(ids), from: 'chart' } : null)
-                      }
-                      currentLabel={periodOffset === 0 ? `This ${unit}` : `Selected ${unit}`}
-                      previousLabel={periodOffset === 0 ? `Last ${unit}` : `Prior ${unit}`}
-                      activities={activityById}
-                    />
-                  )}
-                </div>
-                {period === 0 && chartCategories.length ? (
-                  <ul
-                    className="analytics-legend bar-chart-legend"
-                    aria-label="Chart legend"
-                    tabIndex={0}
+              <ExpandableChart title="Spending" actions={spendingActions}>
+                {(expanded, expand) => (
+                  <section
+                    className="spending-total-panel"
+                    aria-keyshortcuts={`${hasStatements ? 'S ' : ''}W M Q Y A ${hasOthers ? 'F ' : ''}ArrowLeft ArrowRight`}
                   >
-                    {chartCategories.map(({ name, color }) => (
-                      <li key={name}>
-                        <i
-                          className="analytics-category-dot"
-                          style={{ background: color }}
-                          aria-hidden="true"
+                    <header className="workspace-brief-heading">
+                      <div>
+                        <div className="spending-balance-stack">
+                          <h2
+                            className="balance-label"
+                            aria-description={
+                              basis === 'statement'
+                                ? statement?.source === 'issuer'
+                                  ? 'Period from issuer-reported statement dates'
+                                  : 'Period inferred from recurring posted autopay dates'
+                                : undefined
+                            }
+                          >
+                            {focus ? (
+                              `${periodLabel} · ${focus}`
+                            ) : statementBalance != null ? (
+                              <>
+                                {periodOffset === 0 ? 'Balance ' : `${periodLabel} · balance `}
+                                <span className="sensitive-value">
+                                  {formatProseCurrency(statementBalance)}
+                                </span>
+                                {closingLabel}
+                              </>
+                            ) : (
+                              `${periodLabel}${closingLabel}`
+                            )}
+                          </h2>
+                          <AnimatedCurrency className="hero-number" value={figures?.total} />
+                        </div>
+                        <div className="chart-summary-row">
+                          {spendingChange != null ? (
+                            <ChartChange
+                              amount={spendingChange}
+                              percent={figures?.changePct ?? null}
+                              favorable="decrease"
+                              ariaLabel="Change versus prior period"
+                            />
+                          ) : null}
+                          {figures ? (
+                            <span className="spending-daily-average sensitive-value">
+                              {`${formatProseCurrency(figures.daily)} a day`}
+                            </span>
+                          ) : null}
+                          {historyStart ? (
+                            <span className="spending-daily-average">
+                              {`Card history starts ${formatMonthYear(historyStart)}`}
+                            </span>
+                          ) : null}
+                          {focus ? (
+                            <button
+                              type="button"
+                              className="spending-focus-chip"
+                              onClick={clearFocus}
+                              aria-label={`Show all categories instead of ${focus}`}
+                              aria-keyshortcuts="Escape"
+                            >
+                              <i style={{ background: focusColor }} aria-hidden="true" />
+                              {focus}
+                              <X size={12} aria-hidden="true" />
+                            </button>
+                          ) : null}
+                        </div>
+                      </div>
+                      <span className="spending-heading-controls">
+                        {options.length > 1 ? (
+                          <ChartRangeSelect
+                            command="spending.account."
+                            label={`Spending account. Showing: ${accountChoices.find(({ value }) => value === (account?.id ?? allSpendingAccounts))?.label}`}
+                            options={accountChoices.map(({ value, label }) => ({
+                              label,
+                              accessibleLabel: label,
+                              value,
+                            }))}
+                            value={account?.id ?? allSpendingAccounts}
+                            onValueChange={chooseAccount}
+                          />
+                        ) : null}
+                        {hasOthers ? (
+                          <ChartRangeSelect
+                            command="spending.for."
+                            label={`Whose spending. Showing: ${spendingOwnerOptions.find(({ value }) => value === owner)!.label}`}
+                            options={spendingOwnerOptions.map(({ value, label }) => ({
+                              label,
+                              accessibleLabel: label,
+                              value,
+                            }))}
+                            value={owner}
+                            onValueChange={setOwner}
+                          />
+                        ) : null}
+                        <ChartRangeSelect
+                          command="spending.period."
+                          label={`Spending range. Active period: ${periodLabel}`}
+                          options={
+                            hasStatements
+                              ? spendingPeriodIndicators
+                              : spendingPeriodIndicators.filter(
+                                  ({ value }) => value !== 'statement',
+                                )
+                          }
+                          value={period}
+                          onValueChange={choosePeriod}
                         />
-                        {name}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </section>
+                      </span>
+                    </header>
+                    <div
+                      ref={expanded ? setExpandedRegion : setChartRegion}
+                      className={`spending-chart-region${expand ? ' expands-on-click' : ''}`}
+                      role="region"
+                      aria-label="Spending chart"
+                      aria-keyshortcuts={expand ? 'Enter' : undefined}
+                      tabIndex={0}
+                      data-range-focus-region
+                      onClick={expandOnClick(expand)}
+                      onKeyDown={expandOnEnter(expand)}
+                    >
+                      {period === 0 ? (
+                        <SpendingBarChart
+                          data={bars}
+                          label={focus ? `${periodLabel} · ${focus}` : periodLabel}
+                          categories={
+                            focus
+                              ? chartCategories.filter(({ name }) => name === focus)
+                              : chartCategories
+                          }
+                          activities={activityById}
+                        />
+                      ) : (
+                        <SpendingPaceChart
+                          pace={pace}
+                          color={focusColor}
+                          highlightedIds={linked?.from === 'list' ? linked.ids : undefined}
+                          onSelectRange={(from, to) =>
+                            void navigate({
+                              to: '/activities',
+                              search: {
+                                account: account?.id,
+                                category: focus ?? undefined,
+                                for: hasOthers && owner !== 'all' ? owner : undefined,
+                                from,
+                                to,
+                              },
+                            })
+                          }
+                          onScrubDay={(ids) =>
+                            setLinked(ids ? { ids: new Set(ids), from: 'chart' } : null)
+                          }
+                          currentLabel={periodOffset === 0 ? `This ${unit}` : `Selected ${unit}`}
+                          previousLabel={periodOffset === 0 ? `Last ${unit}` : `Prior ${unit}`}
+                          activities={activityById}
+                        />
+                      )}
+                    </div>
+                    {period === 0 && chartCategories.length ? (
+                      <ul
+                        className="analytics-legend bar-chart-legend"
+                        aria-label="Chart legend"
+                        tabIndex={0}
+                      >
+                        {chartCategories.map(({ name, color }) => (
+                          <li key={name}>
+                            <i
+                              className="analytics-category-dot"
+                              style={{ background: color }}
+                              aria-hidden="true"
+                            />
+                            {name}
+                          </li>
+                        ))}
+                      </ul>
+                    ) : null}
+                  </section>
+                )}
+              </ExpandableChart>
             </Card>
 
             {/* Where the money went beside the latest of it, each scrolling in its own card. */}

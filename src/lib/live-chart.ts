@@ -58,6 +58,20 @@ export function chartPointAtOrAfter(points: LivelinePoint[], time: number) {
   return points.find((point) => point.time >= time) ?? points.at(-1)
 }
 
+/** The line's last point at or before `time`, the value a chart ending then shows. */
+export function chartPointAtOrBefore(points: LivelinePoint[], time: number) {
+  return points.findLast((point) => point.time <= time) ?? points[0]
+}
+
+/** The noon UTC a saved day is drawn at, where a chart scrolled back to that day ends. */
+export const chartDayTime = (date: string) => Date.parse(`${date}T12:00:00Z`) / 1_000
+
+/** The first day a chart draws, from its start date on. */
+export function firstChartDay(points: LivelinePoint[], startDate?: string) {
+  const first = chartPointsFromStartDate(points, startDate)[0]
+  return first ? dayKey(first.time * 1_000) : undefined
+}
+
 /**
  * A value chart's change over a window, as Rust read it from the same line: saved, or at the
  * live points when the market stream is on. Nothing changed when Rust has no reading.

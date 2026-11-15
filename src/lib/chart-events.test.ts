@@ -40,6 +40,11 @@ describe('buildChartEventGroups', () => {
       ['External deposit', 'in'],
       ['External withdrawal', 'out'],
     ])
+    // A chart scrolled back to a day shows only what had happened by its end.
+    const scrolled = buildChartEventGroups(data, 'net-worth', 7 * 86_400, [], '2026-09-08')
+    expect(scrolled.flatMap((group) => group.events).map(({ title }) => title)).toEqual([
+      'External deposit',
+    ])
   })
 
   it('includes small directional trades and deduplicates internal transfers', () => {

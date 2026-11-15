@@ -221,4 +221,6 @@ export function useSpendingActions({
     ],
   )
   useRegisterActions(actions)
+  // The expanded chart registers the same keys for its own window.
+  return actions
 }

@@ -1,10 +1,79 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
-import { adjacentGraphWindow, graphWindowForKey, parseGraphWindow } from './graph-preferences'
+import {
+  adjacentGraphWindow,
+  graphWindowForKey,
+  parseGraphWindow,
+  shiftedGraphEnd,
+} from './graph-preferences'
+
+const day = 24 * 60 * 60
+
+it('scrolls a range back within the history and ends today again at the latest day', () => {
+  const today = '2026-09-30'
+  const first = '2026-01-01'
+  const month = 30 * day
+  // A period back from today, then another, then ahead again.
+  expect(shiftedGraphEnd(undefined, -30, month, today, first)).toBe('2026-08-31')
+  expect(shiftedGraphEnd('2026-08-31', -30, month, today, first)).toBe('2026-08-01')
+  expect(shiftedGraphEnd('2026-08-31', 30, month, today, first)).toBeUndefined()
+  // Never before a whole period after the first day.
+  expect(shiftedGraphEnd('2026-02-05', -30, month, today, first)).toBe('2026-01-31')
+  // A history shorter than the range, a day, or all time doesn't scroll.
+  expect(shiftedGraphEnd(undefined, -30, month, today, '2026-09-15')).toBeUndefined()
+  expect(shiftedGraphEnd(undefined, -1, day, today, first)).toBeUndefined()
+  expect(shiftedGraphEnd(undefined, -30, 0, today, first)).toBeUndefined()
+  expect(shiftedGraphEnd(undefined, -30, month, today, undefined)).toBeUndefined()
+})
+
+it('counts a page as scrolling for a moment after its end day moves', async () => {
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { createElement } = await import('react')
+  const { setGraphEnd, useGraphScrolling, resetSessionGraphWindow } =
+    await import('./graph-preferences')
+  vi.useFakeTimers({ toFake: ['Date'] })
+  const scrolling = () => {
+    let seen = false
+    renderToStaticMarkup(
+      createElement(() => {
+        seen = useGraphScrolling()
+        return null
+      }),
+    )
+    return seen
+  }
+  setGraphEnd('2026-08-31')
+  expect(scrolling()).toBe(true)
+  vi.advanceTimersByTime(1_500)
+  expect(scrolling()).toBe(false)
+  vi.useRealTimers()
+  resetSessionGraphWindow()
+})
+
+it('ends today again when the range changes to one that does not scroll', async () => {
+  const { renderToStaticMarkup } = await import('react-dom/server')
+  const { createElement } = await import('react')
+  const { setGraphEnd, useGraphWindow, resetSessionGraphWindow, sessionGraphEnd } =
+    await import('./graph-preferences')
+  resetSessionGraphWindow()
+  let setWindow: ReturnType<typeof useGraphWindow>[1] | undefined
+  renderToStaticMarkup(
+    createElement(() => {
+      ;[, setWindow] = useGraphWindow()
+      return null
+    }),
+  )
+  setWindow!(30 * day)
+  setGraphEnd('2026-08-31')
+  setWindow!(90 * day)
+  expect(sessionGraphEnd()).toBe('2026-08-31')
+  setWindow!(0)
+  expect(sessionGraphEnd()).toBeUndefined()
+  resetSessionGraphWindow()
+})
 
 describe('graph preferences', () => {
   it('validates saved ranges and wraps keyboard selection', () => {
-    const day = 24 * 60 * 60
     expect(parseGraphWindow(String(day))).toBe(day)
     expect(parseGraphWindow(String(2 * day))).toBe(7 * day)
     expect(parseGraphWindow(String(30 * day))).toBe(30 * day)

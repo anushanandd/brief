@@ -14,7 +14,7 @@ Liveline draws the value histories (`src/components/charts.tsx`), which rely on 
 
 - `breakBefore` prevents interpolation and drawing across known gaps or feed boundaries.
 - Window filtering can insert a presentation-only left-boundary point for sparse series.
-- `valueTime` and `endTime` separate an observation endpoint from wall-clock time and support fixed historical windows.
+- `valueTime` and `endTime` separate an observation endpoint from wall-clock time and support fixed historical windows, in line, multi-series, and candle modes. Scrolled-back value charts draw their deposits and S&P 500 lines as series, so they rely on the multi-series window ending at `endTime`.
 - `minValueRange` places a lower bound on the displayed numerical span.
 - Series `dash` and `currentLine` control comparison and current-value presentation.
 - `continuous={false}` allows settled charts to stop requesting frames.

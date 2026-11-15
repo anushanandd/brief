@@ -3,7 +3,12 @@ import { useMemo, useState } from 'react'
 
 import { AccountGroups, AccountRows } from '../components/account-groups'
 import { ActivityList } from '../components/activity-list'
-import { ChartRangeSelector, PerformanceChart } from '../components/charts'
+import {
+  ChartRangeSelector,
+  ChartSpan,
+  ExpandableChart,
+  PerformanceChart,
+} from '../components/charts'
 import { PageError, HomeLoading, ValueHistoryEmptyState } from '../components/data-state'
 import { ExpectedActivity } from '../components/expected-activity'
 import { ChevronRight } from '../components/icons'
@@ -15,6 +20,7 @@ import { SnapTradeReference } from '../components/snaptrade-reference'
 import { AnimatedCurrency, Card, ChartChange, EmptyState, SectionHeading } from '../components/ui'
 import { MarketStatus, WorkspaceHeader } from '../components/workspace-header'
 import { useAmountsHidden } from '../hooks/use-amounts-hidden'
+import { useAsOf } from '../hooks/use-as-of'
 import { useFinance } from '../hooks/use-finance'
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
@@ -31,14 +37,21 @@ import {
 } from '../lib/dashboard-account-views'
 import { financeSettings } from '../lib/finance-settings'
 import { countOf } from '../lib/format'
-import { chartPeriod, useGraphWindow } from '../lib/graph-preferences'
+import { chartPeriod, useGraphEnd, useGraphWindow } from '../lib/graph-preferences'
 import { consolidatedPositions } from '../lib/holding-detail'
 import {
   accountGroupsModes,
   saveAccountGroupsMode,
   useAccountGroupsMode,
 } from '../lib/home-preferences'
-import { buildLiveChartData, chartPointsFromStartDate, chartRangeChange } from '../lib/live-chart'
+import {
+  buildLiveChartData,
+  chartDayTime,
+  chartPointAtOrBefore,
+  chartPointsFromStartDate,
+  chartRangeChange,
+  firstChartDay,
+} from '../lib/live-chart'
 import { getExternalLogosEnabled } from '../lib/logos'
 import type { FinanceSnapshot, Rollup } from '../lib/schema'
 
@@ -60,7 +73,9 @@ export function OverviewPage() {
   const accountDisplayNames = settings.accountNames
   const accountStartDates = settings.accountStartDates
   const [externalLogosEnabled] = useState(getExternalLogosEnabled)
-  useGraphWindowShortcuts(setGraphWindow)
+  const [graphEnd] = useGraphEnd()
+  // Scrolled back in time, the period's figures are the ones Rust measured to the end day.
+  const asOf = useAsOf(committed)
   const accountGroupsActions = useMemo<AppAction[]>(
     () =>
       accountGroupsModes.map(({ value, label }) => ({
@@ -104,6 +119,17 @@ export function OverviewPage() {
     [netWorthView, livePoints],
   )
 
+  const homeStart =
+    liveData && netWorthView
+      ? accountStartDate(liveData, netWorthView.accountId, accountStartDates)
+      : undefined
+  const today = committed?.insights?.today
+  const scroll = useMemo(
+    () => (today ? { today, first: firstChartDay(chartData, homeStart) } : undefined),
+    [today, chartData, homeStart],
+  )
+  useGraphWindowShortcuts(setGraphWindow, scroll)
+
   const details = useMemo(() => {
     if (!committed) return undefined
     return {
@@ -115,29 +141,36 @@ export function OverviewPage() {
   const chartEvents = useMemo(
     () =>
       committed && resolvedAccountId
-        ? buildChartEventGroups(committed, resolvedAccountId, graphWindow)
+        ? buildChartEventGroups(committed, resolvedAccountId, graphWindow, [], graphEnd)
         : [],
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- the mask changes what is formatted
-    [committed, resolvedAccountId, graphWindow, amountsHidden],
+    [committed, resolvedAccountId, graphWindow, graphEnd, amountsHidden],
   )
 
   if (query.isLoading || query.startupPending) return <HomeLoading />
-  if (query.isError || !query.data || !committed || !details || !netWorthView) return <PageError />
+  if (query.isError || !query.data || !committed || !asOf || !details || !netWorthView)
+    return <PageError />
 
   const data = query.data
   const account = netWorthView
   const referenceAccount = committed.accounts.find(({ id }) => id === account.accountId)
 
   const points = account.points
-  const latestValue = account.currentValue
+  // Scrolled back, the hero is the value saved for the end day.
+  const latestValue = graphEnd
+    ? (chartPointAtOrBefore(chartData, chartDayTime(graphEnd))?.value ?? account.currentValue)
+    : account.currentValue
   const incomplete = accountValueIncomplete(data, account.accountId)
-  const startDate = accountStartDate(data, account.accountId, accountStartDates)
-  const rangeChange = chartRangeChange(query.chartChanges, account.accountId, graphWindow)
+  const startDate = homeStart
+  const chartChanges = graphEnd ? (asOf.insights?.chartChanges ?? []) : query.chartChanges
+  const rangeChange = chartRangeChange(chartChanges, account.accountId, graphWindow)
+  // A past day's change is unknown until Rust has measured it.
+  const changeKnown = !graphEnd || chartChanges.some(({ series }) => series === account.accountId)
   const hasHistoricalValues = hasValueHistory(points, startDate)
   const historyIsAvailable =
     !incomplete &&
     (hasHistoricalValues || chartPointsFromStartDate(livePoints ?? [], startDate).length > 1)
-  const periodChanges = committed.insights?.changes.find(({ window }) => window === changeWindow)
+  const periodChanges = asOf.insights?.changes.find(({ window }) => window === changeWindow)
   const accounts = data.accounts
     .filter(({ id }) => id !== 'all')
     .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity))
@@ -171,54 +204,70 @@ export function OverviewPage() {
       <div className="home-layout">
         <div className="home-top">
           <Card className="net-worth-card brokerage-performance-card">
-            <header className="home-balance-header">
-              <div className="home-balance-main">
-                <h2 className="balance-label">
-                  {account.name}
-                  {incomplete ? ' · known USD balances only' : ''}
-                </h2>
-                <div className="home-balance-value">
-                  <AnimatedCurrency className="hero-number" value={latestValue} />
-                </div>
-              </div>
-              {referenceAccount?.id.startsWith('snaptrade:') || historyIsAvailable ? (
-                <div className="chart-header-aside">
-                  {historyIsAvailable ? (
-                    <ChartRangeSelector value={graphWindow} onValueChange={setGraphWindow} />
-                  ) : null}
-                  <SnapTradeReference account={referenceAccount} />
-                </div>
-              ) : null}
-              <div className="chart-summary-row">
-                <ChartChange
-                  amount={historyIsAvailable ? rangeChange.change : null}
-                  percent={historyIsAvailable ? rangeChange.percent : null}
-                />
-              </div>
-            </header>
+            <ExpandableChart
+              title={account.name}
+              seconds={graphWindow}
+              setSeconds={setGraphWindow}
+              scroll={scroll}
+            >
+              {() => (
+                <>
+                  <header className="home-balance-header">
+                    <div className="home-balance-main">
+                      <h2 className="balance-label">
+                        {account.name}
+                        {incomplete ? ' · known USD balances only' : ''}
+                      </h2>
+                      <div className="home-balance-value">
+                        <AnimatedCurrency className="hero-number" value={latestValue} />
+                      </div>
+                    </div>
+                    {referenceAccount?.id.startsWith('snaptrade:') || historyIsAvailable ? (
+                      <div className="chart-header-aside">
+                        <ChartSpan seconds={graphWindow} />
+                        {historyIsAvailable ? (
+                          <ChartRangeSelector value={graphWindow} onValueChange={setGraphWindow} />
+                        ) : null}
+                        <SnapTradeReference account={referenceAccount} />
+                      </div>
+                    ) : null}
+                    <div className="chart-summary-row">
+                      <ChartChange
+                        amount={historyIsAvailable && changeKnown ? rangeChange.change : null}
+                        percent={historyIsAvailable && changeKnown ? rangeChange.percent : null}
+                      />
+                    </div>
+                  </header>
 
-            <div className="brokerage-chart-viewport">
-              <div key={account.accountId} className="brokerage-chart-slide">
-                <div className="brokerage-chart-content">
-                  {historyIsAvailable ? (
-                    <PerformanceChart
-                      data={chartData}
-                      value={latestValue}
-                      events={chartEvents}
-                      referenceIso={data.updatedAt}
-                      startDate={startDate}
-                      selectedWindow={graphWindow}
-                    />
-                  ) : (
-                    <ValueHistoryEmptyState incomplete={incomplete} valueAvailable={!incomplete} />
-                  )}
-                </div>
-              </div>
-            </div>
+                  <div className="brokerage-chart-viewport">
+                    <div key={account.accountId} className="brokerage-chart-slide">
+                      <div className="brokerage-chart-content">
+                        {historyIsAvailable ? (
+                          <PerformanceChart
+                            data={chartData}
+                            value={latestValue}
+                            events={chartEvents}
+                            referenceIso={data.updatedAt}
+                            startDate={startDate}
+                            selectedWindow={graphWindow}
+                            scroll={scroll}
+                          />
+                        ) : (
+                          <ValueHistoryEmptyState
+                            incomplete={incomplete}
+                            valueAvailable={!incomplete}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </>
+              )}
+            </ExpandableChart>
           </Card>
           <div className="home-companion home-ahead">
             <Card className="home-overview-summary home-ahead-card home-period-card">
-              <PeriodTotals data={committed} window={changeWindow} />
+              <PeriodTotals data={asOf} window={changeWindow} />
             </Card>
             <ExpectedActivity data={data} className="home-expected-card" />
           </div>

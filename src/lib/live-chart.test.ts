@@ -3,9 +3,12 @@ import { describe, expect, it } from 'vitest'
 import {
   appendLiveChartPoint,
   buildLiveChartData,
+  chartDayTime,
   chartPointAtOrAfter,
+  chartPointAtOrBefore,
   chartPointsFromStartDate,
   chartRangeChange,
+  firstChartDay,
   referenceLines,
   splitAtEstimate,
   upsertLiveChartPoint,
@@ -15,6 +18,15 @@ import {
 const day = (date: string, value: number) => ({
   time: Date.parse(`${date}T16:00:00Z`) / 1_000,
   value,
+})
+
+it('reads a chart scrolled back at its end day, from its first drawn day', () => {
+  const points = [day('2026-09-01', 100), day('2026-09-02', 110), day('2026-09-04', 120)]
+  expect(chartPointAtOrBefore(points, chartDayTime('2026-09-03'))?.value).toBe(110)
+  expect(chartPointAtOrBefore(points, chartDayTime('2026-08-01'))?.value).toBe(100)
+  expect(firstChartDay(points)).toBe('2026-09-01')
+  expect(firstChartDay(points, '2026-09-02')).toBe('2026-09-02')
+  expect(firstChartDay([], '2026-09-02')).toBeUndefined()
 })
 
 it('splits a line at its last observed day so the estimate starts where it ends', () => {

@@ -41,6 +41,22 @@ pub(crate) fn get_spending_period(
     ))
 }
 
+/// The chart periods' figures at an earlier day's close, for a page scrolled back in time; see
+/// `insights::as_of`. None for today or later, whose figures the snapshot carries.
+#[tauri::command(async)]
+pub(crate) fn get_period_as_of(
+    end: chrono::NaiveDate,
+    state: State<'_, AppState>,
+) -> Result<Option<crate::insights::as_of::PeriodAsOf>, String> {
+    let storage = state.storage()?;
+    let view = storage.read_view()?;
+    Ok(crate::insights::as_of::period_as_of(
+        &view,
+        storage.settings(),
+        end,
+    ))
+}
+
 /// The sums of the Activity rows in view, named by their IDs; see `insights::activity_totals`.
 #[tauri::command(async)]
 pub(crate) fn get_activity_totals(

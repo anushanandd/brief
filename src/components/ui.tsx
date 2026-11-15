@@ -9,6 +9,7 @@ import {
   formatSignedCurrency,
   valueTone,
 } from '../lib/format'
+import { useGraphScrolling } from '../lib/graph-preferences'
 import { FilterSelect } from './filter-select'
 import type { IconComponent } from './icons'
 
@@ -22,20 +23,31 @@ export function AnimatedCurrency({
   /** A public market price, which screen privacy leaves visible. */
   publicValue?: boolean
 }) {
+  const scrolling = useGraphScrolling()
   // NumberFlow draws its own digits, so a hidden amount never reaches it.
   if (value == null || (amountsHidden() && !publicValue))
     return <span className={className}>{formatCurrency(value)}</span>
-
-  // Values change when data arrives or a key steps through rows, never by a gesture worth
-  // animating, so digits update in place rather than rolling.
   return (
-    <NumberFlow
+    <FlowNumber
       className={className}
       value={value}
-      locales="en-US"
-      animated={false}
-      respectMotionPreference
+      animated={scrolling}
       format={{ style: 'currency', currency: 'USD', maximumFractionDigits: 2 }}
+    />
+  )
+}
+
+const sign = (value: number, plus: string) => (value < 0 ? '−' : value > 0 ? plus : '')
+
+/**
+ * A figure in NumberFlow's own digits. Values change when data arrives or a key steps through
+ * rows, which update in place; only a scroll through time, a gesture the eye follows, rolls them.
+ */
+function FlowNumber(props: Omit<ComponentPropsWithRef<typeof NumberFlow>, 'locales'>) {
+  return (
+    <NumberFlow
+      locales="en-US"
+      respectMotionPreference
       transformTiming={{
         duration: 200,
         easing: 'cubic-bezier(0.77, 0, 0.175, 1)',
@@ -44,6 +56,7 @@ export function AnimatedCurrency({
         duration: 120,
         easing: 'cubic-bezier(0.23, 1, 0.32, 1)',
       }}
+      {...props}
     />
   )
 }
@@ -238,6 +251,7 @@ export function ChartChange({
   ariaLabel?: string
 }) {
   const tone = valueTone(amount == null || favorable === 'increase' ? amount : -amount)
+  const scrolling = useGraphScrolling()
 
   if (amount == null && percent == null)
     return (
@@ -252,9 +266,32 @@ export function ChartChange({
 
   return (
     <strong className="hero-change" role={ariaLabel ? 'group' : undefined} aria-label={ariaLabel}>
-      <span className={tone}>{formatSignedCurrency(amount)}</span>
+      {amount == null || amountsHidden() ? (
+        <span className={tone}>{formatSignedCurrency(amount)}</span>
+      ) : (
+        // The sign sits outside the digits: Brief writes a true minus, and Intl a hyphen.
+        <FlowNumber
+          className={tone}
+          value={Math.abs(amount)}
+          animated={scrolling}
+          prefix={sign(amount, '+')}
+          format={{
+            style: 'currency',
+            currency: 'USD',
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }}
+        />
+      )}
       {percent == null ? null : (
-        <span className={tone}>({formatPercent(percent).replace(/^\+/, '')})</span>
+        <FlowNumber
+          className={tone}
+          value={Math.abs(percent) / 100}
+          animated={scrolling}
+          prefix={`(${sign(percent, '')}`}
+          suffix=")"
+          format={{ style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }}
+        />
       )}
     </strong>
   )

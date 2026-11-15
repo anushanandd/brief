@@ -1,8 +1,26 @@
 import { Liveline, type LivelinePoint, type LivelineSeries } from 'liveline'
-import { useLayoutEffect, useMemo, useState } from 'react'
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useEffect,
+  useId,
+  useLayoutEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+  type SetStateAction,
+} from 'react'
 
+import { graphRangeActions } from '../hooks/use-graph-window-shortcuts'
+import { useLatest } from '../hooks/use-latest'
+import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { ActivityItem } from '../lib/activity'
 import { type ChartEventGroup, chartEventGroupLabel } from '../lib/chart-events'
+import { addDays } from '../lib/dates'
 import {
   formatActivityName,
   formatCalendarDate,
@@ -12,11 +30,27 @@ import {
   formatInstant,
   formatShortDay,
 } from '../lib/format'
-import { graphWindows } from '../lib/graph-preferences'
-import { chartPointAtOrAfter, chartPointsFromStartDate, splitAtEstimate } from '../lib/live-chart'
+import {
+  graphWindows,
+  scrollPeriodDays,
+  sessionGraphEnd,
+  setGraphEnd,
+  shiftedGraphEnd,
+  useGraphEnd,
+  type GraphScroll,
+} from '../lib/graph-preferences'
+import {
+  chartDayTime,
+  chartPointAtOrAfter,
+  chartPointsFromStartDate,
+  splitAtEstimate,
+} from '../lib/live-chart'
 import type { SpendingBar } from '../lib/spending'
 import { ActivityMark } from './activity-list'
-import { ChartRangeSelect } from './ui'
+import { X } from './icons'
+import { Button, ChartRangeSelect } from './ui'
+import { Dialog, dialogAutofocus } from './ui/dialog'
+import { usePresence } from './ui/presence'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 const DAY_SECONDS = 24 * 60 * 60
@@ -286,11 +320,14 @@ export function CashAheadChart({
   days,
   through,
   lowest,
+  onExpand,
 }: {
   days: ReadonlyArray<{ date: string; expected: number; low: number; high: number }>
   /** The horizon's last day. */
   through: string
   lowest?: { date: string; expected: number }
+  /** Opens the chart larger, from a click on it or ↵ on it. */
+  onExpand?: () => void
 }) {
   const colors = useChartColors()
   const expected = useMemo(
@@ -331,10 +368,13 @@ export function CashAheadChart({
   const windowSeconds = Math.max(DAY_SECONDS + 1, end - first)
   return (
     <div
-      className="chart-container performance-chart live-performance-chart"
+      className={`chart-container performance-chart live-performance-chart${onExpand ? ' is-expandable' : ''}`}
       role="group"
       tabIndex={0}
+      aria-keyshortcuts={onExpand ? 'Enter' : undefined}
       aria-label={`Expected cash through ${formatDay(through)}, between its low and high range${lowest ? `, lowest ${formatDay(lowest.date)}` : ''}`}
+      onClick={expandOnClick(onExpand)}
+      onKeyDown={expandOnEnter(onExpand)}
     >
       <Liveline
         className="liveline-chart-canvas"
@@ -381,7 +421,8 @@ export function CashAheadChart({
 /**
  * A value's history beside its deposits and the S&P 500 on Liveline's canvas: a range change
  * zooms the window there, without re-rendering React each frame. Hovering reads every line at
- * that day.
+ * that day. With `scroll`, the window ends on the page's end day, and scrolling over the chart
+ * moves it through time; clicking it, or ↵ on it, opens the page's expanded chart.
  */
 export function PerformanceChart({
   data,
@@ -394,6 +435,7 @@ export function PerformanceChart({
   selectedWindow,
   observedOn = [],
   estimatedAfter,
+  scroll,
 }: {
   data: LivelinePoint[]
   netDeposits?: LivelinePoint[]
@@ -407,11 +449,21 @@ export function PerformanceChart({
   observedOn?: string[]
   /** The last observed day of a value estimated since; the line after it is dashed. */
   estimatedAfter?: string
+  scroll?: GraphScroll
 }) {
   const colors = useChartColors()
+  const expand = useChartExpansion()
+  const [container, setContainer] = useState<HTMLDivElement | null>(null)
+  const [graphEnd] = useGraphEnd()
+  const pastEnd = scroll ? graphEnd : undefined
+  const pan = useChartPan(container, selectedWindow, scroll)
+  // Saved days are drawn at noon, so a chart scrolled back ends on its end day's point.
+  const endTime =
+    pastEnd || pan ? (pastEnd ? chartDayTime(pastEnd) : Date.now() / 1_000) + pan : undefined
   // Liveline animates toward each new data set, so the lines keep their identity until a point
   // changes.
-  const chartData = useMemo(() => chartPointsFromStartDate(data, startDate), [data, startDate])
+  const allData = useMemo(() => chartPointsFromStartDate(data, startDate), [data, startDate])
+  const chartData = useMemo(() => until(allData, endTime), [allData, endTime])
   const plottedValue = chartData.at(-1)?.value ?? value
   const minValueRange = Math.max(1, Math.abs(value) * 0.05)
   const firstTime = chartData[0]?.time ?? 0
@@ -461,7 +513,7 @@ export function PerformanceChart({
     // After the last observation the value is an estimate, drawn as its own dashed line.
     const { observed, estimated } = splitAtEstimate(chartData, estimatedAfter)
     const visibleSeries = (points: LivelinePoint[]) => {
-      const startedPoints = chartPointsFromStartDate(points, startDate)
+      const startedPoints = until(chartPointsFromStartDate(points, startDate), endTime)
       return selectedWindow === 0
         ? startedPoints.filter((point) => point.time >= firstTime)
         : startedPoints
@@ -471,10 +523,10 @@ export function PerformanceChart({
       points: LivelinePoint[] | undefined,
       color: string,
       dash: number[],
-    ): LivelineSeries[] =>
-      points?.length
-        ? [{ id, data: visibleSeries(points), value: points.at(-1)!.value, color, dash }]
-        : []
+    ): LivelineSeries[] => {
+      const shown = points?.length ? visibleSeries(points) : []
+      return shown.length ? [{ id, data: shown, value: shown.at(-1)!.value, color, dash }] : []
+    }
     return [
       {
         id: 'Value',
@@ -499,6 +551,7 @@ export function PerformanceChart({
     ]
   }, [
     chartData,
+    endTime,
     estimatedAfter,
     startDate,
     selectedWindow,
@@ -518,12 +571,21 @@ export function PerformanceChart({
 
   return (
     <div
-      className="chart-container performance-chart live-performance-chart"
+      ref={setContainer}
+      className={`chart-container performance-chart live-performance-chart${expand ? ' is-expandable' : ''}`}
       data-range-focus-region
       role="group"
       tabIndex={0}
-      aria-keyshortcuts="D W M Q Y A"
+      aria-keyshortcuts={`D W M Q Y A${scroll ? ' [ ] }' : ''}${expand ? ' Enter' : ''}`}
       aria-label={`Account value over time${lineNames.length ? ` beside ${lineNames.join(', ')}` : ''}${events.length ? `, with ${events.length} key event markers` : ''}`}
+      onClick={(event) => {
+        if (event.target instanceof HTMLCanvasElement) expand?.()
+      }}
+      onKeyDown={(event) => {
+        if (event.key !== 'Enter' || event.target !== event.currentTarget || !expand) return
+        event.preventDefault()
+        expand()
+      }}
     >
       <span className="sr-only" role="status">
         Chart range: {graphWindows.find(({ secs }) => secs === selectedWindow)?.settingsLabel}
@@ -535,6 +597,8 @@ export function PerformanceChart({
         className="liveline-chart-canvas"
         data={chartData}
         value={plottedValue}
+        valueTime={endTime}
+        endTime={endTime}
         series={comparisonSeries}
         theme={colors.theme}
         color={colors.value}
@@ -559,5 +623,265 @@ export function PerformanceChart({
         style={{ flex: 1, minHeight: 0, height: 'auto' }}
       />
     </div>
+  )
+}
+
+/** The points through `time`; all of them while the chart ends now. */
+const until = (points: LivelinePoint[], time: number | undefined) =>
+  time === undefined ? points : points.filter((point) => point.time <= time)
+
+// A wheel's line is about this many pixels.
+const LINE_PIXELS = 16
+// A pause this long ends a scroll, and the chart settles on the nearest day.
+const SETTLE_MS = 160
+
+/**
+ * Scrolling over a chart as seconds moved through time: down, or a swipe right, goes back. The
+ * page's end day moves as each whole day passes, so the figures follow while it scrolls, and the
+ * part of a day left over is drawn as `pan`, seconds past that day; once the scroll pauses it
+ * settles on the nearest day. Without `smooth`, for a chart that can't draw between days, the
+ * part of a day is only carried to the next scroll. The scroll survives the page drawing again
+ * mid-gesture, as it does when new figures or prices arrive.
+ */
+export function useChartPan(
+  element: HTMLElement | null,
+  seconds: number,
+  scroll: GraphScroll | undefined,
+  smooth = true,
+) {
+  const [pan, setPan] = useState(0)
+  const current = useLatest({ seconds, scroll, smooth })
+  useEffect(() => {
+    if (!element) return undefined
+    let moved = 0
+    let settle: ReturnType<typeof setTimeout> | undefined
+    // The store, not a prop, holds the end day: it changes again before the page draws.
+    const endTime = () => {
+      const end = sessionGraphEnd()
+      return end ? chartDayTime(end) : Date.now() / 1_000
+    }
+    // Moves the end day by whole days, keeping what's drawn where it is.
+    const shift = (days: number) => {
+      const { seconds: span, scroll: bounds } = current.current
+      if (!bounds) return
+      const before = endTime()
+      setGraphEnd(shiftedGraphEnd(sessionGraphEnd(), days, span, bounds.today, bounds.first))
+      moved += before - endTime()
+    }
+    const wheel = (event: WheelEvent) => {
+      const { seconds: span, scroll: bounds, smooth: drawn } = current.current
+      const days = scrollPeriodDays(span)
+      const first = bounds?.first
+      if (!bounds || !first || !days) return
+      const across = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      const pixels =
+        (across ? event.deltaX : -event.deltaY) * (event.deltaMode === 1 ? LINE_PIXELS : 1)
+      if (!pixels) return
+      event.preventDefault()
+      const now = Date.now() / 1_000
+      const base = endTime()
+      const earliest = chartDayTime(addDays(first, days)) - base
+      const latest = now - base
+      if (earliest >= latest) return
+      const step = (pixels * span) / Math.max(1, element.clientWidth)
+      moved = Math.min(latest, Math.max(earliest, moved + step))
+      const whole = Math.trunc(moved / DAY_SECONDS)
+      if (whole) shift(whole)
+      if (!drawn) return
+      setPan(moved)
+      clearTimeout(settle)
+      settle = setTimeout(() => {
+        const nearest = Math.round(moved / DAY_SECONDS)
+        if (nearest) shift(nearest)
+        moved = 0
+        setPan(0)
+      }, SETTLE_MS)
+    }
+    element.addEventListener('wheel', wheel, { passive: false })
+    return () => {
+      element.removeEventListener('wheel', wheel)
+      clearTimeout(settle)
+    }
+  }, [element, current])
+  return pan
+}
+
+/**
+ * Scrolling over a chart of periods as whole periods: down, or a swipe right, goes back one each
+ * time the scroll passes half the chart's width. `onStep` hears -1 or 1.
+ */
+export function useWheelSteps(element: HTMLElement | null, onStep: (direction: -1 | 1) => void) {
+  const step = useLatest(onStep)
+  useEffect(() => {
+    if (!element) return undefined
+    let moved = 0
+    const wheel = (event: WheelEvent) => {
+      const across = Math.abs(event.deltaX) > Math.abs(event.deltaY)
+      const pixels =
+        (across ? event.deltaX : -event.deltaY) * (event.deltaMode === 1 ? LINE_PIXELS : 1)
+      if (!pixels) return
+      event.preventDefault()
+      moved += pixels
+      const page = Math.max(1, element.clientWidth / 2)
+      if (Math.abs(moved) < page) return
+      step.current(moved < 0 ? -1 : 1)
+      moved = 0
+    }
+    element.addEventListener('wheel', wheel, { passive: false })
+    return () => element.removeEventListener('wheel', wheel)
+  }, [element, step])
+}
+
+/** A click on a chart that opens it larger, unless it landed on a link or control inside it. */
+export const expandOnClick = (expand: (() => void) | undefined) =>
+  expand
+    ? (event: MouseEvent) => {
+        if (
+          event.target instanceof Element &&
+          !event.target.closest('a, button, input, select, [role="combobox"]')
+        )
+          expand()
+      }
+    : undefined
+
+/** ↵ on a focused chart opens it larger. */
+export const expandOnEnter = (expand: (() => void) | undefined) =>
+  expand
+    ? (event: KeyboardEvent) => {
+        if (event.key !== 'Enter' || event.target !== event.currentTarget) return
+        event.preventDefault()
+        expand()
+      }
+    : undefined
+
+/** The days a chart scrolled back in time shows, and the way back; nothing while it ends today. */
+export function ChartSpan({ seconds }: { seconds: number }) {
+  const [end] = useGraphEnd()
+  const days = scrollPeriodDays(seconds)
+  if (!end || !days) return null
+  return (
+    <span className="chart-span">
+      <span>
+        {formatShortDay(addDays(end, 1 - days))} – {formatDay(end)}
+      </span>
+      <Button
+        size="compact"
+        variant="ghost"
+        aria-keyshortcuts="}"
+        onClick={() => setGraphEnd(undefined)}
+      >
+        Today
+      </Button>
+    </span>
+  )
+}
+
+const ChartExpansionContext = createContext<(() => void) | undefined>(undefined)
+
+/** Opens the expanded chart this one sits in; undefined inside the expanded window itself. */
+export const useChartExpansion = () => useContext(ChartExpansionContext)
+
+/**
+ * A chart card's content, and the same content in a large window that E, a click on the chart,
+ * or ↵ on it opens. Both follow the page's range and end day, so scrolling one moves the other,
+ * and the range and scroll keys work in the window too. A chart with its own period keys passes
+ * them as `actions` instead. A page's second chart is `named`, so E stays with the first and the
+ * palette opens it by name.
+ */
+export function ExpandableChart({
+  title,
+  seconds,
+  setSeconds,
+  scroll,
+  actions: own,
+  named,
+  children,
+}: {
+  title: string
+  seconds?: number
+  setSeconds?: Dispatch<SetStateAction<number>>
+  scroll?: GraphScroll
+  actions?: readonly AppAction[]
+  named?: string
+  /** The content, inline or in the window; inline, `expand` opens the window. */
+  children: (expanded: boolean, expand?: () => void) => ReactNode
+}) {
+  const [open, setOpen] = useState(false)
+  const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
+  const present = usePresence(open, dialog)
+  const titleId = useId()
+  const [end] = useGraphEnd()
+  const expand = useCallback(() => {
+    // The window grows out of the card it opens from, and shrinks back into it.
+    const card = dialog?.parentElement?.getBoundingClientRect()
+    if (dialog && card) {
+      dialog.style.setProperty('--chart-from-x', `${card.x + card.width / 2 - innerWidth / 2}px`)
+      dialog.style.setProperty('--chart-from-y', `${card.y + card.height / 2 - innerHeight / 2}px`)
+    }
+    setOpen(true)
+  }, [dialog])
+  const close = useCallback(() => setOpen(false), [])
+  useRegisterActions(
+    useMemo<AppAction[]>(
+      () => [
+        {
+          id: named ? `graph.expand.${named}` : 'graph.expand',
+          title: named ? `Expand ${named} chart` : 'Expand chart',
+          search: 'chart graph expand enlarge larger window',
+          group: 'View',
+          scope: 'page',
+          bindings: named ? undefined : [{ sequence: ['e'], label: 'E' }],
+          run: expand,
+        },
+      ],
+      [expand, named],
+    ),
+  )
+  // The window's keys are the page's own under ids of their own: the shell keeps one action per
+  // id, and the page's, registered again as they change, would otherwise replace these.
+  const actions = useMemo(
+    () =>
+      [
+        ...(setSeconds && seconds !== undefined
+          ? graphRangeActions(setSeconds, seconds, end, scroll)
+          : []),
+        ...(own ?? []),
+      ].map((action) => ({ ...action, id: `${action.id}.expanded` })),
+    [setSeconds, seconds, end, scroll, own],
+  )
+  return (
+    <>
+      <ChartExpansionContext.Provider value={expand}>
+        {children(false, expand)}
+      </ChartExpansionContext.Provider>
+      <Dialog
+        ref={setDialog}
+        open={open}
+        onClose={close}
+        popups
+        actions={actions}
+        className="chart-dialog"
+        aria-labelledby={titleId}
+      >
+        {present ? (
+          <div className="chart-dialog-panel">
+            <header className="chart-dialog-header">
+              {/* The title takes focus on open, so no control starts out ringed. */}
+              <h2 id={titleId} tabIndex={-1} {...dialogAutofocus}>
+                {title}
+              </h2>
+              <Button
+                icon={X}
+                size="icon-compact"
+                variant="ghost"
+                aria-label="Close chart"
+                onClick={close}
+              />
+            </header>
+            <div className="chart-dialog-body">{children(true)}</div>
+          </div>
+        ) : null}
+      </Dialog>
+    </>
   )
 }

@@ -1,9 +1,17 @@
 import { Link } from '@tanstack/react-router'
-import { useMemo, useRef, type ReactNode } from 'react'
+import { useMemo, useRef, type Dispatch, type ReactNode, type SetStateAction } from 'react'
 
 import { ActivityList } from '../components/activity-list'
 import { AccountsLayout } from '../components/all-accounts-overview'
-import { ChartRangeSelector, MonthlyBarChart, PerformanceChart } from '../components/charts'
+import {
+  ChartRangeSelector,
+  ChartSpan,
+  ExpandableChart,
+  expandOnClick,
+  expandOnEnter,
+  MonthlyBarChart,
+  PerformanceChart,
+} from '../components/charts'
 import { ValueHistoryEmptyState } from '../components/data-state'
 import { ExpectedActivity } from '../components/expected-activity'
 import { ChevronRight, Download } from '../components/icons'
@@ -19,8 +27,10 @@ import {
   ScrollCueCard,
   SectionHeading,
 } from '../components/ui'
+import { useAsOf } from '../hooks/use-as-of'
 import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
+import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import type { AccountGroup } from '../lib/account-groups'
 import { accountDisplayName } from '../lib/account-names'
@@ -30,7 +40,7 @@ import { buildActivities } from '../lib/activity'
 import { openExternalUrl } from '../lib/api'
 import { financeSettings } from '../lib/finance-settings'
 import { formatShortDay } from '../lib/format'
-import { chartPeriod } from '../lib/graph-preferences'
+import { chartPeriod, useGraphEnd } from '../lib/graph-preferences'
 import { getExternalLogosEnabled } from '../lib/logos'
 import type { Account, FinanceSnapshot } from '../lib/schema'
 import { monthlySpendingHistory, sortTransactionsByRecency } from '../lib/spending'
@@ -59,7 +69,7 @@ export function AccountOverview({
   menu: ReactNode
   data: FinanceSnapshot
   graphWindow: number
-  onGraphWindowChange: (seconds: number) => void
+  onGraphWindowChange: Dispatch<SetStateAction<number>>
   /** Cards Money presents; All accounts lists them apart and leaves them out of its totals. */
   spendingAccountIds?: string[]
 }) {
@@ -156,9 +166,12 @@ export function AccountOverview({
     [account.id, data.insights],
   )
   const period = chartPeriod(graphWindow)
+  const [graphEnd] = useGraphEnd()
+  // Scrolled back in time, the period's figures are the ones Rust measured to the end day.
+  const asOf = useAsOf(committed)
   // What moved through the account over the period, as Rust summed it. Rust sums flows for
   // every account and each one, not for a type of account, so a group shows none.
-  const transactionSummary: AccountFlowSummary = committed.insights?.flows.find(
+  const transactionSummary: AccountFlowSummary = asOf.insights?.flows.find(
     (flows) => flows.accountId === (isAll ? 'all' : account.id) && flows.window === period,
   ) ?? {
     // No flows from Rust for this view: every figure is unknown, never zero.
@@ -176,12 +189,14 @@ export function AccountOverview({
   const {
     chartData,
     chartChange,
+    changeKnown,
     incomplete,
     historyIsAvailable,
     chartValue,
     netDeposits,
     benchmark,
     chartEvents,
+    scroll,
   } = useAccountChart({
     data,
     committed,
@@ -191,7 +206,12 @@ export function AccountOverview({
     isInvestment,
     graphWindow,
     startDate,
+    end: graphEnd,
+    pastChanges: asOf.insights?.chartChanges,
   })
+  // A card's chart is its monthly spending, which doesn't scroll.
+  const chartScroll = isCredit ? undefined : scroll
+  useGraphWindowShortcuts(onGraphWindowChange, chartScroll)
   const holdingsLink = (
     <Link className="section-heading-link" to="/holdings" data-command="navigation.open./holdings">
       Holdings <ChevronRight size={14} aria-hidden="true" />
@@ -295,8 +315,8 @@ export function AccountOverview({
     </Card>
   )
 
-  const chartCard = (
-    <Card className="account-overview-chart-card net-worth-card brokerage-performance-card">
+  const chartContent = (_expanded: boolean, expand?: () => void) => (
+    <>
       <header className="home-balance-header">
         <div className="home-balance-main">
           <h2 className="balance-label">
@@ -314,6 +334,7 @@ export function AccountOverview({
         </div>
         {committedAccount?.id.startsWith('snaptrade:') || (!isCredit && historyIsAvailable) ? (
           <div className="chart-header-aside">
+            {chartScroll ? <ChartSpan seconds={graphWindow} /> : null}
             {!isCredit && historyIsAvailable ? (
               <ChartRangeSelector value={graphWindow} onValueChange={onGraphWindowChange} />
             ) : null}
@@ -323,8 +344,8 @@ export function AccountOverview({
         {isCredit ? null : (
           <div className="chart-summary-row">
             <ChartChange
-              amount={historyIsAvailable ? chartChange.change : null}
-              percent={historyIsAvailable ? chartChange.percent : null}
+              amount={historyIsAvailable && changeKnown ? chartChange.change : null}
+              percent={historyIsAvailable && changeKnown ? chartChange.percent : null}
             />
           </div>
         )}
@@ -334,7 +355,18 @@ export function AccountOverview({
         <div key={group ? `group:${group.type}` : account.id} className="brokerage-chart-slide">
           <div className="brokerage-chart-content">
             {isCredit ? (
-              <MonthlyBarChart data={monthlySpending} label={`${displayName} monthly spending`} />
+              // A card's months have no range to scroll; the chart only opens larger.
+              <div
+                className={expand ? 'expands-on-click' : undefined}
+                role="group"
+                tabIndex={0}
+                aria-label={`${displayName} monthly spending chart`}
+                aria-keyshortcuts={expand ? 'Enter' : undefined}
+                onClick={expandOnClick(expand)}
+                onKeyDown={expandOnEnter(expand)}
+              >
+                <MonthlyBarChart data={monthlySpending} label={`${displayName} monthly spending`} />
+              </div>
             ) : historyIsAvailable && chartValue != null ? (
               <PerformanceChart
                 data={chartData}
@@ -351,6 +383,7 @@ export function AccountOverview({
                     ? (account.balanceAsOf ?? undefined)
                     : undefined
                 }
+                scroll={chartScroll}
               />
             ) : (
               <ValueHistoryEmptyState incomplete={incomplete} valueAvailable={chartValue != null} />
@@ -358,6 +391,18 @@ export function AccountOverview({
           </div>
         </div>
       </div>
+    </>
+  )
+  const chartCard = (
+    <Card className="account-overview-chart-card net-worth-card brokerage-performance-card">
+      <ExpandableChart
+        title={displayName}
+        seconds={isCredit ? undefined : graphWindow}
+        setSeconds={isCredit ? undefined : onGraphWindowChange}
+        scroll={chartScroll}
+      >
+        {chartContent}
+      </ExpandableChart>
     </Card>
   )
 

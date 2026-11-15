@@ -6,15 +6,23 @@ import { useLiveFinance } from '../hooks/use-live-finance'
 import type { AccountGroup } from '../lib/account-groups'
 import { buildChartEventGroups } from '../lib/chart-events'
 import { accountValueChart } from '../lib/dashboard-account-views'
-import { referenceLines } from '../lib/live-chart'
-import type { Account, FinanceSnapshot } from '../lib/schema'
+import {
+  chartDayTime,
+  chartPointAtOrBefore,
+  firstChartDay,
+  referenceLines,
+} from '../lib/live-chart'
+import type { Account, ChartChanges, FinanceSnapshot } from '../lib/schema'
 
 const noPoints: LivelinePoint[] = []
+const noChanges: ChartChanges = []
 
 /**
  * What an account's chart draws: its value line with the live market's points merged in, the
  * deposit and benchmark lines for an investment, and its events. Memoized so the chart's line
- * keeps its identity until a point changes.
+ * keeps its identity until a point changes. Scrolled back to `end`, its change is Rust's to that
+ * day (`pastChanges`, none known until it arrives), its value the one saved then, and its
+ * events stop there.
  */
 export function useAccountChart({
   data,
@@ -25,6 +33,8 @@ export function useAccountChart({
   isInvestment,
   graphWindow,
   startDate,
+  end,
+  pastChanges,
 }: {
   data: FinanceSnapshot
   /** The held snapshot, which edits update; events read it. */
@@ -35,6 +45,8 @@ export function useAccountChart({
   isInvestment: boolean
   graphWindow: number
   startDate: string | undefined
+  end: string | undefined
+  pastChanges: ChartChanges | undefined
 }) {
   const live = useLiveFinance()
   const isCombined = isAll || Boolean(group)
@@ -52,6 +64,7 @@ export function useAccountChart({
       : isAll
         ? live.marketSeries.accounts
         : live.marketSeries[account.id]) ?? noPoints
+  const changes = end ? (pastChanges ?? noChanges) : live.chartChanges
   const { chartData, chartChange, incomplete, historyIsAvailable } = useMemo(
     () =>
       accountValueChart(
@@ -60,11 +73,19 @@ export function useAccountChart({
         marketSeries,
         safeChartNow,
         graphWindow,
-        live.chartChanges,
+        changes,
         startDate,
         group,
       ),
-    [data, account, marketSeries, safeChartNow, graphWindow, live.chartChanges, startDate, group],
+    [data, account, marketSeries, safeChartNow, graphWindow, changes, startDate, group],
+  )
+  const series = group ? `group:${group.type}` : isAll ? 'net-worth' : account.id
+  // A past day's change is unknown until Rust has measured it.
+  const changeKnown = !end || changes.some((chart) => chart.series === series)
+  const today = committed.insights?.today
+  const scroll = useMemo(
+    () => (today ? { today, first: firstChartDay(chartData, startDate) } : undefined),
+    [today, chartData, startDate],
   )
   const { netDeposits, benchmark } = useMemo(
     () => referenceLines(performance, safeChartNow),
@@ -75,19 +96,24 @@ export function useAccountChart({
   const chartEvents = useMemo(
     () =>
       isInvestment && !group
-        ? buildChartEventGroups(committed, isAll ? 'net-worth' : account.id, graphWindow)
+        ? buildChartEventGroups(committed, isAll ? 'net-worth' : account.id, graphWindow, [], end)
         : [],
     // oxlint-disable-next-line react-hooks/exhaustive-deps -- the mask changes what is formatted
-    [committed, isInvestment, isAll, group, account.id, graphWindow, amountsHidden],
+    [committed, isInvestment, isAll, group, account.id, graphWindow, end, amountsHidden],
   )
+  const current = group ? group.value : account.value
   return {
     chartData,
     chartChange,
+    changeKnown,
     incomplete,
     historyIsAvailable,
-    chartValue: group ? group.value : account.value,
+    chartValue: end
+      ? (chartPointAtOrBefore(chartData, chartDayTime(end))?.value ?? current)
+      : current,
     netDeposits,
     benchmark,
     chartEvents,
+    scroll,
   }
 }

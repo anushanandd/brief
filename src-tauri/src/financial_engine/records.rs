@@ -503,7 +503,7 @@ impl SnapValuation {
     }
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Clone, Debug, Default, Deserialize)]
 pub(super) struct ActivitySymbol {
     #[serde(default)]
     pub(super) raw_symbol: Option<String>,
@@ -511,7 +511,7 @@ pub(super) struct ActivitySymbol {
     pub(super) symbol: Option<String>,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub(super) struct SnapActivity {
     #[serde(default)]
     pub(super) id: Option<String>,

@@ -84,6 +84,8 @@ export function buildChartEventGroups(
   accountId: string,
   windowSeconds: number,
   extra: ChartEvent[] = [],
+  /** The day the chart ends on when scrolled back; the snapshot's day otherwise. */
+  endDate?: string,
 ): ChartEventGroup[] {
   const relevantAccounts = chartAccountIds(data, accountId)
   const includesAccount = (id?: string) => !relevantAccounts || (!!id && relevantAccounts.has(id))
@@ -185,7 +187,7 @@ export function buildChartEventGroups(
     ...internalTransfers,
     ...extra,
   ]
-  const end = Date.parse(`${data.updatedAt.slice(0, 10)}T23:59:59Z`)
+  const end = Date.parse(`${endDate ?? data.updatedAt.slice(0, 10)}T23:59:59Z`)
   const start = windowSeconds ? end - windowSeconds * 1_000 : Number.NEGATIVE_INFINITY
   const grouped = new Map<string, ChartEvent[]>()
   for (const event of displayEvents) {

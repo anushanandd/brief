@@ -71,7 +71,7 @@ index 414c4e61bac1017c49bbaedbd1691bcd9cdd667c..43f9bcb510d354a05be3318fd075dae4
  interface LivelineTransitionProps {
      /** Key of the active child to display. Must match a child's `key` prop. */
 diff --git a/dist/index.js b/dist/index.js
-index fd0506272e9a54432a0882c3a389ee74302e4718..d65301d68696b6369bdd84556106e7cc4ff3cab2 100644
+index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b20741d584e13 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -56,9 +56,9 @@ function resolveTheme(color, mode) {
@@ -663,6 +663,15 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..d65301d68696b6369bdd84556106e7cc
            if (badgeRef.current.container.style.display !== "none") {
              const base = badgeRef.current.container.style.opacity ? parseFloat(badgeRef.current.container.style.opacity) : 1;
              badgeRef.current.container.style.opacity = String(
+@@ -3061,7 +3126,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+       const firstSeries = effectiveMultiSeries[0];
+       const transition = windowTransitionRef.current;
+       if (hasData) frozenNowRef.current = Date.now() / 1e3 - timeDebtRef.current;
+-      const now = useMultiStash ? frozenNowRef.current : Date.now() / 1e3 - timeDebtRef.current;
++      const now = cfg.endTime ?? (useMultiStash ? frozenNowRef.current : Date.now() / 1e3 - timeDebtRef.current);
+       const smoothValues = /* @__PURE__ */ new Map();
+       for (const s of effectiveMultiSeries) {
+         let dv = displayValuesRef.current.get(s.id);
 @@ -3114,12 +3179,9 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          for (const s of effectiveMultiSeries) {
            const sData = pausedMultiDataRef.current?.get(s.id)?.data ?? s.data;

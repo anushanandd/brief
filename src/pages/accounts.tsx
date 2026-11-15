@@ -10,10 +10,8 @@ import {
 } from '../components/all-accounts-overview'
 import { PageError, PageLoading } from '../components/data-state'
 import { WorkspaceHeader } from '../components/workspace-header'
-import {
-  useGraphAccountShortcuts,
-  useGraphWindowShortcuts,
-} from '../hooks/use-graph-window-shortcuts'
+import { useAsOf } from '../hooks/use-as-of'
+import { useGraphAccountShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { withoutSpendingCard } from '../lib/dashboard-account-views'
 import { financeSettings, spendingAccountIds } from '../lib/finance-settings'
@@ -54,14 +52,15 @@ function AccountsWorkspace({
   const routeSearch = useSearch({ from: '/accounts' })
   const spendingIds = spendingAccountIds(financeSettings(data), data.accounts)
   const [graphWindow, setGraphWindow] = useGraphWindow()
-  useGraphWindowShortcuts(setGraphWindow)
   // Rust always sends the combined row as `all`.
   const allAccount = data.accounts.find(({ id }) => id === 'all')
+  // Scrolled back in time, the menu's changes run to the chart's end day.
+  const asOf = useAsOf(data)
   const groups = useMemo(
-    () => accountMenuGroups(data, spendingIds, graphWindow),
+    () => accountMenuGroups(asOf, spendingIds, graphWindow),
     // The ids are a fresh array each render; their contents are what matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [data, spendingIds.join(','), graphWindow],
+    [asOf, spendingIds.join(','), graphWindow],
   )
   const group = groups.find(({ type }) => type === routeSearch.group)
   const account = data.accounts.find(({ id }) => id !== 'all' && id === routeSearch.account)
@@ -105,7 +104,7 @@ function AccountsWorkspace({
 
   const menu = (
     <AccountsMenu
-      data={data}
+      data={asOf}
       groups={groups}
       allAccount={allAccount}
       selection={selection}

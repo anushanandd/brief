@@ -442,6 +442,62 @@
 .live-performance-chart > div:not(.liveline-chart-canvas) {
   display: none !important;
 }
+/* A click on the chart opens it larger. */
+.is-expandable canvas,
+.expands-on-click {
+  cursor: zoom-in;
+}
+/* The days a chart scrolled back in time shows, beside the way back to today. */
+.chart-span {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: var(--type-meta);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+/* The expanded chart: the card's content, filling the window it opens in (sized in command.css,
+   after the frame it shares). */
+.chart-dialog-panel {
+  display: flex;
+  height: 100%;
+  flex-direction: column;
+}
+.chart-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 16px 0 24px;
+}
+.chart-dialog-header h2 {
+  margin: 0;
+  font-family: var(--font-editorial);
+  font-size: var(--type-page);
+  font-weight: 400;
+  outline: 0;
+}
+.chart-dialog-body {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  padding: 8px 24px 24px;
+}
+.chart-dialog-body .brokerage-chart-viewport,
+.chart-dialog-body .brokerage-chart-slide,
+.chart-dialog-body .brokerage-chart-content {
+  display: flex;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+}
+.chart-dialog-body .performance-chart {
+  height: auto;
+  min-height: 0;
+  flex: 1 1 auto;
+}
 .brokerage-holdings-card {
   min-width: 0;
   padding: var(--card-padding) var(--card-padding) var(--card-padding-end);

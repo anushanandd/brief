@@ -7,7 +7,7 @@ import {
   ReportMetric,
 } from '../components/account-metrics'
 import { AccountStatements } from '../components/account-statements'
-import { CashAheadChart } from '../components/charts'
+import { CashAheadChart, ExpandableChart } from '../components/charts'
 import { ExternalLink } from '../components/external-link'
 import { ArrowUpRight } from '../components/icons'
 import { SettingsLink } from '../components/settings-dialog'
@@ -418,7 +418,16 @@ function CashAheadDetails({
               }
             />
           </div>
-          <CashAheadChart days={cash.days} through={through} lowest={cash.lowest} />
+          <ExpandableChart title="Cash ahead" named="cash ahead">
+            {(_expanded, expand) => (
+              <CashAheadChart
+                days={cash.days}
+                through={through}
+                lowest={cash.lowest}
+                onExpand={expand}
+              />
+            )}
+          </ExpandableChart>
           <p className="metric-detail">
             Recurring bills and deposits to cash accounts, each listed in Coming up; the range runs
             from the smallest to the largest amount each has posted.

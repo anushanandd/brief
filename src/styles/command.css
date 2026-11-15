@@ -394,8 +394,10 @@ kbd.keycap {
   content: '';
 }
 
-/* Keyboard shortcuts (⌘/): every shortcut, one row each, in Settings' dialog frame. */
-.shortcuts-dialog {
+/* Keyboard shortcuts (⌘/): every shortcut, one row each, in Settings' dialog frame. An expanded
+   chart shares the frame. */
+.shortcuts-dialog,
+.chart-dialog {
   width: min(520px, calc(100vw - 48px));
   max-width: none;
   max-height: min(720px, calc(100dvh - 64px));
@@ -414,11 +416,23 @@ kbd.keycap {
     display var(--duration-modal-lift) allow-discrete,
     overlay var(--duration-modal-lift) allow-discrete;
 }
-.shortcuts-dialog:not([open]) {
+/* An expanded chart fills most of the window, with room around it to show it opened over the
+   page. It grows from the card it opened from: the dialog is centered, so the card's offset from
+   the viewport's center is its offset from the dialog's. */
+.chart-dialog {
+  --modal-enter-from: scale(0.92);
+  width: min(1440px, calc(100vw - 160px));
+  height: min(900px, calc(100dvh - 140px));
+  max-height: none;
+  transform-origin: calc(50% + var(--chart-from-x, 0px)) calc(50% + var(--chart-from-y, 0px));
+}
+.shortcuts-dialog:not([open]),
+.chart-dialog:not([open]) {
   opacity: 0;
   transform: var(--modal-enter-from);
 }
-.shortcuts-dialog::backdrop {
+.shortcuts-dialog::backdrop,
+.chart-dialog::backdrop {
   background: var(--dialog-backdrop);
   -webkit-backdrop-filter: var(--dialog-backdrop-filter);
   backdrop-filter: var(--dialog-backdrop-filter);
@@ -427,15 +441,18 @@ kbd.keycap {
     display var(--duration-modal-lift) allow-discrete,
     overlay var(--duration-modal-lift) allow-discrete;
 }
-.shortcuts-dialog:not([open])::backdrop {
+.shortcuts-dialog:not([open])::backdrop,
+.chart-dialog:not([open])::backdrop {
   opacity: 0;
 }
 @starting-style {
-  .shortcuts-dialog[open] {
+  .shortcuts-dialog[open],
+  .chart-dialog[open] {
     opacity: 0;
     transform: var(--modal-enter-from);
   }
-  .shortcuts-dialog[open]::backdrop {
+  .shortcuts-dialog[open]::backdrop,
+  .chart-dialog[open]::backdrop {
     opacity: 0;
   }
 }

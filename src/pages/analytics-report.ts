@@ -1,5 +1,12 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  useCallback,
+  useEffect,
+  useMemo,
+  useState,
+  type Dispatch,
+  type SetStateAction,
+} from 'react'
 
 import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
@@ -24,6 +31,7 @@ import {
   chartPeriodSeconds,
   graphWindows,
   useChosenGraphWindow,
+  useGraphEnd,
   useGraphWindow,
   type ChartPeriod,
 } from '../lib/graph-preferences'
@@ -54,7 +62,7 @@ function useLocalDay() {
  * this session, else the report's default. Choosing a range, by control or shortcut, shares it
  * with the other pages and clears custom dates.
  */
-function useAnalyticsSearch() {
+function useAnalyticsSearch(data: FinanceSnapshot, today: string) {
   const routeSearch = useSearch({ from: '/analytics' })
   const navigate = useNavigate({ from: '/analytics' })
   const [, setSharedWindow] = useGraphWindow()
@@ -70,18 +78,31 @@ function useAnalyticsSearch() {
     },
     [navigate, search, setSharedWindow],
   )
-  useGraphWindowShortcuts(
-    useCallback(
-      (next) => {
-        const current = chartPeriodSeconds(search.range ?? 'month')
-        const seconds = typeof next === 'function' ? next(current) : next
-        const range = graphWindows.find(({ secs }) => secs === seconds)?.name
-        if (range) setRange(range)
-      },
-      [search.range, setRange],
-    ),
+  const setWindow = useCallback<Dispatch<SetStateAction<number>>>(
+    (next) => {
+      const current = chartPeriodSeconds(search.range ?? 'month')
+      const seconds = typeof next === 'function' ? next(current) : next
+      const range = graphWindows.find(({ secs }) => secs === seconds)?.name
+      if (range) setRange(range)
+    },
+    [search.range, setRange],
   )
-  return { search, navigate, setRange }
+  // A trailing period scrolls back through the saved activity; custom dates and Benefits'
+  // calendar year don't.
+  const first = useMemo(
+    () =>
+      data.transactions.reduce<string | undefined>((earliest, transaction) => {
+        const date = (transaction.postedOn ?? transaction.date).slice(0, 10)
+        return !earliest || date < earliest ? date : earliest
+      }, undefined),
+    [data.transactions],
+  )
+  const fixed =
+    Boolean(search.from || search.to) ||
+    analyticsDefinition(search.chart ?? analyticsCharts[0].id).benefits
+  const scroll = useMemo(() => (fixed ? undefined : { today, first }), [fixed, today, first])
+  useGraphWindowShortcuts(setWindow, scroll)
+  return { search, navigate, setRange, setWindow, scroll }
 }
 
 /**
@@ -93,12 +114,18 @@ export function useAnalyticsReport(data: FinanceSnapshot) {
   // use, so one strip never shows two months. The clock takes over only without insights.
   const clock = useLocalDay()
   const today = data.insights?.today ?? clock
-  const { search, navigate, setRange } = useAnalyticsSearch()
+  const { search, navigate, setRange, setWindow, scroll } = useAnalyticsSearch(data, today)
+  const [graphEnd] = useGraphEnd()
   const selected = search.chart ?? analyticsCharts[0].id
   const definition = analyticsDefinition(selected)
   // Benefits runs on one calendar year of its own; the strip keeps the period it shares.
   const benefitsYear = definition.benefits ? benefitYear(search, today) : undefined
-  const request = pageReportRequest(search, selected, today)
+  // Scrolled back in time, the period ends on the page's end day.
+  const end = scroll ? graphEnd : undefined
+  const request = {
+    ...pageReportRequest(search, selected, today),
+    ...(end ? { to: end } : {}),
+  }
   const settings = financeSettings(data)
   const spendingAccountId = settings.spendingAccountId ?? ''
   const spendingAccount = resolveSpendingAccount(data.accounts, spendingAccountId)
@@ -167,6 +194,10 @@ export function useAnalyticsReport(data: FinanceSnapshot) {
     search,
     navigate,
     setRange,
+    setWindow,
+    scroll,
+    /** Whether the report is the trailing period, though Rust reads an end day as custom. */
+    custom: reportWindow.custom && !end,
     selected,
     definition,
     benefitsYear,

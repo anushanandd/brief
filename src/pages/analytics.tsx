@@ -1,10 +1,11 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useMemo, useRef } from 'react'
+import { useMemo, useRef, useState } from 'react'
 
 import { AccountMark } from '../components/account-mark'
 import { GroupedActivityList } from '../components/activity-list'
 import { BenefitGrid, type BenefitInspection } from '../components/benefit-grid'
 import { CashFlowSankey } from '../components/cash-flow-sankey'
+import { ChartSpan, ExpandableChart, expandOnClick, useWheelSteps } from '../components/charts'
 import { PageError, PageLoading } from '../components/data-state'
 import { ExpectedActivity } from '../components/expected-activity'
 import { ChevronRight, X } from '../components/icons'
@@ -46,7 +47,14 @@ import {
   formatActivityName,
   formatDay,
 } from '../lib/format'
-import { graphWindows } from '../lib/graph-preferences'
+import {
+  graphWindows,
+  scrollPeriodDays,
+  setGraphEnd,
+  shiftedGraphEnd,
+  useGraphEnd,
+  useGraphWindow,
+} from '../lib/graph-preferences'
 import { briefMerchant } from '../lib/insights'
 import type { FinanceSnapshot, Report } from '../lib/schema'
 import { useAnalyticsReport } from './analytics-report'
@@ -90,10 +98,28 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
     expectedRecurringIds,
     activitySearch,
     flow,
+    setWindow,
+    scroll,
+    custom,
   } = useAnalyticsReport(data)
+  const [graphWindow] = useGraphWindow()
+  const [graphEnd] = useGraphEnd()
+  // Scrolling over the bars moves the report a period through time, as [ and ] do; the cash
+  // flow scrolls its own rows, so it keeps the wheel.
+  const [bars, setBars] = useState<HTMLDivElement | null>(null)
+  const [expandedBars, setExpandedBars] = useState<HTMLDivElement | null>(null)
+  const stepPeriod = (direction: -1 | 1) => {
+    const days = scrollPeriodDays(graphWindow)
+    if (scroll && days)
+      setGraphEnd(
+        shiftedGraphEnd(graphEnd, direction * days, graphWindow, scroll.today, scroll.first),
+      )
+  }
+  useWheelSteps(flow ? null : bars, stepPeriod)
+  useWheelSteps(flow ? null : expandedBars, stepPeriod)
   const home =
     group === 'money'
-      ? ({ label: 'Money', to: '/spending' } as const)
+      ? ({ label: 'Spending', to: '/spending' } as const)
       : ({ label: 'Investments', to: '/holdings' } as const)
   const periodChange = unavailable ? null : report.change
   if (reportsQuery.isLoading) return <PageLoading />
@@ -216,80 +242,103 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                 tabIndex={0}
                 data-range-focus-region
               >
-                <header className="home-balance-header">
-                  <div className="home-balance-main">
-                    <h2 className="balance-label">{definition.heading ?? report.label}</h2>
-                    <div className="home-balance-value">
-                      <AnimatedCurrency
-                        className="hero-number"
-                        value={unavailable ? null : report.total}
-                      />
-                    </div>
-                  </div>
-                  <ChartRangeSelect<string>
-                    label="Analytics period"
-                    command="graph.range."
-                    value={reportWindow.custom ? '' : reportWindow.range}
-                    options={
-                      reportWindow.custom
-                        ? [{ value: '', label: 'Custom', accessibleLabel: 'Custom' }, ...ranges]
-                        : ranges
-                    }
-                    onValueChange={(value) => {
-                      const range = ranges.find((option) => option.value === value)
-                      if (range) setRange(range.value)
-                    }}
-                  />
-                  <div className="chart-summary-row">
-                    <ChartChange
-                      amount={periodChange}
-                      percent={unavailable ? null : report.percent}
-                      favorable={definition.lowerIsBetter ? 'decrease' : 'increase'}
-                      ariaLabel="Change versus previous period"
-                    />
-                  </div>
-                </header>
-                {unavailable ? (
-                  <EmptyState>
-                    {needsSpendingAccount ? (
-                      <>
-                        Choose a spending account in{' '}
-                        <SettingsLink target="spending-account">Settings</SettingsLink> to chart
-                        card credits.
-                      </>
-                    ) : incompatibleBenefitAccount ? (
-                      <>
-                        Card credits use the saved spending account.{' '}
-                        <Button
-                          size="compact"
-                          variant="ghost"
-                          onClick={() =>
-                            void navigate({ search: { ...search, account: undefined } })
-                          }
-                        >
-                          Clear account filter
-                        </Button>
-                      </>
-                    ) : missingAccount ? (
-                      'This account is unavailable. Select another account.'
-                    ) : !reportWindow.valid ? (
-                      'The start date must be on or before the end date.'
-                    ) : (
-                      'This report is unavailable for these dates.'
-                    )}
-                  </EmptyState>
-                ) : !report.entries.length ? (
-                  <EmptyState>No posted activity in this period.</EmptyState>
-                ) : flow ? (
-                  <CashFlowSankey values={flow} />
-                ) : (
-                  <AnalyticsBars
-                    groupColors={groupColors}
-                    report={report}
-                    search={activitySearch}
-                    activities={activities}
-                  />
-                )}
+                <ExpandableChart
+                  title={definition.heading ?? report.label}
+                  seconds={graphWindow}
+                  setSeconds={setWindow}
+                  scroll={scroll}
+                >
+                  {(expanded, expand) => (
+                    <>
+                      <header className="home-balance-header">
+                        <div className="home-balance-main">
+                          <h2 className="balance-label">{definition.heading ?? report.label}</h2>
+                          <div className="home-balance-value">
+                            <AnimatedCurrency
+                              className="hero-number"
+                              value={unavailable ? null : report.total}
+                            />
+                          </div>
+                        </div>
+                        <div className="chart-header-aside">
+                          <ChartSpan seconds={scroll ? graphWindow : 0} />
+                          <ChartRangeSelect<string>
+                            label="Analytics period"
+                            command="graph.range."
+                            value={custom ? '' : reportWindow.range}
+                            options={
+                              custom
+                                ? [
+                                    { value: '', label: 'Custom', accessibleLabel: 'Custom' },
+                                    ...ranges,
+                                  ]
+                                : ranges
+                            }
+                            onValueChange={(value) => {
+                              const range = ranges.find((option) => option.value === value)
+                              if (range) setRange(range.value)
+                            }}
+                          />
+                        </div>
+                        <div className="chart-summary-row">
+                          <ChartChange
+                            amount={periodChange}
+                            percent={unavailable ? null : report.percent}
+                            favorable={definition.lowerIsBetter ? 'decrease' : 'increase'}
+                            ariaLabel="Change versus previous period"
+                          />
+                        </div>
+                      </header>
+                      <div
+                        ref={expanded ? setExpandedBars : setBars}
+                        className={`brokerage-chart-viewport${expand ? ' expands-on-click' : ''}`}
+                        onClick={expandOnClick(expand)}
+                      >
+                        {unavailable ? (
+                          <EmptyState>
+                            {needsSpendingAccount ? (
+                              <>
+                                Choose a spending account in{' '}
+                                <SettingsLink target="spending-account">Settings</SettingsLink> to
+                                chart card credits.
+                              </>
+                            ) : incompatibleBenefitAccount ? (
+                              <>
+                                Card credits use the saved spending account.{' '}
+                                <Button
+                                  size="compact"
+                                  variant="ghost"
+                                  onClick={() =>
+                                    void navigate({ search: { ...search, account: undefined } })
+                                  }
+                                >
+                                  Clear account filter
+                                </Button>
+                              </>
+                            ) : missingAccount ? (
+                              'This account is unavailable. Select another account.'
+                            ) : !reportWindow.valid ? (
+                              'The start date must be on or before the end date.'
+                            ) : (
+                              'This report is unavailable for these dates.'
+                            )}
+                          </EmptyState>
+                        ) : !report.entries.length ? (
+                          <EmptyState>No posted activity in this period.</EmptyState>
+                        ) : flow ? (
+                          <CashFlowSankey values={flow} />
+                        ) : (
+                          <AnalyticsBars
+                            groupColors={groupColors}
+                            report={report}
+                            search={activitySearch}
+                            activities={activities}
+                          />
+                        )}
+                      </div>
+                    </>
+                  )}
+                </ExpandableChart>
               </ScrollCueCard>
               {definition.benefits ? null : (
                 <ReportBreakdown

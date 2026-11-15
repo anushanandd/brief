@@ -162,7 +162,12 @@ pub fn changes(
 
 /// The first day a chart counts from: the start the user saved, else the first activity, for
 /// the account or the earliest of the accounts it stands for.
-fn start_date(snapshot: &Snapshot, settings: &FinanceSettings, id: &str) -> Option<NaiveDate> {
+fn start_date(
+    snapshot: &Snapshot,
+    settings: &FinanceSettings,
+    firsts: &BTreeMap<&str, NaiveDate>,
+    id: &str,
+) -> Option<NaiveDate> {
     let ids: Vec<&str> = match id {
         NET_WORTH => snapshot
             .accounts
@@ -178,13 +183,13 @@ fn start_date(snapshot: &Snapshot, settings: &FinanceSettings, id: &str) -> Opti
             .collect(),
         id => vec![id],
     };
-    earliest_start(snapshot, settings, ids)
+    earliest_start(settings, firsts, ids)
 }
 
 /// The earliest start of these accounts.
 fn earliest_start<'a>(
-    snapshot: &Snapshot,
     settings: &FinanceSettings,
+    firsts: &BTreeMap<&str, NaiveDate>,
     ids: impl IntoIterator<Item = &'a str>,
 ) -> Option<NaiveDate> {
     ids.into_iter()
@@ -193,35 +198,40 @@ fn earliest_start<'a>(
                 .account_start_dates
                 .get(account)
                 .and_then(|date| NaiveDate::parse_from_str(date, "%Y-%m-%d").ok())
-                .or_else(|| {
-                    // The account's first activity, or a linked feed account's.
-                    let related = |other: &str| {
-                        other == account
-                            || snapshot
-                                .account_links
-                                .get(other)
-                                .is_some_and(|linked| linked == account)
-                    };
-                    snapshot
-                        .transactions
-                        .iter()
-                        .filter(|transaction| {
-                            transaction.account_id.as_deref().is_some_and(related)
-                        })
-                        .filter_map(|transaction| {
-                            calendar::transaction_date(transaction.posted_date())
-                        })
-                        .chain(
-                            snapshot
-                                .trades
-                                .iter()
-                                .filter(|trade| related(&trade.account_id))
-                                .filter_map(|trade| calendar::transaction_date(&trade.date)),
-                        )
-                        .min()
-                })
+                .or_else(|| firsts.get(account).copied())
         })
         .min()
+}
+
+/// Each account's first activity, its own or a linked feed account's, found in one pass so
+/// every chart's start reads it.
+fn first_activity(snapshot: &Snapshot) -> BTreeMap<&str, NaiveDate> {
+    let mut firsts = BTreeMap::<&str, NaiveDate>::new();
+    let dated = snapshot
+        .transactions
+        .iter()
+        .filter_map(|transaction| {
+            Some((
+                transaction.account_id.as_deref()?,
+                calendar::transaction_date(transaction.posted_date())?,
+            ))
+        })
+        .chain(snapshot.trades.iter().filter_map(|trade| {
+            Some((
+                trade.account_id.as_str(),
+                calendar::transaction_date(&trade.date)?,
+            ))
+        }));
+    for (account, date) in dated {
+        let linked = snapshot.account_links.get(account).map(String::as_str);
+        for id in std::iter::once(account).chain(linked) {
+            firsts
+                .entry(id)
+                .and_modify(|first| *first = (*first).min(date))
+                .or_insert(date);
+        }
+    }
+    firsts
 }
 
 fn daily(points: impl IntoIterator<Item = (String, f64)>) -> Vec<(NaiveDate, f64)> {
@@ -246,6 +256,7 @@ pub fn series(
     net_worth: f64,
     groups: &[GroupHistory],
 ) -> Vec<Series> {
+    let firsts = first_activity(snapshot);
     let mut series = vec![Series {
         id: NET_WORTH.into(),
         history: daily(
@@ -253,7 +264,7 @@ pub fn series(
                 .iter()
                 .map(|point| (point.date.clone(), point.value)),
         ),
-        start: start_date(snapshot, settings, NET_WORTH),
+        start: start_date(snapshot, settings, &firsts, NET_WORTH),
         current: net_worth,
     }];
     for performance in &snapshot.brokerage_performance {
@@ -265,7 +276,7 @@ pub fn series(
                     .iter()
                     .map(|point| (point.date.clone(), point.value)),
             ),
-            start: start_date(snapshot, settings, &performance.account_id),
+            start: start_date(snapshot, settings, &firsts, &performance.account_id),
             current: performance.current_value,
         });
     }
@@ -292,7 +303,7 @@ pub fn series(
                     .iter()
                     .map(|point| (point.date.clone(), point.value)),
             ),
-            start: start_date(snapshot, settings, &history.account_id),
+            start: start_date(snapshot, settings, &firsts, &history.account_id),
             current,
         });
     }
@@ -309,8 +320,8 @@ pub fn series(
                     .map(|point| (point.date.clone(), point.value)),
             ),
             start: earliest_start(
-                snapshot,
                 settings,
+                &firsts,
                 group.account_ids.iter().map(String::as_str),
             ),
             current,
@@ -333,6 +344,44 @@ mod tests {
             .unwrap()
             .and_utc()
             .timestamp()
+    }
+
+    #[test]
+    fn a_chart_starts_at_its_first_activity_or_a_linked_feeds_unless_one_is_saved() {
+        use crate::finance_contract::{Trade, Transaction};
+        let mut snapshot: Snapshot =
+            serde_json::from_str(include_str!("../../../src/data/empty.json")).unwrap();
+        let spent = |account: &str, date: &str| Transaction {
+            account_id: Some(account.into()),
+            date: date.into(),
+            ..Transaction::default()
+        };
+        snapshot.transactions = vec![
+            spent("plaid:feed", "2026-09-02"),
+            spent("cash", "2026-09-03"),
+            spent("cash", "2026-09-06"),
+        ];
+        snapshot.trades = vec![Trade {
+            account_id: "snaptrade:broker".into(),
+            date: "2026-09-05".into(),
+            ..Trade::default()
+        }];
+        snapshot
+            .account_links
+            .insert("plaid:feed".into(), "snaptrade:broker".into());
+        let mut settings = FinanceSettings::default();
+        settings
+            .account_start_dates
+            .insert("other".into(), "2026-09-10".into());
+        let firsts = first_activity(&snapshot);
+        let start = |ids: &[&str]| earliest_start(&settings, &firsts, ids.iter().copied());
+        // The brokerage's feed account had activity before the brokerage itself.
+        assert_eq!(start(&["snaptrade:broker"]), Some(day("2026-09-02")));
+        assert_eq!(start(&["cash"]), Some(day("2026-09-03")));
+        // A saved start wins, and a group starts with its earliest account.
+        assert_eq!(start(&["other"]), Some(day("2026-09-10")));
+        assert_eq!(start(&["cash", "other"]), Some(day("2026-09-03")));
+        assert_eq!(start(&["none"]), None);
     }
 
     #[test]

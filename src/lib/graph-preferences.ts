@@ -1,5 +1,6 @@
 import { useSyncExternalStore, type Dispatch, type SetStateAction } from 'react'
 
+import { addDays } from './dates'
 import { preference } from './preference'
 
 const DAY_SECONDS = 24 * 60 * 60
@@ -41,21 +42,20 @@ export function parseGraphWindow(value: unknown) {
   return graphWindows.find((window) => window.secs === seconds)?.secs ?? DEFAULT_GRAPH_WINDOW
 }
 
-const defaultWindow = preference('brief.defaultGraphWindow', parseGraphWindow)
-
-export const getDefaultGraphWindow = defaultWindow.get
-export const saveDefaultGraphWindow = (seconds: number) =>
-  defaultWindow.save(parseGraphWindow(seconds))
+// The range last chosen, so the next launch opens on it.
+const savedWindow = preference('brief.defaultGraphWindow', parseGraphWindow)
 
 // One range for this session, shared by every page with a D/W/M/Q/Y/A chart, so moving between
-// pages keeps the period in view. It starts from the saved default and is not persisted.
+// pages keeps the period in view. It starts from the range last chosen.
 let sessionWindow: number | undefined
 const listeners = new Set<() => void>()
-const currentWindow = () => sessionWindow ?? getDefaultGraphWindow()
+const currentWindow = () => sessionWindow ?? savedWindow.get()
 const setSessionWindow: Dispatch<SetStateAction<number>> = (next) => {
   const value = parseGraphWindow(typeof next === 'function' ? next(currentWindow()) : next)
   if (value === currentWindow()) return
   sessionWindow = value
+  if (!scrollPeriodDays(value)) sessionEnd = undefined
+  if (typeof window !== 'undefined') savedWindow.save(value)
   listeners.forEach((notify) => notify())
 }
 const subscribeWindow = (notify: () => void) => {
@@ -90,4 +90,70 @@ export function useChosenGraphWindow() {
 /** For tests: forget the session range. */
 export function resetSessionGraphWindow() {
   sessionWindow = undefined
+  sessionEnd = undefined
+}
+
+const periodDays: Partial<Record<ChartPeriod, number>> = {
+  week: 7,
+  month: 30,
+  quarter: 90,
+  year: 365,
+}
+
+/** What a chart needs to scroll back in time: the latest day, and the first it draws. */
+export type GraphScroll = { today: string; first: string | undefined }
+
+/** The days a scrolling range moves by a period; none for a day or all time, which don't scroll. */
+export const scrollPeriodDays = (seconds: number) => periodDays[chartPeriod(seconds)]
+
+/**
+ * The day a page's charts end on, while scrolled back in time; undefined while they end today.
+ * A range that doesn't scroll ends today again, and so does every page newly opened.
+ */
+let sessionEnd: string | undefined
+const currentEnd = () => sessionEnd
+
+/** The page's end day now, outside React. */
+export const sessionGraphEnd = () => sessionEnd
+
+export function setGraphEnd(end: string | undefined) {
+  if (end === sessionEnd) return
+  sessionEnd = end
+  endMovedAt = Date.now()
+  listeners.forEach((notify) => notify())
+}
+
+// When the end day last moved: figures that follow a scroll roll to their new values for a
+// moment after, and otherwise update in place.
+let endMovedAt = 0
+const ROLLING_MS = 1_000
+
+/** Whether the page is being scrolled through time, so its figures roll as they change. */
+export function useGraphScrolling() {
+  useGraphEnd()
+  return Date.now() - endMovedAt < ROLLING_MS
+}
+
+export function useGraphEnd() {
+  return [useSyncExternalStore(subscribeWindow, currentEnd, () => undefined), setGraphEnd] as const
+}
+
+/**
+ * The end `days` later (earlier when negative), within the history: no later than `today`,
+ * which is the live end, and no earlier than a full period after `first`.
+ */
+export function shiftedGraphEnd(
+  end: string | undefined,
+  days: number,
+  seconds: number,
+  today: string,
+  first: string | undefined,
+): string | undefined {
+  const period = scrollPeriodDays(seconds)
+  if (!period || !first) return undefined
+  const earliest = addDays(first, period)
+  if (earliest >= today) return undefined
+  const next = addDays(end ?? today, days)
+  if (next >= today) return undefined
+  return next < earliest ? earliest : next
 }
