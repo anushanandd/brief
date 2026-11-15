@@ -734,14 +734,17 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
 
     // This year's tax with a sale less without it, so a loss offsets this year's gains, then
     // other income only to the limit; what carries over saves nothing this year.
+    let tables = TABLES.years.get(&today.year());
+    let total = |earned: &Earned, short, long| {
+        Some(scenario(profile?, tables?, &earned.income(false, short, long))?.total)
+    };
+    let without = this_year.as_ref().and_then(|(earned, short, long)| {
+        Some((earned, *short, *long, total(earned, *short, *long)?))
+    });
     let sale_tax = |short_gain: i64, long_gain: i64| {
-        let (earned, short, long) = this_year.as_ref()?;
-        let tables = TABLES.years.get(&today.year())?;
-        let total = |short, long| {
-            Some(scenario(profile?, tables, &earned.income(false, short, long))?.total)
-        };
+        let (earned, short, long, without) = without?;
         Some(round2(
-            total(short + short_gain, long + long_gain)? - total(*short, *long)?,
+            total(earned, short + short_gain, long + long_gain)? - without,
         ))
     };
     for position in positions
