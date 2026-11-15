@@ -71,7 +71,12 @@ enum Prefix {
 }
 
 fn prefix(text: &str) -> Option<Prefix> {
-    if let Some(captures) = PREFIXED.captures(text) {
+    // Most descriptors have no `*` or `@`, so this skips the slower captures.
+    let captures = text
+        .contains(['*', '@'])
+        .then(|| PREFIXED.captures(text))
+        .flatten();
+    if let Some(captures) = captures {
         let token = captures[1].to_ascii_uppercase();
         return Some(
             RULES

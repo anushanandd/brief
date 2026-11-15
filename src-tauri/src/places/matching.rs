@@ -8,7 +8,7 @@
 //!
 //! Offices never match a purchase (a chain's head office, a billing address), and a place
 //! listed twice counts once.
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use super::{
     lookup, normalize,
@@ -258,7 +258,15 @@ pub fn status(
         .iter()
         .filter_map(need)
         .map(|need| need.key)
-        .collect::<std::collections::BTreeSet<_>>();
+        .collect();
+    tally(transactions, keys, searches)
+}
+
+fn tally(
+    transactions: &[Transaction],
+    keys: BTreeSet<String>,
+    searches: &BTreeMap<String, Vec<OverturePlace>>,
+) -> Status {
     Status {
         in_person: transactions
             .iter()
@@ -277,12 +285,22 @@ pub fn status(
 }
 
 /// Matches each in-person purchase to its business from the saved searches, then takes the
-/// business's coordinates, and its name where Plaid's was contradicted or unsure.
-pub fn apply(transactions: &mut [Transaction], searches: &BTreeMap<String, Vec<OverturePlace>>) {
-    for transaction in transactions {
-        let Some(business) =
-            need(transaction).and_then(|need| choose(transaction, &need, searches.get(&need.key)?))
-        else {
+/// business's coordinates, and its name where Plaid's was contradicted or unsure. Returns the
+/// `status` after matching, reading each purchase's search once.
+pub fn apply(
+    transactions: &mut [Transaction],
+    searches: &BTreeMap<String, Vec<OverturePlace>>,
+) -> Status {
+    let mut keys = BTreeSet::new();
+    for transaction in transactions.iter_mut() {
+        let Some(need) = need(transaction) else {
+            continue;
+        };
+        let business = searches
+            .get(&need.key)
+            .and_then(|found| choose(transaction, &need, found));
+        keys.insert(need.key);
+        let Some(business) = business else {
             continue;
         };
         if let Some(place) = transaction.place.as_mut() {
@@ -300,6 +318,7 @@ pub fn apply(transactions: &mut [Transaction], searches: &BTreeMap<String, Vec<O
         }
         transaction.business = Some(business);
     }
+    tally(transactions, keys, searches)
 }
 
 #[cfg(test)]

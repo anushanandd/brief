@@ -274,3 +274,35 @@ fn reads_canadian_provinces_and_ignores_a_banks_date_trailer() {
         Some("NL".into())
     );
 }
+
+#[test]
+fn normalize_reads_like_folding_each_character_into_a_string() {
+    let reference = |text: &str| {
+        let mut out = String::new();
+        let mut space = false;
+        for character in text.chars() {
+            let folded = fold(character).map_or_else(|| character.to_string(), str::to_owned);
+            if folded.chars().all(|c| c.is_ascii_alphanumeric()) && !folded.is_empty() {
+                if space && !out.is_empty() {
+                    out.push(' ');
+                }
+                space = false;
+                out.extend(folded.chars().map(|c| c.to_ascii_uppercase()));
+            } else {
+                space = true;
+            }
+        }
+        out
+    };
+    let mut inputs = vec![
+        String::new(),
+        "  ".into(),
+        "AplPay CAFÉ ÉCLAIR  SPRINGFIELD, IL".into(),
+        "Straße 9 — Œuvre * Æsir".into(),
+        "  -- trailing --  ".into(),
+    ];
+    inputs.extend(('\0'..='\u{2fff}').map(|c| format!("a{c}b {c} {c}{c}")));
+    for input in inputs {
+        assert_eq!(normalize(&input), reference(&input), "{input:?}");
+    }
+}

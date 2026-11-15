@@ -160,7 +160,21 @@ fn a_match_moves_the_pin_and_names_an_unrecognized_merchant() {
             -122.031,
         )],
     )]);
-    apply(&mut transactions, &searches);
+    transactions.push(purchase(
+        "AplPay EXAMPLE BEAUTY-VALLESANTA CLARA CA",
+        json!(null),
+    ));
+    let status = apply(&mut transactions, &searches);
+    assert_eq!(status, super::status(&transactions, &searches));
+    assert_eq!(
+        status,
+        Status {
+            in_person: 2,
+            matched: 1,
+            searchable: 2,
+            unsearched: 1,
+        }
+    );
     let transaction = &transactions[0];
     assert_eq!(transaction.merchant, "Dick's Sporting Goods");
     assert_eq!(transaction.provider_merchant.as_deref(), Some("Example"));

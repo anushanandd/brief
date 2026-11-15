@@ -130,23 +130,25 @@ pub fn normalize(text: &str) -> String {
     let mut space = false;
     for character in text.chars() {
         let folded = fold(character);
-        let alphanumeric = folded.chars().all(|c| c.is_ascii_alphanumeric()) && !folded.is_empty();
-        if alphanumeric {
-            if space && !out.is_empty() {
-                out.push(' ');
-            }
-            space = false;
-            out.extend(folded.chars().map(|c| c.to_ascii_uppercase()));
-        } else {
+        if folded.is_none() && !character.is_ascii_alphanumeric() {
             space = true;
+            continue;
+        }
+        if space && !out.is_empty() {
+            out.push(' ');
+        }
+        space = false;
+        match folded {
+            Some(letters) => out.push_str(letters),
+            None => out.push(character.to_ascii_uppercase()),
         }
     }
     out
 }
 
-/// The unaccented letters of a Latin character; anything else unchanged.
-fn fold(character: char) -> String {
-    let base = match character {
+/// The unaccented letters of a Latin character.
+fn fold(character: char) -> Option<&'static str> {
+    Some(match character {
         'à'..='å' | 'À'..='Å' | 'ā' | 'Ā' | 'ă' | 'Ă' | 'ą' | 'Ą' => "A",
         'ç' | 'Ç' | 'ć' | 'Ć' | 'č' | 'Č' => "C",
         'ď' | 'Ď' | 'đ' | 'Đ' => "D",
@@ -164,9 +166,8 @@ fn fold(character: char) -> String {
         'ž' | 'Ž' | 'ź' | 'Ź' | 'ż' | 'Ż' => "Z",
         'æ' | 'Æ' => "AE",
         'œ' | 'Œ' => "OE",
-        _ => return character.to_string(),
-    };
-    base.to_owned()
+        _ => return None,
+    })
 }
 
 /// The longest known city name ending `text` among the cities `accept` allows, most populous
