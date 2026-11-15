@@ -12,6 +12,7 @@ import { getCalibration, getChangeLog, getResearch, getSummaryRuns, getSyncRuns 
 import { financeSettings } from '../lib/finance-settings'
 import { countOf, formatShare } from '../lib/format'
 import { providerCatalog } from '../lib/providers'
+import { useRuntimeLog } from '../lib/runtime-log'
 import type { SummaryRun, SyncRun } from '../lib/schema'
 
 const logTimeFormatter = new Intl.DateTimeFormat('en-US', {
@@ -127,6 +128,7 @@ export function LogsPage() {
   const refreshing = useFinanceRefreshState()
   const data = query.data
   const live = useLiveFinance()
+  const runtimeLog = useRuntimeLog()
   const syncRuns = useQuery({ queryKey: ['sync-runs', data?.revision], queryFn: getSyncRuns })
   const summaryRuns = useQuery({ queryKey: ['summary-runs'], queryFn: getSummaryRuns })
   const lookups = useQuery({ queryKey: ['research'], queryFn: getResearch })
@@ -570,8 +572,8 @@ export function LogsPage() {
         <ScrollCueCard className="logs-card" scrollSelector=".activity-log">
           <SectionHeading title="Runtime activity" />
           <div {...logRegion('Runtime activity')} aria-live="polite">
-            {query.runtimeLog.length ? (
-              query.runtimeLog.map((entry) => (
+            {runtimeLog.length ? (
+              runtimeLog.map((entry) => (
                 <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={entry.id}>
                   <StatusDot tone={entry.tone} />
                   <div>

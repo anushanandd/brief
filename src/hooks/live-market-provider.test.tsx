@@ -16,7 +16,6 @@ vi.mock('./use-finance', () => ({
     liveMarketEnabled: true,
     isLoading: false,
     integrationStatusLoading: false,
-    appendRuntimeLog: vi.fn(),
   }),
 }))
 

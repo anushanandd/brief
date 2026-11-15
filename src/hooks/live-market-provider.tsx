@@ -13,6 +13,7 @@ import {
   withMarketWeek,
   type LiveMarketState,
 } from '../lib/live-market'
+import { appendRuntimeLog } from '../lib/runtime-log'
 import type { ChartChanges, MarketHistory, MarketSnapshots } from '../lib/schema'
 import { useFinance } from './use-finance'
 import { LiveFinanceContext } from './use-live-finance'
@@ -43,13 +44,10 @@ function useLiveMarketState() {
       setState((current) => withMarketWeek(current, history, changes, symbolKey)),
     [symbolKey],
   )
-  const rejectMarket = useCallback(
-    (error: string) => {
-      setState((current) => ({ ...current, error }))
-      base.appendRuntimeLog('Alpaca', 'Current market values unavailable', 'negative', error)
-    },
-    [base.appendRuntimeLog],
-  )
+  const rejectMarket = useCallback((error: string) => {
+    setState((current) => ({ ...current, error }))
+    appendRuntimeLog('Alpaca', 'Current market values unavailable', 'negative', error)
+  }, [])
   useEffect(() => {
     const update = () => setVisible(!document.hidden)
     document.addEventListener('visibilitychange', update)

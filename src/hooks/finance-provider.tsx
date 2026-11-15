@@ -1,22 +1,14 @@
 import { useQuery } from '@tanstack/react-query'
 import { listen } from '@tauri-apps/api/event'
-import { useCallback, useEffect, useMemo, useRef, useState, type PropsWithChildren } from 'react'
+import { useCallback, useEffect, useMemo, useState, type PropsWithChildren } from 'react'
 
 import { hasLegacyAnnotations, loadTransactionAnnotations } from '../lib/annotations'
 import { getFinanceSnapshot, getIntegrationStatus, isTauri } from '../lib/api'
 import { localDateKey } from '../lib/dates'
 import { hasLegacySettings, importLegacyFinanceSettings } from '../lib/finance-settings'
 import { formatUpdatedAt } from '../lib/format'
+import { appendRuntimeLog } from '../lib/runtime-log'
 import { FinanceContext, financeQueryKey, shareFinanceSnapshot } from './use-finance'
-
-export type RuntimeLogEntry = {
-  id: number
-  at: string
-  source: string
-  message: string
-  detail?: string
-  tone: 'positive' | 'negative' | 'neutral'
-}
 
 function useBaseFinanceState() {
   const integration = useQuery({
@@ -24,32 +16,6 @@ function useBaseFinanceState() {
     queryFn: getIntegrationStatus,
     staleTime: 60_000,
   })
-  const [runtimeLog, setRuntimeLog] = useState<RuntimeLogEntry[]>([])
-  const logId = useRef(0)
-  const appendRuntimeLog = useCallback(
-    (
-      source: string,
-      message: string,
-      tone: RuntimeLogEntry['tone'] = 'neutral',
-      detail?: string,
-    ) => {
-      const at = new Date().toISOString()
-      setRuntimeLog((current) => {
-        const latest = current[0]
-        if (
-          latest?.source === source &&
-          latest.message === message &&
-          latest.detail === detail &&
-          Date.parse(at) - Date.parse(latest.at) < 1_500
-        ) {
-          return current
-        }
-        logId.current += 1
-        return [{ id: logId.current, at, source, message, detail, tone }, ...current].slice(0, 50)
-      })
-    },
-    [],
-  )
   // Settings and annotations kept in renderer storage by older versions are imported into Rust.
   // Only then does the native view include them, so the first read waits for the import, but
   // only when there is something to import; otherwise both start at once.
@@ -98,7 +64,7 @@ function useBaseFinanceState() {
       'positive',
       `Revision ${query.data.revision ?? 0} · saved ${formatUpdatedAt(query.data.updatedAt)}`,
     )
-  }, [appendRuntimeLog, query.data, query.dataUpdatedAt])
+  }, [query.data, query.dataUpdatedAt])
 
   // A background refresh commits while the window is hidden; reread when it reports one.
   useEffect(() => {
@@ -145,7 +111,7 @@ function useBaseFinanceState() {
       integration.isError ? 'negative' : 'positive',
       configured ? `Configured: ${configured}` : 'No provider credentials configured',
     )
-  }, [appendRuntimeLog, integration.data, integration.isError])
+  }, [integration.data, integration.isError])
 
   const refetchAnnotations = annotations.refetch
   const refetch = useCallback(async () => {
@@ -172,8 +138,6 @@ function useBaseFinanceState() {
       integrationStatusLoading: integration.isLoading,
       liveMarketEnabled,
       marketSymbols: tickers,
-      runtimeLog,
-      appendRuntimeLog,
     }),
     [
       query.data,
@@ -187,8 +151,6 @@ function useBaseFinanceState() {
       integration.isLoading,
       liveMarketEnabled,
       tickers,
-      runtimeLog,
-      appendRuntimeLog,
     ],
   )
 }

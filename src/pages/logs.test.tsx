@@ -19,7 +19,6 @@ vi.mock('../hooks/use-finance', () => ({
       sec: true,
     },
     marketSymbols: ['TEST'],
-    runtimeLog: [],
   }),
 }))
 vi.mock('../hooks/use-live-finance', () => ({

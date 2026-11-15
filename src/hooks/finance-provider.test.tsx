@@ -6,9 +6,10 @@ import { createRoot } from 'react-dom/client'
 import { expect, it, vi } from 'vitest'
 
 import { emptySnapshot } from '../data/fixtures/records'
+import { useRuntimeLog, type RuntimeLogEntry } from '../lib/runtime-log'
 import { FinanceProvider } from './finance-provider'
 import { LiveMarketProvider } from './live-market-provider'
-import { useFinance } from './use-finance'
+import { setFinanceSnapshot, useFinance } from './use-finance'
 import { useLiveFinance } from './use-live-finance'
 
 vi.mock('../lib/api', () => ({
@@ -35,6 +36,12 @@ function Probe() {
   return null
 }
 
+let log: readonly RuntimeLogEntry[] = []
+function LogProbe() {
+  log = useRuntimeLog()
+  return null
+}
+
 let rerender: () => void = () => undefined
 
 function Parent() {
@@ -44,6 +51,7 @@ function Parent() {
     <FinanceProvider>
       <LiveMarketProvider>
         <Probe />
+        <LogProbe />
       </LiveMarketProvider>
     </FinanceProvider>
   )
@@ -69,6 +77,31 @@ it('keeps the context values when a render above the providers changes nothing t
   expect(seen.finance.length).toBeGreaterThan(renders)
   expect(seen.finance.at(-1)).toBe(finance)
   expect(seen.live.at(-1)).toBe(live)
+  await act(async () => root.unmount())
+  client.clear()
+})
+
+it('renders the app once for a new snapshot, with its log line kept outside', async () => {
+  const client = new QueryClient()
+  const root = createRoot(document.body.appendChild(document.createElement('div')))
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <Parent />
+      </QueryClientProvider>,
+    ),
+  )
+  await act(async () => {
+    await vi.waitFor(() => expect(latestData()).toBeDefined())
+  })
+  const renders = seen.finance.length
+  await act(async () => {
+    setFinanceSnapshot(client, { ...emptySnapshot(), revision: 4 })
+    await vi.waitFor(() => expect(latestData()).toMatchObject({ revision: 4 }))
+    await new Promise((resolve) => setTimeout(resolve, 20))
+  })
+  expect(seen.finance.length).toBe(renders + 1)
+  expect(log.at(0)?.message).toBe('Finance snapshot loaded')
   await act(async () => root.unmount())
   client.clear()
 })

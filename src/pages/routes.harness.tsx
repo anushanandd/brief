@@ -739,7 +739,6 @@ function scenarioFinance() {
   const finance = {
     integrationStatus: { plaid: false, snaptrade: false, alpaca: false },
     marketSymbols: ['SYNTH'],
-    runtimeLog: [],
     annotationWarning: scenario.annotationWarning,
     data: {
       recovery: scenario.recovery,

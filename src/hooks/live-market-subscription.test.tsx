@@ -8,8 +8,7 @@ import { emptySnapshot } from '../data/fixtures/records'
 import { subscribeLiveMarket } from '../lib/live-market'
 import { LiveMarketProvider } from './live-market-provider'
 
-// The provider's log callback is stable, as finance-provider's useCallback makes it.
-const finance = vi.hoisted(() => ({ revision: 1, symbols: ['TEST'], log: () => undefined }))
+const finance = vi.hoisted(() => ({ revision: 1, symbols: ['TEST'] }))
 
 vi.mock('../lib/api', () => ({ isTauri: () => true, getSavedMarket: vi.fn() }))
 vi.mock('../lib/live-market', async (actual) => ({
@@ -23,7 +22,6 @@ vi.mock('./use-finance', () => ({
     liveMarketEnabled: true,
     isLoading: false,
     integrationStatusLoading: false,
-    appendRuntimeLog: finance.log,
   }),
 }))
 
