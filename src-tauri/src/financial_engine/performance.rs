@@ -5,8 +5,13 @@
 //! each earlier day undoes the later cash movements and split-restated share changes, and
 //! prices what was then held at Alpaca's close. The provider's own balance history can be wrong
 //! by the size of a transfer, so it is used only when the records don't explain the account
-//! (fewer than no shares, or shares Alpaca can't price) or activity didn't load. Shares a stock
-//! plan allocates arrive with no cash amount, so they count as a deposit worth that day's close.
+//! (fewer than no shares, or shares Alpaca can't price) or activity didn't load.
+//!
+//! Shares a stock plan allocates arrive with no cash amount. They are a deposit into the account
+//! that holds them, once: a custodian may record the allocation in a linked brokerage while the
+//! shares sit in the plan, so a brokerage counts only the allocations its own shares explain. A
+//! plan's deposit is what its shares cost, from the holding's cost basis, so a purchase discount
+//! is a gain; without a cost basis it is that day's close.
 use super::*;
 
 /// Every investment account's performance record, sorted by account id, with the external
@@ -30,6 +35,7 @@ pub(super) fn investment_performance(
 ) -> Performances {
     let mut individual_performance = Vec::new();
     let mut brokerage_flows = BTreeMap::new();
+    let mut unheld_tickers = BTreeSet::new();
     let closes = sync
         .security_history
         .iter()
@@ -53,16 +59,31 @@ pub(super) fn investment_performance(
             continue;
         };
         let current = valuation.total();
-        let activities = parsed
-            .snap_activities
-            .get(&account.id)
-            .map(Vec::as_slice)
-            .unwrap_or_default();
         let account_id = format!("snaptrade:{}", account.id);
         let account_trades = trades
             .iter()
             .filter(|trade| trade.account_id == account_id)
             .collect::<Vec<_>>();
+        let positions = parsed
+            .snap_positions
+            .get(&account.id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let recorded = parsed
+            .snap_activities
+            .get(&account.id)
+            .map(Vec::as_slice)
+            .unwrap_or_default();
+        let unheld = unheld_allocations(positions, recorded, &account_trades);
+        let activities = recorded
+            .iter()
+            .filter(|activity| {
+                share_allocation(activity).is_none_or(|(ticker, _)| !unheld.contains(&ticker))
+            })
+            .cloned()
+            .collect::<Vec<_>>();
+        let activities = activities.as_slice();
+        unheld_tickers.extend(unheld);
         let reported = sync
             .snaptrade
             .balance_history
@@ -75,11 +96,7 @@ pub(super) fn investment_performance(
             .then(|| {
                 traded_history(
                     valuation,
-                    parsed
-                        .snap_positions
-                        .get(&account.id)
-                        .map(Vec::as_slice)
-                        .unwrap_or_default(),
+                    positions,
                     activities,
                     &account_trades,
                     &close,
@@ -154,11 +171,98 @@ pub(super) fn investment_performance(
         }
         individual_performance.push(record);
     }
+    let planned = parsed
+        .plaid_holdings
+        .iter()
+        .filter(|holding| {
+            included
+                .iter()
+                .any(|account| account.account_id == holding.account_id)
+        })
+        .filter_map(|holding| parsed.plaid_securities.get(&holding.security_id))
+        .filter_map(|security| security.ticker_symbol.as_deref())
+        .map(|ticker| ticker.trim().to_ascii_uppercase())
+        .collect::<BTreeSet<_>>();
+    if unheld_tickers
+        .iter()
+        .any(|ticker| !planned.contains(ticker))
+    {
+        warnings.push("Allocated shares no connected account holds aren't counted".into());
+    }
     individual_performance.sort_by(|left, right| left.account_id.cmp(&right.account_id));
     Performances {
         individual: individual_performance,
         brokerage_flows,
     }
+}
+
+/// Fewer shares than this are none; providers round fractional shares.
+const SHARE_TOLERANCE: Decimal = Decimal::from_parts(5, 0, 0, false, 4);
+
+fn position_ticker(position: &SnapPosition) -> Option<String> {
+    let label = &position.instrument.label;
+    let ticker = label.raw_symbol.as_ref().or(label.symbol.as_ref())?;
+    Some(ticker.trim().to_ascii_uppercase())
+}
+
+/// The shares a buy, reinvestment, or sale adds, negative for a sale.
+fn trade_shares(trade: &Trade) -> Option<Decimal> {
+    let kind = trade.r#type.to_ascii_uppercase();
+    let shares = trade.units.and_then(decimal_f64).unwrap_or_default().abs();
+    if kind.contains("BUY") || kind.contains("REINVEST") {
+        Some(shares)
+    } else if kind.contains("SELL") {
+        Some(-shares)
+    } else {
+        None
+    }
+}
+
+/// The tickers whose allocated shares this account never held: undoing its later trades and
+/// allocations from today's shares leaves fewer than none on some day.
+// shortcut: a ticker's allocations are all held or all not; one moved out in part by an
+// unrecorded transfer reads as not held. Split them per allocation if that turns up.
+fn unheld_allocations(
+    positions: &[SnapPosition],
+    activities: &[SnapActivity],
+    trades: &[&Trade],
+) -> BTreeSet<String> {
+    let mut changes = BTreeMap::<String, BTreeMap<String, Decimal>>::new();
+    for activity in activities {
+        if let (Some((ticker, shares)), Some(date)) = (share_allocation(activity), activity.date())
+        {
+            *changes.entry(ticker).or_default().entry(date).or_default() += shares;
+        }
+    }
+    for trade in trades {
+        let ticker = trade
+            .ticker
+            .as_deref()
+            .map(|ticker| ticker.trim().to_ascii_uppercase());
+        if let (Some(days), Some(shares)) = (
+            ticker.and_then(|ticker| changes.get_mut(&ticker)),
+            trade_shares(trade),
+        ) {
+            *days.entry(trade.date.clone()).or_default() += shares;
+        }
+    }
+    changes
+        .into_iter()
+        .filter(|(ticker, days)| {
+            let mut held = positions
+                .iter()
+                .filter(|position| {
+                    !position.cash_equivalent && position_ticker(position).as_ref() == Some(ticker)
+                })
+                .filter_map(|position| position.units)
+                .sum::<Decimal>();
+            days.values().rev().any(|change| {
+                held -= *change;
+                held < -SHARE_TOLERANCE
+            })
+        })
+        .map(|(ticker, _)| ticker)
+        .collect()
 }
 
 /// A SnapTrade account's daily value, rebuilt backward from today's shares and cash: each day
@@ -177,16 +281,14 @@ fn traded_history(
     provider_start: Option<&str>,
     today: &str,
 ) -> Option<Vec<(String, Decimal, Decimal)>> {
-    let tolerance = Decimal::new(5, 4);
+    let tolerance = SHARE_TOLERANCE;
     let mut cash = valuation.cash;
     let mut units = BTreeMap::<String, Decimal>::new();
     for position in positions
         .iter()
         .filter(|position| !position.cash_equivalent)
     {
-        let label = &position.instrument.label;
-        let ticker = label.raw_symbol.as_ref().or(label.symbol.as_ref())?;
-        *units.entry(ticker.trim().to_ascii_uppercase()).or_default() += position.units?;
+        *units.entry(position_ticker(position)?).or_default() += position.units?;
     }
     // Each day's change in cash and in each ticker's shares. Shares come from the split-restated
     // trades, so they agree with Alpaca's split-adjusted closes.
@@ -200,13 +302,7 @@ fn traded_history(
         }
     }
     for trade in trades {
-        let kind = trade.r#type.to_ascii_uppercase();
-        let shares = trade.units.and_then(decimal_f64).unwrap_or_default().abs();
-        let signed = if kind.contains("BUY") || kind.contains("REINVEST") {
-            shares
-        } else if kind.contains("SELL") {
-            -shares
-        } else {
+        let Some(signed) = trade_shares(trade) else {
             continue;
         };
         let ticker = trade.ticker.as_deref()?.trim().to_ascii_uppercase();
@@ -264,7 +360,8 @@ fn traded_history(
 }
 
 /// A stock plan's value history from each holding's reconciled acquisitions priced at Alpaca's
-/// closes, with the acquisitions as its deposits. Empty unless every holding can be priced.
+/// closes, with what the acquisitions cost as its deposits. Empty unless every holding can be
+/// priced.
 fn stock_plan_history(
     account: &PlaidAccount,
     sync: &ProviderSync,
@@ -288,12 +385,26 @@ fn stock_plan_history(
                 .get(&ticker.to_ascii_uppercase())
                 .map(|points| parse_points(points, "Alpaca security history", warnings))
                 .unwrap_or_default();
-            for acquisition in &acquisitions {
-                if let Some((_, price)) = prices.iter().find(|(date, _)| date >= &acquisition.date)
-                {
-                    *flows.entry(acquisition.date.clone()).or_default() +=
-                        acquisition.quantity * *price;
-                }
+            let at_close = acquisitions
+                .iter()
+                .filter_map(|acquisition| {
+                    let (_, price) = prices.iter().find(|(date, _)| date >= &acquisition.date)?;
+                    Some((acquisition.date.clone(), acquisition.quantity * *price))
+                })
+                .collect::<Vec<_>>();
+            let market = at_close.iter().map(|(_, value)| *value).sum::<Decimal>();
+            // The cost basis covers every share, so it is spread only over a fully priced set,
+            // in proportion to each acquisition's value that day.
+            let cost = holding
+                .cost_basis
+                .filter(|basis| {
+                    *basis > Decimal::ZERO
+                        && !market.is_zero()
+                        && at_close.len() == acquisitions.len()
+                })
+                .map_or(Decimal::ONE, |basis| basis / market);
+            for (date, value) in at_close {
+                *flows.entry(date).or_default() += rounded(value * cost);
             }
             (!acquisitions.is_empty() && !prices.is_empty())
                 .then(|| holding_history(acquisitions, &prices))

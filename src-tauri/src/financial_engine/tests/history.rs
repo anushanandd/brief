@@ -324,6 +324,136 @@ fn a_known_cash_balance_splits_a_day_into_cash_and_securities() {
     assert_eq!(parts, [(None, None), (Some(100.0), Some(840.0))]);
 }
 
+/// The fixture's brokerage, paid a dividend, records 10 EXM shares a stock plan allocated on
+/// 2026-09-08 at a close of 110. With `plan`, a connected stock plan holds them at a cost of 900.
+fn allocated_elsewhere(plan: bool) -> ProviderSync {
+    let mut sync = sync();
+    sync.snaptrade.activity_complete = true;
+    sync.snaptrade.activities.insert(
+        "brokerage".into(),
+        vec![
+            json!({ "id": "dividend", "type": "DIVIDEND", "amount": 5, "trade_date": "2026-09-06" }),
+            json!({
+                "id": "allocation", "type": "TRANSFER", "amount": 0, "units": 10,
+                "trade_date": "2026-09-08", "description": "Allocate shares for 1",
+                "symbol": { "symbol": "EXM" }
+            }),
+        ],
+    );
+    sync.security_history.insert(
+        "EXM".into(),
+        vec![
+            json!({ "date": "2026-09-06", "value": 100 }),
+            json!({ "date": "2026-09-08", "value": 110 }),
+        ],
+    );
+    if plan {
+        sync.plaid.investment_accounts.push(json!({
+            "account_id": "plan", "name": "Stock Plan", "institution_name": "Broker", "type": "investment",
+            "subtype": "stock plan", "balances": { "current": "1100", "iso_currency_code": "USD" }
+        }));
+        sync.plaid.holdings.push(json!({
+            "account_id": "plan", "security_id": "exm", "quantity": "10", "institution_price": "110",
+            "institution_value": "1100", "cost_basis": "900", "iso_currency_code": "USD"
+        }));
+        sync.plaid.securities.push(json!({
+            "security_id": "exm", "ticker_symbol": "EXM", "name": "Example", "type": "equity",
+            "iso_currency_code": "USD"
+        }));
+    }
+    sync
+}
+
+/// Each day's net deposits in an account's performance.
+fn deposits(snapshot: &Value, account: &str) -> Vec<(String, f64)> {
+    snapshot["brokeragePerformance"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["accountId"] == account)
+        .unwrap()["points"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|point| {
+            (
+                point["date"].as_str().unwrap().to_owned(),
+                point["netDeposits"].as_f64().unwrap(),
+            )
+        })
+        .collect()
+}
+
+#[test]
+fn allocated_shares_are_a_deposit_once_into_the_account_holding_them() {
+    let snapshot = project_json(
+        &allocated_elsewhere(true),
+        &BTreeMap::new(),
+        projection_time(),
+    )
+    .unwrap();
+    // The brokerage that recorded the allocation never held the shares, so its own records
+    // rebuild it and nothing was deposited there.
+    let brokerage = snapshot["brokeragePerformance"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|record| record["accountId"] == "snaptrade:brokerage")
+        .unwrap();
+    assert_eq!(brokerage["historySource"], "estimated");
+    let untouched = ["2026-09-06", "2026-09-07", "2026-09-08", "2026-09-09"]
+        .map(|date| (date.to_string(), 200.11));
+    assert_eq!(deposits(&snapshot, "snaptrade:brokerage"), untouched);
+    // The plan deposited what the shares cost, so the purchase discount is a gain.
+    assert_eq!(
+        deposits(&snapshot, "plaid:plan"),
+        [
+            ("2026-09-06".to_string(), 0.0),
+            ("2026-09-08".to_string(), 900.0),
+            ("2026-09-09".to_string(), 900.0)
+        ]
+    );
+    assert_eq!(
+        deposits(&snapshot, "total").last().unwrap(),
+        &("2026-09-09".to_string(), 1_100.11)
+    );
+    assert!(!snapshot["syncWarnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|warning| warning.as_str().unwrap().starts_with("Allocated shares")));
+
+    // Shares no connected account holds are no one's deposit, and the refresh says so.
+    let unconnected = project_json(
+        &allocated_elsewhere(false),
+        &BTreeMap::new(),
+        projection_time(),
+    )
+    .unwrap();
+    assert_eq!(deposits(&unconnected, "snaptrade:brokerage"), untouched);
+    assert!(unconnected["syncWarnings"]
+        .as_array()
+        .unwrap()
+        .contains(&json!(
+            "Allocated shares no connected account holds aren't counted"
+        )));
+
+    // A brokerage holding the allocated shares keeps them as its deposit, at that day's close.
+    let mut held = allocated_elsewhere(false);
+    held.snaptrade.positions.insert(
+        "brokerage".into(),
+        vec![json!({
+            "units": 10, "price": 110, "currency": "USD",
+            "instrument": { "kind": "stock", "symbol": "EXM" }
+        })],
+    );
+    let held = project_json(&held, &BTreeMap::new(), projection_time()).unwrap();
+    assert_eq!(
+        deposits(&held, "snaptrade:brokerage").last().unwrap(),
+        &("2026-09-09".to_string(), 1_300.11)
+    );
+}
+
 #[test]
 fn allocated_shares_count_as_deposits_at_that_days_close() {
     let activity = |value: Value| serde_json::from_value::<SnapActivity>(value).unwrap();
