@@ -14,7 +14,11 @@ import { chooseCatalogCard, getResearch, readCardRules, saveAccountLink } from '
 import type { CardRules } from '../../lib/bindings/CardRules'
 import { cardsWithoutRules } from '../../lib/card-drafts'
 import { errorMessage } from '../../lib/errors'
-import { defaultFinanceSettings, financeSettings, type Settings } from '../../lib/finance-settings'
+import {
+  financeSettings,
+  withoutAccountPreferences,
+  type Settings,
+} from '../../lib/finance-settings'
 import { formatCurrency, formatShortDay } from '../../lib/format'
 import { getExternalLogosEnabled } from '../../lib/logos'
 import { manualAccountKinds, type FinanceSettings, type FinanceSnapshot } from '../../lib/schema'
@@ -78,21 +82,8 @@ export function AccountsSection() {
   const reset = (
     <SettingsResetButton
       section="account"
-      onReset={() =>
-        updateSettings((current) => ({
-          ...defaultFinanceSettings,
-          plaidLiabilities: current.plaidLiabilities,
-          plaidInvestmentTransactions: current.plaidInvestmentTransactions,
-          plaidRecurring: current.plaidRecurring,
-          backgroundRefresh: current.backgroundRefresh,
-          notifications: current.notifications,
-          calendarSync: current.calendarSync,
-          calendarId: current.calendarId,
-          taxProfile: current.taxProfile,
-          accountTaxTreatments: current.accountTaxTreatments,
-        }))
-      }
-      detail="Clear names, start dates, card, and benefits?"
+      onReset={() => updateSettings(withoutAccountPreferences)}
+      detail="Clear account names, dates, cards, and hidden benefits? Manual accounts stay."
     />
   )
 

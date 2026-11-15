@@ -3,7 +3,12 @@
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import { financeSettings, importLegacyFinanceSettings } from './finance-settings'
+import {
+  financeSettings,
+  importLegacyFinanceSettings,
+  withoutAccountPreferences,
+} from './finance-settings'
+import type { FinanceSettings } from './schema'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 vi.mock('./api', () => ({ isTauri: () => true, getFinanceSnapshot: vi.fn() }))
@@ -81,4 +86,36 @@ it('uses empty defaults when a snapshot has no saved settings', () => {
     tripCompanions: [],
     research: false,
   })
+})
+
+it('resetting account preferences keeps every other setting', () => {
+  const defaults = financeSettings(undefined)
+  const current: FinanceSettings = {
+    ...defaults,
+    accountNames: { 'plaid:card': 'Card' },
+    accountStartDates: { 'plaid:card': '2026-01-01' },
+    spendingAccountId: 'plaid:card',
+    hiddenBenefitIds: ['benefit'],
+    manualAccounts: [{ id: 'manual:house', name: 'House', kind: 'property', entries: [] }],
+    people: [{ id: 'person', name: 'Example Person' }],
+    appleWallet: true,
+    research: true,
+  }
+  const reset = withoutAccountPreferences(current)
+  expect(reset.accountNames).toEqual(defaults.accountNames)
+  expect(reset.accountStartDates).toEqual(defaults.accountStartDates)
+  expect(reset.spendingAccountId).toBeUndefined()
+  expect(reset.hiddenBenefitIds).toEqual(defaults.hiddenBenefitIds)
+  const cleared = {
+    accountNames: undefined,
+    accountStartDates: undefined,
+    accountClosedDates: undefined,
+    spendingAccountId: undefined,
+    spendingCards: undefined,
+    benefitCards: undefined,
+    cardRules: undefined,
+    cardChoices: undefined,
+    hiddenBenefitIds: undefined,
+  }
+  expect({ ...reset, ...cleared }).toEqual({ ...current, ...cleared })
 })

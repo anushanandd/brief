@@ -46,6 +46,23 @@ export function financeSettings(data: Pick<FinanceSnapshot, 'settings'> | undefi
   return completeSettings(data?.settings ?? defaultFinanceSettings)
 }
 
+/**
+ * `current` with what the Accounts section's Reset clears (names, dates, cards, and hidden
+ * benefits) back at their defaults, and every other setting kept.
+ */
+export const withoutAccountPreferences = (current: FinanceSettings): FinanceSettings => ({
+  ...current,
+  accountNames: defaultFinanceSettings.accountNames,
+  accountStartDates: defaultFinanceSettings.accountStartDates,
+  accountClosedDates: defaultFinanceSettings.accountClosedDates,
+  spendingAccountId: defaultFinanceSettings.spendingAccountId,
+  spendingCards: defaultFinanceSettings.spendingCards,
+  benefitCards: defaultFinanceSettings.benefitCards,
+  cardRules: defaultFinanceSettings.cardRules,
+  cardChoices: defaultFinanceSettings.cardChoices,
+  hiddenBenefitIds: defaultFinanceSettings.hiddenBenefitIds,
+})
+
 /** Every card the user spends from: the saved spending card, then the others. */
 /** The chosen spending cards, then any spending-only account, which is always one. */
 export function spendingAccountIds(
