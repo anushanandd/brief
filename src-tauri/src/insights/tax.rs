@@ -315,7 +315,9 @@ pub struct Withholding {
     pub year: i32,
     /// The statements read, one per employer.
     pub basis: Vec<super::documents::PayProjection>,
-    /// Unavailable when a statement can't be carried forward.
+    /// Employers seen only in payroll deposits, whose pay no statement projects.
+    pub uncounted_employers: Vec<String>,
+    /// Unavailable when a statement can't be carried forward or an employer is uncounted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub projected_wages: Option<f64>,
@@ -856,14 +858,17 @@ struct Earnings {
 }
 
 /// What `Withholding` describes, for `today`'s year: `projections` from its pay statements
-/// (`None` when one can't be carried forward), `investment` its tax year so far,
+/// (`None` when one can't be carried forward), `uncounted_employers` those paying without
+/// one, which leave the projection unavailable too, `investment` its tax year so far,
 /// `self_employment` its contractor pay so far and what last year's arrived after this day,
 /// `prior_earnings` last year's income from its documents when every W-2 is in, and
 /// `prior_investment` last year's investment income. Without the last two, the prior-year
 /// test can't be settled.
+#[allow(clippy::too_many_arguments)]
 pub fn withholding(
     today: NaiveDate,
     projections: Option<Vec<super::documents::PayProjection>>,
+    uncounted_employers: Vec<String>,
     investment: Option<&TaxYear>,
     (self_employment, self_employment_later): (f64, f64),
     prior_earnings: Option<&super::documents::Income>,
@@ -876,7 +881,10 @@ pub fn withholding(
     let year = today.year();
     let rules = &TABLES.safe_harbor;
     let sum = |value: fn(&super::documents::PayProjection) -> f64| {
-        projections.as_ref().map(|projections| {
+        let projections = projections
+            .as_ref()
+            .filter(|_| uncounted_employers.is_empty());
+        projections.map(|projections| {
             from_minor(
                 projections
                     .iter()
@@ -1011,6 +1019,7 @@ pub fn withholding(
     Some(Withholding {
         year,
         basis: projections.unwrap_or_default(),
+        uncounted_employers,
         projected_wages,
         projected_withholding,
         filing_status: filing_status.map(str::to_owned),
@@ -2073,6 +2082,7 @@ mod tests {
         super::withholding(
             day("2026-09-30"),
             Some(vec![projection(wages, withholding)]),
+            Vec::new(),
             Some(&quiet_year()),
             (0.0, 0.0),
             prior_wages.map(w2).as_ref(),
@@ -2093,6 +2103,7 @@ mod tests {
             super::withholding(
                 day("2026-09-30"),
                 Some(vec![projection(150_000.0, 1_000.0)]),
+                Vec::new(),
                 Some(&quiet_year()),
                 (0.0, 0.0),
                 Some(&w2(140_000.0)),
@@ -2123,6 +2134,7 @@ mod tests {
         let result = super::withholding(
             day("2026-09-30"),
             Some(vec![projection(80_000.0, 1_000.0)]),
+            Vec::new(),
             Some(&quiet_year()),
             (0.0, 0.0),
             Some(&w2(77_000.0)),
@@ -2168,6 +2180,7 @@ mod tests {
             super::withholding(
                 day("2026-01-03"),
                 Some(vec![projection(66_500.0, 0.0)]),
+                Vec::new(),
                 Some(year),
                 contractor,
                 None,
@@ -2293,6 +2306,7 @@ mod tests {
             super::withholding(
                 day("2026-12-31"),
                 Some(vec![pay(medicare_wages)]),
+                Vec::new(),
                 Some(&quiet_year()),
                 (self_employment, 0.0),
                 None,
@@ -2330,6 +2344,7 @@ mod tests {
             super::withholding(
                 day("2026-09-30"),
                 Some(vec![projection(150_000.0, 1_000.0)]),
+                Vec::new(),
                 Some(&quiet_year()),
                 (0.0, 0.0),
                 Some(prior),
@@ -2353,6 +2368,7 @@ mod tests {
         let result = super::withholding(
             day("2026-12-31"),
             Some(vec![projection(10_000.0, 0.0)]),
+            Vec::new(),
             Some(&interest),
             (0.0, 0.0),
             None,
@@ -2367,6 +2383,7 @@ mod tests {
         let result = super::withholding(
             day("2026-12-31"),
             Some(vec![projection(10_000.0, 0.0)]),
+            Vec::new(),
             Some(&qualified),
             (0.0, 0.0),
             None,
@@ -2420,6 +2437,7 @@ mod tests {
         let unread = super::withholding(
             day("2026-09-30"),
             None,
+            Vec::new(),
             Some(&quiet_year()),
             (0.0, 0.0),
             None,
@@ -2441,6 +2459,7 @@ mod tests {
             super::withholding(
                 day("2026-09-30"),
                 Some(Vec::new()),
+                Vec::new(),
                 Some(&quiet_year()),
                 (0.0, 0.0),
                 None,
@@ -2453,6 +2472,7 @@ mod tests {
         let untabled = super::withholding(
             day("2030-09-30"),
             Some(vec![projection(66_500.0, 5_220.0)]),
+            Vec::new(),
             Some(&quiet_year()),
             (0.0, 0.0),
             None,

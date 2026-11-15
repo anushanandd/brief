@@ -434,6 +434,7 @@ it('projects withholding from pay statements, with each test that can’t run un
             projectedMedicareWages: 86_400,
           },
         ],
+        uncountedEmployers: [],
         projectedWages: 86_400,
         projectedWithholding: 12_000,
         filingStatus: 'single',

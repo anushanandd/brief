@@ -21,7 +21,11 @@ export type Withholding = { year: number,
  */
 basis: Array<PayProjection>, 
 /**
- * Unavailable when a statement can't be carried forward.
+ * Employers seen only in payroll deposits, whose pay no statement projects.
+ */
+uncountedEmployers: Array<string>, 
+/**
+ * Unavailable when a statement can't be carried forward or an employer is uncounted.
  */
 projectedWages?: number, projectedWithholding?: number, 
 /**

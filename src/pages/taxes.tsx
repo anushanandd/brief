@@ -241,6 +241,9 @@ function WithholdingSection({
               )
               .join('; ')}. `
           : 'A pay statement this year doesn’t print its period, gross, and withholding, so it can’t be carried forward. '}
+        {withholding.uncountedEmployers.length
+          ? `Leaves out ${withholding.uncountedEmployers.map(displayCase).join(', ')}: deposits only, so pay can’t be projected. `
+          : null}
         {withholding.filingStatus
           ? `Filing status from your tax profile; ${
               withholding.fromLastYear

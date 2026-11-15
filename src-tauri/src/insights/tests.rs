@@ -967,3 +967,52 @@ fn unknown_spending_account_produces_no_card_insights() {
     );
     assert!(insights.statement.is_none());
 }
+
+#[test]
+fn an_employer_seen_only_in_deposits_leaves_the_withholding_projection_unknown() {
+    let statement: crate::documents::Document = serde_json::from_value(json!({
+        "id": "a".repeat(64), "fileName": "pay.pdf", "mediaType": "application/pdf", "size": 1,
+        "importedAt": "2026-09-16T00:00:00Z", "kind": "payslip", "form": "Pay statement",
+        "issuer": "Example Employer", "taxYear": 2026, "date": "2026-08-31",
+        "periodStart": "2026-08-16", "periodEnd": "2026-08-31",
+        "fields": [
+            { "key": "gross", "label": "Gross", "amount": 4000.0, "ytd": 64000.0 },
+            { "key": "federalWithholding", "label": "Federal", "amount": 500.0, "ytd": 8000.0 },
+        ],
+    }))
+    .unwrap();
+    let mut snapshot: Snapshot = serde_json::from_value(json!({
+        "updatedAt": "2026-09-16T12:00:00Z", "netWorth": 0,
+        "accounts": [account("plaid:checking", "cash", 1_000.0)],
+        "holdings": [], "netWorthHistory": [], "spending": { "monthTotal": 0, "categories": [] },
+        "transactions": [txn(
+            "pay", "2026-09-15", "Sample Works PAYROLL", "Income", 3_000.0, Kind::Income,
+        )],
+    }))
+    .unwrap();
+    let settings = FinanceSettings {
+        tax_profile: Some(crate::settings::TaxProfile {
+            filing_status: "single".into(),
+            taxable_income: 0.0,
+            state_rate: None,
+        }),
+        ..Default::default()
+    };
+    let insights = derive_with_documents(
+        &mut snapshot,
+        &settings,
+        &benefits::Catalog::from_settings(&settings),
+        &[statement],
+        &[],
+        now(),
+        &NamedZone::Utc,
+    )
+    .unwrap();
+    let withholding = insights.taxes.withholding.unwrap();
+    assert_eq!(withholding.basis.len(), 1);
+    assert_eq!(
+        (withholding.projected_wages, withholding.projected_tax),
+        (None, None)
+    );
+    assert_eq!(withholding.met, tax::HarborMet::Unknown);
+}

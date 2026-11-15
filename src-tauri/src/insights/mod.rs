@@ -504,6 +504,7 @@ pub fn derive_with_documents(
     taxes.withholding = tax::withholding(
         today,
         documents::pay_projections(today.year(), documents),
+        income_in(today.year()).map_or_else(Vec::new, |income| income.uncounted_employers.clone()),
         taxes.years.iter().find(|year| year.year == today.year()),
         (
             income_in(today.year()).map_or(0.0, |income| income.self_employment),
