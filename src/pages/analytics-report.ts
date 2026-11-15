@@ -70,7 +70,8 @@ function useAnalyticsSearch(data: FinanceSnapshot, today: string) {
   const first = useMemo(
     () =>
       data.transactions.reduce<string | undefined>((earliest, transaction) => {
-        const date = (transaction.postedOn ?? transaction.date).slice(0, 10)
+        // Reports date a purchase by the day it was made (decision 0029).
+        const date = transaction.date.slice(0, 10)
         return !earliest || date < earliest ? date : earliest
       }, undefined),
     [data.transactions],
