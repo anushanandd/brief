@@ -386,3 +386,87 @@ fn a_change_from_a_newer_version_is_refused() {
     drop(storage);
     fs::remove_dir_all(directory).unwrap();
 }
+
+/// An edit that lands between a refresh's projection and its commit (the projection runs
+/// outside the store's lock) must not leave a log that replays to another state.
+#[test]
+fn a_statement_imported_during_a_refresh_replays_to_the_saved_state() {
+    let directory = directory();
+    let mut storage = Storage::new(directory.clone()).unwrap();
+    let life = Life::new(7);
+    let days = life.refresh_days();
+    refresh(&mut storage, life.refresh(days[0]));
+    let next = life.refresh(days[1]);
+    let id = uuid::Uuid::new_v4().to_string();
+    let revision = storage.data.revision;
+    storage
+        .stage_refresh(
+            &id,
+            &next.committed_at.to_rfc3339(),
+            revision,
+            Staged {
+                refresh: next.clone(),
+                diagnostics: SyncDiagnostics::default(),
+            },
+        )
+        .unwrap();
+    // The projection reads statements and links before the edit, as refresh.rs does.
+    let snapshot = change::project_refresh(
+        &storage.data.snapshot,
+        &storage.data.statements,
+        &storage.data.account_links,
+        &crate::insights::benefits::Catalog::from_settings(&storage.data.settings),
+        &next,
+    )
+    .unwrap();
+    let (_, draft) = storage
+        .preview_statement(
+            "checking.csv".into(),
+            CHECKING_STATEMENT.as_bytes().to_vec(),
+        )
+        .unwrap();
+    storage.import_statement(draft, "plaid:checking").unwrap();
+    // Refused or committed, what the log replays to is what was saved.
+    let _ = storage.commit(&id, snapshot);
+    assert_replays(&storage);
+}
+
+/// Settings saves don't advance the revision, so a commit checks the card rules and links its
+/// projection read are still the saved ones.
+#[test]
+fn card_rules_changed_during_a_refresh_refuse_its_commit() {
+    let directory = directory();
+    let mut storage = Storage::new(directory.clone()).unwrap();
+    let life = Life::new(7);
+    let days = life.refresh_days();
+    refresh(&mut storage, life.refresh(days[0]));
+    let next = life.refresh(days[1]);
+    let id = uuid::Uuid::new_v4().to_string();
+    let revision = storage.data.revision;
+    storage
+        .stage_refresh(
+            &id,
+            &next.committed_at.to_rfc3339(),
+            revision,
+            Staged {
+                refresh: next.clone(),
+                diagnostics: SyncDiagnostics::default(),
+            },
+        )
+        .unwrap();
+    let snapshot = change::project_refresh(
+        &storage.data.snapshot,
+        &storage.data.statements,
+        &storage.data.account_links,
+        &crate::insights::benefits::Catalog::from_settings(&storage.data.settings),
+        &next,
+    )
+    .unwrap();
+    let mut settings = storage.data.settings.clone();
+    settings
+        .card_rules
+        .push(crate::insights::benefits::example_rules());
+    storage.save_settings(settings, false).unwrap();
+    assert!(storage.commit(&id, snapshot).is_err());
+    assert_replays(&storage);
+}

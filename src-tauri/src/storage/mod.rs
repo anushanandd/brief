@@ -80,9 +80,21 @@ struct PendingRefresh {
     id: String,
     started_at: String,
     revision: u64,
+    /// What the projection reads that an edit can change without a new revision.
+    inputs: Value,
     expires: Instant,
     refresh: change::Refresh,
     diagnostics: SyncDiagnostics,
+}
+
+/// The saved inputs a refresh's projection reads besides the snapshot and statements, which a
+/// new revision already guards: account links and card rules. Replay projects the refresh with
+/// the ones logged before it, so a commit after either changed would replay differently.
+fn projection_inputs(data: &FinanceState) -> Value {
+    serde_json::json!({
+        "accountLinks": data.account_links,
+        "cardRules": data.settings.card_rules,
+    })
 }
 
 pub(crate) enum CommitError {
@@ -1023,6 +1035,7 @@ impl Storage {
             id: id.into(),
             started_at: started_at.into(),
             revision,
+            inputs: projection_inputs(&self.data),
             refresh,
             diagnostics,
             expires: Instant::now() + Duration::from_secs(120),
@@ -1040,6 +1053,7 @@ impl Storage {
             .filter(|pending| {
                 pending.id == id
                     && pending.revision == self.data.revision
+                    && pending.inputs == projection_inputs(&self.data)
                     && pending.expires > Instant::now()
             })
             .ok_or_else(|| {
