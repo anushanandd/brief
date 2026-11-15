@@ -165,6 +165,13 @@ fn selects_alpaca_feeds_from_the_authoritative_market_clock_and_parses_quotes() 
     );
     assert_eq!(snapshots["AAPL"].price, 230.0);
     assert_eq!(snapshots["AAPL"].as_of, "2026-09-03T00:00:00Z");
+
+    // No previous day's bar: the day's move is unknown, not flat.
+    let unknown = parse_market_snapshots(
+        &json!({ "AAPL": { "latestTrade": { "p": 225.0, "t": "2026-09-02T23:45:00Z" } } }),
+        false,
+    );
+    assert_eq!(unknown["AAPL"].day_change_pct(), None);
 }
 
 #[test]

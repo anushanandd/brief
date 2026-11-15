@@ -102,6 +102,17 @@ pub struct MarketSnapshot {
     pub as_of: String,
 }
 
+impl MarketSnapshot {
+    /// Today's move, or none when the provider sent no previous close; `previous_close` then
+    /// holds the price, and the move isn't flat.
+    pub fn day_change_pct(&self) -> Option<f64> {
+        self.previous_close_as_of
+            .as_ref()
+            .map(|_| self.daily_change_pct)
+            .filter(|value| value.is_finite())
+    }
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 #[derive(ts_rs::TS)]

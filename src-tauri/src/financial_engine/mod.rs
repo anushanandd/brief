@@ -485,7 +485,7 @@ fn apply_market_snapshots_with_freshness(
         }
         holding.price = Some(scaled(price, 8));
         holding.value = Some(money(value));
-        holding.daily_change_pct = Some(quote.daily_change_pct);
+        holding.daily_change_pct = quote.day_change_pct();
         holding.weekly_change_pct = quote.weekly_change_pct;
         holding.weekly_reference_price = quote.weekly_reference_price;
         holding.weekly_reference_date = quote.weekly_reference_date.clone();

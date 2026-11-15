@@ -75,14 +75,7 @@ pub(super) fn holding_today(
     sector: Option<(&'static str, &'static str)>,
     snapshots: &BTreeMap<String, MarketSnapshot>,
 ) -> Option<TodayMove> {
-    // A snapshot without a previous close has no day change; never treat it as flat.
-    let change = |symbol: &str| {
-        snapshots
-            .get(symbol)
-            .filter(|snapshot| snapshot.previous_close_as_of.is_some())
-            .map(|snapshot| snapshot.daily_change_pct)
-            .filter(|value| value.is_finite())
-    };
+    let change = |symbol: &str| snapshots.get(symbol)?.day_change_pct();
     let stock = change(ticker)?;
     let benchmark = |(symbol, name): (&str, &str)| {
         change(symbol).map(|change_pct| Benchmark {
