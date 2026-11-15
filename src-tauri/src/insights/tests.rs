@@ -303,10 +303,9 @@ fn plan_paces_categories_and_covers_expected_outflows_in_cents() {
     // Rent is expected on Oct 1 and exceeds cash, so coverage is short and ranked first.
     assert_eq!(plan.coverage.expected_outflows, 1_500.0);
     assert!(matches!(
-        insights.attention[0].item,
+        insights.brief.needs[0].item,
         attention::Item::CoverageShort { .. }
     ));
-    assert_eq!(insights.attention.len(), 1);
 }
 
 #[test]
@@ -933,7 +932,8 @@ fn card_payments_due_within_a_week_need_attention_until_paid() {
             now(),
             &NamedZone::Utc,
         )
-        .attention
+        .brief
+        .needs
         .into_iter()
         .find_map(|item| match item.item {
             attention::Item::PaymentDue { days, .. } => Some((days, item.severity)),

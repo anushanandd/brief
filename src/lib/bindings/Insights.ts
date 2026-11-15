@@ -5,7 +5,6 @@ import type { AccountReturns } from "./AccountReturns";
 import type { AccountsTotal } from "./AccountsTotal";
 import type { AgendaItem } from "./AgendaItem";
 import type { Anomalies } from "./Anomalies";
-import type { AttentionItem } from "./AttentionItem";
 import type { BenefitOption } from "./BenefitOption";
 import type { Brief } from "./Brief";
 import type { CardBenefits } from "./CardBenefits";
@@ -68,7 +67,7 @@ benefitOptions: Array<BenefitOption>, benefitRulesVersion?: string, benefitTerms
 /**
  * Unlinked refunds and the one purchase each most plausibly repays.
  */
-refundSuggestions: Array<RefundSuggestion>, plan: Plan, attention: Array<AttentionItem>, brief: Brief, cash: CashTimeline, subscriptions: Subscriptions, 
+refundSuggestions: Array<RefundSuggestion>, plan: Plan, brief: Brief, cash: CashTimeline, subscriptions: Subscriptions, 
 /**
  * Card utilization and the interest charged on the last statements.
  */

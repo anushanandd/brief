@@ -92,7 +92,6 @@ export function insights(overrides: Partial<Insights> = {}): Insights {
         horizonDays: 30,
       },
     },
-    attention: [],
     brief: { needs: [] },
     cash: {
       horizonDays: 90,

@@ -161,7 +161,6 @@ pub struct Insights {
     /// Unlinked refunds and the one purchase each most plausibly repays.
     pub refund_suggestions: Vec<refunds::RefundSuggestion>,
     pub plan: plan::Plan,
-    pub attention: Vec<attention::AttentionItem>,
     pub brief: attention::Brief,
     pub cash: cashline::CashTimeline,
     pub subscriptions: subscriptions::Subscriptions,
@@ -298,7 +297,6 @@ pub fn derive_with_documents(
         other_card_benefits,
         refund_suggestions,
         plan,
-        attention,
         mut brief,
         cash,
         subscriptions,
@@ -595,7 +593,6 @@ pub fn derive_with_documents(
         benefit_terms_reviewed: spending_rules.map(|rules| rules.terms_reviewed.clone()),
         refund_suggestions,
         plan,
-        attention,
         brief,
         cash,
         subscriptions,
@@ -691,7 +688,6 @@ struct Cashflow {
     other_card_benefits: Vec<CardBenefits>,
     refund_suggestions: Vec<refunds::RefundSuggestion>,
     plan: plan::Plan,
-    attention: Vec<attention::AttentionItem>,
     brief: attention::Brief,
     cash: cashline::CashTimeline,
     subscriptions: subscriptions::Subscriptions,
@@ -867,7 +863,6 @@ fn cashflow(
         statement: statement.as_ref(),
         plan: &plan,
     };
-    let attention = attention::attention(context);
     let horizon = live(forecast::forecast_within(
         transactions,
         &views,
@@ -927,7 +922,6 @@ fn cashflow(
         other_card_benefits,
         refund_suggestions: refunds::suggestions(transactions, today),
         plan,
-        attention,
         brief,
         cash,
         subscriptions,

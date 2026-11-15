@@ -629,7 +629,6 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
         horizonDays: 30,
       },
     },
-    attention: [],
     brief: { needs: [] },
     cash: {
       horizonDays: 90,
