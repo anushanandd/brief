@@ -158,5 +158,5 @@ export function MoneyStrip({
     spendingPeriod,
     today,
   ])
-  return <SelectorStrip label="Money" items={items} />
+  return <SelectorStrip label="Spending" items={items} />
 }

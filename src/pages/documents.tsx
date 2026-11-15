@@ -23,9 +23,8 @@ import {
   X,
 } from '../components/icons'
 import { useObjectDetailsAction } from '../components/object-details'
-import { SelectorStrip } from '../components/selector-strip'
 import { SettingsLink } from '../components/settings-dialog'
-import { Button, Card, EmptyState, SectionHeading } from '../components/ui'
+import { Button, Card, ChartRangeSelect, EmptyState, SectionHeading } from '../components/ui'
 import { useDialogActions } from '../components/ui/dialog'
 import { Tooltip, TooltipContent, TooltipTrigger } from '../components/ui/tooltip'
 import { WorkspaceHeader } from '../components/workspace-header'
@@ -370,7 +369,25 @@ export function DocumentsPage() {
       [search.year, open],
     ),
   )
-  // ⌘↑ and ⌘↓ step through the tax years, newest first, as the strip lists them.
+  // The year picker's choices, each its own action as on Taxes.
+  const yearList = taxYears(query.data).years
+  const yearKey = yearList.join(',')
+  useRegisterActions(
+    useMemo<AppAction[]>(
+      () =>
+        yearList.map((item) => ({
+          id: `documents.year.${item}`,
+          title: `Show ${item} documents`,
+          search: `documents tax year ${item}`,
+          group: 'View',
+          scope: 'page' as const,
+          run: () => void navigate({ to: '/documents', search: { year: item }, replace: true }),
+        })),
+      // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed by the years listed
+      [navigate, yearKey],
+    ),
+  )
+  // ⌘↑ and ⌘↓ step through the tax years, newest first, as the picker lists them.
   useGraphAccountShortcuts(
     useCallback(
       (direction: -1 | 1) => {
@@ -436,6 +453,21 @@ export function DocumentsPage() {
         }
         actions={
           <>
+            {years.length > 1 ? (
+              <ChartRangeSelect
+                label="Tax year"
+                command="documents.year."
+                options={years.map((item) => ({
+                  value: item,
+                  label: String(item),
+                  accessibleLabel: String(item),
+                }))}
+                value={year}
+                onValueChange={(item) =>
+                  void navigate({ to: '/documents', search: { year: item }, replace: true })
+                }
+              />
+            ) : null}
             <Button
               icon={Plus}
               size="compact"
@@ -457,28 +489,6 @@ export function DocumentsPage() {
             </Button>
           </>
         }
-      />
-      <SelectorStrip
-        label="Tax years"
-        items={years.map((item) => {
-          const income = insights?.years.find((entry) => entry.year === item)?.income
-          const count = documents.filter(
-            (document) => (document.taxYear ?? thisYear) === item,
-          ).length
-          return {
-            id: String(item),
-            label: String(item),
-            // The year's mark counts its documents.
-            mark: (
-              <span className="documents-year-mark" aria-label={countOf(count, 'document')}>
-                {count}
-              </span>
-            ),
-            link: { to: '/documents', search: { year: item } },
-            current: item === year,
-            value: income ? income.wages + income.selfEmployment : null,
-          }
-        })}
       />
       <div className="documents-toolbar">
         <label className="documents-search">

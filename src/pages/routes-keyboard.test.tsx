@@ -188,11 +188,12 @@ it('/: Return on recent activity opens it in Activity, and Escape closes it', as
   await unmount()
 })
 
-const total = () => document.querySelector('.financial-activity-footer')
+const total = () => document.querySelector('.activity-total')
+/** The net of each currency. */
 const totalFigures = () =>
-  [
-    ...(total()?.querySelectorAll('.activity-total-figures > .financial-activity-amount') ?? []),
-  ].map((amount) => amount.textContent)
+  [...(total()?.querySelectorAll('.activity-total-part > strong') ?? [])].map(
+    (amount) => amount.textContent,
+  )
 /** The Settings picker for a number key, by what it shows. */
 const picker = (key: string) =>
   document.querySelector(`[aria-label="What the ${key} key opens"]`)?.textContent
@@ -231,11 +232,12 @@ describe('/activities total', () => {
     // The seed's three Spotify charges; the figure is Rust's sum, as it wrote it for the preview.
     await act(async () => history.replace('/activities?q=Spotify'))
     for (let attempt = 0; attempt < 20 && !totalFigures().length; attempt += 1) await settle()
-    // It is a row of the columned ledger, laid out on the same columns as the rows above it.
-    expect(total()?.parentElement?.classList.contains('financial-activity-table')).toBe(true)
-    expect(total()?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe('Total')
+    // It sits under the scrolling rows, never over them.
+    expect(total()?.closest('.activity-page-list')).toBeNull()
+    expect(total()?.getAttribute('aria-label')).toBe('Total')
     expect(totalFigures()).toEqual(['−$36.97'])
-    expect(total()?.textContent).toBe('Total−$36.97')
+    // Only money out, so no In and Out beside the net.
+    expect(total()?.textContent).toBe('3 transactions−$36.97')
 
     // Selecting a row totals the selection instead.
     cannedTotals.set(1, totals([{ currency: 'USD', net: -12.99 }]))
@@ -245,27 +247,27 @@ describe('/activities total', () => {
     await press('x')
     for (let attempt = 0; attempt < 20 && totalFigures()[0] !== '−$12.99'; attempt += 1)
       await settle()
-    expect(total()?.querySelector('[role="group"]')?.getAttribute('aria-label')).toBe(
-      'Total of the selection',
-    )
+    expect(total()?.getAttribute('aria-label')).toBe('Total of the selection')
     expect(totalFigures()).toEqual(['−$12.99'])
 
     // Two currencies are never added; a row without an amount is counted beside the sum.
-    cannedTotals.set(
-      2,
-      totals(
-        [
-          { currency: 'USD', net: -5 },
-          { currency: 'EUR', net: 3 },
-        ],
-        1,
-      ),
+    const mixed = totals(
+      [
+        { currency: 'USD', net: -5 },
+        { currency: 'EUR', net: 3 },
+      ],
+      1,
     )
+    const [dollars] = mixed.currencies
+    if (dollars) Object.assign(dollars, { moneyIn: 10, moneyOut: -15 })
+    cannedTotals.set(2, mixed)
     await act(async () => second.focus())
     await press('x')
     for (let attempt = 0; attempt < 20 && totalFigures().length < 2; attempt += 1) await settle()
     expect(totalFigures()).toEqual(['−$5.00', '€3.00'])
-    expect(total()?.textContent).toContain('excludes 1')
+    expect(total()?.textContent).toBe(
+      '2 selected · 1 without an amountIn $10.00Out −$15.00−$5.00€3.00',
+    )
 
     // A sum Rust couldn't give shows no figure, never a zero.
     cannedTotals.set(1, new Error('Rust is unavailable'))
@@ -273,7 +275,7 @@ describe('/activities total', () => {
     await press('x')
     for (let attempt = 0; attempt < 20 && totalFigures().length; attempt += 1) await settle()
     expect(totalFigures()).toEqual([])
-    expect(total()?.textContent).toBe('Total')
+    expect(total()?.textContent).toBe('1 selected')
 
     await press('Escape')
     await act(async () => history.replace('/activities'))
@@ -459,7 +461,7 @@ describe('⌘ and the sidebar', () => {
     await wait(60)
     // One per sidebar page, in order, and the rest of the visible controls with ⌘ shortcuts.
     expect(hints()).toEqual(
-      expect.arrayContaining(['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘8', '⌘9', '⌘,']),
+      expect.arrayContaining(['⌘1', '⌘2', '⌘3', '⌘4', '⌘5', '⌘6', '⌘7', '⌘,']),
     )
     expect(document.querySelector('.command-key-hints')?.getAttribute('aria-hidden')).toBe('true')
     await keyup('Meta')
@@ -481,6 +483,19 @@ describe('⌘ and the sidebar', () => {
     await wait(COMMAND_HINT_DELAY_MS)
     expect(hints()).toEqual([])
     await keyup('Meta')
+    await unmount()
+  })
+
+  it('a breadcrumb gets no hint, so none covers the crumb after it', async () => {
+    const { unmount } = await mount('/holdings/retirement', 'Holdings')
+    await blurFocus()
+    const crumb = document.querySelector('.page-route a')
+    const page = document.querySelector('.sidebar-menu-button[href="/holdings"]')
+    expect(crumb).not.toBeNull()
+    const chord = page?.getAttribute('aria-keyshortcuts')?.replace('Meta+', '⌘')
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
+    await holdCommand()
+    expect(hints().filter((hint) => hint === chord)).toHaveLength(1)
     await unmount()
   })
 

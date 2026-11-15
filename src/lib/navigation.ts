@@ -8,9 +8,11 @@ import {
   CreditCard,
   FileText,
   House,
+  type IconComponent,
   Landmark,
   Palette,
   Percent,
+  Plane,
   Receipt,
   ReceiptText,
   ScrollText,
@@ -18,21 +20,68 @@ import {
   ShieldCheck,
   Sparkles,
   Sprout,
+  Users,
   WalletCards,
 } from '../components/icons'
 import { analyticsCharts } from './analytics'
 
 export const primaryNavigation = [
   { to: '/', label: 'Home', icon: House, shortcut: '⌘1' },
-  { to: '/spending', label: 'Money', icon: WalletCards, shortcut: '⌘2' },
+  { to: '/spending', label: 'Spending', icon: WalletCards, shortcut: '⌘2' },
   { to: '/holdings', label: 'Investments', icon: BriefcaseBusiness, shortcut: '⌘3' },
   { to: '/accounts', label: 'Accounts', icon: Landmark, shortcut: '⌘4' },
   { to: '/activities', label: 'Activity', icon: Activity, shortcut: '⌘5' },
-  { to: '/insights', label: 'Insights', icon: Sparkles, shortcut: '⌘6' },
-  { to: '/calendar', label: 'Calendar', icon: CalendarDays, shortcut: '⌘7' },
-  { to: '/documents', label: 'Documents', icon: FileText, shortcut: '⌘8' },
-  { to: '/taxes', label: 'Taxes', icon: ReceiptText, shortcut: '⌘9' },
+  { to: '/calendar', label: 'Calendar', icon: CalendarDays, shortcut: '⌘6' },
+  { to: '/insights', label: 'Insights', icon: Sparkles, shortcut: '⌘7' },
 ] as const
+
+export type SectionTab = {
+  id: 'trips' | 'people' | 'taxes' | 'documents'
+  label: string
+  to: '/insights' | '/taxes' | '/documents'
+  search?: { view: 'people' }
+  icon: IconComponent
+  color: string
+}
+
+/**
+ * Pages that live under one sidebar page, shown as the strip of cards that heads each of them,
+ * as Spending's reports do; the sidebar page stays highlighted on all of them. Insights holds
+ * what Brief works out from your records: trips, the people you pay, and taxes with the
+ * documents they read.
+ */
+export const pageSections: Record<'/insights', SectionTab[]> = {
+  '/insights': [
+    { id: 'trips', label: 'Trips', to: '/insights', icon: Plane, color: 'var(--data-4)' },
+    {
+      id: 'people',
+      label: 'People',
+      to: '/insights',
+      search: { view: 'people' },
+      icon: Users,
+      color: 'var(--data-2)',
+    },
+    { id: 'taxes', label: 'Taxes', to: '/taxes', icon: ReceiptText, color: 'var(--data-6)' },
+    {
+      id: 'documents',
+      label: 'Documents',
+      to: '/documents',
+      icon: FileText,
+      color: 'var(--data-5)',
+    },
+  ],
+}
+
+/** The sidebar page a path belongs to, when it is one of a page's tabs. */
+export function sectionHome(pathname: string): keyof typeof pageSections | undefined {
+  return pageSections['/insights'].some(({ to }) => to === pathname) ? '/insights' : undefined
+}
+
+/** Which tab a location shows: People is Insights' people view, Trips the rest of Insights. */
+export function sectionTabActive(tab: SectionTab, pathname: string, view: unknown) {
+  if (tab.to !== pathname) return false
+  return tab.to !== '/insights' || (tab.search?.view === 'people') === (view === 'people')
+}
 
 // Settings opens as a dialog over the current page rather than a sidebar page.
 export const settingsNavigation = { label: 'Settings', icon: Settings, shortcut: '⌘,' } as const

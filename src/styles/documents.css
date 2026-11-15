@@ -105,18 +105,6 @@
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
 }
-.documents-year-mark {
-  display: grid;
-  width: var(--mark-size);
-  height: var(--mark-size);
-  place-items: center;
-  border-radius: var(--radius-inner);
-  background: var(--accent-soft);
-  color: var(--accent);
-  font-size: var(--type-meta);
-  font-weight: 600;
-  font-variant-numeric: tabular-nums;
-}
 .documents-toolbar > button {
   margin-left: auto;
 }

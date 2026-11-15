@@ -21,13 +21,16 @@ const HINT_ROOM = 44
 
 /**
  * The ⌘ shortcut of each visible control that has one: the control names its command in
- * `data-command`, and the command's first single ⌘ chord is its shortcut. A sidebar row has
- * room at its end, so its hint sits inside; any other control keeps its icon and label clear,
- * with the hint beside it, on the right unless the window ends there.
+ * `data-command`, and the command's first single ⌘ chord is its shortcut. Breadcrumbs get none.
+ * A sidebar row has room at its end, so its hint sits inside; any other control keeps its icon
+ * and label clear, with the hint beside it, on the right unless the window ends there.
  */
 export function commandKeyHints(actions: readonly AppAction[]): CommandHint[] {
   const byId = new Map(actions.map((action) => [action.id, action]))
   return visibleActionTargets().flatMap(({ element }, id) => {
+    // A breadcrumb's page shows its shortcut in the sidebar, and a hint here would cover the
+    // crumb after it.
+    if (element.closest('.page-route')) return []
     const command = element.dataset.command
     const binding = command
       ? byId

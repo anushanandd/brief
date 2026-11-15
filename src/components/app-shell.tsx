@@ -16,7 +16,9 @@ import { useRegisterActions, useRegisteredActions } from '../lib/action-system'
 import { analyticsChart, analyticsCharts, analyticsGroup } from '../lib/analytics'
 import { isTauri } from '../lib/api'
 import { announceAmountsHidden, setAmountsHidden } from '../lib/format'
+import { setGraphEnd } from '../lib/graph-preferences'
 import { openModal } from '../lib/keyboard'
+import { sectionHome } from '../lib/navigation'
 import { useOrderedNavigation } from '../lib/navigation-preferences'
 import { getPrivacyPreferences, usePrivacyPreferences } from '../lib/privacy-preferences'
 import { useSettingsDialog } from '../lib/settings-dialog'
@@ -51,13 +53,13 @@ function Shell() {
     select: (location) =>
       location.pathname === '/analytics' ? analyticsChart(location.search.chart) : undefined,
   })
-  // A report belongs to a destination, which stays the highlighted page while it is open.
+  // A report or a tab belongs to a page, which stays the highlighted page while it is open.
   const reportHome =
     pathname === '/analytics'
       ? analyticsGroup(reportChart ?? analyticsCharts[0].id) === 'money'
         ? '/spending'
         : '/holdings'
-      : undefined
+      : sectionHome(pathname)
   const mainContentRef = useRef<HTMLElement>(null)
   const settings = useSettingsDialog()
   const finance = useFinance()
@@ -126,6 +128,8 @@ function Shell() {
   }, [privacyPreferences.hideOnBlur])
   useLayoutEffect(() => {
     if (mainContentRef.current) mainContentRef.current.scrollTop = 0
+    // A page opens on today, even after another was scrolled back in time.
+    setGraphEnd(undefined)
   }, [pathname])
   // Across the page, Tab never walks focus between controls: the sidebar, strips, and lists are
   // reached by shortcuts and arrows instead. Inside a dialog Tab walks its controls, which the

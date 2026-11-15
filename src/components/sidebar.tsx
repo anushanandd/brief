@@ -31,7 +31,6 @@ export function Sidebar({
       <div className="sidebar-content">
         <nav className="sidebar-navigation" aria-label="Pages">
           <section className="sidebar-group">
-            <h2 className="sidebar-group-label">Workspace</h2>
             <ul className="sidebar-menu">
               {pages.map(({ to, label, icon: Icon }, index) => (
                 <li className="sidebar-menu-item" key={to}>

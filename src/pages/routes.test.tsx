@@ -2,7 +2,6 @@
 
 import { expect, it } from 'vitest'
 
-import { evidenceFixture } from '../data/fixtures/evidence'
 import { expectedEvent } from '../data/fixtures/insights'
 import { bindingConflicts, type AppAction } from '../lib/action-system'
 import { settingsSections } from '../lib/settings-search'
@@ -114,6 +113,8 @@ it('places graph ranges at the top right, above the change row', async () => {
       'chart-range-select',
     )
     expect(chart).not.toContain('aria-label="Chart key"')
+    // The chart opens larger and scrolls through time, both from the keyboard.
+    expect(chart).toMatch(/is-expandable[^>]*aria-keyshortcuts="D W M Q Y A \[ \] \} Enter"/)
   }
   for (const [path, heading] of [
     ['/analytics?chart=income', 'home-balance-header'],
@@ -125,6 +126,8 @@ it('places graph ranges at the top right, above the change row', async () => {
     const chart = html.slice(html.indexOf(heading))
     const summary = chart.slice(chart.indexOf('chart-summary-row'), chart.indexOf('</header>'))
     expect(summary).toContain('hero-change')
+    // Every chart opens larger.
+    expect(chart).toContain('expands-on-click')
     if (path === '/analytics?chart=income') {
       expect(summary).not.toContain('chart-range-select')
       expect(chart.slice(0, chart.indexOf('chart-summary-row'))).toContain('chart-range-select')
@@ -225,10 +228,10 @@ it('keeps account details and utilities out of the organized sidebar', async () 
   // Reports open from the palette and the pages that link them, not the sidebar.
   expect(sidebar).not.toContain('href="/analytics')
   const appearance = await renderEverySettingsSection()
-  // One look; there is no theme to choose.
+  // One look, one chart range that follows the last choice, and one quote rate: none to set.
   expect(appearance).not.toContain('aria-label="Theme"')
-  expect(appearance).toMatch(/role="combobox"[^>]*aria-label="Live price updates"/)
-  expect(appearance).toContain('Live price updates')
+  expect(appearance).not.toContain('Default chart range')
+  expect(appearance).not.toContain('Live price updates')
   expect(appearance).toContain('Financial backup')
   expect(appearance).toContain('Figures in a backup are unencrypted')
 })
@@ -330,8 +333,6 @@ it('maps every control to a registered command', async () => {
       color: '#fff',
     },
   ]
-  // Chapters and Rules have controls of their own.
-  scenario.insights = { evidence: evidenceFixture }
   const voids = new Set([
     'area',
     'br',
@@ -359,9 +360,6 @@ it('maps every control to a registered command', async () => {
     '/insights',
     '/insights?view=people',
     '/insights?view=people&person=person:a',
-    '/insights?view=chapters',
-    '/insights?view=chapters&chapter=work:example',
-    '/insights?view=rules',
     '/analytics?chart=card-credits',
     '/taxes',
     '/calendar',

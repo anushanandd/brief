@@ -345,7 +345,7 @@ it('uses the shared Spending range control and keyboard period navigation', asyn
 it('opens the selected analytics chart with shared account and date scope', async () => {
   scenario.creditKind = 'income'
   const html = await renderRoute('/analytics?chart=income&from=2026-09-01&to=2026-09-03')
-  expect(html).toContain('class="account-switcher" aria-label="Money"')
+  expect(html).toContain('class="account-switcher" aria-label="Spending"')
   expect(html).toContain('aria-keyshortcuts="Meta+ArrowUp Meta+ArrowDown"')
   expect(html).toContain('aria-current="page">Income')
   expect(html).toContain('$35.00')
@@ -608,7 +608,7 @@ it('lists a report beside the others of its destination, after that destinationâ
   scenario.otherCategory = 'Income'
   const html = await renderRoute('/analytics?range=month')
   const selector = html.slice(
-    html.indexOf('class="account-switcher" aria-label="Money"'),
+    html.indexOf('class="account-switcher" aria-label="Spending"'),
     html.indexOf('account-overview-dashboard'),
   )
   expect(selector.indexOf('>Spending<')).toBeGreaterThan(-1)

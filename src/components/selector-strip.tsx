@@ -29,7 +29,7 @@ export type SelectorStripItem = {
 }
 
 /**
- * The one selector at the head of Accounts, Money, and Investments: a strip of cards, each with
+ * The selector at the head of a page without a menu: a strip of cards, each with
  * its figure and change over the page's period. ⌘↑ and ⌘↓ step through it.
  */
 export function SelectorStrip({

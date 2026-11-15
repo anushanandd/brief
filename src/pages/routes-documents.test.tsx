@@ -82,8 +82,9 @@ it('lists a year’s documents beside what the year should bring', async () => {
   expect(html).toContain('documents-badge is-attention')
   expect(html).toContain('aria-label="Search documents"')
   expect(html).not.toContain('data-command="documents.read-all"')
-  // Each year's mark counts its documents.
-  expect(html).toContain('aria-label="2 documents"')
+  // The year is picked in the header, as on Taxes, under Insights' strip of pages.
+  expect(html).toContain('data-command="documents.year.')
+  expect(html).toContain('<nav class="account-switcher" aria-label="Insights"')
   // Coverage marks the months each monthly kind arrived in.
   expect(html).toContain('aria-label="August: 1 pay statement"')
   expect(html).toContain('aria-label="August: 1 statement"')

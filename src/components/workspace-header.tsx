@@ -1,5 +1,5 @@
 import { Popover } from '@base-ui/react/popover'
-import { Link } from '@tanstack/react-router'
+import { Link, useLocation } from '@tanstack/react-router'
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
@@ -9,24 +9,21 @@ import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { AnalyticsSearch, AnalyticsChart } from '../lib/analytics'
 import { formatMarketTime, formatUpdatedAt } from '../lib/format'
 import type { InsightsView } from '../lib/insights-views'
-import {
-  marketUpdateIntervals,
-  saveMarketUpdateInterval,
-  useMarketUpdateInterval,
-} from '../lib/market-preferences'
+import { primaryNavigation, sectionHome } from '../lib/navigation'
 import { providerCatalog } from '../lib/providers'
 import type { ChangeWindow } from '../lib/schema'
 import type { IntegrationStatus } from '../lib/schema'
 import type { SpendingRange } from '../lib/spending'
 import { RefreshButton } from './data-state'
 import { type IconComponent, Moon, Sun, Sunrise, Sunset, TrendingUp } from './icons'
+import { SectionStrip } from './section-strip'
 import { SettingsLink } from './settings-dialog'
-import { ChartRangeSelect, StatusDot } from './ui'
+import { StatusDot } from './ui'
 import { usePopupPortal } from './ui/popup-container'
 
 type WorkspaceParent = {
   label: string
-  to: '/' | '/accounts' | '/spending' | '/activities' | '/settings'
+  to: '/' | '/accounts' | '/spending' | '/activities' | '/insights' | '/settings'
 }
 
 export type WorkspaceBreadcrumb = {
@@ -50,9 +47,16 @@ export type WorkspaceBreadcrumb = {
     year?: number
     trip?: string
     person?: string
-    chapter?: string
     window?: ChangeWindow
   }
+}
+
+/** The sidebar page a page is one of the tabs of, such as Activity for Calendar. */
+function useSection() {
+  const pathname = useLocation({ select: (location) => location.pathname })
+  const home = sectionHome(pathname)
+  const label = primaryNavigation.find(({ to }) => to === home)?.label ?? 'Page'
+  return { pathname, home, label }
 }
 
 export function WorkspaceHeader({
@@ -75,6 +79,13 @@ export function WorkspaceHeader({
   showRefresh?: boolean
 }) {
   const data = useFinance().data
+  // A tab of a sidebar page reads as that page's: "Activity / Calendar".
+  const section = useSection()
+  const shownParent: WorkspaceParent | undefined =
+    parent ??
+    (section.home && section.home !== section.pathname
+      ? { label: section.label, to: section.home }
+      : undefined)
   const hasWarning = Boolean(
     data?.recovery ||
     data?.syncWarnings?.length ||
@@ -82,79 +93,85 @@ export function WorkspaceHeader({
   )
 
   return (
-    <header className="page-header workspace-header">
-      <div className="workspace-title">
-        <h1 className={parent || breadcrumbs?.length ? 'page-route' : undefined}>
-          {breadcrumbs?.length ? (
-            breadcrumbs.map((crumb, index) => (
-              <Fragment key={`${index}-${crumb.label}`}>
-                {index > 0 ? (
-                  <span className="page-route-separator" aria-hidden="true">
-                    /
-                  </span>
-                ) : null}
-                {index === breadcrumbs.length - 1 ? (
-                  <span aria-current="page">{crumb.label}</span>
+    <>
+      <header className="page-header workspace-header">
+        <div className="workspace-title">
+          <h1 className={shownParent || breadcrumbs?.length ? 'page-route' : undefined}>
+            {breadcrumbs?.length ? (
+              breadcrumbs.map((crumb, index) => (
+                <Fragment key={`${index}-${crumb.label}`}>
+                  {index > 0 ? (
+                    <span className="page-route-separator" aria-hidden="true">
+                      /
+                    </span>
+                  ) : null}
+                  {index === breadcrumbs.length - 1 ? (
+                    <span aria-current="page">{crumb.label}</span>
+                  ) : (
+                    <Link
+                      to={crumb.to}
+                      search={crumb.search ?? {}}
+                      activeOptions={{ exact: true }}
+                      data-command={
+                        crumb.to === '/analytics' && crumb.search?.chart
+                          ? `navigation.report.${crumb.search.chart}`
+                          : crumb.to === '/insights' && crumb.search?.view === 'people'
+                            ? 'navigation.open.people'
+                            : `navigation.open.${crumb.to}`
+                      }
+                    >
+                      {crumb.label}
+                    </Link>
+                  )}
+                </Fragment>
+              ))
+            ) : shownParent ? (
+              <>
+                {shownParent.to === '/settings' ? (
+                  <SettingsLink target="advanced">{shownParent.label}</SettingsLink>
                 ) : (
                   <Link
-                    to={crumb.to}
-                    search={crumb.search ?? {}}
+                    to={shownParent.to}
                     activeOptions={{ exact: true }}
-                    data-command={
-                      crumb.to === '/analytics' && crumb.search?.chart
-                        ? `navigation.report.${crumb.search.chart}`
-                        : `navigation.open.${crumb.to}`
-                    }
+                    data-command={`navigation.open.${shownParent.to}`}
                   >
-                    {crumb.label}
+                    {shownParent.label}
                   </Link>
                 )}
-              </Fragment>
-            ))
-          ) : parent ? (
-            <>
-              {parent.to === '/settings' ? (
-                <SettingsLink target="advanced">{parent.label}</SettingsLink>
-              ) : (
-                <Link
-                  to={parent.to}
-                  activeOptions={{ exact: true }}
-                  data-command={`navigation.open.${parent.to}`}
-                >
-                  {parent.label}
-                </Link>
-              )}
-              <span className="page-route-separator" aria-hidden="true">
-                /
-              </span>
-              <span aria-current="page">{title}</span>
-            </>
-          ) : (
-            title
-          )}
-        </h1>
-        {detail ? <p>{detail}</p> : null}
-      </div>
-      <div className="workspace-actions">
-        {status || (showSnapshot && data?.updatedAt) ? (
-          // The header status only reports market state, so the popover's market detail follows it.
-          <DataStatus showMarket={Boolean(status)}>
-            {status}
-            {showSnapshot && data?.updatedAt ? (
-              <span className={`freshness snapshot-freshness${hasWarning ? ' warning' : ''}`}>
-                {status ? '· ' : null}
-                <span>
-                  Saved <time dateTime={data.updatedAt}>{formatUpdatedAt(data.updatedAt)}</time>
-                  {hasWarning ? ' · Data needs attention' : ''}
+                <span className="page-route-separator" aria-hidden="true">
+                  /
                 </span>
-              </span>
-            ) : null}
-          </DataStatus>
-        ) : null}
-        {actions}
-        {showRefresh ? <RefreshButton /> : null}
-      </div>
-    </header>
+                <span aria-current="page">{title}</span>
+              </>
+            ) : (
+              title
+            )}
+          </h1>
+          {detail ? <p>{detail}</p> : null}
+        </div>
+        <div className="workspace-actions">
+          {status || (showSnapshot && data?.updatedAt) ? (
+            // The header status only reports market state, so the popover's market detail follows it.
+            <DataStatus showMarket={Boolean(status)}>
+              {status}
+              {showSnapshot && data?.updatedAt ? (
+                <span className={`freshness snapshot-freshness${hasWarning ? ' warning' : ''}`}>
+                  {status ? '· ' : null}
+                  <span>
+                    Saved <time dateTime={data.updatedAt}>{formatUpdatedAt(data.updatedAt)}</time>
+                    {hasWarning ? ' · Data needs attention' : ''}
+                  </span>
+                </span>
+              ) : null}
+            </DataStatus>
+          ) : null}
+          {actions}
+          {showRefresh ? <RefreshButton /> : null}
+        </div>
+      </header>
+      {/* A tab of Activity or Taxes is headed by its page's strip of tabs. */}
+      <SectionStrip />
+    </>
   )
 }
 
@@ -287,7 +304,6 @@ function DataStatus({ showMarket, children }: { showMarket: boolean; children: R
 function DataStatusDetail({ showMarket, close }: { showMarket: boolean; close: () => void }) {
   const live = useLiveFinance()
   const refreshing = useFinanceRefreshState()
-  const marketUpdateInterval = useMarketUpdateInterval()
   const data = live.data
   const warnings = [
     ...(data?.recovery ? [data.recovery.message] : []),
@@ -365,21 +381,6 @@ function DataStatusDetail({ showMarket, close }: { showMarket: boolean; close: (
                 ? 'Paused during recovery.'
                 : 'Live prices need an Alpaca connection.'}
             </p>
-          ) : null}
-          {live.liveMarketEnabled ? (
-            <div className="data-status-setting">
-              <span>Price updates</span>
-              <ChartRangeSelect
-                label="Live price updates"
-                options={marketUpdateIntervals.map(({ seconds, settingsLabel }) => ({
-                  value: seconds,
-                  label: settingsLabel,
-                  accessibleLabel: settingsLabel,
-                }))}
-                value={marketUpdateInterval}
-                onValueChange={saveMarketUpdateInterval}
-              />
-            </div>
           ) : null}
         </section>
       ) : null}
