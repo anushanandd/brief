@@ -509,98 +509,122 @@ fn date_of(transaction: &Transaction) -> Option<NaiveDate> {
     calendar::transaction_date(transaction.posted_date())
 }
 
-/// Forecasts the next occurrence of each recurring series within 30 days of `today`.
-pub fn expected_events(
-    transactions: &[Transaction],
-    accounts: &[AccountView],
-    saved: Option<NaiveDate>,
-    today: NaiveDate,
-) -> Vec<ExpectedEvent> {
-    forecast_within(transactions, accounts, saved, today, 30)
-}
-
-/// Forecasts each recurring series whose next occurrence falls within `horizon_days`, with
-/// the occurrences after it up to the same horizon in `later`.
-pub fn forecast_within(
-    transactions: &[Transaction],
-    accounts: &[AccountView],
-    saved: Option<NaiveDate>,
-    today: NaiveDate,
-    horizon_days: i64,
-) -> Vec<ExpectedEvent> {
-    forecast(
-        transactions,
-        accounts,
-        saved,
-        Horizon {
-            today,
-            horizon_days,
-            missed: false,
-        },
-    )
-}
-
-/// Recurring series whose occurrence was due more than a week of business days ago, within
-/// the last `MISSED_DAYS`, with nothing posted or pending for it: a bill that didn't arrive,
-/// or income that didn't. Each is the series' forecast, in the `Missed` state.
-pub fn missed_events(
-    transactions: &[Transaction],
-    accounts: &[AccountView],
-    saved: Option<NaiveDate>,
-    today: NaiveDate,
-) -> Vec<ExpectedEvent> {
-    let mut events = forecast(
-        transactions,
-        accounts,
-        saved,
-        Horizon {
-            today,
-            horizon_days: 0,
-            missed: true,
-        },
-    );
-    // A pending charge that matches the forecast is arriving, not missed.
-    events.retain(|event| event.state == EventState::Missed);
-    events
-}
-
 /// Whether a snapshot saved on the local day `saved` is too old to forecast from on `today`: an
 /// old one can't establish that a missing payment has stopped, so what's ahead is unknown.
 pub fn stale(saved: Option<NaiveDate>, today: NaiveDate) -> bool {
     saved.is_some_and(|saved| calendar::days_between(saved, today) > 3)
 }
 
-fn forecast(
-    transactions: &[Transaction],
-    accounts: &[AccountView],
-    saved: Option<NaiveDate>,
-    horizon: Horizon,
-) -> Vec<ExpectedEvent> {
-    let today = horizon.today;
-    if stale(saved, today) {
-        return Vec::new();
-    }
-    let mut events = Vec::new();
-    for (key, values) in recurring_groups(transactions) {
-        let mut ordered = values
-            .iter()
-            .filter(|transaction| !transaction.pending)
-            .map(|transaction| (date_of(transaction), *transaction))
-            .collect::<Vec<_>>();
-        ordered.sort_by_key(|(date, _)| *date);
-        let ordered = ordered[ordered.len().saturating_sub(12)..]
-            .iter()
-            .map(|(_, transaction)| *transaction)
-            .collect::<Vec<_>>();
-        let Some(latest) = ordered.last() else {
-            continue;
+/// The recurring series in a history, grouped once so every horizon forecasts from them.
+pub struct Series<'a> {
+    today: NaiveDate,
+    transactions: &'a [Transaction],
+    /// Each transaction's `recurring_key`, in the same order.
+    keys: Vec<String>,
+    groups: Vec<Group<'a>>,
+}
+
+/// One series' current amount runs, each with the transactions its amount is judged from, and
+/// its pending transactions.
+struct Group<'a> {
+    key: String,
+    series: Vec<(Vec<&'a Transaction>, Vec<&'a Transaction>)>,
+    pending: Vec<&'a Transaction>,
+}
+
+impl<'a> Series<'a> {
+    pub fn new(
+        transactions: &'a [Transaction],
+        accounts: &[AccountView],
+        saved: Option<NaiveDate>,
+        today: NaiveDate,
+    ) -> Self {
+        let keys = transactions.iter().map(recurring_key).collect::<Vec<_>>();
+        let groups = if stale(saved, today) {
+            Vec::new()
+        } else {
+            recurring_groups(transactions, &keys)
+                .into_iter()
+                .filter_map(|(key, values)| {
+                    let mut ordered = values
+                        .iter()
+                        .filter(|transaction| !transaction.pending)
+                        .map(|transaction| (date_of(transaction), *transaction))
+                        .collect::<Vec<_>>();
+                    ordered.sort_by_key(|(date, _)| *date);
+                    let ordered = ordered[ordered.len().saturating_sub(12)..]
+                        .iter()
+                        .map(|(_, transaction)| *transaction)
+                        .collect::<Vec<_>>();
+                    if !source_current(ordered.last()?, accounts, today) {
+                        return None;
+                    }
+                    Some(Group {
+                        key,
+                        series: amount_series(&ordered),
+                        pending: values
+                            .iter()
+                            .filter(|transaction| transaction.pending)
+                            .copied()
+                            .collect(),
+                    })
+                })
+                .collect()
         };
-        if !source_current(latest, accounts, today) {
-            continue;
+        Self {
+            today,
+            transactions,
+            keys,
+            groups,
         }
-        let mut candidates = amount_series(&ordered)
+    }
+
+    /// The next occurrence of each series within 30 days.
+    pub fn expected(&self) -> Vec<ExpectedEvent> {
+        self.within(30)
+    }
+
+    /// Each series whose next occurrence falls within `horizon_days`, with the occurrences after
+    /// it up to the same horizon in `later`.
+    pub fn within(&self, horizon_days: i64) -> Vec<ExpectedEvent> {
+        self.forecast(Horizon {
+            today: self.today,
+            horizon_days,
+            missed: false,
+        })
+    }
+
+    /// Series whose occurrence was due more than a week of business days ago, within the last
+    /// `MISSED_DAYS`, with nothing posted or pending for it: a bill that didn't arrive, or
+    /// income that didn't. Each is the series' forecast, in the `Missed` state.
+    pub fn missed(&self) -> Vec<ExpectedEvent> {
+        let mut events = self.forecast(Horizon {
+            today: self.today,
+            horizon_days: 0,
+            missed: true,
+        });
+        // A pending charge that matches the forecast is arriving, not missed.
+        events.retain(|event| event.state == EventState::Missed);
+        events
+    }
+
+    fn forecast(&self, horizon: Horizon) -> Vec<ExpectedEvent> {
+        let mut events = Vec::new();
+        for group in &self.groups {
+            events.extend(group.forecast(&horizon));
+        }
+        events.sort_by_key(|event| event.date);
+        events
+    }
+}
+
+impl Group<'_> {
+    fn forecast(&self, horizon: &Horizon) -> Vec<ExpectedEvent> {
+        let key = &self.key;
+        let mut candidates = self
+            .series
             .iter()
-            .filter_map(|(series, amount_basis)| candidate(&key, series, amount_basis, &horizon))
+            .filter_map(|(series, amount_basis)| candidate(key, series, amount_basis, horizon))
             .collect::<Vec<_>>();
         candidates.sort_by(|left, right| {
             right
@@ -630,15 +654,8 @@ fn forecast(
                 event
             })
             .collect::<Vec<_>>();
-        let pending = values
-            .iter()
-            .filter(|transaction| transaction.pending)
-            .copied()
-            .collect::<Vec<_>>();
-        events.extend(match_pending(group_events, &pending));
+        match_pending(group_events, &self.pending)
     }
-    events.sort_by_key(|event| event.date);
-    events
 }
 
 /// What a forecast is made against: today, how far ahead to look, and whether it looks instead
@@ -652,17 +669,19 @@ struct Horizon {
 
 /// Transactions grouped by recurring series, in the order each series first appears. Transfers
 /// are left out unless they pay down debt.
-fn recurring_groups(transactions: &[Transaction]) -> Vec<(String, Vec<&Transaction>)> {
+fn recurring_groups<'a>(
+    transactions: &'a [Transaction],
+    keys: &[String],
+) -> Vec<(String, Vec<&'a Transaction>)> {
     let mut order = Vec::<String>::new();
     let mut groups = HashMap::<String, Vec<&Transaction>>::new();
-    for transaction in transactions {
-        let traits = traits(transaction);
-        if (transaction.kind() == Some(Kind::Transfer) && !traits.debt_payment)
+    for (transaction, key) in transactions.iter().zip(keys) {
+        if (transaction.kind() == Some(Kind::Transfer) && !traits(transaction).debt_payment)
             || transaction.merchant.trim().is_empty()
         {
             continue;
         }
-        let key = recurring_key(transaction);
+        let key = key.clone();
         groups
             .entry(key.clone())
             .or_insert_with(|| {
@@ -913,42 +932,52 @@ pub struct PayChange {
     pub confidence: f64,
 }
 
-/// Posted transactions of each series a forecast names, oldest first.
-fn series_postings<'a>(
-    transactions: &'a [Transaction],
-    events: &[ExpectedEvent],
-) -> HashMap<String, Vec<(NaiveDate, &'a Transaction)>> {
-    let wanted = events
-        .iter()
-        .map(|event| event.recurring_id.as_str())
-        .collect::<std::collections::HashSet<_>>();
-    let mut series = HashMap::<String, Vec<(NaiveDate, &Transaction)>>::new();
-    for transaction in transactions
-        .iter()
-        .filter(|transaction| !transaction.pending)
-    {
-        let key = recurring_key(transaction);
-        if !wanted.contains(key.as_str()) {
-            continue;
+impl<'a> Series<'a> {
+    /// Posted transactions of each series a forecast names, oldest first.
+    fn postings(
+        &self,
+        events: &[ExpectedEvent],
+    ) -> HashMap<&str, Vec<(NaiveDate, &'a Transaction)>> {
+        let wanted = events
+            .iter()
+            .map(|event| event.recurring_id.as_str())
+            .collect::<std::collections::HashSet<_>>();
+        let mut series = HashMap::<&str, Vec<(NaiveDate, &Transaction)>>::new();
+        for (transaction, key) in self.transactions.iter().zip(&self.keys) {
+            if transaction.pending || !wanted.contains(key.as_str()) {
+                continue;
+            }
+            if let Some(date) = date_of(transaction) {
+                series.entry(key).or_default().push((date, transaction));
+            }
         }
-        if let Some(date) = date_of(transaction) {
-            series.entry(key).or_default().push((date, transaction));
+        for postings in series.values_mut() {
+            postings.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
         }
+        series
     }
-    for postings in series.values_mut() {
-        postings.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
+
+    /// Series in `events` (the forecast) that began within `NEW_SERIES_DAYS`. A card credit
+    /// is a benefit, not a commitment, so it never counts.
+    pub fn new_series(&self, events: &[ExpectedEvent]) -> Vec<NewSeries> {
+        new_series(self.transactions, self.postings(events), events, self.today)
     }
-    series
+
+    /// Paychecks in the last `PAY_RECENT_DAYS` outside their series' band: below the smallest
+    /// or above the largest of up to eleven earlier paychecks by more than a dollar and 1% of
+    /// their median, so rounding and a cent of tax drift never count. Only wages count;
+    /// interest and dividends vary by nature.
+    pub fn pay_changes(&self, events: &[ExpectedEvent]) -> Vec<PayChange> {
+        pay_changes(self.postings(events), events, self.today)
+    }
 }
 
-/// Series in `events` (the forecast) that began within `NEW_SERIES_DAYS`. A card credit is
-/// a benefit, not a commitment, so it never counts.
-pub fn new_series(
+fn new_series(
     transactions: &[Transaction],
+    postings: HashMap<&str, Vec<(NaiveDate, &Transaction)>>,
     events: &[ExpectedEvent],
     today: NaiveDate,
 ) -> Vec<NewSeries> {
-    let postings = series_postings(transactions, events);
     // Each account's first posted day, so a series as old as the history isn't new.
     let mut first_by_account = HashMap::<&str, NaiveDate>::new();
     for transaction in transactions
@@ -966,7 +995,7 @@ pub fn new_series(
         .iter()
         .filter(|event| event.kind != EventKind::Credit)
         .filter_map(|event| {
-            let series = postings.get(&event.recurring_id)?;
+            let series = postings.get(event.recurring_id.as_str())?;
             let (first_seen, _) = *series.first()?;
             let (_, latest) = *series.last()?;
             let account = event.account_id.as_deref()?;
@@ -1004,21 +1033,16 @@ pub fn new_series(
     found
 }
 
-/// Paychecks in the last `PAY_RECENT_DAYS` outside their series' band: below the smallest or
-/// above the largest of up to eleven earlier paychecks by more than a dollar and 1% of their
-/// median, so rounding and a cent of tax drift never count. Only wages count; interest and
-/// dividends vary by nature.
-pub fn pay_changes(
-    transactions: &[Transaction],
+fn pay_changes(
+    postings: HashMap<&str, Vec<(NaiveDate, &Transaction)>>,
     events: &[ExpectedEvent],
     today: NaiveDate,
 ) -> Vec<PayChange> {
-    let postings = series_postings(transactions, events);
     let mut found = events
         .iter()
         .filter(|event| event.kind == EventKind::Income && event.amount > 0.0)
         .filter_map(|event| {
-            let series = postings.get(&event.recurring_id)?;
+            let series = postings.get(event.recurring_id.as_str())?;
             let series = &series[series.len().saturating_sub(12)..];
             let (&(date, latest), earlier) = series.split_last()?;
             if latest.kind() != Some(Kind::Income)

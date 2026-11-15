@@ -100,6 +100,17 @@ pub struct AccountView {
     pub balance_fetched_at: Option<String>,
 }
 
+fn account_views(accounts: &[Account]) -> Vec<AccountView> {
+    accounts
+        .iter()
+        .map(|account| AccountView {
+            id: account.id.clone(),
+            activity_as_of: account.activity_as_of.clone(),
+            balance_fetched_at: account.balance_fetched_at.clone(),
+        })
+        .collect()
+}
+
 #[derive(Clone, Debug, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct CardBenefits {
@@ -284,6 +295,7 @@ pub fn derive_with_documents(
     let ended = recurring::ended(&snapshot.recurring_streams, transactions);
     let today = zone.date(now);
     let saved = calendar::calendar_date(updated_at, zone);
+    let series = forecast::Series::new(transactions, &account_views(accounts), saved, today);
     let mut trips = trips::trips(transactions, &trips::reservations::read(travel), today);
     people::trip_companions(
         &mut trips.trips,
@@ -314,6 +326,7 @@ pub fn derive_with_documents(
         zone,
         &ended,
         trips,
+        &series,
     );
     let people = people::people(transactions, &settings.people, &trips.trips);
     let recurring_check = recurring::check(&snapshot.recurring_streams, &expected, transactions);
@@ -409,21 +422,14 @@ pub fn derive_with_documents(
     // A due bill or deposit that never came, unless its series is ended or its last
     // transaction was marked reviewed, which is how the reminder is dismissed. A subscription
     // that stops charging was most likely cancelled, so it asks for nothing.
-    let views = accounts
-        .iter()
-        .map(|account| AccountView {
-            id: account.id.clone(),
-            activity_as_of: account.activity_as_of.clone(),
-            balance_fetched_at: account.balance_fetched_at.clone(),
-        })
-        .collect::<Vec<_>>();
     let reviewed = |id: &str| {
         transactions
             .iter()
             .any(|transaction| transaction.id == id && transaction.reviewed == Some(true))
     };
     brief.needs.extend(
-        forecast::missed_events(transactions, &views, saved, today)
+        series
+            .missed()
             .into_iter()
             .filter(|event| {
                 event.kind != forecast::EventKind::Subscription
@@ -708,6 +714,7 @@ fn compute(
     now: DateTime<Utc>,
     zone: &dyn Zone,
 ) -> Cashflow {
+    let today = zone.date(now);
     cashflow(
         transactions,
         accounts,
@@ -716,7 +723,13 @@ fn compute(
         now,
         zone,
         &std::collections::BTreeSet::new(),
-        trips::trips(transactions, &[], zone.date(now)),
+        trips::trips(transactions, &[], today),
+        &forecast::Series::new(
+            transactions,
+            &account_views(accounts),
+            calendar::calendar_date(updated_at, zone),
+            today,
+        ),
     )
 }
 
@@ -731,27 +744,14 @@ fn cashflow(
     zone: &dyn Zone,
     ended: &std::collections::BTreeSet<String>,
     trips: trips::Trips,
+    series: &forecast::Series,
 ) -> Cashflow {
     let today = zone.date(now);
-    let saved = calendar::calendar_date(updated_at, zone);
     let live = |mut events: Vec<forecast::ExpectedEvent>| {
         events.retain(|event| !ended.contains(&event.recurring_id));
         events
     };
-    let views = accounts
-        .iter()
-        .map(|account| AccountView {
-            id: account.id.clone(),
-            activity_as_of: account.activity_as_of.clone(),
-            balance_fetched_at: account.balance_fetched_at.clone(),
-        })
-        .collect::<Vec<_>>();
-    let expected = live(forecast::expected_events(
-        transactions,
-        &views,
-        saved,
-        today,
-    ));
+    let expected = live(series.expected());
     let card = spending_card(accounts, settings);
     let card_transactions = card
         .map(|card| {
@@ -766,13 +766,7 @@ fn cashflow(
     let now_iso = now.to_rfc3339();
     // Charges recurring series should make through December, for planning benefit credits.
     let year_end = NaiveDate::from_ymd_opt(today.year(), 12, 31).unwrap_or(today);
-    let upcoming = live(forecast::forecast_within(
-        transactions,
-        &views,
-        saved,
-        today,
-        (year_end - today).num_days().max(0),
-    ));
+    let upcoming = live(series.within((year_end - today).num_days().max(0)));
     // Benefits for one card under one product's rules.
     let card_benefits = |card: &Account, rules: &benefits::RuleSet| {
         let own = transactions
@@ -865,21 +859,9 @@ fn cashflow(
         statement: statement.as_ref(),
         plan: &plan,
     };
-    let horizon = live(forecast::forecast_within(
-        transactions,
-        &views,
-        saved,
-        today,
-        cashline::HORIZON_DAYS,
-    ));
+    let horizon = live(series.within(cashline::HORIZON_DAYS));
     let cash = cashline::timeline(accounts, &horizon, today);
-    let year_ahead = live(forecast::forecast_within(
-        transactions,
-        &views,
-        saved,
-        today,
-        subscriptions::HORIZON_DAYS,
-    ));
+    let year_ahead = live(series.within(subscriptions::HORIZON_DAYS));
     let subscriptions = subscriptions::subscriptions(&year_ahead, transactions);
     let credit = credit::credit(
         accounts,
@@ -911,8 +893,8 @@ fn cashflow(
     brief.needs.extend(attention::inferred(attention::Signals {
         today,
         transactions,
-        new_series: &forecast::new_series(transactions, &year_ahead, today),
-        pay: &forecast::pay_changes(transactions, &year_ahead, today),
+        new_series: &series.new_series(&year_ahead),
+        pay: &series.pay_changes(&year_ahead),
         subscriptions: &subscriptions,
         anomalies: &anomalies,
     }));

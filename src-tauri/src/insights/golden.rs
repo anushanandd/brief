@@ -143,12 +143,14 @@ fn check(record: &Value, zone: &dyn Zone, cards: &Catalog) -> Result<(), String>
                         .collect::<Vec<_>>()
                 })
                 .unwrap_or_default();
-            let actual = forecast::expected_events(
-                &transactions(&data["transactions"], cards),
+            let transactions = transactions(&data["transactions"], cards);
+            let actual = forecast::Series::new(
+                &transactions,
                 &accounts,
                 calendar::transaction_date(data["updatedAt"].as_str().unwrap()),
                 reference_today(record),
-            );
+            )
+            .expected();
             let actual = actual.into_iter().take(16).collect::<Vec<_>>();
             let expected = expected.as_array().unwrap();
             if expected.len() != actual.len() {

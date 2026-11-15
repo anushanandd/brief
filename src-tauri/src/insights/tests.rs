@@ -755,21 +755,17 @@ fn reviewing_an_inference_dismisses_it_and_thin_evidence_raises_nothing() {
                 || ["pay-9", "pay-10", "pay-11", "pay-12"].contains(&transaction.id.as_str())
         })
         .collect::<Vec<_>>();
-    let pay = forecast::pay_changes(
+    let series = forecast::Series::new(
         &thin,
-        &forecast::forecast_within(
-            &thin,
-            &[AccountView {
-                id: "plaid:checking".into(),
-                activity_as_of: None,
-                balance_fetched_at: Some("2026-09-16T12:00:00Z".into()),
-            }],
-            NaiveDate::from_ymd_opt(2026, 9, 16),
-            NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
-            subscriptions::HORIZON_DAYS,
-        ),
+        &[AccountView {
+            id: "plaid:checking".into(),
+            activity_as_of: None,
+            balance_fetched_at: Some("2026-09-16T12:00:00Z".into()),
+        }],
+        NaiveDate::from_ymd_opt(2026, 9, 16),
         NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
     );
+    let pay = series.pay_changes(&series.within(subscriptions::HORIZON_DAYS));
     assert_eq!(pay.len(), 1);
     assert_eq!(pay[0].confidence, 0.5);
     assert!(inferred_needs(&thin)
