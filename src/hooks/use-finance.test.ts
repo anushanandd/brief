@@ -105,3 +105,18 @@ it('keeps holdings-only keys through an annotation edit while ledger reads refet
   // A refresh moves all of them.
   expect(keys({ ...before, revision: 5 }).sectors).not.toEqual(was.sectors)
 })
+
+it('keeps holdings keys through a live price tick, and moves them when shares change', () => {
+  const before: FinanceSnapshot = { ...seedSnapshot(), revision: 4 }
+  const ticked: FinanceSnapshot = {
+    ...before,
+    holdings: before.holdings.map((h) => ({ ...h, price: 10, value: 100 })),
+  }
+  expect(keys(ticked).sectors).toEqual(keys(before).sectors)
+  expect(keys(ticked).summary).toEqual(keys(before).summary)
+  const bought: FinanceSnapshot = {
+    ...before,
+    holdings: before.holdings.map((h, i) => (i === 0 ? { ...h, shares: (h.shares ?? 0) + 1 } : h)),
+  }
+  expect(keys(bought).sectors).not.toEqual(keys(before).sectors)
+})

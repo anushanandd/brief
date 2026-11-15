@@ -17,12 +17,10 @@ type SummaryInputs = HoldingsIdentity & Pick<FinanceSnapshot, 'transactions'>
  * holdings, trades, and dividends. Trades change only with a refresh or an import, which
  * advance `revision`; among edits a manual account or closed date changes which positions are
  * held; and a category edit can make a transaction a dividend or stop it being one, so the
- * dividends' IDs are part of the key. Prices are left out: the page's holdings carry live
- * prices that change with every tick, and Rust reads the committed snapshot, not these.
+ * dividends' IDs are part of the key.
  */
 export const summaryInputsKey = (data: SummaryInputs) => [
-  holdingsKey(data)[0],
-  data.holdings.map(({ accountId, ticker, shares }) => [accountId, ticker, shares]),
+  ...holdingsKey(data),
   data.transactions
     .filter((transaction) => transaction.classification?.mark === 'dividend')
     .map((transaction) => transaction.id),

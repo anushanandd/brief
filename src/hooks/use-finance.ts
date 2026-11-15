@@ -63,10 +63,14 @@ export type HoldingsIdentity = Pick<FinanceSnapshot, 'revision' | 'holdings'>
  * What identifies the holdings, for the key of every query Rust derives from them and the
  * market alone (sector exposure). A refresh advances `revision`; among edits only a
  * manual account or a closed date changes the holdings Rust reports, so a note, tag, or
- * category leaves these queries, and the work behind them, alone.
+ * category leaves these queries, and the work behind them, alone. Prices are left out: the
+ * live overlay replaces them with every tick, and Rust reads the committed snapshot.
  */
 export function holdingsKey(data: HoldingsIdentity | undefined) {
-  return [data?.revision ?? null, data?.holdings ?? null] as const
+  return [
+    data?.revision ?? null,
+    data?.holdings.map(({ accountId, ticker, shares }) => [accountId, ticker, shares]) ?? null,
+  ] as const
 }
 
 /** Every writer of the snapshot goes through here: edits, refreshes, Wallet, and restores. */
