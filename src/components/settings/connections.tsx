@@ -737,8 +737,8 @@ function PlaidOptions({ configured }: { configured: boolean }) {
 }
 
 /**
- * Statement PDFs for the bank connections the user added them to. Brief checks for new ones
- * after a refresh, at most daily; this checks now.
+ * Statement PDFs for the bank connections the user added them to. Brief lists and saves new ones
+ * after a refresh, at most daily; this checks now, and only this asks the bank for new ones.
  */
 function BankStatementsRow({ unavailable }: { unavailable: boolean }) {
   const queryClient = useQueryClient()
@@ -762,7 +762,7 @@ function BankStatementsRow({ unavailable }: { unavailable: boolean }) {
     <SettingsRow
       id="plaid-bank-statements"
       title="Bank statements"
-      description="Bank PDFs for checking and savings. Billed per statement off Plaid's Trial plan."
+      description="Bank PDFs for checking and savings, billed per statement off Plaid's Trial plan. Check now also asks the bank for new ones, at most monthly, which Plaid bills per request; Brief's own checks never do."
     >
       <Button
         icon={RefreshCw}

@@ -1,6 +1,7 @@
 //! Keeps saved bank statements current for the Plaid connections the user added statements to.
-//! A check lists each connection's statements and downloads the new ones; once a month it also
-//! asks Plaid to fetch statements the bank has posted since. Plaid reports that fetch finishing
+//! A check lists each connection's statements and downloads the new ones. A check the user asks
+//! for may also, at most monthly, ask Plaid to fetch statements the bank has posted since; Plaid
+//! bills that per request, so a background check never does. Plaid reports that fetch finishing
 //! only by webhook, which a desktop app can't receive, so a later check lists what it found.
 use std::sync::LazyLock;
 
@@ -63,7 +64,7 @@ pub async fn sync(
         let mut requested_at = None;
         if check.requested_at.is_none() {
             requested_at = Some(now.to_rfc3339());
-        } else if due(&check.requested_at, REQUEST_EVERY) {
+        } else if requests_refresh(check.requested_at.as_deref().and_then(parsed), now, force) {
             let today = now.date_naive();
             match state
                 .providers
@@ -153,6 +154,12 @@ pub fn sync_in_background(app: tauri::AppHandle) {
     });
 }
 
+/// Whether a check asks Plaid to fetch new statements from the bank, which Plaid bills per
+/// request: only one the user asked for, a month after the last ask.
+fn requests_refresh(requested_at: Option<DateTime<Utc>>, now: DateTime<Utc>, force: bool) -> bool {
+    force && requested_at.is_some_and(|at| now - at >= REQUEST_EVERY)
+}
+
 fn record(
     state: &AppState,
     item_id: &str,
@@ -178,4 +185,23 @@ fn parsed(value: &str) -> Option<DateTime<Utc>> {
     DateTime::parse_from_rfc3339(value)
         .ok()
         .map(|value| value.with_timezone(&Utc))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// AGENTS.md: never call billed Plaid endpoints on an ordinary or background refresh.
+    #[test]
+    fn only_a_check_the_user_asked_for_requests_billed_statements() {
+        let now = DateTime::parse_from_rfc3339("2026-06-01T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let long_ago = Some(now - Duration::days(90));
+        assert!(!requests_refresh(long_ago, now, false));
+        assert!(requests_refresh(long_ago, now, true));
+        assert!(!requests_refresh(Some(now - Duration::days(10)), now, true));
+        // A connection never asked before only starts the clock.
+        assert!(!requests_refresh(None, now, true));
+    }
 }
