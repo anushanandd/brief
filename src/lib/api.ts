@@ -2,7 +2,6 @@ import { getVersion } from '@tauri-apps/api/app'
 import { Channel, invoke } from '@tauri-apps/api/core'
 import { openUrl } from '@tauri-apps/plugin-opener'
 
-import seedView from '../data/seed-view.json'
 import type { ActivityTotals } from './bindings/ActivityTotals'
 import type { AppUpdate } from './bindings/AppUpdate'
 import type { AssistantAnswer } from './bindings/AssistantAnswer'
@@ -103,8 +102,11 @@ export async function getSummaryRuns(): Promise<SummaryRun[]> {
 }
 
 // The preview has no native runtime; its view was made by Rust from the synthetic seed. A card
-// other than the seed's own leaves the benefits and statement it was computed for.
-const browserSnapshot = (): FinanceSnapshot => {
+// other than the seed's own leaves the benefits and statement it was computed for. The seed
+// loads on first use, so the native app never ships it in its startup code.
+const previewSeed = async () => (await import('../data/seed-view.json')).default
+const browserSnapshot = async (): Promise<FinanceSnapshot> => {
+  const seedView = await previewSeed()
   const view = fromRust<FinanceSnapshot>(structuredClone(seedView.view))
   const settings = previewFinanceSettings()
   const sameCard = settings.spendingAccountId === seedView.spendingAccountId
@@ -417,7 +419,7 @@ export async function getDataHealth(): Promise<HealthReport> {
   if (!isTauri()) {
     return {
       computedAt: new Date().toISOString(),
-      revision: browserSnapshot().revision ?? 0,
+      revision: (await browserSnapshot()).revision ?? 0,
       overallStatus: 'info',
       counts: { critical: 0, error: 0, warning: 0, info: 1 },
       issues: [
@@ -449,7 +451,7 @@ export async function refreshFinanceSnapshot({
 }> {
   if (!isTauri()) {
     return {
-      snapshot: { ...browserSnapshot(), updatedAt: new Date().toISOString() },
+      snapshot: { ...(await browserSnapshot()), updatedAt: new Date().toISOString() },
       warnings: [],
     }
   }
@@ -655,7 +657,7 @@ export async function getInvestmentSummary(
   ticker?: string,
 ): Promise<InvestmentSummary> {
   // The preview shows the portfolio's summary Rust made from the synthetic seed.
-  if (!isTauri() && !ticker) return fromRust<InvestmentSummary>(seedView.summary)
+  if (!isTauri() && !ticker) return fromRust<InvestmentSummary>((await previewSeed()).summary)
   if (!isTauri()) throw new Error('Desktop app only')
   return invoke<InvestmentSummary>('get_investment_summary', { start, ticker: ticker ?? null })
 }
