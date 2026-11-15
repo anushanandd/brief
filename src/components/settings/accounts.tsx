@@ -928,21 +928,22 @@ function AccountDetails({ data, settings, save }: SectionProps) {
                     />
                   </td>
                   <td data-label="Start date">
-                    <input
+                    {/* WebKit reports each valid date while the year is typed, so save on blur. */}
+                    <CommittedTextInput
                       type="date"
                       max={data.updatedAt.slice(0, 10)}
                       value={accountStartDate(data, account.id, accountStartDates) ?? ''}
                       aria-label={`Start date for ${account.name}`}
-                      onChange={(event) => updateStartDate(account.id, event.target.value)}
+                      onCommit={(date) => updateStartDate(account.id, date)}
                     />
                   </td>
                   <td data-label="Closed">
-                    <input
+                    <CommittedTextInput
                       type="date"
                       max={data.updatedAt.slice(0, 10)}
                       value={closedDates[account.id] ?? ''}
                       aria-label={`Closed date for ${account.name}`}
-                      onChange={(event) => updateClosedDate(account.id, event.target.value)}
+                      onCommit={(date) => updateClosedDate(account.id, date)}
                     />
                   </td>
                   <td data-label="Website">
