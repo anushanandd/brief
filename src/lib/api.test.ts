@@ -3,13 +3,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import empty from '../data/empty.json'
 import {
+  eraseFinanceState,
   forgetProviderConnection,
   getMarketNews,
   pollProviderLink,
   generateFoundationExplanation,
+  recoverFinanceState,
   refreshFinanceSnapshot,
+  restoreFinanceBackup,
   safeExternalUrl,
 } from './api'
+import { rememberEdit, takeLastEdit } from './undo'
 
 vi.mock('@tauri-apps/api/core', () => ({
   invoke: vi.fn(),
@@ -193,5 +197,32 @@ describe('native explanation cancellation', () => {
       generateFoundationExplanation('What changed?', controller.signal),
     ).rejects.toMatchObject({ name: 'AbortError' })
     expect(mockedInvoke).not.toHaveBeenCalled()
+  })
+})
+
+describe('replacing saved data', () => {
+  beforeEach(() => {
+    vi.stubGlobal('window', { __TAURI_INTERNALS__: {} })
+    mockedInvoke.mockReset()
+  })
+  afterEach(() => vi.unstubAllGlobals())
+
+  it('forgets undoable edits after a restore or erase, and keeps them when it fails', async () => {
+    const edit = { label: 'Category', previous: { 'plaid:one': {} } }
+    rememberEdit(edit)
+    mockedInvoke.mockRejectedValueOnce(new Error('No backup'))
+    await expect(restoreFinanceBackup('/backup.sqlite3')).rejects.toThrow()
+    expect(takeLastEdit()).toEqual(edit)
+
+    for (const replace of [
+      () => restoreFinanceBackup('/backup.sqlite3'),
+      () => eraseFinanceState(),
+      () => recoverFinanceState(true),
+    ]) {
+      rememberEdit(edit)
+      mockedInvoke.mockResolvedValueOnce({})
+      await replace()
+      expect(takeLastEdit()).toBeUndefined()
+    }
   })
 })

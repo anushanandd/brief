@@ -51,6 +51,7 @@ import {
   type ProviderLinkSession,
   type ProviderLinkStatus,
 } from './schema'
+import { forgetEdits } from './undo'
 
 // Native results are typed by Rust's own types (src/lib/bindings), so they are read as they
 // arrive; only what Rust leaves as raw JSON (the market stream, an answer's ledger evidence) is
@@ -198,8 +199,15 @@ export async function getActivityTotals(ids: readonly string[]): Promise<Activit
   return invoke<ActivityTotals>('get_activity_totals', { ids })
 }
 
+/** Replaces the saved data, so ⌘Z must not put the old timeline's edits back onto it. */
+async function replacingData(replace: Promise<FinanceSnapshot>) {
+  const snapshot = await replace
+  forgetEdits()
+  return snapshot
+}
+
 export async function recoverFinanceState(restore: boolean): Promise<FinanceSnapshot> {
-  return invoke<FinanceSnapshot>('recover_finance_state', { restore })
+  return replacingData(invoke<FinanceSnapshot>('recover_finance_state', { restore }))
 }
 
 /** A passphrase seals the documents' key into the backup, so another Mac can open them. */
@@ -218,7 +226,9 @@ export async function restoreFinanceBackup(
   passphrase?: string,
 ): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return invoke<FinanceSnapshot>('restore_finance_backup', { path, passphrase: passphrase || null })
+  return replacingData(
+    invoke<FinanceSnapshot>('restore_finance_backup', { path, passphrase: passphrase || null }),
+  )
 }
 
 /** What a document import added, already had, and couldn't keep, with the view after it. */
@@ -388,7 +398,7 @@ export async function confirmWalletRow(id: string, confirmed: boolean): Promise<
 
 export async function eraseFinanceState(): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
-  return invoke<FinanceSnapshot>('erase_finance_state')
+  return replacingData(invoke<FinanceSnapshot>('erase_finance_state'))
 }
 
 export async function getAppVersion(): Promise<string> {
