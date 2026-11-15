@@ -11,6 +11,7 @@ import {
 import { PageError, PageLoading } from '../components/data-state'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useAsOf } from '../hooks/use-as-of'
+import { useFinance } from '../hooks/use-finance'
 import { useGraphAccountShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { withoutSpendingCard } from '../lib/dashboard-account-views'
@@ -56,11 +57,13 @@ function AccountsWorkspace({
   const allAccount = data.accounts.find(({ id }) => id === 'all')
   // Scrolled back in time, the menu's changes run to the chart's end day.
   const asOf = useAsOf(data)
+  // Rows keep the committed order, as the number keys and jumps do, while values stay live.
+  const committed = useFinance().data
   const groups = useMemo(
-    () => accountMenuGroups(asOf, spendingIds, graphWindow),
+    () => accountMenuGroups(asOf, spendingIds, graphWindow, committed),
     // The ids are a fresh array each render; their contents are what matter.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [asOf, spendingIds.join(','), graphWindow],
+    [asOf, spendingIds.join(','), graphWindow, committed],
   )
   const group = groups.find(({ type }) => type === routeSearch.group)
   const account = data.accounts.find(({ id }) => id !== 'all' && id === routeSearch.account)

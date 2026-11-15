@@ -39,3 +39,17 @@ it('names each account type, and the spending cards apart', () => {
   expect(groupLabel('loan')).toBe('Loan')
   expect(groupLabel('spending')).toBe('Spending cards')
 })
+
+it('keeps the committed order while live values move accounts past each other', () => {
+  const live = [account('a', 'brokerage', 9_900), account('b', 'brokerage', 10_050)]
+  const committed = new Map([
+    ['a', 10_000],
+    ['b', 9_950],
+  ])
+  const order = (rank?: Map<string, number>) =>
+    accountGroups(live, [{ type: 'brokerage', value: 19_950 }], [], rank)
+      .flatMap(({ accounts }) => accounts)
+      .map(({ id }) => id)
+  expect(order(committed)).toEqual(['a', 'b'])
+  expect(order()).toEqual(['b', 'a'])
+})

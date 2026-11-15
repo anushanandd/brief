@@ -3,7 +3,7 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { useMemo, type ReactNode } from 'react'
 
 import { snapshotKey, type SnapshotIdentity } from '../hooks/use-finance'
-import { accountGroups, groupLabel, type AccountGroup } from '../lib/account-groups'
+import { accountGroups, groupLabel, largestFirst, type AccountGroup } from '../lib/account-groups'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { getDataHealth } from '../lib/api'
@@ -30,22 +30,23 @@ export function accountMenuGroups(
   data: FinanceSnapshot,
   spendingAccountIds: string[],
   graphWindow: number,
+  /** The committed snapshot, whose values order the rows; `data` when absent. */
+  committed?: FinanceSnapshot,
 ): AccountGroup[] {
+  const rank = committed && new Map(committed.accounts.map(({ id, value }) => [id, value]))
   const changeWindow = chartPeriod(graphWindow)
   const periodChanges = data.insights?.changes.find(({ window }) => window === changeWindow)
   const rollup = data.insights?.rollup
   const listed = data.accounts.filter(({ id }) => id !== 'all' && !spendingAccountIds.includes(id))
   const spendingCards = data.accounts.filter(({ id }) => spendingAccountIds.includes(id))
   return [
-    ...accountGroups(listed, rollup?.listed ?? [], periodChanges?.listed),
+    ...accountGroups(listed, rollup?.listed ?? [], periodChanges?.listed, rank),
     ...(rollup?.cards && spendingCards.length
       ? [
           {
             type: 'spending',
             label: groupLabel('spending'),
-            accounts: spendingCards.toSorted(
-              (left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity),
-            ),
+            accounts: spendingCards.toSorted(largestFirst(rank)),
             value: rollup.cards.value,
             change: periodChanges?.cards ?? null,
             outsideTotal: true,

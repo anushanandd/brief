@@ -24,8 +24,15 @@ const groupLabels: Record<string, string> = {
 export const groupLabel = (type: string) =>
   groupLabels[type] ?? type.charAt(0).toLocaleUpperCase() + type.slice(1)
 
-const byValue = (left: { value: number | null }, right: { value: number | null }) =>
-  (right.value ?? -Infinity) - (left.value ?? -Infinity)
+/**
+ * Largest first. `rank` holds the values to order by, the committed snapshot's, so live prices
+ * never reorder rows or move a number-key jump off the row it names; each account's own value
+ * stands in without one.
+ */
+export const largestFirst =
+  (rank?: ReadonlyMap<string, number | null>) => (left: Account, right: Account) =>
+    ((rank?.has(right.id) ? rank.get(right.id) : right.value) ?? -Infinity) -
+    ((rank?.has(left.id) ? rank.get(left.id) : left.value) ?? -Infinity)
 
 /**
  * Accounts grouped by type in the order Rust ranked the types, each with the total and the
@@ -35,6 +42,7 @@ export function accountGroups(
   accounts: Account[],
   totals: Rollup['groups'],
   changes: Array<{ type: string; change: number | null }> = [],
+  rank?: ReadonlyMap<string, number | null>,
 ): AccountGroup[] {
   return totals.flatMap(({ type, value }) => {
     const members = accounts.filter((account) => account.type === type)
@@ -43,7 +51,7 @@ export function accountGroups(
           {
             type,
             label: groupLabel(type),
-            accounts: members.toSorted(byValue),
+            accounts: members.toSorted(largestFirst(rank)),
             value,
             change: changes.find((change) => change.type === type)?.change ?? null,
           },
