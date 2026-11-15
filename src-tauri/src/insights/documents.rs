@@ -356,7 +356,7 @@ fn pay_links(
 }
 
 /// One employer's pay carried to the year's end from its latest pay statement: what the year
-/// has paid and withheld so far, and that plus the statement's own period for each pay period
+/// has paid and withheld so far, and that plus a regular period's pay for each pay period
 /// left. Wages are W-2 box 1 wages (gross less pre-tax benefits, HSA, and 401(k) deferrals).
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
@@ -403,49 +403,70 @@ fn period_of(date: NaiveDate, periods: u32) -> u32 {
     index.clamp(1, periods)
 }
 
-/// Each employer's pay carried to the end of `year` from its latest pay statement that year.
-/// An employer whose statement doesn't print its period, the period's gross and federal
-/// withholding, and their year-to-date amounts can't be carried forward, so the whole
-/// projection is unavailable (`None`) rather than short by that employer.
+/// Each employer's pay carried to the end of `year`: the year so far from its latest pay
+/// statement that year, and regular pay for each period left. Regular pay is the period of
+/// the lower middle of the last three statements that print one, so a bonus or vest counts
+/// once, in the year so far. An employer whose statements don't print a period, the
+/// period's gross and federal withholding, and their year-to-date amounts can't be carried
+/// forward, so the whole projection is unavailable (`None`) rather than short by that
+/// employer.
 pub fn pay_projections(year: i32, documents: &[Document]) -> Option<Vec<PayProjection>> {
-    let mut latest = BTreeMap::<String, &Document>::new();
+    let mut statements = BTreeMap::<String, Vec<&Document>>::new();
     for document in documents.iter().filter(|document| {
         document.kind == Kind::Payslip
             && document.tax_year == Some(year)
             && document.issuer.is_some()
     }) {
         let employer = document.issuer.clone().unwrap_or_default();
-        let key = latest
+        let key = statements
             .keys()
             .find(|known| same_payer(known, &employer))
             .cloned()
             .unwrap_or(employer);
-        match latest.get(&key) {
-            Some(known) if known.date >= document.date => {}
-            _ => {
-                latest.insert(key, document);
-            }
-        }
+        statements.entry(key).or_default().push(document);
     }
-    latest
+    // Box 1 wages for the period or the year so far.
+    let wages = |value: &dyn Fn(&str) -> Option<f64>| -> Option<f64> {
+        let part = |key: &str| value(key).unwrap_or_default();
+        Some(value("gross")? - part("hsa") - part("pretaxBenefits") - part("pretax401k"))
+    };
+    statements
         .into_iter()
-        .map(|(employer, document)| {
-            let periods = periods_per_year(
-                day(document.period_start.as_deref())?,
-                day(document.period_end.as_deref())?,
-            )?;
+        .map(|(employer, mut statements)| {
+            // Two statements on one day are in the order their year-to-date gross grew.
+            statements.sort_by(|left, right| {
+                let key = |document: &Document| {
+                    (day(document.date.as_deref()), document.ytd("gross"))
+                };
+                key(left)
+                    .partial_cmp(&key(right))
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            });
+            let document = *statements.last()?;
+            let mut recent = statements
+                .iter()
+                .rev()
+                .filter_map(|statement| {
+                    let periods = periods_per_year(
+                        day(statement.period_start.as_deref())?,
+                        day(statement.period_end.as_deref())?,
+                    )?;
+                    Some((
+                        wages(&|key| statement.amount(key))?,
+                        statement.amount("federalWithholding")?,
+                        periods,
+                    ))
+                })
+                .take(3)
+                .collect::<Vec<_>>();
+            recent.sort_by(|left, right| left.0.total_cmp(&right.0));
+            let (period_wages, period_withheld, periods) =
+                *recent.get(recent.len().checked_sub(1)? / 2)?;
             let date = day(document.date.as_deref())?;
             let period = period_of(date, periods);
             let left = f64::from(periods - period);
-            // Box 1 wages for the period and the year so far.
-            let wages = |value: &dyn Fn(&str) -> Option<f64>| -> Option<f64> {
-                let part = |key: &str| value(key).unwrap_or_default();
-                Some(value("gross")? - part("hsa") - part("pretaxBenefits") - part("pretax401k"))
-            };
             let wages_to_date = wages(&|key| document.ytd(key))?;
-            let period_wages = wages(&|key| document.amount(key))?;
             let withheld_to_date = document.ytd("federalWithholding")?;
-            let period_withheld = document.amount("federalWithholding")?;
             Some(PayProjection {
                 employer,
                 document_id: document.id.clone(),

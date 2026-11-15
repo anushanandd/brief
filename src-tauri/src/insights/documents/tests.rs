@@ -521,3 +521,62 @@ fn pay_carries_to_december_from_the_latest_statement_and_its_cadence() {
     // No pay statement this year is nothing to project.
     assert_eq!(pay_projections(2025, &[]), Some(Vec::new()));
 }
+
+#[test]
+fn a_bonus_statement_counts_once_and_regular_pay_carries_forward() {
+    let regular = pay_period(
+        "a",
+        ("2026-09-16", "2026-09-30", "2026-09-30"),
+        [4_000.0, 0.0, 500.0],
+        [72_000.0, 0.0, 9_000.0],
+    );
+    // A bonus paid with the same period's check, then without a period at all.
+    let bonus = pay_period(
+        "b",
+        ("2026-09-16", "2026-09-30", "2026-09-30"),
+        [20_000.0, 0.0, 4_400.0],
+        [92_000.0, 0.0, 13_400.0],
+    );
+    let unperiod = Document {
+        period_start: None,
+        period_end: None,
+        ..pay_period(
+            "c",
+            ("2026-09-16", "2026-09-30", "2026-09-30"),
+            [20_000.0, 0.0, 4_400.0],
+            [92_000.0, 0.0, 13_400.0],
+        )
+    };
+    for one_off in [bonus, unperiod] {
+        let pay = &pay_projections(2026, &[regular.clone(), one_off.clone()]).unwrap()[0];
+        // The bonus is in the year so far; the six periods left are regular pay.
+        assert_eq!(pay.document_id, one_off.id);
+        assert_eq!(pay.projected_wages, 92_000.0 + 6.0 * 4_000.0);
+        assert_eq!(pay.projected_withholding, 13_400.0 + 6.0 * 500.0);
+    }
+    // A raise carries forward once two of the last three statements show it.
+    let raised = |id: &str, start: &str, end: &str, ytd: f64| {
+        pay_period(
+            id,
+            (start, end, end),
+            [5_000.0, 0.0, 600.0],
+            [ytd, 0.0, 10_000.0],
+        )
+    };
+    let older = pay_period(
+        "d",
+        ("2026-08-16", "2026-08-31", "2026-08-31"),
+        [4_000.0, 0.0, 500.0],
+        [60_000.0, 0.0, 9_000.0],
+    );
+    let pay = &pay_projections(
+        2026,
+        &[
+            older,
+            raised("e", "2026-09-01", "2026-09-15", 65_000.0),
+            raised("f", "2026-09-16", "2026-09-30", 70_000.0),
+        ],
+    )
+    .unwrap()[0];
+    assert_eq!(pay.projected_wages, 70_000.0 + 6.0 * 5_000.0);
+}
