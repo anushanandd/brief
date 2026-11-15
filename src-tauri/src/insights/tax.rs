@@ -382,17 +382,23 @@ fn scenario(profile: &TaxProfile, year: &YearTables, income: &Income) -> Option<
     let base = profile.taxable_income;
     let ordinary_extra =
         interest + from_minor(income.ordinary_dividends) + ordinary_gain - deduction;
-    let ordinary_income = (base + ordinary_extra).max(0.0);
-    let preferential = from_minor(income.qualified) + preferential_gain;
+    let ordinary_total = base + ordinary_extra;
+    let ordinary_income = ordinary_total.max(0.0);
+    // A deduction ordinary income doesn't use up shelters preferential income next.
+    let preferential_income = from_minor(income.qualified) + preferential_gain;
+    let preferential = (preferential_income + ordinary_total.min(0.0)).max(0.0);
     let ordinary = ordinary_tax(brackets, ordinary_income) - ordinary_tax(brackets, base);
     let capital_gains = capital_gains_tax(bands, ordinary_income, preferential);
     let investment_income = interest + dividends + ordinary_gain + preferential_gain;
-    let niit = TABLES.niit_rate / 100.0
-        * investment_income.min((ordinary_income + preferential - threshold).max(0.0));
+    // Modified AGI: taxable income with the standard deduction added back, which is low by
+    // anything itemized above it.
+    let standard = year.standard_deduction.get(status).copied().unwrap_or(0.0);
+    let magi = ordinary_total + preferential_income + standard;
+    let niit = TABLES.niit_rate / 100.0 * investment_income.min((magi - threshold).max(0.0));
     let state_rate = profile.state_rate.unwrap_or(0.0);
     let state = state_rate / 100.0
         * (interest + dividends + ordinary_gain + preferential_gain - deduction).max(0.0);
-    let over_threshold = ordinary_income + preferential > threshold;
+    let over_threshold = magi > threshold;
     let niit_marginal = if over_threshold {
         TABLES.niit_rate
     } else {
@@ -743,7 +749,8 @@ pub fn withholding(
     let tax_in = |year: i32, wages: f64, income: &Income| {
         let status = filing_status?;
         let tables = TABLES.years.get(&year)?;
-        let taxable = (wages - tables.standard_deduction.get(status)?).max(0.0);
+        // Below zero, the deduction wages leave carries to investment income.
+        let taxable = wages - tables.standard_deduction.get(status)?;
         federal_tax(tables, status, taxable, income)
     };
     let nothing = Income {
@@ -1455,6 +1462,16 @@ mod tests {
         assert_eq!((loss.loss_deduction, loss.loss_carryover), (3_000.0, 500.0));
     }
 
+    #[test]
+    fn the_investment_income_tax_tests_income_before_the_standard_deduction() {
+        // $190,000 taxable plus the $16,100 deduction and $10,000 of gains is over $200,000.
+        let near = estimate_for(190_000.0, 10_000.0, 0.0);
+        assert_eq!(near.niit, 380.0);
+        assert_eq!(near.marginal_rate, 24.0 + 3.8);
+        // Under the line, none is due.
+        assert_eq!(estimate_for(170_000.0, 10_000.0, 0.0).niit, 0.0);
+    }
+
     fn position(ticker: &str, account: &str, gains: &[(f64, bool)]) -> PositionLots {
         PositionLots {
             account_id: account.into(),
@@ -1752,6 +1769,41 @@ mod tests {
         assert_eq!(
             project(16_000.0, 0.0, None, Some("single")).projected_tax,
             Some(0.0)
+        );
+    }
+
+    #[test]
+    fn deduction_wages_leave_unused_shelters_investment_income() {
+        // $10,000 of wages and $8,000 of interest less $16,100 leaves $1,900 at 10%.
+        let mut interest = quiet_year();
+        interest.interest = 8_000.0;
+        let result = super::withholding(
+            2026,
+            Some(vec![projection(10_000.0, 0.0)]),
+            Some(&interest),
+            None,
+            PriorInvestment::None,
+            Some("single"),
+        )
+        .unwrap();
+        assert_eq!(result.projected_tax, Some(190.0));
+        // The deduction left after ordinary income shelters qualified dividends next.
+        let mut qualified = quiet_year();
+        qualified.dividends.qualified = 600_000.0;
+        let result = super::withholding(
+            2026,
+            Some(vec![projection(10_000.0, 0.0)]),
+            Some(&qualified),
+            None,
+            PriorInvestment::None,
+            Some("single"),
+        )
+        .unwrap();
+        // $593,900 taxable: $49,450 at 0%, $496,050 at 15%, $48,400 at 20%, and 3.8% of the
+        // $410,000 over the line.
+        assert_eq!(
+            result.projected_tax,
+            Some(round2(496_050.0 * 0.15 + 48_400.0 * 0.20 + 410_000.0 * 0.038))
         );
     }
 
