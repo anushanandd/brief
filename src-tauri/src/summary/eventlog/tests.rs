@@ -372,8 +372,12 @@ fn scheduled_market_wide_events_come_from_the_reviewed_calendar_and_published_ru
     // The Monday after the third Friday of December.
     assert!(found.contains(&("indexRebalance", day("2026-12-21"))));
     assert!(ahead.iter().all(|event| event.status == Status::Scheduled));
-    // A BLS release is never inferred.
-    assert!(!found.iter().any(|(kind, _)| *kind == "cpi"));
+    // A BLS release comes only from the reviewed calendar, never inferred.
+    let cpi = found
+        .iter()
+        .filter(|(kind, _)| *kind == "cpi")
+        .collect::<Vec<_>>();
+    assert_eq!(cpi, [&("cpi", day("2026-12-10"))]);
     assert!(rebalance(day("2026-09-21")));
     assert!(!rebalance(day("2026-09-14")));
 }

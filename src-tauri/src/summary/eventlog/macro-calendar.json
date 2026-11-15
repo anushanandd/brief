@@ -1,8 +1,8 @@
 {
-  "reviewed": "2026-10-08",
+  "reviewed": "2026-11-15",
   "fomc": {
     "source": "https://www.federalreserve.gov/monetarypolicy/fomccalendars.htm",
-    "note": "The second day of each scheduled meeting, when the statement is released at 2:00 p.m. Eastern. Add a year only from the Federal Reserve's published calendar; never extrapolate.",
+    "note": "The second day of each scheduled meeting that announces a policy decision, when the statement is released at 2:00 p.m. Eastern. Add a year only from the Federal Reserve's published calendar; never extrapolate.",
     "decisions": [
       "2026-01-28",
       "2026-03-18",
@@ -11,13 +11,48 @@
       "2026-07-29",
       "2026-09-16",
       "2026-10-28",
-      "2026-12-09"
+      "2026-12-09",
+      "2027-01-27",
+      "2027-03-17",
+      "2027-04-28",
+      "2027-06-09",
+      "2027-07-28",
+      "2027-09-15",
+      "2027-11-17"
     ]
   },
   "releases": {
     "source": "https://www.bls.gov/schedule/",
     "note": "BLS release dates (8:30 a.m. Eastern), copied from the published schedule when it is reviewed. Empty until then: Brief never infers a release date.",
-    "cpi": [],
-    "employment": []
+    "cpi": [
+      "2026-12-10",
+      "2027-01-13",
+      "2027-02-11",
+      "2027-03-10",
+      "2027-04-13",
+      "2027-05-12",
+      "2027-06-10",
+      "2027-07-14",
+      "2027-08-11",
+      "2027-09-14",
+      "2027-10-14",
+      "2027-11-10",
+      "2027-12-10"
+    ],
+    "employment": [
+      "2026-12-04",
+      "2027-01-08",
+      "2027-02-05",
+      "2027-03-05",
+      "2027-04-02",
+      "2027-05-07",
+      "2027-06-04",
+      "2027-07-02",
+      "2027-08-06",
+      "2027-09-03",
+      "2027-10-08",
+      "2027-11-05",
+      "2027-12-03"
+    ]
   }
 }
