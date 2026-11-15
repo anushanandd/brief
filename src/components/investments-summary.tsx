@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { type ReactNode, useMemo, useRef } from 'react'
+import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { usePortfolioSectors } from '../hooks/use-portfolio-sectors'
@@ -157,13 +157,19 @@ export function PeriodCard({
 }) {
   // Scrolled back in time, the period ends on the chart's end day.
   const [end] = useGraphEnd()
-  const day = end ?? snapshotToday(data)
-  const { from, to } = rangeDates(range, day, span?.start)
-  // Rust sums the reports over the same days as the period's statement.
-  const summaries = useReports(data, {
-    ...(from ? { from, to } : { range: 'all' }),
+  const { from, to } = rangeDates(range, end ?? snapshotToday(data), span?.start)
+  // Rust sums the reports over the same days as the period's statement. As `useAsOf` does, a
+  // scroll asks for one day at a time, the latest when the last answer arrives.
+  const [asked, setAsked] = useState(end)
+  const days = rangeDates(range, asked ?? snapshotToday(data), span?.start)
+  const answer = useReports(data, {
+    ...(days.from ? { from: days.from, to: days.to } : { range: 'all' }),
     ...(accountId ? { accounts: [accountId] } : {}),
-  }).data?.summaries
+  })
+  useEffect(() => {
+    if (asked !== end && !answer.isFetching) setAsked(end)
+  }, [asked, end, answer.isFetching])
+  const summaries = answer.data?.summaries
   const title = end && from ? `${formatShortDay(from)} – ${formatDay(to)}` : rangeNames[range]
   return (
     <Card className="investments-side-card" aria-label={`${title} in detail`}>
