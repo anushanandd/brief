@@ -86,11 +86,9 @@ struct AppState {
 }
 
 impl AppState {
-    /// The finance store, or an error once a panic has poisoned its lock.
+    /// The finance store; a panic in one command doesn't lock every later one out.
     pub(crate) fn storage(&self) -> Result<std::sync::MutexGuard<'_, Storage>, String> {
-        self.storage
-            .lock()
-            .map_err(|_| "The local data store is unavailable".to_string())
+        Ok(Storage::unpoisoned(&self.storage))
     }
 
     fn written(&self) -> Result<std::sync::MutexGuard<'_, commands::data_folder::Written>, String> {

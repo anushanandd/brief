@@ -1039,3 +1039,20 @@ mod generations;
 mod replay;
 mod sessions;
 mod statements;
+
+#[test]
+fn a_panic_while_the_store_is_held_leaves_it_usable() {
+    let storage = std::sync::Mutex::new(Storage::new(directory()).unwrap());
+    let before = storage.lock().unwrap().read_view().unwrap();
+    let _ = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        let _held = storage.lock().unwrap();
+        panic!("a command panicked");
+    }));
+    assert!(storage.is_poisoned());
+    let recovered = Storage::unpoisoned(&storage);
+    assert!(!storage.is_poisoned());
+    assert_eq!(
+        recovered.read_view().unwrap().snapshot.updated_at,
+        before.snapshot.updated_at
+    );
+}

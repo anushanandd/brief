@@ -557,6 +557,17 @@ impl Storage {
     }
 
     /// The annotation-aware snapshot and its insights, as Rust reads them.
+    /// The store behind `mutex`, even after a panic poisoned it. Writes are transactions that a
+    /// panic rolls back, so only the derived view could be stale; it is derived again.
+    pub(crate) fn unpoisoned(mutex: &std::sync::Mutex<Self>) -> std::sync::MutexGuard<'_, Self> {
+        mutex.lock().unwrap_or_else(|poisoned| {
+            mutex.clear_poison();
+            let storage = poisoned.into_inner();
+            storage.view.take();
+            storage
+        })
+    }
+
     pub fn read_view(&self) -> Result<std::sync::Arc<crate::insights::View>, String> {
         self.view(|cached| cached.view.clone())
     }
