@@ -106,8 +106,8 @@ fn totals<'a>(posted: impl Iterator<Item = &'a Transaction>) -> Totals {
     totals
 }
 
-/// Spending and earned income, in cents, posted from `from` through `through`, counted as
-/// every period here counts them.
+/// Spending and earned income, in cents, from `from` through `through`, counted as every period
+/// here counts them, on whichever day the caller dated each row by.
 pub(super) fn spent_and_earned(
     posted: &[(NaiveDate, &Transaction)],
     from: NaiveDate,

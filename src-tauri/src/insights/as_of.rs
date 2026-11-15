@@ -74,7 +74,8 @@ pub fn period_as_of(view: &View, settings: &FinanceSettings, end: NaiveDate) -> 
             &card_ids,
             end,
         ),
-        recap: recap::recap(&snapshot.transactions, end),
+        // From every transaction, since a purchase made by `end` counts even if it posted later.
+        recap: recap::recap(&view.snapshot.transactions, end),
     })
 }
 
@@ -228,6 +229,44 @@ mod tests {
                 "{window:?} return"
             );
         }
+    }
+
+    #[test]
+    fn a_past_days_recap_counts_purchases_made_by_then_that_posted_later() {
+        let (state, mut view) = life();
+        let today = view.insights.as_ref().unwrap().today;
+        let end = today - chrono::Duration::days(30);
+        let month = |view: &View| {
+            period_as_of(view, &state.settings, end)
+                .unwrap()
+                .recap
+                .into_iter()
+                .find(|recap| recap.window == period_changes::Window::Month)
+                .unwrap()
+                .spending
+        };
+        let before = month(&view);
+        let mut late = view
+            .snapshot
+            .transactions
+            .iter()
+            .find(|transaction| {
+                transaction
+                    .classification
+                    .as_ref()
+                    .is_some_and(|c| c.spending)
+                    && !transaction.pending
+            })
+            .unwrap()
+            .clone();
+        late.id = "late".into();
+        late.amount = -60.0;
+        late.date = (end - chrono::Duration::days(1)).to_string();
+        late.occurred_on = Some(late.date.clone());
+        late.posted_on = Some((end + chrono::Duration::days(1)).to_string());
+        late.splits = Vec::new();
+        view.snapshot.transactions.push(late);
+        assert_eq!(crate::numeric::round2(month(&view) - before), 60.0);
     }
 
     #[test]
