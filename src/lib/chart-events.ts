@@ -93,6 +93,7 @@ export function buildChartEventGroups(
   const transactionThreshold = Math.max(500, Math.abs(data.spending.monthTotal) * 0.1)
   const transferThreshold = Math.max(1_000, Math.abs(data.netWorth) * 0.005)
   const events: ChartEvent[] = []
+  const transferPairs = new Map<string, string>()
 
   for (const transaction of data.transactions) {
     if (transaction.pending || !includesAccount(transaction.accountId)) continue
@@ -110,6 +111,11 @@ export function buildChartEventGroups(
             : undefined
     if (!kind || (kind === 'income' && amount < 500)) continue
     const threshold = kind === 'transfer' ? transferThreshold : transactionThreshold
+    if (transaction.transferPairId)
+      transferPairs.set(
+        `transaction:${transaction.id}`,
+        `transaction:${transaction.transferPairId}`,
+      )
     events.push({
       id: `transaction:${transaction.id}`,
       date,
@@ -153,22 +159,16 @@ export function buildChartEventGroups(
     if (nearbySale) event.note = `Near ${nearbySale.title.toLocaleLowerCase()}`
   }
 
+  // Both legs of a move between your accounts, as Rust paired them, show as one marker.
   const pairedTransfers = new Set<string>()
   const internalTransfers: ChartEvent[] = []
   if (!relevantAccounts) {
-    const transfers = events.filter(({ kind }) => kind === 'transfer')
-    for (const outgoing of transfers.filter(({ amount }) => (amount ?? 0) < 0)) {
-      const outgoingTime = Date.parse(`${outgoing.date}T12:00:00Z`)
-      const incoming = transfers.find(
-        (candidate) =>
-          (candidate.amount ?? 0) > 0 &&
-          candidate.accountId !== outgoing.accountId &&
-          !pairedTransfers.has(candidate.id) &&
-          Math.abs((candidate.amount ?? 0) + (outgoing.amount ?? 0)) < 0.01 &&
-          Math.abs(Date.parse(`${candidate.date}T12:00:00Z`) - outgoingTime) <=
-            3 * DAY_SECONDS * 1_000,
-      )
-      if (!incoming) continue
+    const byId = new Map(events.map((event) => [event.id, event]))
+    for (const outgoing of events) {
+      if (outgoing.kind !== 'transfer' || (outgoing.amount ?? 0) >= 0) continue
+      const pair = transferPairs.get(outgoing.id)
+      const incoming = pair ? byId.get(pair) : undefined
+      if (incoming?.kind !== 'transfer' || (incoming.amount ?? 0) <= 0) continue
       pairedTransfers.add(outgoing.id)
       pairedTransfers.add(incoming.id)
       internalTransfers.push({

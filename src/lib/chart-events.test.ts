@@ -4,6 +4,20 @@ import { classification } from '../data/fixtures/classification'
 import { performance, seedSnapshot, trade, transaction } from '../data/fixtures/records'
 import { buildChartEventGroups, chartEventGroupLabel } from './chart-events'
 
+const leg = (id: string, amount: number, accountId: string, transferPairId?: string) =>
+  transaction({
+    id,
+    merchant: id,
+    category: 'Transfer',
+    date: '2026-09-09',
+    amount,
+    account: accountId,
+    accountId,
+    classification: classification('transfer'),
+    transferPairId,
+    pending: false,
+  })
+
 describe('buildChartEventGroups', () => {
   it('keeps external money transfers directional on the all-accounts chart', () => {
     const data = seedSnapshot()
@@ -74,6 +88,7 @@ describe('buildChartEventGroups', () => {
         account: 'Brokerage',
         accountId: 'snaptrade:brokerage',
         classification: classification('transfer'),
+        transferPairId: 'transfer-in',
         pending: false,
       }),
       transaction({
@@ -85,6 +100,7 @@ describe('buildChartEventGroups', () => {
         account: 'Checking',
         accountId: 'plaid:checking',
         classification: classification('transfer'),
+        transferPairId: 'transfer-out',
         pending: false,
       }),
     ]
@@ -158,5 +174,23 @@ describe('buildChartEventGroups', () => {
     expect(chartEventGroupLabel(sold)).toContain('Sold VTI $207.05 · −12.50%')
     expect(chartEventGroupLabel(near)).toContain('Near sold vti')
     expect(chartEventGroupLabel(bought)).toContain('Bought VXUS')
+  })
+
+  it('joins only the transfer legs Rust paired, as Activity shows them', () => {
+    const data = seedSnapshot()
+    data.updatedAt = '2026-09-10T20:00:00Z'
+    data.netWorth = 100_000
+    data.transactions = [
+      leg('paired out', -2_000, 'plaid:savings', 'paired in'),
+      leg('paired in', 2_000, 'plaid:checking', 'paired out'),
+      // The same amount between two accounts on the same day, which Rust left unpaired.
+      leg('unpaired out', -2_000, 'plaid:savings'),
+      leg('unpaired in', 2_000, 'plaid:checking'),
+    ]
+    data.trades = []
+    const titles = buildChartEventGroups(data, 'net-worth', 0)
+      .flatMap(({ events }) => events)
+      .map(({ title }) => title)
+    expect(titles.toSorted()).toEqual(['Internal transfer', 'unpaired in', 'unpaired out'])
   })
 })
