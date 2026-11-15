@@ -4,7 +4,7 @@
 //! The deterministic tests run every tool call and check its figures, that the Swift bridge
 //! defines every tool, and that the planner leads with each question's tool, resolves its
 //! dates, and runs directly only what it can answer, so a changed figure, a renamed tool, or a
-//! routing regression fails in CI. The ignored test asks Apple Intelligence each question on a
+//! routing regression fails `cargo test`. The ignored test asks Apple Intelligence each question on a
 //! Mac that has it, checks that it queried, quoted the figures with none unverified, and
 //! called the unanswerable unavailable, and appends its pass rate to the private
 //! `notes/assistant-eval-history.jsonl`:

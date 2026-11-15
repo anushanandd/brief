@@ -344,8 +344,8 @@ public func briefFoundationModelGenerate(
       let tools = ledgerTools(host).filter { offered.contains($0.name) }
       let session = LanguageModelSession(tools: tools, instructions: instructions)
       // Greedy sampling gives the same answer to the same question over the same data, for a
-      // given version of the on-device model. Xcode 27 renames `sampling:` to `samplingMode:`, but
-      // CI builds with Xcode 26, which has only `sampling:`.
+      // given version of the on-device model. Xcode 27 renames `sampling:` to `samplingMode:`; the
+      // old name still builds with Xcode 26 and 27.
       let options = GenerationOptions(sampling: .greedy)
       let reply: Reply
       do {

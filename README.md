@@ -38,7 +38,7 @@ Plaid · SnapTrade · Alpaca · SEC EDGAR · Alpha Vantage · statements · docu
    React: formats what Rust computed
 ```
 
-**Rust computes, React displays.** Every total, forecast, and classification is computed in Rust with decimal math. The interface's types are generated from the Rust structs ([ts-rs](https://github.com/Aleph-Alpha/ts-rs)), and CI fails if they drift.
+**Rust computes, React displays.** Every total, forecast, and classification is computed in Rust with decimal math. The interface's types are generated from the Rust structs ([ts-rs](https://github.com/Aleph-Alpha/ts-rs)), and a push fails if they drift.
 
 **The change log is the source of truth.** Every write is one change, applied by the same function live and in replay, and saved with a hash of the state it produced in one SQLite transaction. A test runs a generated person's life through the real refresh and edit paths and requires the log to rebuild the saved tables exactly ([`storage/change.rs`](src-tauri/src/storage/change.rs), [`storage/tests/replay.rs`](src-tauri/src/storage/tests/replay.rs)).
 
@@ -48,7 +48,7 @@ Plaid · SnapTrade · Alpaca · SEC EDGAR · Alpha Vantage · statements · docu
 
 **Live market data survives corrections.** One shared socket per feed serves the whole app, keeps timestamps in order, and treats a corrected or cancelled trade as something to reconcile ([`providers/market_stream.rs`](src-tauri/src/providers/market_stream.rs)).
 
-**The assistant can't make up a number.** Apple's on-device model sees about 4,096 tokens, so Rust plans each question first: it resolves the dates, offers the model at most four tools, and answers a clear question itself. Every figure in an answer is checked against what the tools returned ([`assistant_planner.rs`](src-tauri/src/insights/assistant_planner.rs), [`foundation_model/figures.rs`](src-tauri/src/foundation_model/figures.rs)). A 56-question eval set checks the routing in CI.
+**The assistant can't make up a number.** Apple's on-device model sees about 4,096 tokens, so Rust plans each question first: it resolves the dates, offers the model at most four tools, and answers a clear question itself. Every figure in an answer is checked against what the tools returned ([`assistant_planner.rs`](src-tauri/src/insights/assistant_planner.rs), [`foundation_model/figures.rs`](src-tauri/src/foundation_model/figures.rs)). A 56-question eval set checks the routing in the Rust tests.
 
 **Tests run on synthetic lives.** Results depend only on the data and the local day, so tests pin both. Over 800 Rust tests and 600 frontend tests run on generated people, and none on real data.
 

@@ -17,7 +17,7 @@ cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
 Run checks in proportion to the change. Docs-only changes need none.
 
-`git config core.hooksPath .githooks` enables the hooks: pre-commit scans staged changes for secrets (gitleaks), strings from a private denylist kept outside the repo, a regenerated golden file, and statements, databases, key files, or files over 5 MB; commit-msg checks the message against the same denylist; pre-push runs the checks above plus binding drift. CI (`.github/workflows/ci.yml`) runs the same checks on pull requests. Never bypass a hook with `--no-verify` or the `BRIEF_*` overrides from an agent session; ask.
+`git config core.hooksPath .githooks` enables the hooks: pre-commit scans staged changes for secrets (gitleaks), strings from a private denylist kept outside the repo, a regenerated golden file, and statements, databases, key files, or files over 5 MB; commit-msg checks the message against the same denylist; pre-push runs the checks above plus binding drift. There is no hosted CI; pre-push is the gate. Never bypass a hook with `--no-verify` or the `BRIEF_*` overrides from an agent session; ask.
 
 ## Rules no test catches yet
 

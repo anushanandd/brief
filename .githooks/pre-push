@@ -1,5 +1,5 @@
 #!/bin/sh
-# Runs the full local gate before a push: the same checks CI runs, plus binding drift.
+# Runs every check before a push, the commands AGENTS.md lists plus binding drift; there is no hosted CI.
 # Skip once with BRIEF_SKIP_PREPUSH=1 git push. Enable: git config core.hooksPath .githooks
 set -eu
 
