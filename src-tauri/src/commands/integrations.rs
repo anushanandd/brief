@@ -118,10 +118,15 @@ pub(crate) async fn get_snaptrade_connections(
 #[tauri::command]
 pub(crate) async fn forget_provider_connection(
     item_id: String,
+    remove_at_plaid: bool,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let _refresh = state.refresh.lock().await;
     require_sensitive_authorization(&state)?;
+    // Removed at Plaid first, so a failure there leaves the connection as it was.
+    if remove_at_plaid {
+        state.providers.remove_plaid_item(&item_id).await?;
+    }
     state.providers.forget_connection(&item_id)?;
     state.storage()?.cancel_pending_refresh();
     Ok(())

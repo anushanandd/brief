@@ -83,6 +83,13 @@ describe('refresh process', () => {
     await forgetProviderConnection('synthetic-item')
     expect(mockedInvoke).toHaveBeenCalledWith('forget_provider_connection', {
       itemId: 'synthetic-item',
+      removeAtPlaid: false,
+    })
+    mockedInvoke.mockResolvedValueOnce(undefined)
+    await forgetProviderConnection('synthetic-item', true)
+    expect(mockedInvoke).toHaveBeenLastCalledWith('forget_provider_connection', {
+      itemId: 'synthetic-item',
+      removeAtPlaid: true,
     })
     mockedInvoke.mockRejectedValueOnce(new Error('Synthetic Keychain failure'))
     await expect(forgetProviderConnection('synthetic-item')).rejects.toThrow(

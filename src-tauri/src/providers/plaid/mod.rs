@@ -49,6 +49,27 @@ impl Providers {
         Ok(connections)
     }
 
+    /// Ends `item_id` at Plaid (`/item/remove`), which stops its billed products. A mutation,
+    /// so it is sent once and never retried.
+    pub async fn remove_plaid_item(&self, item_id: &str) -> Result<(), String> {
+        let credentials = self.plaid_credentials()?;
+        let access_token = self
+            .read_secret::<Vec<PlaidItem>>(PLAID_ITEMS_KEY)?
+            .unwrap_or_default()
+            .into_iter()
+            .find(|item| item.item_id == item_id)
+            .map(|item| item.access_token)
+            .ok_or("That connection isn't saved")?;
+        self.plaid_once(
+            &credentials,
+            "/item/remove",
+            json!({ "access_token": access_token }),
+        )
+        .await
+        .map(|_| ())
+        .map_err(|error| error.to_string())
+    }
+
     pub fn forget_connection(&self, item_id: &str) -> Result<(), String> {
         self.mutate_vault(None, true, |vault| {
             update_plaid_items(vault, |items| items.retain(|item| item.item_id != item_id))

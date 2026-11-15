@@ -407,11 +407,11 @@ function ProviderConnections({
   const queryClient = useQueryClient()
   const [forgettingItem, setForgettingItem] = useState<string | null>(null)
   const forgetConnection = useMutation({
-    mutationFn: async (itemId: string) => {
+    mutationFn: async ({ itemId, removeAtPlaid }: { itemId: string; removeAtPlaid: boolean }) => {
       await authenticateSensitiveAction()
-      await forgetProviderConnection(itemId)
+      await forgetProviderConnection(itemId, removeAtPlaid)
     },
-    onSuccess: (_, itemId) => {
+    onSuccess: (_, { itemId }) => {
       queryClient.setQueriesData<ProviderConnection[]>(
         { queryKey: ['provider-connections'] },
         (current) => current?.filter((connection) => connection.itemId !== itemId),
@@ -475,7 +475,9 @@ function ProviderConnections({
             <div className="connection-confirmation" role="group">
               <p>
                 Forget {connection.name}? Saved accounts disappear after the next successful
-                refresh. This does not revoke access at Plaid or your bank.
+                refresh. Forgetting only on this Mac leaves the connection open at Plaid, which
+                keeps billing its products on a paid plan. Removing it at Plaid ends that, but the
+                Trial plan never gives the connection back, so linking this bank again uses another.
               </p>
               <div>
                 <Button icon={X} size="compact" onClick={() => setForgettingItem(null)}>
@@ -486,9 +488,22 @@ function ProviderConnections({
                   size="compact"
                   variant="destructive"
                   disabled={forgetConnection.isPending}
-                  onClick={() => forgetConnection.mutate(connection.itemId)}
+                  onClick={() =>
+                    forgetConnection.mutate({ itemId: connection.itemId, removeAtPlaid: false })
+                  }
                 >
-                  {forgetConnection.isPending ? 'Authenticating…' : 'Confirm forget'}
+                  Forget on this Mac
+                </Button>
+                <Button
+                  icon={Trash2}
+                  size="compact"
+                  variant="destructive"
+                  disabled={forgetConnection.isPending}
+                  onClick={() =>
+                    forgetConnection.mutate({ itemId: connection.itemId, removeAtPlaid: true })
+                  }
+                >
+                  {forgetConnection.isPending ? 'Authenticating…' : 'Remove at Plaid'}
                 </Button>
               </div>
             </div>

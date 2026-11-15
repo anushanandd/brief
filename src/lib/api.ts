@@ -537,8 +537,12 @@ export async function getProviderConnections(): Promise<ProviderConnection[]> {
 export async function getSnapTradeConnections(): Promise<ProviderConnection[]> {
   return isTauri() ? invoke<ProviderConnection[]>('get_snaptrade_connections') : []
 }
-export async function forgetProviderConnection(itemId: string): Promise<void> {
-  await invoke('forget_provider_connection', { itemId })
+/** Forgets a Plaid connection on this Mac; `removeAtPlaid` also ends it at Plaid first. */
+export async function forgetProviderConnection(
+  itemId: string,
+  removeAtPlaid = false,
+): Promise<void> {
+  await invoke('forget_provider_connection', { itemId, removeAtPlaid })
 }
 
 export async function authenticateSensitiveAction(): Promise<void> {
