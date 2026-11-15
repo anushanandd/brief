@@ -24,6 +24,14 @@ export const localDateKey = (seconds: number) => {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 
+/** Today for a snapshot's figures: the day Rust computed its insights for, else this Mac's. */
+export const snapshotToday = (data: { insights?: { today: string } }) =>
+  data.insights?.today ?? localDateKey(Date.now() / 1000)
+
+/** The local day a snapshot was saved on. Its `updatedAt` is UTC, a day ahead in the evening. */
+export const savedDay = (data: { calendarDate?: string; updatedAt: string }) =>
+  data.calendarDate ?? localDateKey(Date.parse(data.updatedAt) / 1000)
+
 /** Whether a year, month (1 to 12), and day name a real calendar day. */
 export function isCalendarDay(year: number, month: number, day: number) {
   const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)

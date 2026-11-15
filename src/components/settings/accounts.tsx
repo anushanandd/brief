@@ -13,6 +13,7 @@ import { useRegisterActions, type AppAction } from '../../lib/action-system'
 import { chooseCatalogCard, getResearch, readCardRules, saveAccountLink } from '../../lib/api'
 import type { CardRules } from '../../lib/bindings/CardRules'
 import { cardsWithoutRules } from '../../lib/card-drafts'
+import { snapshotToday } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import {
   financeSettings,
@@ -592,7 +593,7 @@ function parseAmount(value: string) {
  * counts toward net worth; a loan counts against it.
  */
 function ManualAccounts({ data, settings, save }: SectionProps) {
-  const today = data.updatedAt.slice(0, 10)
+  const today = snapshotToday(data)
   const [adding, setAdding] = useState(false)
   const [draft, setDraft] = useState({
     name: '',
@@ -931,7 +932,7 @@ function AccountDetails({ data, settings, save }: SectionProps) {
                     {/* WebKit reports each valid date while the year is typed, so save on blur. */}
                     <CommittedTextInput
                       type="date"
-                      max={data.updatedAt.slice(0, 10)}
+                      max={snapshotToday(data)}
                       value={accountStartDate(data, account.id, accountStartDates) ?? ''}
                       aria-label={`Start date for ${account.name}`}
                       onCommit={(date) => updateStartDate(account.id, date)}
@@ -940,7 +941,7 @@ function AccountDetails({ data, settings, save }: SectionProps) {
                   <td data-label="Closed">
                     <CommittedTextInput
                       type="date"
-                      max={data.updatedAt.slice(0, 10)}
+                      max={snapshotToday(data)}
                       value={closedDates[account.id] ?? ''}
                       aria-label={`Closed date for ${account.name}`}
                       onCommit={(date) => updateClosedDate(account.id, date)}

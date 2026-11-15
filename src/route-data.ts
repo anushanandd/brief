@@ -13,11 +13,11 @@ import {
   analyticsCharts,
   moneyStripRequests,
   pageReportRequest,
-  reportDay,
   resolvedAnalyticsSearch,
   type AnalyticsSearch,
 } from './lib/analytics'
 import { getDataHealth, type ReportRequest } from './lib/api'
+import { snapshotToday } from './lib/dates'
 import { chosenGraphWindow } from './lib/graph-preferences'
 import type { FinanceSnapshot } from './lib/schema'
 import {
@@ -52,7 +52,7 @@ export function loadAnalytics({ queryClient }: RouterContext, search: AnalyticsS
   if (!data) return undefined
   const resolved = resolvedAnalyticsSearch(search, chosenGraphWindow())
   const chart = resolved.chart ?? analyticsCharts[0].id
-  const today = reportDay(data)
+  const today = snapshotToday(data)
   const money = analyticsCharts.find(({ id }) => id === chart)?.group === 'money'
   return settle(
     reports(queryClient, data, [
@@ -72,7 +72,7 @@ export function loadSpending({ queryClient }: RouterContext, search: SpendingSea
     ...reports(
       queryClient,
       data,
-      moneyStripRequests({ range: reportRangeForPeriod(page.period) }, reportDay(data)),
+      moneyStripRequests({ range: reportRangeForPeriod(page.period) }, snapshotToday(data)),
     ),
   ])
 }

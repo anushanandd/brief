@@ -342,8 +342,6 @@ fn summary(chart: Chart, total: Option<f64>, previous: Option<f64>) -> ReportSum
 
 struct Reader<'a> {
     view: &'a View,
-    /// The snapshot's saved day as written, past which no entry is counted.
-    written: NaiveDate,
     window: ReportWindow,
 }
 
@@ -384,7 +382,7 @@ impl Reader<'_> {
                 })
                 .filter_map(|trade| {
                     let date = calendar::transaction_date(&trade.date)?;
-                    (date <= self.written).then(|| Entry {
+                    (date <= self.window.saved_end).then(|| Entry {
                         id: format!("trade:{}", trade.id),
                         date,
                         value: trade.estimated_realized_gain,
@@ -434,7 +432,7 @@ impl Reader<'_> {
                 .filter_map(|transaction| {
                     let date = calendar::transaction_date(transaction.posted_date())?;
                     let classification = transaction.classification.as_ref()?;
-                    if date > self.written {
+                    if date > self.window.saved_end {
                         return None;
                     }
                     let (value, group) = self.classify(chart, transaction, classification)?;
@@ -903,10 +901,8 @@ pub fn reports(
 ) -> Option<Reports> {
     let snapshot = &view.snapshot;
     let saved = calendar::calendar_date(&snapshot.updated_at, zone)?;
-    let written = calendar::transaction_date(&snapshot.updated_at)?;
     let reader = Reader {
         view,
-        written,
         window: window(view, request, today.max(saved), saved),
     };
     let accounts = request.accounts.as_deref();

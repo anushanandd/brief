@@ -1,3 +1,4 @@
+import { savedDay } from './dates'
 import { formatCurrency, formatPercent, formatActivityName, formatInstant } from './format'
 import type { FinanceSnapshot, ListedEvent } from './schema'
 import { formatActivityDate, transactionDateKey } from './spending'
@@ -187,7 +188,7 @@ export function buildChartEventGroups(
     ...internalTransfers,
     ...extra,
   ]
-  const end = Date.parse(`${endDate ?? data.updatedAt.slice(0, 10)}T23:59:59Z`)
+  const end = Date.parse(`${endDate ?? savedDay(data)}T23:59:59Z`)
   const start = windowSeconds ? end - windowSeconds * 1_000 : Number.NEGATIVE_INFINITY
   const grouped = new Map<string, ChartEvent[]>()
   for (const event of displayEvents) {

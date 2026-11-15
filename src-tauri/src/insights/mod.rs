@@ -606,7 +606,7 @@ pub fn derive_with_documents(
         group_history,
         rollup,
         chart_changes,
-        flows: flows::flows(snapshot),
+        flows: flows::flows(snapshot, today),
         activity_days,
         activity_months,
         returns: returns::returns(performance),

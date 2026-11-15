@@ -8,7 +8,7 @@ import { useReports } from '../hooks/use-reports'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { getEarningsCalendar, isTauri } from '../lib/api'
-import { addDays, localDateKey } from '../lib/dates'
+import { addDays, snapshotToday } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import {
   formatCurrency,
@@ -157,7 +157,7 @@ export function PeriodCard({
 }) {
   // Scrolled back in time, the period ends on the chart's end day.
   const [end] = useGraphEnd()
-  const day = end ?? data.insights?.today ?? localDateKey(Date.parse(data.updatedAt) / 1000)
+  const day = end ?? snapshotToday(data)
   const { from, to } = rangeDates(range, day, span?.start)
   // Rust sums the reports over the same days as the period's statement.
   const summaries = useReports(data, {
@@ -489,7 +489,7 @@ export function InvestmentsComingUp({
   summary?: InvestmentSummary
 }) {
   const native = typeof window !== 'undefined' && isTauri()
-  const today = data.insights?.today ?? localDateKey(Date.parse(data.updatedAt) / 1000)
+  const today = snapshotToday(data)
   const horizon = addDays(today, COMING_DAYS)
   const watch = (data.insights?.investmentAttention?.earningsWatch ?? []).toSorted()
   // The options market's expectation, read in Rust before the report.

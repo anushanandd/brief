@@ -9,11 +9,11 @@ import {
   benefitYear,
   moneyStripRequests,
   noAnalyticsAccounts,
-  reportDay,
   withoutReportView,
   type AnalyticsChart,
   type AnalyticsSearch,
 } from '../lib/analytics'
+import { snapshotToday } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import { analyticsIconColors, analyticsIcons, destinationPages } from '../lib/navigation'
 import type { FinanceSnapshot } from '../lib/schema'
@@ -56,7 +56,7 @@ export function MoneyStrip({
   )
   // Rust sums every report over the strip's window, through today as the report pages do, and
   // Benefits over its year: the one open on Benefits, else this one.
-  const today = reportDay(data)
+  const today = snapshotToday(data)
   const benefitsSearch = useMemo(
     () => ({ account: reportSearch.account, year: search.year }),
     [reportSearch.account, search.year],

@@ -65,7 +65,7 @@ pub fn period_as_of(view: &View, settings: &FinanceSettings, end: NaiveDate) -> 
             &snapshot.trades,
             &snapshot.transactions,
         ),
-        flows: flows::flows(&snapshot),
+        flows: flows::flows(&snapshot, end),
         changes: period_changes::changes(
             &snapshot.account_balance_history,
             &snapshot.brokerage_performance,

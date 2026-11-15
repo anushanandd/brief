@@ -141,12 +141,8 @@ fn investment_flows(
     (contributions.map(from_minor), market.map(from_minor))
 }
 
-/// Each account's flows, and the combined account's, over each chart period ending on the
-/// snapshot's day.
-pub fn flows(snapshot: &Snapshot) -> Vec<AccountFlows> {
-    let Some(end) = calendar::transaction_date(&snapshot.updated_at) else {
-        return Vec::new();
-    };
+/// Each account's flows, and the combined account's, over each chart period ending on `end`.
+pub fn flows(snapshot: &Snapshot, end: NaiveDate) -> Vec<AccountFlows> {
     let posted = snapshot
         .transactions
         .iter()
@@ -268,7 +264,7 @@ mod tests {
             value
         })
         .unwrap();
-        let result = flows(&snapshot);
+        let result = flows(&snapshot, NaiveDate::from_ymd_opt(2026, 9, 16).unwrap());
         let find = |id: &str, window: Window| {
             result
                 .iter()

@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest'
 
-import { addDays, daysBetween, validDate } from './dates'
+import { addDays, daysBetween, savedDay, validDate } from './dates'
 
 it('accepts only real calendar dates', () => {
   expect(validDate('2024-02-29')).toBe('2024-02-29')
@@ -21,4 +21,12 @@ it('counts calendar days across month, year, and daylight-saving boundaries', ()
   expect(addDays('2026-03-07', 2)).toBe('2026-03-09')
   expect(daysBetween('2026-03-07', '2026-03-09')).toBe(2)
   expect(daysBetween('2026-09-10', '2026-09-03')).toBe(-7)
+})
+
+it('saves an evening refresh on its local day, not the UTC one', () => {
+  // Tests run in Pacific time: 03:00 UTC is 8 pm the day before.
+  expect(savedDay({ updatedAt: '2026-09-16T03:00:00Z' })).toBe('2026-09-15')
+  expect(savedDay({ updatedAt: '2026-09-16T03:00:00Z', calendarDate: '2026-09-15' })).toBe(
+    '2026-09-15',
+  )
 })

@@ -1,3 +1,4 @@
+import { savedDay } from './dates'
 import { buildLiveChartData, chartRangeChange } from './live-chart'
 import type { Account, ChartChanges, FinanceSnapshot } from './schema'
 
@@ -128,7 +129,7 @@ function totalNetWorthPoints(
 ) {
   const history = data.netWorthHistory?.length
     ? data.netWorthHistory
-    : [{ date: data.updatedAt.slice(0, 10), value: data.netWorth }]
+    : [{ date: savedDay(data), value: data.netWorth }]
   return history.map((point) => ({
     ...point,
     netDeposits: null,
@@ -168,11 +169,11 @@ export function dashboardAccountViews(
       institution: account.institution,
       currentValue: account.value!,
       historySource: 'unavailable',
-      historyStart: data.updatedAt.slice(0, 10),
+      historyStart: savedDay(data),
       performanceMethod: 'value-only',
       points: [
         {
-          date: data.updatedAt.slice(0, 10),
+          date: savedDay(data),
           value: account.value!,
           netDeposits: null,
           sp500: null,

@@ -1,7 +1,7 @@
 import type { ReportRequest } from './api'
-import { localDateKey, validDate } from './dates'
+import { validDate } from './dates'
 import { type ChartPeriod, chartPeriods, graphWindows } from './graph-preferences'
-import type { FinanceSnapshot, Report } from './schema'
+import type { Report } from './schema'
 
 /** A report and how its page reads. */
 type ReportDefinition = {
@@ -120,10 +120,6 @@ export function resolvedAnalyticsSearch(
         : graphWindows.find(({ secs }) => secs === chosen)?.name),
   }
 }
-
-/** The day reports end on: the one the insights were computed for, else the local day. */
-export const reportDay = (data: FinanceSnapshot) =>
-  data.insights?.today ?? localDateKey(Date.now() / 1000)
 
 /**
  * What Money's strip asks Rust for: every report's total over the page's window, and Benefits'

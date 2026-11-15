@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 
-import { daysBetween, localDateKey } from '../lib/dates'
+import { daysBetween, savedDay, snapshotToday } from '../lib/dates'
 import { formatActivityName, formatCurrency, formatShortDay } from '../lib/format'
 import type { FinanceSnapshot } from '../lib/schema'
 import { expectedActivityDateLabel, RecurringMark, recurringActivities } from './expected-activity'
@@ -14,14 +14,14 @@ export function SubscriptionsCard({
   data: FinanceSnapshot
   className?: string
 }) {
-  const today = data.insights?.today ?? localDateKey(Date.now() / 1000)
+  const today = snapshotToday(data)
   const subscriptions = data.insights?.subscriptions
   const items = subscriptions?.items ?? []
   const activities = recurringActivities(
     data,
     items.map(({ sourceTransactionId }) => sourceTransactionId),
   )
-  const stale = daysBetween(data.updatedAt.slice(0, 10), today) > 3
+  const stale = daysBetween(savedDay(data), today) > 3
 
   return (
     <Card

@@ -6,8 +6,9 @@ import { seedSnapshot } from './data/fixtures/records'
 import { financeQueryKey } from './hooks/use-finance'
 import { reportsQuery } from './hooks/use-reports'
 import { spendingPeriodQuery } from './hooks/use-spending-period'
-import { moneyStripRequests, pageReportRequest, reportDay } from './lib/analytics'
+import { moneyStripRequests, pageReportRequest } from './lib/analytics'
 import { getReports, getSpendingPeriod } from './lib/api'
+import { snapshotToday } from './lib/dates'
 import { spendingPage, spendingPeriodRequest } from './lib/spending'
 import { router } from './router'
 
@@ -49,7 +50,7 @@ it('opens a report only once its data and its strip’s figures are in', async (
   expect(opened).toBe(false)
   release()
   await loading
-  const today = reportDay(data)
+  const today = snapshotToday(data)
   const search = { chart: 'cash-flow', range: 'month' } as const
   for (const request of [
     pageReportRequest(search, 'cash-flow', today),
@@ -83,7 +84,7 @@ it('opens Benefits on its own year whatever period the others share', async () =
   const { queryClient, data, testRouter } = app('/analytics?chart=card-credits&range=week')
   release()
   await testRouter.load()
-  const today = reportDay(data)
+  const today = snapshotToday(data)
   const request = pageReportRequest({ range: 'week' }, 'card-credits', today)
   // This calendar year to date: from Jan 1, through today.
   expect(request).toMatchObject({ chart: 'card-credits', from: `${today.slice(0, 4)}-01-01` })

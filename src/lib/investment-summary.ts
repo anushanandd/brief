@@ -1,4 +1,4 @@
-import { addDays, localDateKey } from './dates'
+import { addDays, snapshotToday } from './dates'
 import { type ChartPeriod } from './graph-preferences'
 import { rangeDates } from './investment-range'
 import type { FinanceSnapshot } from './schema'
@@ -15,7 +15,7 @@ import type { FinanceSnapshot } from './schema'
 export function summaryStart(data: FinanceSnapshot, range: ChartPeriod) {
   const windowStart = data.insights?.periods.find(({ window }) => window === range)?.start
   if (windowStart) return windowStart
-  const today = data.insights?.today ?? localDateKey(Date.parse(data.updatedAt) / 1000)
+  const today = snapshotToday(data)
   const firstDay = rangeDates(range, today).from
   return firstDay ? addDays(firstDay, -1) : undefined
 }

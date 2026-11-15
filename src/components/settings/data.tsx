@@ -17,6 +17,7 @@ import {
   isTauri,
   restoreFinanceBackup,
 } from '../../lib/api'
+import { localDateKey } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import { exportLotsCsv, exportUpcomingCalendar } from '../../lib/exports'
 import { financeSettings } from '../../lib/finance-settings'
@@ -90,7 +91,7 @@ function FinancialBackup() {
   const exportBackup = () =>
     runTask(setBusy, 'export', 'Could not save backup', async () => {
       await authenticateSensitiveAction()
-      const date = new Date().toISOString().slice(0, 10)
+      const date = localDateKey(Date.now() / 1000)
       const path = await save({
         defaultPath: `Brief ${date}.briefbackup`,
         filters: [{ name: 'Brief backup', extensions: ['briefbackup'] }],

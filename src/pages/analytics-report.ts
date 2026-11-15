@@ -1,12 +1,5 @@
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import {
-  useCallback,
-  useEffect,
-  useMemo,
-  useState,
-  type Dispatch,
-  type SetStateAction,
-} from 'react'
+import { useCallback, useMemo, type Dispatch, type SetStateAction } from 'react'
 
 import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
@@ -25,7 +18,7 @@ import {
   pageReportRequest,
   resolvedAnalyticsSearch,
 } from '../lib/analytics'
-import { localDateKey } from '../lib/dates'
+import { snapshotToday } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import {
   chartPeriodSeconds,
@@ -41,21 +34,6 @@ import { resolveSpendingAccount } from '../lib/spending'
 
 // One fixed order everywhere a chart is listed.
 const orderedCharts = analyticsCharts.map(({ id }) => id)
-
-/** Today's local date, kept current across midnight and whenever the window regains focus. */
-function useLocalDay() {
-  const [day, setDay] = useState(() => localDateKey(Date.now() / 1000))
-  useEffect(() => {
-    const update = () => setDay(localDateKey(Date.now() / 1000))
-    const timer = globalThis.setInterval(update, 60_000)
-    globalThis.addEventListener('focus', update)
-    return () => {
-      globalThis.clearInterval(timer)
-      globalThis.removeEventListener('focus', update)
-    }
-  }, [])
-  return day
-}
 
 /**
  * The route's search with its range resolved: the URL's, else the range chosen on any page
@@ -111,9 +89,8 @@ function useAnalyticsSearch(data: FinanceSnapshot, today: string) {
  */
 export function useAnalyticsReport(data: FinanceSnapshot) {
   // Reports end on the day the insights were computed for, the same day Spending and Home
-  // use, so one strip never shows two months. The clock takes over only without insights.
-  const clock = useLocalDay()
-  const today = data.insights?.today ?? clock
+  // use, so one strip never shows two months.
+  const today = snapshotToday(data)
   const { search, navigate, setRange, setWindow, scroll } = useAnalyticsSearch(data, today)
   const [graphEnd] = useGraphEnd()
   const selected = search.chart ?? analyticsCharts[0].id
