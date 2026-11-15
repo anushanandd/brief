@@ -200,31 +200,20 @@
   background: var(--popup-sheen), var(--popup-surface);
   box-shadow: var(--shadow-modal);
   color: var(--text-primary);
-  opacity: 1;
-  transform: none;
-  /* The display and top-layer transitions hold the frame while it settles back down. */
+}
+/* It rises in and leaves at once: only the open state transitions. */
+.settings-dialog[open] {
   transition:
     opacity var(--duration-modal) var(--ease-out),
-    transform var(--duration-modal-lift) var(--ease-lift),
-    display var(--duration-modal-lift) allow-discrete,
-    overlay var(--duration-modal-lift) allow-discrete;
-}
-.settings-dialog:not([open]) {
-  opacity: 0;
-  transform: var(--modal-enter-from);
+    transform var(--duration-modal-lift) var(--ease-lift);
 }
 .settings-dialog::backdrop {
   background: var(--dialog-backdrop);
   -webkit-backdrop-filter: var(--dialog-backdrop-filter);
   backdrop-filter: var(--dialog-backdrop-filter);
-  opacity: 1;
-  transition:
-    opacity var(--duration-modal) var(--ease-out),
-    display var(--duration-modal-lift) allow-discrete,
-    overlay var(--duration-modal-lift) allow-discrete;
 }
-.settings-dialog:not([open])::backdrop {
-  opacity: 0;
+.settings-dialog[open]::backdrop {
+  transition: opacity var(--duration-modal) var(--ease-out);
 }
 @starting-style {
   .settings-dialog[open] {

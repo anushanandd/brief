@@ -420,13 +420,16 @@ function CashAheadDetails({
             />
           </div>
           <ExpandableChart title="Cash ahead" named="cash ahead">
-            {(_expanded, expand) => (
-              <CashAheadChart
-                days={cash.days}
-                through={through}
-                lowest={cash.lowest}
-                onExpand={expand}
-              />
+            {(expanded, expand) => (
+              <>
+                {expanded ? <h2 className="balance-label">Cash ahead</h2> : null}
+                <CashAheadChart
+                  days={cash.days}
+                  through={through}
+                  lowest={cash.lowest}
+                  onExpand={expand}
+                />
+              </>
             )}
           </ExpandableChart>
           <p className="metric-detail">

@@ -812,15 +812,7 @@ export function ExpandableChart({
   const titleId = useId()
   const scrolled = Boolean(useGraphEnd()[0])
   const bounds = useScrollBounds(scroll)
-  const expand = useCallback(() => {
-    // The window grows out of the card it opens from, and shrinks back into it.
-    const card = dialog?.parentElement?.getBoundingClientRect()
-    if (dialog && card) {
-      dialog.style.setProperty('--chart-from-x', `${card.x + card.width / 2 - innerWidth / 2}px`)
-      dialog.style.setProperty('--chart-from-y', `${card.y + card.height / 2 - innerHeight / 2}px`)
-    }
-    setOpen(true)
-  }, [dialog])
+  const expand = useCallback(() => setOpen(true), [])
   const close = useCallback(() => setOpen(false), [])
   useRegisterActions(
     useMemo<AppAction[]>(
@@ -867,8 +859,9 @@ export function ExpandableChart({
         {present ? (
           <div className="chart-dialog-panel">
             <header className="chart-dialog-header">
-              {/* The title takes focus on open, so no control starts out ringed. */}
-              <h2 id={titleId} tabIndex={-1} {...dialogAutofocus}>
+              {/* The content already shows its name, so the title is for assistive tech; it
+                  takes focus on open, so no control starts out ringed. */}
+              <h2 id={titleId} className="sr-only" tabIndex={-1} {...dialogAutofocus}>
                 {title}
               </h2>
               <Button

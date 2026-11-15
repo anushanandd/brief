@@ -410,40 +410,30 @@ kbd.keycap {
   background: var(--popup-sheen), var(--popup-surface);
   box-shadow: var(--shadow-modal);
   color: var(--text-primary);
-  transition:
-    opacity var(--duration-modal) var(--ease-out),
-    transform var(--duration-modal-lift) var(--ease-lift),
-    display var(--duration-modal-lift) allow-discrete,
-    overlay var(--duration-modal-lift) allow-discrete;
 }
 /* An expanded chart fills most of the window, with room around it to show it opened over the
-   page. It grows from the card it opened from: the dialog is centered, so the card's offset from
-   the viewport's center is its offset from the dialog's. */
+   page. */
 .chart-dialog {
-  --modal-enter-from: scale(0.92);
   width: min(1440px, calc(100vw - 160px));
   height: min(900px, calc(100dvh - 140px));
   max-height: none;
-  transform-origin: calc(50% + var(--chart-from-x, 0px)) calc(50% + var(--chart-from-y, 0px));
 }
-.shortcuts-dialog:not([open]),
-.chart-dialog:not([open]) {
-  opacity: 0;
-  transform: var(--modal-enter-from);
+/* Both rise in and leave at once: only the open state transitions. */
+.shortcuts-dialog[open],
+.chart-dialog[open] {
+  transition:
+    opacity var(--duration-modal) var(--ease-out),
+    transform var(--duration-modal-lift) var(--ease-lift);
 }
 .shortcuts-dialog::backdrop,
 .chart-dialog::backdrop {
   background: var(--dialog-backdrop);
   -webkit-backdrop-filter: var(--dialog-backdrop-filter);
   backdrop-filter: var(--dialog-backdrop-filter);
-  transition:
-    opacity var(--duration-modal) var(--ease-out),
-    display var(--duration-modal-lift) allow-discrete,
-    overlay var(--duration-modal-lift) allow-discrete;
 }
-.shortcuts-dialog:not([open])::backdrop,
-.chart-dialog:not([open])::backdrop {
-  opacity: 0;
+.shortcuts-dialog[open]::backdrop,
+.chart-dialog[open]::backdrop {
+  transition: opacity var(--duration-modal) var(--ease-out);
 }
 @starting-style {
   .shortcuts-dialog[open],

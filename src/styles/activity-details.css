@@ -17,27 +17,19 @@
   background: var(--popup-sheen), var(--popup-surface);
   box-shadow: var(--shadow-modal);
   color: var(--text-primary);
+}
+/* It slides in from the edge and leaves at once. */
+.transaction-dialog[open] {
   transition:
     opacity var(--duration-modal) var(--ease-out),
-    transform var(--duration-modal-lift) var(--ease-lift),
-    display var(--duration-modal-lift) allow-discrete,
-    overlay var(--duration-modal-lift) allow-discrete;
-}
-/* Closed, it slides back to the edge it came from. */
-.transaction-dialog:not([open]) {
-  opacity: 0;
-  transform: translateX(16px);
+    transform var(--duration-modal-lift) var(--ease-lift);
 }
 .transaction-dialog::backdrop {
   /* Lighter than a modal's: the page behind stays readable. */
   background: color-mix(in srgb, var(--dialog-backdrop) 45%, transparent);
-  transition:
-    opacity var(--duration-modal) var(--ease-out),
-    display var(--duration-modal-lift) allow-discrete,
-    overlay var(--duration-modal-lift) allow-discrete;
 }
-.transaction-dialog:not([open])::backdrop {
-  opacity: 0;
+.transaction-dialog[open]::backdrop {
+  transition: opacity var(--duration-modal) var(--ease-out);
 }
 @starting-style {
   .transaction-dialog[open] {
