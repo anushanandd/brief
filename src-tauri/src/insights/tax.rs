@@ -173,7 +173,9 @@ pub struct HarvestEstimate {
     /// Unrealized losses on lots held a year or less, and longer, negative.
     pub short_term_loss: f64,
     pub long_term_loss: f64,
-    /// At this year's marginal rates, when there is a tax profile.
+    /// This year's estimate less the estimate with this sale alone, when there is a tax
+    /// profile: a loss beyond this year's gains and the capital-loss limit carries over and
+    /// isn't counted.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub tax_savings: Option<f64>,
@@ -603,6 +605,7 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
         .collect::<Vec<_>>();
 
     let mut results = Vec::new();
+    let mut this_year = None;
     for year in years {
         let in_year = |date: NaiveDate| date.year() == year && date <= today;
         let earned = Earned::in_year(transactions, &taxable, &in_year);
@@ -631,10 +634,24 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
             partial: first_activity
                 .is_none_or(|first| first > NaiveDate::from_ymd_opt(year, 1, 1).unwrap_or(first)),
         });
+        if year == today.year() {
+            this_year = Some((earned, short, long));
+        }
     }
 
-    let rates = this_year_rates(&results);
-    let harvest = harvest(harvestable, positions, trades, rates, today);
+    // This year's tax without a sale less with it, so a loss offsets this year's gains, then
+    // other income only to the limit; what carries over saves nothing this year.
+    let saving = |short_loss: i64, long_loss: i64| {
+        let (earned, short, long) = this_year.as_ref()?;
+        let tables = TABLES.years.get(&today.year())?;
+        let total = |short, long| {
+            Some(scenario(profile?, tables, &earned.income(false, short, long))?.total)
+        };
+        Some(round2(
+            total(*short, *long)? - total(short + short_loss, long + long_loss)?,
+        ))
+    };
+    let harvest = harvest(harvestable, positions, trades, &saving, today);
 
     Taxes {
         years: results,
@@ -958,13 +975,13 @@ fn estimate(
     })
 }
 
-/// Each harvestable position's unrealized losses by term, what selling would save at this
-/// year's rates, and when a recent purchase's wash-sale window closes.
+/// Each harvestable position's unrealized losses by term, what selling would save this year,
+/// and when a recent purchase's wash-sale window closes.
 fn harvest(
     harvestable: &[(String, String)],
     positions: &[PositionLots],
     trades: &[Trade],
-    rates: Option<Rates>,
+    saving: &dyn Fn(i64, i64) -> Option<f64>,
     today: NaiveDate,
 ) -> Vec<HarvestEstimate> {
     harvestable
@@ -995,13 +1012,7 @@ fn harvest(
                 account_id: account_id.clone(),
                 short_term_loss: from_minor(short_term_loss),
                 long_term_loss: from_minor(long_term_loss),
-                tax_savings: rates.map(|rates| {
-                    round2(
-                        -(from_minor(short_term_loss) * rates.short_term
-                            + from_minor(long_term_loss) * rates.long_term)
-                            / 100.0,
-                    )
-                }),
+                tax_savings: saving(short_term_loss, long_term_loss),
                 wash_until: latest_purchase.map(|date| date + Duration::days(WASH_DAYS)),
             })
         })
@@ -1500,7 +1511,7 @@ mod tests {
     }
 
     #[test]
-    fn harvest_values_losses_by_term_at_this_years_rates_and_names_the_wash_window() {
+    fn harvest_values_losses_by_term_against_this_years_tax_and_names_the_wash_window() {
         let positions = [
             // Gains never offset a lot's loss: only the losing lots count.
             position(
@@ -1528,7 +1539,7 @@ mod tests {
             harvestable: &harvestable,
             profile,
         };
-        // $80,000 single: 22% ordinary, 15% long-term, both with 5% state tax.
+        // $80,000 single, with 5% state tax.
         let with_profile = profile(80_000.0, Some(5.0));
         let result = taxes(inputs(Some(&with_profile)), day("2026-09-20"));
         assert_eq!(result.harvest.len(), 2);
@@ -1537,7 +1548,9 @@ mod tests {
             (test.short_term_loss, test.long_term_loss),
             (-150.25, -300.0)
         );
-        assert_eq!(test.tax_savings, Some(round2(150.25 * 0.27 + 300.0 * 0.20)));
+        // With no gains this year, the whole loss comes off ordinary income at 22%. State tax
+        // here is on investment income only, which has none to reduce.
+        assert_eq!(test.tax_savings, Some(99.06));
         // Bought 19 days ago in any account: a sale before Oct 1 would be a wash sale.
         assert_eq!(test.wash_until, Some(day("2026-10-01")));
         let other = &result.harvest[1];
@@ -1551,6 +1564,48 @@ mod tests {
         // Thirty-one days on, the window has closed.
         let later = taxes(inputs(None), day("2026-10-02"));
         assert_eq!(later.harvest[0].wash_until, None);
+    }
+
+    #[test]
+    fn a_harvest_saves_only_what_this_years_gains_and_loss_limit_allow() {
+        let positions = [
+            position("TEST", "taxable", &[(-20_000.0, false)]),
+            position("OTHER", "taxable", &[(-20_000.0, true)]),
+        ];
+        let harvestable = [
+            ("TEST".to_owned(), "taxable".to_owned()),
+            ("OTHER".to_owned(), "taxable".to_owned()),
+        ];
+        let savings = |trades: &[Trade]| {
+            taxes(
+                TaxInputs {
+                    transactions: &[],
+                    trades,
+                    accounts: &[],
+                    positions: &positions,
+                    harvestable: &harvestable,
+                    profile: Some(&profile(80_000.0, None)),
+                },
+                day("2026-09-20"),
+            )
+            .harvest
+            .iter()
+            .map(|harvest| harvest.tax_savings)
+            .collect::<Vec<_>>()
+        };
+        // No gains: $3,000 of either loss comes off ordinary income at 22%; the rest carries
+        // to later years and saves nothing this year.
+        assert_eq!(savings(&[]), [Some(660.0), Some(660.0)]);
+        // A $15,000 short-term gain is offset first, then $3,000 more.
+        let gain = [trade(
+            "gain",
+            "SELL",
+            "2026-05-01",
+            "taxable",
+            10.0,
+            Some((15_000.0, 0.0)),
+        )];
+        assert_eq!(savings(&gain), [Some(3_960.0), Some(3_960.0)]);
     }
 
     #[test]
