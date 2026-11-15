@@ -442,6 +442,7 @@ it('projects withholding from pay statements, with each test that can’t run un
         currentYear: { percent: 90, tax: 10_000, required: 9_000, met: true },
         priorYear: { percent: 100 },
         met: 'currentYear',
+        fromLastYear: false,
       },
     },
   }
@@ -450,6 +451,8 @@ it('projects withholding from pay statements, with each test that can’t run un
   expect(html).toContain('pay statement dated')
   expect(html).toContain('18 of 24 pay periods')
   expect(html).toContain('Filing status from your tax profile')
+  // Without last year's history, nothing still to come is guessed.
+  expect(html).toContain('so far only, since saved history doesn’t cover last year')
   expect(html).toContain('Met: 90% of this year’s tax')
   // Last year's tax isn't known, so its test says what it needs.
   expect(html).toContain('needs every W-2 from last year')

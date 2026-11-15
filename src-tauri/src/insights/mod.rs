@@ -505,7 +505,10 @@ pub fn derive_with_documents(
         today,
         documents::pay_projections(today.year(), documents),
         taxes.years.iter().find(|year| year.year == today.year()),
-        income_in(today.year()).map_or(0.0, |income| income.self_employment),
+        (
+            income_in(today.year()).map_or(0.0, |income| income.self_employment),
+            income_in(today.year() - 1).map_or(0.0, |income| income.self_employment_later),
+        ),
         income_in(today.year() - 1).filter(|income| income.wages_from == "w2"),
         tax::prior_investment(&taxes, transactions, trades, today),
         settings

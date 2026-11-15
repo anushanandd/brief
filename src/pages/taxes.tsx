@@ -242,7 +242,11 @@ function WithholdingSection({
               .join('; ')}. `
           : 'A pay statement this year doesn’t print its period, gross, and withholding, so it can’t be carried forward. '}
         {withholding.filingStatus
-          ? 'Filing status from your tax profile; interest, dividends, and contractor pay carried to December at their pace so far, and gains as realized. Includes self-employment and Additional Medicare tax.'
+          ? `Filing status from your tax profile; ${
+              withholding.fromLastYear
+                ? 'interest, dividends, and contractor pay so far plus what last year paid after this date'
+                : 'interest, dividends, and contractor pay so far only, since saved history doesn’t cover last year'
+            }, and gains as realized. Includes self-employment and Additional Medicare tax.`
           : 'Add a filing status to project the tax.'}
       </p>
       <div className="account-summary-metrics">

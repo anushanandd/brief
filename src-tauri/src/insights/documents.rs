@@ -4,7 +4,7 @@
 //! state it.
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{Datelike, Duration, NaiveDate};
+use chrono::{Datelike, Duration, Months, NaiveDate};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -125,6 +125,9 @@ pub struct Income {
     pub uncounted_employers: Vec<String>,
     /// Contractor pay: 1099-NEC box 1, else what arrived from contractors' payers.
     pub self_employment: f64,
+    /// Contractor deposits after today's day of the year: for last year, what this year may
+    /// still bring.
+    pub self_employment_later: f64,
     pub self_employment_tax: f64,
     /// Wages and self-employment less half that tax and the standard deduction; absent
     /// without a filing status or the year's tables.
@@ -596,8 +599,11 @@ fn tax_year(
     let in_year = posted
         .iter()
         .filter(|(date, _)| date.year() == year)
-        .map(|(_, transaction)| *transaction)
         .collect::<Vec<_>>();
+    // This day of the year in `year`; what arrived after it is still to come this year.
+    let same_day = u32::try_from(today.year() - year)
+        .ok()
+        .and_then(|years| today.checked_sub_months(Months::new(12 * years)));
 
     // Each employer: one whose pay statements or W-2 Brief has, or whose payroll arrived.
     let mut employers = Vec::<(String, &'static str)>::new();
@@ -633,8 +639,9 @@ fn tax_year(
         })
         .filter_map(|document| document.issuer.clone())
         .collect::<Vec<_>>();
-    let mut contractors = BTreeMap::<String, i64>::new();
-    for transaction in in_year.iter().filter(|transaction| {
+    // Each contractor's pay in cents, and the part after `same_day`.
+    let mut contractors = BTreeMap::<String, (i64, i64)>::new();
+    for (date, transaction) in in_year.iter().filter(|(_, transaction)| {
         transaction.kind() == Some(TransactionKind::Income) && transaction.amount > 0.0
     }) {
         let Some(name) = payer(transaction) else {
@@ -656,7 +663,11 @@ fn tax_year(
                 .find(|known| same_payer(known, &name))
                 .cloned()
                 .unwrap_or(name);
-            *contractors.entry(key).or_default() += minor_units(transaction.amount);
+            let paid = contractors.entry(key).or_default();
+            paid.0 += minor_units(transaction.amount);
+            if same_day.is_some_and(|same_day| *date > same_day) {
+                paid.1 += minor_units(transaction.amount);
+            }
         }
     }
     let predictions = predictions(year, documents);
@@ -682,7 +693,7 @@ fn income(
     documents: &[Document],
     predictions: &[W2Prediction],
     employers: &[(String, &'static str)],
-    contractors: &BTreeMap<String, i64>,
+    contractors: &BTreeMap<String, (i64, i64)>,
     filing_status: Option<&str>,
 ) -> Option<Income> {
     let w2s = documents
@@ -768,9 +779,17 @@ fn income(
                     .is_some_and(|issuer| same_payer(issuer, name))
             })
         })
-        .map(|(_, cents)| from_minor(*cents))
+        .map(|(_, (cents, _))| from_minor(*cents))
         .filter(|paid| *paid >= 100.0)
         .sum::<f64>();
+    // Deposits are dated where a 1099-NEC isn't, so every contractor's later pay counts.
+    let self_employment_later = from_minor(
+        contractors
+            .values()
+            .filter(|(cents, _)| *cents >= 10_000)
+            .map(|(_, later)| later)
+            .sum(),
+    );
     let self_employment = nec
         .iter()
         .filter_map(|form| form.amount("box1"))
@@ -793,6 +812,7 @@ fn income(
         wages_from,
         uncounted_employers,
         self_employment: round2(self_employment),
+        self_employment_later,
         self_employment_tax,
         taxable_income,
     })

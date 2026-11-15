@@ -7,8 +7,8 @@ import type { PayProjection } from "./PayProjection";
  * This year's federal withholding carried to December from each employer's latest pay
  * statement (`documents::pay_projections`), with the Additional Medicare Tax employers
  * withhold, against the federal tax on the projected wages and contractor pay less half its
- * self-employment tax and the standard deduction, plus this year's interest, dividends,
- * and contractor pay carried to December at their pace so far and its gains as realized
+ * self-employment tax and the standard deduction, plus this year's interest, dividends, and
+ * contractor pay so far with what last year paid after this day, and its gains as realized
  * (unclassified dividends as ordinary), plus self-employment and Additional Medicare tax, at
  * the filing status of the tax profile. Federal only: no state tax, credits, other
  * deductions, or other income. Last year's tax is figured the same way from last year's
@@ -35,4 +35,10 @@ projectedTax?: number,
 /**
  * Projected withholding less projected tax: below zero is a shortfall.
  */
-difference?: number, currentYear: Harbor, priorYear: Harbor, met: HarborMet, };
+difference?: number, currentYear: Harbor, priorYear: Harbor, met: HarborMet, 
+/**
+ * The interest, dividends, and contractor pay still to come are what last year paid
+ * after this day; without saved history for all of last year, only what has come so far
+ * counts.
+ */
+fromLastYear: boolean, };

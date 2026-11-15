@@ -14,7 +14,7 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::sync::LazyLock;
 
-use chrono::{Datelike, Duration, NaiveDate};
+use chrono::{Datelike, Duration, Months, NaiveDate};
 use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
@@ -199,6 +199,18 @@ pub struct TaxYear {
     pub tables_available: bool,
     /// Saved activity starts after January 1, so the year's amounts are incomplete.
     pub partial: bool,
+    /// This year only: what last year paid after this day a year ago, as the interest and
+    /// dividends still to come; absent when saved history doesn't cover all of last year.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub still_to_come: Option<StillToCome>,
+}
+
+#[derive(Clone, Debug, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct StillToCome {
+    pub interest: f64,
+    pub dividends: Dividends,
 }
 
 /// A taxable position below cost, with what selling it might save.
@@ -290,8 +302,8 @@ pub struct Harbor {
 /// This year's federal withholding carried to December from each employer's latest pay
 /// statement (`documents::pay_projections`), with the Additional Medicare Tax employers
 /// withhold, against the federal tax on the projected wages and contractor pay less half its
-/// self-employment tax and the standard deduction, plus this year's interest, dividends,
-/// and contractor pay carried to December at their pace so far and its gains as realized
+/// self-employment tax and the standard deduction, plus this year's interest, dividends, and
+/// contractor pay so far with what last year paid after this day, and its gains as realized
 /// (unclassified dividends as ordinary), plus self-employment and Additional Medicare tax, at
 /// the filing status of the tax profile. Federal only: no state tax, credits, other
 /// deductions, or other income. Last year's tax is figured the same way from last year's
@@ -325,6 +337,10 @@ pub struct Withholding {
     pub current_year: Harbor,
     pub prior_year: Harbor,
     pub met: HarborMet,
+    /// The interest, dividends, and contractor pay still to come are what last year paid
+    /// after this day; without saved history for all of last year, only what has come so far
+    /// counts.
+    pub from_last_year: bool,
 }
 
 fn ordinary_tax(brackets: &[(Option<f64>, f64)], income: f64) -> f64 {
@@ -648,16 +664,25 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
         let estimate = profile
             .zip(tables)
             .and_then(|(profile, tables)| estimate(profile, tables, &earned, short, long));
+        let partial = |year: i32| {
+            first_activity
+                .is_none_or(|first| first > NaiveDate::from_ymd_opt(year, 1, 1).unwrap_or(first))
+        };
+        let still_to_come = (year == today.year() && !partial(year - 1))
+            .then(|| today.checked_sub_months(Months::new(12)))
+            .flatten()
+            .map(|year_ago| {
+                let later = |date: NaiveDate| date.year() == year - 1 && date > year_ago;
+                let earned = Earned::in_year(transactions, &taxable, &later);
+                StillToCome {
+                    interest: from_minor(earned.interest),
+                    dividends: earned.dividends(),
+                }
+            });
         results.push(TaxYear {
             year,
             interest: from_minor(earned.interest),
-            dividends: Dividends {
-                total: from_minor(earned.qualified + earned.non_qualified + earned.unclassified),
-                qualified: from_minor(earned.qualified),
-                non_qualified: from_minor(earned.non_qualified),
-                unclassified: from_minor(earned.unclassified),
-                capital_gain_distributions: from_minor(earned.capital_gain),
-            },
+            dividends: earned.dividends(),
             realized,
             wash_sales: washes
                 .iter()
@@ -666,8 +691,8 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
                 .collect(),
             estimate,
             tables_available: tables.is_some(),
-            partial: first_activity
-                .is_none_or(|first| first > NaiveDate::from_ymd_opt(year, 1, 1).unwrap_or(first)),
+            partial: partial(year),
+            still_to_come,
         });
         if year == today.year() {
             this_year = Some((earned, short, long));
@@ -796,14 +821,15 @@ struct Earnings {
 
 /// What `Withholding` describes, for `today`'s year: `projections` from its pay statements
 /// (`None` when one can't be carried forward), `investment` its tax year so far,
-/// `self_employment` its contractor pay so far, `prior_earnings` last year's income from its
-/// documents when every W-2 is in, and `prior_investment` last year's investment income.
-/// Without the last two, the prior-year test can't be settled.
+/// `self_employment` its contractor pay so far and what last year's arrived after this day,
+/// `prior_earnings` last year's income from its documents when every W-2 is in, and
+/// `prior_investment` last year's investment income. Without the last two, the prior-year
+/// test can't be settled.
 pub fn withholding(
     today: NaiveDate,
     projections: Option<Vec<super::documents::PayProjection>>,
     investment: Option<&TaxYear>,
-    self_employment: f64,
+    (self_employment, self_employment_later): (f64, f64),
     prior_earnings: Option<&super::documents::Income>,
     prior_investment: PriorInvestment<'_>,
     filing_status: Option<&str>,
@@ -812,9 +838,6 @@ pub fn withholding(
         return None;
     }
     let year = today.year();
-    let year_days = NaiveDate::from_ymd_opt(year, 12, 31).map_or(365, |end| end.ordinal());
-    let pace = f64::from(year_days) / f64::from(today.ordinal());
-    let carried = |cents: i64| (cents as f64 * pace).round() as i64;
     let rules = &TABLES.safe_harbor;
     let sum = |value: fn(&super::documents::PayProjection) -> f64| {
         projections.as_ref().map(|projections| {
@@ -834,15 +857,29 @@ pub fn withholding(
         let over = projection.projected_medicare_wages - rules.withholding_threshold;
         projection.projected_withholding + rules.rate / 100.0 * over.max(0.0)
     });
-    // Interest, dividends, and contractor pay carry to December at their pace so far, as
-    // wages do; gains count as realized.
-    let income = investment.map(income_of).map(|income| Income {
-        interest: carried(income.interest),
-        qualified: carried(income.qualified),
-        ordinary_dividends: carried(income.ordinary_dividends),
-        ..income
+    // Interest, dividends, and contractor pay still to come are what last year paid after this
+    // day, when saved history covers last year; gains count as realized.
+    let still_to_come = investment.and_then(|year| year.still_to_come.as_ref());
+    let income = investment.map(income_of).map(|income| match still_to_come {
+        Some(later) => {
+            let dividends = &later.dividends;
+            Income {
+                interest: income.interest + minor_units(later.interest),
+                qualified: income.qualified + minor_units(dividends.qualified),
+                ordinary_dividends: income.ordinary_dividends
+                    + minor_units(dividends.non_qualified)
+                    + minor_units(dividends.unclassified),
+                long_term: income.long_term + minor_units(dividends.capital_gain_distributions),
+                ..income
+            }
+        }
+        None => income,
     });
-    let self_employment = from_minor(carried(minor_units(self_employment)));
+    let self_employment = if still_to_come.is_some() {
+        round2(self_employment + self_employment_later)
+    } else {
+        self_employment
+    };
     let earnings = projected_wages
         .zip(sum(|projection| projection.projected_medicare_wages))
         .map(|(wages, medicare_wages)| Earnings {
@@ -946,6 +983,7 @@ pub fn withholding(
         current_year,
         prior_year,
         met,
+        from_last_year: still_to_come.is_some(),
     })
 }
 
@@ -988,6 +1026,16 @@ impl Earned {
             }
         }
         earned
+    }
+
+    fn dividends(&self) -> Dividends {
+        Dividends {
+            total: from_minor(self.qualified + self.non_qualified + self.unclassified),
+            qualified: from_minor(self.qualified),
+            non_qualified: from_minor(self.non_qualified),
+            unclassified: from_minor(self.unclassified),
+            capital_gain_distributions: from_minor(self.capital_gain),
+        }
     }
 
     /// The year's income with the unclassified dividends counted as qualified or as ordinary.
@@ -1958,6 +2006,7 @@ mod tests {
             wages_from: "w2",
             uncounted_employers: Vec::new(),
             self_employment: 0.0,
+            self_employment_later: 0.0,
             self_employment_tax: 0.0,
             taxable_income: None,
         }
@@ -1973,6 +2022,7 @@ mod tests {
             estimate: None,
             tables_available: true,
             partial: false,
+            still_to_come: None,
         }
     }
 
@@ -1986,7 +2036,7 @@ mod tests {
             day("2026-09-30"),
             Some(vec![projection(wages, withholding)]),
             Some(&quiet_year()),
-            0.0,
+            (0.0, 0.0),
             prior_wages.map(w2).as_ref(),
             PriorInvestment::None,
             status,
@@ -2006,7 +2056,7 @@ mod tests {
                 day("2026-09-30"),
                 Some(vec![projection(150_000.0, 1_000.0)]),
                 Some(&quiet_year()),
-                0.0,
+                (0.0, 0.0),
                 Some(&w2(140_000.0)),
                 investment,
                 Some("single"),
@@ -2036,7 +2086,7 @@ mod tests {
             day("2026-09-30"),
             Some(vec![projection(80_000.0, 1_000.0)]),
             Some(&quiet_year()),
-            0.0,
+            (0.0, 0.0),
             Some(&w2(77_000.0)),
             PriorInvestment::Year(&prior),
             Some("marriedSeparate"),
@@ -2069,23 +2119,97 @@ mod tests {
     }
 
     #[test]
-    fn interest_and_dividends_carry_to_december_like_wages_and_gains_stay_as_realized() {
-        // March 14 is a fifth of the year: $2,000 of interest so far is $10,000 by December,
-        // at 22% on wages that fill the 12% bracket. The $1,000 gain counts once.
+    fn the_rest_of_the_year_is_what_last_year_paid_after_this_day() {
+        // A dividend paid January 3 counts once; last year's December distribution and
+        // interest after January 3 are what is still to come, and the gain counts once.
         let mut so_far = quiet_year();
-        so_far.interest = 2_000.0;
+        so_far.dividends.non_qualified = 1_000.0;
+        so_far.dividends.total = 1_000.0;
         so_far.realized.short_term = 1_000.0;
-        let result = super::withholding(
-            day("2026-03-14"),
-            Some(vec![projection(66_500.0, 0.0)]),
-            Some(&so_far),
-            0.0,
+        let run = |year: &TaxYear, contractor: (f64, f64)| {
+            super::withholding(
+                day("2026-01-03"),
+                Some(vec![projection(66_500.0, 0.0)]),
+                Some(year),
+                contractor,
+                None,
+                PriorInvestment::None,
+                Some("single"),
+            )
+            .unwrap()
+        };
+        // Without last year's history, only what has come so far counts.
+        let unknown = run(&so_far, (500.0, 4_000.0));
+        assert!(!unknown.from_last_year);
+        let so_far_only = 5_800.0 + 2_000.0 * 0.22;
+        let contractor = |pay: f64| {
+            let tax = self_employment_tax(2026, pay, 66_500.0);
+            tax + (pay - tax / 2.0) * 0.22
+        };
+        assert!((unknown.projected_tax.unwrap() - so_far_only - contractor(500.0)).abs() < 0.02);
+
+        let mut known = so_far.clone();
+        known.still_to_come = Some(StillToCome {
+            interest: 3_000.0,
+            dividends: Dividends {
+                capital_gain_distributions: 2_000.0,
+                ..Dividends::default()
+            },
+        });
+        let result = run(&known, (500.0, 4_000.0));
+        assert!(result.from_last_year);
+        // $3,000 more interest at 22% and a $2,000 long-term distribution at 15%.
+        let expected = so_far_only + 3_000.0 * 0.22 + 2_000.0 * 0.15 + contractor(4_500.0);
+        assert!((result.projected_tax.unwrap() - expected).abs() < 0.02);
+    }
+
+    #[test]
+    fn still_to_come_is_last_years_income_after_this_day_when_history_covers_it() {
+        let accounts = [account("taxable", "taxable"), account("ira", "taxDeferred")];
+        let mut transactions = vec![
+            income("before", "interest", "2025-03-01", "taxable", 10.0, None),
+            income("after", "interest", "2025-10-01", "taxable", 20.0, None),
+            income(
+                "distribution",
+                "dividend",
+                "2025-12-15",
+                "taxable",
+                500.0,
+                Some("capitalGain"),
+            ),
+            income("ira", "dividend", "2025-12-15", "ira", 900.0, None),
+            income("this", "interest", "2026-03-01", "taxable", 30.0, None),
+        ];
+        let run = |transactions: &[Transaction]| {
+            taxes(
+                TaxInputs {
+                    transactions,
+                    trades: &[],
+                    accounts: &accounts,
+                    positions: &mut [],
+                    harvestable: &[],
+                    profile: None,
+                },
+                day("2026-09-20"),
+            )
+            .years[0]
+                .still_to_come
+                .clone()
+        };
+        // History starts in March of last year, so last year can't stand in.
+        assert_eq!(run(&transactions), None);
+        transactions.push(income(
+            "old",
+            "interest",
+            "2024-12-31",
+            "taxable",
+            1.0,
             None,
-            PriorInvestment::None,
-            Some("single"),
-        )
-        .unwrap();
-        assert_eq!(result.projected_tax, Some(5_800.0 + 11_000.0 * 0.22));
+        ));
+        let later = run(&transactions).unwrap();
+        assert_eq!(later.interest, 20.0);
+        assert_eq!(later.dividends.capital_gain_distributions, 500.0);
+        assert_eq!(later.dividends.total, 0.0);
     }
 
     #[test]
@@ -2099,7 +2223,7 @@ mod tests {
                 day("2026-12-31"),
                 Some(vec![pay(medicare_wages)]),
                 Some(&quiet_year()),
-                self_employment,
+                (self_employment, 0.0),
                 None,
                 PriorInvestment::None,
                 Some(status),
@@ -2136,7 +2260,7 @@ mod tests {
                 day("2026-09-30"),
                 Some(vec![projection(150_000.0, 1_000.0)]),
                 Some(&quiet_year()),
-                0.0,
+                (0.0, 0.0),
                 Some(prior),
                 PriorInvestment::None,
                 Some("single"),
@@ -2159,7 +2283,7 @@ mod tests {
             day("2026-12-31"),
             Some(vec![projection(10_000.0, 0.0)]),
             Some(&interest),
-            0.0,
+            (0.0, 0.0),
             None,
             PriorInvestment::None,
             Some("single"),
@@ -2173,7 +2297,7 @@ mod tests {
             day("2026-12-31"),
             Some(vec![projection(10_000.0, 0.0)]),
             Some(&qualified),
-            0.0,
+            (0.0, 0.0),
             None,
             PriorInvestment::None,
             Some("single"),
@@ -2226,7 +2350,7 @@ mod tests {
             day("2026-09-30"),
             None,
             Some(&quiet_year()),
-            0.0,
+            (0.0, 0.0),
             None,
             PriorInvestment::None,
             Some("single"),
@@ -2247,7 +2371,7 @@ mod tests {
                 day("2026-09-30"),
                 Some(Vec::new()),
                 Some(&quiet_year()),
-                0.0,
+                (0.0, 0.0),
                 None,
                 PriorInvestment::None,
                 Some("single")
@@ -2259,7 +2383,7 @@ mod tests {
             day("2030-09-30"),
             Some(vec![projection(66_500.0, 5_220.0)]),
             Some(&quiet_year()),
-            0.0,
+            (0.0, 0.0),
             None,
             PriorInvestment::None,
             Some("single"),

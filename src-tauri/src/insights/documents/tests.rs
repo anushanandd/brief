@@ -272,6 +272,34 @@ fn the_latest_pay_statement_predicts_the_w2_and_a_differing_w2_is_raised() {
 }
 
 #[test]
+fn last_years_contractor_pay_after_this_day_is_what_may_still_come() {
+    let transactions = vec![
+        row(
+            "spring",
+            "cash",
+            "2025-04-02",
+            "Example AI Sol EXAMPLE",
+            1_500.0,
+            TransactionKind::Income,
+        ),
+        row(
+            "fall",
+            "cash",
+            "2025-11-17",
+            "Example AI Sol EXAMPLE",
+            2_200.0,
+            TransactionKind::Income,
+        ),
+    ];
+    let result = run(&[], &transactions, &accounts(), "2026-10-15");
+    let last = result.years[1].income.as_ref().unwrap();
+    assert_eq!(
+        (last.self_employment, last.self_employment_later),
+        (3_700.0, 2_200.0)
+    );
+}
+
+#[test]
 fn contractor_pay_carries_self_employment_tax_and_a_1099_nec_states_it() {
     let transactions = vec![
         row(

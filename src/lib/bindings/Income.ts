@@ -24,7 +24,12 @@ uncountedEmployers: Array<string>,
 /**
  * Contractor pay: 1099-NEC box 1, else what arrived from contractors' payers.
  */
-selfEmployment: number, selfEmploymentTax: number, 
+selfEmployment: number, 
+/**
+ * Contractor deposits after today's day of the year: for last year, what this year may
+ * still bring.
+ */
+selfEmploymentLater: number, selfEmploymentTax: number, 
 /**
  * Wages and self-employment less half that tax and the standard deduction; absent
  * without a filing status or the year's tables.
