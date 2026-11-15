@@ -100,26 +100,28 @@ public func briefCalendarRequest(
   }
 }
 
-/// Accounts a calendar can be made in, the one holding the default calendar first, as
-/// `[{id, title, kind}]`.
+/// Accounts a calendar can be made in, as `[{id, title, kind}]`: On My Mac first, since the
+/// events carry balances and only it keeps them off a server, then the default calendar's.
 @_cdecl("brief_calendar_sources")
 public func briefCalendarSources() -> UnsafeMutablePointer<CChar>? {
   queue.sync {
     let store = store()
     let preferred = store.defaultCalendarForNewEvents?.source.sourceIdentifier
     let usable = store.sources.filter { [.local, .calDAV, .exchange].contains($0.sourceType) }
-    let sources =
-      usable.filter { $0.sourceIdentifier == preferred }
-      + usable.filter { $0.sourceIdentifier != preferred }
+    let rank = { (source: EKSource) in
+      source.sourceType == .local ? 0 : source.sourceIdentifier == preferred ? 1 : 2
+    }
+    let sources = usable.sorted { rank($0) < rank($1) }
     return json(
       sources.map { ["id": $0.sourceIdentifier, "title": $0.title, "kind": sourceKind($0)] })
   }
 }
 
 /// `{id?, sourceId?}`: the saved calendar when it still exists. Given `sourceId`, else a
-/// calendar the user already named "Brief" that Brief can write to (Google accounts don't let
-/// apps make calendars, so one made in Google Calendar is used), else a new "Brief" calendar
-/// in `sourceId`. Answers `{id, title, source}`, `{missing: true}`, or `{error}`.
+/// calendar the user already named "Brief" in that account that Brief can write to (Google
+/// accounts don't let apps make calendars, so one made in Google Calendar is used), else a new
+/// "Brief" calendar in it. A "Brief" calendar in another account, perhaps one shared with
+/// someone, is never used. Answers `{id, title, source}`, `{missing: true}`, or `{error}`.
 @_cdecl("brief_calendar_ensure")
 public func briefCalendarEnsure(_ request: UnsafePointer<CChar>?) -> UnsafeMutablePointer<CChar>? {
   queue.sync {
@@ -133,7 +135,7 @@ public func briefCalendarEnsure(_ request: UnsafePointer<CChar>?) -> UnsafeMutab
       $0.title.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare("Brief") == .orderedSame
         && $0.allowsContentModifications
     }
-    if let found = named.first(where: { $0.source.sourceIdentifier == sourceId }) ?? named.first {
+    if let found = named.first(where: { $0.source.sourceIdentifier == sourceId }) {
       return json(describe(found))
     }
     guard let source = store.sources.first(where: { $0.sourceIdentifier == sourceId }) else {

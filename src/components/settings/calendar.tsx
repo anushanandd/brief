@@ -58,6 +58,7 @@ export function CalendarSyncCard() {
   })
   const [sourceId, setSourceId] = useState<string>()
   const chosen = sourceId ?? sources.data?.[0]?.id
+  const chosenSource = sources.data?.find(({ id }) => id === chosen)
   const [pending, setPending] = useState<'on' | 'keep' | 'remove' | null>(null)
   const [confirmingOff, setConfirmingOff] = useState(false)
 
@@ -114,11 +115,15 @@ export function CalendarSyncCard() {
           onCheckedChange={(checked) => (checked ? void turnOn() : setConfirmingOff(true))}
         />
       </SettingsRow>
-      {needsSource && (sources.data?.length ?? 0) > 1 && chosen ? (
+      {needsSource && chosenSource ? (
         <SettingsRow
           id="brief-calendar-account"
           title="Calendar account"
-          description="Where Brief makes its calendar if you have none named Brief."
+          description={
+            chosenSource.kind === 'local'
+              ? 'On this Mac only.'
+              : `Events, with amounts and accounts, are stored by ${chosenSource.title} and reach every device signed in to it.`
+          }
         >
           <ChartRangeSelect
             label="Calendar account"
@@ -127,7 +132,7 @@ export function CalendarSyncCard() {
               label: title,
               accessibleLabel: title,
             }))}
-            value={chosen}
+            value={chosenSource.id}
             onValueChange={setSourceId}
           />
         </SettingsRow>
