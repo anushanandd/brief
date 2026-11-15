@@ -11,7 +11,8 @@ src-tauri/.taurignore
 *.tsbuildinfo
 # Private notes, card rules, and records that hold real data; and a machine's own agent settings.
 notes/
-.claude/settings.local.json
+# Claude Code's settings and skills stay on this Mac.
+.claude/
 
 # Private artefacts: statements, exports, databases, and scratch output never belong in the repo.
 # A synthetic fixture that needs one of these extensions gets a precise `!path` negation here.

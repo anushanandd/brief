@@ -52,7 +52,7 @@ Plaid · SnapTrade · Alpaca · SEC EDGAR · Alpha Vantage · statements · docu
 
 **Tests run on synthetic lives.** Results depend only on the data and the local day, so tests pin both. Over 800 Rust tests and 600 frontend tests run on generated people, and none on real data.
 
-[ARCHITECTURE.md](ARCHITECTURE.md) has the rules every part keeps and a map of the code, and [docs/decisions/](docs/decisions/) records why the main choices were made.
+[ARCHITECTURE.md](ARCHITECTURE.md) has the rules every part keeps and a map of the code.
 
 ## Privacy
 
