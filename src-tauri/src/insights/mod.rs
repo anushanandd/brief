@@ -268,7 +268,7 @@ pub fn derive_with_documents(
         &snapshot.accounts,
         settings,
         &snapshot.updated_at,
-    )?;
+    );
     for transaction in &mut snapshot.transactions {
         transaction.recurring_id = Some(forecast::recurring_key(transaction));
     }
@@ -970,7 +970,7 @@ fn credits_follow_purchases(
     accounts: &[Account],
     settings: &FinanceSettings,
     updated_at: &str,
-) -> Result<(), String> {
+) {
     let mut others = transactions
         .iter()
         .filter(|transaction| transaction.other)
@@ -1001,17 +1001,16 @@ fn credits_follow_purchases(
         }
     }
     for transaction in transactions.iter_mut() {
+        // An unclassified row can't be marked; it shouldn't cost every other insight.
+        let Some(classification) = transaction.classification.as_mut() else {
+            continue;
+        };
         if !follow.contains(&transaction.id) {
             continue;
         }
-        let classification = transaction
-            .classification
-            .as_mut()
-            .ok_or("Unclassified transaction")?;
         crate::transaction_policy::owe(classification, transaction.amount);
         transaction.other = true;
     }
-    Ok(())
 }
 
 /// Spending and benefits use only the explicitly saved credit account, never ordering.
