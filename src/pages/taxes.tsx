@@ -10,7 +10,13 @@ import { useFinance } from '../hooks/use-finance'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { financeSettings } from '../lib/finance-settings'
-import { displayCase, formatCurrency, formatSignedCurrency, valueTone } from '../lib/format'
+import {
+  countOf,
+  displayCase,
+  formatCurrency,
+  formatSignedCurrency,
+  valueTone,
+} from '../lib/format'
 import type { HarborMet, TaxYear, Withholding } from '../lib/schema'
 import { formatActivityDate, formatListDate } from '../lib/spending'
 import { estimateRange, taxYear } from '../lib/taxes'
@@ -375,6 +381,12 @@ function EstimateCard({
       )}
       {year.partial ? (
         <p className="portfolio-note">Partial year: history starts after Jan 1.</p>
+      ) : null}
+      {estimate && year.realized.unestimatedSales ? (
+        <p className="portfolio-note">
+          Leaves out {countOf(year.realized.unestimatedSales, 'sale')} with no cost basis (
+          {money(year.realized.unestimatedProceeds)} proceeds).
+        </p>
       ) : null}
       {withholding ? <WithholdingSection withholding={withholding} day={day} /> : null}
     </Card>
