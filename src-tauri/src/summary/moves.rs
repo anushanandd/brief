@@ -99,8 +99,9 @@ pub(super) fn holding_today(
         as_of: snapshots.get(ticker).map(|snapshot| snapshot.as_of.clone()),
         change_pct: Some(stock),
         change: None,
-        // Named by its layers once today's session is split.
+        // Named and measured by its layers once today's session is split.
         kind: None,
+        typical_pct: None,
         market,
         sector,
         positions: Vec::new(),
@@ -154,6 +155,7 @@ pub(super) fn portfolio_today_move(
         market: today.market.clone(),
         sector: None,
         kind: None,
+        typical_pct: None,
         positions: today
             .positions
             .iter()

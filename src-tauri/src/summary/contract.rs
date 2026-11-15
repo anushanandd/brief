@@ -44,8 +44,9 @@ pub struct InvestmentSummary {
     pub earnings: Vec<EarningsDigest>,
     /// What analysts and the options market expect of each stock.
     pub expectations: Vec<Expectation>,
-    /// A holding's open-market insider trades in the period, newest first.
-    pub insiders: Vec<InsiderTrade>,
+    /// How the press read about each holding (on a holding's page, it alone) since the period
+    /// began, beside the weeks before.
+    pub press: Vec<Press>,
     /// The latest session's move: the portfolio's, with the holdings that moved it, or the
     /// holding's against its benchmarks; `None` without live prices.
     pub today: Option<TodayMove>,
@@ -133,8 +134,11 @@ pub struct TodayMove {
     pub market: Option<Benchmark>,
     /// A holding's sector fund; `None` for the portfolio.
     pub sector: Option<Benchmark>,
-    /// A holding's move against its benchmarks, as on its page; `None` for the portfolio.
+    /// A holding's move by its layers (`session_kind`); `None` for the portfolio or without a
+    /// fit.
     pub kind: Option<&'static str>,
+    /// A holding's typical day, in percent either way; `None` for the portfolio or without a fit.
+    pub typical_pct: Option<f64>,
     /// The holdings that moved the portfolio, largest dollar effect first.
     pub positions: Vec<TodayPosition>,
     /// The portfolio's largest sectors and how its holdings in each moved.
@@ -266,7 +270,7 @@ impl InvestmentSummary {
             fundamentals: None,
             earnings: Vec::new(),
             expectations: Vec::new(),
-            insiders: Vec::new(),
+            press: Vec::new(),
             today: None,
             coverage: Vec::new(),
             brief: None,

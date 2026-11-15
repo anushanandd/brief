@@ -245,6 +245,7 @@ pub(crate) fn summary() -> Value {
         }),
         sector: None,
         kind: None,
+        typical_pct: None,
         positions,
         sectors: Vec::new(),
     });

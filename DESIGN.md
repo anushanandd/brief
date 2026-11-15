@@ -12,7 +12,8 @@ Brief should feel like a private instrument: calm, exact, and quick. [PRINCIPLES
 
 - Content fills the space it's given. Columns align and end together; a card no longer ends wherever its content happens to.
 - Desktop only, 860 px and up. Navigation is the sidebar and cards, never top tabs.
-- One period control governs a page.
+- One period control governs a page. A week, month, quarter, or year also scrolls through time: scrolling over the chart (down or a swipe right goes back), or [ and ], moves the page's end day, and } brings it back to today. Every period figure on the page follows that day; what looks ahead, like what's coming up, stays on today. A page opens on today, and so does a day or all time.
+- Every chart opens larger with a click on it or ↵ on it, and a page's main chart with E too, in a window that shares the page's period and end day. Spending scrolls through its own periods, as its [ and ] do; a chart with no period to move (a card's months, cash ahead) only opens larger.
 
 ## Prominence
 
@@ -25,7 +26,7 @@ Everything stored is reachable, in three tiers:
 ## Motion
 
 - Under 300 ms, eased out, transform and opacity only, and interruptible.
-- Data arriving and keys pressed repeatedly don't animate; values update in place.
+- Data arriving and keys pressed repeatedly don't animate; values update in place. Scrolling a chart through time is the exception: its figures roll to each new day's value while it moves.
 - What opens may slide in. What closes leaves at once, so nothing waits on a fade.
 - Reduced motion keeps short fades and drops everything that moves.
 
@@ -33,7 +34,7 @@ Everything stored is reachable, in three tiers:
 
 Every command is reachable from the palette (⌘K), the menu bar, and a shortcut. Arrows mean the same thing everywhere. Focus draws no ring, and on the page Tab doesn't move focus; inside a dialog, Settings included, Tab walks its controls, and a list in it (each setting is a row) steps with J and K. App shortcuts (⌘K, ⌘Z, ⌘H, navigation) still work over a dialog; page shortcuts wait for it to close. A dialog's own keys (the inspector's J, K, C, and the rest) are registered actions scoped to that dialog, so the key guide, ⌘/, and the palette list them like any other. Whether to show rings when navigating by keyboard is an open decision.
 
-⌘1–⌘9 open the sidebar's pages in the order shown, and the menu bar carries them. Holding ⌘ alone for a moment shows every visible control's ⌘ shortcut beside it, ⌘1–⌘9 down the sidebar; the hints float over the page, so nothing moves, and vanish when ⌘ is released, another key is pressed, or the window loses focus. Nothing shows while a dialog or the palette is open.
+⌘1–⌘9 open the sidebar's pages in the order shown, and the menu bar carries them. Holding ⌘ alone for a moment shows every visible control's ⌘ shortcut beside it, ⌘1–⌘9 down the sidebar, except a breadcrumb's, whose page the sidebar already shows; the hints float over the page, so nothing moves, and vanish when ⌘ is released, another key is pressed, or the window loses focus. Nothing shows while a dialog or the palette is open.
 
 The plain number keys 1–9 and 0 are the user's own bookmarks: each does nothing until assigned in Settings › Navigation › Number keys to a page, a report, an account, a type of account, or a held security, and then opens it from anywhere except a text field. An assigned key shows as the shortcut on its destination's palette row and in the key guide, never in the sidebar. A bookmark whose destination is gone, such as a closed account or a sold security, does nothing, and Settings names it as no longer available. A page's own single keys never use digits; a digit after a prefix (`b1` opens the first brokerage) belongs to that sequence.
 

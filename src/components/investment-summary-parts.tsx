@@ -1,4 +1,6 @@
-import { formatInstant, formatMarketTime, formatShortDay } from '../lib/format'
+import { useEffect, useState } from 'react'
+
+import { formatAgo, formatInstant, formatMarketTime, formatShortDay } from '../lib/format'
 import type { BriefHeadline, InvestmentSummary } from '../lib/schema'
 import { BriefLine } from './brief-line'
 import { ExternalLink } from './external-link'
@@ -14,13 +16,34 @@ const clock = (value: string, today?: string) => {
     : time
 }
 
-/** When the prices behind the summary are from. */
-export function AsOf({ summary }: { summary: InvestmentSummary }) {
-  if (!summary.pricesAsOf) return null
+/**
+ * When the summary shown was made, "Updated 12 min ago", kept current each minute, and
+ * "· updating" while Rust makes a newer one; the time of the prices it describes is in its title.
+ */
+export function Updated({
+  summary,
+  refreshing = false,
+}: {
+  summary: InvestmentSummary
+  refreshing?: boolean
+}) {
+  const [now, setNow] = useState(Date.now)
+  useEffect(() => {
+    const timer = window.setInterval(() => setNow(Date.now()), 60_000)
+    return () => window.clearInterval(timer)
+  }, [])
   return (
-    <small className="investment-summary-as-of">
-      As of{' '}
-      <time dateTime={summary.pricesAsOf}>{clock(summary.pricesAsOf, summary.session.today)}</time>
+    <small
+      className="investment-summary-as-of"
+      role="status"
+      title={
+        summary.pricesAsOf
+          ? `Prices as of ${clock(summary.pricesAsOf, summary.session.today)}`
+          : undefined
+      }
+    >
+      Updated <time dateTime={summary.generatedAt}>{formatAgo(summary.generatedAt, now)}</time>
+      {refreshing ? ' · updating' : null}
     </small>
   )
 }

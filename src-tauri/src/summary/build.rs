@@ -179,6 +179,7 @@ pub(super) fn build(
     if let Some(today) = summary.today.as_mut() {
         if let Some(ticker) = &ticker {
             today.kind = today_row(ticker).and_then(sessions::session_kind);
+            today.typical_pct = today_row(ticker).and_then(|row| row.sigma);
         }
         for position in &mut today.positions {
             position.kind = today_row(&position.ticker).and_then(sessions::session_kind);
@@ -248,6 +249,49 @@ pub(super) fn build(
             period.end,
         )
     });
+    // A holding's page governs one period, so its brief ends with that period, unless the period
+    // is only the latest session the lines above already told.
+    if let (Some(brief), Some(moved), Some(ticker)) = (
+        summary.brief.as_mut(),
+        summary.period_move.as_ref(),
+        ticker.as_deref(),
+    ) {
+        if period.start < (Session { date: period.end }).previous().date {
+            brief.lines.push(brief::period_line(
+                ticker,
+                period.start,
+                moved,
+                &summary.session,
+            ));
+        }
+    }
+    // Then what others make of it: the press since the period began and, before a report, the
+    // options market. The portfolio names only the holding whose press turned most.
+    if let Some(brief) = summary.brief.as_mut() {
+        match ticker.as_deref() {
+            Some(ticker) => {
+                let press = summary.press.iter().find(|press| press.ticker == ticker);
+                brief
+                    .lines
+                    .extend(press.and_then(|press| {
+                        brief::press_line(press, period.start, &summary.session)
+                    }));
+                let typical = summary.today.as_ref().and_then(|today| today.typical_pct);
+                let expectation = summary
+                    .expectations
+                    .iter()
+                    .find(|expectation| expectation.ticker == ticker);
+                brief.lines.extend(expectation.and_then(|expectation| {
+                    brief::options_line(expectation, typical, &summary.session)
+                }));
+            }
+            None => brief.lines.extend(brief::press_shift(
+                &summary.press,
+                period.start,
+                &summary.session,
+            )),
+        }
+    }
     // Today's summary includes earnings reported in the last two sessions.
     if let Some(brief) = summary.brief.as_mut() {
         let since = Session { date: period.end }.previous().date;
@@ -257,6 +301,7 @@ pub(super) fn build(
             .filter(|digest| digest.reported_on >= since)
             .cloned()
             .collect();
+        brief.changed = told_once(std::mem::take(&mut brief.changed), &summary.earnings);
     }
     trace.stage(
         "brief",
@@ -284,6 +329,36 @@ pub(super) fn build(
         closed,
         held: ledger.held,
     }
+}
+
+/// What changed, each thing told once: a story about an earnings report Brief already tells
+/// from the report itself is left out, and a session's move is measured beside its first event
+/// only, since every event that session shares it.
+pub(super) fn told_once(
+    changed: Vec<ListedEvent>,
+    earnings: &[EarningsDigest],
+) -> Vec<ListedEvent> {
+    let reported = |event: &ListedEvent| {
+        earnings.iter().any(|digest| {
+            event.ticker.as_deref() == Some(digest.ticker.as_str())
+                && (event.session - digest.reported_on).num_days().abs() <= 1
+        })
+    };
+    let mut measured = BTreeSet::new();
+    changed
+        .into_iter()
+        .filter(|event| {
+            !(event.family == eventlog::Family::News
+                && event.subtype.as_deref() == Some("earnings")
+                && reported(event))
+        })
+        .map(|mut event| {
+            if !measured.insert((event.ticker.clone(), event.session)) {
+                event.reaction = None;
+            }
+            event
+        })
+        .collect()
 }
 
 /// The period's sessions in layers: saved ones as they were, the rest filled from closes, and

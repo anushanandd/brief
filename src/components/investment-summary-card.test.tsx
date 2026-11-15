@@ -43,7 +43,7 @@ it('shows a saved summary at once, with no loading state and no request', () => 
   const html = render({ ...summary, refreshing: false })
   expect(html).not.toContain('Gathering the day')
   expect(html).not.toContain('skeleton')
-  expect(html).not.toContain('Updating')
+  expect(html).not.toContain('updating')
   expect(html).toContain('class="investment-brief"')
   // The cached answer stands; nothing asks Rust again on render.
   expect(getInvestmentSummary).not.toHaveBeenCalled()
@@ -56,10 +56,10 @@ it('marks an older saved summary as updating, and keeps its figures out of the o
     html.indexOf('holding-earnings-card'),
   )
   expect(card).not.toContain('Gathering the day')
-  expect(card).toContain('role="status">Updating</span>')
+  expect(card).toContain(' · updating</small>')
   expect(card).toContain('class="investment-brief"')
   // The earnings card waits for the current summary rather than showing the older one's.
   const earnings = html.slice(html.indexOf('holding-earnings-card'))
-  expect(earnings).toContain('Reading reports…')
+  expect(earnings).toContain('Updating…')
   expect(earnings).not.toContain('<q>')
 })

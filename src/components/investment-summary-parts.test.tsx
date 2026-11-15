@@ -5,18 +5,20 @@ import nativeSummary from '../data/fixtures/native-summary.json'
 import { seedSummary } from '../data/fixtures/records'
 import { fromRust } from '../lib/rust-json'
 import type { InvestmentSummary } from '../lib/schema'
-import { AsOf, Changed, Headlines, MarketWrap } from './investment-summary-parts'
+import { Changed, Headlines, MarketWrap, Updated } from './investment-summary-parts'
 
 // A summary as Rust serializes it; a Rust test keeps this fixture in sync.
 const summary = fromRust<InvestmentSummary>(nativeSummary)
 // The browser preview's summary, made by Rust from the synthetic seed.
 const preview = seedSummary()
 
-it('says when the prices are from', () => {
-  expect(renderToStaticMarkup(<AsOf summary={preview} />)).toContain(
-    `As of <time dateTime="${preview.pricesAsOf}">`,
-  )
-  expect(renderToStaticMarkup(<AsOf summary={{ ...preview, pricesAsOf: null }} />)).toBe('')
+it('says how long ago it was made, with the prices’ time in its title', () => {
+  const html = renderToStaticMarkup(<Updated summary={preview} />)
+  expect(html).toContain(`Updated <time dateTime="${preview.generatedAt}">`)
+  expect(html).toContain('title="Prices as of ')
+  expect(
+    renderToStaticMarkup(<Updated summary={{ ...preview, pricesAsOf: null }} />),
+  ).not.toContain('title=')
 })
 
 it('lists each headline as published, linked, with its publisher and time', () => {

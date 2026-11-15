@@ -5,13 +5,13 @@ import type { DayBrief } from "./DayBrief";
 import type { EarningsDigest } from "./EarningsDigest";
 import type { Expectation } from "./Expectation";
 import type { Fundamentals } from "./Fundamentals";
-import type { InsiderTrade } from "./InsiderTrade";
 import type { ListedEvent } from "./ListedEvent";
 import type { MarketDay } from "./MarketDay";
 import type { NotableMove } from "./NotableMove";
 import type { PeriodLayers } from "./PeriodLayers";
 import type { PeriodMove } from "./PeriodMove";
 import type { PeriodReport } from "./PeriodReport";
+import type { Press } from "./Press";
 import type { Quiet } from "./Quiet";
 import type { SessionClock } from "./SessionClock";
 import type { TodayMove } from "./TodayMove";
@@ -79,9 +79,10 @@ earnings: Array<EarningsDigest>,
  */
 expectations: Array<Expectation>, 
 /**
- * A holding's open-market insider trades in the period, newest first.
+ * How the press read about each holding (on a holding's page, it alone) since the period
+ * began, beside the weeks before.
  */
-insiders: Array<InsiderTrade>, 
+press: Array<Press>, 
 /**
  * The latest session's move: the portfolio's, with the holdings that moved it, or the
  * holding's against its benchmarks; `None` without live prices.

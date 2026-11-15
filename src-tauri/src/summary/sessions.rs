@@ -240,9 +240,10 @@ pub(super) fn backfill(
     records
 }
 
-/// A holding's session named by its largest layer: its own part when that was unusual for it,
-/// quiet when the whole move was within its typical day, otherwise the larger of its group's
-/// and the market's parts. `None` without a fit.
+/// A holding's session named by its layers: `ownMove` when its own part was unusual for it,
+/// `quiet` when the whole move was within its typical day, and otherwise its largest layer:
+/// `ownOrdinary` (its own part, at a size it often moves), `withSector`, or `withMarket`.
+/// `None` without a fit.
 pub fn session_kind(row: &HoldingSession) -> Option<&'static str> {
     let (z, sigma) = (row.own_z?, row.sigma?);
     Some(
@@ -250,12 +251,22 @@ pub fn session_kind(row: &HoldingSession) -> Option<&'static str> {
             "ownMove"
         } else if row.change_pct.abs() < sigma {
             "quiet"
-        } else if row.group_pct.abs() > row.market_pct.abs() {
-            "withSector"
         } else {
-            "withMarket"
+            largest_layer(row.market_pct, row.group_pct, row.own_pct)
         },
     )
+}
+
+/// The layer that moved a holding most; a tie goes to its own part, then its group.
+fn largest_layer(market_pct: f64, group_pct: f64, own_pct: f64) -> &'static str {
+    let (market, group, own) = (market_pct.abs(), group_pct.abs(), own_pct.abs());
+    if own >= group && own >= market {
+        "ownOrdinary"
+    } else if group > market {
+        "withSector"
+    } else {
+        "withMarket"
+    }
 }
 
 /// One holding's layers summed over a period's sessions.
@@ -276,9 +287,8 @@ pub struct HoldingPeriod {
 }
 
 impl HoldingPeriod {
-    /// `quiet`, `ownMove`, `withSector`, or `withMarket`: the own part when it was at least one
-    /// typical period, quiet when the whole move was under half of one, and otherwise whichever
-    /// of the group and the market moved it more.
+    /// `ownMove` when the own part was at least one typical period, `quiet` when the whole move
+    /// was under half of one, and otherwise its largest layer, as `session_kind` names them.
     pub fn kind(&self) -> Option<&'static str> {
         let z = self.own_z?;
         let typical = self.typical_pct?;
@@ -287,10 +297,8 @@ impl HoldingPeriod {
             "ownMove"
         } else if whole.abs() < 0.5 * typical {
             "quiet"
-        } else if self.group_pct.abs() > self.market_pct.abs() {
-            "withSector"
         } else {
-            "withMarket"
+            largest_layer(self.market_pct, self.group_pct, self.own_pct)
         })
     }
 }
@@ -689,6 +697,38 @@ mod tests {
     }
 
     #[test]
+    fn a_volatile_stocks_large_day_is_its_own_not_the_markets() {
+        let row = |change_pct: f64, market_pct: f64, own_pct: f64, own_z: f64| HoldingSession {
+            ticker: "TEST".into(),
+            change_pct,
+            market_pct,
+            group_pct: 0.0,
+            own_pct,
+            own_z: Some(own_z),
+            sigma: Some(5.0),
+            change: None,
+            market: None,
+            group: None,
+            own: None,
+            fit: None,
+        };
+        // Down 10% on a 5% typical day with almost no market move: ordinary for it, and its own.
+        assert_eq!(
+            session_kind(&row(-10.0, -0.9, -9.1, -1.6)),
+            Some("ownOrdinary")
+        );
+        assert_eq!(
+            session_kind(&row(-15.0, -0.9, -14.1, -2.8)),
+            Some("ownMove")
+        );
+        assert_eq!(
+            session_kind(&row(-6.0, -4.0, -2.0, -0.4)),
+            Some("withMarket")
+        );
+        assert_eq!(session_kind(&row(-3.0, -0.5, -2.5, -0.5)), Some("quiet"));
+    }
+
+    #[test]
     fn a_period_kind_follows_the_layers_not_the_benchmark_chosen() {
         let period = |market_pct: f64, group_pct: f64, own_pct: f64| HoldingPeriod {
             market_pct,
@@ -705,6 +745,8 @@ mod tests {
         // layer has to be the larger.
         assert_eq!(period(-3.0, -5.0, 1.0).kind(), Some("withSector"));
         assert_eq!(period(-1.0, -1.0, -9.0).kind(), Some("ownMove"));
+        // Its own part was the largest but ordinary for it: never credited to the market.
+        assert_eq!(period(-0.5, 0.0, -3.0).kind(), Some("ownOrdinary"));
         let unfit = HoldingPeriod {
             own_z: None,
             ..period(1.0, 0.0, 0.0)

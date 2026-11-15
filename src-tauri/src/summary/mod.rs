@@ -21,7 +21,6 @@ use crate::insights::reconcile::{self, PeriodReport, Shares};
 use crate::numeric::minor_units;
 use crate::providers::closes::{self, DailyCloses};
 use crate::providers::fundamentals::Fundamentals;
-use crate::providers::insiders::InsiderTrade;
 use crate::providers::news::{Benchmark, MARKET_FUND, RELEVANT};
 pub use crate::providers::portfolio::modeled;
 use crate::providers::portfolio::{held_securities, HeldSecurity};
@@ -37,6 +36,7 @@ mod headlines;
 mod layers;
 mod ledger;
 mod moves;
+mod press;
 #[cfg(test)]
 pub(crate) mod preview;
 pub mod saved;
@@ -52,6 +52,7 @@ pub use eventlog::{Event, ListedEvent, Quiet};
 use events::coverage;
 use ledger::Ledger;
 use moves::{holding_today, notable_moves, period_move, portfolio_today_move};
+pub use press::Press;
 #[cfg(test)]
 pub use sessions::FundRate;
 pub use sessions::{calibration, CalibrationSummary, SessionRecord, METHOD};
@@ -143,6 +144,8 @@ struct Saved {
     reports: Vec<(String, earnings::SavedReport)>,
     /// What analysts and the options market expect of each stock.
     expectations: Vec<Expectation>,
+    /// The stance a model read in each stock's stories, by stock and link.
+    stances: BTreeMap<String, BTreeMap<String, reading::Stance>>,
 }
 
 /// Latest prices for the modeled stocks, their benchmarks, and the rest of the portfolio.
@@ -357,8 +360,15 @@ async fn prepare_summary(
         causes,
         reports,
         expectations,
+        stances,
     } = saved_evidence(providers, &stocks, period).await?;
     summary.expectations = expectations;
+    summary.press = press::press(
+        &evidence,
+        &stances,
+        Session { date: period.start }.close(),
+        ticker.as_deref(),
+    );
     trace.stage(
         "evidence",
         "ok",
@@ -434,14 +444,7 @@ async fn prepare_summary(
     };
     let mut prepared = build::build(gathered, snapshot, period, &ticker, kept, trace);
     if let Some(ticker) = &ticker {
-        company_detail(
-            providers,
-            &mut prepared.summary,
-            ticker,
-            &prepared.held,
-            period.start,
-        )
-        .await;
+        company_detail(providers, &mut prepared.summary, ticker, &prepared.held).await;
     }
     Ok(prepared)
 }
@@ -460,8 +463,12 @@ async fn saved_evidence(
         causes: BTreeMap::new(),
         reports: Vec::new(),
         expectations: Vec::new(),
+        stances: BTreeMap::new(),
     };
     for symbol in stocks {
+        saved
+            .stances
+            .insert(symbol.clone(), reading::saved_stances(&cache, symbol));
         let company = cache.company(symbol)?.0;
         if let Some(sector) = company
             .as_ref()
@@ -579,19 +586,13 @@ async fn history(
     ))
 }
 
-/// A holding's insider trades and latest reported quarter. EDGAR not configured or
-/// unreachable leaves insiders out; funds and other non-company holdings have no quarters.
+/// A holding's latest reported quarter; funds and other non-company holdings have none.
 async fn company_detail(
     providers: &Providers,
     summary: &mut InvestmentSummary,
     ticker: &str,
     held: &[HeldSecurity],
-    start: NaiveDate,
 ) {
-    summary.insiders = providers
-        .insider_trades(ticker, start)
-        .await
-        .unwrap_or_default();
     let fund = held.iter().any(|security| {
         security.ticker == ticker && portfolio::fund_or_other(security.kind.as_deref())
     });

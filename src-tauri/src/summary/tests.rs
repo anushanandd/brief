@@ -310,19 +310,17 @@ fn native_summary_contract_matches_the_renderer_fixture() {
             next_report: Some("2026-12-17".into()),
             expected_move_pct: Some(8.4),
         }],
-        insiders: vec![InsiderTrade {
-            date: "2026-09-14".into(),
-            filed_at: "2026-09-16T20:00:00+00:00".into(),
-            name: "Doe Jane A".into(),
-            role: "Chief Executive Officer".into(),
-            side: "sell".into(),
-            shares: 1200.0,
-            price: Some(110.5),
-            value: Some(132600.0),
-            planned: true,
-            url:
-                "https://www.sec.gov/Archives/edgar/data/1/000000000026000002/xslF345X05/form4.xml"
-                    .into(),
+        press: vec![Press {
+            ticker: "TEST".into(),
+            stories: 6,
+            read: 5,
+            positive: 1,
+            negative: 3,
+            mixed: 1,
+            neutral: 0,
+            before_read: 10,
+            before_negative_pct: Some(30.0),
+            before_positive_pct: Some(50.0),
         }],
         today: Some(TodayMove {
             as_of: Some("2026-09-30T19:59:00+00:00".into()),
@@ -339,6 +337,7 @@ fn native_summary_contract_matches_the_renderer_fixture() {
                 change_pct: 0.5,
             }),
             kind: Some("ownMove"),
+            typical_pct: Some(1.1),
             positions: vec![TodayPosition {
                 ticker: "TEST".into(),
                 change_pct: 2.4,
@@ -666,6 +665,117 @@ fn holding(
         filings,
         own: own.unwrap_or_default(),
     }
+}
+
+#[test]
+fn the_press_counts_stances_read_in_the_period_against_the_weeks_before() {
+    use crate::providers::reading::Stance;
+    let story = |url: &str, at: &str| article("TEST news", at, Vec::new(), url);
+    let mut passing = story("https://example.com/passing", "2026-09-29T12:00:00Z");
+    passing.relevance = 20;
+    let evidence = vec![holding(
+        "TEST",
+        vec![
+            story("https://example.com/a", "2026-09-29T12:00:00Z"),
+            story("https://example.com/b", "2026-09-28T12:00:00Z"),
+            story("https://example.com/c", "2026-09-27T12:00:00Z"),
+            story("https://example.com/unread", "2026-09-26T12:00:00Z"),
+            passing,
+            story("https://example.com/old1", "2026-09-10T12:00:00Z"),
+            story("https://example.com/old2", "2026-09-09T12:00:00Z"),
+        ],
+        Vec::new(),
+        None,
+    )];
+    let stances = BTreeMap::from([(
+        "TEST".to_owned(),
+        BTreeMap::from([
+            ("https://example.com/a".to_owned(), Stance::Negative),
+            ("https://example.com/b".to_owned(), Stance::Negative),
+            ("https://example.com/c".to_owned(), Stance::Positive),
+            ("https://example.com/passing".to_owned(), Stance::Negative),
+            ("https://example.com/old1".to_owned(), Stance::Positive),
+            ("https://example.com/old2".to_owned(), Stance::Negative),
+        ]),
+    )]);
+    let since = "2026-09-25T20:00:00Z".parse().unwrap();
+    let [press] = press::press(&evidence, &stances, since, Some("TEST"))
+        .try_into()
+        .unwrap();
+    // A story only passing the company by isn't its press; an unread one counts, unread.
+    assert_eq!(
+        (press.stories, press.read, press.negative, press.positive),
+        (4, 3, 2, 1)
+    );
+    assert_eq!(
+        (press.before_read, press.before_negative_pct),
+        (2, Some(50.0))
+    );
+    assert!(press::press(&evidence, &stances, since, Some("OTHER")).is_empty());
+}
+
+#[test]
+fn what_changed_tells_a_report_once_and_a_sessions_move_once() {
+    let evidence = vec![holding(
+        "TEST",
+        vec![
+            article(
+                "TEST beats estimates",
+                "2026-09-21T12:00:00Z",
+                vec![NewsTag::Earnings],
+                "https://example.com/beat",
+            ),
+            article(
+                "TEST names a CFO",
+                "2026-09-21T13:00:00Z",
+                vec![NewsTag::Leadership],
+                "https://example.com/cfo",
+            ),
+            article(
+                "TEST opens a plant",
+                "2026-09-21T14:00:00Z",
+                vec![NewsTag::Deal],
+                "https://example.com/plant",
+            ),
+        ],
+        Vec::new(),
+        Some(own_with("2026-01-01", 280, &[("2026-09-21", 4.2)])),
+    )];
+    let changed = logged(&evidence, period(day("2026-08-31"), day("2026-09-30")), 3);
+    let measured = |events: &[ListedEvent]| events.iter().filter(|e| e.reaction.is_some()).count();
+    assert!(
+        measured(&changed) > 1,
+        "the log measures every event of the session"
+    );
+    let digest = EarningsDigest {
+        ticker: "TEST".into(),
+        reported_on: day("2026-09-21"),
+        fiscal_date_ending: None,
+        report_time: None,
+        eps: None,
+        eps_estimate: None,
+        surprise_pct: None,
+        revenue: None,
+        guidance: Vec::new(),
+        guidance_by: None,
+        release_read: false,
+        release_url: None,
+        filing_url: None,
+        reaction_pct: None,
+        reaction_typical_pct: None,
+        expected_move_pct: None,
+        call_guidance: Vec::new(),
+        call_guidance_by: None,
+        line: Vec::new(),
+    };
+    let told = build::told_once(changed.clone(), &[digest]);
+    // The report is told from its source, so the story about it is left out.
+    assert!(!titles(&told).contains(&"TEST beats estimates"));
+    assert!(titles(&told).contains(&"TEST names a CFO"));
+    // The session's move is measured once, beside its first event.
+    assert_eq!(measured(&told), 1);
+    // Without a report told, the earnings story stays.
+    assert!(titles(&build::told_once(changed, &[])).contains(&"TEST beats estimates"));
 }
 
 #[test]

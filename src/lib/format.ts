@@ -173,6 +173,15 @@ export const formatUpdatedAt = (iso: string | number) => {
   })
 }
 
+/** How long ago something happened, by `now` in milliseconds: "just now", "12 min ago", "3 hr ago", then its time. */
+export const formatAgo = (iso: string, now: number) => {
+  const minutes = Math.floor((now - new Date(iso).getTime()) / 60_000)
+  if (minutes < 1) return 'just now'
+  if (minutes < 60) return `${minutes} min ago`
+  if (minutes < 24 * 60) return `${Math.floor(minutes / 60)} hr ago`
+  return formatUpdatedAt(iso)
+}
+
 export const formatSecurityName = (name: string) => name.replace(/\s+class\b.*$/i, '').trim()
 
 export const valueTone = (value: number | null | undefined) =>

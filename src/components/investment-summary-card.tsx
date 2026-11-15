@@ -3,11 +3,11 @@ import { ZodError } from 'zod'
 
 import { holdingsKey, type HoldingsIdentity } from '../hooks/use-finance'
 import { getInvestmentSummary, isTauri, warmInvestmentSummaries } from '../lib/api'
-import { type ChartPeriod } from '../lib/graph-preferences'
+import { type ChartPeriod, useGraphEnd } from '../lib/graph-preferences'
 import { summaryStart } from '../lib/investment-summary'
 import type { FinanceSnapshot } from '../lib/schema'
 import { BriefLine } from './brief-line'
-import { AsOf, Changed, Headlines, MarketWrap } from './investment-summary-parts'
+import { Changed, Headlines, MarketWrap, Updated } from './investment-summary-parts'
 import { Card, EmptyState, SectionHeading } from './ui'
 
 type SummaryInputs = HoldingsIdentity & Pick<FinanceSnapshot, 'transactions'>
@@ -46,9 +46,17 @@ const REFRESHING_RECHECK_MS = 60_000
  * new one. `current` is the summary only when it isn't refreshing, for the cards that set its
  * figures beside today's; the summary card shows a refreshing one, marked.
  */
-export function useInvestmentSummary(data: FinanceSnapshot, range: ChartPeriod, ticker?: string) {
+export function useInvestmentSummary(
+  data: FinanceSnapshot,
+  range: ChartPeriod,
+  ticker?: string,
+  /** Read today's summary even while the page is scrolled back, for what isn't the period's. */
+  latest = false,
+) {
   const native = typeof window !== 'undefined' && isTauri()
-  const start = summaryStart(data, range)
+  // Summaries are written for periods ending today; a page scrolled back in time has none.
+  const [end] = useGraphEnd()
+  const start = end && !latest ? undefined : summaryStart(data, range)
   const summary = useQuery({
     queryKey: summaryKey(start, ticker, data),
     queryFn: () => getInvestmentSummary(start!, ticker),
@@ -102,6 +110,7 @@ export function InvestmentSummaryCard({
 }) {
   const native = typeof window !== 'undefined' && isTauri()
   const { start, summary, refreshing } = useInvestmentSummary(data, range, ticker)
+  const [end] = useGraphEnd()
   const result = summary.data
   const lines = result?.brief?.lines ?? []
 
@@ -112,17 +121,14 @@ export function InvestmentSummaryCard({
         action={
           result ? (
             <>
-              {refreshing ? (
-                <span className="investment-summary-updating" role="status">
-                  Updating
-                </span>
-              ) : null}
-              <AsOf summary={result} />
+              <Updated summary={result} refreshing={refreshing} />
             </>
           ) : undefined
         }
       />
-      {!native && ticker ? (
+      {end ? (
+        <EmptyState>Summaries cover periods ending today.</EmptyState>
+      ) : !native && ticker ? (
         <EmptyState>Needs the desktop app.</EmptyState>
       ) : !start ? (
         <EmptyState>No return history for this period.</EmptyState>

@@ -17,9 +17,14 @@ change: number | null, market: Benchmark | null,
  */
 sector: Benchmark | null, 
 /**
- * A holding's move against its benchmarks, as on its page; `None` for the portfolio.
+ * A holding's move by its layers (`session_kind`); `None` for the portfolio or without a
+ * fit.
  */
 kind: string | null, 
+/**
+ * A holding's typical day, in percent either way; `None` for the portfolio or without a fit.
+ */
+typicalPct: number | null, 
 /**
  * The holdings that moved the portfolio, largest dollar effect first.
  */

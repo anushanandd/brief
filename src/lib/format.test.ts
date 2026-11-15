@@ -6,6 +6,7 @@ import {
   countOf,
   displayCase,
   formatActivityName,
+  formatAgo,
   formatCalendarDate,
   formatCompactCurrency,
   formatCurrency,
@@ -16,6 +17,7 @@ import {
   formatShare,
   formatSignedCompactCurrency,
   formatSignedCurrency,
+  formatUpdatedAt,
   MINUS,
   pluralize,
 } from './format'
@@ -99,6 +101,14 @@ describe('dates and times', () => {
   it('marks market session times in Eastern time and says so', () => {
     expect(formatMarketTime('2026-07-01T13:30:00Z')).toBe('9:30 AM ET')
     expect(formatMarketTime(Date.parse('2026-12-01T21:00:00Z'))).toBe('4:00 PM ET')
+  })
+
+  it('says how long ago in minutes, then hours, then the time', () => {
+    const now = Date.parse('2026-09-30T21:00:00Z')
+    expect(formatAgo('2026-09-30T20:59:30Z', now)).toBe('just now')
+    expect(formatAgo('2026-09-30T20:48:00Z', now)).toBe('12 min ago')
+    expect(formatAgo('2026-09-30T17:30:00Z', now)).toBe('3 hr ago')
+    expect(formatAgo('2026-09-28T21:00:00Z', now)).toBe(formatUpdatedAt('2026-09-28T21:00:00Z'))
   })
 
   it('keeps a rate as given, with two decimals', () => {

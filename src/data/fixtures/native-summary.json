@@ -107,6 +107,12 @@
           "kind": "text",
           "text": "."
         }
+      ],
+      [
+        {
+          "kind": "text",
+          "text": "Most of that was its own move, 2.2× its typical day: unusual for it."
+        }
       ]
     ],
     "market": null
@@ -293,20 +299,6 @@
     "url": "https://www.sec.gov/Archives/edgar/data/1/000000000026000001/"
   },
   "generatedAt": "2026-09-30T21:05:00+00:00",
-  "insiders": [
-    {
-      "date": "2026-09-14",
-      "filedAt": "2026-09-16T20:00:00+00:00",
-      "name": "Doe Jane A",
-      "planned": true,
-      "price": 110.5,
-      "role": "Chief Executive Officer",
-      "shares": 1200.0,
-      "side": "sell",
-      "url": "https://www.sec.gov/Archives/edgar/data/1/000000000026000002/xslF345X05/form4.xml",
-      "value": 132600.0
-    }
-  ],
   "notable": [
     {
       "changePct": 18.2,
@@ -383,6 +375,20 @@
       "symbol": "XLK"
     }
   },
+  "press": [
+    {
+      "beforeNegativePct": 30.0,
+      "beforePositivePct": 50.0,
+      "beforeRead": 10,
+      "mixed": 1,
+      "negative": 3,
+      "neutral": 0,
+      "positive": 1,
+      "read": 5,
+      "stories": 6,
+      "ticker": "TEST"
+    }
+  ],
   "pricesAsOf": "2026-09-30T19:59:00+00:00",
   "quiet": {
     "holdings": ["OTHER"],
@@ -517,7 +523,8 @@
         "name": "Technology",
         "weightPct": 66.6
       }
-    ]
+    ],
+    "typicalPct": 1.1
   },
   "unavailable": [
     {
