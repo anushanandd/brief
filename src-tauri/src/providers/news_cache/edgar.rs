@@ -1,4 +1,4 @@
-//! EDGAR's ticker map, companies with their filings, Form 4 trades, and reported quarters.
+//! EDGAR's ticker map, companies with their filings and reported quarters.
 use super::*;
 
 /// EDGAR's ticker list changes rarely.

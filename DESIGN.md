@@ -12,6 +12,7 @@ Brief should feel like a private instrument: calm, exact, and quick. [PRINCIPLES
 
 - Content fills the space it's given. Columns align and end together; a card no longer ends wherever its content happens to.
 - Desktop only, 860 px and up. Navigation is the sidebar and cards, never top tabs.
+- A page fits the window where it can, with regions that flex rather than fixed heights, and at most one scrolling region: its main list. A page that can't fit, like Settings, scrolls whole, and so does a dialog. Nothing is ever cropped; a table too narrow for its columns reflows into labeled fields.
 - One period control governs a page. A week, month, quarter, or year also scrolls through time: scrolling over the chart (down or a swipe right goes back), or [ and ], moves the page's end day, and } brings it back to today. Every period figure on the page follows that day; what looks ahead, like what's coming up, stays on today. A page opens on today, and so does a day or all time.
 - Every chart opens larger with a click on it or ↵ on it, and a page's main chart with E too, in a window that shares the page's period and end day. Spending scrolls through its own periods, as its [ and ] do; a chart with no period to move (a card's months, cash ahead) only opens larger.
 
