@@ -292,16 +292,16 @@ fn a_semester_away_is_a_base_and_its_weekend_trips_are_trips() {
 
 #[test]
 fn after_a_move_the_old_home_stays_home_for_its_time() {
-    let college = at("Salt Lake City", "UT", "US", 40.76, -111.89);
+    let earlier = at("Salt Lake City", "UT", "US", 40.76, -111.89);
     let mut transactions = (0..110)
         .map(|index| {
             let date = day("2023-01-03") + Duration::days(5 * index);
             purchase(
-                &format!("college-{index}"),
+                &format!("earlier-{index}"),
                 &date.to_string(),
                 -20.0,
                 "Groceries",
-                Some(college.clone()),
+                Some(earlier.clone()),
             )
         })
         .collect::<Vec<_>>();
@@ -315,7 +315,7 @@ fn after_a_move_the_old_home_stays_home_for_its_time() {
             Some(oakland()),
         )
     }));
-    // Long after the move, the college years are still not a trip.
+    // Long after the move, the years at the earlier base are still not a trip.
     let result = trips(&transactions, &[], day("2026-11-30"));
     assert_eq!(result.bases.len(), 2);
     assert!(result.trips.is_empty());
@@ -482,7 +482,7 @@ fn a_reservation_places_a_trip_nothing_was_bought_on() {
     ));
     let read = reservations::read(&[
         event(
-            "Flight to Chennai (XX 101)",
+            "Flight to Lima (XX 101)",
             "2026-09-01T22:00:00-07:00",
             "2026-09-03T06:00:00-07:00",
             Some("Oakland OAK"),
@@ -491,7 +491,7 @@ fn a_reservation_places_a_trip_nothing_was_bought_on() {
             "Flight to Oakland (XX 102)",
             "2026-09-12T01:00:00-07:00",
             "2026-09-12T20:00:00-07:00",
-            Some("Chennai MAA"),
+            Some("Lima LIM"),
         ),
         event(
             "Stay at Example Inn",
@@ -511,7 +511,7 @@ fn a_reservation_places_a_trip_nothing_was_bought_on() {
         [
             ("Seattle, WA", day("2026-09-14"), day("2026-09-15"), true),
             // The flights bound the trip, and between them every day was there.
-            ("Chennai, IN", day("2026-09-01"), day("2026-09-12"), true),
+            ("Lima, PE", day("2026-09-01"), day("2026-09-12"), true),
         ]
     );
     // A flight booked for later says nothing yet.

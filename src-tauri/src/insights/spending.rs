@@ -1174,7 +1174,7 @@ mod tests {
         let mut again = transaction("b", "2026-09-03", -10.0, "Dining");
         again.place = Some(at("Austin", "TX", "US"));
         let mut abroad = transaction("c", "2026-09-04", -50.0, "Dining");
-        abroad.place = Some(at("Sevilla", "51", "ES"));
+        abroad.place = Some(at("Lyon", "84", "FR"));
         let unplaced = transaction("d", "2026-09-05", -10.0, "Dining");
         let places = places_spent(&[&austin, &again, &abroad, &unplaced], 10_000);
         let shown = places
@@ -1183,7 +1183,7 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(
             shown,
-            [("Sevilla, ES", 50.0, 50.0), ("Austin, TX", 40.0, 40.0)]
+            [("Lyon, FR", 50.0, 50.0), ("Austin, TX", 40.0, 40.0)]
         );
     }
 

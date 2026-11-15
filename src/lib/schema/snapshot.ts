@@ -131,7 +131,7 @@ const financeSettingsShape = {
     .object({
       /** Only decides catch-up eligibility. */
       birthYear: z.number().int().optional(),
-      /** Monthly costs to add to today's spending, such as rent after moving out. */
+      /** Monthly costs to add to today's spending, such as a new rent. */
       plannedMonthly: z.number().nonnegative().optional(),
       /** Roth IRA contributions made before the account's history in Brief. */
       earlierContributions: z.record(z.string(), z.number().nonnegative()).optional(),

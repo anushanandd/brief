@@ -1296,7 +1296,7 @@ mod tests {
     fn settings_saved_with_chapters_and_rules_still_load_without_them() {
         let settings: FinanceSettings = serde_json::from_str(
             r#"{"chapters":[{"id":"work:example","status":"confirmed"}],
-                "plannedChapters":[{"id":"planned:move","title":"Moving out","start":"2026-11-01"}],
+                "plannedChapters":[{"id":"planned:example","title":"Example plan","start":"2026-11-01"}],
                 "explanationReviews":{"rule:a":"dismissed"},
                 "programs":[{"id":"example"}],
                 "research":true}"#,

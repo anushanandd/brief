@@ -633,7 +633,7 @@ pub fn retirement(inputs: Inputs<'_>, today: NaiveDate) -> Retirement {
         None => Vec::new(),
     };
 
-    // The monthly costs you entered here, such as rent after moving out.
+    // The monthly costs you entered here, such as a new rent.
     let planned = profile.planned_monthly.map(minor_units).unwrap_or_default() * 12;
     let coverage = recap
         .iter()

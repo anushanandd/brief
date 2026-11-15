@@ -40,22 +40,22 @@ fn reads_a_city_run_into_a_truncated_merchant_name() {
 #[test]
 fn reads_cities_abroad_by_their_country_code_and_local_spelling() {
     assert_eq!(
-        place("AplPay EXAMPLE SHOP SEVILLA ES"),
-        Some(("ES".into(), Some("51".into()), Some("Sevilla".into())))
+        place("AplPay EXAMPLE SHOP LYON FR"),
+        Some(("FR".into(), Some("84".into()), Some("Lyon".into())))
     );
     assert_eq!(
-        place("AplPay EXAMPLE KIOSK MÁLAGA ES")
+        place("AplPay EXAMPLE KIOSK KRAKÓW PL")
             .unwrap()
             .2
             .as_deref(),
-        Some("Málaga")
+        Some("Kraków")
     );
     assert_eq!(
-        place("AplPay EXAMPLE KIOSK MALAGA ES")
+        place("AplPay EXAMPLE KIOSK KRAKOW PL")
             .unwrap()
             .2
             .as_deref(),
-        Some("Málaga")
+        Some("Kraków")
     );
     // DE is Delaware and Germany: the reading with a city wins, spelled without its umlaut.
     let cologne = place("AplPay SUMUP*EXAMPLE KOELN DE").unwrap();

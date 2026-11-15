@@ -2,7 +2,7 @@
 //!
 //! `days` works out where the user was each day, from in-person purchases, Wallet's record of
 //! where the phone was, and the flights and stays in the user's own calendar, and which places
-//! were bases (home, college, a semester away) at each time. A trip is a run of days away from
+//! were bases (places lived for a stretch) at each time. A trip is a run of days away from
 //! every base active then. It needs the phone or a reservation to place it, or purchases from
 //! two merchants, so one merchant's printed billing city never makes a trip. A day at a base
 //! ends a trip; silence ends one only after `GAP_DAYS`.
@@ -147,7 +147,7 @@ pub struct TripStop {
     pub first: NaiveDate,
 }
 
-/// A place the user lived at for a stretch: home, college, a semester away.
+/// A place the user lived at for a stretch, such as one home and then another.
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct TripBase {

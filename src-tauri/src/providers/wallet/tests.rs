@@ -234,9 +234,9 @@ fn store() -> Store {
         "Transaction",
         archive(&[
             ("cardType", wrapped_text("digital")),
-            ("merchantCity", wrapped_text("Sevilla")),
-            ("merchantState", wrapped_text("ESP")),
-            ("merchantRawCountry", wrapped_text("ESP")),
+            ("merchantCity", wrapped_text("Lyon")),
+            ("merchantState", wrapped_text("FRA")),
+            ("merchantRawCountry", wrapped_text("FRA")),
         ]),
     );
     connection
@@ -324,9 +324,9 @@ fn abroad_keeps_the_charged_currency_and_ignores_a_country_printed_as_a_region()
         })
     );
     let place = abroad.place.as_ref().unwrap();
-    assert_eq!(place.city.as_deref(), Some("Sevilla"));
+    assert_eq!(place.city.as_deref(), Some("Lyon"));
     assert_eq!(place.region, None);
-    assert_eq!(place.country.as_deref(), Some("ES"));
+    assert_eq!(place.country.as_deref(), Some("FR"));
 }
 
 #[test]

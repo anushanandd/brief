@@ -3,12 +3,12 @@ import { describe, expect, it } from 'vitest'
 import { activityPlace, type ActivityItem } from './activity'
 import { countryFlag, placeLabel, placeMapsUrl, placeSource, type Place } from './places'
 
-const malaga: Place = {
-  city: 'Málaga',
-  region: '51',
-  country: 'ES',
-  lat: 36.72,
-  lon: -4.42,
+const krakow: Place = {
+  city: 'Kraków',
+  region: '77',
+  country: 'PL',
+  lat: 50.06,
+  lon: 19.94,
   source: 'descriptor',
   precision: 'city',
 }
@@ -27,8 +27,8 @@ describe('places', () => {
     expect(
       placeLabel({ region: 'CA', country: 'US', source: 'descriptor', precision: 'region' }),
     ).toBe('CA')
-    expect(placeLabel(malaga)).toBe('Málaga, Spain')
-    expect(placeSource(malaga)).toBe('From the bank’s descriptor')
+    expect(placeLabel(krakow)).toBe('Kraków, Poland')
+    expect(placeSource(krakow)).toBe('From the bank’s descriptor')
   })
 
   it('flags a country by its code, and nothing without one', () => {
@@ -52,15 +52,15 @@ describe('places', () => {
         precision: 'street',
       }),
     ).toBe(`${google}Example%20Cafe%2C%201%20SAMPLE%20ST%2C%20Sunnyvale%2C%20CA%2094087`)
-    expect(placeMapsUrl('Example Cafe', malaga, 'Calle Larios 1')).toBe(
-      `${google}Example%20Cafe%2C%20Calle%20Larios%201%2C%20M%C3%A1laga%2C%20Spain`,
+    expect(placeMapsUrl('Example Cafe', krakow, 'Example Street 1')).toBe(
+      `${google}Example%20Cafe%2C%20Example%20Street%201%2C%20Krak%C3%B3w%2C%20Poland`,
     )
-    expect(placeMapsUrl('Example Cafe', { ...malaga, precision: 'exact' })).toBe(
-      `${google}36.72%2C-4.42`,
+    expect(placeMapsUrl('Example Cafe', { ...krakow, precision: 'exact' })).toBe(
+      `${google}50.06%2C19.94`,
     )
     // A city's centre isn't where the purchase was.
-    expect(placeMapsUrl('Example Cafe', malaga)).toBe(
-      `${google}Example%20Cafe%2C%20M%C3%A1laga%2C%20Spain`,
+    expect(placeMapsUrl('Example Cafe', krakow)).toBe(
+      `${google}Example%20Cafe%2C%20Krak%C3%B3w%2C%20Poland`,
     )
     expect(
       placeMapsUrl('Example Cafe', {
@@ -84,9 +84,9 @@ describe('places', () => {
       paymentChannel: 'in store',
       // The bank reported a corporate address; the descriptor named the store's city.
       location: { city: 'Oregon', region: 'OH' },
-      place: malaga,
+      place: krakow,
     } as ActivityItem
-    expect(activityPlace(activity)).toMatchObject({ kind: 'place', primary: 'Málaga, Spain' })
+    expect(activityPlace(activity)).toMatchObject({ kind: 'place', primary: 'Kraków, Poland' })
   })
 
   it('shows the issuer’s street, and a remote purchase as online wherever it was billed', () => {
