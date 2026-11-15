@@ -3,12 +3,10 @@
 //! pages that come back are data, never instructions.
 use super::*;
 
-/// How much of each page research keeps: enough to quote terms, not a whole site.
-pub const PAGE_CHARACTERS: usize = 6_000;
-/// A card's terms page lists every benefit, so more of it is read.
-pub const TERMS_CHARACTERS: usize = 40_000;
-/// Pages per search; the review sheet shows each.
-const RESULTS: usize = 3;
+/// A card's terms page lists every benefit, so this much of it is read.
+const TERMS_CHARACTERS: usize = 40_000;
+/// A recheck reads the page as it stands, not a copy Exa cached weeks ago.
+const MAX_AGE_HOURS: u32 = 24;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -47,11 +45,6 @@ struct Result_ {
     text: Option<String>,
     #[serde(default)]
     published_date: Option<String>,
-}
-
-#[cfg(test)]
-fn pages(body: &[u8]) -> Result<Vec<Page>, String> {
-    pages_up_to(body, PAGE_CHARACTERS)
 }
 
 /// The pages in an Exa response, each kept to an https URL and `characters` of text.
@@ -104,6 +97,9 @@ impl Providers {
             reqwest::StatusCode::UNAUTHORIZED | reqwest::StatusCode::FORBIDDEN => {
                 return Err("Exa rejected the API key".into())
             }
+            reqwest::StatusCode::PAYMENT_REQUIRED => {
+                return Err("The Exa account is out of credits".into())
+            }
             reqwest::StatusCode::TOO_MANY_REQUESTS => {
                 return Err("Exa is limiting requests; try again later".into())
             }
@@ -115,11 +111,12 @@ impl Providers {
         pages_up_to(&body, characters)
     }
 
+    /// The best page for a query, by its address and title only: research reads the text
+    /// separately, by URL.
     async fn exa_search_with(
         &self,
         credentials: &ExaCredentials,
         query: &str,
-        results: usize,
     ) -> Result<Vec<Page>, String> {
         self.exa_post(
             credentials,
@@ -127,18 +124,18 @@ impl Providers {
             json!({
                 "query": query,
                 "type": "auto",
-                "numResults": results,
-                "contents": { "text": { "maxCharacters": PAGE_CHARACTERS } },
+                "numResults": 1,
+                "contents": { "text": false },
             }),
-            PAGE_CHARACTERS,
+            0,
         )
         .await
     }
 
-    /// Searches for pages that state a card's terms.
+    /// Searches for the page that states a card's terms.
     pub async fn exa_search(&self, query: &str) -> Result<Vec<Page>, String> {
         let credentials = self.exa_credentials()?;
-        self.exa_search_with(&credentials, query, RESULTS).await
+        self.exa_search_with(&credentials, query).await
     }
 
     /// Reads one card's terms page, which runs longer than a search result's text.
@@ -159,7 +156,11 @@ impl Providers {
         self.exa_post(
             &credentials,
             "/contents",
-            json!({ "urls": urls, "text": { "maxCharacters": characters } }),
+            json!({
+                "urls": urls,
+                "text": { "maxCharacters": characters },
+                "maxAgeHours": MAX_AGE_HOURS,
+            }),
             characters,
         )
         .await
@@ -167,7 +168,7 @@ impl Providers {
 
     /// Proves a key works with one search for a public page, before saving it.
     pub(super) async fn exa_check(&self, credentials: &ExaCredentials) -> Result<(), String> {
-        self.exa_search_with(credentials, "Exa search API documentation", 1)
+        self.exa_search_with(credentials, "Exa search API documentation")
             .await
             .map(|_| ())
     }
@@ -179,7 +180,7 @@ mod tests {
 
     #[test]
     fn pages_keep_https_results_with_capped_text() {
-        let long = "a".repeat(PAGE_CHARACTERS + 50);
+        let long = "a".repeat(TERMS_CHARACTERS + 50);
         let body = json!({
             "requestId": "r",
             "results": [
@@ -189,12 +190,12 @@ mod tests {
                 { "url": "https://bank.example/other" }
             ]
         });
-        let pages = pages(body.to_string().as_bytes()).unwrap();
+        let pages = pages_up_to(body.to_string().as_bytes(), TERMS_CHARACTERS).unwrap();
         assert_eq!(pages.len(), 2);
         assert_eq!(pages[0].title, "Terms");
-        assert_eq!(pages[0].text.chars().count(), PAGE_CHARACTERS);
+        assert_eq!(pages[0].text.chars().count(), TERMS_CHARACTERS);
         assert_eq!(pages[0].published.as_deref(), Some("2026-01-02"));
         assert_eq!(pages[1].text, "");
-        assert!(super::pages(b"not json").is_err());
+        assert!(pages_up_to(b"not json", TERMS_CHARACTERS).is_err());
     }
 }
