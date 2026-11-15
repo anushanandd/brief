@@ -493,6 +493,7 @@ impl Providers {
             "https://paper-api.alpaca.markets",
             "https://api.alpaca.markets",
         ] {
+            super::pace::ALPACA.take().await;
             let response = self
                 .http
                 .get(format!("{base}/v3/clock"))

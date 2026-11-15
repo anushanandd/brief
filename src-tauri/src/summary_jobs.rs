@@ -106,11 +106,49 @@ pub fn refresh(app: &AppHandle, start: String, ticker: Option<String>) {
     run_if_idle(app);
 }
 
-/// Makes the portfolio's summary and each holding's (`tickers`, largest first) for the period
-/// from `start`, replacing an earlier warm-up's jobs.
-pub fn warm(app: &AppHandle, start: &str, tickers: Vec<Option<String>>) {
+/// The period start the page last asked to warm, so new data warms it again (`rewarm`).
+static WARMED: Mutex<Option<String>> = Mutex::new(None);
+
+/// Makes the portfolio's summary for the period from `start`, then each holding's, largest
+/// first, replacing an earlier warm-up's jobs. One already current is skipped when its turn
+/// comes.
+pub fn warm(app: &AppHandle, start: &str) -> Result<(), String> {
+    Period::through_latest(start, chrono::Utc::now())?;
+    let state = app.state::<AppState>();
+    let mut held =
+        providers::portfolio::held_securities(&state.storage()?.read_view()?.snapshot.holdings);
+    held.sort_by(|left, right| {
+        right
+            .value
+            .total_cmp(&left.value)
+            .then_with(|| left.ticker.cmp(&right.ticker))
+    });
+    let tickers = std::iter::once(None)
+        .chain(
+            held.into_iter()
+                .filter_map(|security| providers::one_ticker(Some(security.ticker)).ok())
+                .flatten()
+                .map(Some),
+        )
+        .collect();
+    *WARMED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(start.to_owned());
     queue().warm(start, tickers);
     run_if_idle(app);
+    Ok(())
+}
+
+/// Warms the period the page last asked for again: after new data, or a new 15-minute step
+/// while the market moves.
+pub fn rewarm(app: &AppHandle) {
+    let start = WARMED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    if let Some(start) = start {
+        let _ = warm(app, &start);
+    }
 }
 
 /// Picks up jobs a hidden window paused, once it is back.

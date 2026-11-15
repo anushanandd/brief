@@ -28,7 +28,7 @@ export function EarningsReport({
   range: ChartPeriod
 }) {
   // Only a current summary has the sessions a report's reaction is measured over.
-  const { summary, current, refreshing } = useInvestmentSummary(data, range, ticker)
+  const { summary, current, refreshing } = useInvestmentSummary(data, range, ticker, true)
   const digest = current?.earnings[0]
   return (
     <Card className="holding-detail-card holding-earnings-card">
@@ -49,9 +49,11 @@ export function EarningsReport({
       />
       {!digest ? (
         <EmptyState>
-          {summary.isLoading || refreshing
-            ? 'Reading reports…'
-            : 'No earnings report in the last four months.'}
+          {summary.isLoading
+            ? 'Loading…'
+            : refreshing
+              ? 'Updating…'
+              : 'No earnings report in the last four months.'}
         </EmptyState>
       ) : (
         <div className="holding-earnings">

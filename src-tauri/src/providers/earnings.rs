@@ -1,7 +1,8 @@
 //! Earnings, read: what a company reported against what analysts expected (Alpha Vantage's
-//! reported quarters, within its free daily budget), and what its press release says (the
-//! Exhibit 99.1 of an 8-K reporting Item 2.02, from EDGAR). Brief quotes the release's own
-//! sentences for revenue and guidance; it never computes a figure from release text.
+//! reported quarters, within its free daily budget, which say when each report was), and what
+//! its press release says (the Exhibit 99.1 of an 8-K reporting Item 2.02, or of a foreign
+//! issuer's 6-K filed with the report, from EDGAR). Brief quotes the release's own sentences
+//! for revenue and guidance; it never computes a figure from release text.
 use super::*;
 use serde_json::json;
 use std::sync::LazyLock;
@@ -10,6 +11,10 @@ use std::sync::LazyLock;
 const MAX_RELEASE_CHARS: usize = 120_000;
 /// A report this recent has its release read and its result fetched.
 const RECENT_REPORT_DAYS: i64 = 10;
+/// Days either side of a reported date that its release may be filed.
+const RELEASE_DAYS: i64 = 3;
+/// A company reports once a quarter, so a 6-K this soon after its last report isn't its next.
+const NEXT_REPORT_DAYS: i64 = 60;
 /// Reported quarters fetched per background run, leaving the daily budget for the calendar.
 const RESULTS_PER_RUN: usize = 3;
 /// Releases read per background run.
@@ -151,13 +156,126 @@ pub(crate) fn guidance_key(accession: &str) -> String {
     format!("guidance:{accession}")
 }
 
+/// An 8-K reporting Item 2.02: an earnings release, said so by the filer.
+fn is_report(filing: &sec::SecFiling) -> bool {
+    filing.form.starts_with("8-K") && filing.items.iter().any(|item| item.code == "2.02")
+}
+
+/// A filing that can carry an earnings release: an 8-K reporting Item 2.02, or a foreign
+/// issuer's 6-K, whose contents aren't coded.
+fn may_report(filing: &sec::SecFiling) -> bool {
+    is_report(filing) || filing.form.starts_with("6-K")
+}
+
+fn filed_day(filing: &sec::SecFiling) -> Option<NaiveDate> {
+    crate::session::date_of(&filing.filed_at)
+}
+
+fn reported_day(quarter: &ReportedQuarter) -> Option<NaiveDate> {
+    NaiveDate::parse_from_str(&quarter.reported_date, "%Y-%m-%d").ok()
+}
+
 /// The latest earnings report in a company's saved filings: an 8-K reporting Item 2.02.
 pub(crate) fn latest_report(filings: &[sec::SecFiling]) -> Option<&sec::SecFiling> {
     filings
         .iter()
-        .filter(|filing| filing.form.starts_with("8-K"))
-        .filter(|filing| filing.items.iter().any(|item| item.code == "2.02"))
+        .filter(|filing| is_report(filing))
         .max_by(|a, b| a.filed_at.cmp(&b.filed_at))
+}
+
+/// The day of a company's latest report: its newest reported quarter, or an 8-K reporting
+/// Item 2.02 filed after it, whose results aren't listed yet.
+fn latest_report_day(
+    filings: &[sec::SecFiling],
+    quarters: &[ReportedQuarter],
+) -> Option<NaiveDate> {
+    let filed = latest_report(filings).and_then(filed_day);
+    let listed = quarters.first().and_then(reported_day);
+    filed.max(listed)
+}
+
+/// The filings that may carry the release of a report on `day`, within `RELEASE_DAYS`: 8-Ks
+/// reporting Item 2.02 first, then 6-Ks, each oldest first.
+fn release_candidates(filings: &[sec::SecFiling], day: NaiveDate) -> Vec<&sec::SecFiling> {
+    let mut found: Vec<&sec::SecFiling> = filings
+        .iter()
+        .filter(|filing| may_report(filing))
+        .filter(|filing| {
+            filed_day(filing).is_some_and(|filed| (filed - day).num_days().abs() <= RELEASE_DAYS)
+        })
+        .collect();
+    found.sort_by(|a, b| (!is_report(a), &a.filed_at).cmp(&(!is_report(b), &b.filed_at)));
+    found
+}
+
+/// Whether to ask Alpha Vantage for a company's reported quarters: never asked, or, at most
+/// twice a day, a recent filing that may carry a report newer than the newest listed. A 6-K
+/// counts only once a quarter has passed since that report, since a company reports quarterly
+/// and a foreign issuer files 6-Ks for much else.
+fn results_due(
+    filings: &[sec::SecFiling],
+    saved: Option<&(Vec<ReportedQuarter>, i64)>,
+    now: DateTime<Utc>,
+) -> bool {
+    let Some((quarters, at)) = saved else {
+        return true;
+    };
+    if now.timestamp() - at < 12 * 3_600 {
+        return false;
+    }
+    let newest = quarters.first().and_then(reported_day);
+    let cutoff = now.date_naive() - Duration::days(RECENT_REPORT_DAYS);
+    filings
+        .iter()
+        .filter(|filing| may_report(filing))
+        .any(|filing| {
+            filed_day(filing).is_some_and(|day| {
+                day >= cutoff
+                    && newest.is_none_or(|newest| {
+                        day > newest + Duration::days(RELEASE_DAYS)
+                            && (is_report(filing)
+                                || day >= newest + Duration::days(NEXT_REPORT_DAYS))
+                    })
+            })
+        })
+}
+
+/// Whether a saved release reads as an earnings release: it states revenue.
+fn reads_as_results(text: &str) -> bool {
+    revenue_sentence(&reading::sentences(text)).is_some()
+}
+
+/// A company's latest report and the filing that carried its release. An 8-K reporting Item
+/// 2.02 newer than the listed results is a report whose results aren't listed yet. Otherwise the
+/// newest listed quarter is the report, and its release is an 8-K reporting Item 2.02 filed with
+/// it, or a 6-K filed with it whose saved exhibit (`release`) reads as results.
+fn report_and_release(
+    filings: &[sec::SecFiling],
+    quarters: &[ReportedQuarter],
+    release: impl Fn(&str) -> Option<String>,
+) -> (Option<ReportedQuarter>, Option<sec::SecFiling>) {
+    let filed = latest_report(filings);
+    let newest = quarters.first();
+    let listed = newest.and_then(reported_day);
+    let unlisted = filed
+        .and_then(filed_day)
+        .is_some_and(|day| listed.is_none_or(|listed| day > listed + Duration::days(RELEASE_DAYS)));
+    if unlisted {
+        return (None, filed.cloned());
+    }
+    let Some(listed) = listed else {
+        return (None, None);
+    };
+    let carried = release_candidates(filings, listed)
+        .into_iter()
+        .find(|filing| {
+            is_report(filing)
+                || sec::accession(filing)
+                    .and_then(&release)
+                    .is_some_and(|text| reads_as_results(&text))
+        })
+        .cloned();
+    (newest.cloned(), carried)
 }
 
 impl Providers {
@@ -196,54 +314,72 @@ impl Providers {
         Ok(quarters)
     }
 
-    /// Fetches what recent reporters reported and reads their releases, a few per run. A
-    /// report is recent when an 8-K Item 2.02 was filed in the last `RECENT_REPORT_DAYS`.
+    /// Fetches each stock's reported quarters when they may have changed (`results_due`), a few
+    /// per run, then reads the releases of reports from the last `RECENT_REPORT_DAYS`. Alpha
+    /// Vantage's quarters say when a company reported, whatever form it filed; without them,
+    /// only an 8-K reporting Item 2.02 says so.
     pub async fn read_earnings(
         &self,
         stocks: &[String],
         local: Option<&str>,
     ) -> Result<usize, String> {
-        let cutoff = (Utc::now() - Duration::days(RECENT_REPORT_DAYS)).to_rfc3339();
-        let reports: Vec<(String, sec::SecFiling)> = {
+        let now = Utc::now();
+        let companies: Vec<(String, Vec<sec::SecFiling>)> = {
             let cache = self.news_cache().await?;
             stocks
                 .iter()
-                .filter_map(|symbol| {
-                    let company = cache.company(symbol).ok()?.0?;
-                    let filing = latest_report(&company.filings)?.clone();
-                    (filing.filed_at >= cutoff).then(|| (symbol.clone(), filing))
+                .map(|symbol| {
+                    let filings = cache
+                        .company(symbol)
+                        .ok()
+                        .and_then(|(company, _)| company)
+                        .map(|company| company.filings)
+                        .unwrap_or_default();
+                    (symbol.clone(), filings)
                 })
                 .collect()
         };
         let mut done = 0;
-        let mut fetched = 0;
-        for (symbol, filing) in &reports {
-            // Alpha Vantage lists a quarter once it's reported; one saved since the filing has it.
-            let saved = self.news_cache().await?.reported_quarters(symbol)?;
-            let has_it = saved.as_ref().is_some_and(|(quarters, _)| {
-                quarters.first().is_some_and(|quarter| {
-                    filing
-                        .filed_at
-                        .get(..10)
-                        .is_some_and(|day| quarter.reported_date.as_str() >= day)
-                })
-            });
-            let fresh = saved
-                .as_ref()
-                .is_some_and(|(_, at)| Utc::now().timestamp() - at < 12 * 3_600);
-            if !has_it
-                && !fresh
-                && fetched < RESULTS_PER_RUN
-                && self
-                    .integration_status()
-                    .is_ok_and(|status| status.alpha_vantage)
-            {
-                fetched += 1;
-                if self.fetch_reported_quarters(symbol).await.is_ok() {
-                    done += 1;
+        if self
+            .integration_status()
+            .is_ok_and(|status| status.alpha_vantage)
+        {
+            let mut fetched = 0;
+            for (symbol, filings) in &companies {
+                if fetched == RESULTS_PER_RUN {
+                    break;
+                }
+                let saved = self.news_cache().await?.reported_quarters(symbol)?;
+                if results_due(filings, saved.as_ref(), now) {
+                    fetched += 1;
+                    if self.fetch_reported_quarters(symbol).await.is_ok() {
+                        done += 1;
+                    }
                 }
             }
         }
+        let cutoff = now.date_naive() - Duration::days(RECENT_REPORT_DAYS);
+        let reports: Vec<(String, sec::SecFiling)> = {
+            let cache = self.news_cache().await?;
+            companies
+                .iter()
+                .flat_map(|(symbol, filings)| {
+                    let quarters = cache
+                        .reported_quarters(symbol)
+                        .ok()
+                        .flatten()
+                        .map(|(quarters, _)| quarters)
+                        .unwrap_or_default();
+                    latest_report_day(filings, &quarters)
+                        .filter(|day| *day >= cutoff)
+                        .map(|day| release_candidates(filings, day))
+                        .unwrap_or_default()
+                        .into_iter()
+                        .map(|filing| (symbol.clone(), filing.clone()))
+                        .collect::<Vec<_>>()
+                })
+                .collect()
+        };
         let Some(contact) = self.sec_contact()? else {
             return Ok(done);
         };
@@ -255,7 +391,10 @@ impl Providers {
             let Some(accession) = sec::accession(&filing).map(str::to_owned) else {
                 continue;
             };
-            let text = match self.news_cache().await?.release(&accession)? {
+            // Looked up on its own line: a cache guard left in the match would be held across
+            // the SEC requests below and deadlock on the save.
+            let saved = self.news_cache().await?.release(&accession)?;
+            let text = match saved {
                 Some((_, text)) => text,
                 None => {
                     let Some(index) = index_link(&filing.url) else {
@@ -265,6 +404,14 @@ impl Providers {
                         continue;
                     };
                     let Some(exhibit) = exhibit_link(&page) else {
+                        // A filing without an Exhibit 99.1 has no release; it's noted as read.
+                        self.news_cache().await?.save_release(
+                            &accession,
+                            &symbol,
+                            &index,
+                            "",
+                            Utc::now().timestamp(),
+                        )?;
                         continue;
                     };
                     let Ok(html) = self.sec_text(&contact, &exhibit, 8 * 1024 * 1024).await else {
@@ -284,6 +431,10 @@ impl Providers {
                     text
                 }
             };
+            // A 6-K that isn't a results release has no guidance to read.
+            if !is_report(&filing) && !reads_as_results(&text) {
+                continue;
+            }
             let key = guidance_key(&accession);
             if self.news_cache().await?.reading(&key)?.is_some() {
                 continue;
@@ -293,18 +444,34 @@ impl Providers {
             let (guidance, reader) = if candidates.is_empty() {
                 (Vec::new(), reading::RULE.to_owned())
             } else {
-                // A local model reads every candidate; Apple's, as many as fit.
+                // A local model reads every candidate at once; Apple's, a window at a time.
                 let limit = if local.is_some() {
                     reading::LOCAL_CHARS
                 } else {
                     reading::APPLE_CHARS
                 };
-                let input = reading::numbered("Release sentences:", &candidates, limit);
-                match self.read_text(reading::Task::Guidance, input, local).await {
-                    Ok((reply, reader)) => (reading::listed(&reply, &candidates), reader),
-                    // A model that can't read it now leaves it for the next run.
-                    Err(_) => continue,
+                let mut picked = Vec::new();
+                let mut reader = reading::RULE.to_owned();
+                let mut unread = false;
+                for chunk in reading::chunks("Release sentences:", &candidates, limit) {
+                    let input = reading::numbered("Release sentences:", &chunk, limit);
+                    match self.read_text(reading::Task::Guidance, input, local).await {
+                        Ok((reply, by)) => {
+                            picked.extend(reading::listed(&reply, &chunk));
+                            reader = by;
+                        }
+                        Err(_) => {
+                            unread = true;
+                            break;
+                        }
+                    }
                 }
+                // A model that can't read it all now leaves it for the next run.
+                if unread {
+                    continue;
+                }
+                picked.truncate(4);
+                (picked, reader)
             };
             self.news_cache().await?.save_reading(
                 &key,
@@ -333,35 +500,31 @@ pub(crate) struct SavedReport {
 /// A holding's latest report as saved: the 8-K, the matching reported quarter (reported on or
 /// after the filing's day, or the newest when there's no filing), and the release's reading.
 pub(crate) fn saved_report(cache: &news_cache::NewsCache, symbol: &str) -> SavedReport {
-    let filing = cache
+    let filings = cache
         .company(symbol)
         .ok()
         .and_then(|(company, _)| company)
-        .and_then(|company| latest_report(&company.filings).cloned());
+        .map(|company| company.filings)
+        .unwrap_or_default();
     let quarters = cache
         .reported_quarters(symbol)
         .ok()
         .flatten()
         .map(|(quarters, _)| quarters)
         .unwrap_or_default();
-    let quarter = match &filing {
-        Some(filing) => {
-            let day = filing.filed_at.get(..10).unwrap_or("");
-            quarters
-                .iter()
-                .find(|quarter| {
-                    NaiveDate::parse_from_str(&quarter.reported_date, "%Y-%m-%d")
-                        .ok()
-                        .zip(NaiveDate::parse_from_str(day, "%Y-%m-%d").ok())
-                        .is_some_and(|(reported, filed)| (reported - filed).num_days().abs() <= 3)
-                })
-                .cloned()
-        }
-        None => quarters.first().cloned(),
-    };
+    let (quarter, filing) = report_and_release(&filings, &quarters, |accession| {
+        cache
+            .release(accession)
+            .ok()
+            .flatten()
+            .map(|(_, text)| text)
+    });
     let release = filing.as_ref().and_then(|filing| {
         let accession = sec::accession(filing)?;
-        let (url, text) = cache.release(accession).ok()??;
+        let (url, text) = cache
+            .release(accession)
+            .ok()?
+            .filter(|(_, text)| !text.is_empty())?;
         let sentences = reading::sentences(&text);
         let (guidance, guidance_by) = match cache.reading(&guidance_key(accession)).ok()? {
             Some((reading, reader)) => (
@@ -414,6 +577,125 @@ pub(crate) fn saved_report(cache: &news_cache::NewsCache, symbol: &str) -> Saved
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn filing(form: &str, item: Option<&str>, at: &str, accession: &str) -> sec::SecFiling {
+        sec::SecFiling {
+            form: form.into(),
+            filed_at: at.into(),
+            url: format!("https://www.sec.gov/Archives/edgar/data/1/{accession}/doc.htm"),
+            items: item
+                .map(|code| sec::SecItem {
+                    code: code.into(),
+                    label: String::new(),
+                })
+                .into_iter()
+                .collect(),
+            title: String::new(),
+        }
+    }
+
+    fn quarter(reported: &str) -> ReportedQuarter {
+        ReportedQuarter {
+            fiscal_date_ending: "2026-09-30".into(),
+            reported_date: reported.into(),
+            reported_eps: Some(0.3),
+            estimated_eps: Some(-0.7),
+            surprise_pct: None,
+            report_time: Some("pre-market".into()),
+        }
+    }
+
+    #[test]
+    fn a_foreign_issuers_report_is_found_from_its_results_and_its_6k_release() {
+        let filings = vec![
+            filing(
+                "6-K",
+                None,
+                "2026-11-12T14:22:00+00:00",
+                "000000000126000001",
+            ),
+            filing(
+                "6-K",
+                None,
+                "2026-11-12T21:10:00+00:00",
+                "000000000126000002",
+            ),
+            filing(
+                "6-K",
+                None,
+                "2026-10-22T12:00:00+00:00",
+                "000000000126000003",
+            ),
+        ];
+        let quarters = [quarter("2026-11-12"), quarter("2026-08-07")];
+        // Of the two 6-Ks filed with the report, the one whose exhibit states revenue carried it.
+        let release = |accession: &str| {
+            (accession == "000000000126000002")
+                .then(|| "Revenue was $146 million, up 355% from a year ago.".to_owned())
+        };
+        let (found, carried) = report_and_release(&filings, &quarters, release);
+        assert_eq!(found.map(|q| q.reported_date), Some("2026-11-12".into()));
+        assert_eq!(
+            carried.as_ref().and_then(sec::accession),
+            Some("000000000126000002")
+        );
+        // Not yet read, no 6-K is claimed as the release.
+        let (_, unread) = report_and_release(&filings, &quarters, |_| None);
+        assert!(unread.is_none());
+    }
+
+    #[test]
+    fn an_8k_newer_than_the_listed_results_is_a_report_whose_results_are_pending() {
+        let filings = vec![filing(
+            "8-K",
+            Some("2.02"),
+            "2026-11-12T20:05:00+00:00",
+            "000000000126000004",
+        )];
+        let (found, carried) = report_and_release(&filings, &[quarter("2026-08-07")], |_| None);
+        assert!(found.is_none());
+        assert!(carried.is_some());
+        // Once listed, the quarter and the 8-K filed with it are one report.
+        let (found, carried) = report_and_release(&filings, &[quarter("2026-11-12")], |_| None);
+        assert!(found.is_some() && carried.is_some());
+    }
+
+    #[test]
+    fn results_are_asked_for_once_then_after_a_filing_that_may_carry_a_new_report() {
+        let now: DateTime<Utc> = "2026-11-13T12:00:00Z".parse().unwrap();
+        let day_ago = now.timestamp() - 86_400;
+        let saved = (vec![quarter("2026-08-07")], day_ago);
+        let six_k = |at: &str| vec![filing("6-K", None, at, "000000000126000005")];
+        // Never asked: ask, whatever was filed.
+        assert!(results_due(&[], None, now));
+        // A 6-K a quarter after the last report may be the next one.
+        assert!(results_due(
+            &six_k("2026-11-12T14:00:00+00:00"),
+            Some(&saved),
+            now
+        ));
+        // A 6-K weeks after a report is something else.
+        let recent = (vec![quarter("2026-10-20")], day_ago);
+        assert!(!results_due(
+            &six_k("2026-11-12T14:00:00+00:00"),
+            Some(&recent),
+            now
+        ));
+        // Asked within half a day: wait.
+        let fresh = (vec![quarter("2026-08-07")], now.timestamp() - 3_600);
+        assert!(!results_due(
+            &six_k("2026-11-12T14:00:00+00:00"),
+            Some(&fresh),
+            now
+        ));
+        // Once the report is listed, nothing is due.
+        let listed = (vec![quarter("2026-11-12")], day_ago);
+        assert!(!results_due(
+            &six_k("2026-11-12T14:00:00+00:00"),
+            Some(&listed),
+            now
+        ));
+    }
 
     #[test]
     fn reported_quarters_keep_numbers_and_drop_what_isnt_one() {

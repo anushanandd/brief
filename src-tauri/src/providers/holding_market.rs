@@ -452,6 +452,7 @@ impl Providers {
             "https://paper-api.alpaca.markets",
             "https://api.alpaca.markets",
         ] {
+            super::pace::ALPACA.take().await;
             let response = self
                 .http
                 .get(format!("{base}/v2/calendar"))
@@ -481,6 +482,7 @@ impl Providers {
         let end = Utc::now() - Duration::seconds(2);
         let start = (end - Duration::minutes(1)).to_rfc3339();
         let end = end.to_rfc3339();
+        super::pace::ALPACA.take().await;
         let response = self
             .http
             .get(format!(

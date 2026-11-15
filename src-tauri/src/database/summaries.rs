@@ -40,12 +40,30 @@ impl Database {
         scope: &str,
         start: chrono::NaiveDate,
     ) -> Result<Option<SavedSummary>, String> {
+        self.summary_where(
+            "scope = ?1 AND period_start = ?2",
+            params![scope, start.to_string()],
+        )
+    }
+
+    /// The summary of `scope` saved most recently, whatever its period start.
+    pub fn latest_summary(&self, scope: &str) -> Result<Option<SavedSummary>, String> {
+        self.summary_where("scope = ?1 ORDER BY saved_at DESC LIMIT 1", params![scope])
+    }
+
+    fn summary_where(
+        &self,
+        clause: &str,
+        parameters: impl rusqlite::Params,
+    ) -> Result<Option<SavedSummary>, String> {
         let row = self
             .connection
             .query_row(
-                "SELECT version, inputs, complete, saved_at, summary_json FROM investment_summaries
-                 WHERE scope = ?1 AND period_start = ?2",
-                params![scope, start.to_string()],
+                &format!(
+                    "SELECT version, inputs, complete, saved_at, summary_json FROM investment_summaries
+                     WHERE {clause}"
+                ),
+                parameters,
                 |row| {
                     Ok((
                         row.get::<_, u32>(0)?,

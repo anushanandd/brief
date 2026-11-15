@@ -3,7 +3,7 @@ import { listen } from '@tauri-apps/api/event'
 import { useEffect } from 'react'
 
 import { summaryInputsKey, warmInvestmentSummary } from '../components/investment-summary-card'
-import { isTauri, refreshPortfolioNews } from '../lib/api'
+import { isTauri } from '../lib/api'
 import { sessionGraphWindow, chartPeriod } from '../lib/graph-preferences'
 import type { FinanceSnapshot } from '../lib/schema'
 
@@ -14,31 +14,38 @@ const WARMUP_DELAY_MS = 3_000
 const warmed = new Set<string>()
 
 /**
- * Prepares Investments before it is opened: saves every holding's news (at most every ten
- * minutes, in one request), then has Rust make the portfolio's summary for the app's chart
- * period and each holding's after it, largest first, saving each, so the page and every
- * holding open on a saved summary instead of waiting. Rust says when it made one
- * (`investment-summary-updated`), and that summary's queries ask again.
+ * Prepares Investments before it is opened: has Rust make the portfolio's summary for the app's
+ * chart period and each holding's after it, largest first, so the page and every holding open on
+ * a saved summary. Rust owns everything after that: it refreshes news and filings on its own
+ * schedule, makes the summaries again when something new arrives or the market's prices move on,
+ * and says so. `investment-summary-updated` names a summary it made, and `data-updated` the
+ * holdings whose stories or readings changed, so only their queries ask again.
  */
 export function useInvestmentsWarmup(data: FinanceSnapshot | undefined, connected: boolean) {
   const client = useQueryClient()
   useEffect(() => {
     if (!isTauri()) return undefined
     let disposed = false
-    let stop: (() => void) | undefined
+    const stops: Array<() => void> = []
+    const keep = (unlisten: () => void) => {
+      if (disposed) unlisten()
+      else stops.push(unlisten)
+    }
     void listen<{ start: string; ticker: string | null }>(
       'investment-summary-updated',
       ({ payload }) =>
         void client.invalidateQueries({
           queryKey: ['investment-summary', payload.start, payload.ticker ?? ''],
         }),
-    ).then((unlisten) => {
-      if (disposed) unlisten()
-      else stop = unlisten
-    })
+    ).then(keep)
+    void listen<{ kind: string; symbols: string[] }>('data-updated', ({ payload }) => {
+      if (payload.kind !== 'news') return
+      for (const symbol of payload.symbols)
+        void client.invalidateQueries({ queryKey: ['holding-news', 'alpaca', symbol] })
+    }).then(keep)
     return () => {
       disposed = true
-      stop?.()
+      for (const stop of stops) stop()
     }
   }, [client])
   useEffect(() => {
@@ -48,19 +55,7 @@ export function useInvestmentsWarmup(data: FinanceSnapshot | undefined, connecte
       const key = JSON.stringify([...summaryInputsKey(data), range])
       if (warmed.has(key)) return
       warmed.add(key)
-      void (async () => {
-        try {
-          const news = await refreshPortfolioNews()
-          if (news.refreshed) {
-            // Rust answers with the saved summaries, marked while it makes new ones.
-            await client.invalidateQueries({ queryKey: ['investment-summary'] })
-            void client.invalidateQueries({ queryKey: ['holding-news'] })
-          }
-        } catch {
-          // News is optional; the summary still builds from what's saved.
-        }
-        await warmInvestmentSummary(client, data, range).catch(() => undefined)
-      })()
+      void warmInvestmentSummary(client, data, range).catch(() => undefined)
     }, WARMUP_DELAY_MS)
     return () => window.clearTimeout(timer)
   }, [client, connected, data])

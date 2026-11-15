@@ -123,9 +123,31 @@ async fn read(app: &AppHandle) {
             &crate::providers::portfolio::held_securities(&view.snapshot.holdings),
             None,
         );
-        let _ = state.providers.read_causes(local).await;
-        let _ = state.providers.read_earnings(&stocks, local).await;
-        let _ = state.providers.read_expectations(&stocks, local).await;
+        let read = state
+            .providers
+            .read_causes(&stocks, local)
+            .await
+            .unwrap_or(0)
+            + state
+                .providers
+                .read_stories(&stocks, local)
+                .await
+                .unwrap_or(0)
+            + state
+                .providers
+                .read_earnings(&stocks, local)
+                .await
+                .unwrap_or(0)
+            + state
+                .providers
+                .read_expectations(&stocks, local)
+                .await
+                .unwrap_or(0);
+        // What was read changes the summaries that quote it.
+        if read > 0 {
+            crate::news_job::announce(app, "readings", Vec::new());
+            crate::summary_jobs::rewarm(app);
+        }
     }
 }
 

@@ -107,7 +107,9 @@ impl Providers {
             cache.failure(&symbol, warning)?;
         }
         match company {
-            Some(Ok(company)) => cache.save_filings(&symbol, company.as_ref(), now)?,
+            Some(Ok(company)) => {
+                cache.save_filings(&symbol, company.as_ref(), now)?;
+            }
             Some(Err(error)) => cache.filings_failure(&symbol, &error)?,
             None => {}
         }
@@ -116,21 +118,19 @@ impl Providers {
 }
 
 /// The outcome of a portfolio news refresh.
-#[derive(Clone, Debug, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-#[ts(export)]
+#[derive(Clone, Debug, Default, PartialEq)]
 pub struct PortfolioNews {
     /// `false` when one ran within the last ten minutes, so nothing was requested.
     pub refreshed: bool,
-    pub stories: usize,
-    pub filings: usize,
+    /// The holdings with stories or filings that weren't saved before.
+    pub changed: Vec<String>,
 }
 
 /// Pages of portfolio news per refresh: 200 stories covers a week for most portfolios.
 const PORTFOLIO_NEWS_PAGES: usize = 4;
 const PORTFOLIO_NEWS_DAYS: i64 = 7;
 /// EDGAR filings older than this are checked again on a portfolio refresh, a few per refresh.
-const PORTFOLIO_FILINGS_AGE: i64 = 12 * 3_600;
+const PORTFOLIO_FILINGS_AGE: i64 = 30 * 60;
 const PORTFOLIO_FILINGS_PER_REFRESH: usize = 12;
 
 impl Providers {
@@ -144,11 +144,7 @@ impl Providers {
     ) -> Result<PortfolioNews, String> {
         let held = held_securities(&snapshot.holdings);
         let stocks = super::portfolio::modeled(&held, None);
-        let skipped = PortfolioNews {
-            refreshed: false,
-            stories: 0,
-            filings: 0,
-        };
+        let skipped = PortfolioNews::default();
         if stocks.is_empty() {
             return Ok(skipped);
         }
@@ -199,6 +195,7 @@ impl Providers {
             return Err("News credentials changed; retry the request".into());
         }
         let now = Utc::now().timestamp();
+        let mut changed = Vec::new();
         let stale: Vec<String> = {
             let cache = self.news_cache().await?;
             cache.save_market_news(&feed, now)?;
@@ -209,8 +206,8 @@ impl Providers {
                     .filter(|story| story.symbols.contains(symbol))
                     .cloned()
                     .collect();
-                if !own.is_empty() {
-                    cache.save(symbol, &own, now)?;
+                if !own.is_empty() && cache.save(symbol, &own, now)? > 0 {
+                    changed.push(symbol.clone());
                 }
             }
             let mut stale = Vec::new();
@@ -228,15 +225,20 @@ impl Providers {
                 .collect()
         };
         // EDGAR asks for a contact; without one, filings wait for the holding's page.
-        let mut filings = 0;
         if let Some(contact) = self.sec_contact()? {
             for symbol in stale {
                 let company = self.sec_company(&contact, &symbol).await;
                 let cache = self.news_cache().await?;
                 match company {
                     Ok(company) => {
-                        cache.save_filings(&symbol, company.as_ref(), Utc::now().timestamp())?;
-                        filings += 1;
+                        let new = cache.save_filings(
+                            &symbol,
+                            company.as_ref(),
+                            Utc::now().timestamp(),
+                        )?;
+                        if new > 0 && !changed.contains(&symbol) {
+                            changed.push(symbol);
+                        }
                     }
                     Err(error) => cache.filings_failure(&symbol, &error)?,
                 }
@@ -244,8 +246,7 @@ impl Providers {
         }
         Ok(PortfolioNews {
             refreshed: true,
-            stories: stories.len(),
-            filings,
+            changed,
         })
     }
 }
@@ -337,6 +338,13 @@ pub(super) static ANALYST: LazyLock<regex::Regex> = LazyLock::new(|| {
 pub(super) static ROUNDUP: LazyLock<regex::Regex> = LazyLock::new(|| {
     pattern(
         r"stock market today|stocks to watch|\btop \w+ (us )?stocks|\b\d+ stocks\b|bulls and bears|most-searched|movers|market (update|wrap|recap)|futures (rise|fall|edge|slip)",
+    )
+});
+/// A firm's research or trading notice about other companies, which names the firm first: a
+/// bank you hold that comments on, forecasts, or discloses a stake in something else.
+static ABOUT_OTHERS: LazyLock<regex::Regex> = LazyLock::new(|| {
+    pattern(
+        r"\bcomments on\b|\bupdates outlook on\b|\banalysts? (assess|see|say|expect)|\breleases\b.{0,60}\b(survey|forecast|outlook|report)\b|\bdealing disclosure\b|\bholdings? notification\b|\bdiscloses major holding\b",
     )
 });
 static TAGS: LazyLock<Vec<(NewsTag, regex::Regex)>> = LazyLock::new(|| {
@@ -516,11 +524,12 @@ pub(super) fn relevance(article: &MarketNewsArticle, symbol: &str, key: Option<&
     let score = breadth + named + event;
     // A story whose headline is about something else only mentions the company, unless the
     // company is all it was tagged with.
-    let score = if headline || article.symbols.len() <= 1 {
-        score
-    } else {
-        score.min(RELEVANT - 5)
-    };
+    let score =
+        if (headline || article.symbols.len() <= 1) && !ABOUT_OTHERS.is_match(&article.headline) {
+            score
+        } else {
+            score.min(RELEVANT - 5)
+        };
     match article.scope {
         NewsScope::Market => score.min(25),
         NewsScope::Company => score.min(100),
@@ -802,6 +811,18 @@ mod tests {
         // The ticker counts as a name, as a whole word only.
         assert!(scored("TEST Shares Jump", "", &["TEST", "OTHER"]) >= RELEVANT);
         assert!(scored("TESTX Fund Update", "", &["TEST", "OTHER"]) < RELEVANT);
+        // A firm you hold, writing or trading about other companies, isn't news about it.
+        for notice in [
+            "Testco Comments on Peerco Investor Day",
+            "Testco Updates Outlook on Peerco Following Q3 Results",
+            "Testco Analysts Assess Impact of Election on Data Centers",
+            "Testco Releases H2 Survey on CIO Spending",
+            "Testco Discloses Major Holding in Peerco PLC",
+        ] {
+            assert!(scored(notice, "", &["TEST"]) < RELEVANT, "{notice}");
+        }
+        // Its own business still is.
+        assert!(scored("Testco to Acquire Peerco", "", &["TEST"]) >= RELEVANT);
     }
 
     #[test]

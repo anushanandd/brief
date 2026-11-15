@@ -2,8 +2,11 @@
 //! saved with the hash of its inputs (`inputs_key`); a request with the same inputs gets it
 //! back without a network call, across launches. When the inputs have changed, the older
 //! summary is returned whole, marked `refreshing`, and the caller makes the new one in the
-//! background: the old one is never shown as current, and never mixed with newer figures.
-use std::sync::Mutex;
+//! background: the old one is never shown as current, and never mixed with newer figures. A
+//! period never summarized before shows the holding's latest summary the same way, so only a
+//! holding with nothing saved waits; the same summary is never made twice at once.
+use std::collections::BTreeMap;
+use std::sync::{Arc, Mutex};
 
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use serde_json::Value;
@@ -15,7 +18,7 @@ use crate::storage::Storage;
 /// What a summary is and how it's made. A summary saved under another version is never shown,
 /// not even while a new one is made, since its shape may not be today's: change this with the
 /// summary's contract or the rules that write it.
-pub const VERSION: u32 = 1;
+pub const VERSION: u32 = 3;
 
 /// A summary missing a part (prices that didn't load, say) is made again after this long even
 /// when its inputs haven't changed.
@@ -87,9 +90,28 @@ impl Served {
     }
 }
 
+/// One build at a time for each summary: a request that comes while the same summary is being
+/// made waits for it and answers with what it saved, rather than making it again.
+type Builds = BTreeMap<(String, NaiveDate), Arc<tokio::sync::Mutex<()>>>;
+static BUILDS: Mutex<Builds> = Mutex::new(BTreeMap::new());
+
+fn build_lock(ticker: Option<&str>, start: NaiveDate) -> Arc<tokio::sync::Mutex<()>> {
+    let mut builds = BUILDS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A lock no build holds any more is let go.
+    builds.retain(|_, lock| Arc::strong_count(lock) > 1);
+    builds
+        .entry((scope(ticker).to_owned(), start))
+        .or_default()
+        .clone()
+}
+
 /// The summary of `ticker` (or the portfolio) from `start`: the saved one when it was made from
-/// `inputs`, an older saved one marked refreshing, or, with none saved, one `make` makes now
-/// and this saves. The storage lock is held only to read and to save, never while `make` runs.
+/// `inputs`, an older saved one marked refreshing, or, with none saved for `start`, the scope's
+/// latest summary for another period, marked refreshing, while the caller makes this one. Only
+/// a scope with nothing saved waits for `make`. The storage lock is held only to read and to
+/// save, never while `make` runs.
 pub async fn serve(
     storage: &Mutex<Storage>,
     ticker: Option<&str>,
@@ -103,6 +125,21 @@ pub async fn serve(
         Lookup::Current(summary) => Ok(Served::Saved(summary)),
         Lookup::Stale(summary) => Ok(Served::Refreshing(summary)),
         Lookup::Missing => {
+            // Another period's summary says its own start, so it stands in honestly.
+            let latest = locked(storage)?.latest_summary(ticker)?;
+            if let Lookup::Current(summary) | Lookup::Stale(summary) =
+                lookup(latest, "", VERSION, now)
+            {
+                let mut summary = summary;
+                summary["refreshing"] = Value::Bool(true);
+                return Ok(Served::Refreshing(summary));
+            }
+            let lock = build_lock(ticker, start);
+            let _building = lock.lock().await;
+            let saved = locked(storage)?.saved_summary(ticker, start)?;
+            if let Lookup::Current(summary) = lookup(saved, inputs, VERSION, now) {
+                return Ok(Served::Saved(summary));
+            }
             let summary = make().await?;
             Ok(Served::Made(save(
                 storage, ticker, start, inputs, now, &summary,
@@ -121,6 +158,8 @@ pub async fn refresh(
     now: DateTime<Utc>,
     make: impl AsyncFnOnce() -> Result<InvestmentSummary, String>,
 ) -> Result<bool, String> {
+    let lock = build_lock(ticker, start);
+    let _building = lock.lock().await;
     let saved = locked(storage)?.saved_summary(ticker, start)?;
     if matches!(lookup(saved, inputs, VERSION, now), Lookup::Current(_)) {
         return Ok(false);
@@ -261,6 +300,58 @@ mod tests {
             .saved_summary(None, day(START))
             .unwrap()
             .is_none());
+        drop(storage);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+
+    #[tokio::test]
+    async fn a_new_period_shows_the_latest_summary_and_one_build_answers_requests_at_once() {
+        let directory = directory();
+        let maker = Maker(AtomicUsize::new(0));
+        let now = at("2026-10-17T22:00:00Z");
+        let storage = Mutex::new(Storage::new(directory.clone()).unwrap());
+        // Two requests for a summary never made: one build, and both answered with it.
+        let (first, second) = tokio::join!(
+            serve(
+                &storage,
+                Some("TEST"),
+                day(START),
+                INPUTS,
+                now,
+                async || {
+                    tokio::task::yield_now().await;
+                    maker.make(false).await
+                }
+            ),
+            serve(
+                &storage,
+                Some("TEST"),
+                day(START),
+                INPUTS,
+                now,
+                async || { maker.make(false).await }
+            ),
+        );
+        assert!(matches!(first.unwrap(), Served::Made(_)));
+        assert!(matches!(second.unwrap(), Served::Saved(_)));
+        assert_eq!(maker.calls(), 1);
+        // A period never summarized shows the latest one, marked, and waits for nothing.
+        let served = serve(
+            &storage,
+            Some("TEST"),
+            day("2026-10-12"),
+            INPUTS,
+            now,
+            async || maker.make(false).await,
+        )
+        .await
+        .unwrap();
+        let Served::Refreshing(summary) = served else {
+            panic!("expected the latest summary, refreshing, got {served:?}");
+        };
+        assert_eq!(summary["refreshing"], Value::Bool(true));
+        assert_eq!(summary["start"], START);
+        assert_eq!(maker.calls(), 1);
         drop(storage);
         std::fs::remove_dir_all(directory).unwrap();
     }

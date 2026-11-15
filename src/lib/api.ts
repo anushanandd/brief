@@ -11,8 +11,8 @@ import type { CardRulesChange } from './bindings/CardRulesChange'
 import type { CatalogCard } from './bindings/CatalogCard'
 import type { DocumentImport as NativeDocumentImport } from './bindings/DocumentImport'
 import type { LocalModels } from './bindings/LocalModels'
-import type { PortfolioNews } from './bindings/PortfolioNews'
-import type { ProgramPrefill } from './bindings/ProgramPrefill'
+import type { PeriodAsOf } from './bindings/PeriodAsOf'
+import type { ResearchState } from './bindings/ResearchState'
 import { previewFinanceSettings } from './finance-settings'
 import { ledgerCallSchema, type LedgerCall } from './ledger-view'
 import { fromRust } from './rust-json'
@@ -25,7 +25,6 @@ import {
   type EarningsEvent,
   type HealthReport,
   type InvestmentSummary,
-  type PortfolioToday,
   type SectorExposure,
   type StatementPreview,
   type StatementSummary,
@@ -145,6 +144,15 @@ export async function getSpendingPeriod(
     return fromRust<Record<string, SpendingPeriodDetail>>(periods)[key] ?? null
   }
   return invoke<SpendingPeriodDetail | null>('get_spending_period', { request })
+}
+
+/**
+ * The chart periods' figures at an earlier day's close, computed by Rust; null for today. The
+ * preview has no native runtime, so a page scrolled back there shows them as unavailable.
+ */
+export async function getPeriodAsOf(end: string): Promise<PeriodAsOf | null> {
+  if (!isTauri()) return null
+  return invoke<PeriodAsOf | null>('get_period_as_of', { end })
 }
 
 /** Which reports to read: over which window and accounts, and the one to read in full. */
@@ -323,13 +331,10 @@ export async function chooseCatalogCard(
   return invoke<FinanceSnapshot>('choose_catalog_card', { accountId, catalogId })
 }
 
-/** A bank rule's draft fields read from a research page, each with the sentence that states it. */
-export async function prefillProgramDraft(request: {
-  gapId: string
-  url: string
-}): Promise<ProgramPrefill> {
-  if (!isTauri()) throw new Error('Desktop app only')
-  return invoke<ProgramPrefill>('prefill_program_draft', request)
+/** Whether web lookups are on and connected, and what was looked up; the preview has none. */
+export async function getResearch(): Promise<ResearchState> {
+  if (!isTauri()) return { enabled: false, connected: false, log: [] }
+  return invoke<ResearchState>('get_research')
 }
 
 /** Reads and checks a statement file. Rust keeps the bytes until `importStatement`. */
@@ -384,16 +389,6 @@ export async function confirmWalletRow(id: string, confirmed: boolean): Promise<
 export async function eraseFinanceState(): Promise<FinanceSnapshot> {
   if (!isTauri()) throw new Error('Desktop app only')
   return invoke<FinanceSnapshot>('erase_finance_state')
-}
-
-export async function exportSettingsFile(path: string, contents: string): Promise<void> {
-  if (!isTauri()) throw new Error('Desktop app only')
-  await invoke('export_settings_file', { path, contents })
-}
-
-export async function readSettingsFile(path: string): Promise<string> {
-  if (!isTauri()) throw new Error('Desktop app only')
-  return invoke<string>('read_settings_file', { path })
 }
 
 export async function getAppVersion(): Promise<string> {
@@ -638,12 +633,6 @@ export async function getMarketNews(symbols: string[], refresh = false): Promise
   return invoke<MarketNewsResult>('get_market_news', { symbols, refresh })
 }
 
-/** The portfolio's move today at live prices, with each position's dollar effect. */
-export async function getPortfolioToday(): Promise<PortfolioToday> {
-  if (!isTauri()) throw new Error('Desktop app only')
-  return invoke<PortfolioToday>('get_portfolio_today')
-}
-
 /**
  * The portfolio's, or one holding's, period since `start`: moves against benchmarks, your
  * activity, ranked company events, the latest reported quarter, and any saved context.
@@ -666,16 +655,6 @@ export async function getInvestmentSummary(
 export async function warmInvestmentSummaries(start: string) {
   if (!isTauri()) return
   await invoke('warm_investment_summaries', { start })
-}
-
-/**
- * Saves the past week's news for every held stock in one request and checks EDGAR for the
- * stalest holdings, so summaries and the holdings list are ready before they're opened. Runs at
- * most every ten minutes; `refreshed` is false when it was skipped.
- */
-export async function refreshPortfolioNews(): Promise<PortfolioNews> {
-  if (!isTauri()) throw new Error('Desktop app only')
-  return invoke<PortfolioNews>('refresh_portfolio_news')
 }
 
 /** Held stocks by sector; looks up unclassified stocks in EDGAR once. */

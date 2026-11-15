@@ -174,7 +174,6 @@ fn native_news_contract_carries_tags_relevance_and_filings() {
         cik: 1,
         name: "Synthetic Corp".into(),
         sic: Some(3674),
-        insider_filings: Vec::new(),
         filings: vec![
             filing("2026-09-20T20:05:00+00:00"),
             filing("2026-07-01T20:05:00+00:00"),
@@ -223,7 +222,6 @@ fn filings_survive_failed_refreshes_and_funds_have_none() {
         name: "Synthetic".into(),
         sic: None,
         filings: vec![filing("2026-09-20T20:05:00+00:00")],
-        insider_filings: Vec::new(),
     };
     cache.save_filings("TEST", Some(&company), 100).unwrap();
     cache.filings_failure("TEST", "Synthetic failure").unwrap();
@@ -333,15 +331,6 @@ fn whole_feed_stories_are_read_from_a_time_and_kept_three_days() {
         urls("2026-09-24T00:00:00+00:00"),
         ["https://example.com/oil"]
     );
-}
-
-#[test]
-fn insider_trades_are_read_once_and_kept() {
-    let cache = NewsCache::new(None).unwrap();
-    let url = "https://www.sec.gov/Archives/edgar/data/1/1/form4.xml";
-    assert_eq!(cache.insider_trades(url).unwrap(), None);
-    cache.save_insider_trades(url, &[]).unwrap();
-    assert_eq!(cache.insider_trades(url).unwrap(), Some(Vec::new()));
 }
 
 #[test]
@@ -517,4 +506,41 @@ fn old_daily_pause_gets_one_short_retry() {
     assert!(cache.reserve(now + MINUTE).is_err());
     drop(cache);
     std::fs::remove_file(path).unwrap();
+}
+
+#[test]
+fn saved_closes_widen_their_coverage_and_an_adjustment_replaces_them() {
+    let cache = NewsCache::new(None).unwrap();
+    let day = |value: &str| chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").unwrap();
+    let (first, second, third) = (day("2026-10-01"), day("2026-10-02"), day("2026-10-05"));
+    assert_eq!(cache.closes("TEST", first).unwrap(), (None, Vec::new()));
+    cache
+        .save_closes(
+            "TEST",
+            &[(first, 100.0, Some(10.0)), (second, 101.0, None)],
+            (first, second),
+            false,
+        )
+        .unwrap();
+    // A later fetch from the last saved day widens what is covered.
+    cache
+        .save_closes(
+            "TEST",
+            &[(second, 101.0, None), (third, 102.0, Some(12.0))],
+            (second, third),
+            false,
+        )
+        .unwrap();
+    let (covered, rows) = cache.closes("TEST", first).unwrap();
+    assert_eq!(covered, Some((first, third)));
+    assert_eq!(rows.len(), 3);
+    assert_eq!(cache.closes("TEST", second).unwrap().1.len(), 2);
+    // A split adjusts the whole history: what was saved goes.
+    cache
+        .save_closes("TEST", &[(third, 51.0, None)], (third, third), true)
+        .unwrap();
+    assert_eq!(
+        cache.closes("TEST", first).unwrap(),
+        (Some((third, third)), vec![(third, 51.0, None)])
+    );
 }

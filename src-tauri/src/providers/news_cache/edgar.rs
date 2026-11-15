@@ -51,13 +51,27 @@ impl NewsCache {
             .map_err(|_| "SEC ticker list is unavailable".into())
     }
 
-    /// Saves a company's filings, or that EDGAR lists no company for the ticker.
+    /// Saves a company's filings, or that EDGAR lists no company for the ticker. Returns how
+    /// many filings weren't saved before.
     pub fn save_filings(
         &self,
         symbol: &str,
         company: Option<&SecCompany>,
         now: i64,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
+        let before = self.company(symbol).ok().and_then(|(company, _)| company);
+        let new = company.map_or(0, |company| {
+            company
+                .filings
+                .iter()
+                .filter(|filing| {
+                    !before
+                        .iter()
+                        .flat_map(|before| &before.filings)
+                        .any(|seen| seen.url == filing.url)
+                })
+                .count()
+        });
         let payload = serde_json::to_string(&company).map_err(|_| "Could not save filings")?;
         self.0
             .execute(
@@ -71,7 +85,7 @@ impl NewsCache {
                 [],
             )
             .map_err(|_| "Could not bound saved filings")?;
-        Ok(())
+        Ok(new)
     }
 
     /// Keeps saved filings when a refresh fails.
@@ -120,38 +134,6 @@ impl NewsCache {
                 .flatten(),
             warning,
         ))
-    }
-
-    /// A Form 4's parsed trades, when it was read before; filings never change.
-    pub fn insider_trades(&self, url: &str) -> Result<Option<Vec<InsiderTrade>>, String> {
-        let payload: Option<String> = self
-            .0
-            .query_row(
-                "SELECT payload FROM insider_trades WHERE url=?1",
-                [url],
-                |r| r.get(0),
-            )
-            .optional()
-            .map_err(|_| "Saved insider trades are unavailable")?;
-        Ok(payload.and_then(|payload| serde_json::from_str(&payload).ok()))
-    }
-
-    /// Saves a Form 4's trades, keeping the most recently read 2,000 filings.
-    pub fn save_insider_trades(&self, url: &str, trades: &[InsiderTrade]) -> Result<(), String> {
-        let payload = serde_json::to_string(trades).map_err(|_| "Could not save insider trades")?;
-        self.0
-            .execute(
-                "INSERT OR REPLACE INTO insider_trades VALUES (?1, ?2, strftime('%s','now'))",
-                params![url, payload],
-            )
-            .map_err(|_| "Could not save insider trades")?;
-        self.0
-            .execute(
-                "DELETE FROM insider_trades WHERE url IN (SELECT url FROM insider_trades ORDER BY saved DESC, url LIMIT -1 OFFSET 2000)",
-                [],
-            )
-            .map_err(|_| "Could not bound saved insider trades")?;
-        Ok(())
     }
 
     /// A ticker's saved quarter when it is still usable: checked within a week, or a failed

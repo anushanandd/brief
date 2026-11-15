@@ -6,7 +6,6 @@ const TICKERS_URL: &str = "https://www.sec.gov/files/company_tickers.json";
 /// How long filings are shown after they are accepted.
 pub(super) const FILING_DAYS: i64 = 30;
 const MAX_SAVED_FILINGS: usize = 40;
-const MAX_INSIDER_FILINGS: usize = 24;
 
 /// A company as EDGAR knows it, with its recent current reports.
 #[derive(Clone, Debug, Deserialize, Serialize, TS)]
@@ -16,9 +15,6 @@ pub struct SecCompany {
     pub name: String,
     pub sic: Option<u32>,
     pub filings: Vec<SecFiling>,
-    /// Recent Form 4s (insider trades), newest first.
-    #[serde(default)]
-    pub insider_filings: Vec<super::insiders::InsiderFiling>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, TS)]
@@ -83,6 +79,7 @@ impl Providers {
         contact: &SecContact,
         url: &str,
     ) -> Result<reqwest::Response, String> {
+        super::pace::SEC.take().await;
         self.http
             .get(url)
             .header(
@@ -206,34 +203,7 @@ pub(super) fn parse_sec_company(payload: &Value, cik: u64) -> Result<SecCompany,
         column("primaryDocument"),
     );
     let mut filings = Vec::new();
-    let mut insider_filings = Vec::new();
     for (index, form) in forms.iter().enumerate() {
-        if form.as_str() == Some("4") && insider_filings.len() < MAX_INSIDER_FILINGS {
-            if let (Some(accession), Some(filed_at), Some(document)) = (
-                accessions.get(index).and_then(Value::as_str),
-                accepted
-                    .get(index)
-                    .and_then(Value::as_str)
-                    .and_then(|value| DateTime::parse_from_rfc3339(value).ok()),
-                documents.get(index).and_then(Value::as_str),
-            ) {
-                if accession.chars().all(|c| c.is_ascii_digit() || c == '-') {
-                    insider_filings.extend(super::insiders::insider_filing(
-                        &format!(
-                            "https://www.sec.gov/Archives/edgar/data/{cik}/{}",
-                            accession.replace('-', "")
-                        ),
-                        &document
-                            .split('/')
-                            .map(urlencoding_path)
-                            .collect::<Vec<_>>()
-                            .join("/"),
-                        filed_at.with_timezone(&Utc).to_rfc3339(),
-                    ));
-                }
-            }
-            continue;
-        }
         let Some(form) = form
             .as_str()
             .filter(|form| {
@@ -300,7 +270,6 @@ pub(super) fn parse_sec_company(payload: &Value, cik: u64) -> Result<SecCompany,
                     .and_then(|value| u32::try_from(value).ok())
             }),
         filings,
-        insider_filings,
     })
 }
 
@@ -416,15 +385,6 @@ mod tests {
             filing.url,
             "https://www.sec.gov/Archives/edgar/data/1/000000000126000001/synthetic-8k.htm"
         );
-        // Form 4s are kept apart, pointing at their XML; anything but XML is skipped.
-        assert_eq!(company.insider_filings.len(), 1);
-        assert_eq!(
-            company.insider_filings[0].xml,
-            "https://www.sec.gov/Archives/edgar/data/1/000000000126000005/form4.xml"
-        );
-        assert!(company.insider_filings[0]
-            .page
-            .ends_with("/xslF345X05/form4.xml"));
         assert!(parse_sec_company(&json!({}), 1).is_err());
         let foreign = parse_sec_company(
             &json!({"name": "Synthetic N.V.", "filings": {"recent": {

@@ -1,7 +1,9 @@
-//! Daily closes for the summary: one paged Alpaca request, adjusted for splits and dividends,
-//! dated by New York session, with a live price standing in for the session's close only while
-//! it trades, and the symbols a page limit cut short named rather than dropped. Returns and their
-//! robust typical size feed the layered model (`summary::layers`).
+//! Daily closes for the summary, adjusted for splits and dividends and dated by New York
+//! session: settled sessions from the news cache, and from Alpaca only what it lacks, in paged
+//! requests that name the symbols a page limit cut short rather than drop them. A live price
+//! stands in for the session's close only while it trades. Returns and their robust typical size
+//! feed the layered model (`summary::layers`).
+use super::news_cache::SavedClose;
 use super::*;
 use crate::numeric::median;
 use crate::session::{self, Session};
@@ -83,9 +85,141 @@ fn cut_short(requested: &[String], series: &DailyCloses) -> Vec<String> {
         .collect()
 }
 
+/// Where a symbol's saved history must be fetched from to cover `from` through the session that
+/// opened most recently (`latest`): all of it when nothing covering `from` is saved, otherwise
+/// from its last saved session, which is fetched again to check it, through the latest; `None`
+/// when what's saved is current.
+fn fetch_from(
+    covered: Option<(NaiveDate, NaiveDate)>,
+    from: NaiveDate,
+    latest: NaiveDate,
+) -> Option<NaiveDate> {
+    match covered {
+        Some((first, _)) if from < first => Some(from),
+        Some((_, last)) if last < latest => Some(last),
+        Some(_) => None,
+        None => Some(from),
+    }
+}
+
+/// Whether fetched closes disagree with saved ones for any day both hold: a split or dividend
+/// since the save has adjusted the history, so all of it is fetched again.
+fn readjusted(saved: &[SavedClose], fetched: &[(NaiveDate, f64)]) -> bool {
+    fetched.iter().any(|(day, close)| {
+        saved
+            .iter()
+            .find(|(saved_day, ..)| saved_day == day)
+            .is_some_and(|(_, saved_close, _)| (close / saved_close - 1.0).abs() > 1e-4)
+    })
+}
+
 impl Providers {
-    /// Every symbol's daily closes from `from` through `to`, in one paginated Alpaca request.
+    /// Every symbol's daily closes from `from` through `to`: the settled sessions from the news
+    /// cache, and only what it lacks from Alpaca, saved for next time once settled.
     pub(crate) async fn daily_closes(
+        &self,
+        symbols: Vec<String>,
+        from: NaiveDate,
+        to: NaiveDate,
+    ) -> Result<Closes, String> {
+        let symbols = normalize_stock_symbols(symbols);
+        if symbols.is_empty() {
+            return Ok(Closes::default());
+        }
+        let now = Utc::now();
+        let latest = Session::latest(now).date;
+        // Half an hour after the close, as the close job records sessions.
+        let settled = Session::latest_settled(now, Duration::minutes(30)).date;
+        let mut saved: BTreeMap<String, Vec<SavedClose>> = BTreeMap::new();
+        let mut starts: BTreeMap<NaiveDate, Vec<String>> = BTreeMap::new();
+        {
+            let cache = self.news_cache().await?;
+            for symbol in &symbols {
+                let (covered, rows) = cache.closes(symbol, from)?;
+                if let Some(start) = fetch_from(covered, from, latest) {
+                    starts.entry(start).or_default().push(symbol.clone());
+                }
+                saved.insert(symbol.clone(), rows);
+            }
+        }
+        let mut fetched: Vec<(NaiveDate, Closes)> = Vec::new();
+        for (start, group) in starts {
+            fetched.push((start, self.fetch_closes(group, start, to).await?));
+        }
+        // A history a split or dividend has adjusted since it was saved is fetched whole again.
+        let readjust: Vec<String> = fetched
+            .iter()
+            .flat_map(|(_, closes)| &closes.series)
+            .filter(|(symbol, series)| {
+                saved
+                    .get(*symbol)
+                    .is_some_and(|rows| readjusted(rows, series))
+            })
+            .map(|(symbol, _)| symbol.clone())
+            .collect();
+        if !readjust.is_empty() {
+            for symbol in &readjust {
+                saved.insert(symbol.clone(), Vec::new());
+            }
+            fetched.push((from, self.fetch_closes(readjust.clone(), from, to).await?));
+        }
+        let mut result = Closes::default();
+        let cache = self.news_cache().await?;
+        for (start, closes) in fetched {
+            result.truncated.extend(closes.truncated);
+            for (symbol, series) in closes.series {
+                let replace = readjust.contains(&symbol) && start == from;
+                if !replace && readjust.contains(&symbol) {
+                    continue;
+                }
+                let volumes = closes.volumes.get(&symbol);
+                let rows: Vec<SavedClose> = series
+                    .iter()
+                    .map(|(day, close)| {
+                        (
+                            *day,
+                            *close,
+                            volumes.and_then(|volumes| volumes.get(day)).copied(),
+                        )
+                    })
+                    .collect();
+                if settled >= start {
+                    let settled_rows: Vec<SavedClose> = rows
+                        .iter()
+                        .filter(|(day, ..)| *day <= settled)
+                        .copied()
+                        .collect();
+                    cache.save_closes(&symbol, &settled_rows, (start, settled), replace)?;
+                }
+                // What was fetched replaces the saved days it covers.
+                let kept = saved.entry(symbol.clone()).or_default();
+                kept.retain(|(day, ..)| *day < start);
+                kept.extend(rows);
+            }
+        }
+        for (symbol, rows) in saved {
+            if result.truncated.contains(&symbol) || rows.is_empty() {
+                continue;
+            }
+            let volumes: BTreeMap<NaiveDate, f64> = rows
+                .iter()
+                .filter_map(|(day, _, volume)| Some((*day, (*volume)?)))
+                .collect();
+            if !volumes.is_empty() {
+                result.volumes.insert(symbol.clone(), volumes);
+            }
+            result.series.insert(
+                symbol,
+                rows.into_iter()
+                    .map(|(day, close, _)| (day, close))
+                    .collect(),
+            );
+        }
+        Ok(result)
+    }
+
+    /// Every symbol's daily closes from `from` through `to`, in one paginated Alpaca request.
+    async fn fetch_closes(
         &self,
         symbols: Vec<String>,
         from: NaiveDate,
@@ -94,7 +228,6 @@ impl Providers {
         /// Pages beyond this are left out rather than holding the summary open, and the
         /// symbols they would have held are reported.
         const MAX_PAGES: usize = 10;
-        let symbols = normalize_stock_symbols(symbols);
         let mut closes: DailyCloses = BTreeMap::new();
         let mut volumes: BTreeMap<String, BTreeMap<NaiveDate, f64>> = BTreeMap::new();
         if symbols.is_empty() {
@@ -181,6 +314,22 @@ mod tests {
 
     fn day(offset: i64) -> NaiveDate {
         NaiveDate::from_ymd_opt(2026, 1, 1).unwrap() + Duration::days(offset)
+    }
+
+    #[test]
+    fn saved_closes_are_fetched_only_from_their_last_day_and_whole_after_an_adjustment() {
+        let (from, first, last, latest) = (day(0), day(10), day(300), day(301));
+        // Nothing saved, or saved from too late: all of it.
+        assert_eq!(fetch_from(None, from, latest), Some(from));
+        assert_eq!(fetch_from(Some((first, last)), from, latest), Some(from));
+        // Saved from early enough: from the last saved day, which is checked again.
+        assert_eq!(fetch_from(Some((from, last)), from, latest), Some(last));
+        // Saved through the latest session: nothing to ask.
+        assert_eq!(fetch_from(Some((from, latest)), from, latest), None);
+        // The same close is the same history; a dividend since adjusts the saved day.
+        let saved = [(last, 100.0, Some(5.0))];
+        assert!(!readjusted(&saved, &[(last, 100.0), (latest, 101.0)]));
+        assert!(readjusted(&saved, &[(last, 99.4), (latest, 101.0)]));
     }
 
     #[test]

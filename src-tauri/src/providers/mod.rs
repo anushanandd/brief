@@ -31,10 +31,10 @@ pub mod feeds;
 pub mod fundamentals;
 pub mod holding_market;
 pub mod http;
-pub mod insiders;
 pub mod market_stream;
 pub mod news;
 pub mod news_cache;
+pub(crate) mod pace;
 pub mod plaid;
 pub mod portfolio;
 pub mod reading;
@@ -687,6 +687,10 @@ async fn send_with_retry(
     request: reqwest::RequestBuilder,
     retry: Option<reqwest::RequestBuilder>,
 ) -> Result<reqwest::Response, (reqwest::Error, usize)> {
+    let paced = (provider == "Alpaca").then_some(&*pace::ALPACA);
+    if let Some(pace) = paced {
+        pace.take().await;
+    }
     http::count_request(provider, false);
     let first = request.send().await;
     let Some(retry) = retry else {
@@ -696,6 +700,9 @@ async fn send_with_retry(
         Ok(response) if retryable_status(response.status()) => retry_pause(response).await,
         Ok(_) => return first.map_err(|error| (error, 1)),
         Err(_) => tokio::time::sleep(StdDuration::from_millis(250)).await,
+    }
+    if let Some(pace) = paced {
+        pace.take().await;
     }
     http::count_request(provider, true);
     retry.send().await.map_err(|error| (error, 2))

@@ -272,42 +272,6 @@ pub(super) fn sector_exposure(
 }
 
 impl Providers {
-    pub async fn portfolio_today(&self, held: Vec<HeldSecurity>) -> Result<PortfolioToday, String> {
-        let held: Vec<_> = held
-            .into_iter()
-            .filter(|security| {
-                !matches!(
-                    security.kind.as_deref().map(str::to_lowercase).as_deref(),
-                    Some("crypto" | "cryptocurrency")
-                ) && alpaca::stock_symbol(&security.ticker).is_ok()
-            })
-            .collect();
-        let sectors = {
-            let cache = self.news_cache().await?;
-            let mut sectors = BTreeMap::new();
-            for security in &held {
-                if let Some(sector) = cache
-                    .company(&security.ticker)?
-                    .0
-                    .and_then(|company| company.sic)
-                    .and_then(sec::sector_for_sic)
-                    .filter(|(fund, _)| *fund != security.ticker)
-                {
-                    sectors.insert(security.ticker.clone(), sector);
-                }
-            }
-            sectors
-        };
-        let mut request: Vec<String> = held
-            .iter()
-            .map(|security| security.ticker.clone())
-            .collect();
-        request.push(MARKET_FUND.0.into());
-        request.extend(sectors.values().map(|(fund, _)| (*fund).to_owned()));
-        let snapshots = self.market_snapshots(request).await?.snapshots;
-        Ok(portfolio_today(&held, &snapshots, &sectors))
-    }
-
     /// Sector exposure for held stocks. Stocks EDGAR has not been asked about are looked up
     /// once, and the answer is saved with their filings.
     pub async fn portfolio_sectors(

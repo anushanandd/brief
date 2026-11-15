@@ -13,7 +13,6 @@ mod database;
 mod document_summaries;
 mod documents;
 mod event_calendar;
-mod evidence;
 mod files;
 mod finance_contract;
 mod financial_engine;
@@ -26,6 +25,7 @@ mod inventory;
 mod market;
 mod merchants;
 mod native_menu;
+mod news_job;
 mod notify;
 mod numeric;
 mod objects;
@@ -249,6 +249,7 @@ pub fn run() {
             document_summaries::start(app.handle().clone());
             event_calendar::start(app.handle().clone());
             close::start(app.handle().clone());
+            news_job::start(app.handle().clone());
             reading_job::start(app.handle().clone());
             check_log_in_background(app.handle().clone());
             commands::card_rules::apply_in_background(app.handle().clone());
@@ -282,6 +283,7 @@ pub fn run() {
             market::stop_holding_chart,
             finance::get_finance_snapshot,
             finance::get_spending_period,
+            finance::get_period_as_of,
             finance::get_reports,
             finance::get_activity_totals,
             finance::get_sync_runs,
@@ -313,16 +315,11 @@ pub fn run() {
             finance::export_finance_csv,
             place_commands::find_places,
             commands::research::get_research,
-            commands::research::research_gap,
-            commands::research::recheck_program_sources,
-            commands::research::acknowledge_program_source,
-            commands::research::draft_program,
             commands::card_rules::search_card_catalog,
             commands::card_rules::catalog_brands,
             commands::card_rules::draft_card_rules,
             commands::card_rules::recheck_card_rules,
             commands::card_rules::choose_catalog_card,
-            commands::card_rules::prefill_program_draft,
             refresh::refresh_finance_snapshot,
             refresh::save_account_link,
             backups::recover_finance_state,
@@ -330,8 +327,6 @@ pub fn run() {
             backups::inspect_finance_backup,
             backups::restore_finance_backup,
             backups::erase_finance_state,
-            backups::export_settings_file,
-            backups::read_settings_file,
             integrations::get_integration_status,
             integrations::get_provider_connections,
             integrations::get_snaptrade_connections,
@@ -352,11 +347,9 @@ pub fn run() {
             assistant::cancel_foundation_explanation,
             assistant::ledger_query,
             investments::get_market_news,
-            investments::get_portfolio_today,
             investments::get_portfolio_sectors,
             investments::get_investment_summary,
             investments::warm_investment_summaries,
-            investments::refresh_portfolio_news,
             investments::get_earnings_calendar,
             investments::get_calibration,
             investments::get_summary_runs,

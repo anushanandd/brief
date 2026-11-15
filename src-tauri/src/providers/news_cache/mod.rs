@@ -1,8 +1,7 @@
-//! Local news, SEC filings, insider trades and reported quarters, and the Alpha Vantage
-//! earnings budget, separate from financial state.
+//! Local news, SEC filings and reported quarters, daily closes, and the Alpha Vantage earnings
+//! budget, separate from financial state.
 use super::{
     fundamentals::Fundamentals,
-    insiders::InsiderTrade,
     news::{classify_story, company_key},
     sec::{filing_title, sec_ticker, SecCompany, SecFiling, FILING_DAYS},
     MarketNewsArticle,
@@ -12,8 +11,11 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
+mod closes;
 mod edgar;
 mod quota;
+
+pub(crate) use closes::SavedClose;
 #[cfg(test)]
 mod tests;
 
@@ -90,14 +92,16 @@ impl NewsCache {
             CREATE TABLE IF NOT EXISTS filings (symbol TEXT PRIMARY KEY, payload TEXT, saved INTEGER, warning TEXT);
             CREATE TABLE IF NOT EXISTS fundamentals (symbol TEXT PRIMARY KEY, payload TEXT, saved INTEGER NOT NULL, failed INTEGER);
             CREATE TABLE IF NOT EXISTS portfolio_news (id INTEGER PRIMARY KEY CHECK(id=1), attempted INTEGER NOT NULL);
-            CREATE TABLE IF NOT EXISTS insider_trades (url TEXT PRIMARY KEY, payload TEXT NOT NULL, saved INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS market_news (url TEXT PRIMARY KEY, created TEXT NOT NULL, payload TEXT NOT NULL);
             CREATE TABLE IF NOT EXISTS bodies (url TEXT PRIMARY KEY, symbols TEXT NOT NULL, headline TEXT NOT NULL, created TEXT NOT NULL, body TEXT NOT NULL, saved INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS readings (key TEXT PRIMARY KEY, payload TEXT NOT NULL, reader TEXT NOT NULL, saved INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS reported_quarters (symbol TEXT PRIMARY KEY, payload TEXT NOT NULL, saved INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS releases (accession TEXT PRIMARY KEY, symbol TEXT NOT NULL, url TEXT NOT NULL, text TEXT NOT NULL, saved INTEGER NOT NULL);
             CREATE TABLE IF NOT EXISTS estimates (symbol TEXT PRIMARY KEY, payload TEXT NOT NULL, saved INTEGER NOT NULL);
+            CREATE TABLE IF NOT EXISTS closes (symbol TEXT NOT NULL, day TEXT NOT NULL, close REAL NOT NULL, volume REAL, PRIMARY KEY(symbol, day));
+            CREATE TABLE IF NOT EXISTS close_history (symbol TEXT PRIMARY KEY, first TEXT NOT NULL, last TEXT NOT NULL);
             DROP TABLE IF EXISTS assessments;
+            DROP TABLE IF EXISTS insider_trades;
             DROP TABLE IF EXISTS explanations;
             DROP TABLE IF EXISTS period_explanations;")
             .map_err(|_| "News storage is unavailable")?;
@@ -155,13 +159,14 @@ impl NewsCache {
             "filings",
             "fundamentals",
             "portfolio_news",
-            "insider_trades",
             "market_news",
             "bodies",
             "readings",
             "reported_quarters",
             "releases",
             "estimates",
+            "closes",
+            "close_history",
         ] {
             transaction
                 .execute(&format!("DELETE FROM {table}"), [])
@@ -326,13 +331,14 @@ impl NewsCache {
     }
 
     /// Adds fetched stories to a ticker's saved ones, keeping the newest `SAVED_STORIES`, so a
-    /// portfolio refresh and the ticker's own refresh build one history.
+    /// portfolio refresh and the ticker's own refresh build one history. Returns how many of
+    /// them weren't saved before.
     pub fn save(
         &self,
         symbol: &str,
         articles: &[MarketNewsArticle],
         now: i64,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         let existing: Option<String> = self
             .0
             .query_row("SELECT payload FROM news WHERE symbol=?1", [symbol], |r| {
@@ -341,14 +347,18 @@ impl NewsCache {
             .optional()
             .map_err(|_| "News storage is unavailable")?
             .flatten();
-        let mut merged: Vec<MarketNewsArticle> = articles.to_vec();
-        for article in existing
+        let existing = existing
             .as_deref()
             .filter(|s| s.len() <= 2_000_000)
             .and_then(|s| serde_json::from_str::<SavedNews>(s).ok())
             .map(|saved| saved.articles)
-            .unwrap_or_default()
-        {
+            .unwrap_or_default();
+        let new = articles
+            .iter()
+            .filter(|article| !existing.iter().any(|kept| kept.url == article.url))
+            .count();
+        let mut merged: Vec<MarketNewsArticle> = articles.to_vec();
+        for article in existing {
             if !merged.iter().any(|kept| kept.url == article.url) {
                 merged.push(article);
             }
@@ -367,7 +377,7 @@ impl NewsCache {
                 params![symbol, payload, now],
             )
             .map_err(|_| "Could not save news")?;
-        Ok(())
+        Ok(new)
     }
 
     pub fn failure(&self, symbol: &str, message: &str) -> Result<(), String> {
