@@ -122,7 +122,7 @@ mod tests {
             current_value: points.last().unwrap().1,
             history_source: Some("estimated".into()),
             history_start: Some(points[0].0.into()),
-            performance_method: Some("modified-dietz".into()),
+            performance_method: Some("time-weighted".into()),
             points: points
                 .iter()
                 .map(|(date, value, deposits)| PerformancePoint {

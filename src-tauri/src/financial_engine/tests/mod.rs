@@ -574,7 +574,7 @@ fn brokerage_history_is_rebuilt_from_its_cash_movements() {
     // shows no market change; the provider's rounder 190.00 gave way to the records.
     let account = &snapshot["brokeragePerformance"][1];
     assert_eq!(account["historySource"], "estimated");
-    assert_eq!(account["performanceMethod"], "modified-dietz");
+    assert_eq!(account["performanceMethod"], "time-weighted");
     let points = account["points"].as_array().unwrap();
     let values = points
         .iter()

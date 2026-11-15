@@ -351,12 +351,11 @@ pub(super) fn performance_record(
             }
         })
         .collect::<Vec<_>>();
-    let performance_method = if !comparisons_available {
-        "value-only"
-    } else if source == "estimated" {
-        "modified-dietz"
-    } else {
+    // Rebuilt and reported histories are measured the same way; `history_source` says which.
+    let performance_method = if comparisons_available {
         "time-weighted"
+    } else {
+        "value-only"
     };
     Performance {
         account_id: account.id,
@@ -415,25 +414,19 @@ fn combined_dates(accounts: &[Performance]) -> BTreeSet<String> {
     }
 }
 
-/// How the combined history measures performance: time-weighted only when every account is,
-/// value-only when any account can't be compared with a benchmark.
+/// How the combined history measures performance: value-only when any account can't be compared
+/// with a benchmark. Snapshots saved before Nov 14, 2026 call a rebuilt history "modified-dietz".
 fn combined_method(accounts: &[Performance]) -> &'static str {
-    let methods = accounts
-        .iter()
-        .map(|account| account.performance_method.as_deref())
-        .collect::<Vec<_>>();
-    let comparisons_available = methods
-        .iter()
-        .all(|method| matches!(method, Some("time-weighted" | "modified-dietz")));
-    if !comparisons_available {
-        "value-only"
-    } else if methods
-        .iter()
-        .all(|method| *method == Some("time-weighted"))
-    {
+    let comparable = accounts.iter().all(|account| {
+        matches!(
+            account.performance_method.as_deref(),
+            Some("time-weighted" | "modified-dietz")
+        )
+    });
+    if comparable {
         "time-weighted"
     } else {
-        "modified-dietz"
+        "value-only"
     }
 }
 
