@@ -314,16 +314,14 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
                 if (patch) update(patch)
               }}
               onToggleOther={toggleOther}
-              footer={
-                selected.length || ledger.activeFilterCount || draft.trim() ? (
-                  <ActivityTotal
-                    rows={selected.length ? selected : shown}
-                    selected={selected.length > 0}
-                  />
-                ) : undefined
-              }
             />
           </div>
+          {selected.length || ledger.activeFilterCount || draft.trim() ? (
+            <ActivityTotal
+              rows={selected.length ? selected : shown}
+              selected={selected.length > 0}
+            />
+          ) : null}
         </ScrollCueCard>
         {filtersOpen ? (
           <ActivityFilterCard

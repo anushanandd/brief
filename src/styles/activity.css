@@ -364,44 +364,33 @@
   flex: 0 1 auto;
   min-height: 0;
 }
-/* The total sits on the ledger's own columns, pinned to the foot of the scrolling rows, so its
-   figure ends exactly where the amounts do whichever columns show. Its rule says more rows sit
-   behind it, so the list's fade gives way rather than fading the total. */
-.financial-activity-footer {
-  position: sticky;
-  bottom: 0;
-  display: grid;
-  min-height: var(--row-height-compact);
-  padding: 4px 8px;
-  align-items: center;
-  border-top: var(--hairline) solid var(--border-subtle);
-  background: var(--background);
-}
-.activity-page-list[data-more-below]:has(.financial-activity-footer) {
-  mask-image: none;
-}
-.activity-total-label {
-  grid-column: 1;
-  padding: 0 12px;
-  color: var(--text-secondary);
-  white-space: nowrap;
-}
-/* From the mark to the last column, ending with the figure; it wraps rather than clipping. */
-.activity-total-figures {
+/* Under the scrolling rows rather than over them, so it needs no fill of its own; its insets
+   line the count up with the dates and the net with the amounts. */
+.activity-total {
   display: flex;
-  min-width: 0;
-  grid-column: 2 / -1;
+  flex: none;
   flex-wrap: wrap;
   align-items: baseline;
-  justify-content: flex-end;
-  gap: 4px 12px;
-}
-.activity-total-figures > .financial-activity-amount {
-  font-weight: 600;
-}
-.activity-total-note {
+  gap: 4px 24px;
+  padding: 10px 8px 10px 20px;
+  border-top: var(--hairline) solid var(--border-subtle);
   color: var(--text-tertiary);
   font-size: var(--type-meta);
+}
+.activity-total-count {
+  margin-right: auto;
+}
+.activity-total-currency {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 16px;
+}
+.activity-total-part > .financial-activity-amount {
+  font-variant-numeric: tabular-nums;
+}
+.activity-total-part > strong.financial-activity-amount {
+  font-weight: 600;
 }
 .activity-page-list .financial-activity-list {
   margin-top: 0;
@@ -414,8 +403,7 @@
   min-width: 0;
 }
 .financial-activity-header,
-.financial-activity-row-columns,
-.financial-activity-footer {
+.financial-activity-row-columns {
   /* Every row paints up front: skipping off-screen rows left blank gaps during fast scrolls. */
   min-width: max(100%, var(--activity-grid-width, 850px));
   grid-template-columns: var(

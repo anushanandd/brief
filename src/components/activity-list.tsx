@@ -563,11 +563,6 @@ type GroupedActivityListProps = {
   selectedId?: string
   /** Rows chosen for a bulk edit. */
   checkedIds?: ReadonlySet<string>
-  /**
-   * A row pinned under the columned ledger, laid out on its columns: a child spanning to the
-   * last column ends where the amounts do, whichever columns are showing.
-   */
-  footer?: ReactNode
 }
 
 export function GroupedActivityList(props: GroupedActivityListProps) {
@@ -752,7 +747,6 @@ function ProgressiveActivityList({
   onOpen,
   selectedId,
   checkedIds,
-  footer,
 }: GroupedActivityListProps) {
   // Paging starts again when filtering changes which rows there are; an edit to a row doesn't.
   // The count and ends stand in for the full list of ids, which would cost a join per render.
@@ -917,7 +911,6 @@ function ProgressiveActivityList({
         })
       )}
       {more}
-      {showColumns && footer ? <div className="financial-activity-footer">{footer}</div> : null}
     </>
   )
   return showColumns ? (
