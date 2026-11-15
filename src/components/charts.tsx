@@ -15,7 +15,7 @@ import {
   type SetStateAction,
 } from 'react'
 
-import { graphRangeActions } from '../hooks/use-graph-window-shortcuts'
+import { graphRangeActions, useScrollBounds } from '../hooks/use-graph-window-shortcuts'
 import { useLatest } from '../hooks/use-latest'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { ActivityItem } from '../lib/activity'
@@ -810,7 +810,8 @@ export function ExpandableChart({
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
   const present = usePresence(open, dialog)
   const titleId = useId()
-  const [end] = useGraphEnd()
+  const scrolled = Boolean(useGraphEnd()[0])
+  const bounds = useScrollBounds(scroll)
   const expand = useCallback(() => {
     // The window grows out of the card it opens from, and shrinks back into it.
     const card = dialog?.parentElement?.getBoundingClientRect()
@@ -843,11 +844,11 @@ export function ExpandableChart({
     () =>
       [
         ...(setSeconds && seconds !== undefined
-          ? graphRangeActions(setSeconds, seconds, end, scroll)
+          ? graphRangeActions(setSeconds, seconds, scrolled, bounds)
           : []),
         ...(own ?? []),
       ].map((action) => ({ ...action, id: `${action.id}.expanded` })),
-    [setSeconds, seconds, end, scroll, own],
+    [setSeconds, seconds, scrolled, bounds, own],
   )
   return (
     <>

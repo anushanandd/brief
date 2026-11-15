@@ -1,7 +1,17 @@
-import { expect, it } from 'vitest'
+import { invoke } from '@tauri-apps/api/core'
+import { expect, it, vi } from 'vitest'
 
 import type { AppAction } from './action-system'
-import { commandMenuSections, menuAccelerator, openedViewHref, viewLink } from './native-commands'
+import {
+  commandMenuSections,
+  menuAccelerator,
+  openedViewHref,
+  setCommandMenu,
+  viewLink,
+} from './native-commands'
+
+vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn(async () => undefined) }))
+vi.mock('./api', () => ({ isTauri: () => true }))
 
 const action = (overrides: Partial<AppAction>): AppAction => ({
   id: 'id',
@@ -69,4 +79,17 @@ it('opens only real views from brief:// links', () => {
   expect(viewLink({ pathname: '/analytics', searchStr: '?chart=income' })).toBe(
     'brief://analytics?chart=income',
   )
+})
+
+it('sends the menu bar only when it changes, and again after a failed send', async () => {
+  const sent = vi.mocked(invoke)
+  const menu = commandMenuSections([action({ id: 'export', title: 'Export' })])
+  await setCommandMenu(menu)
+  await setCommandMenu(structuredClone(menu))
+  expect(sent).toHaveBeenCalledTimes(1)
+  const renamed = commandMenuSections([action({ id: 'export', title: 'Export All' })])
+  sent.mockRejectedValueOnce(new Error('Synthetic failure'))
+  await expect(setCommandMenu(renamed)).rejects.toThrow()
+  await setCommandMenu(renamed)
+  expect(sent).toHaveBeenCalledTimes(3)
 })

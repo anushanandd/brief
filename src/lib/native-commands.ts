@@ -76,8 +76,20 @@ export function commandMenuSections(actions: readonly AppAction[]): CommandMenuS
   return ['Go', 'View', 'Actions'].flatMap((title) => sections.get(title) ?? [])
 }
 
+// Rust rebuilds the whole menu bar on the main thread, so an unchanged menu isn't sent again.
+let sentMenu: string | undefined
+
 export async function setCommandMenu(sections: CommandMenuSection[]) {
-  if (isTauri()) await invoke('set_command_menu', { sections })
+  if (!isTauri()) return
+  const menu = JSON.stringify(sections)
+  if (menu === sentMenu) return
+  sentMenu = menu
+  try {
+    await invoke('set_command_menu', { sections })
+  } catch (error) {
+    sentMenu = undefined
+    throw error
+  }
 }
 
 export async function copyText(text: string) {

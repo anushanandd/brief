@@ -5,12 +5,14 @@ import {
   adjacentGraphWindow,
   graphWindows,
   scrollPeriodDays,
+  sessionGraphEnd,
   setGraphEnd,
   shiftedGraphEnd,
   useGraphEnd,
   useGraphWindow,
   type GraphScroll,
 } from '../lib/graph-preferences'
+import { useLatest } from './use-latest'
 
 // Ids name the range, so saved usage and pinned commands keep working.
 const rangeIds = [
@@ -29,7 +31,7 @@ const rangeIds = [
 export function graphRangeActions(
   setGraphWindow: Dispatch<SetStateAction<number>>,
   window: number,
-  end: string | undefined,
+  scrolled: boolean,
   scroll?: GraphScroll,
 ): AppAction[] {
   const step = (direction: -1 | 1) => () =>
@@ -60,21 +62,26 @@ export function graphRangeActions(
       bindings: [{ sequence: ['Meta+Control+ArrowRight'], label: '⌘⌃→' }],
       run: step(1),
     },
-    ...graphScrollActions(window, end, scroll),
+    ...graphScrollActions(window, scrolled, scroll),
   ]
 }
 
-/** [ and ] move a chart a period back or ahead in time, and } brings it to today. */
+/**
+ * [ and ] move a chart a period back or ahead in time, and } brings it to today. They read the
+ * end day when run, so the list changes only when the page goes from today to scrolled back.
+ */
 export function graphScrollActions(
   window: number,
-  end: string | undefined,
+  scrolled: boolean,
   scroll: GraphScroll | undefined,
 ): AppAction[] {
   const days = scrollPeriodDays(window)
   const move = (direction: -1 | 1) => () =>
     scroll &&
     days &&
-    setGraphEnd(shiftedGraphEnd(end, direction * days, window, scroll.today, scroll.first))
+    setGraphEnd(
+      shiftedGraphEnd(sessionGraphEnd(), direction * days, window, scroll.today, scroll.first),
+    )
   const unscrollable = days ? undefined : 'A day or all time ends today'
   return scroll
     ? ([
@@ -96,8 +103,8 @@ export function graphScrollActions(
           group: 'View',
           scope: 'page',
           bindings: [{ sequence: [']'], label: ']' }],
-          disabled: !end,
-          disabledReason: end ? undefined : 'Already showing today',
+          disabled: !scrolled,
+          disabledReason: scrolled ? undefined : 'Already showing today',
           run: move(1),
         },
         {
@@ -107,12 +114,21 @@ export function graphScrollActions(
           group: 'View',
           scope: 'page',
           bindings: [{ sequence: ['}'], label: '}' }],
-          disabled: !end,
-          disabledReason: end ? undefined : 'Already showing today',
+          disabled: !scrolled,
+          disabledReason: scrolled ? undefined : 'Already showing today',
           run: () => setGraphEnd(undefined),
         },
       ] satisfies AppAction[])
     : []
+}
+
+/**
+ * The same bounds while the days are the same: pages rebuild theirs from live chart data, and
+ * the actions built from them would otherwise change, and the menu bar with them, every tick.
+ */
+export function useScrollBounds(scroll: GraphScroll | undefined) {
+  const { today, first } = scroll ?? {}
+  return useMemo(() => (today ? { today, first } : undefined), [today, first])
 }
 
 /** The page's range keys; see `graphRangeActions`. */
@@ -121,10 +137,11 @@ export function useGraphWindowShortcuts(
   scroll?: GraphScroll,
 ) {
   const [window] = useGraphWindow()
-  const [end] = useGraphEnd()
+  const scrolled = Boolean(useGraphEnd()[0])
+  const bounds = useScrollBounds(scroll)
   const actions = useMemo(
-    () => graphRangeActions(setGraphWindow, window, end, scroll),
-    [setGraphWindow, window, end, scroll],
+    () => graphRangeActions(setGraphWindow, window, scrolled, bounds),
+    [setGraphWindow, window, scrolled, bounds],
   )
   useRegisterActions(actions)
 }
@@ -132,8 +149,12 @@ export function useGraphWindowShortcuts(
 /** The scroll keys alone, for a chart whose page registers its range keys elsewhere. */
 export function useGraphScrollShortcuts(scroll: GraphScroll | undefined) {
   const [window] = useGraphWindow()
-  const [end] = useGraphEnd()
-  const actions = useMemo(() => graphScrollActions(window, end, scroll), [window, end, scroll])
+  const scrolled = Boolean(useGraphEnd()[0])
+  const bounds = useScrollBounds(scroll)
+  const actions = useMemo(
+    () => graphScrollActions(window, scrolled, bounds),
+    [window, scrolled, bounds],
+  )
   useRegisterActions(actions)
 }
 
@@ -142,6 +163,7 @@ export function useGraphScrollShortcuts(scroll: GraphScroll | undefined) {
  * while something inside the selected view (one person) takes the keys instead.
  */
 export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => void, enabled = true) {
+  const latest = useLatest(onDirection)
   const actions = useMemo<AppAction[]>(
     () =>
       enabled
@@ -153,7 +175,7 @@ export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => voi
               group: 'View',
               scope: 'page',
               bindings: [{ sequence: ['Meta+ArrowUp'], label: '⌘↑' }],
-              run: () => onDirection(-1),
+              run: () => latest.current(-1),
             },
             {
               id: 'graph.selection.next',
@@ -162,11 +184,11 @@ export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => voi
               group: 'View',
               scope: 'page',
               bindings: [{ sequence: ['Meta+ArrowDown'], label: '⌘↓' }],
-              run: () => onDirection(1),
+              run: () => latest.current(1),
             },
           ]
         : [],
-    [enabled, onDirection],
+    [enabled, latest],
   )
   useRegisterActions(actions)
 }
