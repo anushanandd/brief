@@ -456,10 +456,9 @@ export function PerformanceChart({
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const [graphEnd] = useGraphEnd()
   const pastEnd = scroll ? graphEnd : undefined
-  const pan = useChartPan(container, selectedWindow, scroll)
+  const panEnd = useChartPan(container, selectedWindow, scroll)
   // Saved days are drawn at noon, so a chart scrolled back ends on its end day's point.
-  const endTime =
-    pastEnd || pan ? (pastEnd ? chartDayTime(pastEnd) : Date.now() / 1_000) + pan : undefined
+  const endTime = panEnd ?? (pastEnd ? chartDayTime(pastEnd) : undefined)
   // Liveline animates toward each new data set, so the lines keep their identity until a point
   // changes.
   const allData = useMemo(() => chartPointsFromStartDate(data, startDate), [data, startDate])
@@ -632,78 +631,190 @@ const until = (points: LivelinePoint[], time: number | undefined) =>
 
 // A wheel's line is about this many pixels.
 const LINE_PIXELS = 16
-// A pause this long ends a scroll, and the chart settles on the nearest day.
+// A pause this long ends a scroll, and the chart eases onto the nearest day.
 const SETTLE_MS = 160
+const EASE_MS = 200
+// While a scroll moves, the page's figures follow its end day at most this often.
+const PUBLISH_MS = 100
+
+/** Trading days a chart steps through, and how many its window shows. */
+export type ChartSessions = { days: readonly string[]; count: number }
 
 /**
- * Scrolling over a chart as seconds moved through time: down, or a swipe right, goes back. The
- * page's end day moves as each whole day passes, so the figures follow while it scrolls, and the
- * part of a day left over is drawn as `pan`, seconds past that day; once the scroll pauses it
- * settles on the nearest day. Without `smooth`, for a chart that can't draw between days, the
- * part of a day is only carried to the next scroll. The scroll survives the page drawing again
- * mid-gesture, as it does when new figures or prices arrive.
+ * The end `steps` trading days from `end` (today when undefined), within the history; by calendar
+ * days where the trading days don't reach.
+ */
+function sessionShiftedEnd(
+  end: string | undefined,
+  steps: number,
+  { days }: ChartSessions,
+  seconds: number,
+  { today, first }: GraphScroll,
+) {
+  const from = end ?? today
+  const at = days.findLastIndex((date) => date <= from)
+  const index = at + steps
+  const next = at >= 0 && index >= 0 ? (days[index] ?? today) : addDays(from, steps)
+  return shiftedGraphEnd(next, 0, seconds, today, first)
+}
+
+/**
+ * Scrolling over a chart as time moved: down, or a swipe right, goes back. The wheel moves the
+ * chart once a frame and returns the time its window ends at while it moves; once the scroll
+ * pauses it eases onto the nearest day. The page's end day follows the last day drawn, at most
+ * every PUBLISH_MS, so the figures keep up without the page drawing every frame. With `sessions`,
+ * for a chart that can't draw between days, each plot width over `sessions.count` moves its end a
+ * trading day, and the part of one left over is carried to the next scroll. The scroll survives
+ * the page drawing again mid-gesture, as it does when new figures or prices arrive.
  */
 export function useChartPan(
   element: HTMLElement | null,
   seconds: number,
   scroll: GraphScroll | undefined,
-  smooth = true,
+  sessions?: ChartSessions,
 ) {
-  const [pan, setPan] = useState(0)
-  const current = useLatest({ seconds, scroll, smooth })
+  const [drawnEnd, setDrawnEnd] = useState<number>()
+  const current = useLatest({ seconds, scroll, sessions })
   useEffect(() => {
     if (!element) return undefined
-    let moved = 0
+    let width = 0
+    const resize =
+      typeof ResizeObserver === 'function'
+        ? new ResizeObserver(([entry]) => (width = entry?.contentRect.width ?? 0))
+        : undefined
+    resize?.observe(element)
+    // The scroll's own end day and drawn end; the page's end day follows them.
+    let active = false
+    let end: string | undefined
+    let time = 0
+    let carried = 0
+    let pixels = 0
+    let frame = 0
+    let easing = 0
     let settle: ReturnType<typeof setTimeout> | undefined
-    // The store, not a prop, holds the end day: it changes again before the page draws.
-    const endTime = () => {
-      const end = sessionGraphEnd()
-      return end ? chartDayTime(end) : Date.now() / 1_000
+    let flush: ReturnType<typeof setTimeout> | undefined
+    let publishedAt = -Infinity
+    const nowTime = () => Date.now() / 1_000
+    const publish = (now = false) => {
+      clearTimeout(flush)
+      flush = undefined
+      const wait = publishedAt + PUBLISH_MS - Date.now()
+      if (now || wait <= 0) {
+        publishedAt = Date.now()
+        setGraphEnd(end)
+      } else flush = setTimeout(() => publish(true), wait)
     }
-    // Moves the end day by whole days, keeping what's drawn where it is.
-    const shift = (days: number) => {
-      const { seconds: span, scroll: bounds } = current.current
-      if (!bounds) return
-      const before = endTime()
-      setGraphEnd(shiftedGraphEnd(sessionGraphEnd(), days, span, bounds.today, bounds.first))
-      moved += before - endTime()
+    // The day of a drawn end: the last day whose point it reaches.
+    const dayAt = (at: number, span: number, bounds: GraphScroll) =>
+      at >= nowTime()
+        ? undefined
+        : shiftedGraphEnd(
+            undefined,
+            Math.floor((at - chartDayTime(bounds.today)) / DAY_SECONDS),
+            span,
+            bounds.today,
+            bounds.first,
+          )
+    const move = () => {
+      frame = 0
+      const { seconds: span, scroll: bounds, sessions: steps } = current.current
+      const days = scrollPeriodDays(span)
+      const fraction = pixels / Math.max(1, (width ||= element.clientWidth))
+      pixels = 0
+      if (!bounds?.first || !days) return
+      if (steps) {
+        carried += fraction * steps.count
+        const whole = Math.trunc(carried)
+        if (!whole) return
+        carried -= whole
+        const next = sessionShiftedEnd(end, whole, steps, span, bounds)
+        // Against either end of the history, nothing is carried.
+        if (next === end) carried = 0
+        else {
+          end = next
+          publish()
+        }
+        return
+      }
+      const earliest = chartDayTime(addDays(bounds.first, days))
+      time = Math.min(nowTime(), Math.max(earliest, time + fraction * span))
+      const next = dayAt(time, span, bounds)
+      if (next !== end) {
+        end = next
+        publish()
+      }
+      setDrawnEnd(time)
+    }
+    const finish = () => {
+      const { seconds: span, scroll: bounds, sessions: steps } = current.current
+      if (steps || !bounds) {
+        publish(true)
+        active = false
+        return
+      }
+      const target = shiftedGraphEnd(
+        undefined,
+        Math.round((time - chartDayTime(bounds.today)) / DAY_SECONDS),
+        span,
+        bounds.today,
+        bounds.first,
+      )
+      const from = time
+      const to = target ? chartDayTime(target) : nowTime()
+      const startedAt = Date.now()
+      const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
+      const ease = () => {
+        const progress = reduced ? 1 : Math.min(1, (Date.now() - startedAt) / EASE_MS)
+        time = from + (to - from) * (1 - (1 - progress) ** 3)
+        if (progress < 1) {
+          setDrawnEnd(time)
+          easing = requestAnimationFrame(ease)
+          return
+        }
+        easing = 0
+        active = false
+        end = target
+        publish(true)
+        setDrawnEnd(undefined)
+      }
+      ease()
     }
     const wheel = (event: WheelEvent) => {
-      const { seconds: span, scroll: bounds, smooth: drawn } = current.current
+      const { seconds: span, scroll: bounds } = current.current
       const days = scrollPeriodDays(span)
-      const first = bounds?.first
-      if (!bounds || !first || !days) return
+      // Momentum from a page scroll can't be cancelled, and isn't the chart's to take.
+      if (!event.cancelable || !bounds?.first || !days) return
+      if (chartDayTime(addDays(bounds.first, days)) >= nowTime()) return
       const across = Math.abs(event.deltaX) > Math.abs(event.deltaY)
-      const pixels =
+      const delta =
         (across ? event.deltaX : -event.deltaY) * (event.deltaMode === 1 ? LINE_PIXELS : 1)
-      if (!pixels) return
+      if (!delta) return
       event.preventDefault()
-      const now = Date.now() / 1_000
-      const base = endTime()
-      const earliest = chartDayTime(addDays(first, days)) - base
-      const latest = now - base
-      if (earliest >= latest) return
-      const step = (pixels * span) / Math.max(1, element.clientWidth)
-      moved = Math.min(latest, Math.max(earliest, moved + step))
-      const whole = Math.trunc(moved / DAY_SECONDS)
-      if (whole) shift(whole)
-      if (!drawn) return
-      setPan(moved)
+      if (!active) {
+        active = true
+        end = sessionGraphEnd()
+        time = end ? chartDayTime(end) : nowTime()
+      }
+      cancelAnimationFrame(easing)
+      easing = 0
+      pixels += delta
+      frame ||= requestAnimationFrame(move)
       clearTimeout(settle)
-      settle = setTimeout(() => {
-        const nearest = Math.round(moved / DAY_SECONDS)
-        if (nearest) shift(nearest)
-        moved = 0
-        setPan(0)
-      }, SETTLE_MS)
+      settle = setTimeout(finish, SETTLE_MS)
     }
     element.addEventListener('wheel', wheel, { passive: false })
     return () => {
       element.removeEventListener('wheel', wheel)
+      resize?.disconnect()
+      cancelAnimationFrame(frame)
+      cancelAnimationFrame(easing)
       clearTimeout(settle)
+      clearTimeout(flush)
+      if (active) setGraphEnd(end)
+      setDrawnEnd(undefined)
     }
   }, [element, current])
-  return pan
+  return drawnEnd
 }
 
 /**

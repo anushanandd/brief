@@ -1,5 +1,5 @@
 import { keepPreviousData, useQuery } from '@tanstack/react-query'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 
 import { getPeriodAsOf } from '../lib/api'
 import type { PeriodAsOf } from '../lib/bindings/PeriodAsOf'
@@ -30,9 +30,8 @@ export function useAsOf<T extends FinanceSnapshot | undefined>(data: T): T {
     retry: false,
     placeholderData: keepPreviousData,
   })
-  useEffect(() => {
-    if (asked !== end && !query.isFetching) setAsked(end)
-  }, [asked, end, query.isFetching])
+  // Set while rendering, so a new end day asks without a commit of its own.
+  if (asked !== end && !query.isFetching) setAsked(end)
   return useMemo(() => withPeriodAsOf(data, end, query.data), [data, end, query.data])
 }
 
