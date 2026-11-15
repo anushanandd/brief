@@ -1,2 +1,4 @@
 # Tests assert by unwrapping; the app's code returns its errors instead.
 allow-unwrap-in-tests = true
+# Provider and refresh errors run only on failed requests, where a 200-byte copy costs nothing.
+large-error-threshold = 256

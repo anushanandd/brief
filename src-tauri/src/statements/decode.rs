@@ -24,7 +24,7 @@ fn delimited(text: &str) -> Result<Vec<Vec<String>>, String> {
     // The delimiter that splits the most lines into the same, largest number of fields.
     let lines = text.lines().filter(|line| !line.trim().is_empty()).take(60);
     let sample = lines.collect::<Vec<_>>();
-    let delimiter = [b',', b';', b'\t']
+    let delimiter = (*b",;\t")
         .into_iter()
         .max_by_key(|delimiter| {
             let mut counts = std::collections::BTreeMap::<usize, usize>::new();
