@@ -464,11 +464,15 @@ fn balances(
         .map(|(close, balance)| (close, minor_units(balance)))
         .or(live.map(|live| (today, live)));
     let Some((anchor, anchored)) = anchor else {
-        let opening = statement
+        // With no balance and no autopay, where the cycle opened is unknown, not zero.
+        let Some(opening) = statement
             .autopays
             .iter()
             .find(|autopay| autopay.date >= start && autopay.date <= end)
-            .map_or(0, |autopay| minor_units(autopay.amount));
+            .map(|autopay| minor_units(autopay.amount))
+        else {
+            return (None, None);
+        };
         return (
             Some(from_minor(opening)),
             Some(from_minor(opening + net(activity, start, end, false))),
@@ -1001,6 +1005,19 @@ mod tests {
         // Other kinds of period have no statement.
         let month = period(&known, "card", PeriodKind::Month, "2026-09-01");
         assert_eq!(month.opening, None);
+        // With no balance and no autopay, the opening is unknown rather than zero.
+        let mut bare = statement.clone();
+        bare.autopays.clear();
+        let unpaid = super::scopes(
+            &transactions,
+            std::slice::from_ref(&unknown_card),
+            Some(&unknown_card),
+            Some(&bare),
+            at,
+            &NamedZone::Utc,
+        );
+        let current = period(&unpaid, "card", PeriodKind::Statement, "2026-08-24");
+        assert_eq!((current.opening, current.balance), (None, None));
     }
 
     #[test]
