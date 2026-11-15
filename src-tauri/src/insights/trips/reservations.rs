@@ -7,6 +7,7 @@ use chrono::NaiveDate;
 use regex::Regex;
 
 use crate::event_calendar::Event;
+use crate::insights::calendar;
 use crate::places::{self, City};
 
 #[derive(Clone, Debug, PartialEq)]
@@ -44,10 +45,6 @@ pub fn named_like_one(title: &str) -> bool {
     FLIGHT.is_match(title) || STAY.is_match(title)
 }
 
-fn day(value: &str) -> Option<NaiveDate> {
-    NaiveDate::parse_from_str(value.get(..10)?, "%Y-%m-%d").ok()
-}
-
 /// The most populous city of a name, unless the name is an airport code.
 fn city(name: &str) -> Option<&'static City> {
     let name = name
@@ -61,10 +58,11 @@ fn city(name: &str) -> Option<&'static City> {
 }
 
 pub fn read(events: &[Event]) -> Vec<Reservation> {
-    let mut reservations = events
+    let reservations = events
         .iter()
         .filter_map(|event| {
-            let (start, end) = (day(&event.start)?, day(&event.end)?);
+            let start = calendar::transaction_date(&event.start)?;
+            let end = calendar::transaction_date(&event.end)?;
             if let Some(found) = FLIGHT.captures(&event.title) {
                 let origin = event
                     .location
@@ -107,6 +105,12 @@ pub fn read(events: &[Event]) -> Vec<Reservation> {
             })
         })
         .collect::<Vec<_>>();
-    reservations.dedup();
-    reservations
+    // The same booking can sit in two calendars, or come back from two of Calendar's searches.
+    let mut unique = Vec::with_capacity(reservations.len());
+    for reservation in reservations {
+        if !unique.contains(&reservation) {
+            unique.push(reservation);
+        }
+    }
+    unique
 }

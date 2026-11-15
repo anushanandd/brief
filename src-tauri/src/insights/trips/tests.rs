@@ -471,6 +471,26 @@ fn reads_flights_and_stays_from_their_titles() {
 }
 
 #[test]
+fn a_booking_in_two_calendars_is_read_once() {
+    let stay = || {
+        event(
+            "Stay at Example Inn",
+            "2026-10-01",
+            "2026-10-03",
+            Some("1 Main St, Seattle, WA 98101"),
+        )
+    };
+    let flight = event(
+        "Flight to Lima (XX 101)",
+        "2026-09-01T22:00:00-07:00",
+        "2026-09-03T06:00:00-07:00",
+        Some("Oakland OAK"),
+    );
+    let read = reservations::read(&[stay(), flight, stay()]);
+    assert_eq!(read.len(), 2);
+}
+
+#[test]
 fn a_reservation_places_a_trip_nothing_was_bought_on() {
     let mut transactions = home_life();
     transactions.push(purchase(
