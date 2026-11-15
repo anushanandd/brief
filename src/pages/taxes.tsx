@@ -426,6 +426,12 @@ function FormsCard({ year }: { year: TaxYear }) {
             ) : null}
           </dd>
         </div>
+        {dividends.capitalGainDistributions ? (
+          <div>
+            <dt>Capital gain distributions</dt>
+            <dd>{money(dividends.capitalGainDistributions)}</dd>
+          </div>
+        ) : null}
         <div>
           <dt>Short-term gains</dt>
           <dd className={valueTone(realized.shortTerm)}>

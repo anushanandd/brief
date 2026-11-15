@@ -130,6 +130,9 @@ pub struct Dividends {
     pub non_qualified: f64,
     /// Dividends whose provider didn't say which; the estimate is a range because of them.
     pub unclassified: f64,
+    /// Long-term capital gain distributions, 1099-DIV box 2a, outside `total` and taxed as
+    /// long-term gains.
+    pub capital_gain_distributions: f64,
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq, TS)]
@@ -658,6 +661,7 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
                 qualified: from_minor(earned.qualified),
                 non_qualified: from_minor(earned.non_qualified),
                 unclassified: from_minor(earned.unclassified),
+                capital_gain_distributions: from_minor(earned.capital_gain),
             },
             realized,
             wash_sales: washes
@@ -755,7 +759,8 @@ fn income_of(year: &TaxYear) -> Income {
         qualified: minor_units(year.dividends.qualified),
         ordinary_dividends: minor_units(year.dividends.non_qualified + year.dividends.unclassified),
         short_term: minor_units(year.realized.short_term),
-        long_term: minor_units(year.realized.long_term),
+        long_term: minor_units(year.realized.long_term)
+            + minor_units(year.dividends.capital_gain_distributions),
     }
 }
 
@@ -941,6 +946,7 @@ struct Earned {
     non_qualified: i64,
     /// Dividends the provider didn't classify; estimates bound them both ways.
     unclassified: i64,
+    capital_gain: i64,
 }
 
 impl Earned {
@@ -964,6 +970,7 @@ impl Earned {
                 Some(Kind::Dividend) => match transaction.dividend_type.as_deref() {
                     Some("qualified") => earned.qualified += amount,
                     Some("nonQualified") => earned.non_qualified += amount,
+                    Some("capitalGain") => earned.capital_gain += amount,
                     _ => earned.unclassified += amount,
                 },
                 _ => {}
@@ -984,7 +991,7 @@ impl Earned {
             qualified: self.qualified + qualified,
             ordinary_dividends: self.non_qualified + ordinary,
             short_term,
-            long_term,
+            long_term: long_term + self.capital_gain,
         }
     }
 }
@@ -1441,7 +1448,8 @@ mod tests {
                 total: 2_500.0,
                 qualified: 500.0,
                 non_qualified: 0.0,
-                unclassified: 2_000.0
+                unclassified: 2_000.0,
+                capital_gain_distributions: 0.0,
             }
         );
         assert_eq!(
@@ -1500,6 +1508,48 @@ mod tests {
         );
         assert!(unprofiled.years[0].estimate.is_none() && !unprofiled.has_profile);
         assert!(unprofiled.years[0].tables_available);
+    }
+
+    #[test]
+    fn capital_gain_distributions_are_their_own_line_and_net_against_losses() {
+        let transactions = [income(
+            "distribution",
+            "dividend",
+            "2026-06-30",
+            "taxable",
+            2_000.0,
+            Some("capitalGain"),
+        )];
+        let trades = [trade(
+            "sale",
+            "SELL",
+            "2026-05-01",
+            "taxable",
+            10.0,
+            Some((-5_000.0, 0.0)),
+        )];
+        let result = taxes(
+            TaxInputs {
+                transactions: &transactions,
+                trades: &trades,
+                accounts: &[account("taxable", "taxable")],
+                positions: &[],
+                harvestable: &[],
+                profile: Some(&profile(80_000.0, None)),
+            },
+            day("2026-09-20"),
+        );
+        let year = &result.years[0];
+        // 1099-DIV box 2a, not box 1a's dividends.
+        assert_eq!(year.dividends.capital_gain_distributions, 2_000.0);
+        assert_eq!((year.dividends.total, year.dividends.qualified), (0.0, 0.0));
+        // Long-term gain on Schedule D: the $5,000 loss nets to $3,000, all deducted.
+        let estimate = year.estimate.as_ref().unwrap();
+        assert_eq!(
+            (estimate.loss_deduction, estimate.loss_carryover),
+            (3_000.0, 0.0)
+        );
+        assert_eq!(estimate.high, -660.0);
     }
 
     /// This year's estimate for gains alone on `base` of taxable income, single, no state tax.

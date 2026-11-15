@@ -116,7 +116,8 @@ accountOwner?: string,
  */
 counterparties?: Array<Counterparty>, 
 /**
- * `qualified` or `nonQualified`, for a dividend whose provider says which.
+ * `qualified` or `nonQualified`, for a dividend whose provider says which, or
+ * `capitalGain` for a fund's long-term capital gain distribution.
  */
 dividendType?: string, 
 /**

@@ -173,7 +173,7 @@ fn maps_plaid_investment_activity_to_trades_and_income_rows() {
     assert!(rows.contains(&(
         "Capital gain distribution · TEST".into(),
         7.0,
-        Some("qualified".into())
+        Some("capitalGain".into())
     )));
     assert!(rows.contains(&("Investment fee".into(), -2.0, None)));
     assert!(rows.contains(&("Transfer in".into(), 500.0, None)));

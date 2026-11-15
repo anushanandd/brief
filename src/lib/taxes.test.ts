@@ -26,7 +26,13 @@ it('shows one estimate when every dividend is classified and a range otherwise',
 const year = (value: number) => ({
   year: value,
   interest: 0,
-  dividends: { total: 0, qualified: 0, nonQualified: 0, unclassified: 0 },
+  dividends: {
+    total: 0,
+    qualified: 0,
+    nonQualified: 0,
+    unclassified: 0,
+    capitalGainDistributions: 0,
+  },
   realized: {
     shortTerm: 0,
     longTerm: 0,

@@ -563,7 +563,8 @@ pub struct Transaction {
     /// Who was on the other side: the merchant, a payment app, a marketplace, or a bank.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub counterparties: Vec<Counterparty>,
-    /// `qualified` or `nonQualified`, for a dividend whose provider says which.
+    /// `qualified` or `nonQualified`, for a dividend whose provider says which, or
+    /// `capitalGain` for a fund's long-term capital gain distribution.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub dividend_type: Option<String>,

@@ -573,9 +573,10 @@ fn cash_activity(
         ("cash", "qualified dividend") => ("Dividend", "Dividend", Some("qualified")),
         ("cash", "non-qualified dividend") => ("Dividend", "Dividend", Some("nonQualified")),
         ("cash", "dividend") => ("Dividend", "Dividend", None),
-        // Fund distributions: long-term ones are taxed like qualified dividends.
+        // Fund distributions: long-term ones are 1099-DIV box 2a, a long-term gain; short-term
+        // ones are ordinary dividends.
         ("cash", "long-term capital gain") => {
-            ("Capital gain distribution", "Dividend", Some("qualified"))
+            ("Capital gain distribution", "Dividend", Some("capitalGain"))
         }
         ("cash", "short-term capital gain") => (
             "Capital gain distribution",

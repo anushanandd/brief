@@ -342,7 +342,13 @@ function TransactionDetails({
           {transaction?.dividendType ? (
             <div>
               <dt>Dividend</dt>
-              <dd>{transaction.dividendType === 'qualified' ? 'Qualified' : 'Ordinary'}</dd>
+              <dd>
+                {transaction.dividendType === 'qualified'
+                  ? 'Qualified'
+                  : transaction.dividendType === 'capitalGain'
+                    ? 'Capital gain distribution'
+                    : 'Ordinary'}
+              </dd>
             </div>
           ) : null}
           {activity.description && activity.description !== activity.title ? (

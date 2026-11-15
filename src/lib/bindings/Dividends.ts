@@ -4,4 +4,9 @@ export type Dividends = { total: number, qualified: number, nonQualified: number
 /**
  * Dividends whose provider didn't say which; the estimate is a range because of them.
  */
-unclassified: number, };
+unclassified: number, 
+/**
+ * Long-term capital gain distributions, 1099-DIV box 2a, outside `total` and taxed as
+ * long-term gains.
+ */
+capitalGainDistributions: number, };

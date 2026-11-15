@@ -301,7 +301,13 @@ it('puts the period beside the chart, the holdings menu beside the summary, then
 const taxYear2026 = {
   year: 2026,
   interest: 18.42,
-  dividends: { total: 128.19, qualified: 34.03, nonQualified: 0, unclassified: 94.16 },
+  dividends: {
+    total: 128.19,
+    qualified: 34.03,
+    nonQualified: 0,
+    unclassified: 94.16,
+    capitalGainDistributions: 40,
+  },
   realized: {
     shortTerm: -412.3,
     longTerm: 620.4,
@@ -337,6 +343,7 @@ it('previews the 1099s and asks for a tax profile before estimating', async () =
   }
   const html = (await renderRoute('/taxes')).replaceAll('<!-- -->', '')
   expect(html).toContain('1099 preview')
+  expect(html).toMatch(/<dt>Capital gain distributions<\/dt><dd>.*?\$40\.00/)
   expect(html).toContain('Add tax profile')
   expect(html).toContain('href="#settings/tax-filing-status"')
   expect(html).toContain('Don’t buy BBB through Oct 10')
