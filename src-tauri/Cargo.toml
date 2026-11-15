@@ -16,8 +16,11 @@ debug = "line-tables-only"
 # bound; packed writes one .dSYM per link instead.
 split-debuginfo = "packed"
 
+# Dependencies are optimized in dev builds: a refresh and a derive run about a fifth faster, for
+# one slower cold build; the app's own code stays unoptimized, so an edit rebuilds as quickly.
 [profile.dev.package."*"]
 debug = false
+opt-level = 2
 
 # Thin LTO across parallel codegen units: a release build in a minute or two rather than six,
 # for a binary that waits on the screen and SQLite, not the CPU. Panics unwind, so one failing
