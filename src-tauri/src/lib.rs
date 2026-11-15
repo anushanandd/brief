@@ -216,6 +216,7 @@ pub fn run() {
             )?;
             let directory = app.path().app_data_dir()?;
             panic_log::install(&directory);
+            Storage::clear_opened_copies(&directory);
             app.manage(AppState {
                 startup_market: startup_market::StartupMarket::new(
                     directory.join("startup-market.sqlite3"),
@@ -374,6 +375,11 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building Brief")
         .run(|app, event| {
+            if let tauri::RunEvent::Exit = event {
+                if let Ok(directory) = app.path().app_data_dir() {
+                    Storage::clear_opened_copies(&directory);
+                }
+            }
             // Clicking the Dock icon brings back a window hidden by background refresh.
             #[cfg(target_os = "macos")]
             match &event {

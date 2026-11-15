@@ -200,16 +200,7 @@ impl Storage {
             fs::set_permissions(&directory, fs::Permissions::from_mode(0o700))
                 .map_err(|_| "Could not prepare the document")?;
         }
-        let name = document
-            .file_name
-            .chars()
-            .filter(|c| !matches!(c, '/' | ':' | '\\') && !c.is_control())
-            .collect::<String>();
-        let path = directory.join(if name.trim().is_empty() {
-            "Document".into()
-        } else {
-            name
-        });
+        let path = directory.join(crate::files::safe_name(&document.file_name));
         crate::files::write_private(&path, &contents, "Could not prepare the document")?;
         Ok(path)
     }

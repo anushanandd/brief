@@ -59,9 +59,33 @@ pub fn read_bounded(path: &Path, max: usize) -> Result<Vec<u8>, ReadFailure> {
     Ok(contents)
 }
 
+/// `name` as one file inside a folder, whatever it came with: no separators, colons, or control
+/// characters, never `.` or `..`, and "Document" when nothing is left.
+pub fn safe_name(name: &str) -> String {
+    let name = name
+        .chars()
+        .filter(|c| !matches!(c, '/' | ':' | '\\') && !c.is_control())
+        .collect::<String>();
+    if name.trim().trim_matches('.').is_empty() {
+        "Document".into()
+    } else {
+        name
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn a_saved_name_never_leaves_its_folder() {
+        assert_eq!(safe_name("../../Library/x.pdf"), "....Libraryx.pdf");
+        assert_eq!(safe_name(".."), "Document");
+        assert_eq!(safe_name(" "), "Document");
+        assert_eq!(safe_name("Statement 2026-01.pdf"), "Statement 2026-01.pdf");
+        let joined = Path::new("/scratch").join(safe_name("/etc/passwd"));
+        assert_eq!(joined.parent(), Some(Path::new("/scratch")));
+    }
 
     #[test]
     fn writes_only_new_private_files_and_reads_within_bounds() {

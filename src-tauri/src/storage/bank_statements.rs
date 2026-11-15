@@ -74,6 +74,12 @@ impl Storage {
         Ok(path)
     }
 
+    /// Deletes the decrypted copy a viewer was given, as launch and quit do, so an original
+    /// never outlives the session that opened it.
+    pub(crate) fn clear_opened_copies(directory: &std::path::Path) {
+        let _ = fs::remove_dir_all(directory.join(OPENED_DIRECTORY));
+    }
+
     pub(super) fn opened_directory(&self) -> Result<PathBuf, String> {
         self.path
             .parent()

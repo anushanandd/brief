@@ -113,7 +113,7 @@ fn text_of(document: &Document, contents: &[u8]) -> Result<Option<(String, Strin
         // that is removed at once.
         let scratch = std::env::temp_dir().join(format!("brief-{}", uuid::Uuid::new_v4()));
         std::fs::create_dir_all(&scratch).map_err(|_| "Could not prepare the document")?;
-        let path = scratch.join(&document.file_name);
+        let path = scratch.join(files::safe_name(&document.file_name));
         let reading = files::write_private(&path, contents, "Could not prepare the document")
             .and_then(|()| {
                 let quick = read::read_file(&path, false)?;
