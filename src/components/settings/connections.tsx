@@ -533,7 +533,6 @@ function CredentialForm({ provider, done }: { provider: ProviderDefinition; done
       })
       const status = await saveIntegrationCredentials(provider.id, saved)
       queryClient.setQueryData(['integration-status'], status)
-      void queryClient.invalidateQueries({ queryKey: ['market-snapshots'] })
       toast.success(`${provider.name} credentials saved and tested`)
       done()
     } catch (error) {
@@ -607,7 +606,6 @@ function KeychainCredentials({
       if (provider.id === 'snaptrade')
         queryClient.removeQueries({ queryKey: ['snaptrade-connections'] })
       void queryClient.invalidateQueries({ queryKey: ['provider-connections'] })
-      void queryClient.invalidateQueries({ queryKey: ['market-snapshots'] })
       setConfirming(false)
       toast.success(`${provider.name} credentials removed from Keychain`)
     } catch (error) {

@@ -24,7 +24,6 @@ export function RecoveryNotice({ recovery }: { recovery: Recovery }) {
       setConfirming(false)
       setFinanceSnapshot(client, snapshot)
       void client.invalidateQueries({ queryKey: ['transaction-annotations'] })
-      void client.invalidateQueries({ queryKey: ['market-snapshots'] })
     },
   })
   useEffect(() => {

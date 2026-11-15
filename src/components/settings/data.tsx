@@ -120,8 +120,6 @@ function FinancialBackup() {
         queryClient.invalidateQueries({ queryKey: ['transaction-annotations'] }),
         queryClient.invalidateQueries({ queryKey: ['provider-connections'] }),
         queryClient.invalidateQueries({ queryKey: ['data-health'] }),
-        queryClient.invalidateQueries({ queryKey: ['portfolio-performance'] }),
-        queryClient.invalidateQueries({ queryKey: ['market-snapshots'] }),
       ])
       toast.success('Backup restored')
     })
@@ -325,7 +323,6 @@ function EraseData() {
       await authenticateSensitiveAction()
       const snapshot = await eraseFinanceState()
       setFinanceSnapshot(queryClient, snapshot)
-      queryClient.removeQueries({ queryKey: ['market-snapshots'] })
       queryClient.removeQueries({ queryKey: ['provider-connections'] })
       queryClient.removeQueries({ queryKey: ['sync-runs'] })
       setConfirming(false)
