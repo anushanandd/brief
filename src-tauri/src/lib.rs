@@ -117,6 +117,8 @@ impl AppState {
     /// Stops the portfolio stream and the Holdings chart, as erasing data or removing the
     /// Alpaca keys requires.
     fn stop_market_streams(&self) -> Result<(), String> {
+        // Closes the authenticated sockets themselves, not just the windows' subscriptions.
+        self.providers.market_streams.stop();
         for owner in [&self.market_owner, &self.holding_owner] {
             market::cancel_stream(
                 &mut *owner.lock().map_err(|_| "Market stream unavailable")?,
