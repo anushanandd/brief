@@ -9,7 +9,9 @@ export type HarvestEstimate = { ticker: string, accountId: string,
  */
 shortTermLoss: number, longTermLoss: number, 
 /**
- * At this year's marginal rates, when there is a tax profile.
+ * This year's estimate less the estimate with this sale alone, when there is a tax
+ * profile: a loss beyond this year's gains and the capital-loss limit carries over and
+ * isn't counted.
  */
 taxSavings?: number, 
 /**

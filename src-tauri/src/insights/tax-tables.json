@@ -6,6 +6,7 @@
     "Rev. Proc. 2026-35, sections 3.01, 3.03 and 3.15 (taxable years beginning in 2027)",
     "26 U.S.C. 1411 (net investment income tax thresholds, not indexed)",
     "26 U.S.C. 1211(b) (capital loss limit)",
+    "26 U.S.C. 3101(b)(2) and 1401(b)(2) (Additional Medicare Tax thresholds, not indexed); 26 U.S.C. 3102(f)(1) (withheld on wages over $200,000)",
     "P.L. 119-21, section 70102 (2025 standard deduction); Rev. Proc. 2025-32, section 4.14 (2026)",
     "SSA, contribution and benefit base for 2025, 2026 and 2027",
     "26 U.S.C. 6654(d)(1)(B)-(C) and 6654(e)(1) (estimated-tax safe harbors, not indexed)"
@@ -21,6 +22,16 @@
       "headOfHousehold": 150000
     },
     "smallBalance": 1000
+  },
+  "additionalMedicare": {
+    "rate": 0.9,
+    "thresholds": {
+      "single": 200000,
+      "marriedJoint": 250000,
+      "marriedSeparate": 125000,
+      "headOfHousehold": 200000
+    },
+    "withholdingThreshold": 200000
   },
   "niitRate": 3.8,
   "niitThresholds": {

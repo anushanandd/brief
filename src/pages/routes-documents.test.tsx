@@ -59,6 +59,7 @@ it('lists a year’s documents beside what the year should bring', async () => {
           predictions: [],
           income: {
             wages: 26_800,
+            medicareWages: 26_800,
             wagesFrom: 'payStatements',
             uncountedEmployers: [],
             selfEmployment: 1_500,

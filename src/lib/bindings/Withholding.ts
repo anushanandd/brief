@@ -5,13 +5,15 @@ import type { PayProjection } from "./PayProjection";
 
 /**
  * This year's federal withholding carried to December from each employer's latest pay
- * statement (`documents::pay_projections`) against the federal tax on the projected wages
- * less the standard deduction plus this year's investment income so far (unclassified
- * dividends as ordinary), at the filing status of the tax profile. Federal only: no state
- * tax, credits, other deductions, or other income. Last year's tax is the tax on last year's
- * W-2 wages less its standard deduction, only when every employer's W-2 for the year is in
- * and nothing else was earned; it stands in for the return's total tax, which is the figure
- * the rule names.
+ * statement (`documents::pay_projections`), with the Additional Medicare Tax employers
+ * withhold, against the federal tax on the projected wages and contractor pay less half its
+ * self-employment tax and the standard deduction, plus this year's interest, dividends,
+ * and contractor pay carried to December at their pace so far and its gains as realized
+ * (unclassified dividends as ordinary), plus self-employment and Additional Medicare tax, at
+ * the filing status of the tax profile. Federal only: no state tax, credits, other
+ * deductions, or other income. Last year's tax is figured the same way from last year's
+ * W-2s and contractor pay, only when every employer's W-2 for the year is in; it stands in
+ * for the return's total tax, which is the figure the rule names.
  */
 export type Withholding = { year: number, 
 /**

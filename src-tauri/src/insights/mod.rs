@@ -508,18 +508,19 @@ pub fn derive_with_documents(
         .extend(documents::needs(&document_insights, documents, today));
     // Pay statements project this year's withholding; last year's W-2s supply the prior-year
     // test once all of them are in.
-    let prior_wages = document_insights
-        .years
-        .iter()
-        .find(|year| year.year == today.year() - 1)
-        .and_then(|year| year.income.as_ref())
-        .filter(|income| income.wages_from == "w2" && income.self_employment == 0.0)
-        .map(|income| income.wages);
+    let income_in = |year: i32| {
+        document_insights
+            .years
+            .iter()
+            .find(|tax_year| tax_year.year == year)
+            .and_then(|tax_year| tax_year.income.as_ref())
+    };
     taxes.withholding = tax::withholding(
         today,
         documents::pay_projections(today.year(), documents),
         taxes.years.iter().find(|year| year.year == today.year()),
-        prior_wages,
+        income_in(today.year()).map_or(0.0, |income| income.self_employment),
+        income_in(today.year() - 1).filter(|income| income.wages_from == "w2"),
         tax::prior_investment(&taxes, transactions, trades, today),
         settings
             .tax_profile

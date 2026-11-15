@@ -9,6 +9,10 @@ export type Income = {
  */
 wages: number, 
 /**
+ * W-2 box 5 the same way.
+ */
+medicareWages: number, 
+/**
  * `w2` once every employer's W-2 is in; `payStatements` otherwise.
  */
 wagesFrom: string, 

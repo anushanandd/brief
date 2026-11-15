@@ -2,7 +2,7 @@
 
 /**
  * One employer's pay carried to the year's end from its latest pay statement: what the year
- * has paid and withheld so far, and that plus the statement's own period for each pay period
+ * has paid and withheld so far, and that plus a regular period's pay for each pay period
  * left. Wages are W-2 box 1 wages (gross less pre-tax benefits, HSA, and 401(k) deferrals).
  */
 export type PayProjection = { employer: string, documentId: string, 
@@ -13,4 +13,8 @@ date: string,
 /**
  * Which pay period of the year the statement is, and how many the year has.
  */
-period: number, periods: number, wagesToDate: number, withheldToDate: number, projectedWages: number, projectedWithholding: number, };
+period: number, periods: number, wagesToDate: number, withheldToDate: number, projectedWages: number, projectedWithholding: number, 
+/**
+ * Box 5: box 1 wages with the 401(k) deferrals added back.
+ */
+projectedMedicareWages: number, };

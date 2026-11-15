@@ -244,7 +244,7 @@ function WithholdingSection({
               .join('; ')}. `
           : 'A pay statement this year doesn’t print its period, gross, and withholding, so it can’t be carried forward. '}
         {withholding.filingStatus
-          ? 'Filing status from your tax profile; interest and dividends carried to December at their pace so far, and gains as realized.'
+          ? 'Filing status from your tax profile; interest, dividends, and contractor pay carried to December at their pace so far, and gains as realized. Includes self-employment and Additional Medicare tax.'
           : 'Add a filing status to project the tax.'}
       </p>
       <div className="account-summary-metrics">
@@ -289,8 +289,8 @@ function WithholdingSection({
                 <small className="metric-detail">
                   {priorYear.tax != null ? (
                     <>
-                      {money(priorYear.tax)} on last year’s W-2 wages; your return’s total tax is
-                      the figure that counts
+                      {money(priorYear.tax)} on last year’s W-2s and contractor pay; your return’s
+                      total tax is the figure that counts
                     </>
                   ) : (
                     'needs every W-2 from last year'

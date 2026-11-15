@@ -403,6 +403,7 @@ it('projects withholding from pay statements, with each test that can’t run un
             withheldToDate: 9_000,
             projectedWages: 86_400,
             projectedWithholding: 12_000,
+            projectedMedicareWages: 86_400,
           },
         ],
         projectedWages: 86_400,

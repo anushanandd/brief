@@ -38,8 +38,42 @@ struct Tables {
     niit_rate: f64,
     niit_thresholds: BTreeMap<String, f64>,
     capital_loss_limit: BTreeMap<String, f64>,
+    additional_medicare: AdditionalMedicare,
     safe_harbor: SafeHarborRules,
     years: BTreeMap<i32, YearTables>,
+}
+
+/// The Additional Medicare Tax on wages and self-employment earnings, not indexed.
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct AdditionalMedicare {
+    rate: f64,
+    /// Per filing status: what the year's Medicare wages and earnings may reach untaxed.
+    thresholds: BTreeMap<String, f64>,
+    /// Each employer withholds it on Medicare wages above this, whatever the filing status.
+    withholding_threshold: f64,
+}
+
+/// Net earnings from self-employment as a share of contractor pay (26 U.S.C. 1402(a)(12)).
+const NET_EARNINGS: f64 = 0.9235;
+
+/// Self-employment tax: 15.3% of net earnings, the Social Security part only up to what the
+/// year's Social Security wages left of the wage base; none under $400.
+pub fn self_employment_tax(year: i32, self_employment: f64, social_wages: f64) -> f64 {
+    let net = self_employment * NET_EARNINGS;
+    if net < 400.0 {
+        return 0.0;
+    }
+    let room = social_security_wage_base(year).map_or(net, |base| (base - social_wages).max(0.0));
+    round2(net.min(room) * 0.124 + net * 0.029)
+}
+
+/// The Additional Medicare Tax on Medicare wages and net self-employment earnings together
+/// above the filing status's threshold.
+fn additional_medicare(status: &str, medicare_wages: f64, self_employment: f64) -> Option<f64> {
+    let rules = &TABLES.additional_medicare;
+    let over = medicare_wages + self_employment * NET_EARNINGS - rules.thresholds.get(status)?;
+    Some(round2(rules.rate / 100.0 * over.max(0.0)))
 }
 
 /// The estimated-tax penalty's safe harbors (26 U.S.C. 6654(d)(1) and (e)(1)), not indexed.
@@ -251,14 +285,15 @@ pub struct Harbor {
 }
 
 /// This year's federal withholding carried to December from each employer's latest pay
-/// statement (`documents::pay_projections`) against the federal tax on the projected wages
-/// less the standard deduction plus this year's interest and dividends carried to December
-/// at their pace so far and its gains as realized (unclassified dividends as ordinary), at
-/// the filing status of the tax profile. Federal only: no state
-/// tax, credits, other deductions, or other income. Last year's tax is the tax on last year's
-/// W-2 wages less its standard deduction, only when every employer's W-2 for the year is in
-/// and nothing else was earned; it stands in for the return's total tax, which is the figure
-/// the rule names.
+/// statement (`documents::pay_projections`), with the Additional Medicare Tax employers
+/// withhold, against the federal tax on the projected wages and contractor pay less half its
+/// self-employment tax and the standard deduction, plus this year's interest, dividends,
+/// and contractor pay carried to December at their pace so far and its gains as realized
+/// (unclassified dividends as ordinary), plus self-employment and Additional Medicare tax, at
+/// the filing status of the tax profile. Federal only: no state tax, credits, other
+/// deductions, or other income. Last year's tax is figured the same way from last year's
+/// W-2s and contractor pay, only when every employer's W-2 for the year is in; it stands in
+/// for the return's total tax, which is the figure the rule names.
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Withholding {
@@ -734,16 +769,26 @@ fn investment_agi(income: &Income, status: &str) -> Option<f64> {
     ))
 }
 
-/// What `Withholding` describes, for `year`: `projections` from its pay statements (`None`
-/// when one can't be carried forward), `investment` its tax year so far, `prior_wages` last
-/// year's W-2 box 1 wages when every W-2 is in and there was no self-employment income, and
-/// `prior_investment` last year's investment income. Without the last, the prior-year test
-/// can't be settled.
+/// A year's pay, for its federal tax.
+struct Earnings {
+    /// W-2 boxes 1 and 5.
+    wages: f64,
+    medicare_wages: f64,
+    self_employment: f64,
+    self_employment_tax: f64,
+}
+
+/// What `Withholding` describes, for `today`'s year: `projections` from its pay statements
+/// (`None` when one can't be carried forward), `investment` its tax year so far,
+/// `self_employment` its contractor pay so far, `prior_earnings` last year's income from its
+/// documents when every W-2 is in, and `prior_investment` last year's investment income.
+/// Without the last two, the prior-year test can't be settled.
 pub fn withholding(
     today: NaiveDate,
     projections: Option<Vec<super::documents::PayProjection>>,
     investment: Option<&TaxYear>,
-    prior_wages: Option<f64>,
+    self_employment: f64,
+    prior_earnings: Option<&super::documents::Income>,
     prior_investment: PriorInvestment<'_>,
     filing_status: Option<&str>,
 ) -> Option<Withholding> {
@@ -766,21 +811,43 @@ pub fn withholding(
         })
     };
     let projected_wages = sum(|projection| projection.projected_wages);
-    let projected_withholding = sum(|projection| projection.projected_withholding);
-    // Interest and dividends carry to December at their pace so far, as wages do; gains
-    // count as realized.
+    // Employers withhold the Additional Medicare Tax above their own threshold, and it counts
+    // as paid.
+    let projected_withholding = sum(|projection| {
+        let rules = &TABLES.additional_medicare;
+        let over = projection.projected_medicare_wages - rules.withholding_threshold;
+        projection.projected_withholding + rules.rate / 100.0 * over.max(0.0)
+    });
+    // Interest, dividends, and contractor pay carry to December at their pace so far, as
+    // wages do; gains count as realized.
     let income = investment.map(income_of).map(|income| Income {
         interest: carried(income.interest),
         qualified: carried(income.qualified),
         ordinary_dividends: carried(income.ordinary_dividends),
         ..income
     });
-    let tax_in = |year: i32, wages: f64, income: &Income| {
+    let self_employment = from_minor(carried(minor_units(self_employment)));
+    let earnings = projected_wages
+        .zip(sum(|projection| projection.projected_medicare_wages))
+        .map(|(wages, medicare_wages)| Earnings {
+            wages,
+            medicare_wages,
+            self_employment,
+            // Social Security wages are Medicare wages up to the wage base, which the tax caps.
+            self_employment_tax: self_employment_tax(year, self_employment, medicare_wages),
+        });
+    let tax_in = |year: i32, earnings: &Earnings, income: &Income| {
         let status = filing_status?;
         let tables = TABLES.years.get(&year)?;
         // Below zero, the deduction wages leave carries to investment income.
-        let taxable = wages - tables.standard_deduction.get(status)?;
-        federal_tax(tables, status, taxable, income)
+        let taxable = earnings.wages + earnings.self_employment
+            - earnings.self_employment_tax / 2.0
+            - tables.standard_deduction.get(status)?;
+        Some(round2(
+            federal_tax(tables, status, taxable, income)?
+                + earnings.self_employment_tax
+                + additional_medicare(status, earnings.medicare_wages, earnings.self_employment)?,
+        ))
     };
     let nothing = Income {
         interest: 0,
@@ -789,19 +856,31 @@ pub fn withholding(
         short_term: 0,
         long_term: 0,
     };
-    let projected_tax = projected_wages
+    let projected_tax = earnings
+        .as_ref()
         .zip(income.as_ref())
-        .and_then(|(wages, income)| tax_in(year, wages, income));
+        .and_then(|(earnings, income)| tax_in(year, earnings, income));
     let prior_income = match prior_investment {
         PriorInvestment::Year(year) => Some(income_of(year)),
         PriorInvestment::None => Some(nothing),
         PriorInvestment::Unknown => None,
     };
-    let prior = prior_wages.zip(prior_income.as_ref());
-    let prior_tax = prior.and_then(|(wages, income)| tax_in(year - 1, wages, income));
+    let prior_earnings = prior_earnings.map(|income| Earnings {
+        wages: income.wages,
+        medicare_wages: income.medicare_wages,
+        self_employment: income.self_employment,
+        self_employment_tax: income.self_employment_tax,
+    });
+    let prior = prior_earnings.as_ref().zip(prior_income.as_ref());
+    let prior_tax = prior.and_then(|(earnings, income)| tax_in(year - 1, earnings, income));
     let prior_agi = prior
         .zip(filing_status)
-        .and_then(|((wages, income), status)| Some(wages + investment_agi(income, status)?));
+        .and_then(|((earnings, income), status)| {
+            Some(
+                earnings.wages + earnings.self_employment - earnings.self_employment_tax / 2.0
+                    + investment_agi(income, status)?,
+            )
+        });
     let prior_percent = match (prior_agi, filing_status) {
         (Some(agi), Some(status))
             if rules
@@ -1734,6 +1813,20 @@ mod tests {
             withheld_to_date: 0.0,
             projected_wages: wages,
             projected_withholding: withholding,
+            projected_medicare_wages: wages,
+        }
+    }
+
+    /// Last year's income from W-2s alone.
+    fn w2(wages: f64) -> super::super::documents::Income {
+        super::super::documents::Income {
+            wages,
+            medicare_wages: wages,
+            wages_from: "w2",
+            uncounted_employers: Vec::new(),
+            self_employment: 0.0,
+            self_employment_tax: 0.0,
+            taxable_income: None,
         }
     }
 
@@ -1760,7 +1853,8 @@ mod tests {
             day("2026-09-30"),
             Some(vec![projection(wages, withholding)]),
             Some(&quiet_year()),
-            prior_wages,
+            0.0,
+            prior_wages.map(w2).as_ref(),
             PriorInvestment::None,
             status,
         )
@@ -1779,7 +1873,8 @@ mod tests {
                 day("2026-09-30"),
                 Some(vec![projection(150_000.0, 1_000.0)]),
                 Some(&quiet_year()),
-                Some(140_000.0),
+                0.0,
+                Some(&w2(140_000.0)),
                 investment,
                 Some("single"),
             )
@@ -1808,7 +1903,8 @@ mod tests {
             day("2026-09-30"),
             Some(vec![projection(80_000.0, 1_000.0)]),
             Some(&quiet_year()),
-            Some(77_000.0),
+            0.0,
+            Some(&w2(77_000.0)),
             PriorInvestment::Year(&prior),
             Some("marriedSeparate"),
         )
@@ -1850,12 +1946,75 @@ mod tests {
             day("2026-03-14"),
             Some(vec![projection(66_500.0, 0.0)]),
             Some(&so_far),
+            0.0,
             None,
             PriorInvestment::None,
             Some("single"),
         )
         .unwrap();
         assert_eq!(result.projected_tax, Some(5_800.0 + 11_000.0 * 0.22));
+    }
+
+    #[test]
+    fn wages_over_the_line_and_contractor_pay_add_medicare_and_self_employment_tax() {
+        let pay = |medicare_wages: f64| super::super::documents::PayProjection {
+            projected_medicare_wages: medicare_wages,
+            ..projection(200_000.0, 40_000.0)
+        };
+        let run = |status: &str, medicare_wages: f64, self_employment: f64| {
+            super::withholding(
+                day("2026-12-31"),
+                Some(vec![pay(medicare_wages)]),
+                Some(&quiet_year()),
+                self_employment,
+                None,
+                PriorInvestment::None,
+                Some(status),
+            )
+            .unwrap()
+        };
+        let base = run("single", 200_000.0, 0.0);
+        // $20,000 of deferrals over the single line: 0.9%, which the employer withholds too.
+        let over = run("single", 220_000.0, 0.0);
+        assert_eq!(
+            over.projected_tax,
+            base.projected_tax.map(|tax| tax + 180.0)
+        );
+        assert_eq!(over.projected_withholding, Some(40_180.0));
+        // A joint return's line is $250,000, and the employer still withholds above $200,000.
+        let joint = run("marriedJoint", 220_000.0, 0.0);
+        let joint_base = run("marriedJoint", 200_000.0, 0.0);
+        assert_eq!(joint.projected_tax, joint_base.projected_tax);
+        assert_eq!(joint.projected_withholding, Some(40_180.0));
+        // $10,000 of contractor pay: self-employment tax's Medicare part only, since wages are
+        // past the wage base, 0.9% of its $9,235 of earnings, and income tax at 24% on it
+        // less half the self-employment tax.
+        let contractor = run("single", 200_000.0, 10_000.0);
+        let added = 9_235.0 * 0.029 + 9_235.0 * 0.009 + (10_000.0 - 9_235.0 * 0.029 / 2.0) * 0.24;
+        let difference = contractor.projected_tax.unwrap() - base.projected_tax.unwrap();
+        assert!((difference - added).abs() < 0.02, "{difference} vs {added}");
+
+        // Last year's tax counts its contractor pay the same way.
+        let mut prior = w2(150_000.0);
+        prior.self_employment = 10_000.0;
+        prior.self_employment_tax = self_employment_tax(2025, 10_000.0, 150_000.0);
+        let with = |prior: &super::super::documents::Income| {
+            super::withholding(
+                day("2026-09-30"),
+                Some(vec![projection(150_000.0, 1_000.0)]),
+                Some(&quiet_year()),
+                0.0,
+                Some(prior),
+                PriorInvestment::None,
+                Some("single"),
+            )
+            .unwrap()
+            .prior_year
+            .tax
+            .unwrap()
+        };
+        let added = prior.self_employment_tax + (10_000.0 - prior.self_employment_tax / 2.0) * 0.24;
+        assert!((with(&prior) - with(&w2(150_000.0)) - added).abs() < 0.02);
     }
 
     #[test]
@@ -1867,6 +2026,7 @@ mod tests {
             day("2026-12-31"),
             Some(vec![projection(10_000.0, 0.0)]),
             Some(&interest),
+            0.0,
             None,
             PriorInvestment::None,
             Some("single"),
@@ -1880,6 +2040,7 @@ mod tests {
             day("2026-12-31"),
             Some(vec![projection(10_000.0, 0.0)]),
             Some(&qualified),
+            0.0,
             None,
             PriorInvestment::None,
             Some("single"),
@@ -1932,6 +2093,7 @@ mod tests {
             day("2026-09-30"),
             None,
             Some(&quiet_year()),
+            0.0,
             None,
             PriorInvestment::None,
             Some("single"),
@@ -1952,6 +2114,7 @@ mod tests {
                 day("2026-09-30"),
                 Some(Vec::new()),
                 Some(&quiet_year()),
+                0.0,
                 None,
                 PriorInvestment::None,
                 Some("single")
@@ -1963,6 +2126,7 @@ mod tests {
             day("2030-09-30"),
             Some(vec![projection(66_500.0, 5_220.0)]),
             Some(&quiet_year()),
+            0.0,
             None,
             PriorInvestment::None,
             Some("single"),

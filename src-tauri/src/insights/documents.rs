@@ -116,6 +116,8 @@ pub struct Keep {
 pub struct Income {
     /// W-2 box 1, or the pay statements' prediction of it.
     pub wages: f64,
+    /// W-2 box 5 the same way.
+    pub medicare_wages: f64,
     /// `w2` once every employer's W-2 is in; `payStatements` otherwise.
     pub wages_from: &'static str,
     /// Employers seen only in payroll deposits, with no pay statement or W-2, whose wages
@@ -372,6 +374,8 @@ pub struct PayProjection {
     pub withheld_to_date: f64,
     pub projected_wages: f64,
     pub projected_withholding: f64,
+    /// Box 5: box 1 wages with the 401(k) deferrals added back.
+    pub projected_medicare_wages: f64,
 }
 
 /// Pay periods a year has, from a statement's period: weekly and every two weeks by its
@@ -454,18 +458,21 @@ pub fn pay_projections(year: i32, documents: &[Document]) -> Option<Vec<PayProje
                         wages(&|key| statement.amount(key))?,
                         statement.amount("federalWithholding")?,
                         periods,
+                        statement.amount("pretax401k").unwrap_or_default(),
                     ))
                 })
                 .take(3)
                 .collect::<Vec<_>>();
             recent.sort_by(|left, right| left.0.total_cmp(&right.0));
-            let (period_wages, period_withheld, periods) =
+            let (period_wages, period_withheld, periods, period_deferral) =
                 *recent.get(recent.len().checked_sub(1)? / 2)?;
             let date = day(document.date.as_deref())?;
             let period = period_of(date, periods);
             let left = f64::from(periods - period);
             let wages_to_date = wages(&|key| document.ytd(key))?;
             let withheld_to_date = document.ytd("federalWithholding")?;
+            // Medicare wages keep the 401(k) deferrals box 1 leaves out.
+            let medicare_to_date = wages_to_date + document.ytd("pretax401k").unwrap_or_default();
             Some(PayProjection {
                 employer,
                 document_id: document.id.clone(),
@@ -476,6 +483,9 @@ pub fn pay_projections(year: i32, documents: &[Document]) -> Option<Vec<PayProje
                 withheld_to_date: round2(withheld_to_date),
                 projected_wages: round2(wages_to_date + left * period_wages),
                 projected_withholding: round2(withheld_to_date + left * period_withheld),
+                projected_medicare_wages: round2(
+                    medicare_to_date + left * (period_wages + period_deferral),
+                ),
             })
         })
         .collect()
@@ -707,12 +717,9 @@ fn income(
         })
         .map(|(employer, _)| employer.clone())
         .collect::<Vec<_>>();
-    let (wages, social_wages, wages_from) = if all_in {
-        (
-            w2s.iter().filter_map(|w2| w2.amount("box1")).sum::<f64>(),
-            w2s.iter().filter_map(|w2| w2.amount("box3")).sum::<f64>(),
-            "w2",
-        )
+    let (wages, social_wages, medicare_wages, wages_from) = if all_in {
+        let sum = |key: &str| w2s.iter().filter_map(|w2| w2.amount(key)).sum::<f64>();
+        (sum("box1"), sum("box3"), sum("box5"), "w2")
     } else {
         let predicted = |key: &str| {
             predictions
@@ -732,19 +739,14 @@ fn income(
                 })
             })
             .collect::<Vec<_>>();
-        (
-            predicted("box1")
+        let both = |key: &str| {
+            predicted(key)
                 + unpredicted
                     .iter()
-                    .filter_map(|w2| w2.amount("box1"))
-                    .sum::<f64>(),
-            predicted("box3")
-                + unpredicted
-                    .iter()
-                    .filter_map(|w2| w2.amount("box3"))
-                    .sum::<f64>(),
-            "payStatements",
-        )
+                    .filter_map(|w2| w2.amount(key))
+                    .sum::<f64>()
+        };
+        (both("box1"), both("box3"), both("box5"), "payStatements")
     };
     let nec = documents
         .iter()
@@ -777,16 +779,7 @@ fn income(
     if wages <= 0.0 && self_employment <= 0.0 && uncounted_employers.is_empty() {
         return None;
     }
-    // Self-employment tax: 15.3% of 92.35% of net earnings, the Social Security part only up to
-    // what the year's wages left of the wage base; none under $400.
-    let net = self_employment * 0.9235;
-    let self_employment_tax = if net < 400.0 {
-        0.0
-    } else {
-        let room = super::tax::social_security_wage_base(year)
-            .map_or(net, |base| (base - social_wages).max(0.0));
-        round2(net.min(room) * 0.124 + net * 0.029)
-    };
+    let self_employment_tax = super::tax::self_employment_tax(year, self_employment, social_wages);
     // Wages left out make the taxable income unknown, not low.
     let taxable_income = filing_status
         .filter(|_| uncounted_employers.is_empty())
@@ -796,6 +789,7 @@ fn income(
         });
     Some(Income {
         wages: round2(wages),
+        medicare_wages: round2(medicare_wages),
         wages_from,
         uncounted_employers,
         self_employment: round2(self_employment),
