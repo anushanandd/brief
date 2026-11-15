@@ -6,7 +6,7 @@ import type { AccountGroup } from '../lib/account-groups'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { financeSettings, spendingAccountIds } from '../lib/finance-settings'
-import { useLiveFinance } from './use-live-finance'
+import { useFinance } from './use-finance'
 
 /**
  * The letter that opens a type of account on Accounts from anywhere. Pages give these letters
@@ -45,9 +45,12 @@ export function accountJumps(groups: AccountGroup[], names: Record<string, strin
   })
 }
 
-/** Registers the account jumps; they change only when the menu's order or names do. */
+/**
+ * Registers the account jumps; they change only when the menu's order or names do. They read
+ * the committed snapshot, so the shell that holds them doesn't render again with every live tick.
+ */
 export function useAccountJumpActions() {
-  const data = useLiveFinance().data
+  const data = useFinance().data
   const navigate = useNavigate()
   const settings = financeSettings(data)
   const jumps = data
@@ -56,7 +59,7 @@ export function useAccountJumpActions() {
         settings.accountNames,
       )
     : []
-  // Live prices re-render every tick; the actions follow only the jumps' content.
+  // Every edit brings a new snapshot; the actions follow only the jumps' content.
   const key = JSON.stringify(jumps)
   // eslint-disable-next-line react-hooks/exhaustive-deps
   const stableJumps = useMemo(() => jumps, [key])
