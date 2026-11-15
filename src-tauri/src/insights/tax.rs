@@ -430,7 +430,9 @@ fn scenario(profile: &TaxProfile, year: &YearTables, income: &Income) -> Option<
     let preferential = (preferential_income + ordinary_total.min(0.0)).max(0.0);
     let ordinary = ordinary_tax(brackets, ordinary_income) - ordinary_tax(brackets, base);
     let capital_gains = capital_gains_tax(bands, ordinary_income, preferential);
-    let investment_income = interest + dividends + ordinary_gain + preferential_gain;
+    // As on Form 8960, the capital loss deducted reduces net investment income.
+    let investment_income =
+        (interest + dividends + ordinary_gain + preferential_gain - deduction).max(0.0);
     // Modified AGI: taxable income with the standard deduction added back, which is low by
     // anything itemized above it.
     let standard = year.standard_deduction.get(status).copied().unwrap_or(0.0);
@@ -1622,6 +1624,44 @@ mod tests {
         assert_eq!(near.marginal_rate, 24.0 + 3.8);
         // Under the line, none is due.
         assert_eq!(estimate_for(170_000.0, 10_000.0, 0.0).niit, 0.0);
+    }
+
+    #[test]
+    fn a_deductible_capital_loss_reduces_net_investment_income() {
+        // $10,000 of interest less the $3,000 loss deducted is $7,000 of net investment income,
+        // all of it over the line.
+        let transactions = [income(
+            "interest",
+            "interest",
+            "2026-03-31",
+            "taxable",
+            10_000.0,
+            None,
+        )];
+        let trades = [trade(
+            "sale",
+            "SELL",
+            "2026-05-01",
+            "taxable",
+            10.0,
+            Some((-5_000.0, 0.0)),
+        )];
+        let estimate = taxes(
+            TaxInputs {
+                transactions: &transactions,
+                trades: &trades,
+                accounts: &[account("taxable", "taxable")],
+                positions: &mut [],
+                harvestable: &[],
+                profile: Some(&profile(400_000.0, None)),
+            },
+            day("2026-09-20"),
+        )
+        .years[0]
+            .estimate
+            .clone()
+            .unwrap();
+        assert_eq!(estimate.niit, 266.0);
     }
 
     fn position(ticker: &str, account: &str, gains: &[(f64, bool)]) -> PositionLots {
