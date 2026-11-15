@@ -1,7 +1,12 @@
 import type { CandlePoint, LivelinePoint } from 'liveline'
 
 import { formatInstant } from './format'
-import type { HoldingChartEvent, HoldingPriceHistory, PriceBar } from './schema'
+import {
+  holdingChartEventSchema,
+  type HoldingChartEvent,
+  type HoldingPriceHistory,
+  type PriceBar,
+} from './schema'
 
 export type SavedRangeChange = { change: number; percent: number; asOf: number }
 export type HoldingPreviewHistory = HoldingPriceHistory & { savedComparison?: SavedRangeChange }
@@ -259,19 +264,41 @@ export function holdingPeriodChange(
   }
 }
 
-// Preview only canonical bars, never an old quote, connection, or live marker.
+/** A warmed neighbor's history event as it arrived, validated only once its chart opens. */
+export type UnreadHoldingPreview = {
+  event: unknown
+  savedComparison?: SavedRangeChange
+  connection?: HoldingChartState['connection']
+}
+export type HoldingPreviewEntry = HoldingPreviewHistory | UnreadHoldingPreview
+
+const read = new WeakMap<UnreadHoldingPreview, HoldingPreviewHistory | undefined>()
+function readPreview(entry: UnreadHoldingPreview) {
+  if (!read.has(entry)) {
+    const parsed = holdingChartEventSchema.safeParse(entry.event)
+    const event = parsed.success && parsed.data.kind === 'history' ? parsed.data : undefined
+    const verified =
+      event &&
+      reduceHoldingChart(
+        { bars: [], savedComparison: entry.savedComparison, connection: entry.connection },
+        event,
+      )
+    read.set(entry, event && { ...event.history, savedComparison: verified?.savedComparison })
+  }
+  return read.get(entry)
+}
+
+// Preview only canonical bars, never an old quote, connection, or live marker. An earlier
+// day's copy is shown too, marked saved, until today's arrives.
 export function cachedHoldingPreview(
-  history: HoldingPreviewHistory | undefined,
+  entry: HoldingPreviewEntry | undefined,
   symbol: string,
   range: number,
   now = Date.now(),
 ): HoldingChartState {
+  const history = entry && 'event' in entry ? readPreview(entry) : entry
   const usable =
-    history &&
-    history.symbol === symbol &&
-    history.range === range &&
-    history.fetchedAt <= now &&
-    Math.floor(history.fetchedAt / 86400000) === Math.floor(now / 86400000)
+    history && history.symbol === symbol && history.range === range && history.fetchedAt <= now
   return {
     symbol,
     range,

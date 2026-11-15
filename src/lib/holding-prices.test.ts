@@ -305,7 +305,7 @@ it('anchors a closed Day view to the last observed day, never shifting an open o
   expect(holdingRangeChange({ ...closed, historyError: 'Failed' }, points, sunday)).toBeUndefined()
 })
 
-it('restores only matching same-day canonical history as saved, without live observations', () => {
+it('restores only matching canonical history as saved, without live observations', () => {
   const saved = history([bar(now - 60), bar(now)], { fetchedAt: now * 1000 })
   const preview = cachedHoldingPreview(saved, 'TEST', 86400, now * 1000 + 1000)
   expect(preview.history?.cached).toBe(true)
@@ -316,8 +316,22 @@ it('restores only matching same-day canonical history as saved, without live obs
   expect(holdingRangeChange(preview, holdingChartPoints(preview), now)).toBeUndefined()
   expect(cachedHoldingPreview(saved, 'OTHER', 86400, now * 1000).history).toBeUndefined()
   expect(cachedHoldingPreview(saved, 'TEST', 0, now * 1000).history).toBeUndefined()
-  expect(cachedHoldingPreview(saved, 'TEST', 86400, (now + 86400) * 1000).history).toBeUndefined()
+  // An earlier day's copy stands in, marked saved, until today's arrives.
+  expect(cachedHoldingPreview(saved, 'TEST', 86400, (now + 3 * 86400) * 1000).history?.cached).toBe(
+    true,
+  )
   expect(cachedHoldingPreview(saved, 'TEST', 86400, now * 1000 - 1).history).toBeUndefined()
+})
+
+it('reads a warmed neighbor’s history only when its chart opens', () => {
+  const saved = history([bar(now - 60), bar(now)], { fetchedAt: now * 1000 })
+  const event = { kind: 'history', ...identity, history: saved, startedAt: 0 }
+  const preview = cachedHoldingPreview({ event }, 'TEST', 86400, now * 1000)
+  expect(preview.history?.cached).toBe(true)
+  expect(holdingChartPoints(preview)).toHaveLength(2)
+  expect(cachedHoldingPreview({ event }, 'TEST', 0, now * 1000).history).toBeUndefined()
+  const malformed = { event: { ...event, history: { ...saved, bars: 'none' } } }
+  expect(cachedHoldingPreview(malformed, 'TEST', 86400, now * 1000).history).toBeUndefined()
 })
 
 it('retains an explicitly saved comparison at its verified endpoint and clears it on correction', () => {
