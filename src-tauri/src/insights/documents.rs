@@ -435,9 +435,8 @@ pub fn pay_projections(year: i32, documents: &[Document]) -> Option<Vec<PayProje
         .map(|(employer, mut statements)| {
             // Two statements on one day are in the order their year-to-date gross grew.
             statements.sort_by(|left, right| {
-                let key = |document: &Document| {
-                    (day(document.date.as_deref()), document.ytd("gross"))
-                };
+                let key =
+                    |document: &Document| (day(document.date.as_deref()), document.ytd("gross"));
                 key(left)
                     .partial_cmp(&key(right))
                     .unwrap_or(std::cmp::Ordering::Equal)

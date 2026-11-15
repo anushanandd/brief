@@ -516,7 +516,7 @@ pub fn derive_with_documents(
         .filter(|income| income.wages_from == "w2" && income.self_employment == 0.0)
         .map(|income| income.wages);
     taxes.withholding = tax::withholding(
-        today.year(),
+        today,
         documents::pay_projections(today.year(), documents),
         taxes.years.iter().find(|year| year.year == today.year()),
         prior_wages,

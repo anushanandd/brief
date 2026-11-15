@@ -252,8 +252,9 @@ pub struct Harbor {
 
 /// This year's federal withholding carried to December from each employer's latest pay
 /// statement (`documents::pay_projections`) against the federal tax on the projected wages
-/// less the standard deduction plus this year's investment income so far (unclassified
-/// dividends as ordinary), at the filing status of the tax profile. Federal only: no state
+/// less the standard deduction plus this year's interest and dividends carried to December
+/// at their pace so far and its gains as realized (unclassified dividends as ordinary), at
+/// the filing status of the tax profile. Federal only: no state
 /// tax, credits, other deductions, or other income. Last year's tax is the tax on last year's
 /// W-2 wages less its standard deduction, only when every employer's W-2 for the year is in
 /// and nothing else was earned; it stands in for the return's total tax, which is the figure
@@ -739,7 +740,7 @@ fn investment_agi(income: &Income, status: &str) -> Option<f64> {
 /// `prior_investment` last year's investment income. Without the last, the prior-year test
 /// can't be settled.
 pub fn withholding(
-    year: i32,
+    today: NaiveDate,
     projections: Option<Vec<super::documents::PayProjection>>,
     investment: Option<&TaxYear>,
     prior_wages: Option<f64>,
@@ -749,6 +750,10 @@ pub fn withholding(
     if projections.as_ref().is_some_and(Vec::is_empty) {
         return None;
     }
+    let year = today.year();
+    let year_days = NaiveDate::from_ymd_opt(year, 12, 31).map_or(365, |end| end.ordinal());
+    let pace = f64::from(year_days) / f64::from(today.ordinal());
+    let carried = |cents: i64| (cents as f64 * pace).round() as i64;
     let rules = &TABLES.safe_harbor;
     let sum = |value: fn(&super::documents::PayProjection) -> f64| {
         projections.as_ref().map(|projections| {
@@ -762,7 +767,14 @@ pub fn withholding(
     };
     let projected_wages = sum(|projection| projection.projected_wages);
     let projected_withholding = sum(|projection| projection.projected_withholding);
-    let income = investment.map(income_of);
+    // Interest and dividends carry to December at their pace so far, as wages do; gains
+    // count as realized.
+    let income = investment.map(income_of).map(|income| Income {
+        interest: carried(income.interest),
+        qualified: carried(income.qualified),
+        ordinary_dividends: carried(income.ordinary_dividends),
+        ..income
+    });
     let tax_in = |year: i32, wages: f64, income: &Income| {
         let status = filing_status?;
         let tables = TABLES.years.get(&year)?;
@@ -787,9 +799,9 @@ pub fn withholding(
     };
     let prior = prior_wages.zip(prior_income.as_ref());
     let prior_tax = prior.and_then(|(wages, income)| tax_in(year - 1, wages, income));
-    let prior_agi = prior.zip(filing_status).and_then(|((wages, income), status)| {
-        Some(wages + investment_agi(income, status)?)
-    });
+    let prior_agi = prior
+        .zip(filing_status)
+        .and_then(|((wages, income), status)| Some(wages + investment_agi(income, status)?));
     let prior_percent = match (prior_agi, filing_status) {
         (Some(agi), Some(status))
             if rules
@@ -1745,7 +1757,7 @@ mod tests {
         status: Option<&str>,
     ) -> Withholding {
         super::withholding(
-            2026,
+            day("2026-09-30"),
             Some(vec![projection(wages, withholding)]),
             Some(&quiet_year()),
             prior_wages,
@@ -1764,7 +1776,7 @@ mod tests {
         prior.dividends.total = 30_000.0;
         let with = |investment| {
             super::withholding(
-                2026,
+                day("2026-09-30"),
                 Some(vec![projection(150_000.0, 1_000.0)]),
                 Some(&quiet_year()),
                 Some(140_000.0),
@@ -1793,7 +1805,7 @@ mod tests {
         prior.year = 2025;
         prior.realized.short_term = -3_000.0;
         let result = super::withholding(
-            2026,
+            day("2026-09-30"),
             Some(vec![projection(80_000.0, 1_000.0)]),
             Some(&quiet_year()),
             Some(77_000.0),
@@ -1828,12 +1840,31 @@ mod tests {
     }
 
     #[test]
+    fn interest_and_dividends_carry_to_december_like_wages_and_gains_stay_as_realized() {
+        // March 14 is a fifth of the year: $2,000 of interest so far is $10,000 by December,
+        // at 22% on wages that fill the 12% bracket. The $1,000 gain counts once.
+        let mut so_far = quiet_year();
+        so_far.interest = 2_000.0;
+        so_far.realized.short_term = 1_000.0;
+        let result = super::withholding(
+            day("2026-03-14"),
+            Some(vec![projection(66_500.0, 0.0)]),
+            Some(&so_far),
+            None,
+            PriorInvestment::None,
+            Some("single"),
+        )
+        .unwrap();
+        assert_eq!(result.projected_tax, Some(5_800.0 + 11_000.0 * 0.22));
+    }
+
+    #[test]
     fn deduction_wages_leave_unused_shelters_investment_income() {
         // $10,000 of wages and $8,000 of interest less $16,100 leaves $1,900 at 10%.
         let mut interest = quiet_year();
         interest.interest = 8_000.0;
         let result = super::withholding(
-            2026,
+            day("2026-12-31"),
             Some(vec![projection(10_000.0, 0.0)]),
             Some(&interest),
             None,
@@ -1846,7 +1877,7 @@ mod tests {
         let mut qualified = quiet_year();
         qualified.dividends.qualified = 600_000.0;
         let result = super::withholding(
-            2026,
+            day("2026-12-31"),
             Some(vec![projection(10_000.0, 0.0)]),
             Some(&qualified),
             None,
@@ -1858,7 +1889,9 @@ mod tests {
         // $410,000 over the line.
         assert_eq!(
             result.projected_tax,
-            Some(round2(496_050.0 * 0.15 + 48_400.0 * 0.20 + 410_000.0 * 0.038))
+            Some(round2(
+                496_050.0 * 0.15 + 48_400.0 * 0.20 + 410_000.0 * 0.038
+            ))
         );
     }
 
@@ -1896,7 +1929,7 @@ mod tests {
         assert_eq!(no_status.met, HarborMet::Unknown);
         // A statement that can't be carried forward leaves wages and withholding unknown.
         let unread = super::withholding(
-            2026,
+            day("2026-09-30"),
             None,
             Some(&quiet_year()),
             None,
@@ -1916,7 +1949,7 @@ mod tests {
         // No pay statement this year: no projection, and the typed income stays the basis.
         assert_eq!(
             super::withholding(
-                2026,
+                day("2026-09-30"),
                 Some(Vec::new()),
                 Some(&quiet_year()),
                 None,
@@ -1927,7 +1960,7 @@ mod tests {
         );
         // A year without tables has no tax.
         let untabled = super::withholding(
-            2030,
+            day("2030-09-30"),
             Some(vec![projection(66_500.0, 5_220.0)]),
             Some(&quiet_year()),
             None,

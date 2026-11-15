@@ -244,7 +244,7 @@ function WithholdingSection({
               .join('; ')}. `
           : 'A pay statement this year doesn’t print its period, gross, and withholding, so it can’t be carried forward. '}
         {withholding.filingStatus
-          ? 'Filing status from your tax profile; investment income so far this year.'
+          ? 'Filing status from your tax profile; interest and dividends carried to December at their pace so far, and gains as realized.'
           : 'Add a filing status to project the tax.'}
       </p>
       <div className="account-summary-metrics">
