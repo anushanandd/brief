@@ -6,3 +6,5 @@ export const queryClient = new QueryClient({
     queries: { retry: 1, refetchOnWindowFocus: false },
   },
 })
+// Price previews are written without an observer, so they'd otherwise go after five minutes.
+queryClient.setQueryDefaults(['holding-chart-preview'], { gcTime: Infinity })
