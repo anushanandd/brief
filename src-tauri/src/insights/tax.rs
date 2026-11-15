@@ -701,10 +701,13 @@ fn income_of(year: &TaxYear) -> Income {
 }
 
 /// What investment income adds to AGI: interest, dividends, and net gains, a net loss
-/// counting only to $3,000.
-fn investment_agi(income: &Income) -> f64 {
-    let gains = (income.short_term + income.long_term).max(-300_000);
-    from_minor(income.interest + income.qualified + income.ordinary_dividends + gains)
+/// counting only to the filing status's capital-loss limit.
+fn investment_agi(income: &Income, status: &str) -> Option<f64> {
+    let limit = minor_units(*TABLES.capital_loss_limit.get(status)?);
+    let gains = (income.short_term + income.long_term).max(-limit);
+    Some(from_minor(
+        income.interest + income.qualified + income.ordinary_dividends + gains,
+    ))
 }
 
 /// What `Withholding` describes, for `year`: `projections` from its pay statements (`None`
@@ -760,7 +763,9 @@ pub fn withholding(
     };
     let prior = prior_wages.zip(prior_income.as_ref());
     let prior_tax = prior.and_then(|(wages, income)| tax_in(year - 1, wages, income));
-    let prior_agi = prior.map(|(wages, income)| wages + investment_agi(income));
+    let prior_agi = prior.zip(filing_status).and_then(|((wages, income), status)| {
+        Some(wages + investment_agi(income, status)?)
+    });
     let prior_percent = match (prior_agi, filing_status) {
         (Some(agi), Some(status))
             if rules
@@ -1707,6 +1712,24 @@ mod tests {
             (unknown.prior_year.tax, unknown.prior_year.met),
             (None, None)
         );
+    }
+
+    #[test]
+    fn a_separate_filers_net_loss_counts_only_1500_toward_last_years_agi() {
+        // $77,000 less a $1,500 loss is over the $75,000 line; less $3,000 it wouldn't be.
+        let mut prior = quiet_year();
+        prior.year = 2025;
+        prior.realized.short_term = -3_000.0;
+        let result = super::withholding(
+            2026,
+            Some(vec![projection(80_000.0, 1_000.0)]),
+            Some(&quiet_year()),
+            Some(77_000.0),
+            PriorInvestment::Year(&prior),
+            Some("marriedSeparate"),
+        )
+        .unwrap();
+        assert_eq!(result.prior_year.percent, 110.0);
     }
 
     #[test]
