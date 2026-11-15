@@ -854,3 +854,19 @@ fn an_issuers_merchant_details_reach_the_transactions_its_rows_describe() {
         .unwrap();
     assert!(payroll.get("issuer").is_none());
 }
+
+/// PRINCIPLES: recorded history is appended, never rewritten.
+#[test]
+fn observed_net_worth_is_kept_past_two_years() {
+    let start = NaiveDate::from_ymd_opt(2023, 1, 1).unwrap();
+    let mut previous: Snapshot =
+        serde_json::from_str(include_str!("../../../../src/data/empty.json")).unwrap();
+    previous.observed_net_worth_history = (0..1_000)
+        .map(|day| point(&(start + chrono::Duration::days(day)).to_string(), 100.0))
+        .collect();
+    let today = start + chrono::Duration::days(1_000);
+    let kept = observed_history(&previous, Decimal::from(200), today, true);
+    assert_eq!(kept.len(), 1_001);
+    assert_eq!(kept[0].date, "2023-01-01");
+    assert_eq!(kept.last().unwrap().value, 200.0);
+}

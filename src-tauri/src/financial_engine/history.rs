@@ -289,12 +289,6 @@ fn point_values(points: &[Point]) -> impl Iterator<Item = (String, Decimal)> + '
         .filter_map(|point| Some((iso_date(Some(&point.date))?, decimal_f64(point.value)?)))
 }
 
-/// The latest 730 of these dated values.
-fn latest(values: BTreeMap<String, Decimal>) -> Vec<(String, Decimal)> {
-    let skip = values.len().saturating_sub(730);
-    values.into_iter().skip(skip).collect()
-}
-
 fn points(values: Vec<(String, Decimal)>) -> Vec<Point> {
     values
         .into_iter()
@@ -325,7 +319,6 @@ pub(super) fn merged_net_worth_history(
             history.insert(date, seen);
         }
     }
-    let history = latest(history);
     let has_estimates = history
         .iter()
         .any(|(date, _)| !observed_dates.contains(date));
@@ -356,7 +349,8 @@ pub(super) fn observed_history(
     if fresh {
         observations.insert(calendar_date.to_string(), rounded(current));
     }
-    points(latest(observations))
+    // Every observation is kept (PRINCIPLES: recorded history is appended, never rewritten).
+    points(observations.into_iter().collect())
 }
 
 pub(super) fn snapshot_change(
