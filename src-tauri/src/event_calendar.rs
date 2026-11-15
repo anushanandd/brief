@@ -1,7 +1,8 @@
 //! macOS Calendar, with full access through EventKit. Brief keeps one calendar of its own,
 //! "Brief", matched to the agenda, and reads the user's other calendars for the Calendar page
 //! and trips. It writes only to its own calendar, and only events whose link it made. What it
-//! reads is never saved or logged, and never reaches insights.
+//! reads is never saved or logged. Only flights and stays from the user's own calendars reach
+//! insights, where trips read them; the trips are saved, the events never are.
 use std::sync::Mutex;
 
 use chrono::{Duration, Local, NaiveDate};
@@ -681,6 +682,74 @@ async fn ensure(
         Ensured::Found(info) => Some(info),
         Ensured::Missing { .. } => None,
     })
+}
+
+/// How long travel events are kept in memory before Calendar is read again.
+const TRAVEL_REFRESH: std::time::Duration = std::time::Duration::from_secs(60 * 60);
+const TRAVEL_YEARS: i64 = 12;
+
+static TRAVEL: Mutex<Option<(std::time::Instant, Vec<Event>)>> = Mutex::new(None);
+
+/// The flights and stays in calendars named for an email account: the main calendar of each
+/// of the user's own accounts. Shared calendars are left out, since they carry other people's
+/// travel. Read at most hourly, never without access, and kept only in memory.
+pub fn travel_events() -> Vec<Event> {
+    if access() != Access::Allowed {
+        return Vec::new();
+    }
+    let mut kept = TRAVEL
+        .lock()
+        .unwrap_or_else(|poisoned| poisoned.into_inner());
+    if let Some((read, events)) = kept.as_ref() {
+        if read.elapsed() < TRAVEL_REFRESH {
+            return events.clone();
+        }
+    }
+    let events = read_travel();
+    *kept = Some((std::time::Instant::now(), events.clone()));
+    events
+}
+
+#[cfg(target_os = "macos")]
+fn read_travel() -> Vec<Event> {
+    let Some(calendars) =
+        macos::list().and_then(|text| serde_json::from_str::<Vec<ListedCalendar>>(&text).ok())
+    else {
+        return Vec::new();
+    };
+    let ids = calendars
+        .into_iter()
+        .filter(|calendar| calendar.title.contains('@'))
+        .map(|calendar| calendar.id)
+        .collect::<Vec<_>>();
+    if ids.is_empty() {
+        return Vec::new();
+    }
+    let today = Local::now().date_naive();
+    let mut events = Vec::new();
+    let mut start = today - Duration::days(365 * TRAVEL_YEARS);
+    while start <= today {
+        // An EventKit search spans at most four years.
+        let end = (start + Duration::days(3 * 365)).min(today);
+        let request = serde_json::json!({
+            "start": start, "end": end, "calendarIds": ids, "notes": false,
+        })
+        .to_string();
+        if let Some(found) =
+            macos::events(&request).and_then(|text| serde_json::from_str::<Vec<Event>>(&text).ok())
+        {
+            events.extend(found.into_iter().filter(|event| {
+                crate::insights::trips::reservations::named_like_one(&event.title)
+            }));
+        }
+        start = end + Duration::days(1);
+    }
+    events
+}
+
+#[cfg(not(target_os = "macos"))]
+fn read_travel() -> Vec<Event> {
+    Vec::new()
 }
 
 #[cfg_attr(not(target_os = "macos"), allow(unused_variables))]

@@ -250,15 +250,17 @@ pub(crate) fn derive_view(
     now: chrono::DateTime<chrono::Utc>,
     zone: &dyn crate::insights::calendar::Zone,
 ) -> Result<(crate::insights::View, Value), String> {
-    derive_view_with(data, recovery, searches, None, now, zone)
+    derive_view_with(data, recovery, searches, None, &[], now, zone)
 }
 
-/// `derive_view`, with an embedder for suggesting categories from merchants with similar names.
+/// `derive_view`, with an embedder for suggesting categories from merchants with similar names,
+/// and the travel events trips read from the user's calendars.
 pub(crate) fn derive_view_with(
     data: &FinanceState,
     recovery: Option<Recovery>,
     searches: &BTreeMap<String, Vec<crate::places::overture::OverturePlace>>,
     embedder: Option<&dyn crate::search::embeddings::Embedder>,
+    travel: &[crate::event_calendar::Event],
     now: chrono::DateTime<chrono::Utc>,
     zone: &dyn crate::insights::calendar::Zone,
 ) -> Result<(crate::insights::View, Value), String> {
@@ -287,6 +289,7 @@ pub(crate) fn derive_view_with(
         &mut snapshot,
         &data.settings,
         &data.documents,
+        travel,
         now,
         zone,
     )
@@ -448,6 +451,15 @@ impl Storage {
     ) -> Result<Option<crate::database::SavedSummary>, String> {
         self.database
             .saved_summary(crate::summary::saved::scope(ticker), start)
+    }
+
+    /// The summary of `ticker` (or the portfolio) saved most recently, for any period start.
+    pub fn latest_summary(
+        &self,
+        ticker: Option<&str>,
+    ) -> Result<Option<crate::database::SavedSummary>, String> {
+        self.database
+            .latest_summary(crate::summary::saved::scope(ticker))
     }
 
     /// Saves a summary in place of the one before for its scope and period start. A recovered
@@ -629,6 +641,10 @@ impl Storage {
             .hash(&mut hasher);
         // Merchant names embedded since the last view change category suggestions.
         self.merchant_embeddings.generation().hash(&mut hasher);
+        // A flight or stay added to the calendar changes trips.
+        serde_json::to_vec(&crate::event_calendar::travel_events())
+            .map_err(|error| error.to_string())?
+            .hash(&mut hasher);
         serde_json::to_vec(&(
             &self.data.annotations,
             &self.data.settings,
@@ -652,6 +668,7 @@ impl Storage {
             self.recovery.clone(),
             &searches,
             Some(&embedder),
+            &crate::event_calendar::travel_events(),
             chrono::Utc::now(),
             &crate::insights::calendar::LocalZone,
         );

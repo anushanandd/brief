@@ -5,6 +5,7 @@ pub mod activity_totals;
 pub mod agenda;
 pub mod allocation;
 pub mod anomalies;
+pub mod as_of;
 pub mod assistant_planner;
 pub mod assistant_tools;
 pub mod attention;
@@ -229,8 +230,6 @@ pub struct Insights {
     pub movers: Option<lots::Movers>,
     /// Dated items, for the Calendar page and the Brief calendar.
     pub agenda: Vec<agenda::AgendaItem>,
-    /// What program rules explain or suggest, with proofs, and life chapters.
-    pub evidence: crate::evidence::Evidence,
     /// Each detector's share of your answers that accepted it, for Diagnostics.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub precision: Vec<precision::DetectorPrecision>,
@@ -246,14 +245,16 @@ pub fn derive(
     now: DateTime<Utc>,
     zone: &dyn Zone,
 ) -> Result<Insights, String> {
-    derive_with_documents(snapshot, settings, &[], now, zone)
+    derive_with_documents(snapshot, settings, &[], &[], now, zone)
 }
 
-/// `derive`, with what Brief read from the user's documents.
+/// `derive`, with what Brief read from the user's documents, and the travel events from the
+/// user's own calendars, which trips read and nothing saves.
 pub fn derive_with_documents(
     snapshot: &mut Snapshot,
     settings: &FinanceSettings,
     documents: &[crate::documents::Document],
+    travel: &[crate::event_calendar::Event],
     now: DateTime<Utc>,
     zone: &dyn Zone,
 ) -> Result<Insights, String> {
@@ -272,15 +273,6 @@ pub fn derive_with_documents(
         transaction.recurring_id = Some(forecast::recurring_key(transaction));
     }
     people::assign(&mut snapshot.transactions, &settings.people);
-    // Rules run before any total, so an Explained offset already counts as a refund.
-    let explained = crate::evidence::explain(
-        &snapshot.transactions,
-        &snapshot.accounts,
-        documents,
-        settings,
-        zone.date(now),
-    );
-    crate::evidence::apply(&mut snapshot.transactions, &explained.explanations);
     let snapshot = &*snapshot;
     let (transactions, accounts, updated_at) = (
         &snapshot.transactions,
@@ -289,15 +281,7 @@ pub fn derive_with_documents(
     );
     let ended = recurring::ended(&snapshot.recurring_streams, transactions);
     let today = zone.date(now);
-    let mut trips = trips::trips(transactions, today);
-    // Purchases on trips say nothing about where home is.
-    let away = trips
-        .trips
-        .iter()
-        .flat_map(|trip| trip.transaction_ids.iter().cloned())
-        .collect();
-    let evidence =
-        crate::evidence::evidence(explained, transactions, accounts, &away, settings, today);
+    let mut trips = trips::trips(transactions, &trips::reservations::read(travel), today);
     people::trip_companions(
         &mut trips.trips,
         &settings.trip_companions,
@@ -328,26 +312,8 @@ pub fn derive_with_documents(
         zone,
         &ended,
         trips,
-        crate::evidence::chapters::baseline(&evidence.chapters, today),
     );
     let people = people::people(transactions, &settings.people, &trips.trips);
-    // A month that already fell short can't be changed, so its watch note stays with the rule;
-    // an ended job or a missing bonus still asks something of you.
-    brief.needs.extend(
-        evidence
-            .alerts
-            .iter()
-            .filter(|alert| alert.kind != crate::evidence::AlertKind::Watch)
-            .map(|alert| attention::AttentionItem {
-                id: format!("program:{}", alert.id),
-                severity: attention::Severity::Attention,
-                item: attention::Item::ProgramNote {
-                    program: alert.program.clone(),
-                    says: alert.says.clone(),
-                    subject: alert.subject.clone(),
-                },
-            }),
-    );
     let recurring_check = recurring::check(&snapshot.recurring_streams, &expected, transactions);
     // Statements belong to the saved card, and only once its benefits say it is that card.
     let card = spending_card(accounts, settings);
@@ -672,7 +638,6 @@ pub fn derive_with_documents(
         },
         movers: lots::movers(holdings),
         agenda: Vec::new(),
-        evidence,
         precision: precision::precision(settings, transactions),
     };
     insights.agenda = agenda::agenda(agenda::Inputs {
@@ -750,13 +715,11 @@ fn compute(
         now,
         zone,
         &std::collections::BTreeSet::new(),
-        trips::trips(transactions, zone.date(now)),
-        None,
+        trips::trips(transactions, &[], zone.date(now)),
     )
 }
 
-/// `ended` holds recurring series Plaid reports cancelled; they are not forecast. `baseline`
-/// is where a confirmed chapter starts a new normal for typical spending and usual amounts.
+/// `ended` holds recurring series Plaid reports cancelled; they are not forecast.
 #[allow(clippy::too_many_arguments)]
 fn cashflow(
     transactions: &[Transaction],
@@ -767,7 +730,6 @@ fn cashflow(
     zone: &dyn Zone,
     ended: &std::collections::BTreeSet<String>,
     trips: trips::Trips,
-    baseline: Option<NaiveDate>,
 ) -> Cashflow {
     let today = zone.date(now);
     let live = |mut events: Vec<forecast::ExpectedEvent>| {
@@ -894,7 +856,7 @@ fn cashflow(
         .filter(|(account, _)| !is_spending_card(account))
         .map(|(account, rules)| card_benefits(account, rules))
         .collect::<Vec<_>>();
-    let plan = plan::plan(transactions, accounts, &expected, baseline, today);
+    let plan = plan::plan(transactions, accounts, &expected, today);
     let context = attention::Context {
         today,
         spending_account_id: card.map(|card| card.id.as_str()),
@@ -909,7 +871,7 @@ fn cashflow(
         today,
         cashline::HORIZON_DAYS,
     ));
-    let cash = cashline::timeline(accounts, &horizon, &settings.planned_chapters, today);
+    let cash = cashline::timeline(accounts, &horizon, today);
     let year_ahead = live(forecast::forecast_within(
         transactions,
         &views,
@@ -924,7 +886,7 @@ fn cashflow(
             .map(|(card, cycle)| (card.id.as_str(), cycle)),
         today,
     );
-    let anomalies = anomalies::anomalies(transactions, baseline, today);
+    let anomalies = anomalies::anomalies(transactions, today);
     let mut brief = attention::Brief {
         needs: attention::needs(
             context,

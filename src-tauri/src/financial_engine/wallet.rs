@@ -104,7 +104,11 @@ fn place(saved: &WalletPlace) -> Option<Place> {
         country,
         lat: spot.map(|(lat, _)| lat),
         lon: spot.map(|(_, lon)| lon),
-        source: PlaceSource::Wallet,
+        source: if saved.device {
+            PlaceSource::Device
+        } else {
+            PlaceSource::Wallet
+        },
         precision: if exact {
             PlacePrecision::Exact
         } else if saved.street.is_some() {

@@ -1,10 +1,29 @@
 import { expect, it } from 'vitest'
 
 import { classification } from '../data/fixtures/classification'
-import { evidenceFixture } from '../data/fixtures/evidence'
 import { transaction } from '../data/fixtures/records'
 import { renderRoute } from './routes.harness'
 import { scenario } from './routes.scenario'
+
+/** The cards of Insights' strip marked as the page shown. */
+function currentTabs(html: string) {
+  const start = html.indexOf('<nav class="account-switcher" aria-label="Insights"')
+  const strip = html.slice(start, html.indexOf('</nav>', start))
+  return [...strip.matchAll(/<a [^>]*aria-current="page"[^>]*>.*?title="([^"]+)"/g)].map(
+    (match) => match[1],
+  )
+}
+
+/** Where the synthetic trips leave from. */
+const home = {
+  city: 'Oakland',
+  region: 'CA',
+  country: 'US',
+  lat: 37.8,
+  lon: -122.27,
+  start: '2025-01-01',
+  end: '2026-09-30',
+}
 
 /** A synthetic trip, flown or driven. */
 const trip = (id: string, start: string, end: string, flew: boolean) => ({
@@ -19,10 +38,14 @@ const trip = (id: string, start: string, end: string, flew: boolean) => ({
   destination: `Example ${id}`,
   abroad: true,
   total: -120,
+  gettingThere: 0,
+  staying: 0,
+  onTheGround: -120,
   categories: [{ name: 'Dining', amount: -120, share: 100 }],
   rest: 0,
   restShare: 0,
   transactionIds: ['transaction-0'],
+  bookings: [],
   ongoing: false,
   flew,
   stops: [
@@ -39,12 +62,12 @@ it('opens Trips as a year: its calendar, a row per trip, and places', async () =
         trip('b', '2026-06-01', '2026-06-02', false),
       ],
       years: [{ year: 2026, count: 2, days: 5, spent: 240, abroad: 2, flown: 1, longest: 'a' }],
-      home: ['CA, US'],
+      bases: [home],
     },
   }
   const html = await renderRoute('/insights')
-  expect(html).toContain('aria-current="page">Trips')
-  expect(html).toContain('aria-label="Insights"')
+  // Trips is one of the cards in Activity's strip, the current one here.
+  expect(currentTabs(html)).toEqual(['Trips'])
   expect(html).toContain('Spent away in 2026')
   expect(html).toMatch(/<span>Days away<\/span><strong>5<\/strong>/)
   expect(html).toMatch(/<span>Flown<\/span><strong>1<\/strong>/)
@@ -65,6 +88,8 @@ it('opens Trips as a year: its calendar, a row per trip, and places', async () =
   expect(html).toContain('aria-label="Places in 2026"')
   expect(html).toContain('2 trips · 6 purchases')
   expect(html).not.toContain('Lounge')
+  // Home is named from the bases Rust found for the year.
+  expect(html).toContain('Home in 2026: Oakland, CA.')
   // Money's strip no longer carries trips.
   expect(await renderRoute('/spending')).not.toContain('>Trips<')
 })
@@ -73,14 +98,22 @@ it('opens one trip: its money day by day, purchases, route, and split, stepping 
   scenario.insights = {
     trips: {
       trips: [
-        trip('a', '2026-08-10', '2026-08-12', true),
+        {
+          ...trip('a', '2026-08-10', '2026-08-12', true),
+          gettingThere: -300,
+          bookings: [{ transactionId: 'flight', date: '2026-07-20', confidence: 0.78 }],
+        },
         trip('b', '2026-06-01', '2026-06-02', false),
       ],
       years: [{ year: 2026, count: 2, days: 5, spent: 240, abroad: 2, flown: 1, longest: 'a' }],
-      home: ['CA, US'],
+      bases: [home],
     },
   }
   const html = await renderRoute('/insights?trip=a')
+  // A flight booked ahead is named with how likely it was for this trip, and the money splits
+  // into getting there, staying, and on the ground.
+  expect(html).toContain('78% likely for this trip')
+  expect(html).toMatch(/<span>Getting there<\/span><strong><span class="sensitive-value">\$300\.00/)
   expect(html).toContain('aria-current="page">Portugal &amp; Spain')
   expect(html).toContain('href="/insights">Trips')
   expect(html).toContain('3 days · $40.00 a day · 1 purchase · Flown · Abroad')
@@ -106,7 +139,7 @@ it('shows the trip under way ahead of the year', async () => {
     trips: {
       trips: [{ ...trip('now', '2026-09-28', '2026-09-30', false), ongoing: true }],
       years: [{ year: 2026, count: 1, days: 3, spent: 120, abroad: 1, flown: 0, longest: 'now' }],
-      home: ['CA, US'],
+      bases: [home],
     },
   }
   const html = await renderRoute('/insights')
@@ -171,6 +204,14 @@ it('lists people with what was sent and received, and names payments carry', asy
   scenario.extraTransactions = [tagged]
   const html = await renderRoute('/insights?view=people')
   expect(html).toContain('aria-current="page">People')
+  // Only People is the current tab: Trips, whose search People's holds, is not.
+  expect(currentTabs(html)).toEqual(['People'])
+  // A page of Insights reads as Insights', and Calendar, a page of its own, has no strip.
+  const taxes = await renderRoute('/taxes')
+  expect(taxes).toMatch(/<a[^>]*href="\/insights"[^>]*>Insights<\/a>.*?aria-current="page">Taxes/)
+  expect(currentTabs(taxes)).toEqual(['Taxes'])
+  const calendar = await renderRoute('/calendar')
+  expect(calendar).not.toContain('class="account-switcher"')
   expect(html).toContain('aria-label="Find or add a person"')
   expect(html).toContain('href="/insights?view=people&amp;person=person%3Aa"')
   // A name in payments comes with who it could be, and Y takes the best guess.
@@ -185,20 +226,27 @@ it('lists people with what was sent and received, and names payments carry', asy
   expect(html).toContain('aria-label="Who Example Person C is"')
   expect(html).toContain('New person')
   expect(html).toContain('aria-label="Someone else is Example Person C"')
-  // Everyone as one table: when you were last together, what's tagged, and what went each
-  // way on a shared centre line. Return on a row opens its person.
-  const roster = html.slice(html.indexOf('<table class="people-roster"'))
-  expect(roster).toContain('aria-label="People"')
-  expect(roster).toMatch(/<th scope="col">Last together<\/th>/)
-  expect(roster).toContain('data-keyboard-open')
-  expect(roster).toContain('2 weeks ago')
-  expect(roster).toContain('<td class="is-number">2</td><td class="is-number">1</td>')
-  expect(roster).toMatch(/<td class="is-sent">.*?\$40\.10/)
-  expect(roster).toMatch(/<td class="is-received">.*?\$12\.05/)
-  // Someone with nothing tagged is still listed, without figures.
-  expect(roster).toContain('Example Person B')
-  expect(roster).toContain('Nothing tagged yet')
-  expect(roster).toContain('<td class="is-number">0</td><td class="is-number"></td>')
+  // The page leads with what went each way, then everyone with history around you, each their
+  // avatar, named underneath, and a link to them.
+  expect(html).toContain('<h2 class="balance-label">Sent to people</h2>')
+  expect(html).toMatch(/\$12\.05(<!-- -->)? came back from (<!-- -->)?1 person\./)
+  const orbit = html.slice(html.indexOf('<div class="people-orbit"'))
+  expect(orbit).toContain('aria-label="People by how recently and how much"')
+  expect(orbit).toContain('href="/insights?view=people&amp;person=person%3Aa"')
+  expect(orbit).toMatch(/class="people-orbit-label"[^>]*>Example</)
+  // Beside it, a table of what was received and sent, searched with / and sorted by its
+  // columns; Return on a row opens its person.
+  expect(html).toContain('aria-label="Search people"')
+  const table = html.slice(html.indexOf('<div class="people-table"'))
+  expect(table).toContain('aria-label="Sort by Received"')
+  expect(table).toContain('data-command="people.sort.sent"')
+  const rows = table.slice(table.indexOf('<ol class="people-table-body"'))
+  expect(rows).toContain('data-keyboard-open')
+  expect(rows).toMatch(/Example Person A<\/strong><\/span><span class="sensitive-value">\$12\.05/)
+  expect(rows).toMatch(/\$12\.05<\/span><span class="sensitive-value">\$40\.10/)
+  // Someone with nothing tagged has nothing to show, so only Find or add reaches them.
+  expect(table).not.toContain('Example Person B')
+  expect(orbit).not.toContain('Example Person B')
 })
 
 it('explains People before anyone is added', async () => {
@@ -213,7 +261,7 @@ it('opens a person: their figures, tagged activity, trips, and details behind a 
     trips: {
       trips: [{ ...trip('a', '2026-08-10', '2026-08-12', true), companions: ['person:a'] }],
       years: [],
-      home: ['CA, US'],
+      bases: [home],
     },
     people: {
       people: [
@@ -261,7 +309,7 @@ it('shows who went on a trip, with P to change them', async () => {
     trips: {
       trips: [{ ...trip('a', '2026-08-10', '2026-08-12', true), companions: ['person:a'] }],
       years: [],
-      home: ['CA, US'],
+      bases: [home],
     },
   }
   const html = await renderRoute('/insights?trip=a')
@@ -269,40 +317,4 @@ it('shows who went on a trip, with P to change them', async () => {
   expect(html).toContain('Example Person A')
   expect(html).toContain('data-command="trips.people"')
   expect(html).toContain('aria-keyshortcuts="P"')
-})
-
-it('tells chapters as a timeline and a list, each opening what defines it', async () => {
-  scenario.insights = { evidence: evidenceFixture }
-  const html = await renderRoute('/insights?view=chapters')
-  expect(html).toContain('aria-current="page">Chapters')
-  expect(html).toContain('Example Employer · Oregon · month 6')
-  expect(html).toContain('aria-label="Chapters over time"')
-  expect(html).toContain('data-command="chapters.open.work:example"')
-  expect(html).toContain('data-command="chapters.plan"')
-  // A detected chapter is a possibility until confirmed, and says so in words.
-  expect(html).toContain('>Possible<')
-
-  const detail = await renderRoute('/insights?view=chapters&chapter=work:example')
-  expect(detail).toContain('Pay statements from Example Employer')
-  expect(detail).toContain('Example fee waiver')
-  expect(detail).toContain('Check the final paycheck.')
-  expect(detail).toContain('data-command="chapter.confirm"')
-  expect(detail).toContain('data-command="chapter.dismiss"')
-})
-
-it('shows what rules explain, with tiers and the Why chain', async () => {
-  scenario.insights = { evidence: evidenceFixture }
-  const html = await renderRoute('/insights?view=rules')
-  expect(html).toContain('The $100 bonus offsets the card’s $100 fee')
-  expect(html).toContain('>Explained<')
-  expect(html).toContain('>Possible<')
-  expect(html).toContain('Paperless statements')
-  expect(html).toContain('href="https://bank.example/terms"')
-  expect(html).toContain('Deposits were short in September 2026.')
-  expect(html).toContain('Example fee waiver')
-  // A credit card no saved rules cover can have rules drafted for it.
-  const cards = html.slice(html.indexOf('>Card rules<'))
-  expect(cards).toContain('<strong>Other card</strong>')
-  expect(cards).toContain('data-command="cardRules.find.other"')
-  expect(cards).not.toContain('data-command="cardRules.find.selected"')
 })

@@ -10,6 +10,7 @@ import { placeLabel } from '../lib/places'
 import type { FinanceSnapshot, QualityEvidence, Transaction } from '../lib/schema'
 import { formatActivityDate } from '../lib/spending'
 import { transactionDetail } from '../lib/transaction-detail'
+import { bookingLikelihood, tripTitle } from '../lib/trips'
 import { ActivityMark } from './activity-list'
 import { PlaceMark } from './activity-method-mark'
 import { CategoryMark } from './category-mark'
@@ -174,6 +175,9 @@ function TransactionDetails({
 }) {
   const detail = transactionDetail(data, activity.id)
   const transaction = detail?.transaction
+  const booking = detail?.trip?.bookings.find(
+    ({ transactionId }) => transactionId === transaction?.id,
+  )
   const transfer = activity.transfer
   const posted = transaction?.postedOn ?? activity.date
   const time = activityTime(activity)
@@ -351,12 +355,13 @@ function TransactionDetails({
             <div>
               <dt>Trip</dt>
               <dd>
-                {detail.trip.destination}
+                {tripTitle(detail.trip)}
                 <small>
                   {formatActivityDate(detail.trip.start)} – {formatActivityDate(detail.trip.end)} ·{' '}
                   <span className="sensitive-value">
                     {formatProseCurrency(Math.abs(detail.trip.total))}
                   </span>
+                  {booking ? ` · Booked ahead, ${bookingLikelihood(booking)}` : null}
                 </small>
               </dd>
             </div>
@@ -456,6 +461,7 @@ const evidenceLabels: Record<QualityEvidence['basis'], string> = {
   statementOnly: 'From an imported statement',
   pending: 'Pending; may change when it posts',
   wallet: 'Apple Wallet recorded it',
+  device: 'Your phone was there',
   merchantCode: 'The card network’s merchant code',
   suggested: 'Brief followed your earlier choices',
   provider: 'Posted by the bank',

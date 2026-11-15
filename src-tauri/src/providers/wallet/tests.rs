@@ -330,6 +330,63 @@ fn abroad_keeps_the_charged_currency_and_ignores_a_country_printed_as_a_region()
 }
 
 #[test]
+fn the_phone_outranks_a_billing_city_and_a_store_maps_confused_it_with() {
+    let store = store();
+    let connection = Connection::open(&store.0).unwrap();
+    connection
+        .execute_batch(&format!(
+            "INSERT INTO maps_merchant VALUES (6, 'Other Hall', '+1 555 0199', 'https://other.test',
+               28.06, -82.40,
+               '{{\"street\":\"1 Far St\",\"city\":\"Tampa\",\"state\":\"FL\",\"ISOCountryCode\":\"US\"}}');
+             INSERT INTO payment_transaction VALUES
+               (104, 'laundry', 1, 12500, 'USD', {laundry}, NULL, 1, 0, 1, 'Example Laundry',
+                'example laundry', 7211, 'Salt Lake City', 'UT', 40.70, -111.90, NULL, NULL, NULL, NULL),
+               (105, 'confused', 1, 12500, 'USD', {laundry}, NULL, 1, 0, 1, 'Example Laundry',
+                'example laundry', 7211, 'Salt Lake City', 'UT', 40.70, -111.90, NULL, NULL, NULL, 6),
+               (106, 'transit', 1, 280, 'USD', {laundry}, NULL, 1, 0, 1, 'Example Transit',
+                'example transit', 4111, NULL, NULL, 0.0, 0.0, NULL, NULL, NULL, NULL);",
+            laundry = apple(2025, 4, 24, 18),
+        ))
+        .unwrap();
+    for (id, city) in [
+        ("laundry", "PLAINVIEW"),
+        ("confused", "PLAINVIEW"),
+        ("transit", "EXAMPLE.GOV.UK/CP"),
+    ] {
+        connection
+            .execute(
+                "INSERT INTO cloud_store_record VALUES (?1, 'Transaction', ?2)",
+                rusqlite::params![
+                    id,
+                    archive(&[
+                        ("merchantCity", wrapped_text(city)),
+                        ("merchantRawCountry", wrapped_text("USA")),
+                    ])
+                ],
+            )
+            .unwrap();
+    }
+    let data = read_store(&store.0, now()).unwrap();
+    // The network prints the merchant's billing city; the phone was in Salt Lake City.
+    let laundry = row(&data, "laundry").place.as_ref().unwrap();
+    assert_eq!(laundry.city.as_deref(), Some("Salt Lake City"));
+    assert_eq!(laundry.region.as_deref(), Some("UT"));
+    assert!(laundry.device);
+    // A store Maps matched far from the phone is another business, name and all.
+    let confused = row(&data, "confused");
+    assert_eq!(confused.merchant.as_deref(), Some("Example Laundry"));
+    assert_eq!(confused.phone, None);
+    let place = confused.place.as_ref().unwrap();
+    assert_eq!(place.city.as_deref(), Some("Salt Lake City"));
+    assert_eq!(place.street, None);
+    assert_eq!((place.lat, place.lon), (Some(40.70), Some(-111.90)));
+    // Without the phone, the network's city stands, unless it is a web address.
+    assert_eq!(row(&data, "transit").place.as_ref().unwrap().city, None);
+    // A mapped store beside the phone vouches for where the cardholder was.
+    assert!(row(&data, "tap").place.as_ref().unwrap().device);
+}
+
+#[test]
 fn a_live_record_takes_the_macs_time_and_an_old_one_without_a_zone_has_none() {
     let store = store();
     let data = read_store(&store.0, now()).unwrap();

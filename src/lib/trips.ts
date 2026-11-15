@@ -92,9 +92,25 @@ export function tripDates(trip: Pick<Trip, 'start' | 'end'>, referenceIso: strin
 
 type Stop = Trip['stops'][number]
 
-/** Where a stop was, in one line, as a purchase's place reads. */
-export const tripStopLabel = (stop: Stop) =>
+/** Where a stop or a base was, in one line, as a purchase's place reads. */
+export const tripStopLabel = (stop: Pick<Stop, 'city' | 'region' | 'country'>) =>
   placeLabel({ ...stop, source: 'descriptor', precision: stop.city ? 'city' : 'region' })
+
+/** The bases a year was spent at, by name, oldest first. */
+export function tripBaseLabels(trips: Pick<Trips, 'bases'> | undefined, year: number) {
+  const [first, last] = [`${year}-01-01`, `${year}-12-31`]
+  return [
+    ...new Set(
+      (trips?.bases ?? [])
+        .filter(({ start, end }) => start <= last && end >= first)
+        .map(tripStopLabel),
+    ),
+  ]
+}
+
+/** How likely a booking made ahead was for its trip, in words. */
+export const bookingLikelihood = (booking: Trip['bookings'][number]) =>
+  `${Math.round(booking.confidence * 100)}% likely for this trip`
 
 /**
  * What a trip is called: the countries of a trip that crossed borders, otherwise the city with

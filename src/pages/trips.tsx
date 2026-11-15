@@ -49,6 +49,8 @@ import {
   tripNeighbours,
   tripPeakDay,
   tripPlaces,
+  bookingLikelihood,
+  tripBaseLabels,
   tripStopLabel,
   tripTitle,
   tripYears,
@@ -69,7 +71,8 @@ export function tripFromSearch(data: FinanceSnapshot, id: string | undefined) {
 }
 
 /**
- * Insights' Trips view: trips away from home, found natively from in-store purchases. The year
+ * Insights' Trips view: trips away from home, found natively from in-store purchases, where the
+ * phone was, and the flights and stays in the user's own calendar. The year
  * is the way in: a wall calendar of the days away, a row per trip, and the places reached. Each
  * trip is then its own view: its route, the money day by day, where it went, and every purchase.
  */
@@ -109,10 +112,11 @@ function YearView({ data, trips }: { data: FinanceSnapshot; trips: Trip[] }) {
   const [hovered, setHovered] = useState<string>()
   const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
   const currentYear = Number(today.slice(0, 4))
-  const home = data.insights?.trips.home ?? []
+  const knowsHome = Boolean(data.insights?.trips.bases.length)
   const years = tripYears(trips, today)
   const year = search.year && years.includes(search.year) ? search.year : currentYear
   const shown = trips.filter(inYear(year))
+  const homes = tripBaseLabels(data.insights?.trips, year)
   const totals = tripYearTotals(data.insights?.trips, year)
   const lastYear = tripYearTotals(data.insights?.trips, year - 1)
   const colors = useMemo(() => tripColors(shown), [shown])
@@ -218,9 +222,11 @@ function YearView({ data, trips }: { data: FinanceSnapshot; trips: Trip[] }) {
           referenceIso={data.updatedAt}
         />
         <p className="trips-year-note">
-          {home.length
-            ? `Away from ${home.join(' and ')}: in-store purchases somewhere else, two or more no more than a few days apart.`
-            : 'Trips need a few months of located in-store purchases to know home.'}
+          {homes.length
+            ? `Home in ${year}: ${homes.join(', ')}. A trip is days somewhere else, placed by your phone, a flight or stay in your calendar, or purchases at two places.`
+            : knowsHome
+              ? `No home found in ${year}.`
+              : 'Trips need a few months of located in-store purchases to know home.'}
         </p>
       </Card>
       <div className="trips-grid">
@@ -243,7 +249,7 @@ function YearView({ data, trips }: { data: FinanceSnapshot; trips: Trip[] }) {
             </ol>
           ) : (
             <EmptyState>
-              {trips.length || home.length
+              {trips.length || knowsHome
                 ? `No trips in ${year}.`
                 : 'Trips need a few months of located in-store purchases to know home.'}
             </EmptyState>
@@ -528,6 +534,19 @@ function TripView({
         </Card>
         <Card className="trips-card">
           <SectionHeading title="Purchases" />
+          {trip.bookings.length ? (
+            <p className="trips-year-note sensitive-value">
+              {`Booked ahead: ${trip.bookings
+                .map((booking) =>
+                  [
+                    activities.get(`spending:${booking.transactionId}`)?.title ?? 'A booking',
+                    `on ${formatListDate(booking.date, data.updatedAt)}`,
+                    bookingLikelihood(booking),
+                  ].join(', '),
+                )
+                .join('; ')}.`}
+            </p>
+          ) : null}
           {rows.length ? (
             <ActivityList
               activities={rows}
@@ -682,7 +701,7 @@ function Companions({
  */
 function Route({ trip, referenceIso }: { trip: Trip; referenceIso: string }) {
   const stops = trip.stops.toSorted((left, right) => left.first.localeCompare(right.first))
-  if (!stops.length) return <EmptyState>No located purchases.</EmptyState>
+  if (!stops.length) return <EmptyState>No places found.</EmptyState>
   const Vehicle = trip.flew ? Plane : CarFront
   return (
     <ol className="trips-route" aria-label="Stops">
@@ -706,7 +725,9 @@ function Route({ trip, referenceIso }: { trip: Trip; referenceIso: string }) {
               {tripStopLabel(stop)}
             </strong>
             <small>
-              {`${formatListDate(stop.first, referenceIso)} · ${countOf(stop.purchases, 'purchase')}`}
+              {`${formatListDate(stop.first, referenceIso)} · ${
+                stop.purchases ? countOf(stop.purchases, 'purchase') : 'from your calendar'
+              }`}
             </small>
           </span>
         </li>
@@ -726,9 +747,17 @@ function Route({ trip, referenceIso }: { trip: Trip; referenceIso: string }) {
   )
 }
 
-/** Where a trip's money went: Rust ranked the top categories and what they leave. */
+/**
+ * Where a trip's money went: getting there, staying, and on the ground, then the top categories
+ * Rust ranked and what they leave.
+ */
 function Split({ trip }: { trip: Trip }) {
   if (!trip.total || !trip.categories.length) return <EmptyState>Nothing bought.</EmptyState>
+  const parts = [
+    ['Getting there', trip.gettingThere],
+    ['Staying', trip.staying],
+    ['On the ground', trip.onTheGround],
+  ] as const
   const segments: ShareSegment[] = trip.categories.map(({ name, amount, share }) => ({
     key: name,
     label: name,
@@ -745,6 +774,17 @@ function Split({ trip }: { trip: Trip }) {
   ]
   return (
     <div className="trips-split">
+      {trip.gettingThere || trip.staying ? (
+        <div className="benefit-metrics">
+          {parts.map(([label, amount]) => (
+            <Metric
+              key={label}
+              label={label}
+              value={<span className="sensitive-value">{formatCurrency(Math.abs(amount))}</span>}
+            />
+          ))}
+        </div>
+      ) : null}
       <ShareLine label={`${tripTitle(trip)} by category`} segments={segments} rest={tail} />
       <ul className="trips-split-legend">
         {legend.map((segment) => (

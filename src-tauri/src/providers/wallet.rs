@@ -26,6 +26,7 @@ use serde::{Deserialize, Serialize};
 use crate::finance_contract::{
     AppleCardAccount, DailyCash, WalletForeign, WalletMethod, WalletNetwork, WalletReward,
 };
+use crate::places;
 
 /// Seconds between the Unix epoch and Apple's, the start of 2001.
 const APPLE_EPOCH: i64 = 978_307_200;
@@ -36,6 +37,9 @@ const RATE_PER_PERCENT: f64 = 10_000.0;
 const LIVE_DAYS: i64 = 3;
 /// A device fix this close to the mapped merchant puts the cardholder at the store.
 const AT_THE_STORE_METRES: f64 = 200.0;
+/// A mapped merchant farther than this from the phone is another business Maps confused it
+/// with, such as a chain's store in another city.
+const ANOTHER_BUSINESS_METRES: f64 = 1_000.0;
 const RETURNS_PROGRAM: &str = "REWARD_RETURNS";
 
 const UNREADABLE: &str =
@@ -121,6 +125,10 @@ pub struct WalletPlace {
     pub country: Option<String>,
     pub lat: Option<f64>,
     pub lon: Option<f64>,
+    /// Wallet recorded the phone's own location at the purchase, so the city is where the
+    /// cardholder was.
+    #[serde(skip_serializing_if = "std::ops::Not::not")]
+    pub device: bool,
 }
 
 /// One Wallet record, kept as saved so a record Apple later drops stays in Brief.
@@ -419,14 +427,16 @@ fn coordinates(lat: Option<f64>, lon: Option<f64>) -> Option<(f64, f64)> {
         .filter(|(lat, lon)| lat.is_finite() && lon.is_finite() && (*lat != 0.0 || *lon != 0.0))
 }
 
-/// Where a purchase was, from the mapped address, then the card network's fields, then the city
-/// Wallet worked out from the device.
+/// Where a purchase was: the mapped address, then the city Wallet worked out from the phone
+/// when it has the phone's location, then the card network's fields, which can be the
+/// merchant's billing office.
 fn place(
     address: Option<&serde_json::Value>,
     record: Option<&Fields>,
     locality: Option<String>,
     area: Option<String>,
     spot: Option<(f64, f64)>,
+    device: bool,
 ) -> Option<WalletPlace> {
     let field = |key: &str| {
         address
@@ -442,16 +452,34 @@ fn place(
     });
     // Abroad, networks can print the country where a region belongs.
     let printed_region = text(record, "merchantState").filter(|state| state.len() <= 2);
-    let place = WalletPlace {
-        street: field("street"),
-        city: field("city")
-            .or_else(|| text(record, "merchantCity"))
-            .or(locality),
-        region: field("state").or(printed_region).or(area),
-        postal_code: field("postalCode").or_else(|| text(record, "merchantZip")),
-        country,
-        lat: spot.map(|(lat, _)| lat),
-        lon: spot.map(|(_, lon)| lon),
+    // A network can print a web address where the city belongs ("TFL.GOV.UK/CP").
+    let printed_city = text(record, "merchantCity")
+        .filter(|city| !city.contains('/') && !places::names_a_website(city));
+    let mapped = field("city").is_some();
+    let place = if device && !mapped && locality.is_some() {
+        WalletPlace {
+            street: None,
+            city: locality,
+            region: area,
+            postal_code: None,
+            country,
+            lat: spot.map(|(lat, _)| lat),
+            lon: spot.map(|(_, lon)| lon),
+            device,
+        }
+    } else {
+        WalletPlace {
+            street: field("street"),
+            city: field("city").or(printed_city).or(locality),
+            region: field("state").or(printed_region).or(area),
+            postal_code: field("postalCode").or_else(|| text(record, "merchantZip")),
+            country,
+            lat: spot.map(|(lat, _)| lat),
+            lon: spot.map(|(_, lon)| lon),
+            // The network's city is where the merchant bills from, so only a mapped store
+            // near the phone vouches for where the cardholder was.
+            device: device && mapped,
+        }
     };
     (place.city.is_some() || place.country.is_some() || spot.is_some()).then_some(place)
 }
@@ -625,9 +653,18 @@ fn transactions(connection: &Connection, now: DateTime<Utc>) -> Result<Vec<Walle
             };
             let record = records.get(&id);
             let device = records.get(&format!("device-{id}"));
-            let maps_merchant = row
+            let spot = coordinates(row.get(15)?, row.get(16)?);
+            let mapped = row
                 .get::<_, Option<i64>>(20)?
                 .and_then(|merchant| maps.get(&merchant));
+            // Maps matched another business when its store is far from the phone; its name and
+            // address, on the device's record too, are then that business's.
+            let confused = mapped.is_some_and(|merchant| {
+                spot.zip(merchant.coordinates).is_some_and(|(spot, store)| {
+                    metres_apart(spot, store) > ANOTHER_BUSINESS_METRES
+                })
+            });
+            let maps_merchant = mapped.filter(|_| !confused);
             let zone = text(device, "timeZone").and_then(|zone| zone.parse::<chrono_tz::Tz>().ok());
             let local_day = |moment: DateTime<Utc>| match zone {
                 Some(zone) => moment.with_timezone(&zone).date_naive(),
@@ -659,7 +696,6 @@ fn transactions(connection: &Connection, now: DateTime<Utc>) -> Result<Vec<Walle
                 source_channel,
                 entry_mode.as_deref(),
             );
-            let spot = coordinates(row.get(15)?, row.get(16)?);
             let store = maps_merchant.and_then(|merchant| merchant.coordinates);
             let in_person = match method {
                 Some(WalletMethod::Tap | WalletMethod::Card) => Some(true),
@@ -670,6 +706,7 @@ fn transactions(connection: &Connection, now: DateTime<Utc>) -> Result<Vec<Walle
                     .map(|_| true),
             };
             let device_address = text(device, "merchantPostalAddress")
+                .filter(|_| !confused)
                 .and_then(|address| serde_json::from_str(&address).ok());
             let address = maps_merchant
                 .and_then(|merchant| merchant.address.as_ref())
@@ -693,7 +730,7 @@ fn transactions(connection: &Connection, now: DateTime<Utc>) -> Result<Vec<Walle
                     })
                 });
             let merchant = text(device, "brandName")
-                .or_else(|| text(device, "merchantMapsName"))
+                .or_else(|| text(device, "merchantMapsName").filter(|_| !confused))
                 .or_else(|| maps_merchant.and_then(|merchant| present(merchant.name.as_deref())))
                 .or_else(|| present(row.get::<_, Option<String>>(10).ok()?.as_deref()));
             Ok(Some(WalletRow {
@@ -720,12 +757,15 @@ fn transactions(connection: &Connection, now: DateTime<Utc>) -> Result<Vec<Walle
                     present(row.get::<_, Option<String>>(13)?.as_deref()),
                     present(row.get::<_, Option<String>>(14)?.as_deref()),
                     store.or(spot),
+                    spot.is_some(),
                 ),
-                phone: text(device, "merchantPhoneNumber").or_else(|| {
-                    maps_merchant.and_then(|merchant| present(merchant.phone.as_deref()))
-                }),
+                phone: text(device, "merchantPhoneNumber")
+                    .filter(|_| !confused)
+                    .or_else(|| {
+                        maps_merchant.and_then(|merchant| present(merchant.phone.as_deref()))
+                    }),
                 website: text(device, "brandURL")
-                    .or_else(|| text(device, "merchantURL"))
+                    .or_else(|| text(device, "merchantURL").filter(|_| !confused))
                     .or_else(|| {
                         maps_merchant.and_then(|merchant| present(merchant.website.as_deref()))
                     }),

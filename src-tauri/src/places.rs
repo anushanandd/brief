@@ -23,6 +23,7 @@ use ts_rs::TS;
 use crate::finance_contract::{Transaction, TransactionLocation};
 
 /// One city of the gazetteer.
+#[derive(Debug, PartialEq)]
 pub struct City {
     pub name: String,
     pub country: String,
@@ -373,6 +374,20 @@ fn read_descriptor(descriptor: &str, uncoded: bool) -> (String, Option<Descripto
     }
 }
 
+/// Every city of this name, anywhere, most populous first.
+pub fn cities_named(name: &str) -> Vec<&'static City> {
+    let gazetteer = &*GAZETTEER;
+    let mut cities = gazetteer
+        .spellings
+        .get(&normalize(name))
+        .into_iter()
+        .flatten()
+        .map(|&index| &gazetteer.cities[index as usize])
+        .collect::<Vec<_>>();
+    cities.sort_by_key(|city| std::cmp::Reverse(city.population));
+    cities
+}
+
 /// The most populous city of this name in the country, and the state for the US.
 pub fn lookup(city: &str, country: &str, region: Option<&str>) -> Option<&'static City> {
     let gazetteer = &*GAZETTEER;
@@ -391,6 +406,8 @@ pub fn lookup(city: &str, country: &str, region: Option<&str>) -> Option<&'stati
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
 #[serde(rename_all = "kebab-case")]
 pub enum PlaceSource {
+    /// Apple Wallet recorded where the phone was at the moment of purchase.
+    Device,
     /// Apple Wallet recorded the merchant at the moment of purchase.
     Wallet,
     /// The card issuer's export gave the street address.

@@ -690,11 +690,18 @@ mod tests {
         );
         if let (Some(old), Some(new)) = (&old.insights, &new.insights) {
             println!(
-                "trips: {} -> {}; home: {:?}",
+                "trips: {} -> {}",
                 old.trips.trips.len(),
                 new.trips.trips.len(),
-                new.trips.home
             );
+            for base in &new.trips.bases {
+                println!(
+                    "  base {} {} to {}",
+                    base.city.as_deref().unwrap_or(&base.country),
+                    base.start,
+                    base.end
+                );
+            }
             for trip in new.trips.trips.iter().take(12) {
                 println!("  {} {} to {}", trip.destination, trip.start, trip.end);
             }

@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import type { Trip } from './schema'
 import {
   monthLengths,
+  tripBaseLabels,
   tripColors,
   tripDayCount,
   tripDaysInYear,
@@ -21,10 +22,14 @@ const trip = (id: string, start: string, end: string, extra: Partial<Trip> = {})
   destination: id,
   abroad: false,
   total: -100,
+  gettingThere: 0,
+  staying: 0,
+  onTheGround: -100,
   categories: [],
   rest: 0,
   restShare: 0,
   transactionIds: [],
+  bookings: [],
   ongoing: false,
   flew: false,
   stops: [],
@@ -133,5 +138,28 @@ describe('trip places', () => {
       ['Austin, TX', 1, 5],
     ])
     expect(places[0]?.abroad).toBe(true)
+  })
+})
+
+const base = (city: string, start: string, end: string) => ({
+  city,
+  region: 'CO',
+  country: 'US',
+  lat: 0,
+  lon: 0,
+  start,
+  end,
+})
+
+describe('trip bases', () => {
+  it('names the bases a year was spent at, once each', () => {
+    const bases = [
+      base('Pueblo', '2022-09-01', '2024-05-10'),
+      base('Boulder', '2023-06-01', '2023-08-30'),
+      base('Pueblo', '2025-01-04', '2026-06-14'),
+    ]
+    expect(tripBaseLabels({ bases }, 2024)).toEqual(['Pueblo, CO'])
+    expect(tripBaseLabels({ bases }, 2023)).toEqual(['Pueblo, CO', 'Boulder, CO'])
+    expect(tripBaseLabels({ bases }, 2027)).toEqual([])
   })
 })
