@@ -71,7 +71,7 @@ index 414c4e61bac1017c49bbaedbd1691bcd9cdd667c..43f9bcb510d354a05be3318fd075dae4
  interface LivelineTransitionProps {
      /** Key of the active child to display. Must match a child's `key` prop. */
 diff --git a/dist/index.js b/dist/index.js
-index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b20741d584e13 100644
+index fd0506272e9a54432a0882c3a389ee74302e4718..306c55373cecd5be22c7a45b687498dba0eb2a79 100644
 --- a/dist/index.js
 +++ b/dist/index.js
 @@ -56,9 +56,9 @@ function resolveTheme(color, mode) {
@@ -464,6 +464,24 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
    const pauseProgressRef = useRef(0);
    const timeDebtRef = useRef(0);
    const lastDataRef = useRef([]);
+@@ -2370,7 +2409,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+   const lastLiveRef = useRef(null);
+   const lastLineDataStashRef = useRef([]);
+   const lastLineValueStashRef = useRef(void 0);
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const container = containerRef.current;
+     if (!container) return;
+     const el = document.createElement("div");
+@@ -2390,7 +2429,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+       badgeRef.current = null;
+     };
+   }, [containerRef]);
+-  useEffect(() => {
++  useLayoutEffect(() => {
+     const container = containerRef.current;
+     if (!container) return;
+     const ro = new ResizeObserver((entries) => {
 @@ -2398,6 +2437,7 @@ function useLivelineEngine(canvasRef, containerRef, config) {
        if (!entry) return;
        const { width, height } = entry.contentRect;
@@ -848,7 +866,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
          orderbookData: cfg.orderbookData,
          orderbookState: cfg.orderbookData ? orderbookStateRef.current : void 0,
          particleState: cfg.degenOptions ? particleStateRef.current : void 0,
-@@ -3469,11 +3558,48 @@ function useLivelineEngine(canvasRef, containerRef, config) {
+@@ -3469,11 +3558,51 @@ function useLivelineEngine(canvasRef, containerRef, config) {
          }
        }
      }
@@ -886,12 +904,15 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
 +  requestDrawRef.current = () => {
 +    if (!rafRef.current) rafRef.current = requestAnimationFrame(draw);
 +  };
-+  useEffect(() => {
-+    requestDrawRef.current();
-+  }, [config]);
++  useLayoutEffect(() => {
++    draw();
++  }, [draw]);
    useEffect(() => {
 -    rafRef.current = requestAnimationFrame(draw);
 -    return () => cancelAnimationFrame(rafRef.current);
++    requestDrawRef.current();
++  }, [config]);
++  useEffect(() => {
 +    requestDrawRef.current();
 +    return () => {
 +      cancelAnimationFrame(rafRef.current);
@@ -900,7 +921,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
    }, [draw]);
  }
  
-@@ -3490,6 +3616,8 @@ var defaultFormatTime = (t) => {
+@@ -3490,6 +3619,8 @@ var defaultFormatTime = (t) => {
  function Liveline({
    data,
    value,
@@ -909,7 +930,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
    series: seriesProp,
    theme = "dark",
    color = "#3b82f6",
-@@ -3503,6 +3631,7 @@ function Liveline({
+@@ -3503,6 +3634,7 @@ function Liveline({
    paused = false,
    emptyText,
    exaggerate = false,
@@ -917,7 +938,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
    degen: degenProp,
    badgeTail = true,
    badgeVariant = "default",
-@@ -3522,6 +3651,7 @@ function Liveline({
+@@ -3522,6 +3654,7 @@ function Liveline({
    onHover,
    cursor = "crosshair",
    pulse = true,
@@ -925,7 +946,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
    mode = "line",
    candles,
    candleWidth,
-@@ -3533,6 +3663,8 @@ function Liveline({
+@@ -3533,6 +3666,8 @@ function Liveline({
    onSeriesToggle,
    seriesToggleCompact = false,
    lineWidth,
@@ -934,7 +955,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
    className,
    style
  }) {
-@@ -3546,6 +3678,8 @@ function Liveline({
+@@ -3546,6 +3681,8 @@ function Liveline({
    const modeBtnRefs = useRef2(/* @__PURE__ */ new Map());
    const [modeIndicatorStyle, setModeIndicatorStyle] = useState(null);
    const [hiddenSeries, setHiddenSeries] = useState(/* @__PURE__ */ new Set());
@@ -943,7 +964,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
    const lastSeriesPropRef = useRef2(seriesProp);
    if (seriesProp && seriesProp.length > 0) lastSeriesPropRef.current = seriesProp;
    const palette = useMemo(() => {
-@@ -3567,7 +3701,8 @@ function Liveline({
+@@ -3567,7 +3704,8 @@ function Liveline({
        data: s.data,
        value: s.value,
        palette: seriesPalettes.get(s.id) ?? resolveTheme(s.color || SERIES_COLORS[i % SERIES_COLORS.length], theme),
@@ -953,7 +974,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
      }));
    }, [seriesProp, seriesPalettes, theme]);
    const showMomentum = momentum !== false;
-@@ -3582,9 +3717,22 @@ function Liveline({
+@@ -3582,9 +3720,22 @@ function Liveline({
    const degenEnabled = degenProp != null ? degenProp !== false : false;
    const degenOptions = degenEnabled ? typeof degenProp === "object" ? degenProp : {} : void 0;
    const [activeWindowSecs, setActiveWindowSecs] = useState(
@@ -977,7 +998,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
    useLayoutEffect(() => {
      if (!windows || windows.length === 0) return;
      const btn = windowBtnRefs.current.get(activeWindowSecs);
-@@ -3632,11 +3780,14 @@ function Liveline({
+@@ -3632,11 +3783,14 @@ function Liveline({
    useLivelineEngine(canvasRef, containerRef, {
      data,
      value,
@@ -993,7 +1014,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
      showMomentum: isMultiSeries ? false : showMomentum,
      momentumOverride,
      showFill: isMultiSeries ? false : fill,
-@@ -3646,13 +3797,16 @@ function Liveline({
+@@ -3646,13 +3800,16 @@ function Liveline({
      padding: pad,
      onHover,
      showPulse: pulse,
@@ -1010,7 +1031,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
      valueMomentumColor,
      valueDisplayRef: showValue ? valueDisplayRef : void 0,
      orderbookData: orderbook,
-@@ -3668,7 +3822,9 @@ function Liveline({
+@@ -3668,7 +3825,9 @@ function Liveline({
      lineValue,
      multiSeries,
      isMultiSeries,
@@ -1021,7 +1042,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
    });
    const cursorStyle = scrub ? cursor : "default";
    const activeColor = isDark ? "rgba(255,255,255,0.7)" : "rgba(0,0,0,0.55)";
-@@ -3682,7 +3838,7 @@ function Liveline({
+@@ -3682,7 +3841,7 @@ function Liveline({
            display: "block",
            fontSize: 20,
            fontWeight: 500,
@@ -1030,7 +1051,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
            color: isDark ? "rgba(255,255,255,0.85)" : "#111",
            transition: "color 0.3s",
            letterSpacing: "-0.01em",
-@@ -3893,6 +4049,7 @@ function Liveline({
+@@ -3893,6 +4052,7 @@ function Liveline({
          return /* @__PURE__ */ jsxs(
            "button",
            {
@@ -1038,7 +1059,7 @@ index fd0506272e9a54432a0882c3a389ee74302e4718..e9817e5daf7169852882a879407b2074
              onClick: () => handleSeriesToggle(s.id),
              style: {
                position: "relative",
-@@ -3941,13 +4098,58 @@ function Liveline({
+@@ -3941,13 +4101,58 @@ function Liveline({
            position: "relative",
            ...style
          },

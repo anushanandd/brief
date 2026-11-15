@@ -6,7 +6,7 @@ settings:
 
 patchedDependencies:
   liveline@0.0.7:
-    hash: ae0d5ec637ac725e66c62bca54e0ec09708a64b21b65eb261a7fa5f86e82990f
+    hash: 4989b497ea4d7686af0fb33cf0d51efa76e9d3855666c8a3ae20b08514d11959
     path: patches/liveline@0.0.7.patch
 
 importers:
@@ -45,7 +45,7 @@ importers:
         version: 1.1.1(@types/react-dom@19.2.5(@types/react@19.2.18))(@types/react@19.2.18)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       liveline:
         specifier: ^0.0.7
-        version: 0.0.7(patch_hash=ae0d5ec637ac725e66c62bca54e0ec09708a64b21b65eb261a7fa5f86e82990f)(react@19.2.8)
+        version: 0.0.7(patch_hash=4989b497ea4d7686af0fb33cf0d51efa76e9d3855666c8a3ae20b08514d11959)(react@19.2.8)
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -2997,7 +2997,7 @@ snapshots:
       lightningcss-win32-arm64-msvc: 1.33.0
       lightningcss-win32-x64-msvc: 1.33.0
 
-  liveline@0.0.7(patch_hash=ae0d5ec637ac725e66c62bca54e0ec09708a64b21b65eb261a7fa5f86e82990f)(react@19.2.8):
+  liveline@0.0.7(patch_hash=4989b497ea4d7686af0fb33cf0d51efa76e9d3855666c8a3ae20b08514d11959)(react@19.2.8):
     dependencies:
       react: 19.2.8
 
