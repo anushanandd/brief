@@ -157,8 +157,14 @@ export function holdingChartPoints(state: HoldingChartState): LivelinePoint[] {
   })
 }
 
-export function visibleHoldingChartPoints(points: LivelinePoint[], range: number, now: number) {
-  return points.filter((point) => point.time <= now && (!range || point.time >= now - range))
+export function visibleHoldingChartPoints(
+  points: LivelinePoint[],
+  range: number,
+  now: number,
+  history?: HoldingPriceHistory,
+) {
+  const start = range ? holdingWindow(history, now, range).start : -Infinity
+  return points.filter((point) => point.time <= now && point.time >= start)
 }
 
 export function holdingChartEnd(state: HoldingChartState, points: LivelinePoint[], now: number) {
@@ -316,17 +322,56 @@ const easternHour = new Intl.DateTimeFormat('en-US', {
   hour: 'numeric',
   hourCycle: 'h23',
 })
+type HoldingSession = { start: number; end: number; label: string; kind: string }
+const sessionsRead = new WeakMap<HoldingPriceHistory, HoldingSession[]>()
 export function holdingSessions(history: HoldingPriceHistory | undefined) {
-  return (history?.calendar ?? []).flatMap((day) => {
-    const noon = Date.parse(`${day.date}T12:00:00Z`) / 1000
-    const midnight = noon - Number(easternHour.format(noon * 1000)) * 3600
-    return [
-      { start: midnight - 14400, end: midnight + 14400, label: 'Overnight', kind: 'overnight' },
-      { start: midnight + 14400, end: midnight + day.open, label: 'Pre-market', kind: 'extended' },
-      { start: midnight + day.open, end: midnight + day.close, label: 'Open', kind: 'regular' },
-      { start: midnight + day.close, end: midnight + 72000, label: 'Close', kind: 'extended' },
-    ]
-  })
+  if (!history) return []
+  let sessions = sessionsRead.get(history)
+  if (!sessions) {
+    sessions = (history.calendar ?? []).flatMap((day) => {
+      const noon = Date.parse(`${day.date}T12:00:00Z`) / 1000
+      const midnight = noon - Number(easternHour.format(noon * 1000)) * 3600
+      return [
+        { start: midnight - 14400, end: midnight + 14400, label: 'Overnight', kind: 'overnight' },
+        {
+          start: midnight + 14400,
+          end: midnight + day.open,
+          label: 'Pre-market',
+          kind: 'extended',
+        },
+        { start: midnight + day.open, end: midnight + day.close, label: 'Open', kind: 'regular' },
+        { start: midnight + day.close, end: midnight + 72000, label: 'Close', kind: 'extended' },
+      ]
+    })
+    sessionsRead.set(history, sessions)
+  }
+  return sessions
+}
+
+/** The trading sessions a scrolling period's window shows: about 252 a year. */
+export const holdingWindowSessions = (range: number) =>
+  range > 86400 ? Math.round(((range / 86400) * 252) / 365) : 0
+
+/**
+ * A scrolling period's window, as a fixed count of trading sessions ending at `end`, so each
+ * step back moves it one session and its width never changes: `start` reaches a session past
+ * the left edge so that edge is never empty, and `edge` is where its oldest whole session
+ * starts. Without a calendar, or for a day or all time, it's `range` seconds.
+ */
+export function holdingWindow(
+  history: HoldingPriceHistory | undefined,
+  end: number,
+  range: number,
+) {
+  const sessions = holdingSessions(history)
+  const count = holdingWindowSessions(range)
+  if (!count || !sessions.length) return { start: end - range, edge: end - range, count: 0 }
+  // A day starts overnight, or at the open for daily bars.
+  const offset = history?.resolution === 86400 ? 2 : 0
+  const dayStart = (day: number) => sessions[Math.max(0, day) * 4 + offset]!.start
+  let last = sessions.length / 4 - 1
+  while (last > 0 && dayStart(last) >= end) last -= 1
+  return { start: dayStart(last - count), edge: dayStart(last - count + 1), count }
 }
 
 // Only display coordinates change. Range returns, stored bars and quote times
@@ -340,9 +385,12 @@ export function holdingChartTimeline(
   const sessions = holdingSessions(history)
   const daily = history?.resolution === 86400
   const first = points[0]?.time ?? end
-  const start = Math.max(first, range ? end - range : first)
+  const window = holdingWindow(history, end, range)
+  const start = Math.max(first, range ? window.start : first)
   const days = sessions.filter((session) => session.kind === 'regular')
   const gaps: Array<{ start: number; end: number; removed: number }> = []
+  // Points and gaps both run forward in time, so each is walked once.
+  let after = 0
   for (let i = 1; i < days.length; i++) {
     const previous = days[i - 1]
     // Each day has four sessions, so the gap ends where the day's overnight session starts.
@@ -353,47 +401,65 @@ export function holdingChartTimeline(
       : previous.end + (72000 - (history?.calendar?.[i - 1]?.close ?? 57600))
     const gapEnd = next.start
     if (gapEnd <= gapStart || gapEnd < start || gapStart > end) continue
+    while (after < points.length && points[after]!.time <= gapStart) after += 1
     // Unexpected executions override the nominal calendar; never hide evidence.
-    if (points.some((point) => point.time > gapStart && point.time < gapEnd)) continue
+    if (after < points.length && points[after]!.time < gapEnd) continue
     const a = Math.max(gapStart, start)
     const b = Math.min(gapEnd, end)
     const kept = Math.min(b - a, daily ? 3600 : (history?.resolution ?? 60))
     gaps.push({ start: a, end: b, removed: b - a - kept })
   }
-  const toDisplay = (time: number) => {
-    let removed = 0
-    for (const gap of gaps) {
-      if (time >= gap.end) removed += gap.removed
-      else if (time > gap.start)
-        removed += (gap.removed * (time - gap.start)) / (gap.end - gap.start)
+  // What the gaps before each one removed.
+  const before = [0]
+  for (const gap of gaps) before.push(before.at(-1)! + gap.removed)
+  // The last gap `at` places before `time`, by binary search.
+  const lastBefore = (time: number, at: (index: number) => number) => {
+    let low = 0
+    let high = gaps.length
+    while (low < high) {
+      const middle = (low + high) >> 1
+      if (at(middle) < time) low = middle + 1
+      else high = middle
     }
-    return time - removed
+    return low - 1
+  }
+  const toDisplay = (time: number) => {
+    const index = lastBefore(time, (i) => gaps[i]!.start)
+    const gap = gaps[index]
+    if (!gap) return time
+    if (time >= gap.end) return time - before[index + 1]!
+    return time - before[index]! - (gap.removed * (time - gap.start)) / (gap.end - gap.start)
   }
   const toActual = (time: number) => {
-    let removed = 0
-    for (const gap of gaps) {
-      const a = gap.start - removed
-      const b = gap.end - removed - gap.removed
-      if (time >= b) removed += gap.removed
-      else if (time > a) return gap.start + ((time - a) * (gap.end - gap.start)) / (b - a)
-    }
-    return time + removed
+    const index = lastBefore(time, (i) => gaps[i]!.start - before[i]!)
+    const gap = gaps[index]
+    if (!gap) return time
+    const a = gap.start - before[index]!
+    const b = gap.end - before[index + 1]!
+    if (time >= b) return time + before[index + 1]!
+    return gap.start + ((time - a) * (gap.end - gap.start)) / (b - a)
   }
   const displayEnd = toDisplay(end)
-  const span = Math.max(60, (displayEnd - toDisplay(start)) / 0.95)
+  // A scrolling period keeps its width while its history reaches back that far.
+  const span =
+    window.count && first <= window.edge
+      ? (window.count * (daily ? 27000 : 86400)) / 0.95
+      : Math.max(60, (displayEnd - toDisplay(start)) / 0.95)
   const left = displayEnd - span * 0.95
   const position = (time: number) => ((toDisplay(time) - left) / span) * 100
+  // The first gap starting at or after the previous point; a closure between two points breaks
+  // the line.
+  let next = 0
   return {
     points: points.map((point, i) => {
       const previous = points[i - 1]
+      if (previous) while (next < gaps.length && gaps[next]!.start < previous.time) next += 1
       return {
         ...point,
         time: toDisplay(point.time),
         breakBefore:
           point.breakBefore ||
-          (!daily &&
-            previous !== undefined &&
-            gaps.some((gap) => previous.time <= gap.start && point.time >= gap.end)),
+          (!daily && previous !== undefined && (gaps[next]?.end ?? Infinity) <= point.time),
       }
     }),
     end: displayEnd,
@@ -426,9 +492,10 @@ export function holdingChartCandles(
               ? 7 * 86400
               : 30 * 86400
   const sessions = holdingSessions(state.history)
+  const start = range ? holdingWindow(state.history, end, range).start : -Infinity
   const grouped: Array<PriceBar & { bucket: number; session: number }> = []
   for (const bar of holdingChartBars(state)) {
-    if (bar.endTime > end || (range && bar.endTime < end - range)) continue
+    if (bar.endTime > end || bar.endTime < start) continue
     // Never combine feeds or intraday sessions. Aggregate only supplied OHLCV;
     // missing bars do not create candles and quotes never enter this path.
     const session =

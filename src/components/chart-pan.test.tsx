@@ -112,6 +112,36 @@ it('draws each frame where the scroll is, follows the last day it reaches, and e
   await act(async () => root.unmount())
 })
 
+it('steps a chart that draws only sessions by trading days, a plot width over its count each', async () => {
+  const sessions = {
+    days: ['2026-09-24', '2026-09-25', '2026-09-28', '2026-09-29', '2026-09-30'],
+    count: 5,
+  }
+  function Chart() {
+    const [element, setElement] = useState<HTMLDivElement | null>(null)
+    useChartPan(element, week, { today: '2026-09-30', first: '2026-01-01' }, sessions)
+    return <div ref={setElement} />
+  }
+  const { host, root, render } = mount(<Chart />)
+  await render()
+  const chart = host.querySelector('div')!
+  // 500 pixels show five sessions, so each 100 scrolled is one.
+  Object.defineProperty(chart, 'clientWidth', { value: 500 })
+  const scrolled = async (deltaY: number) => {
+    await act(async () => wheelOn(chart, deltaY))
+    await frame()
+    await act(async () => vi.advanceTimersByTime(200))
+    return sessionGraphEnd()
+  }
+  expect(await scrolled(60)).toBeUndefined()
+  // The rest of a session is carried to the next scroll.
+  expect(await scrolled(60)).toBe('2026-09-29')
+  // Across the weekend in one step.
+  expect(await scrolled(200)).toBe('2026-09-25')
+  expect(await scrolled(-400)).toBeUndefined()
+  await act(async () => root.unmount())
+})
+
 it('scrolls a month back in a handful of page commits, not several per day crossed', async () => {
   const data = seedSnapshot()
   data.insights = insights({ today: '2026-09-30' })

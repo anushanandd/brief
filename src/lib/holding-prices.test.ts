@@ -549,3 +549,47 @@ it('measures a period from a session close to the latest close, and the move sin
   // A start before the history leaves the trailing span to measure.
   expect(holdingPeriodChange(week, points, t('2026-11-13T23:00:00Z'), '2026-11-01')).toBeUndefined()
 })
+
+// Weekday sessions for over a year through mid-November, with Labor Day closed.
+const tradingDays = Array.from({ length: 440 }, (_, index) =>
+  new Date(Date.UTC(2025, 8, 1 + index, 12)).toISOString().slice(0, 10),
+).filter(
+  (date) =>
+    new Date(`${date}T12:00:00Z`).getUTCDay() % 6 && !['2025-09-01', '2026-09-07'].includes(date),
+)
+function dailyHistory(): HoldingPriceHistory {
+  const calendar = tradingDays.map((date) => ({ date, open: 34200, close: 57600 }))
+  const base = history([], { range: 0, resolution: 86400, calendar })
+  const bars = holdingSessions(base)
+    .filter((session) => session.kind === 'regular')
+    .map((session, index) => ({ ...bar(session.start - 34200, 100 + index), endTime: session.end }))
+  return { ...base, bars }
+}
+
+it.each([7, 30, 90, 365])(
+  'moves a scrolled %s-day window the same width for each session, at one span',
+  (days) => {
+    const range = days * 86400
+    const h = dailyHistory()
+    const all = holdingChartPoints({ history: h, bars: [] })
+    // Each step ends a session earlier, at the end of its day, as a scrolled-back chart does.
+    const views = tradingDays.slice(-14, -1).map((date) => {
+      const end = t(`${date}T12:00:00Z`) + 43199
+      return holdingChartTimeline(h, visibleHoldingChartPoints(all, range, end, h), end, range)
+    })
+    expect(new Set(views.map((view) => view.span)).size).toBe(1)
+    // How far the last close of each window moves when the next session comes into view.
+    const widths = views.slice(1).map((later, index) => {
+      const earlier = views[index]!
+      const time = all.findLast((point) => point.time <= earlier.toActual(earlier.end))!.time
+      return earlier.position(time) - later.position(time)
+    })
+    for (const width of widths) expect(width).toBeCloseTo(widths[0]!, 6)
+    expect(widths[0]).toBeGreaterThan(0)
+  },
+)
+
+it('reads a history once for its sessions', () => {
+  const h = dailyHistory()
+  expect(holdingSessions(h)).toBe(holdingSessions(h))
+})

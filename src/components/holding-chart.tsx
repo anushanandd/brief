@@ -32,6 +32,7 @@ import {
   holdingRangeChange,
   holdingChartEnd,
   holdingChartTime,
+  holdingWindowSessions,
 } from '../lib/holding-prices'
 import { holdingHistoryRange } from '../lib/investment-range'
 import { summaryStart } from '../lib/investment-summary'
@@ -117,8 +118,8 @@ export function HoldingChart({
   const chartEnd = holdingChartEnd(prices, allPoints, now)
   const span = chartPeriodSeconds(period)
   const points = useMemo(
-    () => visibleHoldingChartPoints(allPoints, span, chartEnd),
-    [allPoints, span, chartEnd],
+    () => visibleHoldingChartPoints(allPoints, span, chartEnd, history),
+    [allPoints, span, chartEnd, history],
   )
   const last = points.at(-1)
   const price = useSettledPrice(
@@ -129,7 +130,7 @@ export function HoldingChart({
   )
   const timelineEnd =
     prices.connection?.status === 'closed' && !graphEnd ? (last?.time ?? chartEnd) : chartEnd
-  const timeline = useMemo(
+  const windowTimeline = useMemo(
     () => holdingChartTimeline(history, points, timelineEnd, span),
     [history, points, timelineEnd, span],
   )
@@ -171,19 +172,46 @@ export function HoldingChart({
       ]
     })
   }, [news.data, points, ticker])
-  const candleChart = useMemo(
-    () => holdingChartCandles({ history, bars: prices.bars }, timeline, chartEnd, span),
-    [history, prices.bars, timeline, chartEnd, span],
+  const windowCandles = useMemo(
+    () => holdingChartCandles({ history, bars: prices.bars }, windowTimeline, chartEnd, span),
+    [history, prices.bars, windowTimeline, chartEnd, span],
   )
+  // While a new range loads with nothing in this window yet, the last chart drawn stays up.
+  const view = { timeline: windowTimeline, candleChart: windowCandles, last }
+  const drawn = useRef<{ ticker: string; view: typeof view }>(undefined)
+  const fresh = points.length >= 2
+  useEffect(() => {
+    if (fresh) drawn.current = { ticker, view }
+  })
+  const shown = fresh
+    ? view
+    : prices.stale && drawn.current?.ticker === ticker
+      ? drawn.current.view
+      : undefined
+  const { timeline, candleChart, last: drawnLast } = shown ?? view
   const candleLabel =
-    candleChart.resolution < 86400
-      ? `${candleChart.resolution / 60}m candles`
-      : `${candleChart.resolution / 86400}-day candles`
+    windowCandles.resolution < 86400
+      ? `${windowCandles.resolution / 60}m candles`
+      : `${windowCandles.resolution / 86400}-day candles`
   // Measured as the summary beside it measures the period, from the same start; the trailing
   // span is the fallback when that start's close isn't in the history.
   const asOf = useAsOf(finance.data)
   const startDay = asOf ? summaryStart(asOf, period) : undefined
-  const periodChange = startDay ? holdingPeriodChange(prices, allPoints, now, startDay) : undefined
+  // Measured to the latest point by now, so the clock's tick alone doesn't measure it again.
+  const latestTime = allPoints.findLast((point) => point.time <= now)?.time
+  const { historyError, error } = prices
+  const periodChange = useMemo(
+    () =>
+      startDay && latestTime !== undefined
+        ? holdingPeriodChange(
+            { history, historyError, error, bars: [] },
+            allPoints,
+            latestTime,
+            startDay,
+          )
+        : undefined,
+    [history, historyError, error, allPoints, latestTime, startDay],
+  )
   const change = periodChange ?? holdingRangeChange(prices, allPoints, now, span)
   const connection = prices.connection
   const active = !graphEnd && prices.visible && connection?.status === 'subscribed' && !prices.error
@@ -212,7 +240,7 @@ export function HoldingChart({
   const selection = `${ticker}:${period}`
   const savedChange = Boolean(history?.cached || prices.historyError || prices.error)
   const marketStatus = status ?? <LoadingText key={selection}>Loading market data…</LoadingText>
-  const chartVisible = supported && finance.liveMarketEnabled && points.length >= 2
+  const chartVisible = supported && finance.liveMarketEnabled && Boolean(shown)
   const historyStatus = <LoadingText key={selection}>Loading price history…</LoadingText>
   const today = finance.data?.insights?.today
   const firstBar = history?.range === 0 ? firstChartDay(allPoints) : undefined
@@ -226,11 +254,16 @@ export function HoldingChart({
     [today, firstBar, supported, finance.liveMarketEnabled],
   )
   useGraphScrollShortcuts(scroll)
-  // The chart moves a day at a time: its compressed sessions can't be drawn between days.
+  // The chart moves a session at a time: its compressed sessions can't be drawn between days.
+  const calendar = history?.calendar
+  const sessions = useMemo(() => {
+    const days = (calendar ?? []).map(({ date }) => date)
+    return { days, count: days.length ? holdingWindowSessions(span) : span / 86400 }
+  }, [calendar, span])
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
   const [expandedViewport, setExpandedViewport] = useState<HTMLDivElement | null>(null)
-  useChartPan(viewport, span, scroll, false)
-  useChartPan(expandedViewport, span, scroll, false)
+  useChartPan(viewport, span, scroll, sessions)
+  useChartPan(expandedViewport, span, scroll, sessions)
   return (
     <Card className="net-worth-card brokerage-performance-card holding-chart-card">
       <ExpandableChart
@@ -420,8 +453,8 @@ export function HoldingChart({
                     candles={candleChart.candles}
                     candleWidth={candleChart.width}
                     data={timeline.points}
-                    value={last!.value}
-                    valueTime={timeline.toDisplay(last!.time)}
+                    value={drawnLast!.value}
+                    valueTime={timeline.toDisplay(drawnLast!.time)}
                     endTime={timeline.end}
                     theme={colors.theme}
                     color={colors.value}
@@ -437,7 +470,7 @@ export function HoldingChart({
                     paused={false}
                     fill
                     lineWidth={1.75}
-                    minValueRange={last!.value * 0.001}
+                    minValueRange={drawnLast!.value * 0.001}
                     referenceLine={quote ? { value: quote.price, label: latestLabel } : undefined}
                     markers={[
                       ...newsMarkers.map(({ id, time, value, headline }) => ({
