@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { act } from 'react'
+import { act, useEffect } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
@@ -94,6 +94,28 @@ it('focuses its marked control once it has opened, even when it mounts open', as
   )
   expect(dialog().open).toBe(true)
   expect(document.activeElement).toBe(document.querySelector('input'))
+})
+
+it('is shown before content that mounts with `open` runs its effects', async () => {
+  let openWhenMounted: boolean | undefined
+  function Content() {
+    useEffect(() => {
+      openWhenMounted = document.querySelector('dialog')?.open
+    }, [])
+    return null
+  }
+  function Host({ open }: { open: boolean }) {
+    return (
+      <ActionProvider>
+        <Dialog open={open} onClose={onClose} aria-label="Test">
+          {open ? <Content /> : null}
+        </Dialog>
+      </ActionProvider>
+    )
+  }
+  await act(async () => root.render(<Host open={false} />))
+  await act(async () => root.render(<Host open />))
+  expect(openWhenMounted).toBe(true)
 })
 
 it('closes on cancel, Escape, and a press on the backdrop, but leaves Escape to a menu', async () => {

@@ -1,6 +1,7 @@
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -107,13 +108,14 @@ export function Dialog({
     },
     [ref],
   )
-  useEffect(() => {
+  // A layout effect, so content mounting with `open` measures the shown dialog in its own
+  // effects instead of a closed, zero-sized one.
+  useLayoutEffect(() => {
     if (!dialog || typeof dialog.showModal !== 'function') return undefined
     if (open && !dialog.open) {
       dialog.showModal()
       // `showModal` focuses the first control. React never writes the `autofocus` attribute,
-      // and the element arrives through state, so this runs a render after the caller's own
-      // open effects; the control that should start with focus is marked and focused here.
+      // so the control that should start with focus is marked and focused here.
       dialog.querySelector<HTMLElement>(`[${autofocusAttribute}]`)?.focus()
     } else if (!open && dialog.open) dialog.close()
     return undefined
