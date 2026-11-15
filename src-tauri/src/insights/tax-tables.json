@@ -1,12 +1,13 @@
 {
-  "version": "2026-11-11",
+  "version": "2026-11-14",
   "sources": [
     "Rev. Proc. 2024-40, sections 3.01 and 3.03 (taxable years beginning in 2025)",
     "Rev. Proc. 2025-32, sections 4.01 and 4.03 (taxable years beginning in 2026)",
+    "Rev. Proc. 2026-35, sections 3.01, 3.03 and 3.15 (taxable years beginning in 2027)",
     "26 U.S.C. 1411 (net investment income tax thresholds, not indexed)",
     "26 U.S.C. 1211(b) (capital loss limit)",
     "P.L. 119-21, section 70102 (2025 standard deduction); Rev. Proc. 2025-32, section 4.14 (2026)",
-    "SSA, contribution and benefit base for 2025 and 2026",
+    "SSA, contribution and benefit base for 2025, 2026 and 2027",
     "26 U.S.C. 6654(d)(1)(B)-(C) and 6654(e)(1) (estimated-tax safe harbors, not indexed)"
   ],
   "safeHarbor": {
@@ -140,6 +141,59 @@
         "headOfHousehold": 24150
       },
       "socialSecurityWageBase": 184500
+    },
+    "2027": {
+      "ordinary": {
+        "single": [
+          [12800, 10],
+          [52025, 12],
+          [109125, 22],
+          [208325, 24],
+          [264550, 32],
+          [661375, 35],
+          [null, 37]
+        ],
+        "marriedJoint": [
+          [25600, 10],
+          [104050, 12],
+          [218250, 22],
+          [416650, 24],
+          [529100, 32],
+          [793650, 35],
+          [null, 37]
+        ],
+        "marriedSeparate": [
+          [12800, 10],
+          [52025, 12],
+          [109125, 22],
+          [208325, 24],
+          [264550, 32],
+          [396825, 35],
+          [null, 37]
+        ],
+        "headOfHousehold": [
+          [18250, 10],
+          [69650, 12],
+          [109100, 22],
+          [208300, 24],
+          [264550, 32],
+          [661350, 35],
+          [null, 37]
+        ]
+      },
+      "capitalGains": {
+        "single": [51050, 563200],
+        "marriedJoint": [102100, 633600],
+        "marriedSeparate": [51050, 316800],
+        "headOfHousehold": [68350, 598400]
+      },
+      "standardDeduction": {
+        "single": 16600,
+        "marriedJoint": 33200,
+        "marriedSeparate": 16600,
+        "headOfHousehold": 24925
+      },
+      "socialSecurityWageBase": 192300
     }
   }
 }
