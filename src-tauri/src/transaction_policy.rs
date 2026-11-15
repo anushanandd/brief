@@ -131,6 +131,8 @@ fn classify_by_code(t: &Transaction) -> Option<Classification> {
         CodeKind::Payment => (Mark::Payment, Kind::Transfer, false),
         CodeKind::Fee if outflow => (Mark::Fee, Kind::Fee, true),
         CodeKind::Tax if outflow => (Mark::Initial, Kind::Tax, true),
+        // A tax refund nets against the tax paid: never income, never spending.
+        CodeKind::Tax => (Mark::Refund, Kind::Tax, false),
         CodeKind::Expense if outflow => (Mark::Initial, Kind::Expense, true),
         _ => return None,
     };
@@ -155,57 +157,59 @@ fn classify_by_name(t: &Transaction) -> Classification {
     // Plaid's v2 taxonomy reports loan proceeds separately; they are borrowed money moving
     // between accounts, never income or spending.
     let loan_disbursement = category == "loan disbursements";
-    let mark =
-        if category == "transfer" || category == "transfers" || loan_disbursement || to_person {
-            Mark::Transfer
-        } else if category == "reimbursement" {
-            Mark::Refund
-        } else if text.contains("interest") || word(&text, &["apy"]) {
-            Mark::Interest
-        } else if contains(
-            &text,
-            &["dividend", "capital gain", "investment distribution"],
-        ) {
-            Mark::Dividend
-        } else if category == "income" {
-            Mark::Income
-        } else if contains(
-            &text,
-            &[
-                "refund",
-                "reimbursement",
-                "cashback",
-                "cash back",
-                "reversal",
-                "credit adjustment",
-            ],
-        ) {
-            Mark::Refund
-        } else if word(&text, &["fee", "fees"]) || contains(&text, &["overdraft", "service charge"])
-        {
-            Mark::Fee
-        } else if text.contains("cash withdrawal") || word(&text, &["atm"]) {
-            Mark::Cash
-        } else if contains(
-            &text,
-            &[
-                "credit card payment",
-                "loan payment",
-                "autopay",
-                "bill payment",
-            ],
-        ) {
-            Mark::Payment
-        } else if text.contains("transfer") || word(&text, &["wire", "ach"]) {
-            Mark::Transfer
-        } else if contains(
-            &text,
-            &["income", "paycheck", "salary", "payroll", "direct deposit"],
-        ) {
-            Mark::Income
-        } else {
-            Mark::Initial
-        };
+    // A federal or state refund a bank didn't tag, by the descriptor tax agencies send.
+    let tax_refund = t.amount > 0.0 && contains(&text, &["tax ref", "tax rfd"]);
+    let mark = if tax_refund {
+        Mark::Refund
+    } else if category == "transfer" || category == "transfers" || loan_disbursement || to_person {
+        Mark::Transfer
+    } else if category == "reimbursement" {
+        Mark::Refund
+    } else if text.contains("interest") || word(&text, &["apy"]) {
+        Mark::Interest
+    } else if contains(
+        &text,
+        &["dividend", "capital gain", "investment distribution"],
+    ) {
+        Mark::Dividend
+    } else if category == "income" {
+        Mark::Income
+    } else if contains(
+        &text,
+        &[
+            "refund",
+            "reimbursement",
+            "cashback",
+            "cash back",
+            "reversal",
+            "credit adjustment",
+        ],
+    ) {
+        Mark::Refund
+    } else if word(&text, &["fee", "fees"]) || contains(&text, &["overdraft", "service charge"]) {
+        Mark::Fee
+    } else if text.contains("cash withdrawal") || word(&text, &["atm"]) {
+        Mark::Cash
+    } else if contains(
+        &text,
+        &[
+            "credit card payment",
+            "loan payment",
+            "autopay",
+            "bill payment",
+        ],
+    ) {
+        Mark::Payment
+    } else if text.contains("transfer") || word(&text, &["wire", "ach"]) {
+        Mark::Transfer
+    } else if contains(
+        &text,
+        &["income", "paycheck", "salary", "payroll", "direct deposit"],
+    ) {
+        Mark::Income
+    } else {
+        Mark::Initial
+    };
     let category = category.trim();
     let detail = format!(
         "{text} {} {}",
@@ -213,7 +217,9 @@ fn classify_by_name(t: &Transaction) -> Classification {
         t.description.as_deref().unwrap_or("")
     )
     .to_lowercase();
-    let kind = if to_person && spending {
+    let kind = if tax_refund {
+        Kind::Tax
+    } else if to_person && spending {
         Kind::Expense
     } else if category == "reimbursement" {
         Kind::Reimbursement
@@ -251,7 +257,8 @@ fn classify_by_name(t: &Transaction) -> Classification {
             _ => Kind::Other,
         }
     };
-    let credit = t.amount > 0.0 && (mark == Mark::Refund || word(&text, &["credit"]));
+    let credit =
+        t.amount > 0.0 && !tax_refund && (mark == Mark::Refund || word(&text, &["credit"]));
     Classification {
         credit,
         mark,

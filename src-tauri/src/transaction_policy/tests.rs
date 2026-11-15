@@ -716,6 +716,47 @@ fn plaid_codes_decide_meaning_and_labels_follow_the_category() {
 }
 
 #[test]
+fn a_tax_refund_is_tax_coming_back_not_income_or_spending() {
+    let refund = |merchant: &str, category: &str, detail: Option<&str>| {
+        let mut t = transaction(merchant, category, 500.0);
+        t.category_detail = detail.map(str::to_owned);
+        let classified = classify(&t);
+        (
+            classified.mark,
+            classified.kind,
+            classified.spending,
+            classified.credit,
+        )
+    };
+    let tax_refund = (Mark::Refund, Kind::Tax, false, false);
+    // Plaid's code, and the category it now maps to.
+    assert_eq!(
+        crate::financial_engine::categories::categorize("INCOME", Some("INCOME_TAX_REFUND"), None)
+            .category,
+        "Taxes"
+    );
+    assert_eq!(
+        refund("Example Refund", "Taxes", Some("INCOME_TAX_REFUND")),
+        tax_refund
+    );
+    // Untagged deposits, federal and state, by their descriptors.
+    for merchant in [
+        "IRS TREAS 310 TAX REF",
+        "EXAMPLE STATE TAX RFD",
+        "Example Dept of Revenue Tax Refund",
+    ] {
+        assert_eq!(refund(merchant, "Income", None), tax_refund, "{merchant}");
+        assert_eq!(
+            refund(merchant, "Transfer In", None),
+            tax_refund,
+            "{merchant}"
+        );
+    }
+    // Other deposits keep their meaning.
+    assert_eq!(refund("Example Payroll", "Income", None).1, Kind::Income);
+}
+
+#[test]
 fn issuer_statement_credits_are_credits_whatever_plaid_files_them_under() {
     let classified = |merchant: &str, category: &str, detail: &str, amount: f64| {
         let mut t = transaction(merchant, category, amount);

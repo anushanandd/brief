@@ -402,9 +402,9 @@
       "kind": "income"
     },
     "INCOME_TAX_REFUND": {
-      "category": "Income",
+      "category": "Taxes",
       "label": "Tax refund",
-      "kind": "income"
+      "kind": "tax"
     },
     "INCOME_UNEMPLOYMENT": {
       "category": "Income",
