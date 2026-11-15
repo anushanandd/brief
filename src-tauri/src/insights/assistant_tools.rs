@@ -19,6 +19,9 @@ use crate::numeric::{from_minor, minor_units};
 use crate::transaction_policy::Kind;
 
 const MAX_ROWS: usize = 25;
+/// What a forecast tool answers when the saved data is too old to say what's ahead.
+const STALE_FORECAST: &str =
+    "Saved data is more than three days old, so what's ahead is unknown; refresh first";
 
 /// Every tool, with words a question that needs it is likely to use; a hint with a space is a
 /// phrase. The on-device model reads about 4,096 tokens per question, and every tool's
@@ -469,8 +472,11 @@ impl<'a> Ledger<'a> {
     fn upcoming(&self, arguments: &Value) -> Result<Value, String> {
         let days = arguments["days"].as_i64().unwrap_or(30).clamp(1, 60);
         let horizon = self.today + Duration::days(days);
-        let events = self
-            .insights()?
+        let insights = self.insights()?;
+        if insights.forecast_stale {
+            return Err(STALE_FORECAST.into());
+        }
+        let events = insights
             .expected
             .iter()
             .filter(|event| event.date <= horizon)
@@ -555,7 +561,11 @@ impl<'a> Ledger<'a> {
     }
 
     fn subscriptions(&self) -> Result<Value, String> {
-        let subscriptions = &self.insights()?.subscriptions;
+        let insights = self.insights()?;
+        if insights.forecast_stale {
+            return Err(STALE_FORECAST.into());
+        }
+        let subscriptions = &insights.subscriptions;
         Ok(json!({
             "monthlyTotal": subscriptions.monthly,
             "subscriptions": subscriptions.items.iter().take(MAX_ROWS).map(|item| json!({

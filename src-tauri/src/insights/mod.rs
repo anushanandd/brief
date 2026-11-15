@@ -130,6 +130,9 @@ pub struct Insights {
     pub today: NaiveDate,
     pub computed_at: String,
     pub expected: Vec<forecast::ExpectedEvent>,
+    /// The saved data is too old to forecast from, so what's expected and the subscriptions are
+    /// unknown rather than none.
+    pub forecast_stale: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub statement: Option<statement::StatementCycle>,
@@ -569,6 +572,7 @@ pub fn derive_with_documents(
     let mut insights = Insights {
         today,
         computed_at: now.to_rfc3339(),
+        forecast_stale: forecast::stale(updated_at, today),
         expected,
         statement,
         benefits,

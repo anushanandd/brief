@@ -564,6 +564,15 @@ pub fn missed_events(
     events
 }
 
+/// Whether a snapshot saved at `updated_at` is too old to forecast from on `today`: an old one
+/// can't establish that a missing payment has stopped, so what's ahead is unknown, not nothing.
+pub fn stale(updated_at: &str, today: NaiveDate) -> bool {
+    updated_at
+        .get(..10)
+        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
+        .is_some_and(|saved| calendar::days_between(saved, today) > 3)
+}
+
 fn forecast(
     transactions: &[Transaction],
     accounts: &[AccountView],
@@ -571,12 +580,7 @@ fn forecast(
     horizon: Horizon,
 ) -> Vec<ExpectedEvent> {
     let today = horizon.today;
-    // An old saved snapshot cannot establish that a missing payment has stopped.
-    if updated_at
-        .get(..10)
-        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
-        .is_some_and(|saved| calendar::days_between(saved, today) > 3)
-    {
+    if stale(updated_at, today) {
         return Vec::new();
     }
     let mut events = Vec::new();

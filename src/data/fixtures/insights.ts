@@ -63,6 +63,7 @@ export function insights(overrides: Partial<Insights> = {}): Insights {
   return {
     today: '2026-09-18',
     computedAt: '2026-09-18T12:00:00Z',
+    forecastStale: false,
     expected: [],
     spending: [],
     benefitProducts: [{ id: 'example-card', name: 'Example Card' }],

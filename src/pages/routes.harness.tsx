@@ -579,6 +579,7 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
   return {
     today,
     computedAt: now.toISOString(),
+    forecastStale: false,
     expected,
     benefits: card
       ? {

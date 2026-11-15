@@ -41,7 +41,12 @@ import type { Taxes } from "./Taxes";
 import type { Totals } from "./Totals";
 import type { Trips } from "./Trips";
 
-export type Insights = { today: string, computedAt: string, expected: Array<ExpectedEvent>, statement?: StatementCycle, benefits?: CardBenefits, 
+export type Insights = { today: string, computedAt: string, expected: Array<ExpectedEvent>, 
+/**
+ * The saved data is too old to forecast from, so what's expected and the subscriptions are
+ * unknown rather than none.
+ */
+forecastStale: boolean, statement?: StatementCycle, benefits?: CardBenefits, 
 /**
  * Benefits for other credit cards the user assigned a product to.
  */

@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 
-import { daysBetween, savedDay, snapshotToday } from '../lib/dates'
+import { snapshotToday } from '../lib/dates'
 import { formatActivityName, formatCurrency, formatShortDay } from '../lib/format'
 import type { FinanceSnapshot } from '../lib/schema'
 import { expectedActivityDateLabel, RecurringMark, recurringActivities } from './expected-activity'
@@ -21,7 +21,8 @@ export function SubscriptionsCard({
     data,
     items.map(({ sourceTransactionId }) => sourceTransactionId),
   )
-  const stale = daysBetween(savedDay(data), today) > 3
+  // Without insights, as with data too old to forecast from, the list is unknown.
+  const stale = data.insights?.forecastStale ?? true
 
   return (
     <Card
@@ -100,7 +101,7 @@ export function SubscriptionsCard({
         </ul>
       ) : (
         <EmptyState>
-          {stale || !data.insights ? 'Refresh to see subscriptions.' : 'No subscriptions found.'}
+          {stale ? 'Refresh to see subscriptions.' : 'No subscriptions found.'}
         </EmptyState>
       )}
     </Card>

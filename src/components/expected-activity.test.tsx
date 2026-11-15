@@ -152,7 +152,7 @@ it('scopes recurring subscriptions to the selected account', async () => {
   expect(html).not.toContain('other streaming')
 
   // Native insights forecast nothing from a snapshot saved more than three days ago.
-  data.insights = insights({ today: '2026-09-25', expected: [] })
+  data.insights = insights({ today: '2026-09-25', expected: [], forecastStale: true })
   expect(await render()).toContain('Refresh to see what’s coming up.')
   expect(await render()).not.toContain('selected streaming')
 })

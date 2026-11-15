@@ -3,7 +3,7 @@ import type { Ref } from 'react'
 
 import { buildActivities, type ActivityItem } from '../lib/activity'
 import { analyticsAccountMatches } from '../lib/analytics'
-import { daysBetween, savedDay, snapshotToday } from '../lib/dates'
+import { daysBetween, snapshotToday } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import { formatActivityName, formatCurrency, formatDay, formatShortDay } from '../lib/format'
 import { getExternalLogosEnabled } from '../lib/logos'
@@ -84,7 +84,7 @@ export function ExpectedActivity({
     data,
     expected.flatMap((event) => [event.matchedTransactionId, event.sourceTransactionId]),
   )
-  const stale = daysBetween(savedDay(data), today) > 3
+  const stale = data.insights?.forecastStale ?? true
 
   return (
     <Card
