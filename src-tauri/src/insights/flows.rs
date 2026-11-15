@@ -2,7 +2,7 @@
 //! out, interest, and dividends, and for an investment account the new money and the market's
 //! movement. The combined account counts every account; a brokerage counts the bank-feed
 //! accounts linked to it.
-use chrono::{Duration, NaiveDate};
+use chrono::NaiveDate;
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -186,8 +186,8 @@ pub fn flows(snapshot: &Snapshot) -> Vec<AccountFlows> {
                 })
             })
             .collect::<Vec<_>>();
-        for (window, days) in WINDOWS {
-            let start = days.map(|days| end - Duration::days(days));
+        for (window, _) in WINDOWS {
+            let start = window.first_day(end);
             let (mut money_in, mut money_out, mut interest, mut dividends) = (0, 0, 0, 0);
             for (date, transaction) in &posted {
                 if start.is_some_and(|start| *date < start)
@@ -278,7 +278,7 @@ mod tests {
         let week = find("cash", Window::Week);
         assert_eq!(
             week.start,
-            Some(NaiveDate::from_ymd_opt(2026, 9, 9).unwrap())
+            Some(NaiveDate::from_ymd_opt(2026, 9, 10).unwrap())
         );
         assert_eq!(
             (week.money_in, week.money_out, week.net_flow, week.interest),

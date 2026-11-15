@@ -163,16 +163,22 @@ pub fn money_weighted_flows(flows: &[(i64, f64)], span: i64, ending: f64) -> Opt
 }
 
 pub(super) fn window_start(window: Window, end: NaiveDate) -> Option<NaiveDate> {
-    Some(match window {
-        // The latest close before the last day: the day's move.
-        Window::Day => end - Duration::days(1),
-        Window::Week => end - Duration::days(7),
-        Window::Month => end - Duration::days(30),
-        Window::Quarter => end - Duration::days(91),
-        Window::YearToDate => NaiveDate::from_ymd_opt(end.year(), 1, 1)? - Duration::days(1),
-        Window::Year => end - Duration::days(365),
+    use super::period_changes::Window as Chart;
+    let chart = match window {
+        Window::Day => Chart::Day,
+        Window::Week => Chart::Week,
+        Window::Month => Chart::Month,
+        Window::Quarter => Chart::Quarter,
+        Window::Year => Chart::Year,
+        Window::YearToDate => Chart::All,
         Window::All => return None,
-    })
+    };
+    // The close of the day before the window's first day opens it.
+    let first = match chart.first_day(end) {
+        Some(first) => first,
+        None => NaiveDate::from_ymd_opt(end.year(), 1, 1)?,
+    };
+    Some(first - Duration::days(1))
 }
 
 fn window_return(window: Window, days: &[Day]) -> Option<WindowReturn> {

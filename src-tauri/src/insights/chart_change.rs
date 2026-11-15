@@ -10,21 +10,11 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use super::calendar;
-use super::period_changes::Window;
+use super::period_changes::{Window, WINDOWS};
 use super::totals::{group_series_id, GroupHistory};
 use crate::finance_contract::{Point, Snapshot};
 use crate::numeric::round2;
 use crate::settings::FinanceSettings;
-
-/// Each window's length; all time runs from the line's first point.
-pub const WINDOWS: [(Window, i64); 6] = [
-    (Window::Day, 86_400),
-    (Window::Week, 7 * 86_400),
-    (Window::Month, 30 * 86_400),
-    (Window::Quarter, 90 * 86_400),
-    (Window::Year, 365 * 86_400),
-    (Window::All, 0),
-];
 
 /// The chart standing for every account, without the spending cards.
 pub const NET_WORTH: &str = "net-worth";
@@ -151,9 +141,13 @@ pub fn changes(
             );
             ChartChanges {
                 series: series.id.clone(),
+                // All time is 0 seconds: it runs from the line's first point.
                 windows: WINDOWS
                     .iter()
-                    .map(|(window, seconds)| (*window, range_change(&points, *seconds, now)))
+                    .map(|(window, days)| {
+                        let seconds = days.map_or(0, |days| days * 86_400);
+                        (*window, range_change(&points, seconds, now))
+                    })
                     .collect(),
             }
         })

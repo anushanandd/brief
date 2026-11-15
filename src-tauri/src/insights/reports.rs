@@ -13,6 +13,7 @@ use serde::{Deserialize, Serialize};
 use ts_rs::TS;
 
 use super::calendar::{self, Zone};
+use super::period_changes::Window;
 use super::View;
 use crate::finance_contract::Transaction;
 use crate::numeric::{from_minor, minor_units, round2};
@@ -53,6 +54,19 @@ pub enum Range {
     Quarter,
     Year,
     All,
+}
+
+impl Range {
+    fn window(self) -> Window {
+        match self {
+            Range::Day => Window::Day,
+            Range::Week => Window::Week,
+            Range::Month => Window::Month,
+            Range::Quarter => Window::Quarter,
+            Range::Year => Window::Year,
+            Range::All => Window::All,
+        }
+    }
 }
 
 #[cfg(test)]
@@ -660,21 +674,18 @@ fn window(
     // Each period is the trailing days every chart and Home's recap mean by it
     // (`period_changes::WINDOWS`), so a figure opens on the report that sums it. A calendar
     // year, as Benefits reads, is a pair of custom days.
-    let start = request.from.unwrap_or_else(|| match range {
-        Range::All => snapshot
-            .transactions
-            .iter()
-            .map(|transaction| transaction.posted_date())
-            .chain(snapshot.trades.iter().map(|trade| trade.date.as_str()))
-            .filter_map(calendar::transaction_date)
-            .filter(|date| *date <= end)
-            .min()
-            .unwrap_or(end),
-        Range::Year => end - Duration::days(364),
-        Range::Day => end,
-        Range::Week => end - Duration::days(6),
-        Range::Quarter => end - Duration::days(89),
-        Range::Month => end - Duration::days(29),
+    let start = request.from.unwrap_or_else(|| {
+        range.window().first_day(end).unwrap_or_else(|| {
+            snapshot
+                .transactions
+                .iter()
+                .map(|transaction| transaction.posted_date())
+                .chain(snapshot.trades.iter().map(|trade| trade.date.as_str()))
+                .filter_map(calendar::transaction_date)
+                .filter(|date| *date <= end)
+                .min()
+                .unwrap_or(end)
+        })
     });
     let days = (end - start).num_days() + 1;
     ReportWindow {

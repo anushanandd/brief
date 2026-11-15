@@ -158,8 +158,8 @@ mod tests {
         assert_eq!(past.updated_at, "2026-09-02T23:59:59Z");
     }
 
-    #[test]
-    fn a_month_back_every_window_ends_on_that_day() {
+    /// A synthetic year of refreshes and its derived view.
+    fn life() -> (crate::storage::FinanceState, View) {
         use crate::insights::calendar::NamedZone;
         use crate::storage::change::{finish_refresh, project_refresh};
         let life = crate::synthetic::Life::new(1);
@@ -182,6 +182,57 @@ mod tests {
         let (view, _) =
             crate::storage::derive_view(&state, None, &BTreeMap::new(), now, &NamedZone::Utc)
                 .unwrap();
+        (state, view)
+    }
+
+    #[test]
+    fn every_figure_counts_the_same_days_for_a_window() {
+        use crate::insights::{calendar::NamedZone, reports, returns};
+        let (_, view) = life();
+        let insights = view.insights.as_ref().unwrap();
+        let today = insights.today;
+        for (window, days) in period_changes::WINDOWS {
+            let Some(days) = days else { continue };
+            let first = today - chrono::Duration::days(days - 1);
+            let change = insights
+                .changes
+                .iter()
+                .find(|change| change.window == window);
+            assert_eq!(change.unwrap().start, first, "{window:?} balance change");
+            let mut flows = insights.flows.iter().filter(|flows| flows.window == window);
+            assert!(flows.clone().count() > 0);
+            assert!(
+                flows.all(|flows| flows.start == Some(first)),
+                "{window:?} flows"
+            );
+            let recap = insights.recap.iter().find(|recap| recap.window == window);
+            assert!(
+                recap.is_none_or(|recap| recap.start == first),
+                "{window:?} recap"
+            );
+            let request = reports::ReportRequest {
+                range: serde_json::from_value(serde_json::to_value(window).unwrap()).unwrap(),
+                ..Default::default()
+            };
+            let report = reports::reports(&view, &request, today, &NamedZone::Utc).unwrap();
+            assert_eq!(report.window.start, first, "{window:?} report");
+            // A return opens on the close of the day before.
+            let name = serde_json::to_value(window).unwrap();
+            let returns_window = returns::WINDOWS
+                .into_iter()
+                .find(|other| serde_json::to_value(other).unwrap() == name);
+            let opening = returns::window_start(returns_window.unwrap(), today);
+            assert_eq!(
+                opening,
+                Some(first - chrono::Duration::days(1)),
+                "{window:?} return"
+            );
+        }
+    }
+
+    #[test]
+    fn a_month_back_every_window_ends_on_that_day() {
+        let (state, view) = life();
         let settings = &state.settings;
         let today = view.insights.as_ref().unwrap().today;
         assert!(period_as_of(&view, settings, today).is_none());

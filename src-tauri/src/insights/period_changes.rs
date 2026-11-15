@@ -35,6 +35,22 @@ pub const WINDOWS: [(Window, Option<i64>); 6] = [
     (Window::All, None),
 ];
 
+impl Window {
+    /// The days the window counts, its last day included; none for all time.
+    pub fn days(self) -> Option<i64> {
+        WINDOWS
+            .iter()
+            .find(|(window, _)| *window == self)
+            .and_then(|(_, days)| *days)
+    }
+
+    /// The first day the window counts when it ends on `end`. Its change runs from the close of
+    /// the day before.
+    pub fn first_day(self, end: NaiveDate) -> Option<NaiveDate> {
+        self.days().map(|days| end - Duration::days(days - 1))
+    }
+}
+
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 #[ts(rename = "PeriodAccountChange")]
@@ -148,8 +164,8 @@ pub fn changes(
     WINDOWS
         .iter()
         .filter_map(|(window, days)| {
-            let start = match days {
-                Some(days) => today - Duration::days(days - 1),
+            let start = match window.first_day(today) {
+                Some(start) => start,
                 None => earliest?,
             };
             let mut incomplete = false;

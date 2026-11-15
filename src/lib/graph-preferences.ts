@@ -6,7 +6,7 @@ import { preference } from './preference'
 const DAY_SECONDS = 24 * 60 * 60
 const DEFAULT_GRAPH_WINDOW = 7 * DAY_SECONDS
 
-/** The chart periods every D/W/M/Q/Y/A chart offers, each one of the windows Rust computes. */
+/** The D/W/M/Q/Y/A chart periods, the same days as Rust's `period_changes::WINDOWS`. */
 export const graphWindows = [
   { name: 'day', label: 'D', settingsLabel: 'Day', secs: DAY_SECONDS },
   { name: 'week', label: 'W', settingsLabel: 'Week', secs: 7 * DAY_SECONDS },
@@ -93,18 +93,14 @@ export function resetSessionGraphWindow() {
   sessionEnd = undefined
 }
 
-const periodDays: Partial<Record<ChartPeriod, number>> = {
-  week: 7,
-  month: 30,
-  quarter: 90,
-  year: 365,
-}
-
 /** What a chart needs to scroll back in time: the latest day, and the first it draws. */
 export type GraphScroll = { today: string; first: string | undefined }
 
 /** The days a scrolling range moves by a period; none for a day or all time, which don't scroll. */
-export const scrollPeriodDays = (seconds: number) => periodDays[chartPeriod(seconds)]
+export const scrollPeriodDays = (seconds: number) => {
+  const period = chartPeriod(seconds)
+  return period === 'day' || period === 'all' ? undefined : chartPeriodSeconds(period) / DAY_SECONDS
+}
 
 /**
  * The day a page's charts end on, while scrolled back in time; undefined while they end today.
