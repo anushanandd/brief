@@ -58,7 +58,30 @@ struct Clock {
     step: i64,
 }
 
-static CLOCK: Mutex<Option<Clock>> = Mutex::new(None);
+impl Clock {
+    /// Whether a refresh is due at `now`, and whether summaries' prices moved on a step. Only a
+    /// refresh that worked sets `refreshed`, so a failed one is tried again next tick.
+    fn due(&mut self, now: DateTime<Utc>) -> (bool, bool) {
+        let refresh = self
+            .refreshed
+            .is_none_or(|at| now - at >= refresh_interval(now));
+        let step = now.timestamp().div_euclid(STEP_SECONDS);
+        let stepped = moving(now) && step != self.step;
+        self.step = step;
+        (refresh, stepped)
+    }
+}
+
+static CLOCK: Mutex<Clock> = Mutex::new(Clock {
+    refreshed: None,
+    step: 0,
+});
+
+fn clock() -> std::sync::MutexGuard<'static, Clock> {
+    CLOCK
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
 
 pub fn start(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
@@ -73,28 +96,14 @@ pub fn start(app: AppHandle) {
 }
 
 async fn tick(app: &AppHandle, now: DateTime<Utc>) {
-    let (refresh, step) = {
-        let mut clock = CLOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        let clock = clock.get_or_insert_with(Clock::default);
-        let refresh = clock
-            .refreshed
-            .is_none_or(|at| now - at >= refresh_interval(now));
-        if refresh {
-            clock.refreshed = Some(now);
-        }
-        let step = now.timestamp().div_euclid(STEP_SECONDS);
-        let stepped = moving(now) && step != clock.step;
-        clock.step = step;
-        (refresh, stepped)
-    };
+    let (refresh, step) = clock().due(now);
     let mut changed = false;
     if refresh {
         let state = app.state::<AppState>();
         let view = state.storage().and_then(|storage| storage.read_view());
         if let Ok(view) = view {
             if let Ok(news) = state.providers.refresh_portfolio_news(&view.snapshot).await {
+                clock().refreshed = Some(now);
                 if !news.changed.is_empty() {
                     announce(app, "news", news.changed);
                     crate::reading_job::nudge(app);
@@ -145,5 +154,15 @@ mod tests {
         assert!(moving(at("2026-11-13T21:20:00Z")));
         assert!(!moving(at("2026-11-13T21:40:00Z")));
         assert!(!moving(at("2026-11-14T16:00:00Z")));
+    }
+
+    #[test]
+    fn a_failed_refresh_is_tried_again_next_tick() {
+        let mut clock = Clock::default();
+        let now = at("2026-11-14T16:00:00Z");
+        assert!(clock.due(now).0);
+        assert!(clock.due(now + Duration::minutes(1)).0);
+        clock.refreshed = Some(now + Duration::minutes(1));
+        assert!(!clock.due(now + Duration::minutes(2)).0);
     }
 }
