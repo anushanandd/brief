@@ -3,7 +3,9 @@
 //! month, quarter, or year, or all of it, counting your spending, someone else's, or both. This
 //! module sums each period and its categories beside the period before, and decides what a
 //! statement opened at, where the current period is heading, and what is usual by this point.
-//! The renderer only draws the period's activity.
+//! A statement counts purchases by the day they posted, as the issuer does; every other period
+//! by the day they were made, as the ledger and calendar date them. The renderer only draws the
+//! period's activity.
 use std::collections::{BTreeMap, BTreeSet};
 
 use chrono::{Datelike, Duration, NaiveDate};
@@ -190,14 +192,16 @@ struct Activity<'a> {
 }
 
 impl<'a> Activity<'a> {
-    fn new(transactions: Vec<&'a Transaction>, owner: Owner) -> Self {
+    /// The transactions, each on the day `date` reads from it.
+    fn new(
+        transactions: Vec<&'a Transaction>,
+        owner: Owner,
+        date: fn(&Transaction) -> &str,
+    ) -> Self {
         let dated: Vec<_> = transactions
             .into_iter()
             .filter_map(|transaction| {
-                Some((
-                    calendar::transaction_date(transaction.posted_date())?,
-                    transaction,
-                ))
+                Some((calendar::transaction_date(date(transaction))?, transaction))
             })
             .collect();
         let first = dated.iter().map(|(date, _)| *date).min();
@@ -632,7 +636,10 @@ fn places_spent(transactions: &[&Transaction], total: i64) -> Vec<PlaceSpent> {
 pub struct Scope<'a> {
     pub id: &'a str,
     pub owner: Owner,
+    /// By the day of purchase, as the ledger and calendar date it: weeks, months, and the rest.
     activity: Activity<'a>,
+    /// By the day each posted, as the issuer's statement counts it: statement cycles.
+    posted: Activity<'a>,
     card: Option<&'a Account>,
     statement: Option<&'a StatementCycle>,
     today: NaiveDate,
@@ -685,14 +692,24 @@ impl Scope<'_> {
     /// The period `offset` periods before the current one of `kind`, summed and judged, with
     /// whether the saved history reaches a period before it. All time has only one.
     pub fn period(&self, kind: PeriodKind, offset: usize) -> Option<(SpendingPeriod, bool)> {
-        let activity = &self.activity;
         if kind == PeriodKind::All {
             return (offset == 0).then(|| {
-                let period = summed(activity, PeriodKind::All, self.first(), self.today, None);
+                let period = summed(
+                    &self.activity,
+                    PeriodKind::All,
+                    self.first(),
+                    self.today,
+                    None,
+                );
                 (period, false)
             });
         }
         let calendar = self.calendar(kind);
+        let activity = if calendar.kind == PeriodKind::Statement {
+            &self.posted
+        } else {
+            &self.activity
+        };
         let ends = calendar.ends(self.today, activity.first.unwrap_or(self.today));
         let end = *ends.get(offset)?;
         let start = calendar.start(end)?;
@@ -813,7 +830,16 @@ pub fn scope_list<'a>(
             Scope {
                 id: scope,
                 owner,
-                activity: Activity::new(transactions.iter().filter(in_scope).collect(), owner),
+                activity: Activity::new(
+                    transactions.iter().filter(in_scope).collect(),
+                    owner,
+                    |transaction| &transaction.date,
+                ),
+                posted: Activity::new(
+                    transactions.iter().filter(in_scope).collect(),
+                    owner,
+                    Transaction::posted_date,
+                ),
                 card: on_card,
                 statement: statement.filter(|_| on_card.is_some()),
                 today,
@@ -1211,7 +1237,11 @@ mod tests {
         pending.pending = true;
         let mut wallet = transaction("wallet:c", "2026-09-03", -9.0, "Dining");
         wallet.pending = true;
-        let activity = Activity::new(vec![&posted, &pending, &wallet], Owner::Me);
+        let activity = Activity::new(
+            vec![&posted, &pending, &wallet],
+            Owner::Me,
+            Transaction::posted_date,
+        );
         let (start, end) = (day("2026-09-01"), day("2026-09-30"));
         assert_eq!(net(&activity, start, end, false), 3_000);
         assert_eq!(net(&activity, start, end, true), 500);
@@ -1233,6 +1263,34 @@ mod tests {
         // The quarter is well past a week in, with days left, so it is.
         let quarter = period(&scopes, "card", PeriodKind::Quarter, "2026-07-01");
         assert!(quarter.projected.is_some());
+    }
+
+    #[test]
+    fn a_month_counts_purchases_by_the_day_they_were_made() {
+        let mut late = transaction("late", "2026-08-31", -40.0, "Dining");
+        late.posted_on = Some("2026-09-02".into());
+        let card = card(None);
+        let scopes = scopes(
+            &[late],
+            std::slice::from_ref(&card),
+            None,
+            None,
+            "2026-09-10T12:00:00Z",
+            &NamedZone::Utc,
+        );
+        let every = scopes
+            .iter()
+            .find(|scope| scope.scope == "card" && scope.owner == Owner::Me)
+            .unwrap();
+        let month = |month: &str| {
+            every
+                .months
+                .iter()
+                .find(|m| m.month == month)
+                .unwrap()
+                .total
+        };
+        assert_eq!((month("2026-08"), month("2026-09")), (40.0, 0.0));
     }
 
     #[test]

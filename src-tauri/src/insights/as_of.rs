@@ -231,6 +231,26 @@ mod tests {
     }
 
     #[test]
+    fn a_months_spending_is_one_figure_on_every_page() {
+        let (_, view) = life();
+        let insights = view.insights.as_ref().unwrap();
+        let every = insights
+            .spending
+            .iter()
+            .find(|scope| scope.scope == "all" && scope.owner == super::super::spending::Owner::Me)
+            .unwrap();
+        assert!(every.months.len() > 1);
+        for month in &every.months {
+            let calendar = insights
+                .activity_months
+                .iter()
+                .find(|totals| totals.period == month.month)
+                .map_or(0.0, |totals| totals.spent);
+            assert_eq!(month.total, calendar, "{}", month.month);
+        }
+    }
+
+    #[test]
     fn a_month_back_every_window_ends_on_that_day() {
         let (state, view) = life();
         let settings = &state.settings;
