@@ -552,14 +552,16 @@ impl Storage {
     /// Deriving the view is the expensive part of every read, so it is reused until saved
     /// data or the quarter hour changes.
     fn view<T>(&self, read: impl FnOnce(&CachedView) -> T) -> Result<T, String> {
-        let key = self.view_key()?;
+        // One read of the travel events, so the key names the events the view is derived from.
+        let travel = crate::event_calendar::travel();
+        let key = self.view_key(travel.generation)?;
         let fresh = self
             .view
             .borrow()
             .as_ref()
             .is_some_and(|view| view.key == key);
         if !fresh {
-            let (view, json) = self.derive_snapshot()?;
+            let (view, json) = self.derive_snapshot(&travel.events)?;
             *self.view.borrow_mut() = Some(CachedView {
                 key,
                 view: std::sync::Arc::new(view),
@@ -613,7 +615,7 @@ impl Storage {
     }
 
     /// Identifies everything a derived view is computed from, with the clock to the quarter hour.
-    fn view_key(&self) -> Result<u64, String> {
+    fn view_key(&self, travel_generation: u64) -> Result<u64, String> {
         use std::hash::{Hash, Hasher};
         let mut hasher = std::collections::hash_map::DefaultHasher::new();
         self.data.revision.hash(&mut hasher);
@@ -630,9 +632,7 @@ impl Storage {
         // Merchant names embedded since the last view change category suggestions.
         self.merchant_embeddings.generation().hash(&mut hasher);
         // A flight or stay added to the calendar changes trips.
-        serde_json::to_vec(&crate::event_calendar::travel_events())
-            .map_err(|error| error.to_string())?
-            .hash(&mut hasher);
+        travel_generation.hash(&mut hasher);
         serde_json::to_vec(&(
             &self.data.annotations,
             &self.data.settings,
@@ -646,7 +646,10 @@ impl Storage {
 
     /// The committed snapshot with saved edits applied and its insights derived, as the
     /// renderer reads it.
-    fn derive_snapshot(&self) -> Result<(crate::insights::View, Value), String> {
+    fn derive_snapshot(
+        &self,
+        travel: &[crate::event_calendar::Event],
+    ) -> Result<(crate::insights::View, Value), String> {
         let searches = crate::places::cache::read(&self.places_path);
         // Similar merchants come from vectors already in search's cache; names not embedded yet
         // are embedded in the background, and the view after that job reads them.
@@ -656,7 +659,7 @@ impl Storage {
             self.recovery.clone(),
             &searches,
             Some(&embedder),
-            &crate::event_calendar::travel_events(),
+            travel,
             chrono::Utc::now(),
             &crate::insights::calendar::LocalZone,
         );

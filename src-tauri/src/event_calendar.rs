@@ -3,11 +3,11 @@
 //! and trips. It writes only to its own calendar, and only events whose link it made. What it
 //! reads is never saved or logged. Only flights and stays from the user's own calendars reach
 //! insights, where trips read them; the trips are saved, the events never are.
-use std::sync::Mutex;
+use std::sync::{Arc, LazyLock, Mutex, OnceLock, PoisonError};
 
 use chrono::{Duration, Local, NaiveDate};
 use serde::{Deserialize, Serialize};
-use tauri::{AppHandle, Manager};
+use tauri::{AppHandle, Emitter, Manager};
 use ts_rs::TS;
 
 use crate::insights::agenda::{AgendaItem, AgendaKind};
@@ -688,26 +688,77 @@ async fn ensure(
 const TRAVEL_REFRESH: std::time::Duration = std::time::Duration::from_secs(60 * 60);
 const TRAVEL_YEARS: i64 = 12;
 
-static TRAVEL: Mutex<Option<(std::time::Instant, Vec<Event>)>> = Mutex::new(None);
+/// Travel events as last read; `generation` rises each time a read changed them, so a view's
+/// key hashes the number rather than the events.
+#[derive(Clone, Debug, Default)]
+pub struct Travel {
+    pub generation: u64,
+    pub events: Arc<Vec<Event>>,
+}
+
+#[derive(Default)]
+struct TravelCache {
+    read: Option<std::time::Instant>,
+    reading: bool,
+    travel: Travel,
+}
+
+impl TravelCache {
+    /// Whether to read Calendar now: not while a read runs, nor within an hour of the last.
+    fn start(&mut self) -> bool {
+        let due = !self.reading
+            && self
+                .read
+                .is_none_or(|read| read.elapsed() >= TRAVEL_REFRESH);
+        self.reading |= due;
+        due
+    }
+
+    /// Keeps what a read found, and says whether it changed; one that panicked keeps the last
+    /// events for the hour.
+    fn finish(&mut self, events: Option<Vec<Event>>) -> bool {
+        self.reading = false;
+        self.read = Some(std::time::Instant::now());
+        let Some(events) = events.filter(|events| *events != *self.travel.events) else {
+            return false;
+        };
+        self.travel = Travel {
+            generation: self.travel.generation + 1,
+            events: Arc::new(events),
+        };
+        true
+    }
+}
+
+static TRAVEL: LazyLock<Mutex<TravelCache>> = LazyLock::new(Default::default);
+/// Told when travel changed, so the page reads a view with it; set by `start`.
+static APP: OnceLock<AppHandle> = OnceLock::new();
+
+fn travel_cache() -> std::sync::MutexGuard<'static, TravelCache> {
+    TRAVEL.lock().unwrap_or_else(PoisonError::into_inner)
+}
 
 /// The flights and stays in calendars named for an email account: the main calendar of each
 /// of the user's own accounts. Shared calendars are left out, since they carry other people's
-/// travel. Read at most hourly, never without access, and kept only in memory.
-pub fn travel_events() -> Vec<Event> {
+/// travel. Never waits on Calendar, so it's safe under the storage lock: it returns what was
+/// last read, and reads again in the background at most hourly, never without access. Kept
+/// only in memory.
+pub fn travel() -> Travel {
     if access() != Access::Allowed {
-        return Vec::new();
+        return Travel::default();
     }
-    let mut kept = TRAVEL
-        .lock()
-        .unwrap_or_else(|poisoned| poisoned.into_inner());
-    if let Some((read, events)) = kept.as_ref() {
-        if read.elapsed() < TRAVEL_REFRESH {
-            return events.clone();
-        }
+    let mut cache = travel_cache();
+    if cache.start() {
+        std::thread::spawn(|| {
+            let events = std::panic::catch_unwind(read_travel).ok();
+            if travel_cache().finish(events) {
+                if let Some(app) = APP.get() {
+                    let _ = app.emit("finance-snapshot-updated", ());
+                }
+            }
+        });
     }
-    let events = read_travel();
-    *kept = Some((std::time::Instant::now(), events.clone()));
-    events
+    cache.travel.clone()
 }
 
 #[cfg(target_os = "macos")]
@@ -893,6 +944,7 @@ pub fn sync_in_background(app: AppHandle) {
 /// Syncs once a day while Brief runs, so dates past the horizon join as the days pass. The
 /// first check waits for startup, whose reveal must never wait on Calendar.
 pub fn start(app: AppHandle) {
+    let _ = APP.set(app.clone());
     tauri::async_runtime::spawn(async move {
         loop {
             tokio::time::sleep(std::time::Duration::from_secs(60)).await;
@@ -1232,5 +1284,22 @@ mod tests {
         );
         assert_eq!(plan.add.len(), 1);
         assert!(plan.update.is_empty() && plan.remove.is_empty());
+    }
+
+    #[test]
+    fn travel_is_read_once_an_hour_and_its_generation_moves_only_when_it_changed() {
+        let mut cache = TravelCache::default();
+        assert!(cache.start());
+        assert!(!cache.start(), "a read is already running");
+        let stay = existing("stay", None, "2026-10-01", "Stay at Example Inn");
+        assert!(cache.finish(Some(vec![stay.clone()])));
+        assert!(!cache.start(), "read within the hour");
+        assert_eq!(cache.travel.generation, 1);
+        assert!(!cache.finish(Some(vec![stay.clone()])));
+        assert!(!cache.finish(None));
+        assert_eq!(cache.travel.generation, 1);
+        assert_eq!(*cache.travel.events, [stay]);
+        assert!(cache.finish(Some(Vec::new())));
+        assert_eq!(cache.travel.generation, 2);
     }
 }
