@@ -2,7 +2,6 @@ import { describe, expect, it, vi } from 'vitest'
 
 import {
   adjacentGraphWindow,
-  graphWindowForKey,
   parseGraphWindow,
   shiftedGraphEnd,
 } from './graph-preferences'
@@ -88,13 +87,6 @@ describe('graph preferences', () => {
     expect(adjacentGraphWindow(90 * day, 1)).toBe(365 * day)
     expect(adjacentGraphWindow(365 * day, 1)).toBe(0)
     expect(adjacentGraphWindow(0, 1)).toBe(day)
-    expect(graphWindowForKey('d')).toBe(day)
-    expect(graphWindowForKey('w')).toBe(7 * day)
-    expect(graphWindowForKey('M')).toBe(30 * day)
-    expect(graphWindowForKey('q')).toBe(90 * day)
-    expect(graphWindowForKey('y')).toBe(365 * day)
-    expect(graphWindowForKey('a')).toBe(0)
-    expect(graphWindowForKey('x')).toBeUndefined()
   })
 })
 

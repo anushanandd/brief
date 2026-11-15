@@ -26,10 +26,6 @@ export const chartPeriod = (seconds: number): ChartPeriod =>
 export const chartPeriodSeconds = (period: ChartPeriod) =>
   graphWindows.find(({ name }) => name === period)!.secs
 
-export function graphWindowForKey(key: string) {
-  return graphWindows[['d', 'w', 'm', 'q', 'y', 'a'].indexOf(key.toLocaleLowerCase())]?.secs
-}
-
 export function adjacentGraphWindow(current: number, direction: -1 | 1) {
   const index = graphWindows.findIndex(({ secs }) => secs === current)
   const next = (Math.max(0, index) + direction + graphWindows.length) % graphWindows.length
