@@ -552,3 +552,11 @@ fn a_later_read_of_the_same_records_is_nothing_new() {
     next.rows.first_mut().unwrap().amount += 1;
     assert!(!saved.same_records(&next));
 }
+
+#[test]
+fn amounts_round_to_cents_halves_away_from_zero() {
+    // Wallet stores four decimal places.
+    assert_eq!(dollars(123_450), 12.35);
+    assert_eq!(dollars(-123_450), -12.35);
+    assert_eq!(dollars(123_449), 12.34);
+}

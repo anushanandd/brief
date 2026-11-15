@@ -317,7 +317,7 @@ fn optional<T>(
 }
 
 fn dollars(value: i64) -> f64 {
-    Decimal::new(value, AMOUNT_DIGITS)
+    crate::numeric::cents(Decimal::new(value, AMOUNT_DIGITS))
         .to_f64()
         .unwrap_or_default()
 }
