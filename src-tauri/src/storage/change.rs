@@ -585,12 +585,20 @@ mod tests {
         );
     }
 
-    /// What Wallet would change on a copy of the real database, in counts and totals only. It
-    /// reads Wallet read-only and writes nothing: set `BRIEF_WALLET_REPORT_DB` to the copy.
+    /// Whether a real-data report may print amounts and places. Its output lands where agents
+    /// read it, so by default it prints counts only; `BRIEF_REPORT_SAMPLES=1` shows the rest.
+    fn report_samples() -> bool {
+        std::env::var("BRIEF_REPORT_SAMPLES").is_ok_and(|value| value == "1")
+    }
+
+    /// What Wallet would change on a copy of the real database, in counts only unless
+    /// `report_samples`. It reads Wallet read-only and writes nothing: set
+    /// `BRIEF_WALLET_REPORT_DB` to the copy.
     #[test]
     #[ignore]
     fn real_wallet_report() {
         use crate::{insights::calendar::LocalZone, providers::wallet};
+        let samples = report_samples();
         let path = std::env::var("BRIEF_WALLET_REPORT_DB").unwrap();
         let database =
             crate::database::Database::open_read_only(std::path::Path::new(&path)).unwrap();
@@ -605,10 +613,15 @@ mod tests {
             crate::storage::derive_view(state, None, &BTreeMap::new(), now, &LocalZone).unwrap()
         };
         let ((old, _), (new, _)) = (view(&before), view(&after));
+        if samples {
+            println!(
+                "net worth: {} -> {}",
+                old.snapshot.net_worth, new.snapshot.net_worth
+            );
+        }
         println!(
-            "net worth: {} -> {} (incomplete {} -> {})",
-            old.snapshot.net_worth,
-            new.snapshot.net_worth,
+            "net worth changed: {} (incomplete {} -> {})",
+            old.snapshot.net_worth != new.snapshot.net_worth,
             old.snapshot.net_worth_incomplete,
             new.snapshot.net_worth_incomplete
         );
@@ -626,7 +639,9 @@ mod tests {
             );
         }
         println!("declined: {}", summary.declined.len());
-        println!("daily cash: {:?}", summary.daily_cash);
+        if samples {
+            println!("daily cash: {:?}", summary.daily_cash);
+        }
         let apple = new
             .snapshot
             .transactions
@@ -637,12 +652,11 @@ mod tests {
             .iter()
             .filter(|t| t.classification.as_ref().is_some_and(|c| c.spending))
             .collect::<Vec<_>>();
-        println!(
-            "apple card: {} rows, {} spending, ${:.2}",
-            apple.len(),
-            spent.len(),
-            spent.iter().map(|t| t.amount.abs()).sum::<f64>()
-        );
+        println!("apple card: {} rows, {} spending", apple.len(), spent.len());
+        if samples {
+            let total = spent.iter().map(|t| t.amount.abs()).sum::<f64>();
+            println!("apple card spending: ${total:.2}");
+        }
         let count = |name: &str, test: &dyn Fn(&crate::finance_contract::Transaction) -> bool| {
             println!("{name}: {}", spent.iter().filter(|t| test(t)).count());
         };
@@ -663,16 +677,24 @@ mod tests {
             entry.0 += 1;
             entry.1 += transaction.amount.abs();
         }
-        println!("categories: {categories:?}");
+        if samples {
+            println!("categories: {categories:?}");
+        } else {
+            let counts = categories
+                .iter()
+                .map(|(category, (count, _))| (*category, *count))
+                .collect::<BTreeMap<_, _>>();
+            println!("categories: {counts:?}");
+        }
         let refunds = apple
             .iter()
             .filter(|t| t.refund_of.is_some())
             .collect::<Vec<_>>();
-        println!(
-            "linked refunds: {}, ${:.2}",
-            refunds.len(),
-            refunds.iter().map(|t| t.amount).sum::<f64>()
-        );
+        println!("linked refunds: {}", refunds.len());
+        if samples {
+            let total = refunds.iter().map(|t| t.amount).sum::<f64>();
+            println!("linked refunds total: ${total:.2}");
+        }
         let matched_time = new
             .snapshot
             .transactions
@@ -694,16 +716,19 @@ mod tests {
                 old.trips.trips.len(),
                 new.trips.trips.len(),
             );
-            for base in &new.trips.bases {
-                println!(
-                    "  base {} {} to {}",
-                    base.city.as_deref().unwrap_or(&base.country),
-                    base.start,
-                    base.end
-                );
-            }
-            for trip in new.trips.trips.iter().take(12) {
-                println!("  {} {} to {}", trip.destination, trip.start, trip.end);
+            println!("bases: {}", new.trips.bases.len());
+            if samples {
+                for base in &new.trips.bases {
+                    println!(
+                        "  base {} {} to {}",
+                        base.city.as_deref().unwrap_or(&base.country),
+                        base.start,
+                        base.end
+                    );
+                }
+                for trip in new.trips.trips.iter().take(12) {
+                    println!("  {} {} to {}", trip.destination, trip.start, trip.end);
+                }
             }
         }
     }
@@ -745,10 +770,11 @@ mod tests {
             Err(error) => println!("projection refused: {error}"),
             Ok(snapshot) => match finish_refresh(&state, &refresh, snapshot) {
                 Err(error) => println!("validation refused: {error}"),
-                Ok(next) => println!(
+                Ok(next) if report_samples() => println!(
                     "accepted: net worth {} -> {}",
                     state.snapshot.net_worth, next.snapshot.net_worth
                 ),
+                Ok(_) => println!("accepted"),
             },
         }
     }
