@@ -87,7 +87,7 @@ export function TransactionDialog({
 }) {
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
   const titleId = useId()
-  // The last activity stays in view while the inspector slides back to the edge.
+  // The last activity stays mounted until the inspector has closed.
   const shown = usePresence(activity, dialog)
 
   // The inspector's keys run through the app's dispatcher, scoped to this dialog, so they show

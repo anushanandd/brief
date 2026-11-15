@@ -56,7 +56,7 @@ export const SettingsDialog = memo(function SettingsDialog() {
   const { open, target, show, close } = useSettingsDialog()
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
   const titleId = useId()
-  // The panel stays while the dialog settles back down.
+  // The panel stays mounted until the dialog has closed.
   const present = usePresence(open, dialog)
 
   return (
