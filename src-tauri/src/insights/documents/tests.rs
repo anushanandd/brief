@@ -608,3 +608,22 @@ fn a_bonus_statement_counts_once_and_regular_pay_carries_forward() {
     .unwrap()[0];
     assert_eq!(pay.projected_wages, 70_000.0 + 6.0 * 5_000.0);
 }
+
+#[test]
+fn a_new_hires_partial_first_check_does_not_set_regular_pay() {
+    let first = pay_period(
+        "a",
+        ("2026-09-01", "2026-09-15", "2026-09-15"),
+        [2_000.0, 0.0, 200.0],
+        [2_000.0, 0.0, 200.0],
+    );
+    let second = pay_period(
+        "b",
+        ("2026-09-16", "2026-09-30", "2026-09-30"),
+        [4_000.0, 0.0, 500.0],
+        [6_000.0, 0.0, 700.0],
+    );
+    let pay = &pay_projections(2026, &[first, second]).unwrap()[0];
+    assert_eq!(pay.projected_wages, 6_000.0 + 6.0 * 4_000.0);
+    assert_eq!(pay.projected_withholding, 700.0 + 6.0 * 500.0);
+}

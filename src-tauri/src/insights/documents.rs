@@ -462,12 +462,19 @@ pub fn pay_projections(year: i32, documents: &[Document]) -> Option<Vec<PayProje
                         statement.amount("federalWithholding")?,
                         periods,
                         statement.amount("pretax401k").unwrap_or_default(),
+                        statement.amount("gross").map(minor_units)
+                            == statement.ytd("gross").map(minor_units),
                     ))
                 })
                 .take(3)
                 .collect::<Vec<_>>();
+            // The year's first check from an employer may pay part of a period, so it sets
+            // regular pay only when no other statement can.
+            if recent.iter().any(|statement| !statement.4) {
+                recent.retain(|statement| !statement.4);
+            }
             recent.sort_by(|left, right| left.0.total_cmp(&right.0));
-            let (period_wages, period_withheld, periods, period_deferral) =
+            let (period_wages, period_withheld, periods, period_deferral, _) =
                 *recent.get(recent.len().checked_sub(1)? / 2)?;
             let date = day(document.date.as_deref())?;
             let period = period_of(date, periods);
