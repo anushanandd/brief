@@ -12,11 +12,11 @@ pub(crate) struct Pace {
     state: tokio::sync::Mutex<(f64, Instant)>,
 }
 
-/// Ten a second, EDGAR's published fair-access limit.
-pub(crate) static SEC: LazyLock<Pace> = LazyLock::new(|| Pace::new(10.0, 10.0));
-/// 180 a minute, under Alpaca's 200 so the market stream's own requests have room; a burst of
-/// 30 lets a paged price request run without waiting.
-pub(crate) static ALPACA: LazyLock<Pace> = LazyLock::new(|| Pace::new(3.0, 30.0));
+/// Eight a second with a burst of two, so no second ever holds more than EDGAR's ten.
+pub(crate) static SEC: LazyLock<Pace> = LazyLock::new(|| Pace::new(8.0, 2.0));
+/// Three a second with a burst of eight, so no minute holds more than 188 of Alpaca's 200 and
+/// the market stream's own requests have room.
+pub(crate) static ALPACA: LazyLock<Pace> = LazyLock::new(|| Pace::new(3.0, 8.0));
 
 impl Pace {
     fn new(rate: f64, burst: f64) -> Self {
@@ -70,19 +70,27 @@ mod tests {
         }
         let (left, wait) = admit(tokens, 0.0, 10.0, 10.0);
         assert_eq!((left, wait), (0.0, Duration::from_millis(100)));
-        // Requests sent back to back for a minute at three a second: the burst, then the rate.
-        let (mut tokens, mut clock, mut sent) = (30.0, 0.0, 0);
+        // Idle time refills only up to the burst.
+        assert_eq!(admit(0.0, 1_000.0, 3.0, 30.0).0, 29.0);
+    }
+
+    /// Requests sent back to back for `seconds` from a full burst: the most any window holds.
+    fn sent_within(rate: f64, burst: f64, seconds: f64) -> usize {
+        let (mut tokens, mut clock, mut sent) = (burst, 0.0, 0);
         loop {
-            let (left, wait) = admit(tokens, 0.0, 3.0, 30.0);
+            let (left, wait) = admit(tokens, 0.0, rate, burst);
             clock += wait.as_secs_f64();
-            if clock >= 60.0 {
-                break;
+            if clock >= seconds {
+                return sent;
             }
             tokens = left;
             sent += 1;
         }
-        assert!((205..=210).contains(&sent), "{sent} sent in a minute");
-        // Idle time refills only up to the burst.
-        assert_eq!(admit(0.0, 1_000.0, 3.0, 30.0).0, 29.0);
+    }
+
+    #[test]
+    fn no_window_passes_a_published_limit() {
+        assert!(sent_within(SEC.rate, SEC.burst, 1.0) <= 10);
+        assert!(sent_within(ALPACA.rate, ALPACA.burst, 60.0) <= 200);
     }
 }
