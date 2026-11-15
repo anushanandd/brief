@@ -3,6 +3,7 @@
 import { invoke } from '@tauri-apps/api/core'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
+import fullSettings from '../data/fixtures/full-settings.json'
 import {
   financeSettings,
   importLegacyFinanceSettings,
@@ -10,6 +11,7 @@ import {
   withoutAccountPreferences,
 } from './finance-settings'
 import type { FinanceSettings } from './schema'
+import { financeSettingsSchema } from './schema/snapshot'
 
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }))
 vi.mock('./api', () => ({ isTauri: () => true, getFinanceSnapshot: vi.fn() }))
@@ -126,4 +128,9 @@ it('resetting account preferences keeps every other setting', () => {
     hiddenBenefitIds: undefined,
   }
   expect({ ...reset, ...cleared }).toEqual({ ...current, ...cleared })
+})
+
+it('keeps every setting Rust saves', () => {
+  // Rust's settings test reads the same file, so a setting either side drops fails one.
+  expect(financeSettingsSchema.parse(fullSettings)).toEqual(fullSettings)
 })

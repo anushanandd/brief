@@ -898,6 +898,35 @@ fn valid_product(product: &str) -> bool {
 mod tests {
     use super::*;
 
+    /// Whether `read` holds every value `saved` does; it may add defaults.
+    fn keeps(saved: &serde_json::Value, read: &serde_json::Value) -> bool {
+        use serde_json::Value;
+        match (saved, read) {
+            (Value::Object(saved), Value::Object(read)) => saved
+                .iter()
+                .all(|(key, value)| read.get(key).is_some_and(|read| keeps(value, read))),
+            (Value::Array(saved), Value::Array(read)) => {
+                saved.len() == read.len() && saved.iter().zip(read).all(|(s, r)| keeps(s, r))
+            }
+            (Value::Number(saved), Value::Number(read)) => saved.as_f64() == read.as_f64(),
+            _ => saved == read,
+        }
+    }
+
+    /// The renderer's test parses the same file, so a setting either side drops fails one.
+    #[test]
+    fn every_setting_survives_a_save_and_a_read() {
+        let saved: serde_json::Value =
+            serde_json::from_str(include_str!("../../src/data/fixtures/full-settings.json"))
+                .unwrap();
+        let settings = serde_json::from_value::<FinanceSettings>(saved.clone())
+            .unwrap()
+            .normalized()
+            .unwrap();
+        let read = serde_json::to_value(settings).unwrap();
+        assert!(keeps(&saved, &read), "{read:#}");
+    }
+
     #[test]
     fn normalizes_names_and_benefits_and_rejects_invalid_values() {
         let settings = FinanceSettings {
