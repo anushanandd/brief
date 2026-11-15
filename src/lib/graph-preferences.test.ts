@@ -1,10 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 
-import {
-  adjacentGraphWindow,
-  parseGraphWindow,
-  shiftedGraphEnd,
-} from './graph-preferences'
+import { adjacentGraphWindow, parseGraphWindow, shiftedGraphEnd } from './graph-preferences'
 
 const day = 24 * 60 * 60
 
