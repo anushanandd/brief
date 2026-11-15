@@ -1,6 +1,7 @@
 //! What happened over each chart period (the trailing week, month, three months, year, and all
 //! saved history): spending, income, and net, each against the period of the same length before
-//! it, and the categories that drove spending. Amounts are summed in whole cents.
+//! it, and the categories that drove spending. Amounts are summed in whole cents. A purchase
+//! counts on the day it was made, pending or posted, as Spending and the calendar count it.
 use std::collections::BTreeMap;
 
 use chrono::{Duration, NaiveDate};
@@ -122,15 +123,15 @@ pub(super) fn spent_and_earned(
 }
 
 fn period(
-    posted: &[(NaiveDate, &Transaction)],
+    dated: &[(NaiveDate, &Transaction)],
     window: Window,
     start: NaiveDate,
     end: NaiveDate,
     previous_start: Option<NaiveDate>,
 ) -> Option<PeriodRecap> {
-    let history_start = posted.first()?.0;
+    let history_start = dated.first()?.0;
     let within = |from: NaiveDate, through: NaiveDate| {
-        posted
+        dated
             .iter()
             .filter(move |(date, _)| *date >= from && *date <= through)
             .map(|(_, transaction)| *transaction)
@@ -186,10 +187,10 @@ fn period(
     })
 }
 
-/// A recap for each chart period that has any posted activity.
+/// A recap for each chart period that has any activity.
 pub fn recap(transactions: &[Transaction], today: NaiveDate) -> Vec<PeriodRecap> {
-    let posted = calendar::posted_through(transactions, today);
-    let Some(first) = posted.first().map(|(date, _)| *date) else {
+    let made = calendar::made_through(transactions, today);
+    let Some(first) = made.first().map(|(date, _)| *date) else {
         return Vec::new();
     };
     WINDOWS
@@ -198,14 +199,14 @@ pub fn recap(transactions: &[Transaction], today: NaiveDate) -> Vec<PeriodRecap>
             Some(days) => {
                 let start = today - Duration::days(days - 1);
                 period(
-                    &posted,
+                    &made,
                     *window,
                     start,
                     today,
                     Some(start - Duration::days(*days)),
                 )
             }
-            None => period(&posted, *window, first, today, None),
+            None => period(&made, *window, first, today, None),
         })
         .collect()
 }
@@ -314,6 +315,26 @@ mod tests {
         assert_eq!(all.start, day("2026-05-02"));
         assert!(!all.partial);
         assert_eq!(all.net_change_pct, None);
+    }
+
+    #[test]
+    fn a_purchase_counts_on_the_day_it_was_made() {
+        let mut before = txn("before", "2026-09-09", "Dining", -40.0, Kind::Expense);
+        before.posted_on = Some("2026-09-10".into());
+        let mut inside = txn("inside", "2026-09-10", "Dining", -60.0, Kind::Expense);
+        inside.pending = true;
+        let pay = txn("pay", "2026-09-09", "Income", 500.0, Kind::Income);
+        let mut late_pay = pay.clone();
+        late_pay.id = "late-pay".into();
+        late_pay.date = "2026-09-16".into();
+        late_pay.pending = true;
+        let result = recap(&[before, inside, pay, late_pay], day("2026-09-16"));
+        let week = result
+            .iter()
+            .find(|period| period.window == Window::Week)
+            .unwrap();
+        assert_eq!(week.start, day("2026-09-10"));
+        assert_eq!((week.spending, week.income), (60.0, 500.0));
     }
 
     #[test]

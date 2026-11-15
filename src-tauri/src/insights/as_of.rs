@@ -251,6 +251,57 @@ mod tests {
     }
 
     #[test]
+    fn homes_month_spends_and_earns_what_the_months_reports_do() {
+        use crate::insights::{calendar::NamedZone, reports};
+        let (_, view) = life();
+        let insights = view.insights.as_ref().unwrap();
+        let recap = insights
+            .recap
+            .iter()
+            .find(|recap| recap.window == period_changes::Window::Month)
+            .unwrap();
+        let read = |chart| {
+            let request = reports::ReportRequest {
+                chart: Some(chart),
+                range: Some(reports::Range::Month),
+                ..Default::default()
+            };
+            reports::reports(&view, &request, insights.today, &NamedZone::Utc).unwrap()
+        };
+        let income = read(reports::Chart::Income).report.unwrap().summary.total;
+        let flow = read(reports::Chart::CashFlow).flow.unwrap();
+        let spent = flow
+            .purchases
+            .iter()
+            .map(|item| crate::numeric::minor_units(item.value))
+            .sum();
+        let start = recap.start.to_string();
+        let calendar = insights
+            .activity_days
+            .iter()
+            .filter(|totals| totals.period >= start)
+            .fold((0, 0), |(spent, income), totals| {
+                (
+                    spent + crate::numeric::minor_units(totals.spent),
+                    income + crate::numeric::minor_units(totals.income),
+                )
+            });
+        assert!(recap.spending > 0.0 && recap.income > 0.0);
+        assert_eq!(
+            (recap.spending, Some(recap.income)),
+            (crate::numeric::from_minor(spent), income)
+        );
+        // The calendar dates each purchase by the day it was made.
+        assert_eq!(
+            (recap.spending, recap.income),
+            (
+                crate::numeric::from_minor(calendar.0),
+                crate::numeric::from_minor(calendar.1)
+            )
+        );
+    }
+
+    #[test]
     fn a_month_back_every_window_ends_on_that_day() {
         let (state, view) = life();
         let settings = &state.settings;

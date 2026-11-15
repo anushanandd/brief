@@ -77,7 +77,7 @@ fn ids(report: &Report) -> Vec<&str> {
 }
 
 #[test]
-fn income_counts_posted_usd_income_dated_in_the_window() {
+fn income_counts_usd_income_made_in_the_window() {
     let view = view(
         vec![
             transaction("pay", 100.1, json!({})),
@@ -93,8 +93,12 @@ fn income_counts_posted_usd_income_dated_in_the_window() {
             ),
             transaction("pending", 100.0, json!({ "pending": true })),
             transaction("foreign", 50.0, json!({ "accountId": "foreign" })),
-            transaction("future", 50.0, json!({ "postedOn": "2026-09-19" })),
-            transaction("posted-before", 30.0, json!({ "postedOn": "2026-08-31" })),
+            transaction("future", 50.0, json!({ "date": "2026-09-19" })),
+            transaction(
+                "made-before",
+                30.0,
+                json!({ "date": "2026-08-31", "postedOn": "2026-09-02" }),
+            ),
             transaction(
                 "transfer",
                 20.0,
@@ -112,10 +116,15 @@ fn income_counts_posted_usd_income_dated_in_the_window() {
         },
     );
     let report = reports.report.unwrap();
-    assert_eq!(report.summary.total, Some(100.6));
+    assert_eq!(report.summary.total, Some(200.6));
     assert_eq!(
         ids(&report),
-        ["spending:pay", "spending:interest", "spending:dividend"]
+        [
+            "spending:pay",
+            "spending:interest",
+            "spending:dividend",
+            "spending:pending"
+        ]
     );
     // The buckets add up to the total.
     assert_eq!(

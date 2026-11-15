@@ -222,20 +222,40 @@ pub fn posted_through(
     transactions: &[Transaction],
     today: NaiveDate,
 ) -> Vec<(NaiveDate, &Transaction)> {
-    let mut posted = transactions
-        .iter()
-        .filter(|transaction| !transaction.pending)
+    dated_through(
+        transactions
+            .iter()
+            .filter(|transaction| !transaction.pending),
+        Transaction::posted_date,
+        today,
+    )
+}
+
+/// Every transaction made by `today`, pending or posted, on the day it was made, oldest first.
+pub fn made_through(
+    transactions: &[Transaction],
+    today: NaiveDate,
+) -> Vec<(NaiveDate, &Transaction)> {
+    dated_through(transactions.iter(), |transaction| &transaction.date, today)
+}
+
+fn dated_through<'a>(
+    transactions: impl Iterator<Item = &'a Transaction>,
+    date: fn(&Transaction) -> &str,
+    today: NaiveDate,
+) -> Vec<(NaiveDate, &'a Transaction)> {
+    let mut dated = transactions
         .filter_map(|transaction| {
-            let date = transaction_date(transaction.posted_date())?;
-            (date <= today).then_some((date, transaction))
+            let day = transaction_date(date(transaction))?;
+            (day <= today).then_some((day, transaction))
         })
         .collect::<Vec<_>>();
-    posted.sort_by(|left, right| {
+    dated.sort_by(|left, right| {
         left.0
             .cmp(&right.0)
             .then_with(|| left.1.id.cmp(&right.1.id))
     });
-    posted
+    dated
 }
 
 #[cfg(test)]

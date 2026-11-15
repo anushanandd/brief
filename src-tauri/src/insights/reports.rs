@@ -2,8 +2,9 @@
 //! dividends, realized gains, and cash flow, each over a window and the accounts the person
 //! picks. A window is a chart period ending today, the same trailing days every chart and Home's
 //! recap mean by it, or a custom pair of days; each report sums its entries beside the window
-//! before, by group, by day, month, or year, and by account. The renderer only draws and lists
-//! what this returns.
+//! before, by group, by day, month, or year, and by account. A transaction counts on the day it
+//! was made, pending or posted, as Spending, the calendar, and Home's recap count it. The
+//! renderer only draws and lists what this returns.
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::LazyLock;
 
@@ -425,12 +426,9 @@ impl Reader<'_> {
             _ => snapshot
                 .transactions
                 .iter()
-                .filter(|transaction| {
-                    !transaction.pending
-                        && self.eligible(accounts, transaction.account_id.as_deref())
-                })
+                .filter(|transaction| self.eligible(accounts, transaction.account_id.as_deref()))
                 .filter_map(|transaction| {
-                    let date = calendar::transaction_date(transaction.posted_date())?;
+                    let date = calendar::transaction_date(&transaction.date)?;
                     let classification = transaction.classification.as_ref()?;
                     if date > self.window.saved_end {
                         return None;
@@ -677,7 +675,8 @@ fn window(
             snapshot
                 .transactions
                 .iter()
-                .map(|transaction| transaction.posted_date())
+                // Card credits date each by the day the issuer counts it, which can be earlier.
+                .flat_map(|transaction| [transaction.date.as_str(), transaction.occurred_date()])
                 .chain(snapshot.trades.iter().map(|trade| trade.date.as_str()))
                 .filter_map(calendar::transaction_date)
                 .filter(|date| *date <= end)
@@ -721,7 +720,7 @@ fn cash_flow(view: &View, entries: &[Entry]) -> CashFlow {
         if !ids.contains(format!("spending:{}", transaction.id).as_str()) {
             continue;
         }
-        let date = calendar::transaction_date(transaction.posted_date()).unwrap_or_default();
+        let date = calendar::transaction_date(&transaction.date).unwrap_or_default();
         let named = |fallback: &str| {
             Some(transaction.merchant.trim())
                 .filter(|merchant| !merchant.is_empty())
