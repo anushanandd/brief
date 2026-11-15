@@ -446,13 +446,18 @@ pub(crate) fn finish_refresh(
     warnings.dedup();
     snapshot.sync_warnings = warnings;
     snapshot.provider_status = Some(refresh.provider_data.sync_status.clone());
+    // Field by field, so the old snapshot and caches this replaces are never copied.
     Ok(FinanceState {
         schema_version: 1,
         revision,
         snapshot,
         plaid_cache: refresh.plaid_cache.clone(),
         provider_data: refresh.provider_data.clone(),
-        ..state.clone()
+        annotations: state.annotations.clone(),
+        account_links: state.account_links.clone(),
+        settings: state.settings.clone(),
+        statements: state.statements.clone(),
+        documents: state.documents.clone(),
     })
 }
 
