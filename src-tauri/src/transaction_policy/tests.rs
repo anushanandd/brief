@@ -202,6 +202,197 @@ fn payment_app_outflows_are_spending_unless_recategorized() {
     assert_eq!(manual[0]["classification"]["kind"], "transfer");
 }
 
+/// `pair_transfers` as it was before legs were bucketed by amount: every leg against every leg.
+fn pair_transfers_pairwise(transactions: &mut [Transaction]) {
+    struct Leg {
+        index: usize,
+        date: chrono::NaiveDate,
+        account: String,
+        cents: i64,
+        transfer: bool,
+    }
+    for t in transactions.iter_mut() {
+        t.transfer_pair_id = None;
+    }
+    let mut legs = transactions
+        .iter()
+        .enumerate()
+        .filter_map(|(index, t)| {
+            let classification = t.classification.as_ref()?;
+            let kind = &classification.kind;
+            let cents = crate::numeric::minor_units(t.amount);
+            let payment_app = classification.zelle
+                || t.category == PEOPLE_CATEGORY
+                || t.category_detail
+                    .as_deref()
+                    .is_some_and(|code| code.ends_with("_FROM_APPS"));
+            let transfer = *kind == Kind::Transfer && classification.mark != Mark::Cash;
+            let filed = t.category_source == Some(CategorySource::Provider)
+                && match kind {
+                    Kind::Income => cents > 0,
+                    Kind::Expense => cents < 0,
+                    Kind::Other => true,
+                    _ => false,
+                };
+            let date = chrono::NaiveDate::parse_from_str(t.posted_date(), "%Y-%m-%d").ok()?;
+            let account = t.account_id.clone()?;
+            ((transfer || filed) && !payment_app && !t.pending && !t.other && cents != 0).then_some(
+                Leg {
+                    index,
+                    date,
+                    account,
+                    cents,
+                    transfer,
+                },
+            )
+        })
+        .collect::<Vec<_>>();
+    legs.sort_by(|left, right| {
+        (left.date, &transactions[left.index].id).cmp(&(right.date, &transactions[right.index].id))
+    });
+    let mut paired = vec![false; legs.len()];
+    let mut pairs = Vec::new();
+    for mixed in [false, true] {
+        for out in 0..legs.len() {
+            if paired[out] || legs[out].cents > 0 {
+                continue;
+            }
+            let Some(into) = (0..legs.len())
+                .filter(|&into| {
+                    let (sent, arrived) = (&legs[out], &legs[into]);
+                    !paired[into]
+                        && arrived.cents == -sent.cents
+                        && arrived.account != sent.account
+                        && (arrived.date - sent.date).num_days().abs() <= TRANSFER_SETTLEMENT_DAYS
+                        && if mixed {
+                            sent.transfer != arrived.transfer
+                        } else {
+                            sent.transfer && arrived.transfer
+                        }
+                })
+                .min_by_key(|&into| (legs[into].date - legs[out].date).num_days().abs())
+            else {
+                continue;
+            };
+            paired[out] = true;
+            paired[into] = true;
+            pairs.push((out, into));
+        }
+    }
+    for (out, into) in pairs {
+        let (sent, arrived) = (legs[out].index, legs[into].index);
+        transactions[sent].transfer_pair_id = Some(transactions[arrived].id.clone());
+        transactions[arrived].transfer_pair_id = Some(transactions[sent].id.clone());
+        let (filed, transfer) = match (legs[out].transfer, legs[into].transfer) {
+            (true, false) => (arrived, sent),
+            (false, true) => (sent, arrived),
+            _ => continue,
+        };
+        let category = transactions[transfer].category.clone();
+        let leg = &mut transactions[filed];
+        if leg.provider_category.is_none() {
+            leg.provider_category = Some(leg.category.clone());
+        }
+        leg.category = category;
+        leg.subcategory = None;
+        if let Some(classification) = leg.classification.as_mut() {
+            classification.kind = Kind::Transfer;
+            classification.mark = Mark::Transfer;
+            classification.spending = false;
+        }
+    }
+}
+
+#[test]
+fn transfers_pair_as_the_pairwise_scan_paired_them() {
+    // splitmix64, as `synthetic.rs` seeds its life.
+    let mut state = 0x5EED_u64;
+    let mut below = |bound: u64| {
+        state = state.wrapping_add(0x9E37_79B9_7F4A_7C15);
+        let mut z = state;
+        z = (z ^ (z >> 30)).wrapping_mul(0xBF58_476D_1CE4_E5B9);
+        z = (z ^ (z >> 27)).wrapping_mul(0x94D0_49BB_1331_11EB);
+        (z ^ (z >> 31)) % bound
+    };
+    let accounts = [
+        "plaid:checking",
+        "plaid:savings",
+        "plaid:card",
+        "snaptrade:brokerage",
+    ];
+    let kinds = [
+        Kind::Transfer,
+        Kind::Transfer,
+        Kind::Income,
+        Kind::Expense,
+        Kind::Other,
+        Kind::Reimbursement,
+    ];
+    let categories = [
+        "Transfer",
+        "Income",
+        "Loan Payments",
+        PEOPLE_CATEGORY,
+        "Shops",
+    ];
+    let sources = [
+        Some(CategorySource::Provider),
+        Some(CategorySource::Provider),
+        Some(CategorySource::Manual),
+        None,
+    ];
+    let (mut pairs, mut refiled) = (0, 0);
+    for _ in 0..20 {
+        let mut legs = (0..300)
+            .map(|index| {
+                let amount = [25.0, 50.0, 100.0, 250.0][below(4) as usize]
+                    * if below(2) == 0 { 1.0 } else { -1.0 };
+                let mut t = transaction("Synthetic", categories[below(5) as usize], amount);
+                t.id = format!("leg-{:03}", below(1000));
+                t.account_id = (below(20) != 0).then(|| accounts[below(4) as usize].into());
+                t.date = format!("2026-09-{:02}", 1 + below(28));
+                t.posted_on = (below(4) == 0).then(|| format!("2026-09-{:02}", 1 + below(28)));
+                t.pending = below(15) == 0;
+                t.other = below(20) == 0;
+                t.category_source = sources[below(4) as usize];
+                t.category_detail = (below(15) == 0).then(|| "TRANSFER_IN_FROM_APPS".into());
+                t.provider_category = (below(3) == 0).then(|| "Provider".into());
+                t.subcategory = Some("Sub".into());
+                t.transfer_pair_id = (index % 7 == 0).then(|| "stale".into());
+                t.classification = Some(Classification {
+                    mark: if below(8) == 0 {
+                        Mark::Cash
+                    } else {
+                        Mark::Payment
+                    },
+                    kind: kinds[below(6) as usize].clone(),
+                    spending: true,
+                    credit: false,
+                    zelle: below(20) == 0,
+                    others_spending: false,
+                });
+                t
+            })
+            .collect::<Vec<_>>();
+        let mut expected = legs.clone();
+        pair_transfers_pairwise(&mut expected);
+        pair_transfers(&mut legs);
+        assert_eq!(
+            serde_json::to_value(&legs).unwrap(),
+            serde_json::to_value(&expected).unwrap()
+        );
+        pairs += expected
+            .iter()
+            .filter(|t| t.transfer_pair_id.is_some())
+            .count();
+        refiled += expected.iter().filter(|t| t.subcategory.is_none()).count();
+    }
+    assert!(
+        pairs > 200 && refiled > 20,
+        "{pairs} paired, {refiled} refiled"
+    );
+}
+
 #[test]
 fn an_own_transfer_filed_as_income_or_spending_is_a_transfer() {
     let leg = |id: &str, account: &str, date: &str, amount: f64, category: &str, code: &str| {

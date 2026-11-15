@@ -773,6 +773,11 @@ fn pair_transfers(transactions: &mut [Transaction]) {
     legs.sort_by(|left, right| {
         (left.date, &transactions[left.index].id).cmp(&(right.date, &transactions[right.index].id))
     });
+    // A leg's other half has the opposite amount, so each leg scans only those, still in leg order.
+    let mut by_cents = std::collections::HashMap::<i64, Vec<usize>>::new();
+    for (position, leg) in legs.iter().enumerate() {
+        by_cents.entry(leg.cents).or_default().push(position);
+    }
     let mut paired = vec![false; legs.len()];
     let mut pairs = Vec::new();
     for mixed in [false, true] {
@@ -780,11 +785,14 @@ fn pair_transfers(transactions: &mut [Transaction]) {
             if paired[out] || legs[out].cents > 0 {
                 continue;
             }
-            let Some(into) = (0..legs.len())
+            let Some(into) = by_cents
+                .get(&-legs[out].cents)
+                .into_iter()
+                .flatten()
+                .copied()
                 .filter(|&into| {
                     let (sent, arrived) = (&legs[out], &legs[into]);
                     !paired[into]
-                        && arrived.cents == -sent.cents
                         && arrived.account != sent.account
                         && (arrived.date - sent.date).num_days().abs() <= TRANSFER_SETTLEMENT_DAYS
                         && if mixed {
