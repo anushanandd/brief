@@ -513,10 +513,10 @@ fn date_of(transaction: &Transaction) -> Option<NaiveDate> {
 pub fn expected_events(
     transactions: &[Transaction],
     accounts: &[AccountView],
-    updated_at: &str,
+    saved: Option<NaiveDate>,
     today: NaiveDate,
 ) -> Vec<ExpectedEvent> {
-    forecast_within(transactions, accounts, updated_at, today, 30)
+    forecast_within(transactions, accounts, saved, today, 30)
 }
 
 /// Forecasts each recurring series whose next occurrence falls within `horizon_days`, with
@@ -524,14 +524,14 @@ pub fn expected_events(
 pub fn forecast_within(
     transactions: &[Transaction],
     accounts: &[AccountView],
-    updated_at: &str,
+    saved: Option<NaiveDate>,
     today: NaiveDate,
     horizon_days: i64,
 ) -> Vec<ExpectedEvent> {
     forecast(
         transactions,
         accounts,
-        updated_at,
+        saved,
         Horizon {
             today,
             horizon_days,
@@ -546,13 +546,13 @@ pub fn forecast_within(
 pub fn missed_events(
     transactions: &[Transaction],
     accounts: &[AccountView],
-    updated_at: &str,
+    saved: Option<NaiveDate>,
     today: NaiveDate,
 ) -> Vec<ExpectedEvent> {
     let mut events = forecast(
         transactions,
         accounts,
-        updated_at,
+        saved,
         Horizon {
             today,
             horizon_days: 0,
@@ -564,23 +564,20 @@ pub fn missed_events(
     events
 }
 
-/// Whether a snapshot saved at `updated_at` is too old to forecast from on `today`: an old one
-/// can't establish that a missing payment has stopped, so what's ahead is unknown, not nothing.
-pub fn stale(updated_at: &str, today: NaiveDate) -> bool {
-    updated_at
-        .get(..10)
-        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
-        .is_some_and(|saved| calendar::days_between(saved, today) > 3)
+/// Whether a snapshot saved on the local day `saved` is too old to forecast from on `today`: an
+/// old one can't establish that a missing payment has stopped, so what's ahead is unknown.
+pub fn stale(saved: Option<NaiveDate>, today: NaiveDate) -> bool {
+    saved.is_some_and(|saved| calendar::days_between(saved, today) > 3)
 }
 
 fn forecast(
     transactions: &[Transaction],
     accounts: &[AccountView],
-    updated_at: &str,
+    saved: Option<NaiveDate>,
     horizon: Horizon,
 ) -> Vec<ExpectedEvent> {
     let today = horizon.today;
-    if stale(updated_at, today) {
+    if stale(saved, today) {
         return Vec::new();
     }
     let mut events = Vec::new();

@@ -146,7 +146,7 @@ fn check(record: &Value, zone: &dyn Zone, cards: &Catalog) -> Result<(), String>
             let actual = forecast::expected_events(
                 &transactions(&data["transactions"], cards),
                 &accounts,
-                data["updatedAt"].as_str().unwrap(),
+                calendar::transaction_date(data["updatedAt"].as_str().unwrap()),
                 reference_today(record),
             );
             let actual = actual.into_iter().take(16).collect::<Vec<_>>();

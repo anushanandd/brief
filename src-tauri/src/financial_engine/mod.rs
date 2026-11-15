@@ -380,13 +380,10 @@ pub fn apply_edits(
     embedder: Option<&dyn crate::search::embeddings::Embedder>,
     cards: &crate::insights::benefits::Catalog,
 ) -> Result<(), String> {
-    let updated_at = DateTime::parse_from_rfc3339(&snapshot.updated_at)
+    DateTime::parse_from_rfc3339(&snapshot.updated_at)
         .map_err(|_| "Committed snapshot timestamp is invalid")?;
-    let calendar_date = snapshot
-        .calendar_date
-        .as_deref()
-        .and_then(|value| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok())
-        .unwrap_or_else(|| updated_at.date_naive());
+    let calendar_date = refresh_changes::saved_day(snapshot)
+        .ok_or("Committed snapshot calendar date is invalid")?;
     let month_start = calendar_date
         .with_day(1)
         .ok_or("Committed snapshot calendar date is invalid")?;

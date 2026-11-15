@@ -283,6 +283,7 @@ pub fn derive_with_documents(
     );
     let ended = recurring::ended(&snapshot.recurring_streams, transactions);
     let today = zone.date(now);
+    let saved = calendar::calendar_date(updated_at, zone);
     let mut trips = trips::trips(transactions, &trips::reservations::read(travel), today);
     people::trip_companions(
         &mut trips.trips,
@@ -422,7 +423,7 @@ pub fn derive_with_documents(
             .any(|transaction| transaction.id == id && transaction.reviewed == Some(true))
     };
     brief.needs.extend(
-        forecast::missed_events(transactions, &views, updated_at, today)
+        forecast::missed_events(transactions, &views, saved, today)
             .into_iter()
             .filter(|event| {
                 event.kind != forecast::EventKind::Subscription
@@ -570,7 +571,7 @@ pub fn derive_with_documents(
     let mut insights = Insights {
         today,
         computed_at: now.to_rfc3339(),
-        forecast_stale: forecast::stale(updated_at, today),
+        forecast_stale: forecast::stale(saved, today),
         expected,
         statement,
         benefits,
@@ -732,6 +733,7 @@ fn cashflow(
     trips: trips::Trips,
 ) -> Cashflow {
     let today = zone.date(now);
+    let saved = calendar::calendar_date(updated_at, zone);
     let live = |mut events: Vec<forecast::ExpectedEvent>| {
         events.retain(|event| !ended.contains(&event.recurring_id));
         events
@@ -747,7 +749,7 @@ fn cashflow(
     let expected = live(forecast::expected_events(
         transactions,
         &views,
-        updated_at,
+        saved,
         today,
     ));
     let card = spending_card(accounts, settings);
@@ -767,7 +769,7 @@ fn cashflow(
     let upcoming = live(forecast::forecast_within(
         transactions,
         &views,
-        updated_at,
+        saved,
         today,
         (year_end - today).num_days().max(0),
     ));
@@ -866,7 +868,7 @@ fn cashflow(
     let horizon = live(forecast::forecast_within(
         transactions,
         &views,
-        updated_at,
+        saved,
         today,
         cashline::HORIZON_DAYS,
     ));
@@ -874,7 +876,7 @@ fn cashflow(
     let year_ahead = live(forecast::forecast_within(
         transactions,
         &views,
-        updated_at,
+        saved,
         today,
         subscriptions::HORIZON_DAYS,
     ));

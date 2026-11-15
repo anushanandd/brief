@@ -764,7 +764,7 @@ fn reviewing_an_inference_dismisses_it_and_thin_evidence_raises_nothing() {
                 activity_as_of: None,
                 balance_fetched_at: Some("2026-09-16T12:00:00Z".into()),
             }],
-            "2026-09-16T12:00:00Z",
+            NaiveDate::from_ymd_opt(2026, 9, 16),
             NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
             subscriptions::HORIZON_DAYS,
         ),

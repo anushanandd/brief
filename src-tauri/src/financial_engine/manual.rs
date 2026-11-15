@@ -52,11 +52,7 @@ pub fn adjust_snapshot(snapshot: &mut Snapshot, settings: &FinanceSettings) -> V
         !closed_ids.contains(candidate.plaid_account_id.as_str())
             && !closed_ids.contains(candidate.snaptrade_account_id.as_str())
     });
-    let today = snapshot
-        .calendar_date
-        .clone()
-        .or_else(|| snapshot.updated_at.get(..10).map(str::to_owned))
-        .and_then(|value| NaiveDate::parse_from_str(&value, "%Y-%m-%d").ok());
+    let today = super::refresh_changes::saved_day(snapshot);
     // Statement rows for a manual account the user removed have nowhere to go.
     let known = |id: &str| {
         !id.starts_with("manual:")

@@ -31,7 +31,7 @@ pub(super) fn transaction_diff(
     checked_accounts: &BTreeSet<String>,
     observed_at: &str,
 ) -> TransactionDiff {
-    let cutoff = previous_refresh_date(previous)
+    let cutoff = saved_day(previous)
         .map(|date| date - Duration::days(LATE_ACTIVITY_DAYS))
         .unwrap_or(NaiveDate::MIN);
     // A Wallet row stands in until the provider reports the charge, so its coming and going
@@ -195,13 +195,15 @@ fn change(
     }
 }
 
-/// The calendar day of the previous refresh.
-fn previous_refresh_date(previous: &Snapshot) -> Option<NaiveDate> {
-    previous
+/// The local day a snapshot was saved: its calendar date, or the UTC day of a snapshot saved
+/// before Brief recorded one.
+pub(crate) fn saved_day(snapshot: &Snapshot) -> Option<NaiveDate> {
+    let day = |value: &str| NaiveDate::parse_from_str(value, "%Y-%m-%d").ok();
+    snapshot
         .calendar_date
         .as_deref()
-        .or_else(|| previous.updated_at.get(..10))
-        .and_then(|date| NaiveDate::parse_from_str(date, "%Y-%m-%d").ok())
+        .and_then(day)
+        .or_else(|| snapshot.updated_at.get(..10).and_then(day))
 }
 
 /// The saved transaction changes with this refresh's, the latest 500.
