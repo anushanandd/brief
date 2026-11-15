@@ -340,6 +340,22 @@ fn contractor_pay_carries_self_employment_tax_and_a_1099_nec_states_it() {
 }
 
 #[test]
+fn an_employer_seen_only_in_deposits_is_named_not_counted_as_no_wages() {
+    let transactions = vec![row(
+        "pay",
+        "cash",
+        "2026-09-15",
+        "Example Corp PAYROLL",
+        2_000.0,
+        TransactionKind::Income,
+    )];
+    let year = &run(&[], &transactions, &accounts(), "2026-10-15").years[0];
+    let income = year.income.as_ref().unwrap();
+    assert_eq!((income.wages, income.wages_from), (0.0, "payStatements"));
+    assert_eq!(income.uncounted_employers.len(), 1);
+}
+
+#[test]
 fn a_statement_confirms_each_transaction_it_lists_once() {
     let mut statement = document(
         "st",

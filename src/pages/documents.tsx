@@ -1344,6 +1344,9 @@ function YearSummary({
               <dt>
                 Wages
                 <small>{income.wagesFrom === 'w2' ? 'W-2s' : 'Pay statements'}</small>
+                {income.uncountedEmployers.length ? (
+                  <small>{`Leaves out ${income.uncountedEmployers.join(', ')}: deposits only`}</small>
+                ) : null}
               </dt>
               <dd className="sensitive-value">{formatCurrency(income.wages)}</dd>
             </div>

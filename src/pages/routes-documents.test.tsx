@@ -60,6 +60,7 @@ it('lists a year’s documents beside what the year should bring', async () => {
           income: {
             wages: 26_800,
             wagesFrom: 'payStatements',
+            uncountedEmployers: [],
             selfEmployment: 1_500,
             selfEmploymentTax: 211.95,
           },

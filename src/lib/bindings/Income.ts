@@ -13,6 +13,11 @@ wages: number,
  */
 wagesFrom: string, 
 /**
+ * Employers seen only in payroll deposits, with no pay statement or W-2, whose wages
+ * `wages` leaves out.
+ */
+uncountedEmployers: Array<string>, 
+/**
  * Contractor pay: 1099-NEC box 1, else what arrived from contractors' payers.
  */
 selfEmployment: number, selfEmploymentTax: number, 

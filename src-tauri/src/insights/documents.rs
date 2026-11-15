@@ -118,6 +118,9 @@ pub struct Income {
     pub wages: f64,
     /// `w2` once every employer's W-2 is in; `payStatements` otherwise.
     pub wages_from: &'static str,
+    /// Employers seen only in payroll deposits, with no pay statement or W-2, whose wages
+    /// `wages` leaves out.
+    pub uncounted_employers: Vec<String>,
     /// Contractor pay: 1099-NEC box 1, else what arrived from contractors' payers.
     pub self_employment: f64,
     pub self_employment_tax: f64,
@@ -670,6 +673,20 @@ fn income(
                     .is_some_and(|issuer| same_payer(issuer, employer))
             })
         });
+    let uncounted_employers = employers
+        .iter()
+        .filter(|(employer, _)| {
+            !predictions
+                .iter()
+                .any(|prediction| same_payer(&prediction.employer, employer))
+                && !w2s.iter().any(|w2| {
+                    w2.issuer
+                        .as_deref()
+                        .is_some_and(|issuer| same_payer(issuer, employer))
+                })
+        })
+        .map(|(employer, _)| employer.clone())
+        .collect::<Vec<_>>();
     let (wages, social_wages, wages_from) = if all_in {
         (
             w2s.iter().filter_map(|w2| w2.amount("box1")).sum::<f64>(),
@@ -737,7 +754,7 @@ fn income(
         .filter_map(|form| form.amount("box1"))
         .sum::<f64>()
         + arrived;
-    if wages <= 0.0 && self_employment <= 0.0 {
+    if wages <= 0.0 && self_employment <= 0.0 && uncounted_employers.is_empty() {
         return None;
     }
     // Self-employment tax: 15.3% of 92.35% of net earnings, the Social Security part only up to
@@ -750,7 +767,9 @@ fn income(
             .map_or(net, |base| (base - social_wages).max(0.0));
         round2(net.min(room) * 0.124 + net * 0.029)
     };
+    // Wages left out make the taxable income unknown, not low.
     let taxable_income = filing_status
+        .filter(|_| uncounted_employers.is_empty())
         .and_then(|status| super::tax::standard_deduction(year, status))
         .map(|deduction| {
             round2((wages + self_employment - self_employment_tax / 2.0 - deduction).max(0.0))
@@ -758,6 +777,7 @@ fn income(
     Some(Income {
         wages: round2(wages),
         wages_from,
+        uncounted_employers,
         self_employment: round2(self_employment),
         self_employment_tax,
         taxable_income,
