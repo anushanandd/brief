@@ -754,6 +754,11 @@ fn a_tax_refund_is_tax_coming_back_not_income_or_spending() {
     }
     // Other deposits keep their meaning.
     assert_eq!(refund("Example Payroll", "Income", None).1, Kind::Income);
+    // A store's sales-tax refund is a purchase refund.
+    assert_eq!(
+        refund("EXAMPLE STORE SALES TAX REFUND", "Shops", None),
+        refund("EXAMPLE STORE REFUND", "Shops", None)
+    );
 }
 
 #[test]

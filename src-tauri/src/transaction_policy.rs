@@ -157,8 +157,10 @@ fn classify_by_name(t: &Transaction) -> Classification {
     // Plaid's v2 taxonomy reports loan proceeds separately; they are borrowed money moving
     // between accounts, never income or spending.
     let loan_disbursement = category == "loan disbursements";
+    // A store's sales tax is part of a purchase, never tax paid to a government.
+    let sales_tax = text.contains("sales tax");
     // A federal or state refund a bank didn't tag, by the descriptor tax agencies send.
-    let tax_refund = t.amount > 0.0 && contains(&text, &["tax ref", "tax rfd"]);
+    let tax_refund = t.amount > 0.0 && !sales_tax && contains(&text, &["tax ref", "tax rfd"]);
     let mark = if tax_refund {
         Mark::Refund
     } else if category == "transfer" || category == "transfers" || loan_disbursement || to_person {
@@ -244,7 +246,7 @@ fn classify_by_name(t: &Transaction) -> Classification {
     .contains(&category)
     {
         Kind::Fee
-    } else if word(&detail, &["tax", "taxes"]) || detail.contains("withholding") {
+    } else if (word(&detail, &["tax", "taxes"]) && !sales_tax) || detail.contains("withholding") {
         Kind::Tax
     } else {
         match mark {
