@@ -214,8 +214,28 @@ impl Providers {
     }
 
     pub(super) fn alpaca_credentials(&self) -> Result<AlpacaCredentials, String> {
-        self.read_secret(ALPACA_CREDENTIALS_KEY)?
-            .ok_or_else(|| "Enter and test Alpaca credentials in Settings first".into())
+        self.cached_alpaca(|| {
+            self.read_secret(ALPACA_CREDENTIALS_KEY)?
+                .ok_or_else(|| "Enter and test Alpaca credentials in Settings first".into())
+        })
+    }
+
+    /// Alpaca's credentials as of the current credential generation, read from the vault only
+    /// after a change, since every chart and market run asks for them.
+    fn cached_alpaca(
+        &self,
+        read: impl FnOnce() -> Result<AlpacaCredentials, String>,
+    ) -> Result<AlpacaCredentials, String> {
+        // Read the generation first, so a change during the read leaves this copy stale.
+        let generation = self.credential_generation.load(Ordering::SeqCst);
+        if let Some((saved, credentials)) = &*market_stream::recover(&self.alpaca_cache) {
+            if *saved == generation {
+                return Ok(credentials.clone());
+            }
+        }
+        let credentials = read()?;
+        *market_stream::recover(&self.alpaca_cache) = Some((generation, credentials.clone()));
+        Ok(credentials)
     }
 
     pub(super) fn alpha_vantage_credentials(&self) -> Result<AlphaVantageCredentials, String> {
@@ -474,6 +494,33 @@ mod tests {
             vault.entries[PLAID_CREDENTIALS_KEY]["clientId"],
             "new-client"
         );
+    }
+
+    #[test]
+    fn alpaca_credentials_are_read_once_per_credential_change() {
+        let providers = Providers::new().expect("provider state");
+        let first = || {
+            Ok(AlpacaCredentials {
+                key_id: "first".into(),
+                secret_key: "synthetic".into(),
+            })
+        };
+        assert!(providers
+            .cached_alpaca(|| Err("No credentials".into()))
+            .is_err());
+        assert_eq!(providers.cached_alpaca(first).unwrap().key_id, "first");
+        let unread = || unreachable!("cached credentials are read again");
+        assert_eq!(providers.cached_alpaca(unread).unwrap().key_id, "first");
+        providers
+            .credential_generation
+            .fetch_add(1, Ordering::SeqCst);
+        let second = providers.cached_alpaca(|| {
+            Ok(AlpacaCredentials {
+                key_id: "second".into(),
+                secret_key: "synthetic".into(),
+            })
+        });
+        assert_eq!(second.unwrap().key_id, "second");
     }
 
     #[test]
