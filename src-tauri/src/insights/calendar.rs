@@ -112,12 +112,14 @@ pub fn days_between(left: NaiveDate, right: NaiveDate) -> i64 {
     (right - left).num_days()
 }
 
-fn observed(year: i32, month: u32, day: u32) -> NaiveDate {
+/// A fixed-date holiday as the Federal Reserve observes it: on a Sunday, the Monday after; on a
+/// Saturday, not at all, since banks open the Friday before.
+fn observed(year: i32, month: u32, day: u32) -> Option<NaiveDate> {
     let date = NaiveDate::from_ymd_opt(year, month, day).expect("fixed holiday");
     match date.weekday() {
-        Weekday::Sat => date.pred_opt().expect("date in range"),
-        Weekday::Sun => date.succ_opt().expect("date in range"),
-        _ => date,
+        Weekday::Sat => None,
+        Weekday::Sun => date.succ_opt(),
+        _ => Some(date),
     }
 }
 
@@ -125,20 +127,20 @@ fn observed(year: i32, month: u32, day: u32) -> NaiveDate {
 pub fn is_federal_holiday(date: NaiveDate) -> bool {
     let year = date.year();
     let mut holidays = vec![
-        observed(year, 1, 1),
-        observed(year + 1, 1, 1),
         nth_weekday(year, 1, Weekday::Mon, 3),
         nth_weekday(year, 2, Weekday::Mon, 3),
         last_weekday(year, 5, Weekday::Mon),
-        observed(year, 7, 4),
         nth_weekday(year, 9, Weekday::Mon, 1),
         nth_weekday(year, 10, Weekday::Mon, 2),
-        observed(year, 11, 11),
         nth_weekday(year, 11, Weekday::Thu, 4),
-        observed(year, 12, 25),
     ];
+    holidays.extend(
+        [(1, 1), (7, 4), (11, 11), (12, 25)]
+            .into_iter()
+            .filter_map(|(month, day)| observed(year, month, day)),
+    );
     if year >= 2021 {
-        holidays.push(observed(year, 6, 19));
+        holidays.extend(observed(year, 6, 19));
     }
     holidays.contains(&date)
 }
@@ -304,8 +306,11 @@ mod tests {
 
     #[test]
     fn holidays_and_business_days_match_bank_schedules() {
-        assert!(is_federal_holiday(date("2026-07-03")));
-        assert!(is_federal_holiday(date("2027-12-31")));
+        // July 4, 2026 and Jan 1, 2028 fall on a Saturday, and banks open the Friday before.
+        assert!(!is_federal_holiday(date("2026-07-03")));
+        assert!(!is_federal_holiday(date("2027-12-31")));
+        // Christmas 2022 fell on a Sunday, so the Monday after was the holiday.
+        assert!(is_federal_holiday(date("2022-12-26")));
         assert!(is_federal_holiday(date("2026-11-26")));
         assert!(!is_business_day(date("2026-09-07")));
         assert_eq!(
