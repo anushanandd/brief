@@ -520,11 +520,12 @@ function CredentialForm({ provider, done }: { provider: ProviderDefinition; done
       queryClient.setQueryData(['integration-status'], status)
       void queryClient.invalidateQueries({ queryKey: ['market-snapshots'] })
       toast.success(`${provider.name} credentials saved and tested`)
+      done()
     } catch (error) {
+      // The form stays open with what was typed, so a typo is fixed rather than retyped.
       toast.error(errorMessage(error))
     } finally {
       setSaving(false)
-      done()
     }
   }
 
