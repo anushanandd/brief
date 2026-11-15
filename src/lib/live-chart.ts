@@ -74,15 +74,11 @@ export function firstChartDay(points: LivelinePoint[], startDate?: string) {
 
 /**
  * A value chart's change over a window, as Rust read it from the same line: saved, or at the
- * live points when the market stream is on. Nothing changed when Rust has no reading.
+ * live points when the market stream is on. Undefined when Rust has no reading, which isn't a
+ * change of zero.
  */
 export function chartRangeChange(changes: ChartChanges, series: string, windowSeconds: number) {
-  return (
-    changes.find((chart) => chart.series === series)?.windows[chartPeriod(windowSeconds)] ?? {
-      change: 0,
-      percent: 0,
-    }
-  )
+  return changes.find((chart) => chart.series === series)?.windows[chartPeriod(windowSeconds)]
 }
 
 export function chartPointsFromStartDate(points: LivelinePoint[], startDate?: string) {

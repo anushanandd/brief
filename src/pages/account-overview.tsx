@@ -189,7 +189,6 @@ export function AccountOverview({
   const {
     chartData,
     chartChange,
-    changeKnown,
     incomplete,
     historyIsAvailable,
     chartValue,
@@ -344,8 +343,8 @@ export function AccountOverview({
         {isCredit ? null : (
           <div className="chart-summary-row">
             <ChartChange
-              amount={historyIsAvailable && changeKnown ? chartChange.change : null}
-              percent={historyIsAvailable && changeKnown ? chartChange.percent : null}
+              amount={historyIsAvailable ? (chartChange?.change ?? null) : null}
+              percent={historyIsAvailable ? (chartChange?.percent ?? null) : null}
             />
           </div>
         )}

@@ -221,7 +221,7 @@ it('renders supported history with accessible range controls in the account work
   )
   expect(html).toContain('live-performance-chart')
   expect(chartHeader).toContain('class="chart-summary-row"')
-  expect(chartHeader).toContain('class="hero-change"')
+  expect(chartHeader).toContain('class="hero-change')
   expect(chartHeader).toContain('ledger-select-trigger chart-range-select')
   expect(chartHeader.indexOf('chart-range-select')).toBeLessThan(
     chartHeader.indexOf('chart-summary-row'),

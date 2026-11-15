@@ -79,9 +79,6 @@ export function useAccountChart({
       ),
     [data, account, marketSeries, safeChartNow, graphWindow, changes, startDate, group],
   )
-  const series = group ? `group:${group.type}` : isAll ? 'net-worth' : account.id
-  // A past day's change is unknown until Rust has measured it.
-  const changeKnown = !end || changes.some((chart) => chart.series === series)
   const today = committed.insights?.today
   const scroll = useMemo(
     () => (today ? { today, first: firstChartDay(chartData, startDate) } : undefined),
@@ -105,7 +102,6 @@ export function useAccountChart({
   return {
     chartData,
     chartChange,
-    changeKnown,
     incomplete,
     historyIsAvailable,
     chartValue: end

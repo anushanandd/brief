@@ -2,6 +2,6 @@
 
 export type RangeChange = { change: number, 
 /**
- * Of the size of the value where the window starts; zero when that is zero.
+ * Of the size of the value where the window starts; none when that is zero.
  */
-percent: number, };
+percent: number | null, };

@@ -122,8 +122,8 @@ describe('live chart points', () => {
     ]
     expect(chartRangeChange(changes, 'broker', 7 * 86_400)).toEqual({ change: 20, percent: 18.18 })
     expect(chartRangeChange(changes, 'broker', 0)).toEqual({ change: 5, percent: 1 })
-    expect(chartRangeChange(changes, 'broker', 86_400)).toEqual({ change: 0, percent: 0 })
-    expect(chartRangeChange([], 'cash', 0)).toEqual({ change: 0, percent: 0 })
+    expect(chartRangeChange(changes, 'broker', 86_400)).toBeUndefined()
+    expect(chartRangeChange([], 'cash', 0)).toBeUndefined()
   })
 
   it('preserves zero and negative historical balances', () => {

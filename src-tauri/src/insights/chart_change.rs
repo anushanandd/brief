@@ -23,8 +23,8 @@ pub const NET_WORTH: &str = "net-worth";
 #[serde(rename_all = "camelCase")]
 pub struct RangeChange {
     pub change: f64,
-    /// Of the size of the value where the window starts; zero when that is zero.
-    pub percent: f64,
+    /// Of the size of the value where the window starts; none when that is zero.
+    pub percent: Option<f64>,
 }
 
 /// One chart's change for each window.
@@ -84,13 +84,8 @@ pub fn line(series: &Series, live: &[(i64, f64)], now: i64) -> Vec<(i64, f64)> {
 }
 
 /// The change from the line's value where a window ending `now` starts to its latest point.
-pub fn range_change(points: &[(i64, f64)], window_seconds: i64, now: i64) -> RangeChange {
-    let (Some(first), Some(last)) = (points.first(), points.last()) else {
-        return RangeChange {
-            change: 0.0,
-            percent: 0.0,
-        };
-    };
+pub fn range_change(points: &[(i64, f64)], window_seconds: i64, now: i64) -> Option<RangeChange> {
+    let (first, last) = (points.first()?, points.last()?);
     let boundary = if window_seconds > 0 {
         now - window_seconds
     } else {
@@ -115,14 +110,10 @@ pub fn range_change(points: &[(i64, f64)], window_seconds: i64, now: i64) -> Ran
         before.1 + (after.1 - before.1) * progress
     };
     let change = last.1 - baseline;
-    RangeChange {
+    Some(RangeChange {
         change: round2(change),
-        percent: if baseline == 0.0 {
-            0.0
-        } else {
-            round2(change / baseline.abs() * 100.0)
-        },
-    }
+        percent: (baseline != 0.0).then(|| round2(change / baseline.abs() * 100.0)),
+    })
 }
 
 /// Each chart's change for each window ending `now`, with each chart's live points.
@@ -144,9 +135,9 @@ pub fn changes(
                 // All time is 0 seconds: it runs from the line's first point.
                 windows: WINDOWS
                     .iter()
-                    .map(|(window, days)| {
+                    .filter_map(|(window, days)| {
                         let seconds = days.map_or(0, |days| days * 86_400);
-                        (*window, range_change(&points, seconds, now))
+                        Some((*window, range_change(&points, seconds, now)?))
                     })
                     .collect(),
             }
@@ -384,26 +375,26 @@ mod tests {
         let points = [(noon("2026-09-01"), 100.0), (noon("2026-09-03"), 200.0)];
         assert_eq!(
             range_change(&points, 86_400, noon("2026-09-03")),
-            RangeChange {
+            Some(RangeChange {
                 change: 50.0,
-                percent: 33.33,
-            }
+                percent: Some(33.33),
+            })
         );
         // All time runs from the first point; a window before the line starts there too.
-        let all = range_change(&points, 0, noon("2026-09-03"));
-        assert_eq!((all.change, all.percent), (100.0, 100.0));
+        let all = range_change(&points, 0, noon("2026-09-03")).unwrap();
+        assert_eq!((all.change, all.percent), (100.0, Some(100.0)));
         assert_eq!(
-            range_change(&points, 365 * 86_400, noon("2026-09-03")).change,
-            100.0
+            range_change(&points, 365 * 86_400, noon("2026-09-03")).map(|c| c.change),
+            Some(100.0)
         );
-        // Nothing drawn, nothing changed; a zero start has no percent.
-        assert_eq!(range_change(&[], 86_400, 0).change, 0.0);
+        // Nothing drawn has no change, not a zero one; a zero start has no percent.
+        assert_eq!(range_change(&[], 86_400, 0), None);
         assert_eq!(
             range_change(&[(0, 0.0), (10, 5.0)], 0, 10),
-            RangeChange {
+            Some(RangeChange {
                 change: 5.0,
-                percent: 0.0,
-            }
+                percent: None,
+            })
         );
     }
 
@@ -421,7 +412,9 @@ mod tests {
         };
         let now = noon("2026-09-08");
         let percent = |series: &Series, live: &[(i64, f64)], window: i64| {
-            range_change(&line(series, live, now), window, now).percent
+            range_change(&line(series, live, now), window, now)
+                .and_then(|change| change.percent)
+                .unwrap()
         };
         assert_eq!(percent(&series(None), &[], 7 * 86_400), 20.0);
         assert_eq!(percent(&series(None), &[], 30 * 86_400), -20.0);

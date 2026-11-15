@@ -156,16 +156,15 @@ export function OverviewPage() {
   const referenceAccount = committed.accounts.find(({ id }) => id === account.accountId)
 
   const points = account.points
-  // Scrolled back, the hero is the value saved for the end day.
+  // Scrolled back, the hero is the value saved for the end day; with none saved it is unknown,
+  // not today's.
   const latestValue = graphEnd
-    ? (chartPointAtOrBefore(chartData, chartDayTime(graphEnd))?.value ?? account.currentValue)
+    ? (chartPointAtOrBefore(chartData, chartDayTime(graphEnd))?.value ?? null)
     : account.currentValue
   const incomplete = accountValueIncomplete(data, account.accountId)
   const startDate = homeStart
   const chartChanges = graphEnd ? (asOf.insights?.chartChanges ?? []) : query.chartChanges
   const rangeChange = chartRangeChange(chartChanges, account.accountId, graphWindow)
-  // A past day's change is unknown until Rust has measured it.
-  const changeKnown = !graphEnd || chartChanges.some(({ series }) => series === account.accountId)
   const hasHistoricalValues = hasValueHistory(points, startDate)
   const historyIsAvailable =
     !incomplete &&
@@ -233,8 +232,8 @@ export function OverviewPage() {
                     ) : null}
                     <div className="chart-summary-row">
                       <ChartChange
-                        amount={historyIsAvailable && changeKnown ? rangeChange.change : null}
-                        percent={historyIsAvailable && changeKnown ? rangeChange.percent : null}
+                        amount={historyIsAvailable ? (rangeChange?.change ?? null) : null}
+                        percent={historyIsAvailable ? (rangeChange?.percent ?? null) : null}
                       />
                     </div>
                   </header>
@@ -245,7 +244,7 @@ export function OverviewPage() {
                         {historyIsAvailable ? (
                           <PerformanceChart
                             data={chartData}
-                            value={latestValue}
+                            value={latestValue ?? account.currentValue}
                             events={chartEvents}
                             referenceIso={data.updatedAt}
                             startDate={startDate}

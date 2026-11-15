@@ -56,13 +56,10 @@ it('matches account selector changes to the selected chart range and available h
       now,
       7 * 86400,
       changes,
-    ).chartChange.percent,
+    ).chartChange?.percent,
   ).toBe(5)
-  // A window Rust has no reading for changed nothing.
-  expect(accountValueChart(data, account, [], now, 30 * 86400, changes).chartChange).toEqual({
-    change: 0,
-    percent: 0,
-  })
+  // A window Rust has no reading for has no change, not a change of zero.
+  expect(accountValueChart(data, account, [], now, 30 * 86400, changes).chartChange).toBeUndefined()
   expect(
     accountValueChart(data, { ...account, value: null }, [], now, 0, []).historyIsAvailable,
   ).toBe(false)
