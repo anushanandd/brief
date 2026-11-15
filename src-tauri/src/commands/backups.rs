@@ -1,14 +1,11 @@
-//! Recovery, backups, erasure, and the display-preferences file.
+//! Recovery, backups, and erasure.
 use std::path::PathBuf;
 
 use serde_json::Value;
 use tauri::{AppHandle, Manager, State};
 
 use super::require_sensitive_authorization;
-use crate::{documents::crypto, files, storage, AppState};
-
-/// Display preferences are small; a larger file is not one Brief wrote.
-const PREFERENCES_BYTES: usize = 256 * 1024;
+use crate::{documents::crypto, storage, AppState};
 
 #[tauri::command]
 pub(crate) async fn recover_finance_state(
@@ -103,30 +100,4 @@ pub(crate) async fn erase_finance_state(
         crate::data_folder::remove(std::path::Path::new(&folder.path))?;
     }
     state.storage()?.erase()
-}
-
-#[tauri::command(async)]
-pub(crate) fn export_settings_file(path: String, contents: String) -> Result<(), String> {
-    if contents.len() > PREFERENCES_BYTES {
-        return Err("Preferences file exceeds 256 KB".into());
-    }
-    files::write_private(
-        &PathBuf::from(path),
-        contents.as_bytes(),
-        "Preferences could not be saved",
-    )
-}
-
-#[tauri::command(async)]
-pub(crate) fn read_settings_file(path: String) -> Result<String, String> {
-    let contents =
-        files::read_bounded(&PathBuf::from(path), PREFERENCES_BYTES).map_err(|failure| {
-            match failure {
-                files::ReadFailure::OutOfBounds => {
-                    "Preferences file must be between 1 byte and 256 KB"
-                }
-                files::ReadFailure::Unreadable => "Preferences file cannot be read",
-            }
-        })?;
-    String::from_utf8(contents).map_err(|_| "Preferences file cannot be read".into())
 }

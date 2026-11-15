@@ -1,6 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
 import { toast } from 'sonner'
 
 import { useFinance } from '../../hooks/use-finance'
@@ -8,58 +7,17 @@ import { useFinanceEdits } from '../../hooks/use-finance-edits'
 import { getAppVersion, getLoginItem, isTauri, setLoginItem } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
 import { financeSettings } from '../../lib/finance-settings'
-import {
-  getMarketUpdateInterval,
-  marketUpdateIntervals,
-  saveMarketUpdateInterval,
-} from '../../lib/market-preferences'
-import { advancedPreferenceKeys } from '../../lib/settings-preferences'
 import { ExternalLink } from '../external-link'
 import { ChevronRight, Palette, ScrollText, ShieldCheck } from '../icons'
 import { Keys } from '../keys'
 import {
   SettingsBlock,
   SettingsCard,
-  SettingsResetButton,
   SettingsRow,
   SettingsSection,
   SettingsSwitch,
 } from '../settings-ui'
-import { ChartRangeSelect } from '../ui'
 import { CalendarSyncCard } from './calendar'
-
-export function MarketSection() {
-  const [marketUpdateInterval, setMarketUpdateInterval] = useState(getMarketUpdateInterval)
-  return (
-    <SettingsSection
-      id="market"
-      title="Market data"
-      action={<SettingsResetButton section="market data" keys={advancedPreferenceKeys} />}
-    >
-      <SettingsCard>
-        <SettingsRow
-          id="live-price-updates"
-          title="Live price updates"
-          description="How often quotes redraw."
-        >
-          <ChartRangeSelect
-            label="Live price updates"
-            options={marketUpdateIntervals.map(({ seconds, label, settingsLabel }) => ({
-              value: seconds,
-              label,
-              accessibleLabel: settingsLabel,
-            }))}
-            value={marketUpdateInterval}
-            onValueChange={(seconds) => {
-              saveMarketUpdateInterval(seconds)
-              setMarketUpdateInterval(seconds)
-            }}
-          />
-        </SettingsRow>
-      </SettingsCard>
-    </SettingsSection>
-  )
-}
 
 /** Data stays current without the window open: a daily refresh by this Mac, no server. */
 function BackgroundRefreshCard() {

@@ -16,8 +16,8 @@ export type Preference<T> = {
 }
 
 /**
- * This browser's storage, raw, for the few modules that move or export saved values rather
- * than own one: the preferences file and the one-time import of what older builds kept here.
+ * This browser's storage, raw, for the few modules that move or clear saved values rather
+ * than own one: Settings' reset buttons and the one-time import of what older builds kept here.
  * Every other read goes through `preference`. These throw where storage is blocked; the
  * caller decides what that means. Lint keeps `localStorage` itself to this module.
  */

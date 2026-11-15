@@ -14,7 +14,7 @@ const sections = (query: string) =>
           </SettingsRow>
         </SettingsCard>
       </SettingsSection>
-      <SettingsSection id="appearance" title="Appearance">
+      <SettingsSection id="navigation" title="Navigation">
         <SettingsCard>
           <SettingsRow id="theme" title="Theme">
             <button>Light</button>
@@ -39,7 +39,7 @@ it('hides non-matching rows and sections and highlights matched title text', () 
   expect(hidden(html, 'financial-backup')).toBe(false)
   expect(hidden(html, 'data')).toBe(false)
   expect(hidden(html, 'theme')).toBe(true)
-  expect(hidden(html, 'appearance')).toBe(true)
+  expect(hidden(html, 'navigation')).toBe(true)
   expect(html).toContain('<mark>backup</mark>')
   expect(html).not.toContain('<button>Reset</button>')
 })

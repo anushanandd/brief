@@ -2,11 +2,8 @@ export type SettingsSectionId =
   | 'connections'
   | 'accounts'
   | 'taxes'
-  | 'appearance'
-  | 'charts'
   | 'navigation'
   | 'privacy'
-  | 'market'
   | 'data'
   | 'advanced'
 
@@ -62,12 +59,12 @@ export const settingsSections: readonly SettingsSection[] = [
       {
         id: 'connection-exa',
         title: 'Exa',
-        keywords: 'research web search rules terms api key keychain',
+        keywords: 'research web search card terms api key keychain',
       },
       {
         id: 'research',
-        title: 'Research rules online',
-        keywords: 'research exa web search bank employer terms programs rules log queries',
+        title: 'Look up card terms online',
+        keywords: 'research exa web search card issuer terms benefits log queries',
       },
       {
         id: 'card-catalog',
@@ -95,6 +92,16 @@ export const settingsSections: readonly SettingsSection[] = [
         title: 'Recurring streams',
         keywords: 'plaid recurring transactions subscriptions bills streams cancelled billed',
       },
+      {
+        id: 'plaid-bank-statements',
+        title: 'Bank statements',
+        keywords: 'plaid statements pdf monthly download check now',
+      },
+      {
+        id: 'apple-wallet',
+        title: 'Apple Wallet',
+        keywords: 'apple card cash daily cash wallet passes balance declined',
+      },
     ],
   },
   {
@@ -114,7 +121,7 @@ export const settingsSections: readonly SettingsSection[] = [
       },
       {
         id: 'card-benefits',
-        title: 'Other card benefits',
+        title: 'Other cards',
         keywords: 'second card product credits track additional',
       },
       {
@@ -129,8 +136,9 @@ export const settingsSections: readonly SettingsSection[] = [
       },
       {
         id: 'account-details',
-        title: 'Names, start dates, and closed accounts',
-        keywords: 'display name rename nickname start date history begin',
+        title: 'Account details',
+        keywords:
+          'display name rename nickname start date history begin closed website apy interest',
       },
       {
         id: 'statement-history',
@@ -184,30 +192,6 @@ export const settingsSections: readonly SettingsSection[] = [
     ],
   },
   {
-    id: 'appearance',
-    title: 'Appearance',
-    keywords: 'look display',
-    entries: [
-      {
-        id: 'home-accounts',
-        title: 'Account categories',
-        keywords: 'home today categories groups expanded collapsed',
-      },
-    ],
-  },
-  {
-    id: 'charts',
-    title: 'Charts',
-    keywords: 'graphs defaults range',
-    entries: [
-      {
-        id: 'home-range',
-        title: 'Chart range',
-        keywords: 'home overview accounts investments holdings default chart period week month',
-      },
-    ],
-  },
-  {
     id: 'navigation',
     title: 'Navigation',
     keywords: 'order sidebar',
@@ -246,17 +230,10 @@ export const settingsSections: readonly SettingsSection[] = [
         title: 'Apple Intelligence',
         keywords: 'ai on-device model explanations',
       },
-    ],
-  },
-  {
-    id: 'market',
-    title: 'Market data',
-    keywords: 'prices quotes',
-    entries: [
       {
-        id: 'live-price-updates',
-        title: 'Live price updates',
-        keywords: 'frequency interval refresh stream realtime',
+        id: 'local-model',
+        title: 'Local model',
+        keywords: 'ollama ai llm earnings releases calls read on this mac',
       },
     ],
   },
@@ -269,11 +246,6 @@ export const settingsSections: readonly SettingsSection[] = [
         id: 'financial-backup',
         title: 'Financial backup',
         keywords: 'export save restore import briefbackup',
-      },
-      {
-        id: 'preferences-file',
-        title: 'Preferences file',
-        keywords: 'export import settings briefsettings transfer',
       },
       {
         id: 'exports',
@@ -289,6 +261,11 @@ export const settingsSections: readonly SettingsSection[] = [
         id: 'data-folder-masked',
         title: 'Mask amounts in the folder',
         keywords: 'hide amounts masked readable folder',
+      },
+      {
+        id: 'places',
+        title: 'Places',
+        keywords: 'merchants businesses locations map overture find match',
       },
       {
         id: 'local-storage',
@@ -404,7 +381,7 @@ export function settingsMatchRanges(text: string, query: string) {
 }
 
 const legacySettingsPaths: Record<string, SettingsSectionId> = {
-  '/settings/appearance': 'appearance',
+  '/settings/appearance': 'navigation',
   '/settings/accounts': 'accounts',
   '/settings/connections': 'connections',
   '/settings/data': 'privacy',

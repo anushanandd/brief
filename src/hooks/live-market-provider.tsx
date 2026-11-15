@@ -13,10 +13,12 @@ import {
   withMarketWeek,
   type LiveMarketState,
 } from '../lib/live-market'
-import { useMarketUpdateInterval } from '../lib/market-preferences'
 import type { ChartChanges, MarketHistory, MarketSnapshots } from '../lib/schema'
 import { useFinance } from './use-finance'
 import { LiveFinanceContext } from './use-live-finance'
+
+// How often quotes redraw, in seconds.
+const MARKET_UPDATE_SECONDS = 10
 
 // Stable empties, so charts reading them don't see new data each render.
 const noSeries: Record<string, LivelinePoint[]> = {}
@@ -25,7 +27,6 @@ const noChanges: ChartChanges = []
 function useLiveMarketState() {
   const base = useFinance()
   const [state, setState] = useState<LiveMarketState>({ series: {} })
-  const marketUpdateInterval = useMarketUpdateInterval()
   const [visible, setVisible] = useState(() => typeof document === 'undefined' || !document.hidden)
   const symbolKey = base.marketSymbols.join(',')
   const enabled = visible && base.liveMarketEnabled && isTauri() && !!symbolKey
@@ -58,7 +59,7 @@ function useLiveMarketState() {
     if (!enabled) return undefined
     return subscribeLiveMarket(
       symbolKey.split(','),
-      marketUpdateInterval,
+      MARKET_UPDATE_SECONDS,
       acceptMarket,
       rejectMarket,
       acceptHistory,
@@ -66,7 +67,6 @@ function useLiveMarketState() {
   }, [
     enabled,
     symbolKey,
-    marketUpdateInterval,
     base.data?.revision,
     base.data?.updatedAt,
     acceptMarket,

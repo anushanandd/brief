@@ -181,43 +181,6 @@
   color: var(--text-secondary);
   font-size: var(--type-body);
 }
-.settings-trust-card {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(176px, 1fr));
-  padding: 6px;
-}
-.settings-trust-item {
-  display: grid;
-  min-width: 0;
-  min-height: 64px;
-  padding: 12px 16px;
-  grid-template-columns: 18px minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  border-radius: calc(var(--radius-card) - 8px);
-  color: var(--text-secondary);
-  transition: background-color var(--duration-quick) var(--ease-out);
-}
-.settings-trust-link:hover {
-  background: var(--hover-wash);
-}
-.settings-trust-item > span {
-  display: grid;
-  min-width: 0;
-  gap: 4px;
-}
-.settings-trust-item small {
-  color: var(--text-tertiary);
-  font-size: var(--type-meta);
-}
-.settings-trust-item strong {
-  color: var(--text-primary);
-  font-size: var(--type-body);
-  overflow-wrap: anywhere;
-}
-.settings-trust-link:hover strong {
-  color: var(--accent);
-}
 
 /* Settings: a modal over the current page, addressed by #settings/<section>. Every section
    follows the last in one scroll, the rail jumping between them; search keeps only matches.
@@ -373,14 +336,6 @@
 }
 .settings-panel-content > .settings-overview-warning {
   margin: 0;
-}
-/* The items' own padding is pulled into the gutter, so their icons line up with the text. */
-.settings-panel-content > .settings-trust-card {
-  margin: -12px -16px -16px;
-  padding: 0;
-}
-.settings-panel-content .settings-trust-item strong {
-  white-space: normal;
 }
 .settings-panel-loading {
   display: block;
@@ -722,6 +677,9 @@
   color: var(--text-tertiary);
   font-size: var(--type-meta);
   overflow-wrap: anywhere;
+}
+.settings-list-copy small > .is-attention {
+  color: var(--warning);
 }
 .settings-list-copy-inline {
   display: flex;

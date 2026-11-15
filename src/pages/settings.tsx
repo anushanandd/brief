@@ -1,19 +1,13 @@
-import { useQuery } from '@tanstack/react-query'
-import { Link } from '@tanstack/react-router'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 
 import { acceptAutofill, AutofillField, autofillCompletion } from '../components/autofill'
 import {
-  ChartCandlestick,
-  ChartNoAxesCombined,
-  ChevronRight,
   Database,
   EyeOff,
   Landmark,
   Link2,
   List,
-  Palette,
   ReceiptText,
   Search,
   Wrench,
@@ -22,19 +16,14 @@ import {
 import type { IconComponent } from '../components/icons'
 import { SettingsSearchProvider } from '../components/settings-ui'
 import { AccountsSection } from '../components/settings/accounts'
-import { AdvancedSection, MarketSection } from '../components/settings/advanced'
-import {
-  AppearanceSection,
-  ChartsSection,
-  NavigationSection,
-} from '../components/settings/appearance'
+import { AdvancedSection } from '../components/settings/advanced'
 import { ConnectionsSection } from '../components/settings/connections'
 import { DataSection, PrivacySection } from '../components/settings/data'
+import { NavigationSection } from '../components/settings/navigation'
 import { TaxesSection } from '../components/settings/taxes'
-import { Button, EmptyState, StatusDot } from '../components/ui'
-import { snapshotKey, useFinance } from '../hooks/use-finance'
-import { getDataHealth } from '../lib/api'
-import { countOf, formatUpdatedAt } from '../lib/format'
+import { Button, EmptyState } from '../components/ui'
+import { useFinance } from '../hooks/use-finance'
+import { countOf } from '../lib/format'
 import { visibleKeyboardRows } from '../lib/keyboard-regions'
 import {
   isSettingsSectionId,
@@ -52,94 +41,18 @@ const sectionIcons: Record<SettingsSectionId, IconComponent> = {
   connections: Link2,
   accounts: Landmark,
   taxes: ReceiptText,
-  appearance: Palette,
-  charts: ChartNoAxesCombined,
   navigation: List,
   privacy: EyeOff,
-  market: ChartCandlestick,
   data: Database,
   advanced: Wrench,
-}
-
-function TrustSummary({ onShow }: { onShow: (id: string) => void }) {
-  const finance = useFinance()
-  const health = useQuery({
-    queryKey: ['data-health', ...snapshotKey(finance.data)],
-    queryFn: getDataHealth,
-    enabled: Boolean(finance.data),
-  })
-  const providers = Object.values(finance.integrationStatus)
-  const configured = providers.filter(Boolean).length
-  const healthCount = health.data?.issues.length
-  return (
-    <div className="settings-trust-card" role="group" aria-label="Status summary">
-      <div className="settings-trust-item">
-        <StatusDot tone={finance.data ? 'positive' : finance.isError ? 'negative' : 'neutral'} />
-        <span>
-          <small>Last saved</small>
-          <strong>
-            {finance.data
-              ? formatUpdatedAt(finance.data.updatedAt)
-              : finance.isError
-                ? 'Unavailable'
-                : 'Loading…'}
-          </strong>
-        </span>
-      </div>
-      <a
-        href="#settings/connections"
-        className="settings-trust-item settings-trust-link"
-        onClick={(event) => {
-          event.preventDefault()
-          onShow('connections')
-        }}
-      >
-        <Link2 size={16} aria-hidden="true" />
-        <span>
-          <small>Connections</small>
-          <strong>
-            {configured ? `${configured} of ${providers.length} configured` : 'None configured'}
-          </strong>
-        </span>
-        <ChevronRight size={15} aria-hidden="true" />
-      </a>
-      <Link to="/health" className="settings-trust-item settings-trust-link">
-        <StatusDot
-          tone={
-            health.isError || health.data?.overallStatus === 'critical'
-              ? 'negative'
-              : health.data?.overallStatus === 'healthy'
-                ? 'positive'
-                : 'warning'
-          }
-        />
-        <span>
-          <small>Data health</small>
-          <strong>
-            {health.isPending
-              ? 'Checking…'
-              : health.isError
-                ? 'Unavailable'
-                : healthCount
-                  ? countOf(healthCount, 'issue')
-                  : 'All checks passed'}
-          </strong>
-        </span>
-        <ChevronRight size={15} aria-hidden="true" />
-      </Link>
-    </div>
-  )
 }
 
 const sectionViews: Record<SettingsSectionId, () => ReactNode> = {
   connections: ConnectionsSection,
   accounts: AccountsSection,
   taxes: TaxesSection,
-  appearance: AppearanceSection,
-  charts: ChartsSection,
   navigation: NavigationSection,
   privacy: PrivacySection,
-  market: MarketSection,
   data: DataSection,
   advanced: AdvancedSection,
 }
@@ -406,7 +319,6 @@ export function SettingsPanel({
           </p>
         ) : null}
         <SettingsSearchProvider value={search}>
-          {search ? null : <TrustSummary onShow={onShow} />}
           {search && !search.total ? (
             <EmptyState title={`No settings match “${query.trim()}”`}>
               Try theme, backup, or credentials.

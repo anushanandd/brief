@@ -11,12 +11,10 @@ import {
   authenticateSensitiveAction,
   eraseFinanceState,
   exportFinanceBackup,
-  exportSettingsFile,
   getFoundationModelStatus,
   getLocalModels,
   inspectFinanceBackup,
   isTauri,
-  readSettingsFile,
   restoreFinanceBackup,
 } from '../../lib/api'
 import { errorMessage } from '../../lib/errors'
@@ -26,12 +24,7 @@ import { countOf, formatUpdatedAt } from '../../lib/format'
 import { getExternalLogosEnabled, saveExternalLogosEnabled } from '../../lib/logos'
 import { getPrivacyPreferences, savePrivacyPreferences } from '../../lib/privacy-preferences'
 import type { BackupInfo } from '../../lib/schema'
-import {
-  dataPreferenceKeys,
-  exportSettingsPreferences,
-  importSettingsPreferences,
-  parseSettingsPreferences,
-} from '../../lib/settings-preferences'
+import { dataPreferenceKeys } from '../../lib/settings-preferences'
 import { FilterSelect } from '../filter-select'
 import { CalendarDays, Download, Fingerprint, MapPinned, Trash2, Upload, X } from '../icons'
 import {
@@ -70,7 +63,6 @@ export function DataSection() {
     <SettingsSection id="data" title="Backup & data">
       <SettingsCard>
         <FinancialBackup />
-        <PreferencesFile />
         <Exports />
         <DataFolder />
         <Places />
@@ -231,58 +223,6 @@ function FinancialBackup() {
         </div>
       ) : null}
     </SettingsBlock>
-  )
-}
-
-/** These settings as a file, to move them to another Mac. */
-function PreferencesFile() {
-  const [busy, setBusy] = useState<'export' | 'import' | null>(null)
-
-  const exportPreferences = () =>
-    runTask(setBusy, 'export', 'Could not export preferences', async () => {
-      const path = await save({
-        defaultPath: 'Brief preferences.briefsettings',
-        filters: [{ name: 'Brief preferences', extensions: ['briefsettings'] }],
-      })
-      if (!path) return
-      await exportSettingsFile(path, JSON.stringify(exportSettingsPreferences(), null, 2))
-      toast.success('Preferences exported')
-    })
-
-  const importPreferences = () =>
-    runTask(setBusy, 'import', 'Could not import preferences', async () => {
-      const path = await open({
-        multiple: false,
-        directory: false,
-        filters: [{ name: 'Brief preferences', extensions: ['briefsettings', 'json'] }],
-      })
-      if (!path) return
-      const file = parseSettingsPreferences(JSON.parse(await readSettingsFile(path)))
-      importSettingsPreferences(file)
-      window.location.reload()
-    })
-
-  return (
-    <SettingsRow id="preferences-file" title="Preferences file" description="These settings only.">
-      <span className="settings-button-group">
-        <Button
-          icon={Download}
-          size="compact"
-          disabled={!isTauri() || busy !== null}
-          onClick={() => void exportPreferences()}
-        >
-          {busy === 'export' ? 'Exporting…' : 'Export'}
-        </Button>
-        <Button
-          icon={Upload}
-          size="compact"
-          disabled={!isTauri() || busy !== null}
-          onClick={() => void importPreferences()}
-        >
-          {busy === 'import' ? 'Importing…' : 'Import…'}
-        </Button>
-      </span>
-    </SettingsRow>
   )
 }
 

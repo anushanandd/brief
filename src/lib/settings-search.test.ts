@@ -19,10 +19,10 @@ it('requires every word and matches titles, keywords, and section names', () => 
   expect([...keychain.sectionIds]).toEqual(['connections'])
 
   const privacy = searchSettings('PRIVACY')!
-  expect(privacy.counts.get('privacy')).toBe(4)
-  expect(privacy.total).toBe(4)
+  expect(privacy.counts.get('privacy')).toBe(5)
+  expect(privacy.total).toBe(5)
 
-  expect(searchSettings('collapsed')!.entryIds.has('home-accounts')).toBe(true)
+  expect(searchSettings('ollama')!.entryIds.has('local-model')).toBe(true)
   expect(searchSettings('rename')!.entryIds.has('account-details')).toBe(true)
   expect(searchSettings('zzz-not-a-setting')!.total).toBe(0)
 })
@@ -47,6 +47,7 @@ it('merges overlapping highlight ranges', () => {
 it('maps former detail routes and anchors onto the single Settings page', () => {
   expect(settingsHashForPath('/settings/connections')).toBe('connections')
   expect(settingsHashForPath('/settings/accounts')).toBe('accounts')
+  expect(settingsHashForPath('/settings/appearance')).toBe('navigation')
   expect(settingsHashForPath('/settings/accounts#benefit-visibility')).toBe('benefit-visibility')
   expect(settingsHashForPath('/settings#data-sources')).toBe('connections')
   expect(settingsHashForPath('/settings')).toBeUndefined()
