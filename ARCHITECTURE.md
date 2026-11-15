@@ -36,19 +36,21 @@ Live market prices take a separate path. They can overlay the saved snapshot on 
 
 **A refresh is all or nothing.** It is staged, bounded by one deadline, validated, and committed in one transaction (`refresh`). A failure leaves the previous state usable. Plaid's sync cursor only advances once every page and the matching balance request have succeeded.
 
-**Results are deterministic.** They depend only on the saved data, edits, settings, and the local calendar day, so tests pin the day and time zone. A market day is always a New York trading session (`session`).
+**Results are deterministic.** They depend only on the saved data, edits, settings, the local calendar day, and, for trips, the flights and stays in the user's own calendars, so tests pin the day and time zone and pass reservations in. A market day is always a New York trading session (`session`).
 
 **Secrets stay in Keychain.** Credentials and tokens live only in macOS Keychain. Logs, diagnostics, fixtures, and tests never contain them, raw provider messages, or real financial data. Exporting or restoring a backup needs macOS authentication.
 
 **Billed calls are opt-in.** A Plaid product that costs money never runs on an ordinary or background refresh unless it was turned on (`providers::plaid::sync::billed_endpoints`).
 
+**Rust owns the market data schedule.** Stories, filings, earnings, and model readings are fetched by Rust's jobs (`news_job`, `reading_job`, `close`), never because a page opened, and every SEC and Alpaca request takes a token from its provider's pace (`providers::pace`). A job that saved something new says so (`data-updated`), and pages read the saved data again ([0021](docs/decisions/0021-rust-owns-the-market-data-schedule.md)).
+
 **Nothing is stored where it can't be seen.** Every saved field appears in some record's raw view or in a table the Storage page opens, and the `objects` tests check this.
 
 **Settings that change results** are saved in the finance database (`FinanceSettings`), never in the browser's storage.
 
-**The on-device model has no authority.** Apple Intelligence can quote only what read-only Rust queries returned, and every figure in its answer is checked against them. In the investment summary it only chooses which sentence of a source to quote. Brief never states a cause in its own words or predicts a price: reasons are quoted from their publishers, and forecasts are labeled as someone else's.
+**The on-device model has no authority.** Apple Intelligence can quote only what read-only Rust queries returned, and every figure in its answer is checked against them. In the investment summary it only chooses which sentence of a source to quote and reads each story's stance toward its company, which Brief counts and labels as the press's view ([0022](docs/decisions/0022-the-press-is-read-not-judged.md)). Brief never states a cause in its own words or predicts a price: reasons are quoted from their publishers, and forecasts are labeled as someone else's.
 
-**Outside its own files, Brief writes only to its own calendar.** In macOS Calendar it writes only to its "Brief" calendar, and only to events it made there (`event_calendar`). Other calendar events are read for the Calendar page and trips, and never saved.
+**Outside its own files, Brief writes only to its own calendar.** In macOS Calendar it writes only to its "Brief" calendar, and only to events it made there (`event_calendar`). Other calendar events are read for the Calendar page and trips, and never saved; only flights and stays from the user's own calendars reach insights ([0019](docs/decisions/0019-travel-reservations-reach-trips.md)).
 
 ## Where data lives
 
@@ -84,8 +86,8 @@ In `src-tauri/src`:
 - `transaction_policy`, `merchants`, `places`, `quality`: what each transaction means, computed on every read.
 - `insights/`: everything else computed on read, including reports, benefits, taxes, and the assistant's tools and planner.
 - `statements/`, `documents/`: imported statements and documents, read on the Mac.
-- `evidence/`, `objects/`, `search/`: rules stored as data and the engine that proves them, the object graph, and search.
-- `card_drafts/`, `research`: drafting card and bank rules from the open catalog, published terms, and the card's own credits. `card_drafts/apply` applies clear catalog matches by itself and never changes the user's rules.
+- `objects/`, `search/`: the object graph, and search.
+- `card_drafts/`, `research`: drafting card rules from the open catalog, published terms, and the card's own credits, and the log of every web lookup. `card_drafts/apply` applies clear catalog matches by itself and never changes the user's rules.
 - `market/`, `summary/`, `session`: live valuation, the investment summary, and trading days.
 - `commands/`: the Tauri commands. `native/` holds the Swift bridges to Apple's frameworks.
 - `app_update`: finds a newer release on GitHub and installs it when asked; the updater checks its signature first ([0016](docs/decisions/0016-releases-ship-from-this-mac.md)).

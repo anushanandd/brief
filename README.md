@@ -14,10 +14,11 @@ There is no server. Brief is a Tauri 2 app: a Rust backend in `src-tauri/`, a Re
 ## What it does
 
 - **Home:** net worth over time, what needs attention, and what's coming up.
-- **Money:** spending by period, category, and merchant; cash flow; recurring bills; a 90-day cash forecast; card statements and benefit credits.
+- **Spending:** spending by period, category, and merchant; cash flow; recurring bills; a 90-day cash forecast; card statements and benefit credits.
 - **Activity:** one ledger of every transaction, with search, edits, splits, and the evidence behind each field.
+- **Calendar:** what's due and what happened, day by day.
 - **Investments:** live portfolio value, holdings with their news and SEC filings, returns beside the S&P 500, tax lots, and dividends.
-- **Documents and taxes:** pay statements and tax forms read on the Mac and matched to deposits; realized gains, wash sales, and an estimated tax.
+- **Insights:** your trips and the people you pay; an estimated tax with realized gains and wash sales; and the documents it reads, pay statements and tax forms read on the Mac and matched to deposits.
 - **Assistant:** questions answered on-device by Apple Intelligence, quoting only figures Rust computed.
 
 It is built for the keyboard: a command palette reaches every page, record, and action.
@@ -47,7 +48,7 @@ Plaid · SnapTrade · Alpaca · SEC EDGAR · Alpha Vantage · statements · docu
 
 **Live market data survives corrections.** One shared socket per feed serves the whole app, keeps timestamps in order, and treats a corrected or cancelled trade as something to reconcile ([`providers/market_stream.rs`](src-tauri/src/providers/market_stream.rs)).
 
-**The assistant can't make up a number.** Apple's on-device model sees about 4,096 tokens, so Rust plans each question first: it resolves the dates, offers the model at most four tools, and answers a clear question itself. Every figure in an answer is checked against what the tools returned ([`assistant_planner.rs`](src-tauri/src/insights/assistant_planner.rs), [`foundation_model/figures.rs`](src-tauri/src/foundation_model/figures.rs)). An 81-question eval set checks the routing in CI.
+**The assistant can't make up a number.** Apple's on-device model sees about 4,096 tokens, so Rust plans each question first: it resolves the dates, offers the model at most four tools, and answers a clear question itself. Every figure in an answer is checked against what the tools returned ([`assistant_planner.rs`](src-tauri/src/insights/assistant_planner.rs), [`foundation_model/figures.rs`](src-tauri/src/foundation_model/figures.rs)). A 56-question eval set checks the routing in CI.
 
 **Tests run on synthetic lives.** Results depend only on the data and the local day, so tests pin both. Over 800 Rust tests and 600 frontend tests run on generated people, and none on real data.
 
@@ -57,7 +58,7 @@ Plaid · SnapTrade · Alpaca · SEC EDGAR · Alpha Vantage · statements · docu
 
 Credentials live only in macOS Keychain. Financial data is in SQLite files readable only by your user; they aren't encrypted, so use FileVault. Document originals are sealed with AES-256-GCM under a key in Keychain.
 
-Data leaves the Mac only for the providers that supply it. Logos, place lookups, and web research are off until you turn them on, and there is no telemetry. At launch and once a day Brief asks GitHub whether a newer release exists; the request carries nothing but what any web request does, and an update installs only when you choose it.
+Data leaves the Mac only for the providers that supply it. Logos, place lookups, and looking up card terms on the web are off until you turn them on, and there is no telemetry. At launch and once a day Brief asks GitHub whether a newer release exists; the request carries nothing but what any web request does, and an update installs only when you choose it.
 
 ## Install
 
