@@ -45,6 +45,11 @@ denied() {
     echo "pre-commit: no denylist at $denylist, personal-string check skipped." >&2
     return
   fi
+  # With no entries, awk would read the staged diff itself as the denylist and check nothing.
+  if ! grep -qv -e '^[[:space:]]*$' -e '^#' "$denylist"; then
+    echo "pre-commit: the denylist at $denylist has no entries, personal-string check skipped." >&2
+    return
+  fi
   hits="$(
     {
       staged | sed 's/^/N /'
@@ -91,6 +96,10 @@ denied() {
 # AGENTS.md: never regenerate the golden insights; edit the records a rule change affects.
 golden_regenerated() {
   [ "${BRIEF_ALLOW_GOLDEN:-}" = 1 ] && return 0
+  if git diff --cached --name-only --diff-filter=D -- "$golden" | grep -q .; then
+    fail "$golden is staged for deletion; the golden insights are edited, never removed."
+    return 0
+  fi
   counts="$(git diff --cached --numstat -- "$golden")"
   [ -n "$counts" ] || return 0
   total="$(git cat-file -p ":$golden" 2>/dev/null | wc -l | tr -d ' ')"
@@ -104,9 +113,13 @@ golden_regenerated() {
 
 private_files() {
   staged | while IFS= read -r path; do
-    case "$(echo "$path" | tr '[:upper:]' '[:lower:]')" in
-      *.pdf | *.sqlite | *.sqlite3 | *.db | *.ofx | *.qfx)
-        echo "pre-commit: $path is a statement, export, or database file." >&2
+    lower="$(echo "$path" | tr '[:upper:]' '[:lower:]')"
+    case "$lower" in
+      # Synthetic fixtures are made up for tests and may use any of these formats.
+      */fixtures/synthetic-*) ;;
+      *.pdf | *.sqlite | *.sqlite3 | *.sqlite3-* | *.db | *.ofx | *.qfx | *.qbo | *.csv | \
+        *.xls | *.xlsx | *.zip | *.key | *.pem | *.p8 | *.p12 | .env* | */.env*)
+        echo "pre-commit: $path is a statement, export, database, or key file." >&2
         echo x
         ;;
     esac

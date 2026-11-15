@@ -25,7 +25,7 @@ set -- $(git rev-list --all)
 echo "Scanning $# commits for $total denylist entries…"
 
 # One pass over every commit's files for all entries; per-entry passes only when it finds any.
-any_contents="$(git grep -l -F -i -f "$work/all" "$@" -- 2>/dev/null || true)"
+any_contents="$(git grep -I -l -F -i -f "$work/all" "$@" -- 2>/dev/null || true)"
 for commit in "$@"; do
   git ls-tree -r --name-only "$commit" | sed "s|^|$commit:|"
 done >"$work/paths"
@@ -37,7 +37,7 @@ while IFS= read -r entry; do
   printf '%s\n' "$entry" >"$work/one"
   contents=""
   if [ -n "$any_contents" ]; then
-    contents="$(git grep -l -F -i -f "$work/one" "$@" -- 2>/dev/null || true)"
+    contents="$(git grep -I -l -F -i -f "$work/one" "$@" -- 2>/dev/null || true)"
   fi
   paths="$(grep -F -i -f "$work/one" "$work/paths" || true)"
   messages="$(git log --all --regexp-ignore-case --fixed-strings --grep="$entry" --format=%H)"

@@ -1,0 +1,38 @@
+#!/bin/sh
+# Checks a commit message before it is saved, since subjects become public release notes:
+#   1. no line of the private denylist appears in it;
+#   2. it carries no Claude co-author or session trailer (the owner doesn't want them).
+# Hits name the entry number, never the string.
+set -eu
+
+message="$1"
+denylist="${BRIEF_DENYLIST:-$HOME/.brief-private/denylist.txt}"
+failed=0
+
+if grep -qiE '^(Co-Authored-By: Claude|Claude-Session:)' "$message"; then
+  echo "commit-msg: remove the Claude co-author or session line from the message." >&2
+  failed=1
+fi
+
+if [ -f "$denylist" ] && grep -qv -e '^[[:space:]]*$' -e '^#' "$denylist"; then
+  hits="$(
+    grep -v '^#' "$message" | awk '
+      NR == FNR {
+        sub(/\r$/, "")
+        if ($0 != "" && substr($0, 1, 1) != "#") { n++; deny[n] = tolower($0) }
+        next
+      }
+      {
+        lower = tolower($0)
+        for (i = 1; i <= n; i++) if (index(lower, deny[i])) print "message: denylist entry #" i
+      }
+    ' "$denylist" -
+  )"
+  if [ -n "$hits" ]; then
+    echo "$hits" | sort -u >&2
+    echo "commit-msg: the message contains strings from $denylist." >&2
+    failed=1
+  fi
+fi
+
+exit "$failed"
