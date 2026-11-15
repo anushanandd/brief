@@ -168,9 +168,10 @@ pub(super) fn read(reading: &Reading) -> Read {
                     .find(|text| COMPANY.is_match(text))
                     .map(|text| text.trim_end_matches('.').to_owned());
             }
+            // A deposit panel can sit beside the earnings table, so only a row naming the
+            // account it paid into is a deposit; every other row is read as usual.
             if lower.contains("deposited to") || lower.contains("direct deposit") {
                 depositing = true;
-                continue;
             }
             if depositing {
                 if let (Some(mask), Some((amount, _))) = (masked(&joined), figures.last()) {
@@ -181,8 +182,8 @@ pub(super) fn read(reading: &Reading) -> Read {
                     if !read.deposits.contains(&deposit) {
                         read.deposits.push(deposit);
                     }
+                    continue;
                 }
-                continue;
             }
             if figures.is_empty() {
                 if VOCABULARY

@@ -454,3 +454,28 @@ fn reads_a_folder() {
         }
     }
 }
+
+/// A deposit panel headed "Direct Deposit" beside the earnings table leaves the table readable.
+#[test]
+fn a_deposit_panel_beside_the_earnings_keeps_every_line() {
+    let mut reading = payslip();
+    for line in &mut reading.pages[0].lines {
+        if line.text == "Payment Method Amount" {
+            line.text = "Direct Deposit Amount".into();
+        }
+    }
+    let read = understand(&reading, "Payslip_2026-06-19.pdf");
+    let field = |key: &str| read.fields.iter().find(|field| field.key == key);
+    assert_eq!(field("gross").and_then(|f| f.amount), Some(4_000.0));
+    assert_eq!(
+        field("federalWithholding").and_then(|f| f.amount),
+        Some(500.0)
+    );
+    assert_eq!(field("stateWithholding").and_then(|f| f.ytd), Some(800.0));
+    assert_eq!(read.deposits.len(), 1);
+    assert!(
+        read.checks.iter().all(|check| check.passed),
+        "{:?}",
+        read.checks
+    );
+}

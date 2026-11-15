@@ -16,7 +16,7 @@ mod statement;
 pub use read::Reading;
 
 /// Raised whenever a reader reads documents better, so those read before can be read again.
-pub const READER_VERSION: u32 = 4;
+pub const READER_VERSION: u32 = 5;
 
 /// Imports refuse anything larger; a phone photo of a form is a few megabytes.
 pub const MAX_DOCUMENT_BYTES: usize = 40 * 1024 * 1024;
