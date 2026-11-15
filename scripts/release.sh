@@ -155,9 +155,12 @@ if [ -f "$data/finance-state.sqlite3" ]; then
   echo "Copying the finance database to ${copy}…"
   /bin/mkdir -p "$copy"
   /bin/chmod 700 "$data/releases" "$copy"
-  for file in "$data"/finance-state.sqlite3 "$data"/finance-state.sqlite3-wal \
-    "$data"/finance-state.backup.sqlite3 "$data"/finance-state.backup.sqlite3-wal; do
-    if [ -f "$file" ]; then /bin/cp -p "$file" "$copy/"; fi
+  # Both databases use journal_mode=DELETE, so a hot journal, not a WAL, is what may hold the
+  # rest of an interrupted write; documents.sqlite3 holds the documents' sealed originals.
+  for name in finance-state finance-state.backup documents; do
+    for file in "$data/$name.sqlite3" "$data/$name.sqlite3-journal"; do
+      if [ -f "$file" ]; then /bin/cp -p "$file" "$copy/"; fi
+    done
   done
   # Keep the newest copies; each is a complete copy of your data.
   /bin/ls -dt "$data"/releases/pre-release-* | /usr/bin/tail -n +$((kept_copies + 1)) |
@@ -198,6 +201,6 @@ if [ -d "$app.previous" ]; then
 fi
 if [ -n "$copy" ]; then
   echo "  and, only if the new build changed the database (this replaces it):"
-  echo "  rm -f '$data'/finance-state*.sqlite3-wal '$data'/finance-state*.sqlite3-shm"
+  echo "  rm -f '$data'/finance-state*.sqlite3-journal '$data'/documents.sqlite3-journal"
   echo "  cp -p '$copy'/* '$data/'"
 fi
