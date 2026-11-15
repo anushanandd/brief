@@ -258,14 +258,23 @@ pub fn derive(
     now: DateTime<Utc>,
     zone: &dyn Zone,
 ) -> Result<Insights, String> {
-    derive_with_documents(snapshot, settings, &[], &[], now, zone)
+    derive_with_documents(
+        snapshot,
+        settings,
+        &benefits::Catalog::from_settings(settings),
+        &[],
+        &[],
+        now,
+        zone,
+    )
 }
 
-/// `derive`, with what Brief read from the user's documents, and the travel events from the
-/// user's own calendars, which trips read and nothing saves.
+/// `derive`, with the catalog built from `settings`, what Brief read from the user's documents,
+/// and the travel events from the user's own calendars, which trips read and nothing saves.
 pub fn derive_with_documents(
     snapshot: &mut Snapshot,
     settings: &FinanceSettings,
+    catalog: &benefits::Catalog,
     documents: &[crate::documents::Document],
     travel: &[crate::event_calendar::Event],
     now: DateTime<Utc>,
@@ -280,6 +289,7 @@ pub fn derive_with_documents(
         &mut snapshot.transactions,
         &snapshot.accounts,
         settings,
+        catalog,
         &snapshot.updated_at,
     );
     for transaction in &mut snapshot.transactions {
@@ -327,6 +337,7 @@ pub fn derive_with_documents(
         &ended,
         trips,
         &series,
+        catalog,
     );
     let people = people::people(transactions, &settings.people, &trips.trips);
     let recurring_check = recurring::check(&snapshot.recurring_streams, &expected, transactions);
@@ -554,10 +565,9 @@ pub fn derive_with_documents(
         .map(|fee| minor_units(fee.offsets))
         .reduce(|total, offsets| total + offsets)
         .map(from_minor);
-    let cards = benefits::Catalog::from_settings(settings);
     let spending_rules = benefits
         .as_ref()
-        .and_then(|card| cards.product(&card.product));
+        .and_then(|card| catalog.product(&card.product));
     let benefit_options = spending_rules
         .map(|rules| {
             let mut options = rules.options();
@@ -583,7 +593,7 @@ pub fn derive_with_documents(
         benefits,
         other_card_benefits,
         fee_offsets,
-        benefit_products: cards
+        benefit_products: catalog
             .products()
             .iter()
             .map(|rules| BenefitOption {
@@ -730,6 +740,7 @@ fn compute(
             calendar::calendar_date(updated_at, zone),
             today,
         ),
+        &benefits::Catalog::from_settings(settings),
     )
 }
 
@@ -745,6 +756,7 @@ fn cashflow(
     ended: &std::collections::BTreeSet<String>,
     trips: trips::Trips,
     series: &forecast::Series,
+    cards: &benefits::Catalog,
 ) -> Cashflow {
     let today = zone.date(now);
     let live = |mut events: Vec<forecast::ExpectedEvent>| {
@@ -840,8 +852,7 @@ fn cashflow(
             activity,
         }
     };
-    let cards = benefits::Catalog::from_settings(settings);
-    let tracked = tracked_cards(accounts, settings, &cards);
+    let tracked = tracked_cards(accounts, settings, cards);
     let is_spending_card = |account: &Account| card.is_some_and(|card| card.id == account.id);
     let benefits = tracked
         .iter()
@@ -951,6 +962,7 @@ fn credits_follow_purchases(
     transactions: &mut [Transaction],
     accounts: &[Account],
     settings: &FinanceSettings,
+    cards: &benefits::Catalog,
     updated_at: &str,
 ) {
     let mut others = transactions
@@ -959,8 +971,7 @@ fn credits_follow_purchases(
         .map(|transaction| transaction.id.clone())
         .collect::<std::collections::HashSet<_>>();
     let mut follow = Vec::new();
-    let cards = benefits::Catalog::from_settings(settings);
-    for (card, rules) in tracked_cards(accounts, settings, &cards) {
+    for (card, rules) in tracked_cards(accounts, settings, cards) {
         let own = transactions
             .iter()
             .filter(|transaction| transaction.account_id.as_deref() == Some(card.id.as_str()))

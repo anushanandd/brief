@@ -278,6 +278,7 @@ pub(crate) fn derive_view_with(
 ) -> Result<(crate::insights::View, Value), String> {
     let mut snapshot = data.snapshot.clone();
     snapshot.recovery = recovery;
+    let cards = crate::insights::benefits::Catalog::from_settings(&data.settings);
     let closed_accounts =
         crate::financial_engine::manual::adjust_snapshot(&mut snapshot, &data.settings);
     crate::financial_engine::apply_edits(
@@ -291,7 +292,7 @@ pub(crate) fn derive_view_with(
             .map(|(id, review)| (id.clone(), review.category.clone()))
             .collect(),
         embedder,
-        &crate::insights::benefits::Catalog::from_settings(&data.settings),
+        &cards,
     )?;
     crate::places::matching::apply(&mut snapshot.transactions, searches);
     let places = crate::places::matching::status(&snapshot.transactions, searches);
@@ -300,6 +301,7 @@ pub(crate) fn derive_view_with(
     let insights = crate::insights::derive_with_documents(
         &mut snapshot,
         &data.settings,
+        &cards,
         &data.documents,
         travel,
         now,
