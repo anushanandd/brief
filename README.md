@@ -58,7 +58,7 @@ Plaid · SnapTrade · Alpaca · SEC EDGAR · Alpha Vantage · statements · docu
 
 Credentials live only in macOS Keychain. Financial data is in SQLite files readable only by your user; they aren't encrypted, so use FileVault. Document originals are sealed with AES-256-GCM under a key in Keychain.
 
-Data leaves the Mac only for the providers that supply it. Logos, place lookups, and looking up card terms on the web are off until you turn them on, and there is no telemetry. The open card catalog is on by default and is downloaded from GitHub once a day, the same file for everyone; turning it off in Settings stops that. At launch and once a day Brief asks GitHub whether a newer release exists; the request carries nothing but what any web request does, and an update installs only when you choose it.
+Data leaves the Mac only for the providers that supply it. Logos and place lookups are off until you turn them on, and there is no telemetry. The open card catalog is on by default and is downloaded from GitHub once a day, the same file for everyone; turning it off in Settings stops that. At launch and once a day Brief asks GitHub whether a newer release exists; the request carries nothing but what any web request does, and an update installs only when you choose it.
 
 ## Install
 

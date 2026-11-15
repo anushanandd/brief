@@ -87,7 +87,7 @@ In `src-tauri/src`:
 - `insights/`: everything else computed on read, including reports, benefits, taxes, and the assistant's tools and planner.
 - `statements/`, `documents/`: imported statements and documents, read on the Mac.
 - `objects/`, `search/`: the object graph, and search.
-- `card_drafts/`, `research`: drafting card rules from the open catalog, published terms, and the card's own credits, and the log of every web lookup. `card_drafts/apply` applies clear catalog matches by itself and never changes the user's rules.
+- `card_drafts/`: drafting card rules from the open catalog and the card's own credits. `card_drafts/apply` applies clear catalog matches by itself and never changes the user's rules.
 - `market/`, `summary/`, `session`: live valuation, the investment summary, and trading days.
 - `commands/`: the Tauri commands. `native/` holds the Swift bridges to Apple's frameworks.
 - `app_update`: finds a newer release on GitHub and installs it when asked; the updater checks its signature first.
