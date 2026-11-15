@@ -75,7 +75,8 @@ export function AccountOverviewDetails({
   const unrealizedLabel =
     isAll || account.costBasisCoverage === 'partial' ? 'Known unrealized P/L' : 'Unrealized P/L'
   if (isAll) {
-    const sheet = rollup?.sheet ?? { assets: 0, liabilities: 0, complete: false }
+    // Without Rust's rollup, what the accounts own and owe is unknown, not zero.
+    const sheet = rollup?.sheet
     // What the accounts own and owe, then investment and income figures across every account.
     // Group totals are in "Balances".
     return (
@@ -83,13 +84,13 @@ export function AccountOverviewDetails({
         <SectionHeading title="Account details" />
         <div className="account-summary-metrics">
           <Metric
-            label={sheet.complete ? 'Assets' : 'Known assets'}
-            value={formatCurrency(sheet.assets)}
+            label={sheet?.complete ? 'Assets' : 'Known assets'}
+            value={sheet ? formatCurrency(sheet.assets) : 'Unavailable'}
           />
           <Metric
-            label={sheet.complete ? 'Liabilities' : 'Known liabilities'}
-            value={formatCurrency(sheet.liabilities)}
-            tone={sheet.liabilities < 0 ? 'negative' : undefined}
+            label={sheet?.complete ? 'Liabilities' : 'Known liabilities'}
+            value={sheet ? formatCurrency(sheet.liabilities) : 'Unavailable'}
+            tone={sheet && sheet.liabilities < 0 ? 'negative' : undefined}
           />
           <ReportMetric chart="interest" label="Interest" value={summary.interest} range={period} />
           <ReportMetric

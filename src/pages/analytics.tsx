@@ -782,13 +782,18 @@ function ReportBreakdown({
       />
       {view === 'breakdown' ? (
         <RankedBars
-          items={report.breakdown.map(({ label, value }) => ({
-            name: label,
-            value: unavailable ? 0 : (value ?? 0),
-            color: colors.get(label) ?? 'var(--text-tertiary)',
-          }))}
+          // A group whose total is unknown draws no bar rather than a zero one.
+          items={(unavailable ? [] : report.breakdown).flatMap(({ label, value }) =>
+            value == null
+              ? []
+              : [{ name: label, value, color: colors.get(label) ?? 'var(--text-tertiary)' }],
+          )}
           label={`${report.label} by group`}
-          emptyMessage="No posted activity in this period."
+          emptyMessage={
+            unavailable
+              ? 'This report is unavailable for these dates.'
+              : 'No posted activity in this period.'
+          }
           selected={null}
           onSelect={(name) => {
             if (name) onChange('transactions', name)
