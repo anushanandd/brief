@@ -82,8 +82,6 @@ export function TaxesPage() {
         </Card>
       ) : (
         <>
-          {/* The year's answer leads: the estimate beside what the forms will say and where
-              you lived. What can still change it follows. */}
           <div className="taxes-grid">
             <EstimateCard
               year={selected}
@@ -125,7 +123,7 @@ export function TaxesPage() {
                           Sold {day(wash.date)} · {accountName(wash.accountId)} ·{' '}
                           {wash.permanent
                             ? 'lost for good (bought back in an IRA)'
-                            : 'added to new shares’ cost'}
+                            : 'deferred to the shares bought back, whose cost in Brief’s lots leaves it out'}
                         </small>
                       </span>
                       <span>{money(wash.disallowed)} disallowed</span>
@@ -324,7 +322,7 @@ function EstimateCard({
       {range ? (
         <header className="home-balance-header">
           <div className="home-balance-main">
-            <h2 className="balance-label">Estimated tax · {year.year}</h2>
+            <h2 className="balance-label">Tax on investment income · {year.year}</h2>
             <div className="home-balance-value">
               <strong className="hero-number sensitive-value">
                 {'single' in range
@@ -335,7 +333,7 @@ function EstimateCard({
           </div>
         </header>
       ) : (
-        <SectionHeading title={`Estimated tax · ${year.year}`} />
+        <SectionHeading title={`Tax on investment income · ${year.year}`} />
       )}
       {estimate ? (
         <>

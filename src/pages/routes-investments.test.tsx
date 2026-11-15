@@ -324,7 +324,23 @@ const taxYear2026 = {
 it('previews the 1099s and asks for a tax profile before estimating', async () => {
   scenario.insights = {
     taxes: {
-      years: [taxYear2026],
+      years: [
+        {
+          ...taxYear2026,
+          washSales: [
+            {
+              saleId: 'wash',
+              ticker: 'CCC',
+              accountId: 'selected',
+              date: '2026-08-01',
+              loss: -100,
+              disallowed: 100,
+              replacementTradeIds: ['buy'],
+              permanent: false,
+            },
+          ],
+        },
+      ],
       harvest: [{ ticker: 'AAA', accountId: 'selected', shortTermLoss: -600, longTermLoss: 0 }],
       washWindows: [
         {
@@ -348,7 +364,12 @@ it('previews the 1099s and asks for a tax profile before estimating', async () =
   expect(html).toContain('href="#settings/tax-filing-status"')
   expect(html).toContain('Don’t buy BBB through Oct 10')
   expect(html).toContain('href="/holdings/AAA"')
-  expect(html).toContain('Estimated tax · 2026')
+  // The figure is what investment income adds, not the year's whole tax.
+  expect(html).toContain('Tax on investment income · 2026')
+  // Brief's lots don't carry a wash sale's loss into the replacement shares' cost.
+  expect(html).toContain(
+    'deferred to the shares bought back, whose cost in Brief’s lots leaves it out',
+  )
 })
 
 it('shows an estimate as a range while dividends are unclassified', async () => {
