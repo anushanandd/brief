@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { useCallback } from 'react'
 
 import {
@@ -39,6 +39,27 @@ function describeEdit(changes: TransactionAnnotationChanges) {
   return ids.length > 1 ? `${what} on ${ids.length} transactions` : what
 }
 
+let settingsSaves: Promise<unknown> = Promise.resolve()
+
+/**
+ * Saves settings once every earlier save has landed, so each change reads the settings the
+ * last one committed; two quick toggles never write over each other.
+ */
+export function saveSettingsInTurn(
+  client: QueryClient,
+  change: (current: Settings) => FinanceSettings,
+) {
+  const saved = settingsSaves.then(async () => {
+    const current = client.getQueryData<FinanceSnapshot>(financeQueryKey)?.settings
+    if (!current) throw new Error('Finance settings are unavailable')
+    const snapshot = await saveFinanceSettings(change(completeSettings(current)))
+    setFinanceSnapshot(client, snapshot)
+    return snapshot
+  })
+  settingsSaves = saved.catch(() => undefined)
+  return saved
+}
+
 /**
  * Durable edits go through narrow native commands. Each returns the annotation-aware snapshot,
  * which replaces the cached view so every mounted page updates. Transaction edits are
@@ -56,12 +77,8 @@ export function useFinanceEdits() {
     [client],
   )
   const updateSettings = useCallback(
-    async (change: (current: Settings) => FinanceSettings) => {
-      const current = client.getQueryData<FinanceSnapshot>(financeQueryKey)?.settings
-      if (!current) throw new Error('Finance settings are unavailable')
-      return commit(await saveFinanceSettings(change(completeSettings(current))))
-    },
-    [client, commit],
+    (change: (current: Settings) => FinanceSettings) => saveSettingsInTurn(client, change),
+    [client],
   )
   const annotate = useCallback(
     async (changes: TransactionAnnotationChanges) => {

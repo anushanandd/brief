@@ -8,9 +8,11 @@ import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 import { TransactionEdits } from '../components/transaction-edits'
 import { seedSnapshot } from '../data/fixtures/records'
 import { restoreTransactionAnnotations, saveTransactionAnnotations } from '../lib/annotations'
+import { saveFinanceSettings } from '../lib/finance-settings'
 import type { FinanceSnapshot } from '../lib/schema'
 import { forgetEdits } from '../lib/undo'
 import { financeQueryKey } from './use-finance'
+import { saveSettingsInTurn } from './use-finance-edits'
 import { useGlobalActions } from './use-global-actions'
 import { useKeyboardDispatch } from './use-keyboard-dispatch'
 
@@ -30,6 +32,10 @@ vi.mock('./use-finance', async (original) => {
     }),
   }
 })
+vi.mock('../lib/finance-settings', async (original) => ({
+  ...(await original<typeof import('../lib/finance-settings')>()),
+  saveFinanceSettings: vi.fn(),
+}))
 vi.mock('./use-refresh-finance', () => {
   const refresh = vi.fn()
   return { useRefreshFinance: () => refresh, useFinanceRefreshState: () => false }
@@ -159,4 +165,25 @@ it('shows a failed edit’s error and keeps the snapshot as it was', async () =>
     )
   })
   expect(restoreTransactionAnnotations).not.toHaveBeenCalled()
+})
+
+it('two quick settings changes both land', async () => {
+  client.setQueryData(financeQueryKey, seedSnapshot())
+  // Each save answers with the view after it, a little later than asked.
+  let revision = 1_000
+  vi.mocked(saveFinanceSettings).mockImplementation(
+    async (settings) =>
+      new Promise((resolve) => {
+        revision += 1
+        const snapshot = { ...seedSnapshot(), revision, settings }
+        setTimeout(() => resolve(snapshot), 5)
+      }),
+  )
+  await Promise.all([
+    saveSettingsInTurn(client, (current) => ({ ...current, notifications: true })),
+    saveSettingsInTurn(client, (current) => ({ ...current, research: true })),
+  ])
+  const saved = client.getQueryData<FinanceSnapshot>(financeQueryKey)?.settings
+  expect(saved?.notifications).toBe(true)
+  expect(saved?.research).toBe(true)
 })
