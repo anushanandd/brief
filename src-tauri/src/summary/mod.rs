@@ -831,12 +831,6 @@ fn earnings_digests(
                 reaction_typical_pct: reaction
                     .map(|(_, typical)| (typical * 100.0).round() / 100.0),
                 expected_move_pct: report.expected_move_pct,
-                call_guidance: report
-                    .call_guidance
-                    .as_ref()
-                    .map(|(sentences, _)| sentences.clone())
-                    .unwrap_or_default(),
-                call_guidance_by: report.call_guidance.as_ref().map(|(_, by)| by.clone()),
                 line: brief::earnings_line(symbol, eps, estimate, reaction),
             })
         })

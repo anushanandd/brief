@@ -44,10 +44,6 @@ reactionPct: number | null, reactionTypicalPct: number | null,
  */
 expectedMovePct: number | null, 
 /**
- * What management said about the outlook on the call, quoted, when a local model read it.
- */
-callGuidance: Array<string>, callGuidanceBy: string | null, 
-/**
  * The report in a line, in Rust's words.
  */
 line: Array<Span>, };

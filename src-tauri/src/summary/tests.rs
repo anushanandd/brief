@@ -291,8 +291,6 @@ fn native_summary_contract_matches_the_renderer_fixture() {
             reaction_pct: Some(6.1),
             reaction_typical_pct: Some(2.6),
             expected_move_pct: Some(7.9),
-            call_guidance: vec!["We expect revenue growth to continue next quarter.".into()],
-            call_guidance_by: Some("local:example".into()),
             line: brief::earnings_line("TEST", Some(0.42), Some(0.38), Some((6.1, 2.6))),
         }],
         expectations: vec![Expectation {
@@ -424,7 +422,6 @@ fn an_earnings_digest_matches_its_quarter_and_measures_the_stocks_own_answer() {
         }),
         release: None,
         expected_move_pct: Some(5.0),
-        call_guidance: None,
     };
     let evidence = [holding(
         "TEST",
@@ -452,7 +449,6 @@ fn an_earnings_digest_matches_its_quarter_and_measures_the_stocks_own_answer() {
     // Unread, the release claims no guidance; the move priced in before it is kept.
     assert!(!digest.release_read && digest.guidance.is_empty());
     assert_eq!(digest.expected_move_pct, Some(5.0));
-    assert!(digest.call_guidance.is_empty() && digest.call_guidance_by.is_none());
     // A report outside the period stays off the portfolio summary but shows on the holding.
     let later = period(day("2026-10-05"), day("2026-10-30"));
     assert!(earnings_digests(&reports, &evidence, later, None).is_empty());
@@ -764,8 +760,6 @@ fn what_changed_tells_a_report_once_and_a_sessions_move_once() {
         reaction_pct: None,
         reaction_typical_pct: None,
         expected_move_pct: None,
-        call_guidance: Vec::new(),
-        call_guidance_by: None,
         line: Vec::new(),
     };
     let told = build::told_once(changed.clone(), &[digest]);

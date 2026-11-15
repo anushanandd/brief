@@ -7,12 +7,12 @@ import { useInvestmentSummary } from './investment-summary-card'
 import { Card, EmptyState, SectionHeading } from './ui'
 
 /** Who chose the guidance sentences, said plainly. */
-const chosenBy = (by: string | null, from = 'the release’s sentences') =>
+const chosenBy = (by: string | null) =>
   by === 'apple'
-    ? `Chosen by Apple Intelligence from ${from}`
+    ? 'Chosen by Apple Intelligence from the release’s sentences'
     : by?.startsWith('local:')
-      ? `Chosen by ${by.slice(6)} on this Mac from ${from}`
-      : `Chosen by Brief’s rule from ${from}`
+      ? `Chosen by ${by.slice(6)} on this Mac from the release’s sentences`
+      : 'Chosen by Brief’s rule from the release’s sentences'
 
 /**
  * A holding's latest earnings report: what it earned against the consensus and how the stock's
@@ -90,18 +90,6 @@ export function EarningsReport({
               </span>
             )}
           </div>
-          {digest.callGuidance.length ? (
-            <div className="holding-earnings-quote">
-              <small>On the call</small>
-              <ul title={chosenBy(digest.callGuidanceBy, 'management’s remarks on the call')}>
-                {digest.callGuidance.map((sentence) => (
-                  <li key={sentence}>
-                    <q>{sentence}</q>
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ) : null}
           <NextQuarter summary={current} />
           <div className="holding-earnings-links">
             {digest.releaseUrl ? (

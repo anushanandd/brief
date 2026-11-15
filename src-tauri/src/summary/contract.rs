@@ -94,9 +94,6 @@ pub struct EarningsDigest {
     pub reaction_typical_pct: Option<f64>,
     /// The move the options market priced in before the report, in percent either way.
     pub expected_move_pct: Option<f64>,
-    /// What management said about the outlook on the call, quoted, when a local model read it.
-    pub call_guidance: Vec<String>,
-    pub call_guidance_by: Option<String>,
     /// The report in a line, in Rust's words.
     pub line: Vec<brief::Span>,
 }

@@ -3,7 +3,6 @@
 //! (the at-the-money straddle in Alpaca's free indicative options feed). Brief predicts
 //! nothing; after a report it puts the outcome beside these.
 use super::*;
-use chrono::Datelike;
 use serde_json::json;
 
 /// A holding's estimates are fetched at most this often.
@@ -160,18 +159,8 @@ pub(super) fn expected_move(
     Some((expiry, (straddle / price * 1_000.0).round() / 10.0))
 }
 
-/// The calendar quarter a fiscal period ends in, as Alpha Vantage names transcripts: `2026Q3`.
-pub(super) fn transcript_quarter(fiscal_date_ending: &str) -> Option<String> {
-    let date = NaiveDate::parse_from_str(fiscal_date_ending, "%Y-%m-%d").ok()?;
-    Some(format!("{}Q{}", date.year(), (date.month() - 1) / 3 + 1))
-}
-
 pub(crate) fn expected_key(symbol: &str, report_date: &str) -> String {
     format!("expected:{symbol}:{report_date}")
-}
-
-pub(crate) fn call_key(symbol: &str, quarter: &str) -> String {
-    format!("call:{symbol}:{quarter}")
 }
 
 impl Providers {
@@ -383,25 +372,6 @@ pub(crate) fn saved_expected_move(
         .as_f64()
 }
 
-/// The latest call's guidance sentences, with who chose them, when a local model read it.
-pub(crate) fn saved_call_guidance(
-    cache: &news_cache::NewsCache,
-    symbol: &str,
-    fiscal_date_ending: &str,
-) -> Option<(Vec<String>, String)> {
-    let quarter = transcript_quarter(fiscal_date_ending)?;
-    let (reading, reader) = cache.reading(&call_key(symbol, &quarter)).ok()??;
-    Some((
-        reading["sentences"]
-            .as_array()?
-            .iter()
-            .filter_map(Value::as_str)
-            .map(str::to_owned)
-            .collect(),
-        reader,
-    ))
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -465,11 +435,5 @@ mod tests {
             Some((day("2026-11-20"), 'C', 450.5))
         );
         assert_eq!(occ("BAD"), None);
-    }
-
-    #[test]
-    fn a_transcript_is_named_by_its_calendar_quarter() {
-        assert_eq!(transcript_quarter("2026-09-30").as_deref(), Some("2026Q3"));
-        assert_eq!(transcript_quarter("2027-01-31").as_deref(), Some("2027Q1"));
     }
 }

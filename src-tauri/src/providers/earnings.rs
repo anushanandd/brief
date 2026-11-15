@@ -485,8 +485,6 @@ pub(crate) struct SavedReport {
     pub release: Option<ReleaseReading>,
     /// The move the options market priced in before the report, in percent.
     pub expected_move_pct: Option<f64>,
-    /// What management said about the outlook on the call, with who chose the sentences.
-    pub call_guidance: Option<(Vec<String>, String)>,
 }
 
 /// A holding's latest report as saved: the 8-K, the matching reported quarter (reported on or
@@ -554,15 +552,11 @@ pub(crate) fn saved_report(cache: &news_cache::NewsCache, symbol: &str) -> Saved
     let expected_move_pct = report_day
         .as_deref()
         .and_then(|day| expectations::saved_expected_move(cache, symbol, day));
-    let call_guidance = quarter.as_ref().and_then(|quarter| {
-        expectations::saved_call_guidance(cache, symbol, &quarter.fiscal_date_ending)
-    });
     SavedReport {
         filing,
         quarter,
         release,
         expected_move_pct,
-        call_guidance,
     }
 }
 

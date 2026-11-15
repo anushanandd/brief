@@ -135,8 +135,6 @@
   ],
   "earnings": [
     {
-      "callGuidance": ["We expect revenue growth to continue next quarter."],
-      "callGuidanceBy": "local:example",
       "eps": 0.42,
       "epsEstimate": 0.38,
       "expectedMovePct": 7.9,
