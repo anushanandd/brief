@@ -27,8 +27,8 @@ pub struct Lot {
     pub long_term: bool,
     /// The first day a sale would be long-term.
     pub long_term_on: NaiveDate,
-    /// Tax a sale today would add (negative: save) at this year's marginal rates, in a
-    /// taxable account with a tax profile.
+    /// What selling this lot alone today would add to this year's tax estimate (negative:
+    /// save), in a taxable account with a tax profile.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub estimated_tax: Option<f64>,

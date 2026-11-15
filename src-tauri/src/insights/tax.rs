@@ -327,14 +327,6 @@ pub struct Withholding {
     pub met: HarborMet,
 }
 
-/// Marginal rates for one year, for estimating the tax on a sale.
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rates {
-    /// Percent, including the investment income tax and state tax where they apply.
-    pub short_term: f64,
-    pub long_term: f64,
-}
-
 fn ordinary_tax(brackets: &[(Option<f64>, f64)], income: f64) -> f64 {
     let mut tax = 0.0;
     let mut floor = 0.0;
@@ -594,7 +586,8 @@ pub struct TaxInputs<'a> {
     pub transactions: &'a [Transaction],
     pub trades: &'a [Trade],
     pub accounts: &'a [Account],
-    pub positions: &'a [PositionLots],
+    /// Each taxable lot's `estimated_tax` is filled in.
+    pub positions: &'a mut [PositionLots],
     /// Taxable losses large enough to harvest, by ticker and account.
     pub harvestable: &'a [(String, String)],
     pub profile: Option<&'a TaxProfile>,
@@ -681,18 +674,34 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
         }
     }
 
-    // This year's tax without a sale less with it, so a loss offsets this year's gains, then
+    // This year's tax with a sale less without it, so a loss offsets this year's gains, then
     // other income only to the limit; what carries over saves nothing this year.
-    let saving = |short_loss: i64, long_loss: i64| {
+    let sale_tax = |short_gain: i64, long_gain: i64| {
         let (earned, short, long) = this_year.as_ref()?;
         let tables = TABLES.years.get(&today.year())?;
         let total = |short, long| {
             Some(scenario(profile?, tables, &earned.income(false, short, long))?.total)
         };
         Some(round2(
-            total(*short, *long)? - total(short + short_loss, long + long_loss)?,
+            total(short + short_gain, long + long_gain)? - total(*short, *long)?,
         ))
     };
+    for position in positions
+        .iter_mut()
+        .filter(|position| !position.tax_deferred)
+    {
+        for lot in &mut position.lots {
+            let gain = lot.gain.map(minor_units);
+            lot.estimated_tax = gain.and_then(|gain| {
+                if lot.long_term {
+                    sale_tax(0, gain)
+                } else {
+                    sale_tax(gain, 0)
+                }
+            });
+        }
+    }
+    let saving = |short_loss: i64, long_loss: i64| sale_tax(short_loss, long_loss).map(|tax| -tax);
     let harvest = harvest(harvestable, positions, trades, &saving, today);
 
     Taxes {
@@ -1119,21 +1128,6 @@ fn harvest(
         .collect()
 }
 
-fn this_year_rates(years: &[TaxYear]) -> Option<Rates> {
-    years
-        .first()
-        .and_then(|year| year.estimate.as_ref())
-        .map(|estimate| Rates {
-            short_term: estimate.marginal_rate,
-            long_term: estimate.capital_gains_rate,
-        })
-}
-
-/// This year's marginal rates, when there is an estimate.
-pub fn rates(taxes: &Taxes) -> Option<Rates> {
-    this_year_rates(&taxes.years)
-}
-
 #[cfg(test)]
 mod tests {
     use serde_json::json;
@@ -1435,7 +1429,7 @@ mod tests {
                 transactions: &transactions,
                 trades: &trades,
                 accounts: &accounts,
-                positions: &[],
+                positions: &mut [],
                 harvestable: &[],
                 profile: Some(&profile(80_000.0, Some(5.0))),
             },
@@ -1484,7 +1478,7 @@ mod tests {
                 transactions: &[],
                 trades: &losing,
                 accounts: &accounts,
-                positions: &[],
+                positions: &mut [],
                 harvestable: &[],
                 profile: Some(&profile(80_000.0, None)),
             },
@@ -1502,7 +1496,7 @@ mod tests {
                 transactions: &[],
                 trades: &losing,
                 accounts: &accounts,
-                positions: &[],
+                positions: &mut [],
                 harvestable: &[],
                 profile: None,
             },
@@ -1535,7 +1529,7 @@ mod tests {
                 transactions: &transactions,
                 trades: &trades,
                 accounts: &[account("taxable", "taxable")],
-                positions: &[],
+                positions: &mut [],
                 harvestable: &[],
                 profile: Some(&profile(80_000.0, None)),
             },
@@ -1569,7 +1563,7 @@ mod tests {
                 transactions: &[],
                 trades: &trades,
                 accounts: &[account("taxable", "taxable")],
-                positions: &[],
+                positions: &mut [],
                 harvestable: &[],
                 profile: Some(&profile(base, None)),
             },
@@ -1712,17 +1706,22 @@ mod tests {
             // A pair with no saved lots is left out, not shown as zero.
             ("GONE".to_owned(), "taxable".to_owned()),
         ];
-        let inputs = |profile| TaxInputs {
-            transactions: &[],
-            trades: &trades,
-            accounts: &[],
-            positions: &positions,
-            harvestable: &harvestable,
-            profile,
+        let run = |profile, today| {
+            taxes(
+                TaxInputs {
+                    transactions: &[],
+                    trades: &trades,
+                    accounts: &[],
+                    positions: &mut positions.clone(),
+                    harvestable: &harvestable,
+                    profile,
+                },
+                today,
+            )
         };
         // $80,000 single, with 5% state tax.
         let with_profile = profile(80_000.0, Some(5.0));
-        let result = taxes(inputs(Some(&with_profile)), day("2026-09-20"));
+        let result = run(Some(&with_profile), day("2026-09-20"));
         assert_eq!(result.harvest.len(), 2);
         let test = &result.harvest[0];
         assert_eq!(
@@ -1737,13 +1736,13 @@ mod tests {
         let other = &result.harvest[1];
         assert_eq!(other.wash_until, None, "TEST's purchases don't touch OTHER");
         // Without a profile the losses are listed and no saving is guessed.
-        let unprofiled = taxes(inputs(None), day("2026-09-20"));
+        let unprofiled = run(None, day("2026-09-20"));
         assert!(unprofiled
             .harvest
             .iter()
             .all(|harvest| harvest.tax_savings.is_none()));
         // Thirty-one days on, the window has closed.
-        let later = taxes(inputs(None), day("2026-10-02"));
+        let later = run(None, day("2026-10-02"));
         assert_eq!(later.harvest[0].wash_until, None);
     }
 
@@ -1763,7 +1762,7 @@ mod tests {
                     transactions: &[],
                     trades,
                     accounts: &[],
-                    positions: &positions,
+                    positions: &mut positions.clone(),
                     harvestable: &harvestable,
                     profile: Some(&profile(80_000.0, None)),
                 },
@@ -1787,6 +1786,50 @@ mod tests {
             Some((15_000.0, 0.0)),
         )];
         assert_eq!(savings(&gain), [Some(3_960.0), Some(3_960.0)]);
+    }
+
+    #[test]
+    fn each_taxable_lot_carries_what_selling_it_alone_would_change_this_year() {
+        let mut deferred = position("IRA", "ira", &[(5_000.0, true)]);
+        deferred.tax_deferred = true;
+        let mut positions = [
+            position("TEST", "taxable", &[(-20_000.0, false), (1_000.0, true)]),
+            deferred,
+        ];
+        let run = |positions: &mut [PositionLots], profile: Option<&TaxProfile>| {
+            taxes(
+                TaxInputs {
+                    transactions: &[],
+                    trades: &[],
+                    accounts: &[],
+                    positions,
+                    harvestable: &[],
+                    profile,
+                },
+                day("2026-09-20"),
+            );
+        };
+        run(&mut positions, Some(&profile(80_000.0, None)));
+        let estimated = |position: &PositionLots| {
+            position
+                .lots
+                .iter()
+                .map(|lot| lot.estimated_tax)
+                .collect::<Vec<_>>()
+        };
+        // The loss saves only $3,000 at 22%; the gain adds 15%. A tax-deferred lot owes nothing
+        // on a sale.
+        assert_eq!(estimated(&positions[0]), [Some(-660.0), Some(150.0)]);
+        assert_eq!(estimated(&positions[1]), [None]);
+        // Without a profile no tax is guessed.
+        let mut unprofiled = positions.clone();
+        for position in &mut unprofiled {
+            for lot in &mut position.lots {
+                lot.estimated_tax = None;
+            }
+        }
+        run(&mut unprofiled, None);
+        assert_eq!(estimated(&unprofiled[0]), [None, None]);
     }
 
     #[test]
@@ -1851,7 +1894,7 @@ mod tests {
                 transactions: &transactions,
                 trades: &trades,
                 accounts: &accounts,
-                positions: &[],
+                positions: &mut [],
                 harvestable: &[],
                 profile: None,
             },

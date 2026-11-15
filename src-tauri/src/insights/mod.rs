@@ -394,26 +394,12 @@ pub fn derive_with_documents(
             transactions,
             trades,
             accounts,
-            positions: &lots,
+            positions: &mut lots,
             harvestable: &harvestable,
             profile: settings.tax_profile.as_ref(),
         },
         today,
     );
-    if let Some(rates) = tax::rates(&taxes) {
-        for position in lots.iter_mut().filter(|position| !position.tax_deferred) {
-            for lot in &mut position.lots {
-                let rate = if lot.long_term {
-                    rates.long_term
-                } else {
-                    rates.short_term
-                };
-                lot.estimated_tax = lot
-                    .gain
-                    .map(|gain| from_minor(minor_units(gain * rate / 100.0)));
-            }
-        }
-    }
     brief.needs.extend(
         taxes
             .wash_windows

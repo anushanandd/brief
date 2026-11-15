@@ -14,7 +14,7 @@ longTerm: boolean,
  */
 longTermOn: string, 
 /**
- * Tax a sale today would add (negative: save) at this year's marginal rates, in a
- * taxable account with a tax profile.
+ * What selling this lot alone today would add to this year's tax estimate (negative:
+ * save), in a taxable account with a tax profile.
  */
 estimatedTax?: number, };
