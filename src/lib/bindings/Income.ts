@@ -26,8 +26,7 @@ uncountedEmployers: Array<string>,
  */
 selfEmployment: number, 
 /**
- * Contractor deposits after today's day of the year: for last year, what this year may
- * still bring.
+ * For last year, the contractor deposits this year may still bring (`tax::still_to_come`).
  */
 selfEmploymentLater: number, selfEmploymentTax: number, 
 /**

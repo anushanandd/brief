@@ -627,3 +627,20 @@ fn a_new_hires_partial_first_check_does_not_set_regular_pay() {
     assert_eq!(pay.projected_wages, 6_000.0 + 6.0 * 4_000.0);
     assert_eq!(pay.projected_withholding, 700.0 + 6.0 * 500.0);
 }
+
+#[test]
+fn last_years_contractor_pay_arriving_early_this_year_is_not_still_to_come() {
+    let pay = |id: &str, date: &str, payer: &str, amount: f64| {
+        row(id, "cash", date, payer, amount, TransactionKind::Income)
+    };
+    let transactions = vec![
+        // Last year's October 17 check came on October 13 this year.
+        pay("last", "2025-10-17", "Example AI Sol EXAMPLE", 1_000.0),
+        pay("this", "2026-10-13", "Example AI Sol EXAMPLE", 1_000.0),
+        // Last year's October 13 check from another payer hasn't come yet.
+        pay("late", "2025-10-13", "Sample Design Studio", 500.0),
+    ];
+    let result = run(&[], &transactions, &accounts(), "2026-10-15");
+    let last = result.years[1].income.as_ref().unwrap();
+    assert_eq!(last.self_employment_later, 500.0);
+}

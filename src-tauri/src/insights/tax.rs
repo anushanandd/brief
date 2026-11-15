@@ -199,8 +199,8 @@ pub struct TaxYear {
     pub tables_available: bool,
     /// Saved activity starts after January 1, so the year's amounts are incomplete.
     pub partial: bool,
-    /// This year only: what last year paid after this day a year ago, as the interest and
-    /// dividends still to come; absent when saved history doesn't cover all of last year.
+    /// This year only: last year's interest and dividends still to come (`still_to_come`);
+    /// absent when saved history doesn't cover all of last year.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub still_to_come: Option<StillToCome>,
@@ -609,6 +609,24 @@ pub struct TaxInputs<'a> {
     pub profile: Option<&'a TaxProfile>,
 }
 
+/// Whether last year's payment on `paid` is still to come by `today`, given the days this
+/// year's payments from the same source arrived: one within ten days of its anniversary is
+/// that payment landing early or late, and one more than ten days overdue isn't expected.
+pub fn still_to_come(
+    paid: NaiveDate,
+    today: NaiveDate,
+    this_year: impl IntoIterator<Item = NaiveDate>,
+) -> bool {
+    const DAYS: i64 = 10;
+    paid.checked_add_months(Months::new(12))
+        .is_some_and(|anniversary| {
+            (anniversary - today).num_days() > -DAYS
+                && !this_year
+                    .into_iter()
+                    .any(|date| (date - anniversary).num_days().abs() <= DAYS)
+        })
+}
+
 /// Each year's 1099 amounts and estimate, harvest values, and open wash-sale windows.
 pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
     let TaxInputs {
@@ -658,7 +676,7 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
     let mut this_year = None;
     for year in years {
         let in_year = |date: NaiveDate| date.year() == year && date <= today;
-        let earned = Earned::in_year(transactions, &taxable, &in_year);
+        let earned = Earned::in_year(transactions, &taxable, &|_, date| in_year(date));
         let (realized, short, long) = realized(trades, &washes, &taxable, &in_year);
         let tables = TABLES.years.get(&year);
         let estimate = profile
@@ -668,17 +686,32 @@ pub fn taxes(inputs: TaxInputs, today: NaiveDate) -> Taxes {
             first_activity
                 .is_none_or(|first| first > NaiveDate::from_ymd_opt(year, 1, 1).unwrap_or(first))
         };
-        let still_to_come = (year == today.year() && !partial(year - 1))
-            .then(|| today.checked_sub_months(Months::new(12)))
-            .flatten()
-            .map(|year_ago| {
-                let later = |date: NaiveDate| date.year() == year - 1 && date > year_ago;
-                let earned = Earned::in_year(transactions, &taxable, &later);
-                StillToCome {
-                    interest: from_minor(earned.interest),
-                    dividends: earned.dividends(),
-                }
-            });
+        let still_to_come = (year == today.year() && !partial(year - 1)).then(|| {
+            let later = |transaction: &Transaction, date: NaiveDate| {
+                date.year() == year - 1
+                    && matches!(transaction.kind(), Some(Kind::Interest | Kind::Dividend))
+                    && still_to_come(
+                        date,
+                        today,
+                        transactions
+                            .iter()
+                            .filter(|other| {
+                                !other.pending
+                                    && other.account_id == transaction.account_id
+                                    && other.merchant == transaction.merchant
+                                    && other.kind() == transaction.kind()
+                                    && other.dividend_type == transaction.dividend_type
+                            })
+                            .filter_map(|other| calendar::transaction_date(&other.date))
+                            .filter(|other| other.year() == year && *other <= today),
+                    )
+            };
+            let earned = Earned::in_year(transactions, &taxable, &later);
+            StillToCome {
+                interest: from_minor(earned.interest),
+                dividends: earned.dividends(),
+            }
+        });
         results.push(TaxYear {
             year,
             interest: from_minor(earned.interest),
@@ -1002,7 +1035,7 @@ impl Earned {
     fn in_year(
         transactions: &[Transaction],
         taxable: &dyn Fn(&str) -> bool,
-        in_year: &dyn Fn(NaiveDate) -> bool,
+        in_year: &dyn Fn(&Transaction, NaiveDate) -> bool,
     ) -> Self {
         let mut earned = Earned::default();
         for transaction in transactions.iter().filter(|transaction| {
@@ -1010,7 +1043,9 @@ impl Earned {
                 && transaction.amount > 0.0
                 && taxable(transaction.account_id.as_deref().unwrap_or_default())
         }) {
-            if !calendar::transaction_date(&transaction.date).is_some_and(in_year) {
+            if !calendar::transaction_date(&transaction.date)
+                .is_some_and(|date| in_year(transaction, date))
+            {
                 continue;
             }
             let amount = minor_units(transaction.amount);
@@ -2210,6 +2245,39 @@ mod tests {
         assert_eq!(later.interest, 20.0);
         assert_eq!(later.dividends.capital_gain_distributions, 500.0);
         assert_eq!(later.dividends.total, 0.0);
+    }
+
+    #[test]
+    fn a_payment_landing_a_few_days_off_its_anniversary_counts_once() {
+        let accounts = [account("taxable", "taxable")];
+        let transactions = [
+            income("old", "interest", "2024-12-31", "taxable", 1.0, None),
+            // Paid two days after this day last year, and two days before it this year.
+            income("early", "interest", "2025-09-22", "taxable", 20.0, None),
+            Transaction {
+                id: "early-now".into(),
+                ..income("early", "interest", "2026-09-18", "taxable", 20.0, None)
+            },
+            // Paid two days before this day last year, and not yet this year.
+            income("late", "dividend", "2025-09-18", "taxable", 50.0, None),
+        ];
+        let later = taxes(
+            TaxInputs {
+                transactions: &transactions,
+                trades: &[],
+                accounts: &accounts,
+                positions: &mut [],
+                harvestable: &[],
+                profile: None,
+            },
+            day("2026-09-20"),
+        )
+        .years[0]
+            .still_to_come
+            .clone()
+            .unwrap();
+        assert_eq!(later.interest, 0.0);
+        assert_eq!(later.dividends.unclassified, 50.0);
     }
 
     #[test]

@@ -4,7 +4,7 @@
 //! state it.
 use std::collections::{BTreeMap, BTreeSet};
 
-use chrono::{Datelike, Duration, Months, NaiveDate};
+use chrono::{Datelike, Duration, NaiveDate};
 use serde::Serialize;
 use ts_rs::TS;
 
@@ -125,8 +125,7 @@ pub struct Income {
     pub uncounted_employers: Vec<String>,
     /// Contractor pay: 1099-NEC box 1, else what arrived from contractors' payers.
     pub self_employment: f64,
-    /// Contractor deposits after today's day of the year: for last year, what this year may
-    /// still bring.
+    /// For last year, the contractor deposits this year may still bring (`tax::still_to_come`).
     pub self_employment_later: f64,
     pub self_employment_tax: f64,
     /// Wages and self-employment less half that tax and the standard deduction; absent
@@ -607,11 +606,6 @@ fn tax_year(
         .iter()
         .filter(|(date, _)| date.year() == year)
         .collect::<Vec<_>>();
-    // This day of the year in `year`; what arrived after it is still to come this year.
-    let same_day = u32::try_from(today.year() - year)
-        .ok()
-        .and_then(|years| today.checked_sub_months(Months::new(12 * years)));
-
     // Each employer: one whose pay statements or W-2 Brief has, or whose payroll arrived.
     let mut employers = Vec::<(String, &'static str)>::new();
     for document in documents.iter().filter(|document| {
@@ -646,7 +640,7 @@ fn tax_year(
         })
         .filter_map(|document| document.issuer.clone())
         .collect::<Vec<_>>();
-    // Each contractor's pay in cents, and the part after `same_day`.
+    // Each contractor's pay in cents, and for last year the part still to come this year.
     let mut contractors = BTreeMap::<String, (i64, i64)>::new();
     for (date, transaction) in in_year.iter().filter(|(_, transaction)| {
         transaction.kind() == Some(TransactionKind::Income) && transaction.amount > 0.0
@@ -665,6 +659,20 @@ fn tax_year(
                 employers.push((name, "Payroll deposits"));
             }
         } else if !known_employers.iter().any(|known| same_payer(known, &name)) {
+            let later = year == today.year() - 1
+                && super::tax::still_to_come(
+                    *date,
+                    today,
+                    posted
+                        .iter()
+                        .filter(|(other, deposit)| {
+                            other.year() == today.year()
+                                && deposit.amount > 0.0
+                                && deposit.kind() == Some(TransactionKind::Income)
+                                && payer(deposit).is_some_and(|other| same_payer(&other, &name))
+                        })
+                        .map(|(other, _)| *other),
+                );
             let key = contractors
                 .keys()
                 .find(|known| same_payer(known, &name))
@@ -672,7 +680,7 @@ fn tax_year(
                 .unwrap_or(name);
             let paid = contractors.entry(key).or_default();
             paid.0 += minor_units(transaction.amount);
-            if same_day.is_some_and(|same_day| *date > same_day) {
+            if later {
                 paid.1 += minor_units(transaction.amount);
             }
         }

@@ -11,7 +11,7 @@ export type TaxYear = { year: number, interest: number, dividends: Dividends, re
  */
 partial: boolean, 
 /**
- * This year only: what last year paid after this day a year ago, as the interest and
- * dividends still to come; absent when saved history doesn't cover all of last year.
+ * This year only: last year's interest and dividends still to come (`still_to_come`);
+ * absent when saved history doesn't cover all of last year.
  */
 stillToCome?: StillToCome, };
