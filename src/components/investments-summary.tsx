@@ -7,11 +7,12 @@ import { usePortfolioSectors } from '../hooks/use-portfolio-sectors'
 import { useReports } from '../hooks/use-reports'
 import { accountDisplayName } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { getEarningsCalendar, getPortfolioToday, isTauri } from '../lib/api'
+import { getEarningsCalendar, isTauri } from '../lib/api'
 import { addDays, localDateKey } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import {
   formatCurrency,
+  formatDay,
   formatPercent,
   formatProseCurrency,
   formatProsePercent,
@@ -22,7 +23,12 @@ import {
   valueTone,
   formatShortDay,
 } from '../lib/format'
-import { useGraphWindow, type ChartPeriod, chartPeriodSeconds } from '../lib/graph-preferences'
+import {
+  useGraphEnd,
+  useGraphWindow,
+  type ChartPeriod,
+  chartPeriodSeconds,
+} from '../lib/graph-preferences'
 import { rangeDates } from '../lib/investment-range'
 import type {
   Exposure,
@@ -51,19 +57,6 @@ const COMING_LISTED = 5
 
 const money = (value: number) => formatProseCurrency(Math.abs(value))
 const percent = formatProsePercent
-/** Today's move at live prices, for the standout holding and its explanation. */
-export function usePortfolioToday(revision: number | undefined, connected: boolean) {
-  const native = typeof window !== 'undefined' && isTauri()
-  return useQuery({
-    queryKey: ['portfolio-today', revision],
-    queryFn: getPortfolioToday,
-    enabled: native && connected && revision != null,
-    staleTime: 60_000,
-    refetchInterval: 120_000,
-    retry: false,
-  })
-}
-
 /**
  * The page's one period, chosen from the main chart card with the app's chart range control.
  * It is the period Home and Accounts share, and every card here follows it.
@@ -162,16 +155,19 @@ export function PeriodCard({
   range: ChartPeriod
   accountId?: string
 }) {
-  const day = data.insights?.today ?? localDateKey(Date.parse(data.updatedAt) / 1000)
+  // Scrolled back in time, the period ends on the chart's end day.
+  const [end] = useGraphEnd()
+  const day = end ?? data.insights?.today ?? localDateKey(Date.parse(data.updatedAt) / 1000)
   const { from, to } = rangeDates(range, day, span?.start)
   // Rust sums the reports over the same days as the period's statement.
   const summaries = useReports(data, {
     ...(from ? { from, to } : { range: 'all' }),
     ...(accountId ? { accounts: [accountId] } : {}),
   }).data?.summaries
+  const title = end && from ? `${formatShortDay(from)} – ${formatDay(to)}` : rangeNames[range]
   return (
-    <Card className="investments-side-card" aria-label={`${rangeNames[range]} in detail`}>
-      <SectionHeading title={rangeNames[range]} />
+    <Card className="investments-side-card" aria-label={`${title} in detail`}>
+      <SectionHeading title={title} />
       <div className="investments-side-stats">
         {span ? (
           <>

@@ -200,6 +200,65 @@ export function holdingRangeChange(
   return { change, percent: (change / first.value) * 100 }
 }
 
+export type HoldingPeriodChange = {
+  change: number
+  percent: number
+  /** Outside regular hours, the move since the latest session's close, and when it traded. */
+  extended?: { change: number; percent: number; label: string }
+}
+
+/**
+ * The change over a page's period measured as the investment summary measures it: from the
+ * regular close of the session on or before `startDay`, and before the latest session, to the
+ * latest regular-session price. Outside regular hours the latest session's close ends the period
+ * and the move since then is its own figure, since the summary never counts an extended-hours
+ * price. `undefined` when either close isn't in the history.
+ */
+export function holdingPeriodChange(
+  state: HoldingChartState,
+  points: LivelinePoint[],
+  now: number,
+  startDay: string,
+): HoldingPeriodChange | undefined {
+  const history = state.history
+  if (!history || history.cached || state.historyError || state.error) return undefined
+  const sessions = holdingSessions(history)
+  const calendar = history.calendar ?? []
+  const regular = sessions
+    .filter((session) => session.kind === 'regular')
+    .map((session, index) => ({ ...session, date: calendar[index]?.date ?? '' }))
+  const closeOf = (session: { start: number; end: number }) =>
+    points.findLast((point) => point.time > session.start && point.time <= session.end)
+  const latest = points.findLast((point) => point.time <= now)
+  const current = latest && regular.findLast((session) => session.start < latest.time)
+  const opening =
+    current &&
+    regular.findLast((session) => session.date <= startDay && session.date < current.date)
+  const first = opening && closeOf(opening)
+  if (!latest || !current || !first || first.value <= 0) return undefined
+  const trading = latest.time <= current.end
+  const end = trading ? latest : closeOf(current)
+  if (!end || end.time <= first.time) return undefined
+  const change = end.value - first.value
+  const moved = latest.value - end.value
+  const during = sessions.find(
+    (session) => latest.time > session.start && latest.time <= session.end,
+  )
+  return {
+    change,
+    percent: (change / first.value) * 100,
+    ...(trading || !moved
+      ? {}
+      : {
+          extended: {
+            change: moved,
+            percent: (moved / end.value) * 100,
+            label: during?.label === 'Close' ? 'After hours' : (during?.label ?? 'After hours'),
+          },
+        }),
+  }
+}
+
 // Preview only canonical bars, never an old quote, connection, or live marker.
 export function cachedHoldingPreview(
   history: HoldingPreviewHistory | undefined,

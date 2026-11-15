@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { toast } from 'sonner'
 
 import { useFinanceEdits } from '../hooks/use-finance-edits'
@@ -356,14 +357,20 @@ function Coverage({ data, retirement }: { data: FinanceSnapshot; retirement: Ret
   )
 }
 
-/** Retirement: this year's contributions against their limits, then how saving is going. */
-export function RetirementView({ data }: { data: FinanceSnapshot }) {
+/**
+ * Retirement: this year's contributions against their limits and how saving is going, the
+ * page's menu beside the years of spending they cover, then the savings by tax treatment.
+ */
+export function RetirementView({ data, menu }: { data: FinanceSnapshot; menu: ReactNode }) {
   const retirement = data.insights?.retirement
   if (!retirement)
     return (
-      <Card>
-        <EmptyState>Retirement figures are unavailable.</EmptyState>
-      </Card>
+      <div className="investments-split">
+        {menu}
+        <Card>
+          <EmptyState>Retirement figures are unavailable.</EmptyState>
+        </Card>
+      </div>
     )
   const names = financeSettings(data).accountNames
   const name = (id: string) =>
@@ -378,10 +385,11 @@ export function RetirementView({ data }: { data: FinanceSnapshot }) {
         <Contributions retirement={retirement} name={name} />
         <Savings retirement={retirement} />
       </div>
-      <div className="investments-pair">
-        <Buckets retirement={retirement} name={name} />
+      <div className="investments-split">
+        {menu}
         <Coverage data={data} retirement={retirement} />
       </div>
+      <Buckets retirement={retirement} name={name} />
     </>
   )
 }

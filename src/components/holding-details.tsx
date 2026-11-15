@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { useId, useMemo, useRef, useState } from 'react'
+import { useId, useMemo, useState } from 'react'
 
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { accountDisplayName } from '../lib/account-names'
@@ -203,7 +203,6 @@ export function PositionCard({
         )}
       </div>
       {descriptors.length ? <p className="portfolio-note">{descriptors.join(' · ')}</p> : null}
-      <PositionAccounts data={data} ticker={ticker} />
       <div className="position-card-action">
         <Button
           type="button"
@@ -228,75 +227,15 @@ export function PositionCard({
 }
 
 /**
- * The position's parts, one per account, behind a disclosure: shown only when the security is
- * held in more than one account, since one account's part is the whole position above.
+ * Where one security is held, each account with its part of the position. With several
+ * accounts each part's gain shows too; with one it is the position's, already above. Cost
+ * basis is on the account's page, a click away.
  */
-function PositionAccounts({ data, ticker }: { data: FinanceSnapshot; ticker: string }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null)
-  const parts = holdingDetail(data, ticker).accounts
-  const several = parts.length > 1
-  useRegisterActions(
-    useMemo<AppAction[]>(
-      () =>
-        several
-          ? [
-              {
-                id: 'holding.accounts.toggle',
-                title: 'Show the position by account',
-                search: 'holding position accounts split breakdown',
-                group: 'View',
-                scope: 'page',
-                bindings: [{ sequence: ['i'], label: 'I' }],
-                run: () => {
-                  const details = detailsRef.current
-                  if (details) details.open = !details.open
-                },
-              },
-            ]
-          : [],
-      [several],
-    ),
-  )
-  if (!several) return null
-  const names = financeSettings(data).accountNames
-  const accountName = (id: string) =>
-    accountDisplayName(id, data.accounts.find((account) => account.id === id)?.name ?? id, names)
-  return (
-    <details ref={detailsRef} className="account-details-more position-accounts">
-      <summary data-command="holding.accounts.toggle">{`In ${parts.length} accounts`}</summary>
-      <table className="financial-table" aria-label={`Your ${ticker} position by account`}>
-        <thead>
-          <tr>
-            <th scope="col">Account</th>
-            <th scope="col">Shares</th>
-            <th scope="col">Value</th>
-            <th scope="col">Cost basis</th>
-            <th scope="col">Gain</th>
-          </tr>
-        </thead>
-        <tbody>
-          {parts.map((part) => (
-            <tr key={part.accountId}>
-              <th scope="row">{accountName(part.accountId)}</th>
-              <td>{formatShares(part.shares)}</td>
-              <td className="sensitive-value">{formatCurrency(part.value)}</td>
-              <td className="sensitive-value">{formatCurrency(part.costBasis)}</td>
-              <td className={`sensitive-value ${valueTone(part.unrealizedGain)}`}>
-                {formatCurrency(part.unrealizedGain)}
-              </td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </details>
-  )
-}
-
-/** Where one security is held, each account with its part of the position. */
 export function HoldingAccounts({ data, ticker }: { data: FinanceSnapshot; ticker: string }) {
   const detail = holdingDetail(data, ticker)
   const names = financeSettings(data).accountNames
   const accountIds = detail.accounts.map(({ accountId }) => accountId)
+  const several = accountIds.length > 1
   return (
     <Card className="holding-detail-card holding-accounts-card">
       <SectionHeading title="Held in" />
@@ -331,7 +270,20 @@ export function HoldingAccounts({ data, ticker }: { data: FinanceSnapshot; ticke
                   <strong className="sensitive-value" data-copy-amount>
                     {formatCurrency(position?.value)}
                   </strong>
-                  <small>{formatShares(position?.shares)} shares</small>
+                  <small>
+                    {formatShares(position?.shares)} shares
+                    {several && position?.unrealizedGain != null ? (
+                      <>
+                        {' · '}
+                        <span
+                          className={`sensitive-value ${valueTone(position.unrealizedGain)}`}
+                          aria-label={`${formatSignedCurrency(position.unrealizedGain)} gain`}
+                        >
+                          {formatSignedCurrency(position.unrealizedGain)}
+                        </span>
+                      </>
+                    ) : null}
+                  </small>
                 </span>
                 <ChevronRight size={15} aria-hidden="true" />
               </Link>

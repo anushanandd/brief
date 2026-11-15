@@ -9,7 +9,7 @@ import type { ReactNode } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { expect, it, vi } from 'vitest'
 
-import { insights } from '../data/fixtures/insights'
+import { emptyRollup, insights } from '../data/fixtures/insights'
 import periodCardReports from '../data/fixtures/period-card-reports.json'
 
 // Server rendering never runs a query. Rust wrote the seed's reports for the days these cards
@@ -34,7 +34,7 @@ vi.mock('../hooks/use-reports', () => ({
 }))
 import { seedSnapshot, seedSummary } from '../data/fixtures/records'
 import { fromRust } from '../lib/rust-json'
-import type { Insights, PortfolioToday, Statement } from '../lib/schema'
+import type { Insights, Statement } from '../lib/schema'
 import { HoldingsTable } from './holdings-table'
 import {
   InvestmentsAttention,
@@ -169,23 +169,6 @@ const yearWindow: Statement = {
   },
   risk: { drawdownPct: null, volatilityPct: null, beta: null },
 }
-const position = (ticker: string, changePct: number, change: number) => ({
-  ticker,
-  name: ticker,
-  changePct,
-  change,
-  sector: null,
-})
-const notableDay: PortfolioToday = {
-  change: 2803,
-  changePct: 0.68,
-  market: { symbol: 'SPY', name: 'S&P 500', changePct: 0.4 },
-  vsMarket: 'ahead',
-  incomplete: false,
-  positions: [position('BIG', 3.1, 2910), position('SMALL', -0.4, -107)],
-  notable: true,
-  asOf: '2026-09-16T18:00:00Z',
-}
 
 it('states the period as its market gain and return, like every chart', async () => {
   const year = await render(() => <PeriodChange span={yearWindow} />, {})
@@ -270,43 +253,60 @@ it('lists only decisions, and shows nothing when there are none', async () => {
   )
 })
 
-it('lists every holding largest first with today, gain, and sortable columns', async () => {
-  const html = await render(
-    (data) => <HoldingsTable data={data} range="week" today={notableDay} />,
-    {
-      securities: [
-        {
-          ticker: 'SMALL',
-          name: 'Small Co',
-          accounts: 1,
-          value: 900,
-          percent: 9,
-          gain: -40,
-          gainPercent: -4.26,
-        },
-        {
-          ticker: 'BIG',
-          name: 'Big Co Class A',
-          accounts: 2,
-          value: 9100,
-          percent: 91,
-          gain: 2100,
-          gainPercent: 30,
-        },
+const holdingTotal = (ticker: string, name: string, value: number, price: number | null) => ({
+  ticker,
+  name,
+  instrumentKind: null,
+  color: '#fff',
+  quoteEligible: null,
+  valuationNote: null,
+  currency: 'USD',
+  shares: 10,
+  vestedShares: null,
+  value,
+  costBasis: value - 100,
+  unrealizedGain: 100,
+  totalChangePct: 10,
+  averageBasis: null,
+  weight: null,
+  price,
+  dailyChangePct: price == null ? null : 3.1,
+  weeklyChangePct: null,
+  marketAsOf: null,
+  accounts: [],
+})
+
+it('lists the portfolio, retirement, then every holding largest first, marking the one shown', async () => {
+  const html = await render((data) => <HoldingsTable data={data} selected="BIG" value={10000} />, {
+    rollup: emptyRollup({
+      retirement: 5000,
+      holdings: [
+        holdingTotal('SMALL', 'Small Co', 900, null),
+        holdingTotal('BIG', 'Big Co Class A', 9100, 910),
       ],
-    },
-  )
-  expect(html.indexOf('href="/holdings/BIG"')).toBeLessThan(html.indexOf('href="/holdings/SMALL"'))
-  // Names drop their share class; today's move comes from live prices.
+    }),
+  })
+  const order = [
+    'href="/holdings"',
+    'href="/holdings/retirement"',
+    '/holdings/BIG',
+    '/holdings/SMALL',
+  ]
+  const at = order.map((marker) => html.indexOf(marker))
+  expect(at.every((index) => index >= 0)).toBe(true)
+  expect(at).toEqual(at.toSorted((left, right) => left - right))
+  expect(html).toContain('2 holdings')
+  const anchor = (href: string) => html.match(new RegExp(`<a[^>]*href="${href}"[^>]*>`))?.[0]
+  expect(anchor('/holdings/BIG')).toContain('aria-current="page"')
+  expect(anchor('/holdings')).not.toContain('aria-current')
+  // Names drop their share class; a figure Rust doesn't have reads as unavailable.
   expect(html).toContain('Big Co</small>')
   expect(html).toContain('+3.10%')
-  expect(html).toContain('91.0%')
-  // Every column sorts through a registered command.
-  for (const column of ['holding', 'today', 'period', 'value', 'weight', 'gain', 'news'])
+  expect(html).toContain('$9,000')
+  expect(html).toContain('—')
+  for (const column of ['holding', 'price', 'today', 'total', 'cost', 'value'])
     expect(html).toContain(`data-command="investments.sort.${column}"`)
   expect(html).toContain('aria-label="Sort by Value, descending"')
-  // Without the desktop app there is no period change or news, shown as unavailable.
-  expect(html).toContain('<span class="muted">—</span>')
 })
 
 it('compares every period with the S&P 500 and marks the page’s', async () => {

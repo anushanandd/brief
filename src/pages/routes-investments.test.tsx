@@ -117,7 +117,7 @@ it('gives each holding its own page, and lists every security once on the overvi
     'aria-label="Price chart details"',
   )
   expect(html).not.toContain('aria-label="Chart style"')
-  // Your position is a card beside the price it is worth; where it's held sits beside the news.
+  // Your position sits beside the chart.
   const position = html.slice(html.indexOf('position-card'))
   expect(position).toContain('<h2>Your position</h2>')
   expect(position).toContain('71.4%')
@@ -133,30 +133,48 @@ it('gives each holding its own page, and lists every security once on the overvi
   expect(html).not.toContain('$29.00')
   expect(selected).toContain('$29.00')
   expect(selected).not.toContain('-$37.00')
-  // The holding page is about one security; the list of all of them lives on the overview.
   expect(html).not.toContain('aria-label="Held securities"')
-  expect(html).not.toContain('holdings-table')
-  expect(await renderRoute('/holdings/ZZZ')).toContain('ZZZ isn’t held')
+  const missing = await renderRoute('/holdings/ZZZ')
+  expect(missing).toContain('ZZZ isn’t held')
+  expect(missing).toContain('holdings-table-card')
 
-  // The price chart sits beside the position, the summary under them, then the news.
-  expect(html.indexOf('holding-chart-card')).toBeLessThan(html.indexOf('position-card'))
-  expect(html.indexOf('position-card')).toBeLessThan(html.indexOf('investment-summary-card'))
-  expect(html.indexOf('investment-summary-card')).toBeLessThan(html.indexOf('holding-news-card'))
+  // The chart beside the position, the menu beside the summary, then news beside where it's
+  // held, earnings, and activity.
+  const layout = [
+    'holding-chart-card',
+    'position-card',
+    'holdings-table-card',
+    'investment-summary-card',
+    'holding-news-card',
+    'holding-accounts-card',
+    'holding-earnings-card',
+    'aria-label="AAA activity"',
+  ].map((marker) => html.indexOf(marker))
+  expect(layout.every((index) => index >= 0)).toBe(true)
+  expect(layout).toEqual(layout.toSorted((a, b) => a - b))
+  const side = html.slice(html.indexOf('holding-side'))
+  expect(side).not.toContain('holding-news-card')
+  expect(side).toContain('holding-accounts-card')
   const summaryCard = html.slice(html.indexOf('investment-summary-card'))
   expect(summaryCard).toContain('<h2>Summary</h2>')
   // It needs the desktop app, and the preview says so instead of inventing a period.
   expect(summaryCard).toMatch(/Needs the desktop app\.|No return history for this period\./)
-  // The strip heading the page is the selector: the portfolio, then each holding by value.
-  const rail = html.slice(
+  // The Holdings menu is the selector: the portfolio, retirement, then each holding by value.
+  const menu = html.slice(
     html.indexOf('aria-label="Holdings"'),
     html.indexOf('</nav>', html.indexOf('aria-label="Holdings"')),
   )
-  expect(rail.indexOf('href="/holdings"')).toBeLessThan(rail.indexOf('href="/holdings/AAA"'))
-  expect(rail.indexOf('href="/holdings/AAA"')).toBeLessThan(rail.indexOf('href="/holdings/BBB"'))
-  expect(rail.match(/href="\/holdings\/AAA"/g)).toHaveLength(1)
-  expect(rail).toMatch(
+  expect(menu.indexOf('href="/holdings"')).toBeLessThan(menu.indexOf('href="/holdings/retirement"'))
+  expect(menu.indexOf('href="/holdings/retirement"')).toBeLessThan(
+    menu.indexOf('href="/holdings/AAA"'),
+  )
+  expect(menu.indexOf('href="/holdings/AAA"')).toBeLessThan(menu.indexOf('href="/holdings/BBB"'))
+  expect(menu.match(/href="\/holdings\/AAA"/g)).toHaveLength(1)
+  expect(menu).toMatch(
     /aria-current="page"[^>]*href="\/holdings\/AAA"|href="\/holdings\/AAA"[^>]*aria-current="page"/,
   )
+  // The strip of cards it replaced is gone.
+  expect(html).not.toContain('account-switcher')
   // The period is chosen in the price chart's card.
   expect(holdingChart).toMatch(/role="combobox"[^>]*aria-label="Chart range"/)
   // Taxes open on request, not on every look at a holding.
@@ -173,7 +191,7 @@ it('gives each holding its own page, and lists every security once on the overvi
   expect(overview).not.toContain('position-card')
 })
 
-it('shows a security held in two accounts once, at its whole position, with each account behind a disclosure', async () => {
+it('shows a security held in two accounts once, at its whole position, with each account’s part where it’s held', async () => {
   const position = {
     ticker: 'AAA',
     name: 'Alpha fund',
@@ -216,18 +234,15 @@ it('shows a security held in two accounts once, at its whole position, with each
   expect(preview).not.toContain('$100.00')
 
   const page = await renderRoute('/holdings/AAA')
-  const card = page.slice(page.indexOf('position-card'), page.indexOf('investment-summary-card'))
+  const card = page.slice(page.indexOf('position-card'), page.indexOf('holdings-table-card'))
   // The whole position: value, gain on the summed cost, and shares across both accounts.
   expect(card).toContain('$150.00')
   expect(card).toContain('+$40.00')
   expect(card).toContain('+36.36%')
-  // Each account's part sits behind a disclosure, reachable from the keyboard.
-  const parts = card.slice(card.indexOf('<details'), card.indexOf('</details>'))
-  expect(parts).toContain('data-command="holding.accounts.toggle"')
-  expect(parts).toContain('In 2 accounts')
-  expect(parts).toContain('aria-label="Your AAA position by account"')
-  for (const part of ['$100.00', '$80.00', '$50.00', '$30.00', '$20.00'])
-    expect(parts).toContain(part)
+  expect(card).not.toContain('<details')
+  // Where it's held shows each account's part with its own gain.
+  const held = page.slice(page.indexOf('holding-accounts-card'))
+  for (const part of ['$100.00', '$50.00', '+$20.00']) expect(held).toContain(part)
 })
 
 it('shows a saved date and provider warning without claiming fresh data', async () => {
@@ -241,7 +256,7 @@ it('shows a saved date and provider warning without claiming fresh data', async 
   expect(html).toContain('dateTime="2026-09-03T12:00:00Z"')
 })
 
-it('heads the page with its holdings, puts the period beside the chart and the summary under them, then every holding beside what needs you, then exposure beside performance', async () => {
+it('puts the period beside the chart, the holdings menu beside the summary, then what’s ahead beside what needs you, then exposure beside performance', async () => {
   scenario.insights = {
     investmentAttention: {
       flags: [{ kind: 'concentrated', ticker: 'AAA', percent: 40 }],
@@ -252,8 +267,8 @@ it('heads the page with its holdings, puts the period beside the chart and the s
   const order = [
     'investments-portfolio-card',
     'investments-side-card',
-    'investment-summary-card',
     'holdings-table-card',
+    'investment-summary-card',
     '<h2>Needs you</h2>',
     '<h2>Exposure</h2>',
     '<h2>Performance</h2>',
@@ -263,7 +278,7 @@ it('heads the page with its holdings, puts the period beside the chart and the s
     Object.fromEntries(order.map((marker) => [marker, true])),
   )
   expect(positions).toEqual(positions.toSorted((a, b) => a - b))
-  // The holdings strip replaces the reports strip; the period card opens the reports.
+  // The holdings menu replaces the reports strip; the period card opens the reports.
   expect(overview).toContain('aria-label="Holdings"')
   expect(overview).not.toContain('aria-label="Overview and reports"')
   // The summary has no button: it is made in the background.

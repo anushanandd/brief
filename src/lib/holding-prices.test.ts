@@ -8,6 +8,7 @@ import {
   holdingSessions,
   visibleHoldingChartPoints,
   holdingChartTime,
+  holdingPeriodChange,
   holdingRangeChange,
   holdingChartEnd,
   reduceHoldingChart,
@@ -496,4 +497,41 @@ it('keeps ordinary candle bodies wide when the last candle is only one minute ol
     const before = result.candles[index - 1]
     if (before) expect(before.time + before.width!).toBeLessThanOrEqual(candle.time)
   })
+})
+
+it('measures a period from a session close to the latest close, and the move since on its own', () => {
+  const days = ['2026-11-11', '2026-11-12', '2026-11-13'].map((date) => ({
+    date,
+    open: 34200,
+    close: 57600,
+  }))
+  // Each regular session's last minute ends at 4:00 PM in New York, 21:00 UTC in November.
+  const closing = (date: string, close: number) => bar(t(`${date}T20:59:00Z`), close)
+  const bars = [
+    closing('2026-11-11', 100),
+    closing('2026-11-12', 90),
+    bar(t('2026-11-13T19:58:00Z'), 85),
+    closing('2026-11-13', 80),
+    bar(t('2026-11-13T22:00:00Z'), 76),
+  ]
+  const week = state(bars, { calendar: days, range: 7 * 86400 })
+  const points = holdingChartPoints(week)
+  // After hours: the period ends at the close, and the later trade is its own figure.
+  expect(holdingPeriodChange(week, points, t('2026-11-13T23:00:00Z'), '2026-11-11')).toEqual({
+    change: -20,
+    percent: -20,
+    extended: { change: -4, percent: -5, label: 'After hours' },
+  })
+  // While the session trades, the latest price ends the period.
+  expect(holdingPeriodChange(week, points, t('2026-11-13T20:00:00Z'), '2026-11-11')).toEqual({
+    change: -15,
+    percent: -15,
+  })
+  // A period starting on the latest session starts from the one before, as the summary's does.
+  expect(holdingPeriodChange(week, points, t('2026-11-14T15:00:00Z'), '2026-11-13')).toMatchObject({
+    change: -10,
+    extended: { change: -4 },
+  })
+  // A start before the history leaves the trailing span to measure.
+  expect(holdingPeriodChange(week, points, t('2026-11-13T23:00:00Z'), '2026-11-01')).toBeUndefined()
 })

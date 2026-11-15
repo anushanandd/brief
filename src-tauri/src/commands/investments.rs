@@ -3,8 +3,7 @@
 use tauri::State;
 
 use crate::{
-    providers::{self, news::PortfolioNews, portfolio},
-    session::Period,
+    providers::{self, portfolio},
     summary, summary_jobs, AppState,
 };
 
@@ -27,14 +26,6 @@ fn held_securities(state: &AppState) -> Result<Vec<portfolio::HeldSecurity>, Str
 }
 
 #[tauri::command]
-pub(crate) async fn get_portfolio_today(
-    state: State<'_, AppState>,
-) -> Result<portfolio::PortfolioToday, String> {
-    let held = held_securities(&state)?;
-    state.providers.portfolio_today(held).await
-}
-
-#[tauri::command]
 pub(crate) async fn get_portfolio_sectors(
     state: State<'_, AppState>,
 ) -> Result<portfolio::SectorExposure, String> {
@@ -48,25 +39,6 @@ pub(crate) async fn get_earnings_calendar(
     state: State<'_, AppState>,
 ) -> Result<Vec<providers::EarningsEvent>, String> {
     state.providers.earnings_calendar(symbols).await
-}
-
-/// Saves the past week's news for every held stock and checks EDGAR for the stalest holdings,
-/// at most every ten minutes.
-#[tauri::command]
-pub(crate) async fn refresh_portfolio_news(
-    app: tauri::AppHandle,
-    state: State<'_, AppState>,
-) -> Result<PortfolioNews, String> {
-    let view = state.storage()?.read_view()?;
-    let news = state
-        .providers
-        .refresh_portfolio_news(&view.snapshot)
-        .await?;
-    // What was just saved is read in the background; the summary never waits on a model.
-    if news.refreshed {
-        crate::reading_job::nudge(&app);
-    }
-    Ok(news)
 }
 
 /// The portfolio's, or one holding's, day and period: the brief and its headlines, moves,
@@ -109,26 +81,8 @@ pub(crate) async fn get_investment_summary(
 pub(crate) fn warm_investment_summaries(
     start: String,
     app: tauri::AppHandle,
-    state: State<'_, AppState>,
 ) -> Result<(), String> {
-    Period::through_latest(&start, chrono::Utc::now())?;
-    let mut held = portfolio::held_securities(&state.storage()?.read_view()?.snapshot.holdings);
-    held.sort_by(|left, right| {
-        right
-            .value
-            .total_cmp(&left.value)
-            .then_with(|| left.ticker.cmp(&right.ticker))
-    });
-    let tickers = std::iter::once(None)
-        .chain(
-            held.into_iter()
-                .filter_map(|security| providers::one_ticker(Some(security.ticker)).ok())
-                .flatten()
-                .map(Some),
-        )
-        .collect();
-    summary_jobs::warm(&app, &start, tickers);
-    Ok(())
+    summary_jobs::warm(&app, &start)
 }
 
 /// How often the layered model's group and own-move thresholds fired over saved sessions.
