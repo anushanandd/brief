@@ -120,3 +120,34 @@ fn folders_macos_may_sync_are_named() {
     ));
     assert!(!synced(Path::new("/Users/example/Brief"), home));
 }
+
+#[test]
+fn a_masked_folder_holds_no_amount_and_no_old_copy() {
+    let chosen = chosen();
+    let mut graph = graph();
+    graph.objects[2].record = json!({
+        "statementCsv": "date,amount\n2026-03-04,-1234.56\n",
+        "summary": "Paid $1,200 toward the card, leaving 87.10.",
+    });
+    let old = chosen.join(format!(".{FOLDER_NAME}.old.{}", uuid::Uuid::new_v4()));
+    fs::create_dir_all(&old).unwrap();
+    fs::write(old.join("accounts.csv"), "balance\n5000.00\n").unwrap();
+    write(&chosen, &graph, true, "2026-09-10T12:00:00Z").unwrap();
+    assert!(!old.exists());
+    let mut written = String::new();
+    let mut folders = vec![target(&chosen)];
+    while let Some(folder) = folders.pop() {
+        for entry in fs::read_dir(folder).unwrap().flatten() {
+            if entry.path().is_dir() {
+                folders.push(entry.path());
+            } else {
+                written.push_str(&fs::read_to_string(entry.path()).unwrap());
+            }
+        }
+    }
+    for amount in ["1234.56", "1,200", "87.10", "12.5"] {
+        assert!(!written.contains(amount), "{amount} written");
+    }
+    assert!(written.contains("2026-03-04"));
+    fs::remove_dir_all(chosen).unwrap();
+}

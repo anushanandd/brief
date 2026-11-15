@@ -58,6 +58,36 @@ fn csv(rows: &[Vec<String>]) -> String {
         + "\n"
 }
 
+/// Amounts written as text, such as a statement row's "-45.20" or a summary's "$1,200".
+static AMOUNT: std::sync::LazyLock<regex::Regex> = std::sync::LazyLock::new(|| {
+    regex::Regex::new(r"\$\s?\d[\d,]*(?:\.\d+)?|\d[\d,]*\.\d{2}\b")
+        .expect("the amount pattern is valid")
+});
+
+/// `text` with every amount in it as the mask, for a folder written masked.
+fn masked_text(text: &str) -> String {
+    AMOUNT.replace_all(text, MASK).into_owned()
+}
+
+/// Removes what earlier writes left beside the folder: an old copy a swap couldn't remove, or a
+/// staging copy a crash stopped. Both may hold amounts the current setting would mask.
+fn sweep(chosen: &Path) {
+    let Ok(entries) = fs::read_dir(chosen) else {
+        return;
+    };
+    let prefix = format!(".{FOLDER_NAME}.");
+    for entry in entries.flatten() {
+        let name = entry.file_name();
+        let Some(rest) = name.to_str().and_then(|name| name.strip_prefix(&prefix)) else {
+            continue;
+        };
+        let id = rest.strip_prefix("old.").unwrap_or(rest);
+        if uuid::Uuid::parse_str(id).is_ok() && entry.path().is_dir() {
+            let _ = fs::remove_dir_all(entry.path());
+        }
+    }
+}
+
 /// Every number in a record as the mask, for a folder written masked.
 fn masked(value: &Value) -> Value {
     match value {
@@ -397,7 +427,7 @@ impl<'a> Writer<'a> {
 }
 
 /// Whether a folder is one Brief wrote.
-fn ours(folder: &Path) -> bool {
+pub fn ours(folder: &Path) -> bool {
     folder.join(MARKER).is_file()
 }
 
@@ -412,6 +442,7 @@ pub fn write(chosen: &Path, graph: &Graph, masked: bool, written_at: &str) -> Re
             "A folder named {FOLDER_NAME} that Brief didn't write is already there"
         ));
     }
+    sweep(chosen);
     let staging = chosen.join(format!(".{FOLDER_NAME}.{}", uuid::Uuid::new_v4()));
     let result = (|| {
         for (path, contents) in Writer::new(graph, masked)
@@ -426,6 +457,12 @@ pub fn write(chosen: &Path, graph: &Graph, masked: bool, written_at: &str) -> Re
             if let Some(parent) = path.parent() {
                 fs::create_dir_all(parent).map_err(|_| "Could not write the data folder")?;
             }
+            // Records hold amounts as text too, in statement rows and summaries.
+            let contents = if masked {
+                masked_text(&contents)
+            } else {
+                contents
+            };
             fs::write(&path, contents).map_err(|_| "Could not write the data folder")?;
         }
         // Swap the new copy in, then remove the old one.
@@ -447,6 +484,7 @@ pub fn write(chosen: &Path, graph: &Graph, masked: bool, written_at: &str) -> Re
 
 /// Removes the copy Brief wrote, as erasure and turning the folder off do.
 pub fn remove(chosen: &Path) -> Result<(), String> {
+    sweep(chosen);
     let target = target(chosen);
     if !target.exists() {
         return Ok(());

@@ -38,7 +38,8 @@ pub(crate) struct Failure {
     reason: String,
 }
 
-/// Every file under `paths`, skipping hidden ones and anything that isn't a document.
+/// Every file under `paths`, skipping hidden ones, anything that isn't a document, and the
+/// readable folder Brief writes, whose exports would come back as documents.
 fn collect(paths: &[String]) -> Vec<PathBuf> {
     let mut found = Vec::new();
     let mut pending = paths.iter().map(PathBuf::from).collect::<Vec<_>>();
@@ -50,6 +51,9 @@ fn collect(paths: &[String]) -> Vec<PathBuf> {
             continue;
         }
         if path.is_dir() {
+            if crate::data_folder::ours(&path) {
+                continue;
+            }
             if let Ok(entries) = std::fs::read_dir(&path) {
                 let mut entries = entries
                     .flatten()
