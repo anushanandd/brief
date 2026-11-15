@@ -3,6 +3,8 @@
 //! and relaunches it. Only the request for that file leaves the Mac; it carries no data.
 //! Debug builds never update: they don't run from an app bundle.
 
+use std::sync::{Mutex, PoisonError};
+
 use serde::Serialize;
 use tauri::AppHandle;
 use tauri_plugin_updater::UpdaterExt;
@@ -25,18 +27,33 @@ async fn newer(app: &AppHandle) -> Result<Option<tauri_plugin_updater::Update>, 
     updater.check().await.map_err(|error| error.to_string())
 }
 
-#[tauri::command]
-pub(crate) async fn check_app_update(app: AppHandle) -> Result<Option<AppUpdate>, String> {
-    Ok(newer(&app).await?.map(|update| AppUpdate {
-        version: update.version,
-        notes: update.body,
-    }))
+/// The update the last check offered, so installing it installs what was shown.
+static OFFERED: Mutex<Option<tauri_plugin_updater::Update>> = Mutex::new(None);
+
+fn offered() -> std::sync::MutexGuard<'static, Option<tauri_plugin_updater::Update>> {
+    OFFERED.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
-/// Installs the newest release, then relaunches the way Quit exits.
+#[tauri::command]
+pub(crate) async fn check_app_update(app: AppHandle) -> Result<Option<AppUpdate>, String> {
+    let update = newer(&app).await?;
+    let shown = update.as_ref().map(|update| AppUpdate {
+        version: update.version.clone(),
+        notes: update.body.clone(),
+    });
+    *offered() = update;
+    Ok(shown)
+}
+
+/// Installs the update the last check offered, or the newest release when none was, then
+/// relaunches the way Quit exits.
 #[tauri::command]
 pub(crate) async fn install_app_update(app: AppHandle) -> Result<(), String> {
-    let update = newer(&app).await?.ok_or("Brief is already up to date.")?;
+    let held = offered().clone();
+    let update = match held {
+        Some(update) => update,
+        None => newer(&app).await?.ok_or("Brief is already up to date.")?,
+    };
     update
         .download_and_install(|_, _| {}, || {})
         .await
