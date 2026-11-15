@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { queryOptions, useQuery, useQueryClient } from '@tanstack/react-query'
 import { ZodError } from 'zod'
 
 import { holdingsKey, type HoldingsIdentity } from '../hooks/use-finance'
@@ -38,6 +38,19 @@ const SUMMARY_STALE_MS = 30 * 60_000
 // that word was missed.
 const REFRESHING_RECHECK_MS = 60_000
 
+/** A summary's query, shared by its cards and the holding's route. */
+export const investmentSummaryQuery = (
+  start: string | undefined,
+  ticker: string | undefined,
+  data: SummaryInputs,
+) =>
+  queryOptions({
+    queryKey: summaryKey(start, ticker, data),
+    queryFn: () => getInvestmentSummary(start!, ticker),
+    staleTime: SUMMARY_STALE_MS,
+    retry: false,
+  })
+
 /**
  * A summary with its figures, for the period the page shows. Rust answers at once from the
  * summary it saved; one made from older inputs comes marked `refreshing` while Rust makes the
@@ -56,12 +69,9 @@ export function useInvestmentSummary(
   const [end] = useGraphEnd()
   const start = end && !latest ? undefined : summaryStart(data, range)
   const summary = useQuery({
-    queryKey: summaryKey(start, ticker, data),
-    queryFn: () => getInvestmentSummary(start!, ticker),
+    ...investmentSummaryQuery(start, ticker, data),
     // The browser preview has the portfolio's summary from the synthetic seed.
     enabled: (native || !ticker) && Boolean(start),
-    staleTime: SUMMARY_STALE_MS,
-    retry: false,
     refetchInterval: (query) => (query.state.data?.refreshing ? REFRESHING_RECHECK_MS : false),
     // After a refresh the key changes; the same scope's last summary stays up, marked as
     // updating, for the moment Rust takes to answer, instead of a loading state.

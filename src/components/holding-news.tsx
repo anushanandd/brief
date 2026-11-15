@@ -7,22 +7,15 @@ import { getMarketNews, isTauri } from '../lib/api'
 import { pluralize } from '../lib/format'
 import { rankHoldingNews, RELEVANT } from '../lib/holding-news'
 import type { MarketNewsResult } from '../lib/schema'
+import { holdingNewsQuery } from '../route-data'
 import { RefreshCw } from './icons'
 import { NewsList } from './news-list'
 import { Button, EmptyState, ScrollCueCard, SectionHeading } from './ui'
 
-const newsKey = (ticker: string) => ['holding-news', 'alpaca', ticker]
-
 /** Saved Alpaca stories and SEC filings for one ticker; the chart and the News card share it. */
 export function useHoldingNews(ticker: string) {
   const native = typeof window !== 'undefined' && isTauri()
-  return useQuery({
-    queryKey: newsKey(ticker),
-    queryFn: () => getMarketNews([ticker]),
-    enabled: native && Boolean(ticker),
-    staleTime: Infinity,
-    retry: false,
-  })
+  return useQuery({ ...holdingNewsQuery(ticker), enabled: native && Boolean(ticker) })
 }
 
 /**
@@ -36,7 +29,7 @@ export function HoldingNews({ ticker, connected }: { ticker: string; connected: 
   const newsScrollRef = useViewportScroll(48)
   const news = useHoldingNews(ticker)
   const save = (result: MarketNewsResult, symbol: string) => {
-    client.setQueryData(newsKey(symbol), result)
+    client.setQueryData(holdingNewsQuery(symbol).queryKey, result)
     // The summary's events and sources come from the saved stories.
     void client.invalidateQueries({ queryKey: ['investment-summary'] })
   }

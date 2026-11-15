@@ -2,19 +2,17 @@ import { useQuery } from '@tanstack/react-query'
 import { useMemo } from 'react'
 
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { getEarningsCalendar, isTauri } from '../lib/api'
+import { isTauri } from '../lib/api'
 import { formatShortDay } from '../lib/format'
+import { earningsCalendarQuery } from '../route-data'
 import { RefreshCw } from './icons'
 import { Button } from './ui'
 
 export function HoldingEarnings({ symbols, connected }: { symbols: string[]; connected: boolean }) {
   const native = typeof window !== 'undefined' && isTauri()
   const earnings = useQuery({
-    queryKey: ['earnings-calendar', symbols],
-    queryFn: () => getEarningsCalendar(symbols),
+    ...earningsCalendarQuery(symbols),
     enabled: native && connected && symbols.length > 0,
-    staleTime: 6 * 60 * 60 * 1000,
-    retry: false,
   })
   const failed = native && connected && earnings.isError
   const { refetch } = earnings

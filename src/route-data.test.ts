@@ -7,21 +7,34 @@ import { financeQueryKey } from './hooks/use-finance'
 import { reportsQuery } from './hooks/use-reports'
 import { spendingPeriodQuery } from './hooks/use-spending-period'
 import { moneyStripRequests, pageReportRequest } from './lib/analytics'
-import { getReports, getSpendingPeriod } from './lib/api'
+import {
+  getEarningsCalendar,
+  getInvestmentSummary,
+  getMarketNews,
+  getReports,
+  getSpendingPeriod,
+  isTauri,
+} from './lib/api'
 import { snapshotToday } from './lib/dates'
 import { spendingPage, spendingPeriodRequest } from './lib/spending'
+import { earningsCalendarQuery, holdingNewsQuery } from './route-data'
 import { router } from './router'
 
 vi.mock('./lib/api', async (original) => ({
   ...(await original<typeof import('./lib/api')>()),
+  isTauri: vi.fn(() => false),
   getReports: vi.fn(),
   getSpendingPeriod: vi.fn(),
+  getMarketNews: vi.fn(),
+  getEarningsCalendar: vi.fn(),
+  getInvestmentSummary: vi.fn(),
 }))
 
 let release: () => void
+let answered: Promise<void>
 beforeEach(() => {
   // Rust answers only when the test lets it, so a navigation can be caught waiting.
-  const answered = new Promise<void>((resolve) => (release = resolve))
+  answered = new Promise<void>((resolve) => (release = resolve))
   vi.mocked(getReports).mockImplementation(() => answered.then(() => null))
   vi.mocked(getSpendingPeriod).mockImplementation(() => answered.then(() => null))
 })
@@ -71,6 +84,38 @@ it('opens Spending only once its period is in', async () => {
   expect(
     cached(queryClient, spendingPeriodQuery(data, spendingPeriodRequest(page, 0)).queryKey),
   ).toBe(true)
+})
+
+it('opens a holding once its saved news and earnings date are in, with its summary started', async () => {
+  vi.mocked(isTauri).mockReturnValue(true)
+  vi.mocked(getMarketNews).mockImplementation(() =>
+    answered.then(() => ({
+      articles: [],
+      savedAt: null,
+      warning: null,
+      canRefresh: false,
+      company: null,
+      filings: [],
+      filingsSavedAt: null,
+      filingsWarning: null,
+    })),
+  )
+  vi.mocked(getEarningsCalendar).mockImplementation(() => answered.then(() => []))
+  // A summary waiting on market data never holds the page.
+  vi.mocked(getInvestmentSummary).mockImplementation(() => new Promise(() => undefined))
+  const { queryClient, testRouter } = app('/holdings/MSFT')
+  queryClient.setQueryData(['integration-status'], { alphaVantage: true })
+  let opened = false
+  const loading = testRouter.load().then(() => (opened = true))
+  await vi.waitFor(() => expect(getEarningsCalendar).toHaveBeenCalledWith(['MSFT']))
+  expect(getMarketNews).toHaveBeenCalledWith(['MSFT'])
+  expect(getInvestmentSummary).toHaveBeenCalledWith(expect.any(String), 'MSFT')
+  expect(opened).toBe(false)
+  release()
+  await loading
+  expect(cached(queryClient, holdingNewsQuery('MSFT').queryKey)).toBe(true)
+  expect(cached(queryClient, earningsCalendarQuery(['MSFT']).queryKey)).toBe(true)
+  vi.mocked(isTauri).mockReturnValue(false)
 })
 
 it('leaves a failed read to the page instead of failing the navigation', async () => {

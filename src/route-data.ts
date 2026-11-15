@@ -4,8 +4,9 @@
  * arrive, so navigation never shows a loading screen. Before the first snapshot there is
  * nothing to fetch.
  */
-import type { QueryClient } from '@tanstack/react-query'
+import { queryOptions, type QueryClient } from '@tanstack/react-query'
 
+import { investmentSummaryQuery } from './components/investment-summary-card'
 import { financeQueryKey, snapshotKey } from './hooks/use-finance'
 import { reportsQuery } from './hooks/use-reports'
 import { spendingPeriodQuery } from './hooks/use-spending-period'
@@ -16,10 +17,17 @@ import {
   resolvedAnalyticsSearch,
   type AnalyticsSearch,
 } from './lib/analytics'
-import { getDataHealth, type ReportRequest } from './lib/api'
+import {
+  getDataHealth,
+  getEarningsCalendar,
+  getMarketNews,
+  isTauri,
+  type ReportRequest,
+} from './lib/api'
 import { snapshotToday } from './lib/dates'
-import { chosenGraphWindow } from './lib/graph-preferences'
-import type { FinanceSnapshot } from './lib/schema'
+import { chartPeriod, chosenGraphWindow, sessionGraphWindow } from './lib/graph-preferences'
+import { summaryStart } from './lib/investment-summary'
+import type { FinanceSnapshot, IntegrationStatus } from './lib/schema'
 import {
   reportRangeForPeriod,
   spendingPage,
@@ -34,6 +42,24 @@ export const dataHealthQuery = (data: FinanceSnapshot | undefined) => ({
   queryKey: ['data-health', ...snapshotKey(data)],
   queryFn: getDataHealth,
 })
+
+/** A holding's saved stories and filings, shared by its chart, its News card, and its route. */
+export const holdingNewsQuery = (ticker: string) =>
+  queryOptions({
+    queryKey: ['holding-news', 'alpaca', ticker],
+    queryFn: () => getMarketNews([ticker]),
+    staleTime: Infinity,
+    retry: false,
+  })
+
+/** The saved next earnings dates, shared by the position card and the holding's route. */
+export const earningsCalendarQuery = (symbols: string[]) =>
+  queryOptions({
+    queryKey: ['earnings-calendar', symbols],
+    queryFn: () => getEarningsCalendar(symbols),
+    staleTime: 6 * 60 * 60 * 1000,
+    retry: false,
+  })
 
 const snapshot = (client: QueryClient) => client.getQueryData<FinanceSnapshot>(financeQueryKey)
 
@@ -74,6 +100,23 @@ export function loadSpending({ queryClient }: RouterContext, search: SpendingSea
       data,
       moneyStripRequests({ range: reportRangeForPeriod(page.period) }, snapshotToday(data)),
     ),
+  ])
+}
+
+/**
+ * A holding's saved news and next earnings date. Its summary may wait on market data, so it
+ * starts here without holding the page.
+ */
+export function loadSecurity({ queryClient }: RouterContext, ticker: string) {
+  const data = snapshot(queryClient)
+  if (!data || !isTauri() || !data.holdings.some((holding) => holding.ticker === ticker))
+    return undefined
+  const start = summaryStart(data, chartPeriod(sessionGraphWindow()))
+  if (start) void queryClient.prefetchQuery(investmentSummaryQuery(start, ticker, data))
+  const earnings = queryClient.getQueryData<IntegrationStatus>(['integration-status'])?.alphaVantage
+  return settle([
+    queryClient.ensureQueryData(holdingNewsQuery(ticker)),
+    ...(earnings ? [queryClient.ensureQueryData(earningsCalendarQuery([ticker]))] : []),
   ])
 }
 

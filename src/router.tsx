@@ -18,7 +18,13 @@ import { settingsHash } from './lib/settings-dialog'
 import { settingsHashForPath } from './lib/settings-search'
 import { spendingRanges, type SpendingRange } from './lib/spending'
 import { queryClient } from './query-client'
-import { loadAnalytics, loadDataHealth, loadSpending, type RouterContext } from './route-data'
+import {
+  loadAnalytics,
+  loadDataHealth,
+  loadSecurity,
+  loadSpending,
+  type RouterContext,
+} from './route-data'
 
 const rootRoute = createRootRouteWithContext<RouterContext>()({ component: AppShell })
 
@@ -111,7 +117,15 @@ const performanceRoute = createRoute({
 })
 // A fixed segment outranks `$ticker`, so no holding can take this address.
 const retirementRoute = createRoute({ getParentRoute: () => holdingsRoute, path: 'retirement' })
-const securityRoute = createRoute({ getParentRoute: () => holdingsRoute, path: '$ticker' })
+const securityRoute = createRoute({
+  getParentRoute: () => holdingsRoute,
+  path: '$ticker',
+  loader: {
+    handler: ({ context, params }) => loadSecurity(context, params.ticker),
+    staleReloadMode: beforeOpening.staleReloadMode,
+  },
+  preloadStaleTime: beforeOpening.preloadStaleTime,
+})
 const activitiesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/activities',
