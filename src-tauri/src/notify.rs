@@ -111,8 +111,6 @@ pub fn notices(needs: &[AttentionItem], account_name: impl Fn(&str) -> String) -
                 Item::WashWindow { .. }
                 | Item::BenefitReview { .. }
                 | Item::IdleCash { .. }
-                // A rule's note names amounts, which notifications never show.
-                | Item::ProgramNote { .. }
                 | Item::ContributionsToConfirm { .. }
                 | Item::ContributionLimit { .. }
                 // Inferences never notify; they wait beside their transactions.

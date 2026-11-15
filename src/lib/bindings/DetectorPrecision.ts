@@ -2,8 +2,7 @@
 
 export type DetectorPrecision = { 
 /**
- * `rule:<program>`, `chapter:<kind>`, `benefit-match`, `category-suggestion`, or
- * `second-look`.
+ * `benefit-match`, `category-suggestion`, or `second-look`.
  */
 detector: string, 
 /**

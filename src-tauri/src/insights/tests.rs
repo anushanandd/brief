@@ -307,33 +307,6 @@ fn plan_paces_categories_and_covers_expected_outflows_in_cents() {
         attention::Item::CoverageShort { .. }
     ));
     assert_eq!(insights.attention.len(), 1);
-
-    // A chapter confirmed mid-July starts a new normal: only August is typical, and July,
-    // part old life, isn't.
-    let fresh = plan::plan(
-        &transactions,
-        &accounts,
-        &[],
-        Some(NaiveDate::from_ymd_opt(2026, 7, 10).unwrap()),
-        NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
-    );
-    let whole = plan::plan(
-        &transactions,
-        &accounts,
-        &[],
-        Some(NaiveDate::from_ymd_opt(2026, 8, 1).unwrap()),
-        NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
-    );
-    let typical = |plan: &plan::Plan| {
-        plan.categories
-            .iter()
-            .map(|c| (c.category.clone(), c.typical))
-            .collect::<Vec<_>>()
-    };
-    assert_eq!(typical(&fresh), typical(&whole));
-    assert_eq!(fresh.baseline_since, NaiveDate::from_ymd_opt(2026, 7, 10));
-    // One month is too little to call a monthly average.
-    assert_eq!(fresh.monthly_spending, None);
 }
 
 #[test]
@@ -476,7 +449,6 @@ fn split_parts_count_under_their_own_categories() {
         &transactions,
         &[],
         &[],
-        None,
         NaiveDate::from_ymd_opt(2026, 9, 16).unwrap(),
     );
     let spent = |category: &str| {
@@ -565,7 +537,6 @@ fn the_brief_lists_each_thing_that_needs_action_once() {
                 attention::Item::ContributionLimit { .. } => "contribution-limit",
                 attention::Item::PayMissing { .. } => "pay-missing",
                 attention::Item::W2Differs { .. } => "w2-differs",
-                attention::Item::ProgramNote { .. } => "program-note",
                 attention::Item::NewSeries { .. } => "new-series",
                 attention::Item::PriceChanged { .. } => "price-changed",
                 attention::Item::FeesCharged { .. } => "fees-charged",

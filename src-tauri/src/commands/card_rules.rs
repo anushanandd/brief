@@ -8,11 +8,7 @@ use tauri::{AppHandle, Emitter, Manager, State};
 
 use super::research::{begin, enabled, finish};
 use crate::{
-    card_drafts::{
-        self, catalog, history,
-        programs::{self, ProgramPrefill},
-        terms, CardDraft, CardRulesChange, CatalogCard,
-    },
+    card_drafts::{self, catalog, history, terms, CardDraft, CardRulesChange, CatalogCard},
     finance_contract::{Account, Transaction},
     insights::benefits::{CardRules, RuleOrigin},
     providers::{
@@ -373,46 +369,4 @@ pub(crate) async fn recheck_card_rules(
         });
     }
     Ok(changes)
-}
-
-/// A program draft for a research gap, prefilled from a page the user picked.
-#[tauri::command]
-pub(crate) async fn prefill_program_draft(
-    app: AppHandle,
-    state: State<'_, AppState>,
-    gap_id: String,
-    url: String,
-) -> Result<ProgramPrefill, String> {
-    can_read_terms(&state)?;
-    if !url.starts_with("https://") {
-        return Err("Pick a page with an https address".into());
-    }
-    let gap = super::research::get_research(state.clone())
-        .await?
-        .gaps
-        .into_iter()
-        .find(|gap| gap.id == gap_id)
-        .ok_or("That gap is no longer open")?;
-    let now = chrono::Utc::now();
-    let mut entry = Entry::begin(EntryKind::Recheck, url.clone(), Some(gap.id.clone()), now);
-    begin(&app, &state, &entry)?;
-    let result = state.providers.exa_terms_page(&url).await;
-    entry.finish(
-        result
-            .as_ref()
-            .map(|page| {
-                vec![Page {
-                    text: page.text.chars().take(400).collect(),
-                    ..page.clone()
-                }]
-            })
-            .map_err(Clone::clone),
-        chrono::Utc::now(),
-    );
-    finish(&app, &state, &entry)?;
-    Ok(programs::prefill(
-        &gap,
-        &result?,
-        chrono::Local::now().date_naive(),
-    ))
 }

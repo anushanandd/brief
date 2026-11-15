@@ -15,7 +15,6 @@ import type { Credit } from "./Credit";
 import type { DetectorPrecision } from "./DetectorPrecision";
 import type { DividendOutlook } from "./DividendOutlook";
 import type { Documents } from "./Documents";
-import type { EvidenceGraph } from "./EvidenceGraph";
 import type { ExpectedEvent } from "./ExpectedEvent";
 import type { Exposure } from "./Exposure";
 import type { GroupHistory } from "./GroupHistory";
@@ -165,10 +164,6 @@ dividends: DividendOutlook, movers?: Movers,
  * Dated items, for the Calendar page and the Brief calendar.
  */
 agenda: Array<AgendaItem>, 
-/**
- * What program rules explain or suggest, with proofs, and life chapters.
- */
-evidence: EvidenceGraph, 
 /**
  * Each detector's share of your answers that accepted it, for Diagnostics.
  */

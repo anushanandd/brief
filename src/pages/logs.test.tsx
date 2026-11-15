@@ -158,10 +158,6 @@ it('makes every Diagnostics list a keyboard region whose rows J and K step throu
 })
 
 it('names each detector whose precision Diagnostics shows, and says when there is none', () => {
-  expect(detectorLabel('rule:bonus', [{ id: 'bonus', name: 'Example bonus' }])).toBe(
-    'Rule · Example bonus',
-  )
-  expect(detectorLabel('chapter:home')).toBe('Chapters · home')
   expect(detectorLabel('category-suggestion')).toBe('Suggested categories')
   expect(renderLogs()).toContain('No answers to Brief’s suggestions yet.')
 })

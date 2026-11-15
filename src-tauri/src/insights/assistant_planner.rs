@@ -1,5 +1,5 @@
 //! The assistant's planner: what a question asks, settled in Rust before the on-device model
-//! sees it. Relative dates ("last month", "since I moved") become explicit days. Tools are
+//! sees it. Relative dates ("last month", "since March") become explicit days. Tools are
 //! scored by the question's words and the names in the user's ledger. When one tool clearly
 //! leads, Rust runs it and the model only phrases the result; otherwise the model is offered
 //! the leading tools.
@@ -37,7 +37,7 @@ pub struct Plan {
 /// Tools whose arguments are a date range.
 pub const DATED: [&str; 3] = ["spendingByCategory", "cashFlow", "searchTransactions"];
 /// Offered when a question points to no tool.
-const GENERAL: [&str; 4] = ["listAccounts", "cashFlow", "searchTransactions", "chapters"];
+const GENERAL: [&str; 3] = ["listAccounts", "cashFlow", "searchTransactions"];
 /// Tool definitions offered per question; each takes part of the model's context.
 const OFFERED: usize = 4;
 /// How far the leading tool's score must exceed the next one's for Rust to run it itself.
@@ -177,16 +177,11 @@ fn trailing(unit: &str, count: u32, today: NaiveDate) -> Option<NaiveDate> {
 
 const UNITS: [&str; 4] = ["week", "month", "quarter", "year"];
 
-/// The days a question's date phrase means, given today and the user's chapters: "last month",
-/// "this year", "since March", "the past 90 days", "in 2025", "yesterday", "Q3 2026", "the
-/// first quarter", "September 2026", and "since I moved" or "since I started my job" when the
-/// evidence holds that chapter. A question with no such phrase, or one this can't settle, has
-/// none, and the model reads the question as written.
-pub fn resolve_dates(
-    question: &str,
-    today: NaiveDate,
-    evidence: Option<&crate::evidence::Evidence>,
-) -> Option<Range> {
+/// The days a question's date phrase means, given today: "last month", "this year", "since
+/// March", "the past 90 days", "in 2025", "yesterday", "Q3 2026", "the first quarter", and
+/// "September 2026". A question with no such phrase, or one this can't settle, has none, and
+/// the model reads the question as written.
+pub fn resolve_dates(question: &str, today: NaiveDate) -> Option<Range> {
     let text = normal(question);
     let words = text.split_whitespace().collect::<Vec<_>>();
     let at = |index: usize| words.get(index).copied().unwrap_or("");
@@ -197,7 +192,7 @@ pub fn resolve_dates(
             phrase: phrase.join(" "),
         })
     };
-    // "since …": a month, a year, or a chapter.
+    // "since …": a month or a year.
     if let Some(index) = words.iter().position(|word| *word == "since") {
         let next = at(index + 1);
         if let Some(month) = month_number(next) {
@@ -216,25 +211,6 @@ pub fn resolve_dates(
                 today,
                 &words[index..index + 2],
             );
-        }
-        // The fewest words after "since" that name a chapter ("I moved", "joining"), then
-        // the words that go on naming it ("my job", the employer's name).
-        if let Some(evidence) = evidence {
-            let rest = &words[index + 1..words.len().min(index + 6)];
-            let found = (1..=rest.len()).find_map(|count| {
-                assistant_tools::chapter_named(evidence, &rest[..count].join(" "))
-                    .map(|chapter| (count, chapter))
-            });
-            if let Some((mut count, chapter)) = found {
-                let title = normal(&chapter.title);
-                while count < rest.len()
-                    && (["my", "job", "new", "the", "here", "home", "work"].contains(&rest[count])
-                        || has_phrase(&title, rest[count]))
-                {
-                    count += 1;
-                }
-                return range(chapter.start, today, &words[index..=index + count]);
-            }
         }
     }
     for (index, word) in words.iter().enumerate() {
@@ -350,7 +326,6 @@ enum Kind {
     Category,
     Holding,
     Trip,
-    Chapter,
 }
 
 impl Kind {
@@ -364,13 +339,12 @@ impl Kind {
             Kind::Holding => &[("topHoldings", 2)],
             // Spending "in Chicago" is a trip's, not a period's.
             Kind::Trip => &[("trips", 3)],
-            Kind::Chapter => &[("chapters", 2)],
         }
     }
 }
 
 /// Names in the user's ledger: account names, merchants, categories, holdings' tickers
-/// and names, trip cities, and chapter titles and states.
+/// and names, and trip cities.
 struct Names {
     entries: Vec<(Kind, String)>,
 }
@@ -402,16 +376,6 @@ impl Names {
                 let city = trip.destination.split(',').next().unwrap_or_default();
                 entries.push((Kind::Trip, city.to_owned()));
             }
-            for chapter in &insights.evidence.chapters {
-                entries.push((Kind::Chapter, chapter.title.clone()));
-                if let Some(state) = chapter
-                    .state
-                    .as_deref()
-                    .and_then(crate::evidence::chapters::state_name)
-                {
-                    entries.push((Kind::Chapter, state.to_owned()));
-                }
-            }
         }
         entries.sort();
         entries.dedup();
@@ -424,7 +388,7 @@ impl Names {
     fn matched(&self, text: &str) -> Vec<(Kind, Vec<String>)> {
         let mut kinds = std::collections::BTreeMap::<String, Vec<Kind>>::new();
         // A whole name counts for its kind only when no name of another kind holds it too
-        // ("Example Analytics" the merchant and "Example Analytics LLC" the job).
+        // ("Example Analytics" the merchant and "Example Analytics Card" the account).
         let whole = self
             .entries
             .iter()
@@ -492,8 +456,8 @@ impl Names {
     }
 }
 
-/// The question's text with its resolved date phrase taken out, so "since I moved" in a
-/// spending question points to spending, not to chapters.
+/// The question's text with its resolved date phrase taken out, so "since March" in a
+/// spending question points to spending, not to a merchant named March.
 fn without_dates(question: &str, range: Option<&Range>) -> String {
     let text = normal(question);
     match range {
@@ -554,32 +518,13 @@ pub fn scores(question: &str, view: &View, range: Option<&Range>) -> Vec<(&'stat
 fn arguments(tool: &str, text: &str, range: Option<&Range>, view: &View) -> Option<Value> {
     match tool {
         "listAccounts" | "monthPlan" | "creditCards" | "taxSummary" | "subscriptions"
-        | "dividendIncome" | "explanations" | "topHoldings" | "trips" | "upcomingActivity" => {
-            Some(json!({}))
-        }
+        | "dividendIncome" | "topHoldings" | "trips" | "upcomingActivity" => Some(json!({})),
         "cashFlow" | "spendingByCategory" => range.map(
             |range| json!({ "start": calendar::iso(range.start), "end": calendar::iso(range.end) }),
         ),
         "merchantHistory" => Names::of(view)
             .whole(Kind::Merchant, text)
             .map(|merchant| json!({ "merchant": merchant })),
-        // "When did I …" asks for one chapter's dates, named by the ledger's own words or by
-        // a move or a job; any other question reads every chapter.
-        "chapters" if text.starts_with(" when ") => {
-            let named = Names::of(view)
-                .matched(text)
-                .into_iter()
-                .find(|(kind, _)| *kind == Kind::Chapter)
-                .map(|(_, words)| words.join(" "))
-                .or_else(|| {
-                    ["moved", "move", "started", "joined"]
-                        .into_iter()
-                        .find(|word| has_phrase(text, word))
-                        .map(str::to_owned)
-                })?;
-            Some(json!({ "name": named }))
-        }
-        "chapters" => Some(json!({})),
         _ => None,
     }
 }
@@ -588,11 +533,7 @@ fn arguments(tool: &str, text: &str, range: Option<&Range>, view: &View) -> Opti
 /// leading tool is clear (it leads the next by `CLEAR_LEAD`), its arguments are settled, and
 /// the question isn't one the ledger can't answer.
 pub fn plan(question: &str, view: &View, today: NaiveDate) -> Plan {
-    let range = resolve_dates(
-        question,
-        today,
-        view.insights.as_ref().map(|insights| &insights.evidence),
-    );
+    let range = resolve_dates(question, today);
     let text = without_dates(question, range.as_ref());
     let scored = scores(question, view, range.as_ref());
     let mut tools = scored
@@ -630,7 +571,7 @@ mod tests {
     }
 
     fn resolved(question: &str) -> Option<(String, String)> {
-        resolve_dates(question, day("2026-10-17"), None)
+        resolve_dates(question, day("2026-10-17"))
             .map(|range| (calendar::iso(range.start), calendar::iso(range.end)))
     }
 

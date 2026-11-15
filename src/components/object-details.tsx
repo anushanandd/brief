@@ -11,7 +11,7 @@ import {
 
 import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
-import { tierLabels } from '../lib/evidence'
+import { tierLabels } from '../lib/objects'
 import { getObject, objectKinds, type ObjectDetail } from '../lib/objects'
 import { X } from './icons'
 import { Button } from './ui'
@@ -110,16 +110,6 @@ export function RawTree({ value }: { value: unknown }) {
 }
 
 /** An object's facts, links, record, and provider record. */
-/** A proof step's first evidence, as a link to it; nothing when the step cites none. */
-function EvidenceLink({ id, onShow }: { id: string | undefined; onShow: (id: string) => void }) {
-  if (!id) return null
-  return (
-    <button type="button" className="object-link" onClick={() => onShow(id)}>
-      {id}
-    </button>
-  )
-}
-
 export function ObjectDetailsBody({
   detail,
   onShow,
@@ -153,34 +143,6 @@ export function ObjectDetailsBody({
                     .filter(Boolean)
                     .join(' · ')}
                 </small>
-                {fact.proof ? (
-                  <details className="rules-why">
-                    <summary>Why</summary>
-                    <ol>
-                      {fact.proof.steps.map((step) => (
-                        <li key={step.says} className={step.met ? 'is-met' : undefined}>
-                          <span aria-label={step.met ? 'Met' : 'Not met'}>
-                            {step.met ? '✓' : '–'}
-                          </span>
-                          <span>
-                            {step.says}
-                            {step.detail ? <small>{step.detail}</small> : null}
-                          </span>
-                          <EvidenceLink id={step.evidence[0]} onShow={onShow} />
-                        </li>
-                      ))}
-                      {fact.proof.unchecked.map((says) => (
-                        <li key={says}>
-                          <span aria-label="No record shows this">?</span>
-                          <span>{says}</span>
-                        </li>
-                      ))}
-                    </ol>
-                    <p className="rules-source">
-                      {fact.proof.name} · {fact.proof.source.url} · read {fact.proof.reviewed}
-                    </p>
-                  </details>
-                ) : null}
               </li>
             ))}
           </ul>

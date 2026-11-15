@@ -347,7 +347,18 @@ fn migrate_schema(connection: &Connection, version: u32) -> Result<(), String> {
     // it without waiting on market data.
     connection
         .execute_batch(super::summaries::SCHEMA)
-        .map_err(db_error)
+        .map_err(db_error)?;
+    // Version 25 retires life chapters and program rules. A graph saved before names their
+    // objects and links, so it is cleared, and the next read writes it whole.
+    if version < 25 {
+        connection
+            .execute_batch(
+                "DELETE FROM graph_objects; DELETE FROM graph_links; DELETE FROM graph_facts;
+                 DELETE FROM graph_meta;",
+            )
+            .map_err(db_error)?;
+    }
+    Ok(())
 }
 
 /// Version 5 clears provider messages that versions before it saved, inside the migration's

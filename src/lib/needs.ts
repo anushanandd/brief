@@ -231,17 +231,6 @@ export function needView(need: AttentionItem, data: FinanceSnapshot): NeedView {
         link: { to: '/accounts', search: { account: need.accountId } },
         urgent,
       }
-    // A rule's own words; its figures are the rule's published terms, not your amounts.
-    case 'program-note':
-      return {
-        id: need.id,
-        title: need.says,
-        detail:
-          data.insights?.evidence.programs.find((program) => program.id === need.program)?.name ??
-          'A rule Brief knows',
-        link: { to: '/insights', search: { view: 'rules' } },
-        urgent,
-      }
     // Inferences: each says how sure it is and opens the transaction it is about.
     case 'new-series':
       return {

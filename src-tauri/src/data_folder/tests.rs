@@ -50,7 +50,6 @@ fn graph() -> Graph {
             sources: vec!["plaid".into()],
             grade: None,
             tier: Tier::Observed,
-            proof: None,
         }],
     }
 }

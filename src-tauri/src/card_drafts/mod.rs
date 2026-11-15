@@ -4,7 +4,6 @@
 pub mod apply;
 pub mod catalog;
 pub mod history;
-pub mod programs;
 pub mod terms;
 #[cfg(test)]
 mod tests;

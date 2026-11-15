@@ -10,7 +10,7 @@ import type {
 export const emptyInsightDetails = {
   credit: { cards: [], balance: 0, limit: 0, cardsWithoutLimit: 0 },
   anomalies: { duplicates: [], unusual: [] },
-  trips: { trips: [], years: [], home: [] },
+  trips: { trips: [], years: [], bases: [] },
   people: { people: [], sent: 0, suggestions: [] },
   recurringCheck: { available: false, ended: [], unforecast: [] },
   taxes: {
@@ -32,14 +32,6 @@ export const emptyInsightDetails = {
     uncounted: [],
   },
   documents: { years: [], pay: [], keep: [], toReview: 0, outdated: [], evidence: [] },
-  evidence: {
-    explanations: [],
-    alerts: [],
-    chapters: [],
-    now: {},
-    residency: [],
-    programs: [],
-  },
   agenda: [],
   flows: [],
   activityDays: [],

@@ -10,11 +10,10 @@ import { percent, secureWebsite } from '../../lib/account-details'
 import { accountDisplayName } from '../../lib/account-names'
 import { accountStartDate } from '../../lib/account-start-dates'
 import { useRegisterActions, type AppAction } from '../../lib/action-system'
-import { chooseCatalogCard, readCardRules, saveAccountLink } from '../../lib/api'
+import { chooseCatalogCard, getResearch, readCardRules, saveAccountLink } from '../../lib/api'
 import type { CardRules } from '../../lib/bindings/CardRules'
 import { cardsWithoutRules } from '../../lib/card-drafts'
 import { errorMessage } from '../../lib/errors'
-import { getResearch } from '../../lib/evidence'
 import { defaultFinanceSettings, financeSettings, type Settings } from '../../lib/finance-settings'
 import { formatCurrency, formatShortDay } from '../../lib/format'
 import { getExternalLogosEnabled } from '../../lib/logos'
@@ -143,22 +142,48 @@ export function ruleOriginLabel(rules: CardRules) {
     : 'From the card catalog'
 }
 
+/** A card's issuer logo, or a card icon when the rules name no card. */
+function CardMark({ account }: { account?: FinanceSnapshot['accounts'][number] }) {
+  return (
+    <AccountMark
+      type="credit"
+      institution={account?.institution}
+      domain={account && 'domain' in account ? account.domain : undefined}
+    />
+  )
+}
+
+function CardRulesBlock(props: SectionProps) {
+  return (
+    <SettingsBlock
+      id="card-rules"
+      title="Card rules"
+      description="Each card's benefit terms, applied from the open card catalog. Rules you review or import are yours, and the catalog never changes them."
+    >
+      <CardRulesList {...props} />
+    </SettingsBlock>
+  )
+}
+
 /**
- * The card products Brief knows the benefit terms of. Brief applies them from the open card
- * catalog; rules the user reviews or imports are theirs, and the catalog never changes them.
+ * The card products Brief knows the benefit terms of, and the credit cards it has none for.
+ * Brief applies them from the open card catalog; rules the user reviews or imports are theirs,
+ * and the catalog never changes them. A review opens in place.
  */
-function CardRulesBlock({ data, settings, save }: SectionProps) {
+function CardRulesList({ data, settings, save }: SectionProps) {
   const client = useQueryClient()
   const [choosing, setChoosing] = useState(false)
   const [drafting, setDrafting] = useState<{ accountId: string; saved?: CardRules }>()
+  const review = (accountId: string, saved?: CardRules) => setDrafting({ accountId, saved })
   const research = useQuery({ queryKey: ['research'], queryFn: getResearch })
   const rules = settings.cardRules ?? []
   const uncovered = cardsWithoutRules(data)
   const names = settings.accountNames
   const cardChoices = settings.cardChoices ?? []
   const choices = new Map(cardChoices.map((choice) => [choice.accountId, choice]))
+  const accountOf = (id?: string) => data.accounts.find((candidate) => candidate.id === id)
   const nameOf = (id: string) => {
-    const account = data.accounts.find((candidate) => candidate.id === id)
+    const account = accountOf(id)
     return account ? accountDisplayName(account.id, account.name, names) : 'this card'
   }
   const accountFor = (product: string) =>
@@ -173,6 +198,8 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
   }
   const latestPick = useRef(pick)
   latestPick.current = pick
+  // Set to `choose` below, once it's defined.
+  const latestChoose = useRef(async () => {})
   const reviewable = rules.flatMap((rule) => {
     const accountId = accountFor(rule.product)
     return accountId ? [{ rule, accountId }] : []
@@ -193,7 +220,15 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
           search: 'card rules review benefits catalog edit',
           group: 'Here',
           scope: 'page' as const,
-          run: () => setDrafting({ accountId, saved: rule }),
+          run: () => review(accountId, rule),
+        })),
+        ...uncovered.map((account) => ({
+          id: `cardRules.find.${account.id}`,
+          title: `Find rules for ${nameOf(account.id)}`,
+          search: 'card rules benefits find draft catalog credits',
+          group: 'Here',
+          scope: 'page' as const,
+          run: () => review(account.id),
         })),
         ...cardChoices
           .filter(({ accountId }) => uncoveredIds.has(accountId))
@@ -207,6 +242,14 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
               run: () => void latestPick.current(accountId, card.id),
             })),
           ),
+        {
+          id: 'cardRules.import',
+          title: 'Import a card rules file',
+          search: 'card rules import file json benefits',
+          group: 'Here',
+          scope: 'page' as const,
+          run: () => void latestChoose.current(),
+        },
       ]
     }, [actionKey]),
   )
@@ -234,12 +277,9 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
       setChoosing(false)
     }
   }
+  latestChoose.current = choose
   return (
-    <SettingsBlock
-      id="card-rules"
-      title="Card rules"
-      description="Each card's benefit terms, applied from the open card catalog. Rules you review or import are yours, and the catalog never changes them."
-    >
+    <>
       {settings.cardCatalogOff ? (
         <p className="transaction-edit-note">
           The <SettingsLink target="card-catalog">card benefits catalog</SettingsLink> is off, so
@@ -252,11 +292,15 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
             const accountId = accountFor(rule.product)
             return (
               <li className="settings-list-row" key={rule.product}>
-                <span className="settings-list-copy">
-                  <strong>{rule.name}</strong>
-                  <small>
-                    {rule.benefits.length} benefits · {ruleOriginLabel(rule)}
-                  </small>
+                <span className="settings-account-name">
+                  <CardMark account={accountOf(accountId)} />
+                  <span className="settings-list-copy">
+                    <strong>{rule.name}</strong>
+                    <small>
+                      {accountId ? `${nameOf(accountId)} · ` : ''}
+                      {rule.benefits.length} benefits · {ruleOriginLabel(rule)}
+                    </small>
+                  </span>
                 </span>
                 {accountId ? (
                   <Button
@@ -264,7 +308,7 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
                     variant="ghost"
                     icon={Search}
                     data-command={`cardRules.review.${rule.product}`}
-                    onClick={() => setDrafting({ accountId, saved: rule })}
+                    onClick={() => review(accountId, rule)}
                   >
                     Review
                   </Button>
@@ -291,7 +335,7 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
             )
           })}
         </ul>
-      ) : (
+      ) : uncovered.length ? null : (
         <EmptyState>
           {settings.cardCatalogOff
             ? 'No card rules yet.'
@@ -304,11 +348,17 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
             const choice = choices.get(account.id)
             return (
               <li className="settings-list-row" key={account.id}>
-                <span className="settings-list-copy">
-                  <strong>{accountDisplayName(account.id, account.name, names)}</strong>
-                  <small>
-                    {account.institution} · {choice ? 'Which card is this?' : 'no catalog match'}
-                  </small>
+                <span className="settings-account-name">
+                  <CardMark account={account} />
+                  <span className="settings-list-copy">
+                    <strong>{accountDisplayName(account.id, account.name, names)}</strong>
+                    <small>
+                      {account.institution} ·{' '}
+                      <span className="is-attention">
+                        {choice ? 'Which card is this?' : 'No rules yet'}
+                      </span>
+                    </small>
+                  </span>
                 </span>
                 {choice ? (
                   <FilterSelect
@@ -328,7 +378,8 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
                   size="compact"
                   variant={choice ? 'ghost' : undefined}
                   icon={Search}
-                  onClick={() => setDrafting({ accountId: account.id })}
+                  data-command={`cardRules.find.${account.id}`}
+                  onClick={() => review(account.id)}
                   disabled={drafting?.accountId === account.id}
                 >
                   {choice ? 'Search' : 'Find rules'}
@@ -356,12 +407,13 @@ function CardRulesBlock({ data, settings, save }: SectionProps) {
           variant="ghost"
           icon={Plus}
           disabled={choosing}
+          data-command="cardRules.import"
           onClick={() => void choose()}
         >
           Import a rules file
         </Button>
       </div>
-    </SettingsBlock>
+    </>
   )
 }
 

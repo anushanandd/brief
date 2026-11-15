@@ -1,7 +1,6 @@
-//! A fixed synthetic career, as saved state, for the evidence tests and the assistant's eval
-//! set: two jobs with a move between them, pay split across two accounts, a fee waiver that
-//! lapses when deposits fall short, a fee repaid by a bonus, and one trip. Dates and amounts
-//! never change, so tests can assert exact results.
+//! A fixed synthetic career, as saved state, for the assistant's eval set: two jobs with a move
+//! between them, pay split across two accounts, a fee repaid by a bonus, and one trip. Dates and
+//! amounts never change, so tests can assert exact results.
 use chrono::{Datelike, Duration, NaiveDate, Weekday};
 use serde_json::json;
 
@@ -496,119 +495,6 @@ pub(crate) fn state() -> FinanceState {
     state.snapshot.transactions = transactions;
     state.snapshot.updated_at = "2026-10-17T12:00:00Z".into();
     state.documents = documents;
-    state.settings.programs = vec![employee_waiver(), loyalty_bonus()];
     state.settings.card_rules = vec![crate::insights::benefits::example_rules()];
     state
-}
-
-/// An invented employer's fee waiver, as a rule the user approved from research: it exercises
-/// employment, monthly deposits, a condition no record shows, a watch, and a job's end.
-pub(crate) fn employee_waiver() -> crate::evidence::programs::Program {
-    serde_json::from_value(json!({
-        "id": "example-premier-employee-fee-waiver",
-        "name": "Example Bank employee waiver",
-        "organization": "Example Bank",
-        "summary": "For Example Corp employees, the Premier Checking $25 monthly fee is avoided with $5,000 in monthly deposits and enrollment in online banking.",
-        "source": { "url": "https://bank.example/employees", "title": "Employee banking | Example Bank" },
-        "reviewed": "2026-10-17",
-        "terms": [{ "from": "2025-01-01", "values": { "deposits": [5000], "fee": [25] } }],
-        "conditions": [
-            {
-                "kind": "account",
-                "as": "premier",
-                "says": "A Premier Checking account at Example Bank",
-                "name": "premier checking",
-                "institution": "example bank"
-            },
-            {
-                "kind": "employment",
-                "as": "job",
-                "says": "You work at Example Corp, by your pay statements or payroll",
-                "organization": "example corp"
-            },
-            {
-                "kind": "monthlyDeposits",
-                "as": "months",
-                "says": "At least the terms' deposits reached the account in the month, while you worked there",
-                "account": "premier",
-                "atLeastTerm": "deposits",
-                "during": "job"
-            },
-            {
-                "kind": "unobservable",
-                "says": "Enrollment in Example Bank online banking, which no record Brief reads shows"
-            }
-        ],
-        "conclusion": {
-            "subject": "premier",
-            "predicate": "feeWaived",
-            "title": "Monthly fee waived",
-            "says": "The $25 monthly fee is waived under the employee criteria",
-            "spans": "months"
-        },
-        "watch": {
-            "condition": "months",
-            "says": "Deposits to Premier Checking were under {deposits} in {month}; the $25 monthly fee may apply."
-        },
-        "ends": {
-            "with": "job",
-            "says": "When work at Example Corp ends, the employee waiver lapses: the standard criteria apply, or the $25 monthly fee."
-        }
-    }))
-    .expect("the career's waiver is a valid program")
-}
-
-/// An invented bank bonus that repays an account's annual fee: it exercises an account, two
-/// dated transactions, a term amount, an offset, and an expected bonus.
-pub(crate) fn loyalty_bonus() -> crate::evidence::programs::Program {
-    serde_json::from_value(json!({
-        "id": "example-checking-loyalty-bonus",
-        "name": "Example Bank loyalty bonus",
-        "organization": "Example Bank",
-        "summary": "Example Bank pays a loyalty bonus into Everyday Checking after its annual fee.",
-        "source": { "url": "https://bank.example/loyalty", "title": "Loyalty bonus | Example Bank" },
-        "reviewed": "2026-10-17",
-        "terms": [{ "from": "2026-01-01", "values": { "bonus": [100] } }],
-        "conditions": [
-            {
-                "kind": "account",
-                "as": "checking",
-                "says": "An Everyday Checking account at Example Bank",
-                "name": "everyday checking",
-                "institution": "example bank"
-            },
-            {
-                "kind": "transaction",
-                "as": "bonus",
-                "says": "A deposit to that account named a loyalty bonus, of the amount the terms give",
-                "account": "checking",
-                "description": "loyalty bonus",
-                "direction": "in",
-                "amountTerm": "bonus"
-            },
-            {
-                "kind": "transaction",
-                "as": "fee",
-                "says": "The account's annual fee, charged in the 13 months before the bonus",
-                "account": "checking",
-                "description": "annual account fee|annual fee",
-                "direction": "out",
-                "before": { "of": "bonus", "days": 396 }
-            }
-        ],
-        "conclusion": {
-            "subject": "bonus",
-            "predicate": "offsets",
-            "object": "fee",
-            "title": "Account fee offset",
-            "says": "The {bonus} loyalty bonus offsets the account's {fee} annual fee"
-        },
-        "expect": {
-            "missing": "bonus",
-            "after": "fee",
-            "days": 60,
-            "says": "The loyalty bonus usually posts within two months of the annual fee; none has since the fee on {fee.date}."
-        }
-    }))
-    .expect("the career's bonus is a valid program")
 }

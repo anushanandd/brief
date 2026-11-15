@@ -46,7 +46,7 @@ const COLLECTIONS: [&str; 11] = [
     "brokeragePerformance",
     "possibleDuplicateAccounts",
 ];
-pub(crate) const DATABASE_SCHEMA_VERSION: u32 = 24;
+pub(crate) const DATABASE_SCHEMA_VERSION: u32 = 25;
 const DATABASE_APPLICATION_ID: u32 = 0x4252_4946; // BRIF
 
 pub struct Database {

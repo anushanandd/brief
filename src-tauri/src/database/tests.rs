@@ -461,38 +461,20 @@ fn version_twenty_two_keeps_proofs_and_a_research_log() {
         .unwrap();
     drop(db);
     let db = Database::open(&path).unwrap();
-    // The old graph's hash is forgotten, so the next read writes the graph with its proofs.
+    // The old graph's hash is forgotten, so the next read writes the graph whole.
     assert_eq!(db.graph_hash().unwrap(), None);
-    let proof = crate::evidence::Proof {
-        program: "rule".into(),
-        name: "Rule".into(),
-        source: crate::evidence::programs::Source {
-            url: "https://example.com/terms".into(),
-            title: "Terms".into(),
-        },
-        reviewed: chrono::NaiveDate::from_ymd_opt(2026, 10, 1).unwrap(),
-        steps: vec![crate::evidence::Step {
-            says: "A record".into(),
-            evidence: vec!["transaction:t1".into()],
-            detail: None,
-            met: true,
-        }],
-        unchecked: Vec::new(),
-        notes: Vec::new(),
-    };
     let graph = crate::objects::Graph {
         objects: Vec::new(),
         links: Vec::new(),
         facts: vec![crate::objects::Fact {
             subject: "transaction:t1".into(),
-            predicate: "offsets".into(),
-            value: serde_json::json!("transaction:t2"),
+            predicate: "amount".into(),
+            value: serde_json::json!(-12.5),
             from: Some("2026-07-15".into()),
             to: None,
-            sources: vec!["program:rule".into(), "transaction:t1".into()],
+            sources: vec!["plaid".into()],
             grade: None,
-            tier: crate::objects::Tier::Explained,
-            proof: Some(proof),
+            tier: crate::objects::Tier::Observed,
         }],
     };
     db.write_graph(&graph, &graph.hash().unwrap()).unwrap();

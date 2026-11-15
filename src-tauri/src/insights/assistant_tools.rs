@@ -24,7 +24,7 @@ const MAX_ROWS: usize = 25;
 /// phrase. The on-device model reads about 4,096 tokens per question, and every tool's
 /// definition takes some of them, so a question is offered only the tools its words point to
 /// (`assistant_planner::plan`).
-pub const TOOLS: [(&str, &[&str]); 15] = [
+pub const TOOLS: [(&str, &[&str]); 13] = [
     (
         "listAccounts",
         &[
@@ -156,120 +156,7 @@ pub const TOOLS: [(&str, &[&str]); 15] = [
         "dividendIncome",
         &["dividend", "dividends", "dividend income"],
     ),
-    (
-        "explanations",
-        &[
-            "why",
-            "why did",
-            "fee waived",
-            "fee waiver",
-            "anything wrong",
-            "waive",
-            "waived",
-            "waiver",
-            "bonus",
-            "rule",
-            "rules",
-            "source",
-            "offset",
-            "conditions",
-            "confirm",
-            "requirement",
-            "wrong",
-            "deposits",
-        ],
-    ),
-    (
-        "chapters",
-        &[
-            "when",
-            "my job",
-            "live",
-            "lived",
-            "work",
-            "job",
-            "move",
-            "moved",
-            "joined",
-            "join",
-            "start",
-            "started",
-            "leave",
-            "left",
-            "state",
-            "states",
-            "residency",
-            "chapter",
-            "since",
-            "change",
-            "opened",
-            "open",
-        ],
-    ),
 ];
-
-/// The chapter a phrase such as "since I moved" or "Example Corp" names: the chapter whose
-/// title or state names the most of its words (the latest when tied), else for a move or home
-/// the latest home chapter, and for a job the latest work chapter.
-pub fn chapter_named<'a>(
-    evidence: &'a crate::evidence::Evidence,
-    name: &str,
-) -> Option<&'a crate::evidence::chapters::Chapter> {
-    use crate::evidence::chapters::{state_name, ChapterKind};
-    let name = name.to_lowercase();
-    let words = name
-        .split(|c: char| !c.is_alphanumeric())
-        .filter(|word| word.len() > 1)
-        .collect::<Vec<_>>();
-    let has = |options: &[&str]| words.iter().any(|word| options.contains(word));
-    let latest = |kind: ChapterKind| {
-        evidence
-            .chapters
-            .iter()
-            .filter(|chapter| chapter.kind == kind)
-            .max_by_key(|chapter| chapter.start)
-    };
-    let named = evidence
-        .chapters
-        .iter()
-        .map(|chapter| {
-            let title = chapter.title.to_lowercase();
-            let state = chapter
-                .state
-                .as_deref()
-                .and_then(state_name)
-                .unwrap_or_default()
-                .to_lowercase();
-            let score = words
-                .iter()
-                .filter(|word| {
-                    ![
-                        "the", "of", "at", "in", "since", "my", "job", "work", "joined", "joining",
-                    ]
-                    .contains(*word)
-                        && (title
-                            .split_whitespace()
-                            .any(|part| part.starts_with(**word))
-                            || state.split_whitespace().any(|part| part == **word))
-                })
-                .count();
-            (score, chapter.start, chapter)
-        })
-        .filter(|(score, _, _)| *score > 0)
-        .max_by_key(|(score, start, _)| (*score, *start))
-        .map(|(_, _, chapter)| chapter);
-    named
-        .or_else(|| {
-            has(&["move", "moved", "moving", "home", "lived", "live"])
-                .then(|| latest(ChapterKind::Home))
-                .flatten()
-        })
-        .or_else(|| {
-            has(&["job", "work", "joined", "joining", "started", "employer"])
-                .then(|| latest(ChapterKind::Work))
-                .flatten()
-        })
-}
 
 fn to_json(value: &impl serde::Serialize) -> Result<Value, String> {
     serde_json::to_value(value).map_err(|error| error.to_string())
@@ -365,9 +252,6 @@ impl<'a> Ledger<'a> {
             "trips" => self.trips(arguments),
             "subscriptions" => self.subscriptions(),
             "dividendIncome" => self.dividend_income(),
-            "explanations" => self.explanations(),
-            "chapters" if arguments["name"].is_string() => self.chapter_span(arguments),
-            "chapters" => self.chapters(),
             _ => Err(format!("Unknown tool {name}")),
         };
         result.unwrap_or_else(|error| json!({ "error": error }))
@@ -661,6 +545,9 @@ impl<'a> Ledger<'a> {
                 "start": trip.start,
                 "end": trip.end,
                 "total": trip.total,
+                "gettingThere": trip.getting_there,
+                "staying": trip.staying,
+                "onTheGround": trip.on_the_ground,
                 "perDay": trip.per_day,
                 "transactions": trip.transaction_ids.len(),
             })).collect::<Vec<_>>(),
@@ -692,85 +579,6 @@ impl<'a> Ledger<'a> {
                 "payableDate": next.dividend.payable_date,
                 "amount": next.dividend.amount,
             })).collect::<Vec<_>>(),
-        }))
-    }
-
-    /// What published rules explain, each with its tier, its conditions, and its source, and
-    /// the notes rules raise. A Suggested conclusion is a possibility, never a fact.
-    fn explanations(&self) -> Result<Value, String> {
-        let evidence = &self.insights()?.evidence;
-        Ok(json!({
-            "explanations": evidence.explanations.iter().take(MAX_ROWS).map(|explanation| json!({
-                "title": explanation.title,
-                "says": explanation.says,
-                "tier": explanation.tier,
-                "from": explanation.from,
-                "to": explanation.to,
-                "rule": explanation.proof.name,
-                "source": explanation.proof.source.url,
-                "conditions": explanation.proof.steps.iter().map(|step| json!({
-                    "says": step.says,
-                    "met": step.met,
-                    "detail": step.detail,
-                })).collect::<Vec<_>>(),
-                "unchecked": explanation.proof.unchecked,
-            })).collect::<Vec<_>>(),
-            "notes": evidence.alerts.iter().map(|alert| &alert.says).collect::<Vec<_>>(),
-        }))
-    }
-
-    /// Life chapters, where you are now, and where you lived each tax year.
-    fn chapters(&self) -> Result<Value, String> {
-        let evidence = &self.insights()?.evidence;
-        let effect = |chapter: &crate::evidence::chapters::Chapter, measure: &str| {
-            chapter
-                .effects
-                .iter()
-                .find(|effect| effect.measure == measure)
-                .map(|effect| json!({ "before": effect.before, "after": effect.after }))
-        };
-        Ok(json!({
-            "now": evidence.now,
-            "chapters": evidence.chapters.iter().rev().take(MAX_ROWS).map(|chapter| json!({
-                "title": chapter.title,
-                "kind": chapter.kind,
-                "start": chapter.start,
-                "end": chapter.end,
-                "tier": chapter.tier,
-                "state": chapter.state,
-                "programs": chapter.programs,
-                "checklist": chapter.checklist,
-                "monthlyIncome": effect(chapter, "income"),
-                "monthlySpending": effect(chapter, "spending"),
-            })).collect::<Vec<_>>(),
-            "residency": evidence.residency.iter().map(|span| json!({
-                "year": span.year,
-                "state": span.state,
-                "from": span.from,
-                "to": span.to,
-                "days": span.days,
-            })).collect::<Vec<_>>(),
-        }))
-    }
-
-    /// `chapters` given a name: the dates a phrase like "since I moved" or "since joining
-    /// Example Corp" means, kept small for the on-device model's context. A
-    /// move or home is the latest home chapter, a job the latest work chapter, and anything
-    /// else the chapter whose title or state names it.
-    fn chapter_span(&self, arguments: &Value) -> Result<Value, String> {
-        let evidence = &self.insights()?.evidence;
-        let name = arguments["name"]
-            .as_str()
-            .map(str::trim)
-            .filter(|name| !name.is_empty() && name.len() <= 100)
-            .ok_or("Name the chapter, such as a move, a job, or an employer")?;
-        let chapter = chapter_named(evidence, name).ok_or("No chapter matches that name")?;
-        Ok(json!({
-            "title": chapter.title,
-            "kind": chapter.kind,
-            "start": chapter.start,
-            "end": chapter.end,
-            "tier": chapter.tier,
         }))
     }
 

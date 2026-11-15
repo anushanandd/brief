@@ -6,6 +6,7 @@ import type { useNavigate } from '@tanstack/react-router'
 import { invoke } from '@tauri-apps/api/core'
 
 import { isTauri, openExternalUrl } from './api'
+import type { FactTier } from './bindings/FactTier'
 import type { GraphFact } from './bindings/GraphFact'
 import type { GraphLink } from './bindings/GraphLink'
 import type { GraphObject } from './bindings/GraphObject'
@@ -36,8 +37,14 @@ export const objectKinds: Record<ObjectKind, { label: string; plural: string; pr
   bill: { label: 'Bill', plural: 'Bills', prefix: 'bill' },
   benefit: { label: 'Benefit', plural: 'Benefits', prefix: 'benefit' },
   story: { label: 'Story', plural: 'News', prefix: 'news' },
-  chapter: { label: 'Chapter', plural: 'Chapters', prefix: 'chapter' },
-  program: { label: 'Rule', plural: 'Rules', prefix: 'rule' },
+}
+
+/** How each fact tier reads beside the statement it qualifies; never by color alone. */
+export const tierLabels: Record<FactTier, { label: string; detail: string }> = {
+  observed: { label: 'Observed', detail: 'A source states it, or you set it' },
+  derived: { label: 'Derived', detail: 'Arithmetic over observed facts' },
+  explained: { label: 'Explained', detail: 'A rule Brief no longer has concluded it' },
+  suggested: { label: 'Possible', detail: 'A pattern Brief infers; yours to confirm' },
 }
 
 const isKind = (name: string): name is ObjectKind => name in objectKinds
@@ -187,9 +194,5 @@ export function openObject(
       const url = text(object.record?.url)
       return url ? openExternalUrl(url) : showDetails(object.id)
     }
-    case 'chapter':
-      return navigate({ to: '/insights', search: { view: 'chapters', chapter: key } })
-    case 'program':
-      return navigate({ to: '/insights', search: { view: 'rules' } })
   }
 }

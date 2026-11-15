@@ -6,8 +6,6 @@ use super::*;
 use crate::finance_contract::{Account, Transaction};
 use crate::insights::benefits::{Alignment, Cadence, RuleOrigin, RuleSet};
 use crate::providers::card_catalog::parse_catalog;
-use crate::providers::exa::Page;
-use crate::research::{Gap, GapKind, Template};
 use crate::settings::FinanceSettings;
 
 const CATALOG: &str = r#"{
@@ -350,50 +348,6 @@ fn a_recheck_lists_each_term_that_changed() {
         .is_none());
     assert!(found("benefit", "New credit").unwrap().before.is_none());
     assert!(diff(&saved, &saved).is_empty());
-}
-
-#[test]
-fn a_program_draft_takes_only_the_amounts_a_sentence_states() {
-    let page = |text: &str| Page {
-        url: "https://bank.example/terms".into(),
-        title: "Account terms".into(),
-        text: text.into(),
-        published: None,
-    };
-    let account = Gap {
-        id: "account:example".into(),
-        kind: GapKind::Account,
-        name: "Example Checking".into(),
-        query: String::new(),
-    };
-    let waiver = programs::prefill(
-        &account,
-        &page("Example Checking has a $12 monthly service fee. The fee is waived with $500 in qualifying direct deposits each month."),
-        day("2026-03-01"),
-    );
-    assert_eq!(waiver.draft.template, Template::EmployeeDepositWaiver);
-    assert_eq!((waiver.draft.fee, waiver.draft.amount), (Some(12.0), 500.0));
-    assert_eq!(waiver.quotes.len(), 2);
-    let card = Gap {
-        kind: GapKind::Card,
-        ..account.clone()
-    };
-    let bonus = programs::prefill(
-        &card,
-        &page("Earn a $200 bonus each year after renewal."),
-        day("2026-03-01"),
-    );
-    assert_eq!(
-        (bonus.draft.template, bonus.draft.amount),
-        (Template::BonusOffsetsFee, 200.0)
-    );
-    let empty = programs::prefill(
-        &account,
-        &page("Nothing here states an amount at all, sadly."),
-        day("2026-03-01"),
-    );
-    assert_eq!((empty.draft.amount, empty.draft.fee), (0.0, None));
-    assert!(empty.quotes.is_empty());
 }
 
 fn applied(settings: &FinanceSettings, accounts: &[Account]) -> FinanceSettings {

@@ -171,11 +171,8 @@ impl Database {
                         serde_json::to_string(&fact.sources).map_err(json_error)?,
                         fact.grade.as_ref().map(text_of).transpose()?,
                         text_of(&fact.tier)?,
-                        fact.proof
-                            .as_ref()
-                            .map(serde_json::to_string)
-                            .transpose()
-                            .map_err(json_error)?,
+                        // Only retired rules carried a proof.
+                        None::<String>,
                     ])
                     .map_err(db_error)?;
             }
@@ -230,7 +227,7 @@ impl Database {
             .connection
             .prepare(
                 "SELECT subject, predicate, value_json, valid_from, valid_to, sources_json, grade,
-                   tier, proof_json FROM graph_facts WHERE ?1 IS NULL OR subject = ?1
+                   tier FROM graph_facts WHERE ?1 IS NULL OR subject = ?1
                  ORDER BY subject, predicate, rowid",
             )
             .map_err(db_error)?;
@@ -245,12 +242,11 @@ impl Database {
                     row.get::<_, String>(5)?,
                     row.get::<_, Option<String>>(6)?,
                     row.get::<_, String>(7)?,
-                    row.get::<_, Option<String>>(8)?,
                 ))
             })
             .map_err(db_error)?;
         rows.map(|row| {
-            let (subject, predicate, value, from, to, sources, grade, tier, proof) =
+            let (subject, predicate, value, from, to, sources, grade, tier) =
                 row.map_err(db_error)?;
             Ok(Fact {
                 subject,
@@ -261,11 +257,6 @@ impl Database {
                 sources: serde_json::from_str(&sources).map_err(json_error)?,
                 grade: grade.as_deref().map(name).transpose()?,
                 tier: name(&tier)?,
-                proof: proof
-                    .as_deref()
-                    .map(serde_json::from_str)
-                    .transpose()
-                    .map_err(json_error)?,
             })
         })
         .collect()

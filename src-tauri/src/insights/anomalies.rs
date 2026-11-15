@@ -104,13 +104,7 @@ fn merchant_key(transaction: &Transaction) -> String {
     })
 }
 
-/// A usual amount comes only from charges on or after `since`, a confirmed chapter's start,
-/// so a former life's prices don't set the new normal.
-pub fn anomalies(
-    transactions: &[Transaction],
-    since: Option<NaiveDate>,
-    today: NaiveDate,
-) -> Anomalies {
+pub fn anomalies(transactions: &[Transaction], today: NaiveDate) -> Anomalies {
     let recent_from = today - Duration::days(RECENT_DAYS);
     // Posted charges, with their day.
     let charges = transactions
@@ -182,11 +176,7 @@ pub fn anomalies(
         }) {
             let mut prior = history
                 .iter()
-                .filter(|(other, _)| {
-                    other < date
-                        && *other >= *date - Duration::days(HISTORY_DAYS)
-                        && since.is_none_or(|since| *other >= since)
-                })
+                .filter(|(other, _)| other < date && *other >= *date - Duration::days(HISTORY_DAYS))
                 .collect::<Vec<_>>();
             prior.sort_by(|left, right| left.0.cmp(&right.0).then(left.1.id.cmp(&right.1.id)));
             let mut earlier = prior
@@ -251,7 +241,7 @@ mod tests {
     }
 
     fn run(transactions: &[Transaction]) -> Anomalies {
-        anomalies(transactions, None, day("2026-09-20"))
+        anomalies(transactions, day("2026-09-20"))
     }
 
     #[test]
@@ -312,9 +302,6 @@ mod tests {
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].transaction_id, "gym-big");
         assert_eq!((found[0].usual, found[0].observations), (-40.0, 6));
-        // After a confirmed chapter starts, earlier charges no longer set the usual amount.
-        let fresh = anomalies(&steady, Some(day("2026-05-01")), day("2026-09-20")).unusual;
-        assert!(fresh.is_empty());
 
         let mut varied = [-30.0, -120.0, -65.0, -200.0, -90.0, -150.0]
             .iter()

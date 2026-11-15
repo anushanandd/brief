@@ -91,7 +91,7 @@ const providerDetails: Record<
     fields: [{ key: 'clientId', label: 'Contact email', placeholder: 'you@example.com' }],
   },
   exa: {
-    description: 'Research: published bank and employer terms, only when research is on',
+    description: 'Reads card issuers’ published terms, only when looking up terms is on',
     fields: [{ key: 'clientId', label: 'API key', placeholder: 'Exa API key', secret: true }],
   },
 }
@@ -354,8 +354,8 @@ function CardCatalogOption() {
 }
 
 /**
- * Opt-in research, off by default: even a generic query reveals something, such as where you
- * work. Every query is logged in Insights › Rules before and after it runs.
+ * Opt-in lookups of card terms, off by default: even a card's name reveals something about
+ * you. Every query is logged before and after it runs, in the research log Storage shows.
  */
 function ResearchOption() {
   const finance = useFinance()
@@ -365,8 +365,8 @@ function ResearchOption() {
     <SettingsCard>
       <SettingsRow
         id="research"
-        title="Research rules online"
-        description="Looks up bank and employer terms through Exa, by public names only. Each query is logged."
+        title="Look up card terms online"
+        description="Reads a card issuer’s published terms through Exa, by the card’s public name only. Each query is logged."
       >
         <SettingsSwitch
           labelledBy="research-title"

@@ -1,6 +1,6 @@
 # 0010: Rules are data, interpreted and recomputed whole
 
-Recorded 2026-11-11 from the earlier architecture docs; measured October 2026 · Accepted
+Recorded 2026-11-11 from the earlier architecture docs; measured October 2026 · Superseded by [0017](0017-rules-and-chapters-are-retired.md)
 
 ## Context
 

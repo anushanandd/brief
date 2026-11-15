@@ -136,13 +136,6 @@ struct MerchantName: Encodable {
 
 @available(macOS 26.0, *)
 @Generable
-struct ChapterQuery: Encodable {
-  @Guide(description: "A move, job, employer, or state, for that chapter's dates alone.")
-  var name: String?
-}
-
-@available(macOS 26.0, *)
-@Generable
 struct Horizon: Encodable {
   @Guide(description: "How many days ahead to include, from 1 to 60.")
   var days: Int?
@@ -255,14 +248,6 @@ private func ledgerTools(_ host: LedgerHost) -> [any Tool] {
     LedgerTool<NoArguments>(
       name: "dividendIncome",
       description: "Shows expected yearly dividend income and announced upcoming dividends.",
-      host: host),
-    LedgerTool<NoArguments>(
-      name: "explanations",
-      description: "Explains bank and employer rules applied, such as a bonus offsetting a fee.",
-      host: host),
-    LedgerTool<ChapterQuery>(
-      name: "chapters",
-      description: "Lists jobs and homes with dates, and where the user works and lives now.",
       host: host),
   ]
 }
@@ -470,6 +455,21 @@ struct SentencePicks {
 }
 
 @available(macOS 26.0, *)
+@Generable
+enum StoryStance: String {
+  case positive, negative, mixed, neutral
+}
+
+@available(macOS 26.0, *)
+@Generable
+struct StoryReading {
+  @Guide(description: "The story's stance toward the company named, from its text alone.")
+  var stance: StoryStance
+  @Guide(description: "The number of the sentence that best states the story's main point, or 0.")
+  var sentence: Int
+}
+
+@available(macOS 26.0, *)
 private func json(_ object: Any) -> String {
   guard let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys])
   else { return "{}" }
@@ -516,6 +516,11 @@ public func briefFoundationModelRead(
           to: inputText, generating: SentencePicks.self, options: options
         ).content
         result = json(["sentences": picks.sentences])
+      case "story":
+        let reading = try await session.respond(
+          to: inputText, generating: StoryReading.self, options: options
+        ).content
+        result = json(["stance": reading.stance.rawValue, "sentence": reading.sentence])
       default:
         throw NSError(
           domain: "Brief", code: 1,

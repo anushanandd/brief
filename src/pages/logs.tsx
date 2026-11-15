@@ -8,7 +8,7 @@ import { useFinance } from '../hooks/use-finance'
 import { useLiveFinance } from '../hooks/use-live-finance'
 import { useFinanceRefreshState } from '../hooks/use-refresh-finance'
 import { accountDisplayName } from '../lib/account-names'
-import { getCalibration, getChangeLog, getSummaryRuns, getSyncRuns } from '../lib/api'
+import { getCalibration, getChangeLog, getResearch, getSummaryRuns, getSyncRuns } from '../lib/api'
 import { financeSettings } from '../lib/finance-settings'
 import { countOf, formatShare } from '../lib/format'
 import { providerCatalog } from '../lib/providers'
@@ -112,13 +112,7 @@ const logRegion = (label: string) => ({
 })
 
 /** A detector's name in words: `rule:<program>` by the rule's name, `chapter:<kind>`, and the others. */
-export function detectorLabel(
-  detector: string,
-  programs: ReadonlyArray<{ id: string; name: string }> = [],
-) {
-  const [kind, rest] = detector.split(/:(.*)/s)
-  if (kind === 'rule') return `Rule · ${programs.find(({ id }) => id === rest)?.name ?? rest}`
-  if (kind === 'chapter') return `Chapters · ${rest}`
+export function detectorLabel(detector: string) {
   return (
     {
       'benefit-match': 'Benefit matches',
@@ -135,6 +129,7 @@ export function LogsPage() {
   const live = useLiveFinance()
   const syncRuns = useQuery({ queryKey: ['sync-runs', data?.revision], queryFn: getSyncRuns })
   const summaryRuns = useQuery({ queryKey: ['summary-runs'], queryFn: getSummaryRuns })
+  const lookups = useQuery({ queryKey: ['research'], queryFn: getResearch })
   const calibration = useQuery({ queryKey: ['calibration'], queryFn: getCalibration })
   const changeLog = useQuery({ queryKey: ['change-log', data?.revision], queryFn: getChangeLog })
 
@@ -379,6 +374,40 @@ export function LogsPage() {
             ) : null}
           </div>
         </ScrollCueCard>
+        {/* Exactly what Brief sent to Exa, logged before each query ran, newest first. */}
+        <ScrollCueCard className="logs-card" scrollSelector=".activity-log">
+          <SectionHeading title="Web lookups" />
+          <div {...logRegion('Web lookups')}>
+            {lookups.data?.log.map((entry) => (
+              <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={entry.id}>
+                <StatusDot
+                  tone={
+                    entry.status === 'done'
+                      ? 'positive'
+                      : entry.status === 'failed'
+                        ? 'negative'
+                        : 'neutral'
+                  }
+                />
+                <div>
+                  <strong>{entry.query}</strong>
+                  <small>
+                    {entry.status === 'failed'
+                      ? (entry.error ?? 'Failed')
+                      : entry.status === 'running'
+                        ? 'Running'
+                        : countOf(entry.pages.length, 'page')}
+                  </small>
+                </div>
+                <time dateTime={entry.startedAt}>{formatTime(entry.startedAt)}</time>
+              </div>
+            ))}
+            {lookups.isError ? <EmptyState>Web lookups are unavailable.</EmptyState> : null}
+            {!lookups.isPending && !lookups.isError && !lookups.data?.log.length ? (
+              <EmptyState>Nothing looked up on the web.</EmptyState>
+            ) : null}
+          </div>
+        </ScrollCueCard>
         <ScrollCueCard className="logs-card" scrollSelector=".activity-log">
           <SectionHeading
             title="Calibration"
@@ -446,7 +475,7 @@ export function LogsPage() {
                 >
                   <StatusDot tone={row.low ? 'warning' : 'neutral'} />
                   <div>
-                    <strong>{detectorLabel(row.detector, data.insights?.evidence.programs)}</strong>
+                    <strong>{detectorLabel(row.detector)}</strong>
                     <small>
                       {row.acceptsObserved
                         ? `${row.accepted} kept · ${row.rejected} turned down in the last ${countOf(row.accepted + row.rejected, 'answer')}${row.low ? ' · wrong too often' : ''}`

@@ -135,18 +135,13 @@ impl Providers {
         .await
     }
 
-    /// Searches for pages that state a program's terms.
+    /// Searches for pages that state a card's terms.
     pub async fn exa_search(&self, query: &str) -> Result<Vec<Page>, String> {
         let credentials = self.exa_credentials()?;
         self.exa_search_with(&credentials, query, RESULTS).await
     }
 
-    /// Reads pages by URL, as the monthly re-check of rule sources does.
-    pub async fn exa_contents(&self, urls: &[String]) -> Result<Vec<Page>, String> {
-        self.exa_contents_up_to(urls, PAGE_CHARACTERS).await
-    }
-
-    /// Reads one card's terms page, which runs longer than a program's.
+    /// Reads one card's terms page, which runs longer than a search result's text.
     pub async fn exa_terms_page(&self, url: &str) -> Result<Page, String> {
         self.exa_contents_up_to(&[url.to_owned()], TERMS_CHARACTERS)
             .await?

@@ -69,6 +69,8 @@ pub enum Basis {
     PlaceMatched,
     /// Apple Wallet recorded it at the purchase.
     Wallet,
+    /// Apple Wallet recorded where the phone was at the purchase.
+    Device,
     /// The card network's merchant code, since Plaid wasn't sure.
     MerchantCode,
     /// Brief followed your earlier choices for the merchant, or for ones named like it.
@@ -199,7 +201,9 @@ fn grade(
         match (&transaction.place, reported) {
             (None, _) => evidence(Weak, Unreported),
             (Some(_), _) if transaction.business.is_some() => evidence(Confirmed, PlaceMatched),
-            (Some(place), _) if place.source == PlaceSource::Wallet => evidence(Confirmed, Wallet),
+            (Some(place), _) if place.source == PlaceSource::Device => evidence(Confirmed, Device),
+            // Without the phone, Wallet's city can be the network's billing city.
+            (Some(place), _) if place.source == PlaceSource::Wallet => evidence(Supported, Wallet),
             // The issuer's address stands only where the descriptor's city agrees or names none.
             (Some(place), _) if place.source == PlaceSource::Issuer => {
                 let named = transaction

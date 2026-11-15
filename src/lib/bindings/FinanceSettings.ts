@@ -3,13 +3,9 @@ import type { AccountDetails } from "./AccountDetails";
 import type { CardChoice } from "./CardChoice";
 import type { CardRules } from "./CardRules";
 import type { CategoryReview } from "./CategoryReview";
-import type { ChapterChoice } from "./ChapterChoice";
 import type { DataFolder } from "./DataFolder";
-import type { ExplanationReview } from "./ExplanationReview";
 import type { ManualAccount } from "./ManualAccount";
 import type { Person } from "./Person";
-import type { PlannedChapter } from "./PlannedChapter";
-import type { Program } from "./Program";
 import type { RetirementProfile } from "./RetirementProfile";
 import type { TaxProfile } from "./TaxProfile";
 import type { TripCompanions } from "./TripCompanions";
@@ -125,30 +121,13 @@ tripCompanions?: Array<TripCompanions>,
  */
 dataFolder?: DataFolder, 
 /**
- * Your word on detected chapters: confirmed or dismissed, with any title and dates.
- */
-chapters?: Array<ChapterChoice>, 
-/**
- * Chapters you planned ahead, such as moving out, with their expected monthly costs.
- */
-plannedChapters?: Array<PlannedChapter>, 
-/**
- * Your word on Suggested explanations, by explanation id. A dismissal is kept so Brief
- * never asks twice.
- */
-explanationReviews?: { [key in string]: ExplanationReview }, 
-/**
  * Your answers to suggested categories, by transaction id. A rejected category is never
  * suggested for that transaction again and counts against it for the merchant; a kept one
  * is saved as your category, so here it only feeds the detector's precision.
  */
 categoryReviews?: { [key in string]: CategoryReview }, 
 /**
- * Program rules you approved from research, with their citations.
- */
-programs?: Array<Program>, 
-/**
- * Opt-in web research: generic queries from public names, each logged, only when on.
+ * Opt-in web lookups of a card's published terms, each logged, only when on.
  */
 research: boolean, 
 /**

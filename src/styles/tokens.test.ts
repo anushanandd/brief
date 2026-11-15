@@ -111,7 +111,6 @@ const clippingAllowed = new Set([
   // Charts: bars, legends, flow labels, and a timeline's segments.
   '.analytics-bars-scroll',
   '.bar-chart-legend',
-  '.chapters-bar > span',
   '.sankey-label strong',
   '.monthly-bar-column > strong, .monthly-bar-column > small',
 ])

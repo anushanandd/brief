@@ -8,10 +8,10 @@ import type { ResearchStatus } from "./ResearchStatus";
  */
 export type ResearchEntry = { id: string, kind: ResearchEntryKind, 
 /**
- * The query text, or the URL read again.
+ * The query text, or the URL read.
  */
 query: string, 
 /**
- * The gap or program it was for.
+ * What it was for, such as a catalog card.
  */
 subject?: string, startedAt: string, finishedAt?: string, status: ResearchStatus, error?: string, pages: Array<ResearchPage>, };

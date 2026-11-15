@@ -14,11 +14,7 @@ plan: string, taxYear: number, limit: number, amount: number,
 /**
  * `amount` is where this year's deferrals are on pace to end, not where they are.
  */
-onPace: boolean, } | { "kind": "pay-missing", documentId: string, employer: string, date: string, amount: number, accountId?: string, } | { "kind": "w2-differs", documentId: string, employer: string, taxYear: number, boxes: number, } | { "kind": "idle-cash", accountId: string, balance: number, annualRate?: number, betterAccountId: string, betterRate: number, } | { "kind": "program-note", program: string, says: string, 
-/**
- * The object it's about.
- */
-subject: string, } | { "kind": "new-series", recurringId: string, title: string, event: EventKind, frequency: string, accountId?: string, amount: number, firstSeen: string, transactionId: string, confidence: number, evidence: Array<string>, } | { "kind": "price-changed", recurringId: string, title: string, previous: number, latest: number, changedOn: string, transactionId: string, confidence: number, evidence: Array<string>, } | { "kind": "fees-charged", since: string, count: number, 
+onPace: boolean, } | { "kind": "pay-missing", documentId: string, employer: string, date: string, amount: number, accountId?: string, } | { "kind": "w2-differs", documentId: string, employer: string, taxYear: number, boxes: number, } | { "kind": "idle-cash", accountId: string, balance: number, annualRate?: number, betterAccountId: string, betterRate: number, } | { "kind": "new-series", recurringId: string, title: string, event: EventKind, frequency: string, accountId?: string, amount: number, firstSeen: string, transactionId: string, confidence: number, evidence: Array<string>, } | { "kind": "price-changed", recurringId: string, title: string, previous: number, latest: number, changedOn: string, transactionId: string, confidence: number, evidence: Array<string>, } | { "kind": "fees-charged", since: string, count: number, 
 /**
  * Their sum, negative.
  */

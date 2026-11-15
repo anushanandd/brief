@@ -1,6 +1,5 @@
-//! How often each detector is right, by your own answers: a suggested rule explanation you
-//! confirmed or dismissed, a detected chapter, a benefit match, a suggested category kept or
-//! declined, and the second looks you marked reviewed. Only counting: each detector's last
+//! How often each detector is right, by your own answers: a benefit match, a suggested category
+//! kept or declined, and the second looks you marked reviewed. Only counting: each detector's last
 //! `WINDOW` answers, ordered by the day they concern (by id where a dismissed record keeps
 //! none), and the share accepted. A detector whose share falls below `FLOOR` over at least
 //! `MINIMUM` answers is flagged, so a threshold is raised on evidence rather than a hunch.
@@ -10,7 +9,7 @@ use serde::Serialize;
 use ts_rs::TS;
 
 use crate::finance_contract::Transaction;
-use crate::settings::{ChapterStatus, ExplanationReview, FinanceSettings};
+use crate::settings::FinanceSettings;
 
 /// The answers a detector's precision reads.
 pub const WINDOW: usize = 20;
@@ -22,8 +21,7 @@ pub const FLOOR: f64 = 0.7;
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct DetectorPrecision {
-    /// `rule:<program>`, `chapter:<kind>`, `benefit-match`, `category-suggestion`, or
-    /// `second-look`.
+    /// `benefit-match`, `category-suggestion`, or `second-look`.
     pub detector: String,
     /// Within the last `WINDOW` answers.
     pub accepted: usize,
@@ -79,27 +77,6 @@ pub fn precision(
             .map_or_else(|| id.to_owned(), |transaction| transaction.date.clone())
     };
     let mut answers = BTreeMap::<String, Vec<Answer>>::new();
-    // An explanation's id is its rule's id and a hash; dismissed ones keep no date.
-    for (id, review) in &settings.explanation_reviews {
-        let program = id
-            .rsplit_once(':')
-            .map_or(id.as_str(), |(program, _)| program);
-        answers
-            .entry(format!("rule:{program}"))
-            .or_default()
-            .push((id.clone(), *review == ExplanationReview::Confirmed));
-    }
-    // A chapter's id is its kind, then what it is about and when.
-    for choice in &settings.chapters {
-        let kind = choice.id.split(':').next().unwrap_or_default();
-        if kind == "planned" {
-            continue;
-        }
-        answers
-            .entry(format!("chapter:{kind}"))
-            .or_default()
-            .push((choice.id.clone(), choice.status == ChapterStatus::Confirmed));
-    }
     for transaction in transactions {
         if let Some(confirmed) = transaction.benefit_confirmed {
             answers
@@ -132,7 +109,7 @@ pub fn precision(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::settings::{CategoryReview, ChapterChoice};
+    use crate::settings::CategoryReview;
 
     fn transaction(id: &str, date: &str) -> Transaction {
         serde_json::from_value(serde_json::json!({
@@ -163,17 +140,6 @@ mod tests {
             .collect();
         let settings = FinanceSettings {
             category_reviews,
-            explanation_reviews: BTreeMap::from([
-                ("bonus:aaaa".into(), ExplanationReview::Confirmed),
-                ("bonus:bbbb".into(), ExplanationReview::Dismissed),
-            ]),
-            chapters: vec![ChapterChoice {
-                id: "home:co:2026-03".into(),
-                status: ChapterStatus::Confirmed,
-                title: None,
-                start: None,
-                end: None,
-            }],
             ..Default::default()
         };
         let found = precision(&settings, &transactions);
@@ -185,11 +151,6 @@ mod tests {
         );
         assert!((category.precision.unwrap() - 1.0 / 3.0).abs() < 1e-9);
         assert!(category.low);
-        // Two answers say too little to judge.
-        let rule = row("rule:bonus");
-        assert_eq!((rule.accepted, rule.rejected, rule.precision), (1, 1, None));
-        assert!(!rule.low);
-        assert_eq!(row("chapter:home").accepted, 1);
     }
 
     #[test]

@@ -112,25 +112,26 @@ pub struct FinanceSettings {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub data_folder: Option<DataFolder>,
-    /// Your word on detected chapters: confirmed or dismissed, with any title and dates.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub chapters: Vec<ChapterChoice>,
-    /// Chapters you planned ahead, such as moving out, with their expected monthly costs.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub planned_chapters: Vec<PlannedChapter>,
-    /// Your word on Suggested explanations, by explanation id. A dismissal is kept so Brief
-    /// never asks twice.
-    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    pub explanation_reviews: BTreeMap<String, ExplanationReview>,
+    /// Life chapters and program rules were retired; settings saved with your word on them, your
+    /// planned chapters, or your approved rules still load and drop the keys.
+    #[serde(rename = "chapters", skip_serializing)]
+    #[ts(skip)]
+    pub retired_chapters: Option<IgnoredAny>,
+    #[serde(rename = "plannedChapters", skip_serializing)]
+    #[ts(skip)]
+    pub retired_planned_chapters: Option<IgnoredAny>,
+    #[serde(rename = "explanationReviews", skip_serializing)]
+    #[ts(skip)]
+    pub retired_explanation_reviews: Option<IgnoredAny>,
+    #[serde(rename = "programs", skip_serializing)]
+    #[ts(skip)]
+    pub retired_programs: Option<IgnoredAny>,
     /// Your answers to suggested categories, by transaction id. A rejected category is never
     /// suggested for that transaction again and counts against it for the merchant; a kept one
     /// is saved as your category, so here it only feeds the detector's precision.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub category_reviews: BTreeMap<String, CategoryReview>,
-    /// Program rules you approved from research, with their citations.
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub programs: Vec<crate::evidence::programs::Program>,
-    /// Opt-in web research: generic queries from public names, each logged, only when on.
+    /// Opt-in web lookups of a card's published terms, each logged, only when on.
     pub research: bool,
     /// An Ollama model on this Mac that reads long documents whole, such as an earnings
     /// release; unset leaves reading to Apple Intelligence and rules. Reached only on the
@@ -152,60 +153,6 @@ pub struct FinanceSettings {
     #[serde(rename = "personHandles", skip_serializing)]
     #[ts(skip)]
     pub retired_person_handles: Option<IgnoredAny>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum ChapterStatus {
-    Confirmed,
-    Dismissed,
-}
-
-/// Your word on one detected chapter.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct ChapterChoice {
-    pub id: String,
-    pub status: ChapterStatus,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub title: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub start: Option<NaiveDate>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub end: Option<NaiveDate>,
-}
-
-/// An expected monthly cost of a planned chapter, such as rent.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PlannedCost {
-    pub label: String,
-    /// Positive: what it costs each month.
-    pub monthly: f64,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, TS)]
-#[serde(deny_unknown_fields, rename_all = "camelCase")]
-pub struct PlannedChapter {
-    /// `planned:` followed by an identifier the renderer chose.
-    pub id: String,
-    pub title: String,
-    pub start: NaiveDate,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub end: Option<NaiveDate>,
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub costs: Vec<PlannedCost>,
-}
-
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, TS)]
-#[serde(rename_all = "camelCase")]
-pub enum ExplanationReview {
-    Confirmed,
-    Dismissed,
 }
 
 /// Your answer to one suggested category.
@@ -270,10 +217,7 @@ pub struct TripCompanions {
     pub people: Vec<String>,
 }
 
-const MAX_CHAPTERS: usize = 200;
-const MAX_PLANNED_COSTS: usize = 20;
 const MAX_REVIEWS: usize = 2_000;
-const MAX_PROGRAMS: usize = 100;
 const MAX_PEOPLE: usize = 500;
 const MAX_MATCH_NAMES: usize = 8;
 const MAX_MATCH_NAME_LENGTH: usize = 60;
@@ -743,73 +687,12 @@ impl FinanceSettings {
                     .to_owned(),
             ),
         };
-        if self.chapters.len() > MAX_CHAPTERS
-            || self.planned_chapters.len() > MAX_CHAPTERS
-            || self.explanation_reviews.len() > MAX_REVIEWS
-            || self.programs.len() > MAX_PROGRAMS
-        {
-            return Err(invalid("evidence"));
-        }
-        let text_ok = |text: &str| !text.trim().is_empty() && text.len() <= MAX_NAME_LENGTH;
-        let mut chapters = Vec::<ChapterChoice>::new();
-        for choice in self.chapters {
-            if !valid_id(&choice.id)
-                || choice.title.as_deref().is_some_and(|title| !text_ok(title))
-                || choice
-                    .start
-                    .zip(choice.end)
-                    .is_some_and(|(start, end)| end < start)
-            {
-                return Err(invalid("chapter"));
-            }
-            chapters.retain(|known| known.id != choice.id);
-            chapters.push(ChapterChoice {
-                title: choice.title.map(|title| title.trim().to_owned()),
-                ..choice
-            });
-        }
-        let mut planned_chapters = Vec::<PlannedChapter>::new();
-        for plan in self.planned_chapters {
-            if !plan.id.starts_with("planned:")
-                || !valid_id(&plan.id)
-                || !text_ok(&plan.title)
-                || plan.end.is_some_and(|end| end < plan.start)
-                || plan.costs.len() > MAX_PLANNED_COSTS
-                || plan.costs.iter().any(|cost| {
-                    !text_ok(&cost.label)
-                        || !cost.monthly.is_finite()
-                        || cost.monthly < 0.0
-                        || cost.monthly > MAX_MANUAL_VALUE
-                })
-            {
-                return Err(invalid("planned chapter"));
-            }
-            planned_chapters.retain(|known| known.id != plan.id);
-            planned_chapters.push(PlannedChapter {
-                title: plan.title.trim().to_owned(),
-                costs: plan
-                    .costs
-                    .into_iter()
-                    .map(|cost| PlannedCost {
-                        label: cost.label.trim().to_owned(),
-                        monthly: crate::numeric::round2(cost.monthly),
-                    })
-                    .collect(),
-                ..plan
-            });
-        }
-        if self.explanation_reviews.keys().any(|id| !valid_id(id)) {
-            return Err(invalid("explanation review"));
-        }
         if self.category_reviews.len() > MAX_REVIEWS
             || self.category_reviews.iter().any(|(id, review)| {
                 !valid_id(id) || review.category.trim().is_empty() || review.category.len() > 100
             })
         {
             return Err(invalid("category review"));
-        }
-        for program in &self.programs {
-            program.validate()?;
         }
         let data_folder = match self.data_folder {
             Some(folder)
@@ -862,9 +745,10 @@ impl FinanceSettings {
             people,
             trip_companions,
             data_folder,
-            chapters,
-            planned_chapters,
-            explanation_reviews: self.explanation_reviews,
+            retired_chapters: None,
+            retired_planned_chapters: None,
+            retired_explanation_reviews: None,
+            retired_programs: None,
             category_reviews: self
                 .category_reviews
                 .into_iter()
@@ -878,7 +762,6 @@ impl FinanceSettings {
                     )
                 })
                 .collect(),
-            programs: self.programs,
             research: self.research,
             local_model,
             retired_merchant_sites: None,
@@ -948,32 +831,10 @@ impl FinanceSettings {
         if next.trip_companions.is_empty() {
             next.trip_companions = imported.trip_companions;
         }
-        // Chapter choices, plans, reviews, and approved rules join by id; research stays as
-        // set here, since turning it on is a choice about this Mac's queries.
-        for choice in imported.chapters {
-            if !next.chapters.iter().any(|known| known.id == choice.id) {
-                next.chapters.push(choice);
-            }
-        }
-        for plan in imported.planned_chapters {
-            if !next
-                .planned_chapters
-                .iter()
-                .any(|known| known.id == plan.id)
-            {
-                next.planned_chapters.push(plan);
-            }
-        }
-        for (id, review) in imported.explanation_reviews {
-            next.explanation_reviews.entry(id).or_insert(review);
-        }
+        // Reviews join by id; research stays as set here, since turning it on is a choice about
+        // this Mac's queries.
         for (id, review) in imported.category_reviews {
             next.category_reviews.entry(id).or_insert(review);
-        }
-        for program in imported.programs {
-            if !next.programs.iter().any(|known| known.id == program.id) {
-                next.programs.push(program);
-            }
         }
         next
     }
@@ -1432,104 +1293,24 @@ mod tests {
     }
 
     #[test]
-    fn evidence_choices_are_checked_and_imports_join_them_by_id() {
-        let day = |text: &str| NaiveDate::parse_from_str(text, "%Y-%m-%d").unwrap();
-        let plan = |id: &str| PlannedChapter {
-            id: id.into(),
-            title: " Moving out ".into(),
-            start: day("2026-11-01"),
-            end: None,
-            costs: vec![PlannedCost {
-                label: " Rent ".into(),
-                monthly: 1_800.004,
-            }],
-        };
-        let settings = FinanceSettings {
-            chapters: vec![
-                ChapterChoice {
-                    id: "work:example".into(),
-                    status: ChapterStatus::Dismissed,
-                    title: None,
-                    start: None,
-                    end: None,
-                },
-                // A later choice for the same chapter replaces the earlier one.
-                ChapterChoice {
-                    id: "work:example".into(),
-                    status: ChapterStatus::Confirmed,
-                    title: Some(" New job ".into()),
-                    start: None,
-                    end: None,
-                },
-            ],
-            planned_chapters: vec![plan("planned:move")],
-            explanation_reviews: BTreeMap::from([("rule:a".into(), ExplanationReview::Confirmed)]),
-            ..Default::default()
-        }
-        .normalized()
+    fn settings_saved_with_chapters_and_rules_still_load_without_them() {
+        let settings: FinanceSettings = serde_json::from_str(
+            r#"{"chapters":[{"id":"work:example","status":"confirmed"}],
+                "plannedChapters":[{"id":"planned:move","title":"Moving out","start":"2026-11-01"}],
+                "explanationReviews":{"rule:a":"dismissed"},
+                "programs":[{"id":"example"}],
+                "research":true}"#,
+        )
         .unwrap();
-        assert_eq!(settings.chapters.len(), 1);
-        assert_eq!(settings.chapters[0].status, ChapterStatus::Confirmed);
-        assert_eq!(settings.chapters[0].title.as_deref(), Some("New job"));
-        assert_eq!(settings.planned_chapters[0].title, "Moving out");
-        assert_eq!(settings.planned_chapters[0].costs[0].label, "Rent");
-        assert_eq!(settings.planned_chapters[0].costs[0].monthly, 1_800.0);
-
-        let backwards = ChapterChoice {
-            id: "home:ca".into(),
-            status: ChapterStatus::Confirmed,
-            title: None,
-            start: Some(day("2026-05-01")),
-            end: Some(day("2026-04-01")),
-        };
-        let mut uncited = crate::synthetic::career::loyalty_bonus();
-        uncited.source.url = "http://example.com".into();
-        for invalid in [
-            FinanceSettings {
-                chapters: vec![backwards],
-                ..Default::default()
-            },
-            FinanceSettings {
-                planned_chapters: vec![plan("move")],
-                ..Default::default()
-            },
-            FinanceSettings {
-                planned_chapters: vec![PlannedChapter {
-                    costs: vec![PlannedCost {
-                        label: "Rent".into(),
-                        monthly: -1.0,
-                    }],
-                    ..plan("planned:negative")
-                }],
-                ..Default::default()
-            },
-            FinanceSettings {
-                programs: vec![uncited],
-                ..Default::default()
-            },
+        assert!(settings.research);
+        let saved = serde_json::to_value(settings.normalized().unwrap()).unwrap();
+        for key in [
+            "chapters",
+            "plannedChapters",
+            "explanationReviews",
+            "programs",
         ] {
-            assert!(invalid.normalized().is_err());
+            assert!(saved.get(key).is_none(), "{key} was kept");
         }
-
-        let merged = FinanceSettings {
-            planned_chapters: vec![plan("planned:move")],
-            ..Default::default()
-        }
-        .merge_missing(FinanceSettings {
-            planned_chapters: vec![
-                PlannedChapter {
-                    title: "Replaced".into(),
-                    ..plan("planned:move")
-                },
-                plan("planned:other"),
-            ],
-            explanation_reviews: BTreeMap::from([("rule:a".into(), ExplanationReview::Dismissed)]),
-            research: true,
-            ..Default::default()
-        });
-        assert_eq!(merged.planned_chapters.len(), 2);
-        assert_eq!(merged.planned_chapters[0].title, " Moving out ");
-        assert_eq!(merged.explanation_reviews.len(), 1);
-        assert!(!merged.research);
     }
 }

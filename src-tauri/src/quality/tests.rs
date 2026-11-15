@@ -87,7 +87,7 @@ fn a_category_the_user_set_is_confirmed_and_an_unsure_one_is_weak() {
 fn wallets_record_confirms_what_it_saw() {
     let seen = graded(json!({
         "paymentChannel": "in store", "categoryConfidence": "LOW",
-        "place": { "city": "Austin", "country": "US", "source": "wallet", "precision": "exact" },
+        "place": { "city": "Austin", "country": "US", "source": "device", "precision": "exact" },
         "wallet": { "recordId": "w", "merchant": "Cafe", "categorized": true }
     }));
     assert_eq!(seen.amount, evidence(Grade::Confirmed, Basis::Wallet));
@@ -101,7 +101,16 @@ fn wallets_record_confirms_what_it_saw() {
     );
     assert_eq!(
         seen.location,
-        Some(evidence(Grade::Confirmed, Basis::Wallet))
+        Some(evidence(Grade::Confirmed, Basis::Device))
+    );
+    // Without the phone's location, Wallet's city can be where the merchant bills from.
+    let billed = graded(json!({
+        "paymentChannel": "in store",
+        "place": { "city": "Austin", "country": "US", "source": "wallet", "precision": "city" }
+    }));
+    assert_eq!(
+        billed.location,
+        Some(evidence(Grade::Supported, Basis::Wallet))
     );
     // A tip: Wallet saw another amount at the terminal, so the amount rests on the bank.
     let tipped = graded(json!({ "wallet": { "recordId": "w", "terminalAmount": -5.0 } }));
