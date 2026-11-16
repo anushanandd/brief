@@ -321,6 +321,62 @@ it('shows a marker only inside the plot, alone or beside other lines', async () 
   }
 })
 
+it('moves a marker by transform, and leaves one it hid alone until it shows', async () => {
+  const chart = createRef<LivelineHandle>()
+  const { marker } = await mount({
+    ...settled,
+    ref: chart,
+    data: line,
+    value: 200,
+    endTime: 2_000,
+    window: 400,
+    markers: [
+      { id: 'inside', time: 1_900, value: 190, color: '#fff', label: 'Inside plot' },
+      { id: 'outside', time: 1_500, value: 150, color: '#fff', label: 'Outside plot' },
+    ],
+  })
+  await settle()
+  const inside = marker('Inside plot')!
+  const outside = marker('Outside plot')!
+  expect(inside.style.transform).toMatch(/^translate\(/)
+  const placed = inside.style.transform
+  const styles: CSSStyleDeclaration = Object.getPrototypeOf(inside.style)
+  const display = vi.spyOn(styles, 'display', 'set')
+  const transform = vi.spyOn(styles, 'transform', 'set')
+  const layout = (['left', 'top'] as const).map((side) => vi.spyOn(styles, side, 'set'))
+  for (const end of [1_990, 1_980, 1_970]) {
+    chart.current!.view(end)
+    await frame()
+  }
+  for (const side of layout) expect(side).not.toHaveBeenCalled()
+  const written = [...display.mock.contexts, ...transform.mock.contexts]
+  expect(written).not.toContain(outside.style)
+  // Shown all along, so only its place is written.
+  expect(display.mock.contexts).not.toContain(inside.style)
+  expect(inside.style.transform).not.toBe(placed)
+})
+
+it('renders the markers a moving view reaches without the page rendering', async () => {
+  const chart = createRef<LivelineHandle>()
+  const far = { id: 'far', time: 400, value: 100, color: '#fff', label: 'Far back' }
+  const { marker } = await mount({
+    ...settled,
+    ref: chart,
+    data: [{ time: 0, value: 100 }, ...line],
+    value: 200,
+    endTime: 2_000,
+    window: 400,
+    markers: [far],
+  })
+  expect(marker('Far back')).toBeNull()
+  for (const end of [1_600, 1_200, 800, 500]) {
+    chart.current!.view(end)
+    await frame()
+  }
+  await settle()
+  expect(marker('Far back')?.style.display).toBe('block')
+})
+
 it('hides only Liveline’s own toolbar, so the holding chart’s session overlay shows', async () => {
   const style = document.head.appendChild(document.createElement('style'))
   style.textContent = readFileSync(join(process.cwd(), 'src/styles/components.css'), 'utf8')
