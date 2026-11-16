@@ -128,11 +128,12 @@
   min-width: 0;
 }
 /* A section's heading owns the space under it, so every section's content starts the same
-   distance below its title. */
+   distance below its title, a list inside a scroll region included. */
 .surface-card > .section-heading {
   margin-bottom: 12px;
 }
-.surface-card > .section-heading + * {
+.surface-card > .section-heading + *,
+.surface-card > .section-heading + [role='region'] > :first-child {
   margin-top: 0;
 }
 .section-heading h2 {

@@ -236,9 +236,6 @@
   overflow-y: auto;
   overscroll-behavior-y: contain;
 }
-.account-activity-preview .financial-activity-list {
-  margin-top: 8px;
-}
 .account-sales-preview .financial-table-scroll,
 .spending-activity-scroll,
 .holding-activity-scroll,
