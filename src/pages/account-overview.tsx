@@ -329,9 +329,10 @@ export function AccountOverview({
         </div>
         {committedAccount?.id.startsWith('snaptrade:') || (!isCredit && historyIsAvailable) ? (
           <div className="chart-header-aside">
-            {chartScroll ? <ChartSpan seconds={graphWindow} /> : null}
             {!isCredit && historyIsAvailable ? (
-              <ChartRangeSelector value={graphWindow} onValueChange={onGraphWindowChange} />
+              <ChartSpan seconds={chartScroll ? graphWindow : 0}>
+                <ChartRangeSelector value={graphWindow} onValueChange={onGraphWindowChange} />
+              </ChartSpan>
             ) : null}
             <SnapTradeReference account={committedAccount} />
           </div>

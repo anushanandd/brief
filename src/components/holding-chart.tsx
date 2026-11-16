@@ -433,8 +433,9 @@ export function HoldingChart({
               </div>
               <div className="holding-chart-controls">
                 <div className="holding-chart-actions">
-                  <ChartSpan seconds={span} />
-                  <InvestmentRangeSelect />
+                  <ChartSpan seconds={span}>
+                    <InvestmentRangeSelect />
+                  </ChartSpan>
                   <Tooltip open={detailsOpen} onOpenChange={setDetailsOpen}>
                     <TooltipTrigger
                       render={

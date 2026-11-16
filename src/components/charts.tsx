@@ -899,17 +899,24 @@ export function LineChange({
   )
 }
 
-/** The days a chart scrolled back in time shows, as it scrolls; nothing at today. } goes back. */
-export function ChartSpan({ seconds }: { seconds: number }) {
+/**
+ * A chart's range selector, and under it the days the chart scrolled back in time shows, as it
+ * scrolls; nothing at today. } goes back.
+ */
+export function ChartSpan({ seconds, children }: { seconds: number; children: ReactNode }) {
   const [settled] = useGraphEnd()
   const live = useLiveGraphEnd()
   const end = live ? live.day : settled
   const days = scrollPeriodDays(seconds)
-  if (!end || !days) return null
   return (
-    <span className="chart-span">
-      {formatShortDay(addDays(end, 1 - days))} – {formatDay(end)}
-    </span>
+    <div className="chart-range">
+      {children}
+      {end && days ? (
+        <span className="chart-span">
+          {formatShortDay(addDays(end, 1 - days))} – {formatDay(end)}
+        </span>
+      ) : null}
+    </div>
   )
 }
 

@@ -197,10 +197,23 @@ it('slides a chart along its own timeline and settles it on the nearest session'
 
 it('names the days a chart scrolled back shows, leaving the way back to } and the palette', async () => {
   setGraphEnd('2026-09-20')
-  const { host, root, render } = mount(<ChartSpan seconds={week} />)
+  const { host, root, render } = mount(
+    <ChartSpan seconds={week}>
+      <select aria-label="Chart range" />
+    </ChartSpan>,
+  )
   await render()
-  expect(host.textContent).toContain('Sep 14')
+  // The days sit under the range selector, in the box it alone sizes.
+  const range = host.querySelector('.chart-range')!
+  expect([...range.children].map(({ tagName, className }) => tagName + className)).toEqual([
+    'SELECT',
+    'SPANchart-span',
+  ])
+  expect(range.textContent).toContain('Sep 14')
   expect(host.querySelector('button')).toBeNull()
+  await act(async () => setGraphEnd(undefined))
+  expect(range.isConnected).toBe(true)
+  expect(range.querySelector('.chart-span')).toBeNull()
   await act(async () => root.unmount())
 })
 
@@ -355,7 +368,9 @@ it('moves the figures beside a value chart each frame, and hands them to the pag
             waitingAt={end && asOfWaiting(asOf) ? chartDayTime(end) : undefined}
           />
         </div>
-        <ChartSpan seconds={month} />
+        <ChartSpan seconds={month}>
+          <select aria-label="Chart range" />
+        </ChartSpan>
         <PerformanceChart
           data={values}
           value={1_272}

@@ -261,24 +261,25 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                           </div>
                         </div>
                         <div className="chart-header-aside">
-                          <ChartSpan seconds={scroll ? graphWindow : 0} />
-                          <ChartRangeSelect<string>
-                            label="Analytics period"
-                            command="graph.range."
-                            value={custom ? '' : reportWindow.range}
-                            options={
-                              custom
-                                ? [
-                                    { value: '', label: 'Custom', accessibleLabel: 'Custom' },
-                                    ...ranges,
-                                  ]
-                                : ranges
-                            }
-                            onValueChange={(value) => {
-                              const range = ranges.find((option) => option.value === value)
-                              if (range) setRange(range.value)
-                            }}
-                          />
+                          <ChartSpan seconds={scroll ? graphWindow : 0}>
+                            <ChartRangeSelect<string>
+                              label="Analytics period"
+                              command="graph.range."
+                              value={custom ? '' : reportWindow.range}
+                              options={
+                                custom
+                                  ? [
+                                      { value: '', label: 'Custom', accessibleLabel: 'Custom' },
+                                      ...ranges,
+                                    ]
+                                  : ranges
+                              }
+                              onValueChange={(value) => {
+                                const range = ranges.find((option) => option.value === value)
+                                if (range) setRange(range.value)
+                              }}
+                            />
+                          </ChartSpan>
                         </div>
                         <div className="chart-summary-row">
                           <ChartChange

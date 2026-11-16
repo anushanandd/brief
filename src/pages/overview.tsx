@@ -225,9 +225,13 @@ export function OverviewPage() {
                     </div>
                     {referenceAccount?.id.startsWith('snaptrade:') || historyIsAvailable ? (
                       <div className="chart-header-aside">
-                        <ChartSpan seconds={graphWindow} />
                         {historyIsAvailable ? (
-                          <ChartRangeSelector value={graphWindow} onValueChange={setGraphWindow} />
+                          <ChartSpan seconds={graphWindow}>
+                            <ChartRangeSelector
+                              value={graphWindow}
+                              onValueChange={setGraphWindow}
+                            />
+                          </ChartSpan>
                         ) : null}
                         <SnapTradeReference account={referenceAccount} />
                       </div>

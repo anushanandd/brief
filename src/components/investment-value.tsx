@@ -159,8 +159,9 @@ export function InvestmentsPortfolio({
                 />
               </div>
               <div className="chart-header-aside">
-                <ChartSpan seconds={graphWindow} />
-                <InvestmentRangeSelect />
+                <ChartSpan seconds={graphWindow}>
+                  <InvestmentRangeSelect />
+                </ChartSpan>
               </div>
             </header>
             <div className="brokerage-chart-viewport">

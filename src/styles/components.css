@@ -448,11 +448,26 @@
   cursor: zoom-in;
 }
 /* The days a chart scrolled back in time shows. */
+/* The days a scrolled chart shows hang under its range selector, so they never move anything. */
+.chart-range {
+  position: relative;
+  display: flex;
+}
 .chart-span {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
   color: var(--text-secondary);
   font-size: var(--type-meta);
   font-variant-numeric: tabular-nums;
+  line-height: 16px;
   white-space: nowrap;
+  pointer-events: none;
+}
+/* What else sits under the selector starts below the days' line. */
+.chart-header-aside > .chart-range:not(:last-child),
+.holding-chart-actions:not(:last-child) {
+  margin-bottom: 20px;
 }
 
 /* The expanded chart: the card's content, filling the window it opens in (sized in command.css,
