@@ -3,7 +3,7 @@ import { ZodError } from 'zod'
 
 import { holdingsKey, type HoldingsIdentity } from '../hooks/use-finance'
 import { getInvestmentSummary, isTauri, warmInvestmentSummaries } from '../lib/api'
-import { type ChartPeriod, useGraphEnd } from '../lib/graph-preferences'
+import { type ChartPeriod } from '../lib/graph-preferences'
 import { summaryStart } from '../lib/investment-summary'
 import type { FinanceSnapshot } from '../lib/schema'
 import { BriefLine } from './brief-line'
@@ -52,22 +52,16 @@ export const investmentSummaryQuery = (
   })
 
 /**
- * A summary with its figures, for the period the page shows. Rust answers at once from the
- * summary it saved; one made from older inputs comes marked `refreshing` while Rust makes the
- * new one. `current` is the summary only when it isn't refreshing, for the cards that set its
- * figures beside today's; the summary card shows a refreshing one, marked.
+ * A summary with its figures, for the period the page shows ending today, even while the page
+ * is scrolled back: `data` is today's snapshot, never one measured to an earlier day. Rust
+ * answers at once from the summary it saved; one made from older inputs comes marked
+ * `refreshing` while Rust makes the new one. `current` is the summary only when it isn't
+ * refreshing, for the cards that set its figures beside today's; the summary card shows a
+ * refreshing one, marked.
  */
-export function useInvestmentSummary(
-  data: FinanceSnapshot,
-  range: ChartPeriod,
-  ticker?: string,
-  /** Read today's summary even while the page is scrolled back, for what isn't the period's. */
-  latest = false,
-) {
+export function useInvestmentSummary(data: FinanceSnapshot, range: ChartPeriod, ticker?: string) {
   const native = typeof window !== 'undefined' && isTauri()
-  // Summaries are written for periods ending today; a page scrolled back in time has none.
-  const [end] = useGraphEnd()
-  const start = end && !latest ? undefined : summaryStart(data, range)
+  const start = summaryStart(data, range)
   const summary = useQuery({
     ...investmentSummaryQuery(start, ticker, data),
     // The browser preview has the portfolio's summary from the synthetic seed.
@@ -118,7 +112,6 @@ export function InvestmentSummaryCard({
 }) {
   const native = typeof window !== 'undefined' && isTauri()
   const { start, summary, refreshing } = useInvestmentSummary(data, range, ticker)
-  const [end] = useGraphEnd()
   const result = summary.data
   const lines = result?.brief?.lines ?? []
 
@@ -134,9 +127,7 @@ export function InvestmentSummaryCard({
           ) : undefined
         }
       />
-      {end ? (
-        <EmptyState>Summaries cover periods ending today.</EmptyState>
-      ) : !native && ticker ? (
+      {!native && ticker ? (
         <EmptyState>Needs the desktop app.</EmptyState>
       ) : !start ? (
         <EmptyState>No return history for this period.</EmptyState>

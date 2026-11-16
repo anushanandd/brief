@@ -43,7 +43,7 @@ function Overview({
   integrations,
 }: {
   data: FinanceSnapshot
-  /** The snapshot as it stands today, for what's ahead. */
+  /** The snapshot as it stands today, for what's ahead and the summary. */
   today: FinanceSnapshot
   menu: ReactNode
   value: number | null
@@ -52,9 +52,9 @@ function Overview({
 }) {
   const span = periodStatement(data, range)
   // What's ahead reads the summary the card loads, once it is current; an older one being
-  // brought up to date is shown only in the card, marked. It looks ahead from today even while
-  // the page is scrolled back.
-  const { current } = useInvestmentSummary(today, range, undefined, true)
+  // brought up to date is shown only in the card, marked. Both stay on today while the page is
+  // scrolled back.
+  const { current } = useInvestmentSummary(today, range)
   return (
     <>
       <div className="investments-hero">
@@ -63,7 +63,7 @@ function Overview({
       </div>
       <div className="investments-split">
         {menu}
-        <InvestmentSummaryCard data={data} range={range} />
+        <InvestmentSummaryCard data={today} range={range} />
       </div>
       <div className="investments-pair">
         <InvestmentsComingUp
@@ -95,7 +95,7 @@ function Holding({
   integrations,
 }: {
   data: FinanceSnapshot
-  /** The snapshot as it stands today, for what isn't the period's, like the latest earnings. */
+  /** The snapshot as it stands today, for the summary and the latest earnings. */
   today: FinanceSnapshot
   menu: ReactNode
   ticker: string
@@ -132,7 +132,7 @@ function Holding({
       </div>
       <div className="investments-split">
         {menu}
-        <InvestmentSummaryCard data={data} range={range} ticker={ticker} />
+        <InvestmentSummaryCard data={today} range={range} ticker={ticker} />
       </div>
       <div className="holding-layout">
         <HoldingNews ticker={ticker} connected={integrations.alpaca} />

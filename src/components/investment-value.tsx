@@ -79,8 +79,8 @@ export function InvestmentsPortfolio({
   )
   // The whole portfolio; a single brokerage's view stands in when there is no total.
   const view = views.find(({ accountId }) => accountId === 'total') ?? views[0]
-  // The summary's sourced events sit on the line beside the activity.
-  const { current } = useInvestmentSummary(data, range)
+  // The summary's sourced events sit on the line beside the activity; it describes today.
+  const { current } = useInvestmentSummary(committed, range)
   const listed = current?.events
   const [, setGraphWindow] = useGraphWindow()
   const [graphEnd] = useGraphEnd()

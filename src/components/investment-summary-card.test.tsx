@@ -1,10 +1,14 @@
+// @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import nativeSummary from '../data/fixtures/native-summary.json'
 import { seedSnapshot } from '../data/fixtures/records'
 import { getInvestmentSummary } from '../lib/api'
+import { setGraphEnd } from '../lib/graph-preferences'
 import { summaryStart } from '../lib/investment-summary'
 import { fromRust } from '../lib/rust-json'
 import type { InvestmentSummary } from '../lib/schema'
@@ -62,4 +66,31 @@ it('marks an older saved summary as updating, and keeps its figures out of the o
   const earnings = html.slice(html.indexOf('holding-earnings-card'))
   expect(earnings).toContain('Updating…')
   expect(earnings).not.toContain('<q>')
+})
+
+it('describes today’s period while the page is scrolled back, from the same query', async () => {
+  const data = seedSnapshot()
+  const client = new QueryClient({ defaultOptions: { queries: { gcTime: Infinity } } })
+  client.setQueryData(summaryKey(summaryStart(data, 'year'), 'TEST', data), {
+    ...summary,
+    refreshing: false,
+  })
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  await act(async () =>
+    root.render(
+      <QueryClientProvider client={client}>
+        <InvestmentSummaryCard data={data} range="year" ticker="TEST" />
+      </QueryClientProvider>,
+    ),
+  )
+  const today = host.innerHTML
+  await act(async () => setGraphEnd('2026-01-15'))
+  expect(host.innerHTML).toBe(today)
+  expect(host.innerHTML).toContain('class="investment-brief"')
+  expect(getInvestmentSummary).not.toHaveBeenCalled()
+  expect(client.getQueryCache().findAll({ queryKey: ['investment-summary'] })).toHaveLength(1)
+  await act(async () => root.unmount())
+  setGraphEnd(undefined)
+  client.clear()
 })

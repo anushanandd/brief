@@ -28,7 +28,7 @@ export function EarningsReport({
   range: ChartPeriod
 }) {
   // Only a current summary has the sessions a report's reaction is measured over.
-  const { summary, current, refreshing } = useInvestmentSummary(data, range, ticker, true)
+  const { summary, current, refreshing } = useInvestmentSummary(data, range, ticker)
   const digest = current?.earnings[0]
   return (
     <Card className="holding-detail-card holding-earnings-card">
