@@ -356,21 +356,42 @@ export function holdingWindow(
   return { start: dayStart(last - count), edge: dayStart(last - count + 1), count }
 }
 
-// Only display coordinates change. Range returns, stored bars and quote times
-// keep their original timestamps. Unknown intervals never become closures.
-export function holdingChartTimeline(
+/** Whether the history reaches a session past the left edge of the window ending at `end`. */
+export function holdingWindowCovered(
   history: HoldingPriceHistory | undefined,
   points: LivelinePoint[],
   end: number,
   range: number,
 ) {
+  const window = holdingWindow(history, end, range)
+  return window.count > 0 && window.start < window.edge && (points[0]?.time ?? end) <= window.edge
+}
+
+type HoldingDisplayTime = {
+  gaps: Array<{ start: number; end: number; removed: number; kept: number }>
+  toDisplay: (time: number) => number
+  toActual: (time: number) => number
+}
+const displayRead = new WeakMap<
+  LivelinePoint[],
+  { history: HoldingPriceHistory | undefined; time: HoldingDisplayTime }
+>()
+
+/**
+ * A whole history's display time, read once: each closure it never traded in keeps its first
+ * moments and loses the rest, so a time sits at one display time whatever window is drawn.
+ */
+function holdingDisplayTime(
+  history: HoldingPriceHistory | undefined,
+  points: LivelinePoint[],
+): HoldingDisplayTime {
+  const cached = displayRead.get(points)
+  if (cached && cached.history === history) return cached.time
   const sessions = holdingSessions(history)
   const daily = history?.resolution === 86400
-  const first = points[0]?.time ?? end
-  const window = holdingWindow(history, end, range)
-  const start = Math.max(first, range ? window.start : first)
+  const start = points[0]?.time ?? Infinity
   const days = sessions.filter((session) => session.kind === 'regular')
-  const gaps: Array<{ start: number; end: number; removed: number }> = []
+  const gaps: HoldingDisplayTime['gaps'] = []
   // Points and gaps both run forward in time, so each is walked once.
   let after = 0
   for (let i = 1; i < days.length; i++) {
@@ -382,14 +403,13 @@ export function holdingChartTimeline(
       ? previous.end
       : previous.end + (72000 - (history?.calendar?.[i - 1]?.close ?? 57600))
     const gapEnd = next.start
-    if (gapEnd <= gapStart || gapEnd < start || gapStart > end) continue
+    if (gapEnd <= gapStart || gapEnd < start) continue
     while (after < points.length && points[after]!.time <= gapStart) after += 1
     // Unexpected executions override the nominal calendar; never hide evidence.
     if (after < points.length && points[after]!.time < gapEnd) continue
     const a = Math.max(gapStart, start)
-    const b = Math.min(gapEnd, end)
-    const kept = Math.min(b - a, daily ? 3600 : (history?.resolution ?? 60))
-    gaps.push({ start: a, end: b, removed: b - a - kept })
+    const kept = Math.min(gapEnd - a, daily ? 3600 : (history?.resolution ?? 60))
+    gaps.push({ start: a, end: gapEnd, removed: gapEnd - a - kept, kept })
   }
   // What the gaps before each one removed.
   const before = [0]
@@ -410,17 +430,39 @@ export function holdingChartTimeline(
     const gap = gaps[index]
     if (!gap) return time
     if (time >= gap.end) return time - before[index + 1]!
-    return time - before[index]! - (gap.removed * (time - gap.start)) / (gap.end - gap.start)
+    return gap.start - before[index]! + Math.min(time - gap.start, gap.kept)
   }
+  // A closure's last moment reads as its end, where trading resumes.
   const toActual = (time: number) => {
     const index = lastBefore(time, (i) => gaps[i]!.start - before[i]!)
     const gap = gaps[index]
     if (!gap) return time
-    const a = gap.start - before[index]!
-    const b = gap.end - before[index + 1]!
-    if (time >= b) return time + before[index + 1]!
-    return gap.start + ((time - a) * (gap.end - gap.start)) / (b - a)
+    const into = time - (gap.start - before[index]!)
+    return into < gap.kept ? gap.start + into : time + before[index + 1]!
   }
+  const display = { gaps, toDisplay, toActual }
+  displayRead.set(points, { history, time: display })
+  return display
+}
+
+/**
+ * A history's display time, with the window ending at `end`: its span, and where each time,
+ * session, and closure in it falls, in percent of the plot. Only display coordinates change.
+ * Range returns, stored bars and quote times keep their original timestamps. Unknown intervals
+ * never become closures.
+ */
+export function holdingChartTimeline(
+  history: HoldingPriceHistory | undefined,
+  points: LivelinePoint[],
+  end: number,
+  range: number,
+) {
+  const { gaps, toDisplay, toActual } = holdingDisplayTime(history, points)
+  const sessions = holdingSessions(history)
+  const daily = history?.resolution === 86400
+  const first = points[0]?.time ?? end
+  const window = holdingWindow(history, end, range)
+  const start = Math.max(first, range ? window.start : first)
   const displayEnd = toDisplay(end)
   // A scrolling period keeps its width while its history reaches back that far.
   const span =
@@ -430,20 +472,25 @@ export function holdingChartTimeline(
   const left = displayEnd - span * 0.95
   const position = (time: number) => ((toDisplay(time) - left) / span) * 100
   return {
-    points: points.map((point) => ({ ...point, time: toDisplay(point.time) })),
     end: displayEnd,
     span,
     toDisplay,
     toActual,
     position,
     sessions: daily ? [] : sessions.filter((session) => session.end > start && session.start < end),
-    gaps: gaps.filter((gap) => gap.removed > 0 && (!daily || gap.end - gap.start > 86400)),
+    // The closures in the window, cut at its edges.
+    gaps: gaps.flatMap((gap) => {
+      const a = Math.max(gap.start, start)
+      const b = Math.min(gap.end, end)
+      return b - a > gap.kept && (!daily || b - a > 86400) ? [{ start: a, end: b }] : []
+    }),
   }
 }
 
+/** The candles of the whole history through `end`, at the resolution `range` is drawn with. */
 export function holdingChartCandles(
   state: HoldingChartState,
-  timeline: ReturnType<typeof holdingChartTimeline>,
+  timeline: Pick<HoldingDisplayTime, 'toDisplay'>,
   end: number,
   range: number,
 ) {
@@ -461,14 +508,15 @@ export function holdingChartCandles(
               ? 7 * 86400
               : 30 * 86400
   const sessions = holdingSessions(state.history)
-  const start = range ? holdingWindow(state.history, end, range).start : -Infinity
   const grouped: Array<PriceBar & { bucket: number; session: number }> = []
+  // Bars and sessions both run forward in time, so each is walked once.
+  let at = 0
   for (const bar of holdingChartBars(state)) {
-    if (bar.endTime > end || bar.endTime < start) continue
+    if (bar.endTime > end) continue
     // Never combine feeds or intraday sessions. Aggregate only supplied OHLCV;
     // missing bars do not create candles and quotes never enter this path.
-    const session =
-      resolution < 86400 ? sessions.findIndex((s) => bar.time >= s.start && bar.time < s.end) : -1
+    while (at < sessions.length && sessions[at]!.end <= bar.time) at += 1
+    const session = resolution < 86400 && sessions[at] && bar.time >= sessions[at]!.start ? at : -1
     const bucket = Math.floor(bar.time / resolution)
     const last = grouped.at(-1)
     if (last && last.bucket === bucket && last.feed === bar.feed && last.session === session) {

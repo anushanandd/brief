@@ -1,4 +1,4 @@
-import { Liveline } from 'liveline'
+import { Liveline, type LivelinePoint } from 'liveline'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAsOf } from '../hooks/use-as-of'
@@ -44,6 +44,9 @@ import { InvestmentRangeSelect } from './investments-summary'
 import { SecurityMark } from './security-mark'
 import { AnimatedCurrency, Button, Card, ChartChange, EmptyState } from './ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
+
+// A candle chart draws its candles, never a line.
+const noPoints: LivelinePoint[] = []
 
 function LoadingText({ children }: { children: string }) {
   const [visible, setVisible] = useState(false)
@@ -131,8 +134,8 @@ export function HoldingChart({
   const timelineEnd =
     prices.connection?.status === 'closed' && !graphEnd ? (last?.time ?? chartEnd) : chartEnd
   const windowTimeline = useMemo(
-    () => holdingChartTimeline(history, points, timelineEnd, span),
-    [history, points, timelineEnd, span],
+    () => holdingChartTimeline(history, allPoints, timelineEnd, span),
+    [history, allPoints, timelineEnd, span],
   )
   const news = useHoldingNews(ticker)
   const [detailsOpen, setDetailsOpen] = useState(false)
@@ -452,7 +455,7 @@ export function HoldingChart({
                     mode="candle"
                     candles={candleChart.candles}
                     candleWidth={candleChart.width}
-                    data={timeline.points}
+                    data={noPoints}
                     value={drawnLast!.value}
                     endTime={timeline.end}
                     theme={colors.theme}

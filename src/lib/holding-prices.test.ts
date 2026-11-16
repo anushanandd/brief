@@ -11,6 +11,7 @@ import {
   holdingPeriodChange,
   holdingRangeChange,
   holdingChartEnd,
+  holdingWindowCovered,
   reduceHoldingChart,
   type HoldingChartState,
 } from './holding-prices'
@@ -553,9 +554,12 @@ it.each([7, 30, 90, 365])(
     // Each step ends a session earlier, at the end of its day, as a scrolled-back chart does.
     const views = tradingDays.slice(-14, -1).map((date) => {
       const end = t(`${date}T12:00:00Z`) + 43199
-      return holdingChartTimeline(h, visibleHoldingChartPoints(all, range, end, h), end, range)
+      return holdingChartTimeline(h, all, end, range)
     })
     expect(new Set(views.map((view) => view.span)).size).toBe(1)
+    // A time sits at one display time whichever window is drawn, so a chart can slide between.
+    const traded = all.at(-30)!.time
+    expect(new Set(views.map((view) => view.toDisplay(traded))).size).toBe(1)
     // How far the last close of each window moves when the next session comes into view.
     const widths = views.slice(1).map((later, index) => {
       const earlier = views[index]!
@@ -566,6 +570,31 @@ it.each([7, 30, 90, 365])(
     expect(widths[0]).toBeGreaterThan(0)
   },
 )
+
+it('builds a whole history’s candles, placed the same whatever window is drawn', () => {
+  const h = dailyHistory()
+  const current = { history: h, bars: [] }
+  const all = holdingChartPoints(current)
+  const latest = all.at(-1)!.time
+  const [earlier, later] = [-60, -2].map((back) =>
+    holdingChartTimeline(h, all, all.at(back)!.time + 3600, 30 * 86400),
+  )
+  const candles = holdingChartCandles(current, earlier!, latest, 30 * 86400).candles
+  expect(candles).toHaveLength(all.length)
+  expect(holdingChartCandles(current, later!, latest, 30 * 86400).candles).toEqual(candles)
+})
+
+it('covers a window ending earlier only while the history reaches past its left edge', () => {
+  const h = dailyHistory()
+  const all = holdingChartPoints({ history: h, bars: [] })
+  const end = (date: string) => t(`${date}T12:00:00Z`) + 43199
+  const month = 30 * 86400
+  expect(holdingWindowCovered(h, all, end(tradingDays.at(-5)!), month)).toBe(true)
+  // A month's window is 21 sessions, so 25 of them cover one ending today, not 9 sessions back.
+  const recent = all.slice(-25)
+  expect(holdingWindowCovered(h, recent, end(tradingDays.at(-1)!), month)).toBe(true)
+  expect(holdingWindowCovered(h, recent, end(tradingDays.at(-10)!), month)).toBe(false)
+})
 
 it('reads a history once for its sessions', () => {
   const h = dailyHistory()
