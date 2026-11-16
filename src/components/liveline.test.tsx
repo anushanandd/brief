@@ -276,6 +276,39 @@ it('moves its window to a handle’s end each frame without a render, and back t
   expect(badge().textContent).toBe('200.00')
 })
 
+it('moves a candle chart to a handle’s end, drawing and badging the candles up to it', async () => {
+  const chart = createRef<LivelineHandle>()
+  // Each candle a hundred seconds wide, centered 50 past its start.
+  const candles = Array.from({ length: 10 }, (_, index) => ({
+    time: 1_000 + index * 100,
+    width: 100,
+    open: 100 + index,
+    high: 105 + index,
+    low: 95 + index,
+    close: 100 + index,
+  }))
+  const { badge } = await mount({
+    ...settled,
+    ref: chart,
+    mode: 'candle',
+    candles,
+    candleWidth: 100,
+    data: [],
+    value: 109,
+    endTime: 2_000,
+    window: 400,
+    badge: true,
+  })
+  await settle()
+  expect(badge().textContent).toBe('109.00')
+  chart.current!.view(1_520)
+  await frame()
+  expect(badge().textContent).toBe('104.00')
+  chart.current!.view(undefined, false)
+  await settle()
+  expect(badge().textContent).toBe('109.00')
+})
+
 it('reads every line at a settled end its data runs past', async () => {
   const props = {
     ...settled,
