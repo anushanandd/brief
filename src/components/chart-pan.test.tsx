@@ -15,7 +15,7 @@ import {
   type GraphScroll,
 } from '../lib/graph-preferences'
 import { chartDayTime } from '../lib/live-chart'
-import { PerformanceChart, useChartPan } from './charts'
+import { type ChartTimeline, PerformanceChart, useChartPan } from './charts'
 
 vi.mock('../lib/api', async (original) => ({
   ...(await original<typeof import('../lib/api')>()),
@@ -118,14 +118,34 @@ it('draws the chart where the scroll is, follows the last day it reaches, and ea
   await act(async () => root.unmount())
 })
 
-it('steps a chart that draws only sessions by trading days, a plot width over its count each', async () => {
-  const sessions = {
-    days: ['2026-09-24', '2026-09-25', '2026-09-28', '2026-09-29', '2026-09-30'],
-    count: 5,
+it('slides a chart along its own timeline and settles it on the nearest session', async () => {
+  const views: Array<number | undefined> = []
+  const handle = {
+    current: { view: (end?: number, moving = true) => views.push(moving ? end : undefined) },
+  }
+  // A display day for each session, the weekend closed.
+  const sessions = ['2026-09-24', '2026-09-25', '2026-09-28', '2026-09-29']
+  const closed = Date.parse('2026-09-26T00:00:00Z') / 1_000
+  const toDisplay = (time: number) => (time < closed ? time : Math.max(closed, time - 2 * day))
+  const end = (session: string | undefined) => (session ? chartDayTime(session) + 43_199 : now)
+  const timeline: ChartTimeline = {
+    span: 5 * day,
+    toDisplay,
+    toActual: (time) => (time < closed ? time : time + 2 * day),
+    end,
+    day: (time) =>
+      sessions.findLast(
+        (session) => Math.abs(toDisplay(end(session)) - toDisplay(time)) <= day / 2,
+      ),
   }
   function Chart() {
     const [element, setElement] = useState<HTMLDivElement | null>(null)
-    useChartPan(element, week, { today: '2026-09-30', first: '2026-01-01' }, { sessions })
+    useChartPan(
+      element,
+      week,
+      { today: '2026-09-30', first: '2026-01-01' },
+      { chart: handle, timeline },
+    )
     return <div ref={setElement} />
   }
   const { host, root, render } = mount(<Chart />)
@@ -133,18 +153,17 @@ it('steps a chart that draws only sessions by trading days, a plot width over it
   const chart = host.querySelector('div')!
   // 500 pixels show five sessions, so each 100 scrolled is one.
   Object.defineProperty(chart, 'clientWidth', { value: 500 })
-  const scrolled = async (deltaY: number) => {
-    await act(async () => wheelOn(chart, deltaY))
-    await frame()
-    await act(async () => vi.advanceTimersByTime(200))
-    return sessionGraphEnd()
-  }
-  expect(await scrolled(60)).toBeUndefined()
-  // The rest of a session is carried to the next scroll.
-  expect(await scrolled(60)).toBe('2026-09-29')
-  // Across the weekend in one step.
-  expect(await scrolled(200)).toBe('2026-09-25')
-  expect(await scrolled(-400)).toBeUndefined()
+  await act(async () => wheelOn(chart, 50))
+  // Half a session, drawn as it is.
+  expect(views.at(-1)).toBe(toDisplay(now) - day / 2)
+  await act(async () => wheelOn(chart, 200))
+  expect(views.at(-1)).toBe(toDisplay(now) - 2.5 * day)
+  expect(sessionGraphEnd()).toBeUndefined()
+  await act(async () => vi.advanceTimersByTime(160 + 250))
+  // Across the weekend, onto the session nearest where it paused.
+  expect(views.at(-2)).toBe(toDisplay(end('2026-09-25')))
+  expect(views.at(-1)).toBeUndefined()
+  expect(sessionGraphEnd()).toBe('2026-09-25')
   await act(async () => root.unmount())
 })
 

@@ -1,4 +1,4 @@
-import { Liveline, type LivelinePoint } from 'liveline'
+import { Liveline, type LivelineHandle, type LivelinePoint } from 'liveline'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { useAsOf } from '../hooks/use-as-of'
@@ -32,12 +32,19 @@ import {
   holdingRangeChange,
   holdingChartEnd,
   holdingChartTime,
-  holdingWindowSessions,
+  holdingWindowCovered,
 } from '../lib/holding-prices'
 import { holdingHistoryRange } from '../lib/investment-range'
 import { summaryStart } from '../lib/investment-summary'
 import { chartDayTime, firstChartDay } from '../lib/live-chart'
-import { ChartSpan, ExpandableChart, useChartColors, useChartPan } from './charts'
+import { type HoldingPriceHistory } from '../lib/schema'
+import {
+  type ChartTimeline,
+  ChartSpan,
+  ExpandableChart,
+  useChartColors,
+  useChartPan,
+} from './charts'
 import { useHoldingNews } from './holding-news'
 import { Info } from './icons'
 import { InvestmentRangeSelect } from './investments-summary'
@@ -93,9 +100,19 @@ export function HoldingChart({
   const tickers = useMemo(() => tickerKey.split(','), [tickerKey])
   const [graphEnd] = useGraphEnd()
   const [, setGraphWindow] = useGraphWindow()
+  const span = chartPeriodSeconds(period)
   // The native history to request, and the span of it on screen (three months and this year
-  // crop the year's daily bars). Scrolled back in time, the whole daily history is read.
-  const range = graphEnd ? 0 : holdingHistoryRange(period)
+  // crop the year's daily bars). Scrolled back in time, the history today's chart read stays
+  // while it covers the window; past it, the whole daily history is read.
+  const todayRange = holdingHistoryRange(period)
+  const todayRead = useRef<{ history: HoldingPriceHistory; points: LivelinePoint[] }>(undefined)
+  const read = todayRead.current
+  const covered =
+    graphEnd &&
+    read?.history.symbol === ticker &&
+    read.history.range === todayRange &&
+    holdingWindowCovered(read.history, read.points, chartDayTime(graphEnd) + 43_199, span)
+  const range = graphEnd && !covered ? 0 : todayRange
   const supported = finance.marketSymbols.includes(ticker)
   const prices = useHoldingPrices(ticker, range, finance.liveMarketEnabled && supported, tickers)
   const holding = holdings.find((position) => position.ticker === ticker)
@@ -103,11 +120,8 @@ export function HoldingChart({
   // A chart scrolled back ends with its end day's last second (UTC), so today's quote is no
   // part of it.
   const quote = graphEnd ? undefined : prices.quote
-  const now = graphEnd
-    ? chartDayTime(graphEnd) + 43_199
-    : history?.cached
-      ? history.fetchedAt / 1000
-      : prices.now
+  const liveNow = history?.cached ? history.fetchedAt / 1000 : prices.now
+  const now = graphEnd ? chartDayTime(graphEnd) + 43_199 : liveNow
   const allPoints = useMemo(
     () =>
       holdingChartPoints({
@@ -118,8 +132,17 @@ export function HoldingChart({
       }),
     [history, prices.bars, prices.historyError, prices.error],
   )
+  useEffect(() => {
+    todayRead.current =
+      history?.range === todayRange && !prices.stale ? { history, points: allPoints } : undefined
+  })
   const chartEnd = holdingChartEnd(prices, allPoints, now)
-  const span = chartPeriodSeconds(period)
+  // Where today's chart ends, scrolled back or not: a closed market's ends on its last trade.
+  const latestEnd = holdingChartEnd(prices, allPoints, liveNow)
+  const liveEnd =
+    prices.connection?.status === 'closed'
+      ? (allPoints.findLast((point) => point.time <= latestEnd)?.time ?? latestEnd)
+      : latestEnd
   const points = useMemo(
     () => visibleHoldingChartPoints(allPoints, span, chartEnd, history),
     [allPoints, span, chartEnd, history],
@@ -131,8 +154,7 @@ export function HoldingChart({
       : (last?.value ?? (!finance.liveMarketEnabled ? (holding?.price ?? undefined) : undefined)),
     ticker,
   )
-  const timelineEnd =
-    prices.connection?.status === 'closed' && !graphEnd ? (last?.time ?? chartEnd) : chartEnd
+  const timelineEnd = graphEnd ? chartEnd : liveEnd
   const windowTimeline = useMemo(
     () => holdingChartTimeline(history, allPoints, timelineEnd, span),
     [history, allPoints, timelineEnd, span],
@@ -175,14 +197,28 @@ export function HoldingChart({
       ]
     })
   }, [news.data, points, ticker])
+  // Every candle in the history, so the chart can slide to any window without a render.
+  const displayTime = windowTimeline.toDisplay
   const windowCandles = useMemo(
-    () => holdingChartCandles({ history, bars: prices.bars }, windowTimeline, chartEnd, span),
-    [history, prices.bars, windowTimeline, chartEnd, span],
+    () =>
+      holdingChartCandles(
+        { history, bars: prices.bars },
+        { toDisplay: displayTime },
+        Infinity,
+        span,
+      ),
+    [history, prices.bars, displayTime, span],
   )
-  // While a new range loads with nothing in this window yet, the last chart drawn stays up.
-  const view = { timeline: windowTimeline, candleChart: windowCandles, last }
+  // While a new range loads, the history read last stays up where the chart is; with none of it
+  // there, the last chart drawn does.
+  const view = {
+    timeline: windowTimeline,
+    candleChart: windowCandles,
+    last: last ?? allPoints.at(-1),
+    calendar: history?.calendar,
+  }
   const drawn = useRef<{ ticker: string; view: typeof view }>(undefined)
-  const fresh = points.length >= 2
+  const fresh = points.length >= 2 || (prices.stale && allPoints.length >= 2)
   useEffect(() => {
     if (fresh) drawn.current = { ticker, view }
   })
@@ -191,7 +227,7 @@ export function HoldingChart({
     : prices.stale && drawn.current?.ticker === ticker
       ? drawn.current.view
       : undefined
-  const { timeline, candleChart, last: drawnLast } = shown ?? view
+  const { timeline, candleChart, last: drawnLast, calendar } = shown ?? view
   const candleLabel =
     windowCandles.resolution < 86400
       ? `${windowCandles.resolution / 60}m candles`
@@ -257,16 +293,39 @@ export function HoldingChart({
     [today, firstBar, supported, finance.liveMarketEnabled],
   )
   useGraphScrollShortcuts(scroll)
-  // The chart moves a session at a time: its compressed sessions can't be drawn between days.
-  const calendar = history?.calendar
-  const sessions = useMemo(() => {
-    const days = (calendar ?? []).map(({ date }) => date)
-    return { days, count: days.length ? holdingWindowSessions(span) : span / 86400 }
-  }, [calendar, span])
+  // The chart slides along its sessions, closures removed, and settles on the nearest one.
+  const sessions = useMemo((): ChartTimeline | undefined => {
+    if (!today) return undefined
+    const { toDisplay, toActual } = timeline
+    const end = (day: string | undefined) => (day ? chartDayTime(day) + 43_199 : liveEnd)
+    const at = (day: string | undefined) => toDisplay(end(day))
+    const days = (calendar ?? []).map(({ date }) => date).filter((date) => date < today)
+    return {
+      span: timeline.span * 0.95,
+      toDisplay,
+      toActual,
+      end,
+      day: (time) => {
+        const target = toDisplay(time)
+        // Before the sessions read, by calendar days.
+        const first = days[0] ?? today
+        if (target < at(first)) return addDays(first, Math.round((target - at(first)) / 86_400))
+        let nearest: string | undefined
+        for (const day of days)
+          if (Math.abs(at(day) - target) < Math.abs(at(nearest) - target)) nearest = day
+        return nearest
+      },
+    }
+  }, [timeline, calendar, liveEnd, today])
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
   const [expandedViewport, setExpandedViewport] = useState<HTMLDivElement | null>(null)
-  useChartPan(viewport, span, scroll, { sessions })
-  useChartPan(expandedViewport, span, scroll, { sessions })
+  const chart = useRef<LivelineHandle>(null)
+  const expandedChart = useRef<LivelineHandle>(null)
+  const panning = useChartPan(viewport, span, scroll, { chart, timeline: sessions })
+  const expandedPanning = useChartPan(expandedViewport, span, scroll, {
+    chart: expandedChart,
+    timeline: sessions,
+  })
   return (
     <Card className="net-worth-card brokerage-performance-card holding-chart-card">
       <ExpandableChart
@@ -413,7 +472,7 @@ export function HoldingChart({
               {chartVisible ? (
                 <div className="chart-container performance-chart live-performance-chart">
                   <div
-                    className="holding-session-overlay"
+                    className={`holding-session-overlay${(expanded ? expandedPanning : panning) ? ' is-moving' : ''}`}
                     aria-label="Trading sessions in Eastern time"
                   >
                     {timeline.sessions.map((session) => {
@@ -450,6 +509,7 @@ export function HoldingChart({
                     ))}
                   </div>
                   <Liveline
+                    ref={expanded ? expandedChart : chart}
                     className="liveline-chart-canvas"
                     key={`${ticker}:${period}`}
                     mode="candle"

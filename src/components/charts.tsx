@@ -630,49 +630,49 @@ const LINE_PIXELS = 16
 const SETTLE_MS = 160
 const EASE_MS = 200
 
-/** Trading days a chart steps through, and how many its window shows. */
-export type ChartSessions = { days: readonly string[]; count: number }
-
 /**
- * The end `steps` trading days from `end` (today when undefined), within the history; by calendar
- * days where the trading days don't reach.
+ * A chart's own time, for one that doesn't draw calendar time, like a holding's sessions with
+ * closures removed: it moves `span` across its window, and `end` and `day` place an end day on it.
  */
-function sessionShiftedEnd(
-  end: string | undefined,
-  steps: number,
-  { days }: ChartSessions,
-  seconds: number,
-  { today, first }: GraphScroll,
-) {
-  const from = end ?? today
-  const at = days.findLastIndex((date) => date <= from)
-  const index = at + steps
-  const next = at >= 0 && index >= 0 ? (days[index] ?? today) : addDays(from, steps)
-  return shiftedGraphEnd(next, 0, seconds, today, first)
+export type ChartTimeline = {
+  span: number
+  toDisplay: (time: number) => number
+  toActual: (time: number) => number
+  /** When a window ending on `day` ends; today's end when undefined. */
+  end: (day: string | undefined) => number
+  /** The end day nearest a time; undefined for today. */
+  day: (time: number) => string | undefined
 }
+
+const calendarTimeline = (span: number, today: string): ChartTimeline => ({
+  span,
+  toDisplay: (time) => time,
+  toActual: (time) => time,
+  end: (day) => (day ? chartDayTime(day) : Date.now() / 1_000),
+  day: (time) => addDays(today, Math.round((time - chartDayTime(today)) / DAY_SECONDS)),
+})
 
 /**
  * Scrolling over a chart as time moved: down, or a swipe right, goes back. Each wheel event moves
  * `chart` to where the scroll is, drawn outside React; once the scroll pauses it eases onto the
  * nearest day, the page's end day moves there, and the chart returns to its own end once the page
  * has caught up. The page hears nothing while the scroll moves: drawing it costs more than a frame.
- * With `sessions`, for a chart that can't draw between days, each plot width over
- * `sessions.count` moves its end a trading day, and the part of one left over is carried to the
- * next scroll. The scroll survives the page drawing again mid-gesture, as it does when new figures
- * or prices arrive.
+ * A chart with its own `timeline` moves along it, and settles where that places the nearest day.
+ * The scroll survives the page drawing again mid-gesture, as it does when new figures or prices
+ * arrive. Whether it's moving is returned.
  */
 export function useChartPan(
   element: HTMLElement | null,
   seconds: number,
   scroll: GraphScroll | undefined,
-  { sessions, chart }: { sessions?: ChartSessions; chart?: RefObject<LivelineHandle | null> } = {},
+  { chart, timeline }: { chart?: RefObject<LivelineHandle | null>; timeline?: ChartTimeline } = {},
 ) {
   const [panning, setPanning] = useState(false)
   // After the commit that carries the scroll's last end day, so the chart never draws an older one.
   useLayoutEffect(() => {
     if (!panning) chart?.current?.view(undefined, false)
   }, [panning, chart])
-  const current = useLatest({ seconds, scroll, sessions, chart })
+  const current = useLatest({ seconds, scroll, timeline, chart })
   useEffect(() => {
     if (!element) return undefined
     let width = 0
@@ -681,61 +681,46 @@ export function useChartPan(
         ? new ResizeObserver(([entry]) => (width = entry?.contentRect.width ?? 0))
         : undefined
     resize?.observe(element)
-    // The scroll's own end day and drawn end; the page's end day moves once it settles.
+    // The drawn end in actual time, so it holds while the chart's timeline changes under it; the
+    // page's end day moves once it settles.
     let active = false
-    let end: string | undefined
     let time = 0
-    let carried = 0
     let easing = 0
     let settle: ReturnType<typeof setTimeout> | undefined
-    const nowTime = () => Date.now() / 1_000
-    // The day nearest the drawn end, or the scroll's own end day for a chart of sessions.
+    const axis = () =>
+      current.current.timeline ??
+      calendarTimeline(current.current.seconds, current.current.scroll?.today ?? '')
     const nearest = () => {
-      const { seconds: span, scroll: bounds, sessions: steps } = current.current
-      if (steps || !bounds) return end
-      return shiftedGraphEnd(
-        undefined,
-        Math.round((time - chartDayTime(bounds.today)) / DAY_SECONDS),
-        span,
-        bounds.today,
-        bounds.first,
-      )
+      const { seconds: span, scroll: bounds } = current.current
+      const day = bounds && axis().day(time)
+      return day && shiftedGraphEnd(day, 0, span, bounds.today, bounds.first)
     }
     const move = (pixels: number) => {
-      const { seconds: span, scroll: bounds, sessions: steps } = current.current
+      const { seconds: span, scroll: bounds } = current.current
       const days = scrollPeriodDays(span)
       const fraction = pixels / Math.max(1, (width ||= element.clientWidth))
       if (!bounds?.first || !days) return
-      if (steps) {
-        carried += fraction * steps.count
-        const whole = Math.trunc(carried)
-        if (!whole) return
-        carried -= whole
-        const next = sessionShiftedEnd(end, whole, steps, span, bounds)
-        // Against either end of the history, nothing is carried.
-        if (next === end) carried = 0
-        end = next
-        return
-      }
-      const earliest = chartDayTime(addDays(bounds.first, days))
-      time = Math.min(nowTime(), Math.max(earliest, time + fraction * span))
-      current.current.chart?.current?.view(time)
+      const { span: across, toDisplay, toActual, end } = axis()
+      const earliest = toDisplay(end(addDays(bounds.first, days)))
+      const at = Math.min(
+        toDisplay(end(undefined)),
+        Math.max(earliest, toDisplay(time) + fraction * across),
+      )
+      time = toActual(at)
+      current.current.chart?.current?.view(at)
     }
     const finish = () => {
       const target = nearest()
-      if (current.current.sessions || !current.current.scroll) {
-        active = false
-        setGraphEnd(target)
-        return
-      }
-      const from = time
-      const to = target ? chartDayTime(target) : nowTime()
+      const { toDisplay, toActual, end } = axis()
+      const from = toDisplay(time)
+      const to = toDisplay(end(target))
       const startedAt = Date.now()
       const reduced = window.matchMedia?.('(prefers-reduced-motion: reduce)').matches
       const ease = () => {
         const progress = reduced ? 1 : Math.min(1, (Date.now() - startedAt) / EASE_MS)
-        time = from + (to - from) * (1 - (1 - progress) ** 3)
-        current.current.chart?.current?.view(time)
+        const at = from + (to - from) * (1 - (1 - progress) ** 3)
+        time = toActual(at)
+        current.current.chart?.current?.view(at)
         if (progress < 1) {
           easing = requestAnimationFrame(ease)
           return
@@ -748,11 +733,11 @@ export function useChartPan(
       ease()
     }
     const wheel = (event: WheelEvent) => {
-      const { seconds: span, scroll: bounds, sessions: steps } = current.current
+      const { seconds: span, scroll: bounds } = current.current
       const days = scrollPeriodDays(span)
       // Momentum from a page scroll can't be cancelled, and isn't the chart's to take.
       if (!event.cancelable || !bounds?.first || !days) return
-      if (chartDayTime(addDays(bounds.first, days)) >= nowTime()) return
+      if (chartDayTime(addDays(bounds.first, days)) >= Date.now() / 1_000) return
       const across = Math.abs(event.deltaX) > Math.abs(event.deltaY)
       const delta =
         (across ? event.deltaX : -event.deltaY) * (event.deltaMode === 1 ? LINE_PIXELS : 1)
@@ -760,9 +745,8 @@ export function useChartPan(
       event.preventDefault()
       if (!active) {
         active = true
-        end = sessionGraphEnd()
-        time = end ? chartDayTime(end) : nowTime()
-        if (!steps) setPanning(true)
+        time = axis().end(sessionGraphEnd())
+        setPanning(true)
       }
       cancelAnimationFrame(easing)
       easing = 0
@@ -780,6 +764,7 @@ export function useChartPan(
       setPanning(false)
     }
   }, [element, current])
+  return panning
 }
 
 /**

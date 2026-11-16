@@ -382,6 +382,11 @@
   overflow: hidden;
 }
 
+/* Placed for the window at rest, so it steps aside while the chart slides through time. */
+.holding-session-overlay.is-moving {
+  visibility: hidden;
+}
+
 .holding-session {
   position: absolute;
   inset-block: 0;
