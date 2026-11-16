@@ -27,7 +27,7 @@ Everything stored is reachable, in three tiers:
 ## Motion
 
 - Under 300 ms, eased out, transform and opacity only, and interruptible.
-- Data arriving and keys pressed repeatedly don't animate; values update in place. Scrolling a chart through time is the exception: its figures roll to each new day's value while it moves.
+- Data arriving and keys pressed repeatedly don't animate; values update in place. Scrolling a chart through time is the exception: the chart moves with the scroll, and once it settles on a day the figures roll to that day's values.
 - What opens may slide in. What closes leaves at once, so nothing waits on a fade.
 - Reduced motion keeps short fades and drops everything that moves.
 

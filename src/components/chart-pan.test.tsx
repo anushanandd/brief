@@ -91,11 +91,10 @@ it('draws the chart where the scroll is, follows the last day it reaches, and ea
     wheelOn(chart, 75)
     wheelOn(chart, 75)
   })
-  // A day and a half back from 6 pm: the 29th at 6 am, so the 28th is the last day drawn, which
-  // the page hears within PUBLISH_MS.
+  // A day and a half back from 6 pm, which the page doesn't hear while the scroll moves.
   expect(pan()).toBe(now - 1.5 * day)
   await act(async () => vi.advanceTimersByTime(100))
-  expect(sessionGraphEnd()).toBe('2026-09-28')
+  expect(sessionGraphEnd()).toBeUndefined()
   await act(async () => setRedraws!(1))
   // Nothing lost to the redraw.
   await act(async () => wheelOn(chart, 150))
@@ -149,7 +148,7 @@ it('steps a chart that draws only sessions by trading days, a plot width over it
   await act(async () => root.unmount())
 })
 
-it('scrolls a month back in a handful of page commits, not several per day crossed', async () => {
+it('scrolls a month back without a page commit until it settles', async () => {
   const data = seedSnapshot()
   data.insights = insights({ today: '2026-09-30' })
   const scroll: GraphScroll = { today: '2026-09-30', first: '2026-01-01' }
@@ -189,11 +188,12 @@ it('scrolls a month back in a handful of page commits, not several per day cross
     await act(async () => wheelOn(chart, 10))
     await frame()
   }
+  expect(pageCommits).toBe(0)
   await act(async () => vi.advanceTimersByTime(1_000))
   expect(sessionGraphEnd()).toBe('2026-08-31')
   console.info(`30 days on M: ${pageCommits} page commits, ${commits} commits`)
-  // About a second of scrolling publishes the end day ten times or so, each a commit or two.
-  expect(pageCommits).toBeLessThanOrEqual(25)
+  // The settled day, and the figures asked for it.
+  expect(pageCommits).toBeLessThanOrEqual(2)
   await act(async () => root.unmount())
 })
 
@@ -256,9 +256,11 @@ it('scrolls a value chart a month back with the chart drawing each frame outside
     await act(async () => wheelOn(chart, 10))
     await frame()
   }
+  // Once, as the scroll starts.
+  expect(commits).toBe(1)
   await act(async () => vi.advanceTimersByTime(1_000))
   expect(sessionGraphEnd()).toBe('2026-08-31')
   console.info(`30 days of a value chart on M: ${commits} commits, ${chartRenders} chart renders`)
-  expect(commits).toBeLessThanOrEqual(25)
+  expect(commits).toBeLessThanOrEqual(2)
   await act(async () => root.unmount())
 })

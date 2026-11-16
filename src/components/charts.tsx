@@ -629,8 +629,6 @@ const LINE_PIXELS = 16
 // A pause this long ends a scroll, and the chart eases onto the nearest day.
 const SETTLE_MS = 160
 const EASE_MS = 200
-// While a scroll moves, the page's figures follow its end day at most this often.
-const PUBLISH_MS = 100
 
 /** Trading days a chart steps through, and how many its window shows. */
 export type ChartSessions = { days: readonly string[]; count: number }
@@ -656,12 +654,12 @@ function sessionShiftedEnd(
 /**
  * Scrolling over a chart as time moved: down, or a swipe right, goes back. Each wheel event moves
  * `chart` to where the scroll is, drawn outside React; once the scroll pauses it eases onto the
- * nearest day, and the chart returns to its own end once the page's end day has caught up. The
- * page's end day follows the last day drawn, at most every PUBLISH_MS, so the figures keep up
- * without the page drawing every frame. With `sessions`, for a chart that can't draw between days,
- * each plot width over `sessions.count` moves its end a trading day, and the part of one left over
- * is carried to the next scroll. The scroll survives the page drawing again mid-gesture, as it
- * does when new figures or prices arrive.
+ * nearest day, the page's end day moves there, and the chart returns to its own end once the page
+ * has caught up. The page hears nothing while the scroll moves: drawing it costs more than a frame.
+ * With `sessions`, for a chart that can't draw between days, each plot width over
+ * `sessions.count` moves its end a trading day, and the part of one left over is carried to the
+ * next scroll. The scroll survives the page drawing again mid-gesture, as it does when new figures
+ * or prices arrive.
  */
 export function useChartPan(
   element: HTMLElement | null,
@@ -683,36 +681,26 @@ export function useChartPan(
         ? new ResizeObserver(([entry]) => (width = entry?.contentRect.width ?? 0))
         : undefined
     resize?.observe(element)
-    // The scroll's own end day and drawn end; the page's end day follows them.
+    // The scroll's own end day and drawn end; the page's end day moves once it settles.
     let active = false
     let end: string | undefined
     let time = 0
     let carried = 0
     let easing = 0
     let settle: ReturnType<typeof setTimeout> | undefined
-    let flush: ReturnType<typeof setTimeout> | undefined
-    let publishedAt = -Infinity
     const nowTime = () => Date.now() / 1_000
-    const publish = (now = false) => {
-      clearTimeout(flush)
-      flush = undefined
-      const wait = publishedAt + PUBLISH_MS - Date.now()
-      if (now || wait <= 0) {
-        publishedAt = Date.now()
-        setGraphEnd(end)
-      } else flush = setTimeout(() => publish(true), wait)
+    // The day nearest the drawn end, or the scroll's own end day for a chart of sessions.
+    const nearest = () => {
+      const { seconds: span, scroll: bounds, sessions: steps } = current.current
+      if (steps || !bounds) return end
+      return shiftedGraphEnd(
+        undefined,
+        Math.round((time - chartDayTime(bounds.today)) / DAY_SECONDS),
+        span,
+        bounds.today,
+        bounds.first,
+      )
     }
-    // The day of a drawn end: the last day whose point it reaches.
-    const dayAt = (at: number, span: number, bounds: GraphScroll) =>
-      at >= nowTime()
-        ? undefined
-        : shiftedGraphEnd(
-            undefined,
-            Math.floor((at - chartDayTime(bounds.today)) / DAY_SECONDS),
-            span,
-            bounds.today,
-            bounds.first,
-          )
     const move = (pixels: number) => {
       const { seconds: span, scroll: bounds, sessions: steps } = current.current
       const days = scrollPeriodDays(span)
@@ -726,35 +714,20 @@ export function useChartPan(
         const next = sessionShiftedEnd(end, whole, steps, span, bounds)
         // Against either end of the history, nothing is carried.
         if (next === end) carried = 0
-        else {
-          end = next
-          publish()
-        }
+        end = next
         return
       }
       const earliest = chartDayTime(addDays(bounds.first, days))
       time = Math.min(nowTime(), Math.max(earliest, time + fraction * span))
-      const next = dayAt(time, span, bounds)
-      if (next !== end) {
-        end = next
-        publish()
-      }
       current.current.chart?.current?.view(time)
     }
     const finish = () => {
-      const { seconds: span, scroll: bounds, sessions: steps } = current.current
-      if (steps || !bounds) {
-        publish(true)
+      const target = nearest()
+      if (current.current.sessions || !current.current.scroll) {
         active = false
+        setGraphEnd(target)
         return
       }
-      const target = shiftedGraphEnd(
-        undefined,
-        Math.round((time - chartDayTime(bounds.today)) / DAY_SECONDS),
-        span,
-        bounds.today,
-        bounds.first,
-      )
       const from = time
       const to = target ? chartDayTime(target) : nowTime()
       const startedAt = Date.now()
@@ -769,8 +742,7 @@ export function useChartPan(
         }
         easing = 0
         active = false
-        end = target
-        publish(true)
+        setGraphEnd(target)
         setPanning(false)
       }
       ease()
@@ -804,8 +776,7 @@ export function useChartPan(
       resize?.disconnect()
       cancelAnimationFrame(easing)
       clearTimeout(settle)
-      clearTimeout(flush)
-      if (active) setGraphEnd(end)
+      if (active) setGraphEnd(nearest())
       setPanning(false)
     }
   }, [element, current])
