@@ -309,6 +309,45 @@ it('moves a candle chart to a handle’s end, drawing and badging the candles up
   expect(badge().textContent).toBe('109.00')
 })
 
+it('badges a candle chart at rest on a trade newer than its candles, and on the candles while it moves', async () => {
+  const chart = createRef<LivelineHandle>()
+  const candles = Array.from({ length: 10 }, (_, index) => ({
+    time: 1_000 + index * 100,
+    width: 100,
+    open: 100 + index,
+    high: 105 + index,
+    low: 95 + index,
+    close: 100 + index,
+  }))
+  const props: LivelineProps = {
+    ...settled,
+    ref: chart,
+    mode: 'candle',
+    candles,
+    candleWidth: 100,
+    data: [],
+    value: 109,
+    endTime: 2_000,
+    window: 400,
+    badge: true,
+    referenceLine: { value: 104 },
+  }
+  const { badge, render } = await mount(props)
+  await settle()
+  const onCandle = badge().style.transform
+  await render({ ...props, badgeValue: 104 })
+  await settle()
+  expect(badge().textContent).toBe('104.00')
+  // On the trade's line, below the last candle's close.
+  expect(badge().style.transform).not.toBe(onCandle)
+  chart.current!.view(1_720)
+  await frame()
+  expect(badge().textContent).toBe('106.00')
+  chart.current!.view(undefined, false)
+  await settle()
+  expect(badge().textContent).toBe('104.00')
+})
+
 it('reads every line at a settled end its data runs past', async () => {
   const props = {
     ...settled,

@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import type { LivelineProps } from 'liveline'
 import { act, Profiler } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
@@ -50,6 +51,7 @@ const daily = {
     })),
 }
 const histories = new Map<number, HoldingPriceHistory>()
+let quote: { kind: 'quote'; price: number; time: number } | undefined
 vi.mock('../hooks/use-holding-prices', () => ({
   useHoldingPrices: (symbol: string, range: number) => {
     if (!histories.has(range)) histories.set(range, { ...daily, range })
@@ -57,6 +59,7 @@ vi.mock('../hooks/use-holding-prices', () => ({
       symbol,
       range,
       history: histories.get(range),
+      quote,
       bars: [],
       stale: false,
       visible: true,
@@ -73,6 +76,17 @@ vi.mock('../hooks/use-finance', async (original) => ({
     liveMarketEnabled: true,
   }),
 }))
+const drawn: LivelineProps[] = []
+vi.mock('liveline', async (original) => {
+  const actual = await original<typeof import('liveline')>()
+  return {
+    ...actual,
+    Liveline: (props: LivelineProps) => {
+      drawn.push(props)
+      return <actual.Liveline {...props} />
+    },
+  }
+})
 // jsdom can't run an animated figure (NumberFlow) once it updates.
 vi.mock('@number-flow/react', () => ({
   default: ({ value }: { value: number }) => <span>{value}</span>,
@@ -110,6 +124,44 @@ afterEach(() => {
   vi.unstubAllGlobals()
   resetSessionGraphWindow()
   document.body.replaceChildren()
+  quote = undefined
+  drawn.length = 0
+})
+
+const holding = (
+  <QueryClientProvider client={new QueryClient()}>
+    <HoldingChart
+      holdings={[{ ticker: 'TEST', name: 'Test', price: 100 }]}
+      ticker="TEST"
+      range="quarter"
+    />
+  </QueryClientProvider>
+)
+
+it('badges daily candles with a trade newer than the last one, as the price above reads', async () => {
+  // Before the open: the last candle is yesterday's close.
+  quote = { kind: 'quote', price: 555.5, time: now - 60 }
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  await act(async () => root.render(holding))
+  const lastClose = drawn.at(-1)!.candles!.at(-1)!.close
+  expect(lastClose).not.toBe(555.5)
+  expect(drawn.at(-1)!.badgeValue).toBe(555.5)
+  expect(host.querySelector('.home-balance-value')!.textContent).toBe('555.5')
+  // Scrolled back, the day's candles badge themselves.
+  await act(async () => setGraphEnd('2026-09-01'))
+  expect(drawn.at(-1)!.badgeValue).toBeUndefined()
+  await act(async () => root.unmount())
+  setGraphEnd(undefined)
+})
+
+it('badges daily candles on their last close without a newer trade', async () => {
+  quote = { kind: 'quote', price: 555.5, time: now - 10 * 86_400 }
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  await act(async () => root.render(holding))
+  expect(drawn.at(-1)!.badgeValue).toBeUndefined()
+  await act(async () => root.unmount())
 })
 
 it('slides a candle chart a month back without a page commit until it settles', async () => {

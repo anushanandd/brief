@@ -148,8 +148,9 @@ export function HoldingChart({
     [allPoints, span, chartEnd, history],
   )
   const last = points.at(-1)
+  const tradedSince = Boolean(quote && quote.time >= (last?.time ?? 0))
   const price = useSettledPrice(
-    quote && quote.time >= (last?.time ?? 0)
+    quote && tradedSince
       ? quote.price
       : (last?.value ?? (!finance.liveMarketEnabled ? (holding?.price ?? undefined) : undefined)),
     ticker,
@@ -517,6 +518,8 @@ export function HoldingChart({
                     candleWidth={candleChart.width}
                     data={noPoints}
                     value={drawnLast!.value}
+                    // Daily candles end on the last close; a trade since badges the price above.
+                    badgeValue={tradedSince && candleChart.resolution >= 86_400 ? price : undefined}
                     endTime={timeline.end}
                     theme={colors.theme}
                     color={colors.value}
