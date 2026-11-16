@@ -2,11 +2,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { act, memo, Profiler, useState } from 'react'
 import { createRoot } from 'react-dom/client'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 
 import { insights } from '../data/fixtures/insights'
 import { seedSnapshot } from '../data/fixtures/records'
 import { useAsOf } from '../hooks/use-as-of'
+import { addDays } from '../lib/dates'
 import {
   resetSessionGraphWindow,
   sessionGraphEnd,
@@ -14,7 +15,7 @@ import {
   type GraphScroll,
 } from '../lib/graph-preferences'
 import { chartDayTime } from '../lib/live-chart'
-import { useChartPan } from './charts'
+import { PerformanceChart, useChartPan } from './charts'
 
 vi.mock('../lib/api', async (original) => ({
   ...(await original<typeof import('../lib/api')>()),
@@ -64,15 +65,20 @@ function mount(node: React.ReactNode) {
 const wheelOn = (element: Element, deltaY: number, cancelable = true) =>
   element.dispatchEvent(new WheelEvent('wheel', { deltaY, bubbles: true, cancelable }))
 
-it('draws each frame where the scroll is, follows the last day it reaches, and eases onto a day', async () => {
-  let pan: number | undefined
+it('draws the chart where the scroll is, follows the last day it reaches, and eases onto a day', async () => {
+  // Each view the chart is asked to draw: its end while moving, or undefined back at its own.
+  const views: Array<number | undefined> = []
+  const handle = {
+    current: { view: (end?: number, moving = true) => views.push(moving ? end : undefined) },
+  }
+  const pan = () => views.at(-1)
   let setRedraws: ((redraws: number) => void) | undefined
   function Chart() {
     const [element, setElement] = useState<HTMLDivElement | null>(null)
     ;[, setRedraws] = useState(0)
     // A fresh scroll each draw, as a page gives when new figures or prices arrive.
     const scroll: GraphScroll = { today: '2026-09-30', first: '2026-01-01' }
-    pan = useChartPan(element, week, scroll)
+    useChartPan(element, week, scroll, { chart: handle })
     return <div ref={setElement} />
   }
   const { host, root, render } = mount(<Chart />)
@@ -81,34 +87,35 @@ it('draws each frame where the scroll is, follows the last day it reaches, and e
   // 700 pixels show the week, so each 100 scrolled is a day.
   Object.defineProperty(chart, 'clientWidth', { value: 700 })
 
-  // Two events in one frame move the chart once, by both.
   await act(async () => {
     wheelOn(chart, 75)
     wheelOn(chart, 75)
   })
-  expect(pan).toBeUndefined()
-  await frame()
-  // A day and a half back from 6 pm: the 29th at 6 am, so the 28th is the last day drawn.
-  expect(pan).toBe(now - 1.5 * day)
+  // A day and a half back from 6 pm: the 29th at 6 am, so the 28th is the last day drawn, which
+  // the page hears within PUBLISH_MS.
+  expect(pan()).toBe(now - 1.5 * day)
+  await act(async () => vi.advanceTimersByTime(100))
   expect(sessionGraphEnd()).toBe('2026-09-28')
   await act(async () => setRedraws!(1))
   // Nothing lost to the redraw.
   await act(async () => wheelOn(chart, 150))
-  await frame()
-  expect(pan).toBe(now - 3 * day)
+  expect(pan()).toBe(now - 3 * day)
 
   // Paused, it eases onto the nearest day instead of jumping there.
   await act(async () => vi.advanceTimersByTime(160 + 16 * 3))
-  expect(pan).toBeLessThan(now - 3 * day)
-  expect(pan).toBeGreaterThan(chartDayTime('2026-09-27'))
+  expect(pan()).toBeLessThan(now - 3 * day)
+  expect(pan()).toBeGreaterThan(chartDayTime('2026-09-27'))
   await act(async () => vi.advanceTimersByTime(250))
-  expect(pan).toBeUndefined()
+  // It reaches the day, and once the page ends there too the chart draws at its own end.
+  expect(views.at(-2)).toBe(chartDayTime('2026-09-27'))
+  expect(pan()).toBeUndefined()
   expect(sessionGraphEnd()).toBe('2026-09-27')
 
   // Momentum the page started scrolling with isn't the chart's to take.
+  const drawn = views.length
   await act(async () => wheelOn(chart, 300, false))
   await frame()
-  expect(pan).toBeUndefined()
+  expect(views).toHaveLength(drawn)
   await act(async () => root.unmount())
 })
 
@@ -119,7 +126,7 @@ it('steps a chart that draws only sessions by trading days, a plot width over it
   }
   function Chart() {
     const [element, setElement] = useState<HTMLDivElement | null>(null)
-    useChartPan(element, week, { today: '2026-09-30', first: '2026-01-01' }, sessions)
+    useChartPan(element, week, { today: '2026-09-30', first: '2026-01-01' }, { sessions })
     return <div ref={setElement} />
   }
   const { host, root, render } = mount(<Chart />)
@@ -187,5 +194,71 @@ it('scrolls a month back in a handful of page commits, not several per day cross
   console.info(`30 days on M: ${pageCommits} page commits, ${commits} commits`)
   // About a second of scrolling publishes the end day ten times or so, each a commit or two.
   expect(pageCommits).toBeLessThanOrEqual(25)
+  await act(async () => root.unmount())
+})
+
+it('scrolls a value chart a month back with the chart drawing each frame outside React', async () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      disconnect() {}
+    },
+  )
+  vi.stubGlobal('matchMedia', () => ({
+    matches: false,
+    addEventListener: () => undefined,
+    removeEventListener: () => undefined,
+  }))
+  onTestFinished(() => {
+    vi.unstubAllGlobals()
+  })
+  const original = Object.getOwnPropertyDescriptor(HTMLCanvasElement.prototype, 'getContext')!
+  Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', {
+    configurable: true,
+    value: () => null,
+  })
+  onTestFinished(() => {
+    Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', original)
+  })
+  const scroll: GraphScroll = { today: '2026-09-30', first: '2026-01-01' }
+  const data = Array.from({ length: 273 }, (_, index) => ({
+    time: chartDayTime(addDays('2026-01-01', index)),
+    value: 1_000 + index,
+  }))
+  let commits = 0
+  let chartRenders = 0
+  function Page() {
+    useGraphEnd()
+    return (
+      <Profiler id="chart" onRender={() => (chartRenders += 1)}>
+        <PerformanceChart
+          data={data}
+          value={1_272}
+          referenceIso="2026-09-30T18:00:00Z"
+          selectedWindow={month}
+          scroll={scroll}
+        />
+      </Profiler>
+    )
+  }
+  const { host, root, render } = mount(
+    <Profiler id="page" onRender={() => (commits += 1)}>
+      <Page />
+    </Profiler>,
+  )
+  await render()
+  const chart = host.querySelector('.performance-chart')!
+  Object.defineProperty(chart, 'clientWidth', { value: 700 })
+  commits = 0
+  chartRenders = 0
+  for (let index = 0; index < 70; index += 1) {
+    await act(async () => wheelOn(chart, 10))
+    await frame()
+  }
+  await act(async () => vi.advanceTimersByTime(1_000))
+  expect(sessionGraphEnd()).toBe('2026-08-31')
+  console.info(`30 days of a value chart on M: ${commits} commits, ${chartRenders} chart renders`)
+  expect(commits).toBeLessThanOrEqual(25)
   await act(async () => root.unmount())
 })

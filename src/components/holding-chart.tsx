@@ -262,8 +262,8 @@ export function HoldingChart({
   }, [calendar, span])
   const [viewport, setViewport] = useState<HTMLDivElement | null>(null)
   const [expandedViewport, setExpandedViewport] = useState<HTMLDivElement | null>(null)
-  useChartPan(viewport, span, scroll, sessions)
-  useChartPan(expandedViewport, span, scroll, sessions)
+  useChartPan(viewport, span, scroll, { sessions })
+  useChartPan(expandedViewport, span, scroll, { sessions })
   return (
     <Card className="net-worth-card brokerage-performance-card holding-chart-card">
       <ExpandableChart

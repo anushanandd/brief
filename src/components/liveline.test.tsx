@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
-import { Liveline, type LivelineProps } from 'liveline'
-import { act } from 'react'
+import { Liveline, type LivelineHandle, type LivelineProps } from 'liveline'
+import { act, createRef, Profiler } from 'react'
 import { createRoot } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 
@@ -54,12 +54,20 @@ afterEach(() => {
 
 const settled = { continuous: false, pulse: false, momentum: false } as const
 
-async function mount(props: LivelineProps) {
-  const root = createRoot(document.body.appendChild(document.createElement('div')))
-  const render = (next: LivelineProps) => act(async () => root.render(<Liveline {...next} />))
+async function mount(props: LivelineProps, onRender = () => undefined) {
+  const host = document.body.appendChild(document.createElement('div'))
+  const root = createRoot(host)
+  const render = (next: LivelineProps) =>
+    act(async () =>
+      root.render(
+        <Profiler id="chart" onRender={onRender}>
+          <Liveline {...next} />
+        </Profiler>,
+      ),
+    )
   await render(props)
   onTestFinished(() => act(async () => root.unmount()))
-  const chart = document.body.lastElementChild!.lastElementChild as HTMLElement
+  const chart = host.querySelector<HTMLElement>(':scope > div:last-child')!
   return {
     chart,
     render,
@@ -111,18 +119,19 @@ it('stops drawing a settled candle chart', async () => {
   expect(await settle()).toBeLessThan(400)
 })
 
+const endingAt = (last: number) => [
+  { time: 1_000, value: 100 },
+  { time: 1_100, value: 200 },
+  { time: 1_200, value: last },
+]
+
 it('eases a new value all the way, badge included, though the range stays put', async () => {
-  const data = (last: number) => [
-    { time: 1_000, value: 100 },
-    { time: 1_100, value: 200 },
-    { time: 1_200, value: last },
-  ]
   const props = { ...settled, endTime: 1_200, window: 300, badge: true }
-  const moved = await mount({ ...props, data: data(150), value: 150 })
+  const moved = await mount({ ...props, data: endingAt(150), value: 150 })
   await settle()
-  await moved.render({ ...props, data: data(160), value: 160 })
+  await moved.render({ ...props, data: endingAt(160), value: 160 })
   await settle()
-  const fresh = await mount({ ...props, data: data(160), value: 160 })
+  const fresh = await mount({ ...props, data: endingAt(160), value: 160 })
   expect(moved.badge().textContent).toBe('160.00')
   expect(moved.badge().style.transform).toBe(fresh.badge().style.transform)
 })
@@ -206,4 +215,105 @@ it('plays the whole reveal when data arrives after an empty chart', async () => 
   expect(badge().style.display).toBe('none')
   await settle()
   expect(badge().style.display).toBe('')
+})
+
+const line = Array.from({ length: 11 }, (_, index) => ({
+  time: 1_000 + index * 100,
+  value: 100 + index * 10,
+}))
+
+it('moves its window to a handle’s end each frame without a render, and back to its own', async () => {
+  const chart = createRef<LivelineHandle>()
+  const onHover = vi.fn()
+  let renders = 0
+  const props = {
+    ...settled,
+    ref: chart,
+    data: line,
+    value: 200,
+    endTime: 2_000,
+    window: 400,
+    badge: true,
+    onHover,
+    markers: [
+      { id: 'before', time: 1_400, value: 140, color: '#fff', label: 'Before' },
+      { id: 'after', time: 1_800, value: 180, color: '#fff', label: 'After' },
+    ],
+  }
+  const { badge, marker: find } = await mount(props, () => {
+    renders += 1
+  })
+  const marker = (label: string) => find(label)!
+  await settle()
+  expect(badge().textContent).toBe('200.00')
+  expect(marker('After').style.display).toBe('block')
+  await act(async () => marker('After').focus())
+  await settle()
+  renders = 0
+
+  chart.current!.view(1_550)
+  await frame()
+  // The value at the end, at once, with the line ending there and what's after it hidden.
+  expect(badge().textContent).toBe('155.00')
+  expect(marker('Before').style.display).toBe('block')
+  expect(marker('After').style.display).toBe('none')
+  onHover.mockClear()
+  await settle()
+  expect(onHover).not.toHaveBeenCalledWith(expect.objectContaining({ time: 1_800 }))
+  for (const end of [1_500, 1_450, 1_400]) {
+    chart.current!.view(end)
+    await frame()
+  }
+  expect(badge().textContent).toBe('140.00')
+  // Once, to let go of the marker it hid.
+  expect(renders).toBe(1)
+
+  chart.current!.view(undefined, false)
+  await settle()
+  expect(badge().textContent).toBe('200.00')
+})
+
+it('reads every line at a settled end its data runs past', async () => {
+  const props = {
+    ...settled,
+    data: line,
+    value: 200,
+    series: [
+      { id: 'Value', data: line, value: 200, color: '#fff' },
+      {
+        id: 'Deposits',
+        data: line.map(({ time }) => ({ time, value: 100 })),
+        value: 100,
+        color: '#fff',
+      },
+    ],
+    endTime: 1_550,
+    window: 400,
+    badge: true,
+  }
+  const { badge } = await mount(props)
+  await settle()
+  expect(badge().textContent).toBe('155.00')
+})
+
+it('shows a marker only inside the plot, alone or beside other lines', async () => {
+  for (const series of [undefined, [{ id: 'Value', data: line, value: 200, color: '#fff' }]]) {
+    const { marker } = await mount({
+      ...settled,
+      data: line,
+      value: 200,
+      series,
+      endTime: 2_000,
+      window: 400,
+      badge: true,
+      markers: [
+        { id: 'inside', time: 1_700, value: 170, color: '#fff', label: 'Inside plot' },
+        // Rendered a window early, so a scroll finds it there, but hidden until it's drawn.
+        { id: 'outside', time: 1_500, value: 150, color: '#fff', label: 'Outside plot' },
+      ],
+    })
+    await settle()
+    expect(marker('Inside plot')!.style.display).toBe('block')
+    expect(marker('Outside plot')!.style.display).toBe('none')
+  }
 })

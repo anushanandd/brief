@@ -1,4 +1,4 @@
-import { Liveline, type LivelinePoint, type LivelineSeries } from 'liveline'
+import { Liveline, type LivelineHandle, type LivelinePoint, type LivelineSeries } from 'liveline'
 import {
   createContext,
   useCallback,
@@ -7,11 +7,13 @@ import {
   useId,
   useLayoutEffect,
   useMemo,
+  useRef,
   useState,
   type Dispatch,
   type KeyboardEvent,
   type MouseEvent,
   type ReactNode,
+  type RefObject,
   type SetStateAction,
 } from 'react'
 
@@ -455,17 +457,16 @@ export function PerformanceChart({
   const [container, setContainer] = useState<HTMLDivElement | null>(null)
   const [graphEnd] = useGraphEnd()
   const pastEnd = scroll ? graphEnd : undefined
-  const panEnd = useChartPan(container, selectedWindow, scroll)
-  // Saved days are drawn at noon, so a chart scrolled back ends on its end day's point.
-  const endTime = panEnd ?? (pastEnd ? chartDayTime(pastEnd) : undefined)
-  // Liveline animates toward each new data set, so the lines keep their identity until a point
-  // changes.
+  const chart = useRef<LivelineHandle>(null)
+  useChartPan(container, selectedWindow, scroll, { chart })
+  // Saved days are drawn at noon, so a chart scrolled back ends on its end day's point. Liveline
+  // draws every line to that end, so the lines and markers are built once from all the history.
+  const endTime = pastEnd ? chartDayTime(pastEnd) : undefined
   const allData = useMemo(() => chartPointsFromStartDate(data, startDate), [data, startDate])
-  const chartData = useMemo(() => until(allData, endTime), [allData, endTime])
-  const plottedValue = chartData.at(-1)?.value ?? value
+  const plottedValue = allData.at(-1)?.value ?? value
   const minValueRange = Math.max(1, Math.abs(value) * 0.05)
-  const firstTime = chartData[0]?.time ?? 0
-  const lastTime = chartData.at(-1)?.time ?? firstTime
+  const firstTime = allData[0]?.time ?? 0
+  const lastTime = allData.at(-1)?.time ?? firstTime
   const historyWindow = Math.max(DAY_SECONDS + 1, (lastTime - firstTime) / 0.935)
   const windowSeconds = selectedWindow || historyWindow
   const eventColors = { in: colors.positive, out: colors.negative, none: colors.benchmark }
@@ -476,7 +477,7 @@ export function PerformanceChart({
         ? referenceTime
         : Date.parse(`${group.date}T12:00:00Z`) / 1_000
     if (!Number.isFinite(eventTime) || eventTime < firstTime - DAY_SECONDS) return []
-    const point = chartPointAtOrAfter(chartData, eventTime)
+    const point = chartPointAtOrAfter(allData, eventTime)
     // The group's color is its leading event's.
     const [lead] = group.events
     if (!point || !lead) return []
@@ -493,7 +494,7 @@ export function PerformanceChart({
   // Observed values are dots on the line; between them the line may be an estimate.
   const observationMarkers = observedOn.flatMap((date) => {
     const target = Date.parse(`${date}T12:00:00Z`) / 1_000
-    const point = chartPointAtOrAfter(chartData, target - DAY_SECONDS / 2)
+    const point = chartPointAtOrAfter(allData, target - DAY_SECONDS / 2)
     return point && Math.abs(point.time - target) < DAY_SECONDS
       ? [
           {
@@ -509,9 +510,9 @@ export function PerformanceChart({
   const markers = [...observationMarkers, ...eventMarkers]
   const series = useMemo((): LivelineSeries[] => {
     // After the last observation the value is an estimate, drawn as its own dashed line.
-    const { observed, estimated } = splitAtEstimate(chartData, estimatedAfter)
+    const { observed, estimated } = splitAtEstimate(allData, estimatedAfter)
     const visibleSeries = (points: LivelinePoint[]) => {
-      const startedPoints = until(chartPointsFromStartDate(points, startDate), endTime)
+      const startedPoints = chartPointsFromStartDate(points, startDate)
       return selectedWindow === 0
         ? startedPoints.filter((point) => point.time >= firstTime)
         : startedPoints
@@ -548,8 +549,7 @@ export function PerformanceChart({
       ...layer('S&P 500', benchmark, colors.benchmark, [1, 5]),
     ]
   }, [
-    chartData,
-    endTime,
+    allData,
     estimatedAfter,
     startDate,
     selectedWindow,
@@ -592,8 +592,9 @@ export function PerformanceChart({
         <span className="sr-only">Net deposits shows the starting value plus net cash flows.</span>
       ) : null}
       <Liveline
+        ref={chart}
         className="liveline-chart-canvas"
-        data={chartData}
+        data={allData}
         value={plottedValue}
         endTime={endTime}
         series={comparisonSeries}
@@ -622,10 +623,6 @@ export function PerformanceChart({
     </div>
   )
 }
-
-/** The points through `time`; all of them while the chart ends now. */
-const until = (points: LivelinePoint[], time: number | undefined) =>
-  time === undefined ? points : points.filter((point) => point.time <= time)
 
 // A wheel's line is about this many pixels.
 const LINE_PIXELS = 16
@@ -657,22 +654,27 @@ function sessionShiftedEnd(
 }
 
 /**
- * Scrolling over a chart as time moved: down, or a swipe right, goes back. The wheel moves the
- * chart once a frame and returns the time its window ends at while it moves; once the scroll
- * pauses it eases onto the nearest day. The page's end day follows the last day drawn, at most
- * every PUBLISH_MS, so the figures keep up without the page drawing every frame. With `sessions`,
- * for a chart that can't draw between days, each plot width over `sessions.count` moves its end a
- * trading day, and the part of one left over is carried to the next scroll. The scroll survives
- * the page drawing again mid-gesture, as it does when new figures or prices arrive.
+ * Scrolling over a chart as time moved: down, or a swipe right, goes back. Each wheel event moves
+ * `chart` to where the scroll is, drawn outside React; once the scroll pauses it eases onto the
+ * nearest day, and the chart returns to its own end once the page's end day has caught up. The
+ * page's end day follows the last day drawn, at most every PUBLISH_MS, so the figures keep up
+ * without the page drawing every frame. With `sessions`, for a chart that can't draw between days,
+ * each plot width over `sessions.count` moves its end a trading day, and the part of one left over
+ * is carried to the next scroll. The scroll survives the page drawing again mid-gesture, as it
+ * does when new figures or prices arrive.
  */
 export function useChartPan(
   element: HTMLElement | null,
   seconds: number,
   scroll: GraphScroll | undefined,
-  sessions?: ChartSessions,
+  { sessions, chart }: { sessions?: ChartSessions; chart?: RefObject<LivelineHandle | null> } = {},
 ) {
-  const [drawnEnd, setDrawnEnd] = useState<number>()
-  const current = useLatest({ seconds, scroll, sessions })
+  const [panning, setPanning] = useState(false)
+  // After the commit that carries the scroll's last end day, so the chart never draws an older one.
+  useLayoutEffect(() => {
+    if (!panning) chart?.current?.view(undefined, false)
+  }, [panning, chart])
+  const current = useLatest({ seconds, scroll, sessions, chart })
   useEffect(() => {
     if (!element) return undefined
     let width = 0
@@ -686,8 +688,6 @@ export function useChartPan(
     let end: string | undefined
     let time = 0
     let carried = 0
-    let pixels = 0
-    let frame = 0
     let easing = 0
     let settle: ReturnType<typeof setTimeout> | undefined
     let flush: ReturnType<typeof setTimeout> | undefined
@@ -713,12 +713,10 @@ export function useChartPan(
             bounds.today,
             bounds.first,
           )
-    const move = () => {
-      frame = 0
+    const move = (pixels: number) => {
       const { seconds: span, scroll: bounds, sessions: steps } = current.current
       const days = scrollPeriodDays(span)
       const fraction = pixels / Math.max(1, (width ||= element.clientWidth))
-      pixels = 0
       if (!bounds?.first || !days) return
       if (steps) {
         carried += fraction * steps.count
@@ -741,7 +739,7 @@ export function useChartPan(
         end = next
         publish()
       }
-      setDrawnEnd(time)
+      current.current.chart?.current?.view(time)
     }
     const finish = () => {
       const { seconds: span, scroll: bounds, sessions: steps } = current.current
@@ -764,8 +762,8 @@ export function useChartPan(
       const ease = () => {
         const progress = reduced ? 1 : Math.min(1, (Date.now() - startedAt) / EASE_MS)
         time = from + (to - from) * (1 - (1 - progress) ** 3)
+        current.current.chart?.current?.view(time)
         if (progress < 1) {
-          setDrawnEnd(time)
           easing = requestAnimationFrame(ease)
           return
         }
@@ -773,12 +771,12 @@ export function useChartPan(
         active = false
         end = target
         publish(true)
-        setDrawnEnd(undefined)
+        setPanning(false)
       }
       ease()
     }
     const wheel = (event: WheelEvent) => {
-      const { seconds: span, scroll: bounds } = current.current
+      const { seconds: span, scroll: bounds, sessions: steps } = current.current
       const days = scrollPeriodDays(span)
       // Momentum from a page scroll can't be cancelled, and isn't the chart's to take.
       if (!event.cancelable || !bounds?.first || !days) return
@@ -792,11 +790,11 @@ export function useChartPan(
         active = true
         end = sessionGraphEnd()
         time = end ? chartDayTime(end) : nowTime()
+        if (!steps) setPanning(true)
       }
       cancelAnimationFrame(easing)
       easing = 0
-      pixels += delta
-      frame ||= requestAnimationFrame(move)
+      move(delta)
       clearTimeout(settle)
       settle = setTimeout(finish, SETTLE_MS)
     }
@@ -804,15 +802,13 @@ export function useChartPan(
     return () => {
       element.removeEventListener('wheel', wheel)
       resize?.disconnect()
-      cancelAnimationFrame(frame)
       cancelAnimationFrame(easing)
       clearTimeout(settle)
       clearTimeout(flush)
       if (active) setGraphEnd(end)
-      setDrawnEnd(undefined)
+      setPanning(false)
     }
   }, [element, current])
-  return drawnEnd
 }
 
 /**

@@ -198,32 +198,6 @@ it('retains markers in a fixed historical window instead of filtering against to
   expect(html).not.toContain('aria-label="Outside window"')
 })
 
-it('uses the same badge-buffered marker window for single and comparison charts', () => {
-  const endTime = 1600000000
-  const data = [
-    { time: endTime - 120, value: 100 },
-    { time: endTime, value: 110 },
-  ]
-  for (const series of [undefined, [{ id: 'Value', data, value: 110, color: '#fff' }]]) {
-    const html = renderToStaticMarkup(
-      <Liveline
-        data={data}
-        value={110}
-        series={series}
-        endTime={endTime}
-        window={120}
-        badge
-        markers={[
-          { id: 'inside', time: endTime - 110, value: 100, color: '#fff', label: 'Inside plot' },
-          { id: 'outside', time: endTime - 118, value: 100, color: '#fff', label: 'Outside plot' },
-        ]}
-      />,
-    )
-    expect(html).toContain('aria-label="Inside plot"')
-    expect(html).not.toContain('aria-label="Outside plot"')
-  }
-})
-
 it('names the year on axis labels once a range repeats months', () => {
   const time = Date.parse('2024-11-25T12:00:00Z') / 1_000
   const day = 86_400
