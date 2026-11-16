@@ -462,18 +462,12 @@
   height: 100%;
   flex-direction: column;
 }
-.chart-dialog-header {
-  display: flex;
-  align-items: center;
-  justify-content: flex-end;
-  padding: 16px 16px 0 24px;
-}
 .chart-dialog-body {
   display: flex;
   min-height: 0;
   flex: 1 1 auto;
   flex-direction: column;
-  padding: 8px 24px 24px;
+  padding: 24px;
 }
 .chart-dialog-body .brokerage-chart-viewport,
 .chart-dialog-body .brokerage-chart-slide,

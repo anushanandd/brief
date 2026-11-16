@@ -53,8 +53,7 @@ import {
 } from '../lib/live-chart'
 import type { SpendingBar } from '../lib/spending'
 import { ActivityMark } from './activity-list'
-import { X } from './icons'
-import { AnimatedCurrency, Button, ChartChange, ChartRangeSelect } from './ui'
+import { AnimatedCurrency, ChartChange, ChartRangeSelect } from './ui'
 import { Dialog, dialogAutofocus } from './ui/dialog'
 import { usePresence } from './ui/presence'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
@@ -996,20 +995,11 @@ export function ExpandableChart({
       >
         {present ? (
           <div className="chart-dialog-panel">
-            <header className="chart-dialog-header">
-              {/* The content already shows its name, so the title is for assistive tech; it
-                  takes focus on open, so no control starts out ringed. */}
-              <h2 id={titleId} className="sr-only" tabIndex={-1} {...dialogAutofocus}>
-                {title}
-              </h2>
-              <Button
-                icon={X}
-                size="icon-compact"
-                variant="ghost"
-                aria-label="Close chart"
-                onClick={close}
-              />
-            </header>
+            {/* The content already shows its name, so the title is for assistive tech; it takes
+                focus on open, so no control starts out ringed. */}
+            <h2 id={titleId} className="sr-only" tabIndex={-1} {...dialogAutofocus}>
+              {title}
+            </h2>
             <div className="chart-dialog-body">{children(true)}</div>
           </div>
         ) : null}

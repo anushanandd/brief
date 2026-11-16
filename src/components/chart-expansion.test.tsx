@@ -53,10 +53,36 @@ it('names the expanded window without repeating the name its content already sho
     (heading) => !heading.classList.contains('sr-only'),
   )
   expect(visible.map((heading) => heading.textContent)).toEqual(['Savings'])
+  // Escape and the backdrop close it, so it has no close button of its own.
+  expect(dialog.querySelector('button, header')).toBeNull()
 
-  await act(async () =>
-    dialog.querySelector<HTMLButtonElement>('[aria-label="Close chart"]')?.click(),
-  )
+  // The cancel event is what Escape sends a modal dialog.
+  await act(async () => dialog.dispatchEvent(new Event('cancel', { cancelable: true })))
   expect(dialog.open).toBe(false)
   expect(dialog.childElementCount).toBe(0)
+})
+
+it('closes on a click on the backdrop', async () => {
+  await act(async () =>
+    root.render(
+      <ActionProvider>
+        <ExpandableChart title="Savings">
+          {(expanded, expand) =>
+            expanded ? null : (
+              <button type="button" onClick={expand}>
+                Expand
+              </button>
+            )
+          }
+        </ExpandableChart>
+      </ActionProvider>,
+    ),
+  )
+  await act(async () => document.querySelector('button')?.click())
+  const dialog = document.querySelector('dialog')!
+  await act(async () => {
+    dialog.dispatchEvent(new Event('pointerdown', { bubbles: true }))
+    dialog.click()
+  })
+  expect(dialog.open).toBe(false)
 })
