@@ -815,24 +815,14 @@ export const expandOnEnter = (expand: (() => void) | undefined) =>
       }
     : undefined
 
-/** The days a chart scrolled back in time shows, and the way back; nothing while it ends today. */
+/** The days a chart scrolled back in time shows; nothing while it ends today. } goes back. */
 export function ChartSpan({ seconds }: { seconds: number }) {
   const [end] = useGraphEnd()
   const days = scrollPeriodDays(seconds)
   if (!end || !days) return null
   return (
     <span className="chart-span">
-      <span>
-        {formatShortDay(addDays(end, 1 - days))} – {formatDay(end)}
-      </span>
-      <Button
-        size="compact"
-        variant="ghost"
-        aria-keyshortcuts="}"
-        onClick={() => setGraphEnd(undefined)}
-      >
-        Today
-      </Button>
+      {formatShortDay(addDays(end, 1 - days))} – {formatDay(end)}
     </span>
   )
 }

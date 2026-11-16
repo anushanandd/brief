@@ -11,11 +11,12 @@ import { addDays } from '../lib/dates'
 import {
   resetSessionGraphWindow,
   sessionGraphEnd,
+  setGraphEnd,
   useGraphEnd,
   type GraphScroll,
 } from '../lib/graph-preferences'
 import { chartDayTime } from '../lib/live-chart'
-import { type ChartTimeline, PerformanceChart, useChartPan } from './charts'
+import { ChartSpan, type ChartTimeline, PerformanceChart, useChartPan } from './charts'
 
 vi.mock('../lib/api', async (original) => ({
   ...(await original<typeof import('../lib/api')>()),
@@ -164,6 +165,15 @@ it('slides a chart along its own timeline and settles it on the nearest session'
   expect(views.at(-2)).toBe(toDisplay(end('2026-09-25')))
   expect(views.at(-1)).toBeUndefined()
   expect(sessionGraphEnd()).toBe('2026-09-25')
+  await act(async () => root.unmount())
+})
+
+it('names the days a chart scrolled back shows, leaving the way back to } and the palette', async () => {
+  setGraphEnd('2026-09-20')
+  const { host, root, render } = mount(<ChartSpan seconds={week} />)
+  await render()
+  expect(host.textContent).toContain('Sep 14')
+  expect(host.querySelector('button')).toBeNull()
   await act(async () => root.unmount())
 })
 

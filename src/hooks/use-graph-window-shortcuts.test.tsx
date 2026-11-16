@@ -70,5 +70,10 @@ it('keeps the page keys through live redraws and days scrolled, reading the end 
   if (!days) throw new Error('The default range scrolls')
   await act(async () => run('graph.end.earlier'))
   expect(sessionGraphEnd()).toBe(addDays('2026-06-19', -days))
+  // The chart has no button back to today; } and the palette's command are the way.
+  const back = registered.find(({ id }) => id === 'graph.end.today')
+  expect(back?.bindings?.[0]?.sequence).toEqual(['}'])
+  await act(async () => run('graph.end.today'))
+  expect(sessionGraphEnd()).toBeUndefined()
   await act(async () => root.unmount())
 })
