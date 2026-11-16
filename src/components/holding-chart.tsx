@@ -454,7 +454,6 @@ export function HoldingChart({
                     candleWidth={candleChart.width}
                     data={timeline.points}
                     value={drawnLast!.value}
-                    valueTime={timeline.toDisplay(drawnLast!.time)}
                     endTime={timeline.end}
                     theme={colors.theme}
                     color={colors.value}

@@ -136,25 +136,7 @@ export function holdingChartBars(state: HoldingChartState): PriceBar[] {
 export function holdingChartPoints(state: HoldingChartState): LivelinePoint[] {
   const history = state.history
   if (!history) return []
-  const bars = holdingChartBars(state)
-  const daily = history.resolution === 86400
-  return bars.map((bar, index) => {
-    const previous = bars[index - 1]
-    return {
-      time: bar.endTime,
-      value: bar.close,
-      // Fully paginated history connects reported closes; streaming gaps and
-      // failed verification remain breaks. No bars or executions are fabricated.
-      breakBefore:
-        previous !== undefined &&
-        (bar.feed !== previous.feed ||
-          (bar.time - previous.time > history.resolution * (daily ? 4 : 1.5) &&
-            (!history.calendar?.length ||
-              Boolean(state.historyError || state.error) ||
-              previous.time < history.start ||
-              bar.endTime > history.end))),
-    }
-  })
+  return holdingChartBars(state).map((bar) => ({ time: bar.endTime, value: bar.close }))
 }
 
 export function visibleHoldingChartPoints(
@@ -447,21 +429,8 @@ export function holdingChartTimeline(
       : Math.max(60, (displayEnd - toDisplay(start)) / 0.95)
   const left = displayEnd - span * 0.95
   const position = (time: number) => ((toDisplay(time) - left) / span) * 100
-  // The first gap starting at or after the previous point; a closure between two points breaks
-  // the line.
-  let next = 0
   return {
-    points: points.map((point, i) => {
-      const previous = points[i - 1]
-      if (previous) while (next < gaps.length && gaps[next]!.start < previous.time) next += 1
-      return {
-        ...point,
-        time: toDisplay(point.time),
-        breakBefore:
-          point.breakBefore ||
-          (!daily && previous !== undefined && (gaps[next]?.end ?? Infinity) <= point.time),
-      }
-    }),
+    points: points.map((point) => ({ ...point, time: toDisplay(point.time) })),
     end: displayEnd,
     span,
     toDisplay,

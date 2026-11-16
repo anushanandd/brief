@@ -177,7 +177,6 @@ it('retains markers in a fixed historical window instead of filtering against to
         { time: endTime, value: 101 },
       ]}
       value={101}
-      valueTime={endTime}
       endTime={endTime}
       window={120}
       badge={false}
@@ -194,7 +193,8 @@ it('retains markers in a fixed historical window instead of filtering against to
       ]}
     />,
   )
-  expect(html).toContain('aria-label="Saved transaction"')
+  // A marker names itself to a pointer too, since the crosshair says only its value and day.
+  expect(html).toContain('aria-label="Saved transaction" title="Saved transaction"')
   expect(html).not.toContain('aria-label="Outside window"')
 })
 

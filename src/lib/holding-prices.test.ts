@@ -78,7 +78,7 @@ const state = (
   history: history(bars, options),
 })
 
-it('cold overnight history retains daytime and overnight executions and their gaps', () => {
+it('cold overnight history retains daytime and overnight executions', () => {
   const points = holdingChartPoints(
     state([
       bar(now - 36000),
@@ -88,7 +88,6 @@ it('cold overnight history retains daytime and overnight executions and their ga
     ]),
   )
   expect(points.map((point) => point.value)).toEqual([100, 101, 102, 103])
-  expect(points.map((point) => point.breakBefore)).toEqual([false, false, true, true])
   expect(points[0]?.time).toBe(now - 35940)
 })
 
@@ -197,9 +196,7 @@ it('coarser ranges never mix minute samples with daily or multi-minute closes', 
   const daily = { ...bar(now - 86400), endTime: now - 28800 }
   const initial = state([daily], { resolution: 86400, range: 31536000, feeds: ['sip'] })
   initial.bars = [{ ...bar(now - 120, 200), receivedAt: now * 1000 }]
-  expect(holdingChartPoints(initial)).toEqual([
-    { time: daily.endTime, value: 100, breakBefore: false },
-  ])
+  expect(holdingChartPoints(initial)).toEqual([{ time: daily.endTime, value: 100 }])
 })
 
 it('suppresses unsupported changes, never interpolating a missing left boundary', () => {
@@ -378,7 +375,7 @@ it('retains an explicitly saved comparison at its verified endpoint and clears i
   expect(holdingRangeChange(corrected, holdingChartPoints(corrected), now)).toBeUndefined()
 })
 
-it('compresses the weekend while preserving real timestamps, feed boundaries and DST', () => {
+it('compresses the weekend while preserving real timestamps and DST', () => {
   const friday = t('2026-03-06T21:00:00Z')
   const sunday = t('2026-03-09T00:01:00Z')
   const h = history([bar(friday - 60), bar(sunday - 60, 101, 'boats')], {
@@ -395,28 +392,10 @@ it('compresses the weekend while preserving real timestamps, feed boundaries and
   expect(axis.gaps).toHaveLength(1)
   expect(axis.toDisplay(sunday) - axis.toDisplay(friday)).toBe(4 * 3600 + 120)
   expect(axis.toActual(axis.toDisplay(sunday))).toBe(sunday)
-  expect(axis.points[1]?.breakBefore).toBe(true)
   expect(points[1]?.time).toBe(sunday)
   expect(
     holdingSessions(h).find((session) => session.start === t('2026-03-09T13:30:00Z'))?.label,
   ).toBe('Open')
-})
-
-it('connects only fully fetched same-feed history and leaves unknown/live gaps visible', () => {
-  const bars = [bar(now - 3600), bar(now - 1800)]
-  const h = history(bars, { calendar: [{ date: '2026-09-16', open: 34200, close: 57600 }] })
-  expect(holdingChartPoints({ history: h, bars: [] })[1]?.breakBefore).toBe(false)
-  expect(
-    holdingChartPoints({ history: h, bars: [], historyError: 'Correction pending' })[1]
-      ?.breakBefore,
-  ).toBe(true)
-  expect(
-    holdingChartPoints({ history: { ...h, calendar: undefined }, bars: [] })[1]?.breakBefore,
-  ).toBe(true)
-  expect(
-    holdingChartPoints({ history: h, bars: [{ ...bar(now - 60), receivedAt: now * 1000 }] }).at(-1)
-      ?.breakBefore,
-  ).toBe(true)
 })
 
 it('honors early closes, holidays and preserves unexpected observations inside closures', () => {
@@ -437,7 +416,6 @@ it('honors early closes, holidays and preserves unexpected observations inside c
   expect(holdingSessions(h)[2]?.end).toBe(first)
   expect(axis.toDisplay(end) - axis.toDisplay(first)).toBe(7.5 * 3600)
   expect(axis.toActual(axis.toDisplay(first))).toBe(first)
-  expect(axis.points[1]?.breakBefore).toBeFalsy()
   const unexpected = [...points, { time: first + 86400, value: 102 }].toSorted(
     (a, b) => a.time - b.time,
   )

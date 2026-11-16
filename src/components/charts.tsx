@@ -380,7 +380,6 @@ export function CashAheadChart({
         className="liveline-chart-canvas"
         data={expected}
         value={last}
-        valueTime={end}
         endTime={end}
         series={series}
         theme={colors.theme}
@@ -596,7 +595,6 @@ export function PerformanceChart({
         className="liveline-chart-canvas"
         data={chartData}
         value={plottedValue}
-        valueTime={endTime}
         endTime={endTime}
         series={comparisonSeries}
         theme={colors.theme}
