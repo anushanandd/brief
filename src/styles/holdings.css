@@ -145,10 +145,10 @@
 
 .security-position-accounts {
   display: grid;
-  margin: 0 -12px;
+  margin: 0 -8px;
 }
 .security-position-accounts > .account-row {
-  padding-inline: 12px;
+  padding-inline: 8px;
   border-radius: var(--radius-control);
 }
 /* In a companion card the name keeps its line and the figures go beneath it, rather than
@@ -383,7 +383,7 @@
 .investments-attention {
   display: grid;
   gap: 2px;
-  margin: 0 -12px;
+  margin: 0 -8px;
   padding: 0;
   list-style: none;
 }
@@ -391,9 +391,9 @@
   display: grid;
   grid-template-columns: 22px minmax(0, 1fr) 16px;
   align-items: start;
-  gap: 10px;
+  gap: 12px;
   height: 100%;
-  padding: 10px 12px;
+  padding: 10px 8px;
   border-radius: var(--radius-control);
   color: inherit;
   transition: background-color var(--duration-quick) var(--ease-out);
@@ -641,7 +641,7 @@ div.investments-attention-row:hover {
 .holdings-table {
   display: grid;
   grid-template-columns: minmax(96px, 1fr) repeat(5, auto);
-  gap: 2px 16px;
+  column-gap: 16px;
   margin-inline: -8px;
   font-variant-numeric: tabular-nums;
 }
@@ -675,7 +675,9 @@ div.investments-attention-row:hover {
   min-height: 36px;
   margin-top: 8px;
 }
-.holdings-table-head > button {
+/* Sortable column headings, shared with the People table. */
+.holdings-table-head > button,
+.people-table-head > button {
   display: flex;
   min-height: 28px;
   align-items: center;
@@ -691,11 +693,10 @@ div.investments-attention-row:hover {
   cursor: pointer;
   transition: color var(--duration-quick) var(--ease-out);
 }
-.holdings-table-head > button:first-child {
+:is(.holdings-table-head, .people-table-head) > button:first-child {
   justify-content: flex-start;
 }
-.holdings-table-head > button:hover,
-.holdings-table-head > button[aria-pressed='true'] {
+:is(.holdings-table-head, .people-table-head) > button:is(:hover, [aria-pressed='true']) {
   color: var(--text-primary);
 }
 /* Rows measure as the home page's holdings do; the one shown is washed instead of ruled. */
@@ -732,7 +733,7 @@ div.investments-attention-row:hover {
 .investments-coming {
   display: grid;
   gap: 2px;
-  margin: 0 -12px;
+  margin: 0 -8px;
   padding: 0;
   list-style: none;
 }
@@ -740,8 +741,8 @@ div.investments-attention-row:hover {
   display: grid;
   grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: baseline;
-  gap: 10px;
-  padding: 8px 12px;
+  gap: 12px;
+  padding: 8px;
   border-radius: var(--radius-control);
   color: inherit;
   font-size: var(--type-body);

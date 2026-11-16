@@ -81,11 +81,6 @@
   padding: 20px 20px 16px;
   border-bottom: var(--hairline) solid var(--border-subtle);
 }
-.transaction-details-hero .hero-number {
-  font-size: var(--type-hero);
-  font-weight: 500;
-  letter-spacing: -0.04em;
-}
 .transaction-details-hero p {
   display: flex;
   margin: 12px 0 0;

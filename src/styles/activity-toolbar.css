@@ -64,12 +64,12 @@
 .date-range-presets > button {
   display: flex;
   min-height: 32px;
-  padding: 0 8px 0 10px;
+  padding: 0 8px;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
   border: 0;
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-inner);
   background: transparent;
   color: var(--text-primary);
   font: inherit;

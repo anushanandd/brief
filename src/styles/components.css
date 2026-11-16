@@ -398,7 +398,7 @@ number-flow-react {
 }
 .spending-bar-tooltip .treemap-tooltip-composition li {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
   align-items: center;
   gap: 8px;
 }
@@ -576,14 +576,8 @@ number-flow-react {
 .home-holdings-row {
   margin-top: 16px;
 }
-.home-activity-card .financial-activity-row {
-  min-height: 64px;
-}
 .accounts-overview-card {
   align-self: start;
-}
-.accounts-overview-card .account-row {
-  min-height: 64px;
 }
 /* A category total that expands to its accounts; the group owns the divider. */
 .account-group {
@@ -767,19 +761,25 @@ number-flow-react {
 .financial-activity-list {
   margin-top: 12px;
 }
-.financial-activity-row {
-  display: grid;
-  align-items: center;
-  gap: 12px;
-  border-bottom: var(--hairline) solid var(--border-subtle);
-  font-size: var(--type-body);
-  font-variant-numeric: tabular-nums;
-  grid-template-columns: 32px minmax(0, 1fr) auto;
+/* Every ruled list row is one height, padding and rule, so a list reads the same on any page. */
+.account-row,
+.financial-activity-row,
+.expected-activity-item,
+.spending-benefit-row {
   min-height: var(--row-height);
   padding: 10px 0;
+  border-bottom: var(--hairline) solid var(--border-subtle);
+  font-variant-numeric: tabular-nums;
 }
-.financial-activity-row:last-child {
+:is(.account-row, .financial-activity-row, .expected-activity-item):last-child {
   border-bottom: 0;
+}
+.financial-activity-row {
+  display: grid;
+  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  font-size: var(--type-body);
 }
 .financial-activity-copy,
 .financial-activity-meta {

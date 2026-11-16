@@ -26,9 +26,6 @@
 .workspace-brief-heading .balance-label {
   margin-bottom: 12px;
 }
-.workspace-brief-heading .hero-number {
-  font-size: var(--type-hero);
-}
 .workspace-brief-heading > p {
   max-width: 360px;
   margin: 2px 0 0;
@@ -375,16 +372,15 @@
   font-size: var(--type-meta);
   font-weight: 500;
 }
-/* Balances as the Accounts menu, read like the sidebar: rounded rows with no rules between
-   them, each type's heading a row of its own, space between types. Rows bleed into the gutter
-   so the one shown can be washed without its text moving, so the card mustn't clip them. */
+/* Balances as the Accounts menu: rows ruled and sized as home's lists, each type's heading a
+   row of its own, space between types. Rows bleed into the gutter so the one shown can be
+   washed without its text moving, so the card mustn't clip them. Investments' menu shares
+   this class. */
 .accounts-menu {
   overflow: visible;
 }
 .accounts-menu > nav {
   display: grid;
-  gap: 2px;
-  margin-top: 8px;
 }
 .accounts-menu .account-row,
 .accounts-menu .account-group-section-heading {
@@ -394,10 +390,7 @@
   color: inherit;
 }
 .accounts-menu .account-row {
-  grid-template-columns: 32px minmax(0, 1fr) auto;
-  min-height: 0;
-  padding-block: 8px;
-  border-bottom: 0;
+  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
   transition: background-color var(--duration-quick) var(--ease-out);
 }
 /* A menu changes the view in place, so its rows carry no chevron out. */
@@ -406,7 +399,6 @@
 }
 .accounts-menu .account-group-section {
   display: grid;
-  gap: 2px;
   margin-top: 12px;
 }
 .accounts-menu .account-group-section-heading {
@@ -424,8 +416,8 @@
 .accounts-menu .account-group-section-link:hover {
   background: var(--hover-wash);
 }
-/* The menu shows the row hovered by its wash, not the accent its name turns elsewhere. */
-.accounts-menu .account-row:hover .account-row-name > strong {
+/* A menu shows the row hovered by its wash, not the accent its name turns elsewhere. */
+.accounts-menu a:hover strong {
   color: inherit;
 }
 .accounts-menu .account-row[aria-current='page'],

@@ -69,16 +69,9 @@
 }
 .expected-activity-item {
   display: grid;
-  min-height: var(--row-height);
-  padding: 10px 0;
-  grid-template-columns: 32px minmax(0, 1fr);
+  grid-template-columns: var(--mark-size) minmax(0, 1fr);
   align-items: start;
   gap: 12px;
-  border-bottom: var(--hairline) solid var(--border-subtle);
-  font-variant-numeric: tabular-nums;
-}
-.expected-activity-item:last-child {
-  border-bottom: 0;
 }
 .expected-activity-item > .transaction-mark {
   width: 32px;

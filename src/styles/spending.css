@@ -108,9 +108,6 @@
 }
 .spending-total-panel .hero-number {
   --number-flow-mask-height: 0.125em;
-  font-size: var(--type-hero);
-  font-weight: 500;
-  letter-spacing: -0.04em;
 }
 .spending-total-panel .balance-label {
   margin-bottom: 8px;
@@ -192,7 +189,7 @@
 }
 .benefit-detail-row {
   display: grid;
-  grid-template-columns: 32px minmax(0, 1fr) max-content;
+  grid-template-columns: var(--mark-size) minmax(0, 1fr) max-content;
   align-items: center;
   gap: 4px 12px;
 }
@@ -231,12 +228,6 @@
 .benefit-progress::-moz-progress-bar {
   border-radius: 999px;
   background: var(--accent);
-}
-.spending-benefit-row {
-  min-height: var(--row-height);
-  padding: 10px 0;
-  border-bottom: var(--hairline) solid var(--border-subtle);
-  font-variant-numeric: tabular-nums;
 }
 .benefit-title-row {
   display: flex;
@@ -442,7 +433,7 @@
   line-height: 1.5;
 }
 .benefit-evidence li.with-mark {
-  grid-template-columns: 32px minmax(0, 1fr) max-content;
+  grid-template-columns: var(--mark-size) minmax(0, 1fr) max-content;
   gap: 12px;
 }
 .benefit-evidence li + li {

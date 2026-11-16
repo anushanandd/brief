@@ -362,7 +362,7 @@ function PeopleList({ data, photos }: { data: FinanceSnapshot; photos: Record<st
                       onPointerEnter={() => setCursor(person.id)}
                       onPointerLeave={settle}
                     >
-                      <span className="people-table-name">
+                      <span className="position-security">
                         <PersonAvatar person={person} photos={photos} />
                         <strong>{person.name}</strong>
                       </span>

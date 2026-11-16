@@ -53,7 +53,7 @@
   gap: 4px;
   overflow: hidden;
   border: 0;
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-inner);
   background: var(--sidebar-accent);
   color: var(--text-primary);
   font: inherit;
@@ -77,7 +77,7 @@
   height: 28px;
   place-items: center;
   border: 0;
-  border-radius: calc(var(--radius-control) - 2px);
+  border-radius: var(--radius-inner);
   background: transparent;
   color: var(--text-tertiary);
   cursor: pointer;
