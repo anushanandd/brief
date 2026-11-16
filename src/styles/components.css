@@ -172,6 +172,12 @@
   font-weight: 600;
   font-variant-numeric: tabular-nums;
 }
+/* number-flow@0.6.2 pads its digits by twice this above and below (`.number__inner` and each
+   digit), room for their roll; the margin takes it back so a figure's box is its line, as
+   plain text's is, and layouts space figures themselves. */
+number-flow-react {
+  margin-block: calc(round(nearest, calc(var(--number-flow-mask-height, 0.25em) / 2), 1px) * -2);
+}
 .hero-number {
   display: block;
   font-size: var(--type-hero);
@@ -188,6 +194,7 @@
   color: var(--text-tertiary);
   font-size: var(--type-body);
   font-weight: 600;
+  line-height: 1;
 }
 .hero-change-unavailable {
   font-weight: 500;
@@ -199,14 +206,14 @@
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: flex-start;
-  gap: 0 24px;
+  gap: 8px 24px;
   margin-bottom: 24px;
 }
 .home-balance-main {
   display: grid;
   width: 100%;
   min-width: 0;
-  gap: 0;
+  gap: 8px;
 }
 .home-balance-main:only-child {
   grid-column: 1 / -1;
@@ -225,16 +232,20 @@
   text-align: right;
 }
 .home-balance-header .balance-label {
-  margin-bottom: 4px;
+  margin-bottom: 0;
   white-space: normal;
 }
-.hero-number::part(fraction) {
+/* A plain figure's spans carry the part names, so it reads the same as an animated one. */
+.hero-number::part(fraction),
+.hero-number .fraction {
   color: var(--text-tertiary);
 }
-.hero-number::part(currency) {
+.hero-number::part(currency),
+.hero-number .currency {
   font-weight: 400;
 }
-.hero-number::part(fraction) {
+.hero-number::part(fraction),
+.hero-number .fraction {
   font-size: 0.62em;
   letter-spacing: -0.02em;
 }
@@ -409,7 +420,7 @@
   padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .brokerage-performance-card .home-balance-header {
-  margin-bottom: 12px;
+  margin-bottom: 16px;
 }
 .home-primary-grid,
 .home-secondary-grid {

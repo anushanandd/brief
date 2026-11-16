@@ -42,7 +42,10 @@
   min-width: 0;
 }
 .trips-year-summary .balance-label {
-  margin-bottom: 4px;
+  margin-bottom: 12px;
+}
+.trips-year-summary .hero-number + .trips-year-line {
+  margin-top: 16px;
 }
 .trips-year-stats {
   display: flex;

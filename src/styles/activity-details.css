@@ -78,7 +78,7 @@
   font-size: var(--type-meta);
 }
 .transaction-details-hero {
-  padding: 12px 20px 16px;
+  padding: 20px 20px 16px;
   border-bottom: var(--hairline) solid var(--border-subtle);
 }
 .transaction-details-hero .hero-number {
@@ -88,7 +88,7 @@
 }
 .transaction-details-hero p {
   display: flex;
-  margin: 4px 0 0;
+  margin: 12px 0 0;
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 10px;

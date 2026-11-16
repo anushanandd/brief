@@ -19,7 +19,9 @@
   min-width: 0;
   padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
+/* As tall as the focus chip, so the row keeps its height when one appears. */
 .spending-total-panel .chart-summary-row {
+  min-height: 24px;
   justify-content: flex-start;
 }
 .spending-category-scope,
@@ -100,7 +102,7 @@
   display: grid;
   width: 100%;
   min-width: 0;
-  gap: 0;
+  gap: 4px;
 }
 .spending-balance-stack {
   display: grid;
@@ -113,7 +115,7 @@
   letter-spacing: -0.04em;
 }
 .spending-total-panel .balance-label {
-  margin-bottom: 4px;
+  margin-bottom: 8px;
 }
 .spending-chart-region {
   position: relative;

@@ -1,17 +1,14 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
+import { styles } from '@number-flow/react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { afterEach, expect, it } from 'vitest'
 
 import { setAmountsHidden } from '../lib/format'
 import { Save } from './icons'
-import {
-  AnimatedCurrency,
-  Button,
-  Change,
-  ChartChange,
-  ChartRangeSelect,
-  hasMoreBelow,
-} from './ui'
+import { AnimatedCurrency, Button, Change, ChartChange, ChartRangeSelect, hasMoreBelow } from './ui'
 
 afterEach(() => setAmountsHidden(false))
 
@@ -45,6 +42,20 @@ it.each([1234.5, -1234.5, 0, 1234567.89])(
     )
   },
 )
+
+it('takes back the room NumberFlow keeps around its digits, so layouts space figures', () => {
+  // Its fallback text pads by the whole room, which its shadow splits over two spans.
+  const room = /number-flow-react > span\{[^}]*padding:calc\((.+?) \* 2\) 0\}/.exec(styles[1])?.[1]
+  expect(room).toBeDefined()
+  expect(styles[2]).toContain(`.number__inner{padding:${room} `)
+  expect(styles[2]).toContain(`.digit__num,.number .section::after{padding:${room} 0}`)
+  const css = readFileSync(join(process.cwd(), 'src/styles/components.css'), 'utf8')
+  expect(css).toContain(`number-flow-react {\n  margin-block: calc(${room} * -2);\n}`)
+  // Each style for a part also styles the plain figure's span of that name.
+  const parts = [...css.matchAll(/([\w.-]+)::part\((\w+)\)/g)]
+  expect(parts.length).toBeGreaterThan(0)
+  for (const [, host, part] of parts) expect(css).toContain(`${host} .${part}`)
+})
 
 it('splits a hidden amount into parts without its digits', () => {
   setAmountsHidden(true)

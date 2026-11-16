@@ -2,6 +2,7 @@
 
 /* Analytics shares Accounts' selector, chart header, and companion-card layout. */
 .analytics-chart-card .home-balance-header {
+  row-gap: 4px;
   margin-bottom: 12px;
 }
 
