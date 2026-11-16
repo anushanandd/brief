@@ -1,8 +1,68 @@
+// @vitest-environment jsdom
 import { renderToStaticMarkup } from 'react-dom/server'
-import { expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 
+import { setAmountsHidden } from '../lib/format'
 import { Save } from './icons'
-import { AnimatedCurrency, Button, Change, ChartRangeSelect, hasMoreBelow } from './ui'
+import {
+  AnimatedCurrency,
+  Button,
+  Change,
+  ChartChange,
+  ChartRangeSelect,
+  hasMoreBelow,
+} from './ui'
+
+afterEach(() => setAmountsHidden(false))
+
+const parse = (html: string) => {
+  const host = document.createElement('div')
+  host.innerHTML = html
+  return host
+}
+// NumberFlow renders its digits into a shadow root, which static markup keeps in templates.
+const flows = (html: string) =>
+  [...parse(html).querySelectorAll('template')].map(({ content }) => content)
+const flowText = (html: string) =>
+  flows(html)
+    .map((root) => root.querySelector('[role="img"]')?.getAttribute('aria-label'))
+    .join('')
+const styledParts = (root: ParentNode, selector: (part: string) => string) =>
+  ['currency', 'integer', 'fraction'].map(
+    (part) => root.querySelector(selector(part))?.textContent ?? null,
+  )
+
+it.each([1234.5, -1234.5, 0, 1234567.89])(
+  'writes a plain figure as NumberFlow does, in the same parts, for %s',
+  (value) => {
+    const flow = renderToStaticMarkup(<AnimatedCurrency className="hero-number" value={value} />)
+    const plain = renderToStaticMarkup(
+      <AnimatedCurrency still className="hero-number" value={value} />,
+    )
+    expect(parse(plain).textContent).toBe(flowText(flow))
+    expect(styledParts(parse(plain), (part) => `.${part}`)).toEqual(
+      styledParts(flows(flow)[0]!, (part) => `[part~="${part}"]`),
+    )
+  },
+)
+
+it('splits a hidden amount into parts without its digits', () => {
+  setAmountsHidden(true)
+  const html = renderToStaticMarkup(<AnimatedCurrency className="hero-number" value={1234.5} />)
+  expect(html).not.toMatch(/\d/)
+  expect(styledParts(parse(html), (part) => `.${part}`)).toEqual(['$', '••••', null])
+})
+
+it.each([
+  [100, 12.5],
+  [-100, -12.5],
+  [0, 0],
+  [1234567.89, 12345.678],
+])('writes a plain change as NumberFlow does for %s (%s%)', (amount, percent) => {
+  const flow = renderToStaticMarkup(<ChartChange amount={amount} percent={percent} />)
+  const plain = renderToStaticMarkup(<ChartChange still amount={amount} percent={percent} />)
+  expect(parse(plain).textContent).toBe(flowText(flow))
+})
 
 it('shows a card scroll cue only while content remains below', () => {
   expect(hasMoreBelow({ scrollHeight: 300, clientHeight: 200, scrollTop: 0 })).toBe(true)

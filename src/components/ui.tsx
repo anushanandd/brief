@@ -28,21 +28,48 @@ export function AnimatedCurrency({
   still?: boolean
 }) {
   const scrolling = useGraphScrolling()
-  if (still && publicValue) return <span className={className}>{formatPublicCurrency(value)}</span>
   // NumberFlow draws its own digits, so a hidden amount never reaches it.
   if (still || value == null || (amountsHidden() && !publicValue))
-    return <span className={className}>{formatCurrency(value)}</span>
+    return (
+      <PlainCurrency
+        className={className}
+        text={(publicValue ? formatPublicCurrency : formatCurrency)(value)}
+      />
+    )
   return (
+    // The sign sits outside the digits: Brief writes a true minus, and Intl a hyphen.
     <FlowNumber
       className={className}
-      value={value}
+      value={Math.abs(value)}
       animated={scrolling}
+      prefix={sign(value, '')}
       format={{ style: 'currency', currency: 'USD', maximumFractionDigits: 2 }}
     />
   )
 }
 
+/** Formatted currency split into NumberFlow's parts, so styles for its parts apply to both. */
+function PlainCurrency({ className, text }: { className?: string; text: string }) {
+  const parts = /^(.*?)(\$)([\d,•]+)(\.\d+)?$/.exec(text)
+  if (!parts) return <span className={className}>{text}</span>
+  const [, minus, currency, integer, fraction] = parts
+  return (
+    <span className={className}>
+      {minus}
+      <span className="currency">{currency}</span>
+      <span className="integer">{integer}</span>
+      {fraction ? <span className="fraction">{fraction}</span> : null}
+    </span>
+  )
+}
+
 const sign = (value: number, plus: string) => (value < 0 ? '−' : value > 0 ? plus : '')
+const percentFormat = {
+  style: 'percent',
+  minimumFractionDigits: 2,
+  maximumFractionDigits: 2,
+} as const
+const percentFormatter = new Intl.NumberFormat('en-US', percentFormat)
 
 /**
  * A figure in NumberFlow's own digits. Values change when data arrives or a key steps through
@@ -292,7 +319,9 @@ export function ChartChange({
         />
       )}
       {percent == null ? null : still ? (
-        <span className={tone}>{`(${sign(percent, '')}${Math.abs(percent).toFixed(2)}%)`}</span>
+        <span className={tone}>
+          {`(${sign(percent, '')}${percentFormatter.format(Math.abs(percent) / 100)})`}
+        </span>
       ) : (
         <FlowNumber
           className={tone}
@@ -300,7 +329,7 @@ export function ChartChange({
           animated={scrolling}
           prefix={`(${sign(percent, '')}`}
           suffix=")"
-          format={{ style: 'percent', minimumFractionDigits: 2, maximumFractionDigits: 2 }}
+          format={percentFormat}
         />
       )}
     </strong>
