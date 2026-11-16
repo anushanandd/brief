@@ -16,7 +16,6 @@
 }
 .workspace-brief-card {
   min-width: 0;
-  padding: var(--card-padding);
 }
 .workspace-brief-heading {
   display: flex;
@@ -40,7 +39,6 @@
 }
 .account-group-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .account-switcher {
   min-width: 0;
@@ -197,15 +195,9 @@
 .account-preview-card {
   min-width: 0;
   overflow: hidden;
-  padding: var(--card-padding);
-}
-.account-overview-summary-card,
-.account-preview-card {
-  padding-bottom: var(--card-padding-end);
 }
 .account-overview-chart-card {
   position: relative;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .account-overview-chart-card .monthly-bar-chart {
   height: 330px;

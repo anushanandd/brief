@@ -139,7 +139,7 @@ export function HoldingsTable({
             data-keyboard-open
             aria-current={selected ? undefined : 'page'}
           >
-            <span className="holdings-table-name">
+            <span className="position-security">
               <AccountMark type="brokerage" />
               <span>
                 <strong>Portfolio</strong>
@@ -157,7 +157,7 @@ export function HoldingsTable({
             data-keyboard-open
             aria-current={selected === RETIREMENT ? 'page' : undefined}
           >
-            <span className="holdings-table-name">
+            <span className="position-security">
               <AccountMark type="retirement" />
               <span>
                 <strong>Retirement</strong>
@@ -186,7 +186,7 @@ export function HoldingsTable({
               data-keyboard-open
               aria-current={selected === row.ticker ? 'page' : undefined}
             >
-              <span className="holdings-table-name">
+              <span className="position-security">
                 <SecurityMark ticker={row.ticker} name={row.name} />
                 <span>
                   <strong>{row.ticker}</strong>

@@ -80,7 +80,6 @@
   max-height: 100%;
   min-height: 0;
   align-self: start;
-  padding: var(--card-padding) 12px var(--card-padding-end);
   flex-direction: column;
   transition:
     opacity var(--duration-modal) var(--ease-out),
@@ -93,7 +92,6 @@
   }
 }
 .activity-filter-card > .section-heading {
-  margin-bottom: 12px;
   padding: 0 8px;
 }
 .activity-filter-body {
@@ -638,17 +636,12 @@
 .analytics-activities-card {
   display: flex;
   flex-direction: column;
-  padding-bottom: 12px;
 }
 .analytics-activities-card > .section-heading {
   flex: none;
 }
 .analytics-activity-scroll {
   min-width: 0;
-}
-
-.analytics-activities-card > .section-heading {
-  margin-bottom: 8px;
 }
 
 .ledger-select-trigger {

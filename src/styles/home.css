@@ -56,7 +56,6 @@
 /* Portfolio cards share these quiet evidence rows. */
 .portfolio-card {
   min-width: 0;
-  padding: var(--card-padding);
 }
 .portfolio-note {
   margin: 12px 0 0;
@@ -134,7 +133,6 @@
 .pinned-card {
   min-width: 0;
   overflow: hidden;
-  padding: var(--card-padding);
 }
 .command-evidence {
   display: grid;
@@ -241,7 +239,6 @@
    expected. */
 .home-ahead-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 
 /* Spent and income for the chart's period, in its own companion section. */
@@ -324,7 +321,6 @@
 }
 .taxes-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .taxes-copy {
   margin: 12px 0 16px;

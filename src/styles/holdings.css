@@ -29,7 +29,6 @@
 }
 
 .holding-detail-card {
-  padding: var(--card-padding);
   min-width: 0;
 }
 .holding-chart-card {
@@ -127,9 +126,6 @@
   }
 }
 
-.holding-detail-card > .section-heading {
-  margin-bottom: 12px;
-}
 .holding-detail-card .financial-activity-list,
 .holding-news-content .news-list {
   margin-top: 0;
@@ -307,7 +303,6 @@
   display: flex;
   flex-direction: column;
   min-width: 0;
-  padding: var(--card-padding);
 }
 .investments-side-stats > .metric {
   padding: 0;
@@ -384,10 +379,6 @@
   gap: 16px;
 }
 
-.investments-attention-card > .section-heading,
-.investments-coming-card > .section-heading {
-  margin-bottom: 12px;
-}
 /* One decision per row, in the narrow column beside the holdings. */
 .investments-attention {
   display: grid;
@@ -519,9 +510,6 @@ div.investments-attention-row:hover {
 }
 
 /* The summary card: a short paragraph about today, then the news behind it. */
-.investment-summary-card > .section-heading {
-  margin-bottom: 12px;
-}
 /* Today in plain words: figures read as part of the sentence, never as a dashboard. */
 .investment-brief {
   max-width: 68ch;
@@ -646,12 +634,6 @@ div.investments-attention-row:hover {
 /* Investments' menu: the portfolio and retirement, then every holding, as Accounts' menu reads.
    Rows share one grid, so each figure's column is as wide as its widest figure and never clips;
    the name takes what's left and wraps. */
-.holdings-table-card > .section-heading {
-  margin-bottom: 8px;
-}
-.holdings-table-card {
-  padding-bottom: var(--card-padding-end);
-}
 .holdings-table-scroll {
   container: holdings-table / inline-size;
 }
@@ -692,7 +674,6 @@ div.investments-attention-row:hover {
 .holdings-table-head {
   min-height: 36px;
   margin-top: 8px;
-  border-bottom: var(--hairline) solid var(--border-subtle);
 }
 .holdings-table-head > button {
   display: flex;
@@ -717,14 +698,19 @@ div.investments-attention-row:hover {
 .holdings-table-head > button[aria-pressed='true'] {
   color: var(--text-primary);
 }
+/* Rows measure as the home page's holdings do; the one shown is washed instead of ruled. */
 .holdings-table-row {
   min-height: var(--row-height);
-  padding-block: 8px;
+  padding-block: 10px;
+  border-bottom: var(--hairline) solid var(--border-subtle);
   border-radius: var(--radius-control);
   color: inherit;
   font-size: var(--type-body);
   text-decoration: none;
   transition: background-color var(--duration-quick) var(--ease-out);
+}
+.holdings-table-row:last-child {
+  border-bottom: 0;
 }
 .holdings-table-row:hover {
   background: var(--hover-wash);
@@ -740,25 +726,6 @@ div.investments-attention-row:hover {
 /* The portfolio and retirement have only a value, under the holdings' values. */
 .holdings-table-scope > :last-child {
   grid-column: -2;
-}
-.holdings-table-name {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  min-width: 0;
-}
-.holdings-table-name > span {
-  display: grid;
-  min-width: 0;
-}
-.holdings-table-name strong {
-  font-weight: 500;
-}
-/* A long fund name wraps under its ticker. */
-.holdings-table-name small {
-  color: var(--text-tertiary);
-  font-size: var(--type-meta);
-  overflow-wrap: break-word;
 }
 
 /* What's scheduled: date, what, and any amount, opening the holding. */
@@ -798,12 +765,6 @@ div.investments-attention-row:hover {
 }
 
 /* Returns for every period beside the S&P 500; the page's period is marked. */
-.investments-performance-card {
-  padding-bottom: var(--card-padding-end);
-}
-.investments-performance-card > .section-heading {
-  margin-bottom: 12px;
-}
 .investments-performance-head,
 .investments-performance-row {
   display: grid;

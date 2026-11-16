@@ -341,9 +341,6 @@ button.ranked-bars-row[aria-pressed='true'] .ranked-bars-name {
   min-height: 280px;
   max-height: 640px;
 }
-.spending-account-empty {
-  padding: var(--card-padding);
-}
 .spending-account-empty .empty-state {
   padding-top: 0;
 }
@@ -351,7 +348,6 @@ button.ranked-bars-row[aria-pressed='true'] .ranked-bars-name {
 /* Subscriptions sit in Spending's companion, under the card's benefits. */
 .spending-subscriptions-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 
 /* Fee break-even: one sentence over a meter that fills as credits recover the fee. */

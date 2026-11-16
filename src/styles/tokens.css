@@ -18,8 +18,6 @@
   --radius-modal: 20px;
   --radius-badge: var(--radius-control);
   --card-padding: 24px;
-  /* Cards that end in rows: the last row's own padding makes up the rest. */
-  --card-padding-end: 12px;
   --companion-card-width: max(280px, calc(27.5% - 4.4px));
   --type-micro: 11px;
   --type-meta: 12px;

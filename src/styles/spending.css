@@ -13,11 +13,9 @@
 }
 .spending-hero-card {
   overflow: hidden;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .spending-category-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 /* As tall as the focus chip, so the row keeps its height when one appears. */
 .spending-total-panel .chart-summary-row {
@@ -166,7 +164,6 @@
 .spending-transactions-preview {
   min-width: 0;
   overflow: hidden;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .spending-companion {
   display: grid;

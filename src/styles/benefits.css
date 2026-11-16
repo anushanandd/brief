@@ -3,7 +3,6 @@
 /* Spaced like the chart section it replaces: a gap above its rule, the section padding below. */
 .benefit-grid-card {
   margin-top: 16px;
-  padding-top: var(--card-padding);
 }
 
 .benefit-grid-top {

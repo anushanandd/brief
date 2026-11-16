@@ -18,7 +18,6 @@
 .trips-card,
 .trips-places-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .trips-eyebrow {
   display: block;

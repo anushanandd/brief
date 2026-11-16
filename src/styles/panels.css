@@ -76,7 +76,6 @@
 .diagnostics-summary {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  padding: var(--card-padding) 0 0;
 }
 .diagnostics-stat {
   display: grid;
@@ -123,11 +122,9 @@
 }
 .logs-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .news-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .news-list {
   margin-top: 12px;

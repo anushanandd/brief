@@ -16,7 +16,6 @@
 .calendar-day-card,
 .calendar-activity-card {
   min-width: 0;
-  padding-top: var(--card-padding);
 }
 .calendar-activity-card .section-heading-link {
   color: var(--text-tertiary);

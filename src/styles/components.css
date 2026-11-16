@@ -98,17 +98,14 @@
   color: var(--text-tertiary);
 }
 
+/* Sections sit straight on the page with only a rule above each one and the same space below
+   it, so text lines up with the page title and the gap below sets the space above the next rule.
+   Sections don't set their own padding. */
 .surface-card {
   position: relative;
-  border-top: var(--hairline) solid var(--border-subtle);
   min-width: 0;
-}
-/* Sections sit straight on the page with only a rule above each one. This outranks each
-   section's own padding: text lines up with the page title, and the gap below sets the space
-   above the next rule. */
-:root .surface-card {
-  padding-inline: 0;
-  padding-bottom: 0;
+  padding: var(--card-padding) 0 0;
+  border-top: var(--hairline) solid var(--border-subtle);
 }
 /* The section's own top padding sits below each rule; the gap matches it above. Columns need
    wide gutters with no outline to separate them. A page sets its own header spacing, so it's
@@ -129,6 +126,14 @@
 }
 .section-heading > :first-child {
   min-width: 0;
+}
+/* A section's heading owns the space under it, so every section's content starts the same
+   distance below its title. */
+.surface-card > .section-heading {
+  margin-bottom: 12px;
+}
+.surface-card > .section-heading + * {
+  margin-top: 0;
 }
 .section-heading h2 {
   margin: 0;
@@ -198,9 +203,6 @@ number-flow-react {
 }
 .hero-change-unavailable {
   font-weight: 500;
-}
-.net-worth-card {
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .home-balance-header {
   display: grid;
@@ -412,12 +414,10 @@ number-flow-react {
 }
 .home-overview-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .brokerage-performance-card {
   position: relative;
   overflow: hidden;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .brokerage-performance-card .home-balance-header {
   margin-bottom: 16px;
@@ -510,7 +510,6 @@ number-flow-react {
 }
 .brokerage-holdings-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
   align-self: start;
 }
 /* Position tables drop their least decision-relevant columns before Value clips. */
@@ -581,7 +580,6 @@ number-flow-react {
   min-height: 64px;
 }
 .accounts-overview-card {
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
   align-self: start;
 }
 .accounts-overview-card .account-row {
@@ -874,7 +872,6 @@ number-flow-react {
 .spending-detail-card {
   min-width: 0;
   margin-bottom: 16px;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 .transaction-description {
   white-space: normal;

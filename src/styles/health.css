@@ -9,7 +9,6 @@
   align-items: center;
   justify-content: space-between;
   gap: var(--card-padding) 48px;
-  padding: var(--card-padding) 0 0;
 }
 .health-summary-status {
   display: flex;
@@ -90,7 +89,6 @@
 /* One section per severity, its issues as rows. */
 .health-section {
   margin-top: var(--card-padding);
-  padding-top: var(--card-padding);
 }
 .health-section-count {
   color: var(--text-tertiary);

@@ -98,7 +98,6 @@
 .people-who-card,
 .people-hero-card {
   min-width: 0;
-  padding: var(--card-padding) var(--card-padding) var(--card-padding-end);
 }
 
 /* Who's this: a line per name in payments, then who it could be, each a chip. */
@@ -331,7 +330,6 @@
 .people-list-card {
   display: flex;
   min-height: 0;
-  padding-bottom: var(--card-padding-end);
   flex-direction: column;
   gap: 8px;
   contain: size;

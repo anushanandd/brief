@@ -73,11 +73,6 @@
 .documents-count > .is-attention {
   color: var(--warning);
 }
-
-/* Sections keep the page's spacing below their rule. */
-.documents-section {
-  padding-top: var(--card-padding);
-}
 .documents-group-title {
   display: inline-flex;
   align-items: center;

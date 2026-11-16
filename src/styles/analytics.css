@@ -56,9 +56,6 @@
 .analytics-breakdown-row:last-child {
   border-bottom: 0;
 }
-.expected-activity-card > .section-heading {
-  margin-bottom: 12px;
-}
 .expected-horizon {
   color: var(--text-tertiary);
   font-size: var(--type-meta);
@@ -427,9 +424,6 @@
   font-size: var(--type-meta);
 }
 
-.holding-news-card > .section-heading {
-  margin-bottom: 0;
-}
 .holding-news-card .news-row-meta {
   flex-wrap: wrap;
   gap: 4px 8px;
