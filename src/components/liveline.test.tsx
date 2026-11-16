@@ -1,4 +1,7 @@
 // @vitest-environment jsdom
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
+
 import { Liveline, type LivelineHandle, type LivelineProps } from 'liveline'
 import { act, createRef, Profiler } from 'react'
 import { createRoot } from 'react-dom/client'
@@ -316,4 +319,37 @@ it('shows a marker only inside the plot, alone or beside other lines', async () 
     expect(marker('Inside plot')!.style.display).toBe('block')
     expect(marker('Outside plot')!.style.display).toBe('none')
   }
+})
+
+it('hides only Liveline’s own toolbar, so the holding chart’s session overlay shows', async () => {
+  const style = document.head.appendChild(document.createElement('style'))
+  style.textContent = readFileSync(join(process.cwd(), 'src/styles/components.css'), 'utf8')
+  onTestFinished(() => style.remove())
+  const host = document.body.appendChild(document.createElement('div'))
+  host.className = 'live-performance-chart'
+  const root = createRoot(host)
+  onTestFinished(() => act(async () => root.unmount()))
+  await act(async () =>
+    root.render(
+      <>
+        <div className="holding-session-overlay" />
+        <Liveline
+          {...settled}
+          className="liveline-chart-canvas"
+          data={line}
+          value={200}
+          // Two lines bring out Liveline's series toggles.
+          series={[
+            { id: 'Value', data: line, value: 200, color: '#fff' },
+            { id: 'Deposits', data: line, value: 200, color: '#fff' },
+          ]}
+          window={400}
+        />
+      </>,
+    ),
+  )
+  const [overlay, toolbar, chart] = [...host.children]
+  expect(getComputedStyle(toolbar!).display).toBe('none')
+  expect(getComputedStyle(overlay!).display).not.toBe('none')
+  expect(getComputedStyle(chart!).display).not.toBe('none')
 })

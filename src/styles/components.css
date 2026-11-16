@@ -439,7 +439,7 @@
   flex-direction: column;
 }
 /* Comparison lines stay visible; their optional Liveline toggles stay out of the layout. */
-.live-performance-chart > div:not(.liveline-chart-canvas) {
+.live-performance-chart > div:not(.liveline-chart-canvas, .holding-session-overlay) {
   display: none !important;
 }
 /* A click on the chart opens it larger. */
