@@ -35,6 +35,12 @@ export function useAsOf<T extends FinanceSnapshot | undefined>(data: T): T {
   return useMemo(() => withPeriodAsOf(data, end, query.data), [data, end, query.data])
 }
 
+// Snapshots standing in with another day's figures, or none, until the end day's arrive.
+const waiting = new WeakSet<object>()
+
+/** Whether `useAsOf`'s snapshot is still waiting on its end day's figures from Rust. */
+export const asOfWaiting = (data: FinanceSnapshot | undefined) => Boolean(data && waiting.has(data))
+
 /** The snapshot with `past`'s figures while it is scrolled back to `end`; none known yet without. */
 export function withPeriodAsOf<T extends FinanceSnapshot | undefined>(
   data: T,
@@ -43,5 +49,8 @@ export function withPeriodAsOf<T extends FinanceSnapshot | undefined>(
 ): T {
   if (!data?.insights || !end) return data
   const { end: _, ...figures } = past ?? { end, ...unknown }
-  return { ...data, insights: { ...data.insights, ...figures } }
+  const result = { ...data, insights: { ...data.insights, ...figures } }
+  // Rust answers null for a day it has no figures for.
+  if (past !== null && past?.end !== end) waiting.add(result)
+  return result
 }

@@ -1,7 +1,7 @@
 import { Liveline, type LivelineHandle, type LivelinePoint } from 'liveline'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-import { useAsOf } from '../hooks/use-as-of'
+import { asOfWaiting, useAsOf } from '../hooks/use-as-of'
 import { useFinance } from '../hooks/use-finance'
 import { useGraphScrollShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useHoldingPrices } from '../hooks/use-holding-prices'
@@ -34,11 +34,12 @@ import {
   holdingChartTime,
   holdingWindowCovered,
 } from '../lib/holding-prices'
-import { holdingHistoryRange } from '../lib/investment-range'
+import { holdingHistoryRange, rangeDates } from '../lib/investment-range'
 import { summaryStart } from '../lib/investment-summary'
 import { chartDayTime, firstChartDay } from '../lib/live-chart'
 import { type HoldingPriceHistory } from '../lib/schema'
 import {
+  ChartReadout,
   type ChartTimeline,
   ChartSpan,
   ExpandableChart,
@@ -153,7 +154,8 @@ export function HoldingChart({
     quote && tradedSince
       ? quote.price
       : (last?.value ?? (!finance.liveMarketEnabled ? (holding?.price ?? undefined) : undefined)),
-    ticker,
+    // A new end day's close shows at once, as the readout that followed the scroll there did.
+    `${ticker}:${graphEnd ?? ''}`,
   )
   const timelineEnd = graphEnd ? chartEnd : liveEnd
   const windowTimeline = useMemo(
@@ -253,6 +255,31 @@ export function HoldingChart({
     [history, historyError, error, allPoints, latestTime, startDay],
   )
   const change = periodChange ?? holdingRangeChange(prices, allPoints, now, span)
+  // What the chart drawn to `at` reads, as it reads an end day once settled there: the close of
+  // its last candle, and the change to it from the window's start.
+  const priceAt = (at: number) => {
+    const end = holdingChartEnd(prices, allPoints, at)
+    return visibleHoldingChartPoints(allPoints, span, end, history).at(-1)?.value
+  }
+  const changeAt = (at: number) => {
+    const from = rangeDates(period, new Date(at * 1000).toISOString().slice(0, 10)).from
+    const latest = allPoints.findLast((point) => point.time <= at)?.time
+    const moved =
+      from && latest !== undefined
+        ? holdingPeriodChange(
+            { history, historyError, error, bars: [] },
+            allPoints,
+            latest,
+            addDays(from, -1),
+          )
+        : undefined
+    return {
+      change: moved ?? holdingRangeChange(prices, allPoints, at, span),
+      extended: moved?.extended,
+    }
+  }
+  // Scrolled back, the readouts keep reading the chart until the day's history and figures are in.
+  const waitingAt = graphEnd && (prices.stale || asOfWaiting(asOf)) ? now : undefined
   const connection = prices.connection
   const active = !graphEnd && prices.visible && connection?.status === 'subscribed' && !prices.error
   const stale = quote && now - quote.time > (connection?.delayMinutes ?? 0) * 60 + 120
@@ -282,6 +309,40 @@ export function HoldingChart({
   const marketStatus = status ?? <LoadingText key={selection}>Loading market data…</LoadingText>
   const chartVisible = supported && finance.liveMarketEnabled && Boolean(shown)
   const historyStatus = <LoadingText key={selection}>Loading price history…</LoadingText>
+  const changeRow = (
+    moved: typeof change,
+    extended: NonNullable<typeof periodChange>['extended'],
+    still = false,
+  ) =>
+    moved ? (
+      <>
+        <ChartChange
+          still={still}
+          amount={moved.change}
+          percent={moved.percent}
+          ariaLabel={`${savedChange ? 'Saved bar-close change' : 'Bar-close change'}${
+            prices.savedComparison
+              ? `, verified ${formatUpdatedAt(prices.savedComparison.asOf)}`
+              : ''
+          }`}
+        />
+        {extended ? (
+          <span className="holding-chart-extended">
+            {extended.label}
+            <ChartChange
+              still={still}
+              amount={extended.change}
+              percent={extended.percent}
+              ariaLabel={`${extended.label} change since the close`}
+            />
+          </span>
+        ) : null}
+      </>
+    ) : loadingHistory ? (
+      <span className="holding-chart-status">{historyStatus}</span>
+    ) : (
+      <ChartChange amount={null} percent={null} />
+    )
   const today = finance.data?.insights?.today
   const firstBar = history?.range === 0 ? firstChartDay(allPoints) : undefined
   const scroll = useMemo(
@@ -350,12 +411,24 @@ export function HoldingChart({
                   )}
                 </h2>
                 <div className="home-balance-value">
-                  <AnimatedCurrency
-                    key={ticker}
-                    className="hero-number"
-                    value={price}
-                    publicValue
-                  />
+                  <ChartReadout
+                    waitingAt={waitingAt}
+                    read={(at) => (
+                      <AnimatedCurrency
+                        still
+                        className="hero-number"
+                        value={priceAt(at)}
+                        publicValue
+                      />
+                    )}
+                  >
+                    <AnimatedCurrency
+                      key={ticker}
+                      className="hero-number"
+                      value={price}
+                      publicValue
+                    />
+                  </ChartReadout>
                 </div>
               </div>
               <div className="holding-chart-controls">
@@ -422,33 +495,15 @@ export function HoldingChart({
                 ) : null}
               </div>
               <div className="chart-summary-row">
-                {change ? (
-                  <>
-                    <ChartChange
-                      amount={change.change}
-                      percent={change.percent}
-                      ariaLabel={`${savedChange ? 'Saved bar-close change' : 'Bar-close change'}${
-                        prices.savedComparison
-                          ? `, verified ${formatUpdatedAt(prices.savedComparison.asOf)}`
-                          : ''
-                      }`}
-                    />
-                    {periodChange?.extended ? (
-                      <span className="holding-chart-extended">
-                        {periodChange.extended.label}
-                        <ChartChange
-                          amount={periodChange.extended.change}
-                          percent={periodChange.extended.percent}
-                          ariaLabel={`${periodChange.extended.label} change since the close`}
-                        />
-                      </span>
-                    ) : null}
-                  </>
-                ) : loadingHistory ? (
-                  <span className="holding-chart-status">{historyStatus}</span>
-                ) : (
-                  <ChartChange amount={null} percent={null} />
-                )}
+                <ChartReadout
+                  waitingAt={waitingAt}
+                  read={(at) => {
+                    const moved = changeAt(at)
+                    return changeRow(moved.change, moved.extended, true)
+                  }}
+                >
+                  {changeRow(change, periodChange?.extended)}
+                </ChartReadout>
               </div>
             </header>
             <div

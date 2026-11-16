@@ -87,6 +87,36 @@ export function useChosenGraphWindow() {
 export function resetSessionGraphWindow() {
   sessionWindow = undefined
   sessionEnd = undefined
+  liveEnd = undefined
+}
+
+/** Where a chart being scrolled is drawn this frame, in seconds, and the day it would settle on. */
+export type LiveGraphEnd = { time: number; day: string | undefined }
+
+// Apart from the page's end day, so only the readouts beside a chart draw each frame.
+let liveEnd: LiveGraphEnd | undefined
+const liveListeners = new Set<() => void>()
+
+export function setLiveGraphEnd(next: LiveGraphEnd | undefined) {
+  if (next === liveEnd) return
+  liveEnd = next
+  liveListeners.forEach((notify) => notify())
+}
+
+const subscribeLive = (notify: () => void) => {
+  liveListeners.add(notify)
+  return () => {
+    liveListeners.delete(notify)
+  }
+}
+
+/** Where a scrolling chart is drawn, each frame; undefined while none moves. */
+export function useLiveGraphEnd() {
+  return useSyncExternalStore(
+    subscribeLive,
+    () => liveEnd,
+    () => undefined,
+  )
 }
 
 /** What a chart needs to scroll back in time: the latest day, and the first it draws. */

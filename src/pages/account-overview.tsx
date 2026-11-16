@@ -9,6 +9,8 @@ import {
   ExpandableChart,
   expandOnClick,
   expandOnEnter,
+  LineChange,
+  LineValue,
   MonthlyBarChart,
   PerformanceChart,
 } from '../components/charts'
@@ -19,15 +21,8 @@ import { useObjectDetailsAction } from '../components/object-details'
 import { PositionTable } from '../components/position-table'
 import { SalesTable } from '../components/sales-table'
 import { SnapTradeReference } from '../components/snaptrade-reference'
-import {
-  AnimatedCurrency,
-  Button,
-  Card,
-  ChartChange,
-  ScrollCueCard,
-  SectionHeading,
-} from '../components/ui'
-import { useAsOf } from '../hooks/use-as-of'
+import { Button, Card, ScrollCueCard, SectionHeading } from '../components/ui'
+import { asOfWaiting, useAsOf } from '../hooks/use-as-of'
 import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
@@ -41,6 +36,7 @@ import { openExternalUrl } from '../lib/api'
 import { financeSettings } from '../lib/finance-settings'
 import { formatShortDay } from '../lib/format'
 import { chartPeriod, useGraphEnd } from '../lib/graph-preferences'
+import { chartDayTime, chartPointsFromStartDate } from '../lib/live-chart'
 import { getExternalLogosEnabled } from '../lib/logos'
 import type { Account, FinanceSnapshot } from '../lib/schema'
 import { monthlySpendingHistory, sortTransactionsByRecency } from '../lib/spending'
@@ -328,7 +324,7 @@ export function AccountOverview({
             {group?.outsideTotal ? ' · not in total' : ''}
           </h2>
           <div className="home-balance-value">
-            <AnimatedCurrency className="hero-number" value={chartValue} />
+            <LineValue data={chartData} value={chartValue} />
           </div>
         </div>
         {committedAccount?.id.startsWith('snaptrade:') || (!isCredit && historyIsAvailable) ? (
@@ -342,9 +338,11 @@ export function AccountOverview({
         ) : null}
         {isCredit ? null : (
           <div className="chart-summary-row">
-            <ChartChange
-              amount={historyIsAvailable ? (chartChange?.change ?? null) : null}
-              percent={historyIsAvailable ? (chartChange?.percent ?? null) : null}
+            <LineChange
+              data={historyIsAvailable ? chartPointsFromStartDate(chartData, startDate) : []}
+              seconds={graphWindow}
+              change={historyIsAvailable ? chartChange : undefined}
+              waitingAt={graphEnd && asOfWaiting(asOf) ? chartDayTime(graphEnd) : undefined}
             />
           </div>
         )}

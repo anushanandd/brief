@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   appendLiveChartPoint,
   buildLiveChartData,
+  chartChangeAt,
   chartDayTime,
   chartPointAtOrAfter,
   chartPointAtOrBefore,
@@ -27,6 +28,35 @@ it('reads a chart scrolled back at its end day, from its first drawn day', () =>
   expect(firstChartDay(points)).toBe('2026-09-01')
   expect(firstChartDay(points, '2026-09-02')).toBe('2026-09-02')
   expect(firstChartDay([], '2026-09-02')).toBeUndefined()
+})
+
+it('measures a moving chart’s change as Rust measures each day’s, from the points drawn by then', () => {
+  const noon = chartDayTime
+  const points = [
+    { time: noon('2026-09-01'), value: 100 },
+    { time: noon('2026-09-03'), value: 200 },
+    { time: noon('2026-09-05'), value: 400 },
+  ]
+  // A day before Sep 3 noon reads 150, between the points around it.
+  expect(chartChangeAt(points, 86_400, noon('2026-09-03'))).toEqual({
+    change: 50,
+    percent: 33.33,
+  })
+  // What comes after the end isn't drawn yet.
+  expect(chartChangeAt(points, 0, noon('2026-09-04'))).toEqual({ change: 100, percent: 100 })
+  expect(chartChangeAt(points, 365 * 86_400, noon('2026-09-03'))?.change).toBe(100)
+  expect(chartChangeAt([], 86_400, 0)).toBeUndefined()
+  expect(chartChangeAt([points[0]!], 86_400, 0)).toBeUndefined()
+  expect(
+    chartChangeAt(
+      [
+        { time: 0, value: 0 },
+        { time: 10, value: 5 },
+      ],
+      0,
+      10,
+    ),
+  ).toEqual({ change: 5, percent: null })
 })
 
 it('splits a line at its last observed day so the estimate starts where it ends', () => {

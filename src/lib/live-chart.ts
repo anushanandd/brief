@@ -81,6 +81,38 @@ export function chartRangeChange(changes: ChartChanges, series: string, windowSe
   return changes.find((chart) => chart.series === series)?.windows[chartPeriod(windowSeconds)]
 }
 
+// Halves away from zero, as Rust rounds.
+const round2 = (value: number) => (Math.sign(value) * Math.round(Math.abs(value) * 100)) / 100 + 0
+
+/**
+ * A chart's change over the window ending `now`, measured from the points drawn by then as
+ * Rust's `chart_change::range_change` measures each day's, so a chart moving between the days
+ * Rust measured reads the same figure it settles on. Only a moving chart's readout uses it.
+ */
+export function chartChangeAt(points: LivelinePoint[], windowSeconds: number, now: number) {
+  const drawn = points.filter((point) => point.time <= now)
+  const first = drawn[0]
+  const last = drawn.at(-1)
+  if (!first || !last) return undefined
+  const boundary = windowSeconds > 0 ? now - windowSeconds : first.time
+  const index = drawn.findIndex((point) => point.time >= boundary)
+  const after = drawn[index] ?? last
+  const before = index > 0 ? drawn[index - 1]! : after
+  const elapsed = after.time - before.time
+  const baseline =
+    boundary <= first.time
+      ? first.value
+      : boundary >= last.time
+        ? last.value
+        : before.value +
+          (after.value - before.value) * (elapsed > 0 ? (boundary - before.time) / elapsed : 0)
+  const change = last.value - baseline
+  return {
+    change: round2(change),
+    percent: baseline ? round2((change / Math.abs(baseline)) * 100) : null,
+  }
+}
+
 export function chartPointsFromStartDate(points: LivelinePoint[], startDate?: string) {
   if (!startDate || !DATE_PATTERN.test(startDate)) return points
   const startTime = Date.parse(`${startDate}T00:00:00Z`) / 1_000

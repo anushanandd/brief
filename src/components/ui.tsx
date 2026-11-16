@@ -6,6 +6,7 @@ import {
   amountsHidden,
   formatCurrency,
   formatPercent,
+  formatPublicCurrency,
   formatSignedCurrency,
   valueTone,
 } from '../lib/format'
@@ -17,15 +18,19 @@ export function AnimatedCurrency({
   value,
   className,
   publicValue = false,
+  still = false,
 }: {
   value: number | null | undefined
   className?: string
   /** A public market price, which screen privacy leaves visible. */
   publicValue?: boolean
+  /** Plain text, for a figure that changes every frame. */
+  still?: boolean
 }) {
   const scrolling = useGraphScrolling()
+  if (still && publicValue) return <span className={className}>{formatPublicCurrency(value)}</span>
   // NumberFlow draws its own digits, so a hidden amount never reaches it.
-  if (value == null || (amountsHidden() && !publicValue))
+  if (still || value == null || (amountsHidden() && !publicValue))
     return <span className={className}>{formatCurrency(value)}</span>
   return (
     <FlowNumber
@@ -244,11 +249,14 @@ export function ChartChange({
   percent,
   favorable = 'increase',
   ariaLabel,
+  still = false,
 }: {
   amount: number | null | undefined
   percent: number | null | undefined
   favorable?: 'increase' | 'decrease'
   ariaLabel?: string
+  /** Plain text, for a change that moves every frame. */
+  still?: boolean
 }) {
   const tone = valueTone(amount == null || favorable === 'increase' ? amount : -amount)
   const scrolling = useGraphScrolling()
@@ -266,7 +274,7 @@ export function ChartChange({
 
   return (
     <strong className="hero-change" role={ariaLabel ? 'group' : undefined} aria-label={ariaLabel}>
-      {amount == null || amountsHidden() ? (
+      {still || amount == null || amountsHidden() ? (
         <span className={tone}>{formatSignedCurrency(amount)}</span>
       ) : (
         // The sign sits outside the digits: Brief writes a true minus, and Intl a hyphen.
@@ -283,7 +291,9 @@ export function ChartChange({
           }}
         />
       )}
-      {percent == null ? null : (
+      {percent == null ? null : still ? (
+        <span className={tone}>{`(${sign(percent, '')}${Math.abs(percent).toFixed(2)}%)`}</span>
+      ) : (
         <FlowNumber
           className={tone}
           value={Math.abs(percent) / 100}

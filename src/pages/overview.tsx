@@ -7,6 +7,8 @@ import {
   ChartRangeSelector,
   ChartSpan,
   ExpandableChart,
+  LineChange,
+  LineValue,
   PerformanceChart,
 } from '../components/charts'
 import { PageError, HomeLoading, ValueHistoryEmptyState } from '../components/data-state'
@@ -17,10 +19,10 @@ import { PinnedQueries } from '../components/pinned-queries'
 import { PositionTable, type PositionRow } from '../components/position-table'
 import { ShareLine, type ShareSegment } from '../components/share-line'
 import { SnapTradeReference } from '../components/snaptrade-reference'
-import { AnimatedCurrency, Card, ChartChange, EmptyState, SectionHeading } from '../components/ui'
+import { Card, EmptyState, SectionHeading } from '../components/ui'
 import { MarketStatus, WorkspaceHeader } from '../components/workspace-header'
 import { useAmountsHidden } from '../hooks/use-amounts-hidden'
-import { useAsOf } from '../hooks/use-as-of'
+import { asOfWaiting, useAsOf } from '../hooks/use-as-of'
 import { useFinance } from '../hooks/use-finance'
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
@@ -218,7 +220,7 @@ export function OverviewPage() {
                         {incomplete ? ' · known USD balances only' : ''}
                       </h2>
                       <div className="home-balance-value">
-                        <AnimatedCurrency className="hero-number" value={latestValue} />
+                        <LineValue data={chartData} value={latestValue} />
                       </div>
                     </div>
                     {referenceAccount?.id.startsWith('snaptrade:') || historyIsAvailable ? (
@@ -231,9 +233,15 @@ export function OverviewPage() {
                       </div>
                     ) : null}
                     <div className="chart-summary-row">
-                      <ChartChange
-                        amount={historyIsAvailable ? (rangeChange?.change ?? null) : null}
-                        percent={historyIsAvailable ? (rangeChange?.percent ?? null) : null}
+                      <LineChange
+                        data={
+                          historyIsAvailable ? chartPointsFromStartDate(chartData, startDate) : []
+                        }
+                        seconds={graphWindow}
+                        change={historyIsAvailable ? rangeChange : undefined}
+                        waitingAt={
+                          graphEnd && asOfWaiting(asOf) ? chartDayTime(graphEnd) : undefined
+                        }
                       />
                     </div>
                   </header>

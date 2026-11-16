@@ -68,6 +68,17 @@ vi.mock('../hooks/use-holding-prices', () => ({
   },
 }))
 
+vi.mock('../lib/api', async (original) => ({
+  ...(await original<typeof import('../lib/api')>()),
+  getPeriodAsOf: vi.fn(async (end: string) => ({
+    end,
+    chartChanges: [],
+    periods: [],
+    flows: [],
+    changes: [],
+    recap: [],
+  })),
+}))
 vi.mock('../hooks/use-finance', async (original) => ({
   ...(await original<typeof import('../hooks/use-finance')>()),
   useFinance: () => ({
@@ -204,20 +215,35 @@ it('slides a candle chart a month back without a page commit until it settles', 
   await act(async () => vi.advanceTimersByTime(2_000))
   pageCommits = 0
   commits = 0
+  const renders = drawn.length
+  const price = () => host.querySelector('.home-balance-value')!.textContent
+  const change = () => host.querySelector('.chart-summary-row')!.textContent
+  const prices = new Set<string>()
+  const changes = new Set<string>()
   for (let index = 0; index < 70; index += 1) {
     await act(async () =>
       chart.dispatchEvent(new WheelEvent('wheel', { deltaY: 10, bubbles: true, cancelable: true })),
     )
     await act(async () => vi.advanceTimersToNextFrame())
+    prices.add(price())
+    changes.add(change())
   }
   expect(pageCommits).toBe(0)
-  // The chart's own, as the scroll starts.
-  expect(commits).toBeLessThanOrEqual(2)
+  // The chart renders once, as the scroll starts; its readouts follow every session it crosses.
+  expect(drawn.length - renders).toBeLessThanOrEqual(1)
+  expect(prices.size).toBeGreaterThanOrEqual(20)
+  expect(changes.size).toBeGreaterThanOrEqual(20)
+  expect(price()).toMatch(/^\$\d+\.\d\d$/)
+  // Eased onto the session, the readout holds until the day's figures arrive.
+  await act(async () => vi.advanceTimersByTime(160 + 250))
+  const settling = Number(price().replace('$', ''))
   await act(async () => vi.advanceTimersByTime(1_000))
   console.info(`30 days of a candle chart on M: ${pageCommits} page commits, ${commits} commits`)
   // 21 sessions back, onto one of them.
   expect(weekdays).toContain(sessionGraphEnd())
   expect(sessionGraphEnd()! >= '2026-08-28' && sessionGraphEnd()! <= '2026-09-01').toBe(true)
+  // The animated price takes over at the close the readout settled on.
+  expect(price()).toBe(String(settling))
   expect(pageCommits).toBeLessThanOrEqual(2)
   await act(async () => root.unmount())
   setGraphEnd(undefined)

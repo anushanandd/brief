@@ -6,7 +6,7 @@ import { afterEach, beforeEach, expect, it, onTestFinished, vi } from 'vitest'
 
 import { insights } from '../data/fixtures/insights'
 import { seedSnapshot } from '../data/fixtures/records'
-import { useAsOf } from '../hooks/use-as-of'
+import { asOfWaiting, useAsOf } from '../hooks/use-as-of'
 import { addDays } from '../lib/dates'
 import {
   resetSessionGraphWindow,
@@ -15,14 +15,41 @@ import {
   useGraphEnd,
   type GraphScroll,
 } from '../lib/graph-preferences'
-import { chartDayTime } from '../lib/live-chart'
-import { ChartSpan, type ChartTimeline, PerformanceChart, useChartPan } from './charts'
+import { chartDayTime, chartPointAtOrBefore, chartRangeChange } from '../lib/live-chart'
+import {
+  ChartSpan,
+  type ChartTimeline,
+  LineChange,
+  LineValue,
+  PerformanceChart,
+  useChartPan,
+} from './charts'
 
+// jsdom can't run an animated figure (NumberFlow) once it updates.
+vi.mock('@number-flow/react', () => ({
+  default: ({ value }: { value: number }) => <span>{value}</span>,
+}))
+
+// The line below rises a dollar a day from 1,000 on Jan 1, so Rust's month change to any day is
+// 30 over the value 30 days before.
 vi.mock('../lib/api', async (original) => ({
   ...(await original<typeof import('../lib/api')>()),
   getPeriodAsOf: vi.fn(async (end: string) => ({
     end,
-    chartChanges: [],
+    chartChanges: [
+      {
+        series: 'Value',
+        windows: {
+          month: {
+            change: 30,
+            percent:
+              Math.round(
+                (30 / (970 + (Date.parse(end) - Date.parse('2026-01-01')) / 86_400_000)) * 10_000,
+              ) / 100,
+          },
+        },
+      },
+    ],
     periods: [],
     flows: [],
     changes: [],
@@ -226,7 +253,7 @@ it('scrolls a month back without a page commit until it settles', async () => {
   await act(async () => root.unmount())
 })
 
-it('scrolls a value chart a month back with the chart drawing each frame outside React', async () => {
+function stubCanvas() {
   vi.stubGlobal(
     'ResizeObserver',
     class {
@@ -250,11 +277,18 @@ it('scrolls a value chart a month back with the chart drawing each frame outside
   onTestFinished(() => {
     Object.defineProperty(HTMLCanvasElement.prototype, 'getContext', original)
   })
-  const scroll: GraphScroll = { today: '2026-09-30', first: '2026-01-01' }
-  const data = Array.from({ length: 273 }, (_, index) => ({
-    time: chartDayTime(addDays('2026-01-01', index)),
-    value: 1_000 + index,
-  }))
+}
+
+const valueScroll: GraphScroll = { today: '2026-09-30', first: '2026-01-01' }
+const values = Array.from({ length: 273 }, (_, index) => ({
+  time: chartDayTime(addDays('2026-01-01', index)),
+  value: 1_000 + index,
+}))
+
+it('scrolls a value chart a month back with the chart drawing each frame outside React', async () => {
+  stubCanvas()
+  const scroll = valueScroll
+  const data = values
   let commits = 0
   let chartRenders = 0
   function Page() {
@@ -292,4 +326,82 @@ it('scrolls a value chart a month back with the chart drawing each frame outside
   console.info(`30 days of a value chart on M: ${commits} commits, ${chartRenders} chart renders`)
   expect(commits).toBeLessThanOrEqual(2)
   await act(async () => root.unmount())
+})
+
+it('moves the figures beside a value chart each frame, and hands them to the page’s on the day', async () => {
+  stubCanvas()
+  const snapshot = seedSnapshot()
+  snapshot.insights = insights({ today: '2026-09-30' })
+  let pageRenders = 0
+  function Page() {
+    pageRenders += 1
+    const [end] = useGraphEnd()
+    const asOf = useAsOf(snapshot)
+    return (
+      <>
+        <div className="value">
+          <LineValue
+            data={values}
+            value={end ? chartPointAtOrBefore(values, chartDayTime(end))?.value : 1_272}
+          />
+        </div>
+        <div className="change">
+          <LineChange
+            data={values}
+            seconds={month}
+            change={
+              end ? chartRangeChange(asOf.insights?.chartChanges ?? [], 'Value', month) : undefined
+            }
+            waitingAt={end && asOfWaiting(asOf) ? chartDayTime(end) : undefined}
+          />
+        </div>
+        <ChartSpan seconds={month} />
+        <PerformanceChart
+          data={values}
+          value={1_272}
+          referenceIso="2026-09-30T18:00:00Z"
+          selectedWindow={month}
+          scroll={valueScroll}
+        />
+      </>
+    )
+  }
+  const { host, root, render } = mount(
+    <QueryClientProvider client={new QueryClient()}>
+      <Page />
+    </QueryClientProvider>,
+  )
+  await render()
+  const chart = host.querySelector('.performance-chart')!
+  Object.defineProperty(chart, 'clientWidth', { value: 700 })
+  const text = (selector: string) => host.querySelector(selector)?.textContent ?? ''
+  const shown = new Set<string>()
+  pageRenders = 0
+  for (let index = 0; index < 70; index += 1) {
+    await act(async () => wheelOn(chart, 10))
+    await frame()
+    shown.add(`${text('.value')} ${text('.change')} ${text('.chart-span')}`)
+  }
+  expect(pageRenders).toBe(0)
+  // A frame for each day crossed, in plain text: a day back from Sep 30 reads Sep 29's.
+  expect(shown.size).toBeGreaterThanOrEqual(29)
+  expect([...shown][10]).toMatch(/^\$1,2\d\d\.00 \+\$\d\d\.\d\d\(2\.\d\d%\) .+ – Sep \d+, 2026$/)
+  // It eases onto the day, where the page's animated value takes over at the readout's.
+  await act(async () => vi.advanceTimersByTime(160))
+  let eased = text('.value')
+  while (text('.value').startsWith('$')) {
+    eased = text('.value')
+    await frame()
+  }
+  expect(eased).toBe('$1,242.00')
+  expect(text('.value')).toBe('1242')
+  expect(sessionGraphEnd()).toBe('2026-08-31')
+  // The change holds while Rust measures the day.
+  expect(text('.change')).toBe('+$30.00(2.48%)')
+  expect(text('.chart-span')).toBe('Aug 2 – Aug 31, 2026')
+  // Rust's figure takes over, animated, at the same value.
+  await act(async () => vi.advanceTimersByTime(1_000))
+  expect(text('.change')).toBe('300.0248')
+  await act(async () => root.unmount())
+  setGraphEnd(undefined)
 })

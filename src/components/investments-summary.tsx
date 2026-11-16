@@ -1,5 +1,6 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
+import type { LivelinePoint } from 'liveline'
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
 
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
@@ -30,6 +31,7 @@ import {
   chartPeriodSeconds,
 } from '../lib/graph-preferences'
 import { rangeDates } from '../lib/investment-range'
+import { chartChangeAt, chartPointAtOrBefore } from '../lib/live-chart'
 import type {
   Exposure,
   FinanceSnapshot,
@@ -37,7 +39,7 @@ import type {
   ReportSummary,
   Statement,
 } from '../lib/schema'
-import { ChartRangeSelector } from './charts'
+import { ChartRangeSelector, ChartReadout } from './charts'
 import { ExternalLink } from './external-link'
 import { AlertCircle, ChevronRight } from './icons'
 import { SecurityMark } from './security-mark'
@@ -77,11 +79,50 @@ export function periodStatement(data: FinanceSnapshot, range: ChartPeriod) {
   return data.insights?.periods.find(({ window }) => window === range)
 }
 
-/** The period's change as on every chart: the investment gain, then the time-weighted return. */
-export function PeriodChange({ span }: { span?: Statement }) {
+/**
+ * The period's change as on every chart: the investment gain, then the time-weighted return.
+ * While its chart moves, or Rust measures the day it settled on (`waitingAt`), it is the value's
+ * change less the net deposits' over the window drawn, of the value where the window starts.
+ */
+export function PeriodChange({
+  span,
+  value = [],
+  deposits = [],
+  seconds = 0,
+  waitingAt,
+}: {
+  span?: Statement
+  /** The value and net deposits lines the chart draws from its start date. */
+  value?: LivelinePoint[]
+  deposits?: LivelinePoint[]
+  seconds?: number
+  waitingAt?: number
+}) {
   return (
     <div className="chart-summary-row">
-      <ChartChange amount={span?.investmentGain ?? null} percent={span?.timeWeightedPct ?? null} />
+      <ChartReadout
+        waitingAt={waitingAt}
+        read={(time) => {
+          // shortcut: a gain and simple return read from the lines, not Rust's reconciled
+          // statement, so the two can differ by its dividends and timing once the day settles.
+          const moved = span ? chartChangeAt(value, seconds, time) : undefined
+          const end = chartPointAtOrBefore(value, time)?.value
+          const gain = moved && moved.change - (chartChangeAt(deposits, seconds, time)?.change ?? 0)
+          const start = moved && end !== undefined ? end - moved.change : 0
+          return (
+            <ChartChange
+              still
+              amount={gain ?? null}
+              percent={gain !== undefined && start ? (gain / Math.abs(start)) * 100 : null}
+            />
+          )
+        }}
+      >
+        <ChartChange
+          amount={span?.investmentGain ?? null}
+          percent={span?.timeWeightedPct ?? null}
+        />
+      </ChartReadout>
     </div>
   )
 }

@@ -2,6 +2,7 @@ import type { LivelinePoint } from 'liveline'
 import { useMemo } from 'react'
 
 import { useAmountsHidden } from '../hooks/use-amounts-hidden'
+import { asOfWaiting } from '../hooks/use-as-of'
 import { useFinance } from '../hooks/use-finance'
 import { useGraphScrollShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useLiveFinance } from '../hooks/use-live-finance'
@@ -29,11 +30,11 @@ import {
   referenceLines,
 } from '../lib/live-chart'
 import type { FinanceSnapshot } from '../lib/schema'
-import { ChartSpan, ExpandableChart, PerformanceChart } from './charts'
+import { ChartSpan, ExpandableChart, LineValue, PerformanceChart } from './charts'
 import { ValueHistoryEmptyState } from './data-state'
 import { useInvestmentSummary } from './investment-summary-card'
 import { InvestmentRangeSelect, PeriodChange, periodStatement } from './investments-summary'
-import { AnimatedCurrency, Card } from './ui'
+import { Card } from './ui'
 
 const noPoints: LivelinePoint[] = []
 
@@ -147,9 +148,15 @@ export function InvestmentsPortfolio({
               <div className="home-balance-main">
                 <h2 className="balance-label">{view?.name ?? 'All investments'}</h2>
                 <div className="home-balance-value">
-                  <AnimatedCurrency className="hero-number" value={shownValue} />
+                  <LineValue data={chartData} value={shownValue} />
                 </div>
-                <PeriodChange span={span} />
+                <PeriodChange
+                  span={span}
+                  value={historyIsAvailable ? chartPointsFromStartDate(chartData, startDate) : []}
+                  deposits={netDeposits && chartPointsFromStartDate(netDeposits, startDate)}
+                  seconds={graphWindow}
+                  waitingAt={graphEnd && asOfWaiting(data) ? chartDayTime(graphEnd) : undefined}
+                />
               </div>
               <div className="chart-header-aside">
                 <ChartSpan seconds={graphWindow} />

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest'
 
 import { seedSnapshot } from '../data/fixtures/records'
 import type { PeriodAsOf } from '../lib/bindings/PeriodAsOf'
-import { withPeriodAsOf } from './use-as-of'
+import { asOfWaiting, withPeriodAsOf } from './use-as-of'
 
 const past = (end: string): PeriodAsOf => ({
   end,
@@ -33,4 +33,13 @@ it('shows a past day the nearest figures answered, and none before any arrive', 
   expect(pending?.flows).toEqual([])
   expect(pending?.changes).toEqual([])
   expect(pending?.recap).toEqual([])
+})
+
+it('says when its figures are another day’s, or none yet, until the end day’s arrive', () => {
+  const data = seedSnapshot()
+  expect(asOfWaiting(withPeriodAsOf(data, undefined, undefined))).toBe(false)
+  expect(asOfWaiting(withPeriodAsOf(data, '2026-08-01', past('2026-08-01')))).toBe(false)
+  expect(asOfWaiting(withPeriodAsOf(data, '2026-08-01', past('2026-08-02')))).toBe(true)
+  expect(asOfWaiting(withPeriodAsOf(data, '2026-08-01', undefined))).toBe(true)
+  expect(asOfWaiting(withPeriodAsOf(data, '2026-08-01', null))).toBe(false)
 })

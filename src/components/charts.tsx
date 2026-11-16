@@ -37,20 +37,24 @@ import {
   scrollPeriodDays,
   sessionGraphEnd,
   setGraphEnd,
+  setLiveGraphEnd,
   shiftedGraphEnd,
   useGraphEnd,
+  useLiveGraphEnd,
   type GraphScroll,
 } from '../lib/graph-preferences'
 import {
+  chartChangeAt,
   chartDayTime,
   chartPointAtOrAfter,
+  chartPointAtOrBefore,
   chartPointsFromStartDate,
   splitAtEstimate,
 } from '../lib/live-chart'
 import type { SpendingBar } from '../lib/spending'
 import { ActivityMark } from './activity-list'
 import { X } from './icons'
-import { Button, ChartRangeSelect } from './ui'
+import { AnimatedCurrency, Button, ChartChange, ChartRangeSelect } from './ui'
 import { Dialog, dialogAutofocus } from './ui/dialog'
 import { usePresence } from './ui/presence'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
@@ -708,6 +712,7 @@ export function useChartPan(
       )
       time = toActual(at)
       current.current.chart?.current?.view(at)
+      setLiveGraphEnd({ time, day: nearest() })
     }
     const finish = () => {
       const target = nearest()
@@ -722,12 +727,15 @@ export function useChartPan(
         time = toActual(at)
         current.current.chart?.current?.view(at)
         if (progress < 1) {
+          setLiveGraphEnd({ time, day: target })
           easing = requestAnimationFrame(ease)
           return
         }
         easing = 0
         active = false
+        // One commit: the page's figures for the day replace the readouts' own.
         setGraphEnd(target)
+        setLiveGraphEnd(undefined)
         setPanning(false)
       }
       ease()
@@ -760,7 +768,10 @@ export function useChartPan(
       resize?.disconnect()
       cancelAnimationFrame(easing)
       clearTimeout(settle)
-      if (active) setGraphEnd(nearest())
+      if (active) {
+        setGraphEnd(nearest())
+        setLiveGraphEnd(undefined)
+      }
       setPanning(false)
     }
   }, [element, current])
@@ -815,9 +826,85 @@ export const expandOnEnter = (expand: (() => void) | undefined) =>
       }
     : undefined
 
-/** The days a chart scrolled back in time shows; nothing while it ends today. } goes back. */
-export function ChartSpan({ seconds }: { seconds: number }) {
+/**
+ * A figure beside a chart that follows its scroll. While the chart moves toward an earlier day,
+ * or while the page's own figure for the day it settled on is on its way (`waitingAt`), it is
+ * `read` at that time, as plain text that doesn't roll each frame; otherwise it is `children`,
+ * the page's own, which `read` matches once the day settles.
+ */
+export function ChartReadout({
+  read,
+  waitingAt,
+  children,
+}: {
+  read: (time: number) => ReactNode
+  waitingAt?: number
+  children: ReactNode
+}) {
+  const live = useLiveGraphEnd()
   const [end] = useGraphEnd()
+  // Heading back to today on a page already there, the page's figures are today's.
+  const at = live && (live.day || end) ? live.time : waitingAt
+  return <>{at === undefined ? children : read(at)}</>
+}
+
+/** A value chart's figure above it: the page's `value`, or the point the moving chart ends on. */
+export function LineValue({
+  data,
+  value,
+}: {
+  data: LivelinePoint[]
+  value: number | null | undefined
+}) {
+  return (
+    <ChartReadout
+      read={(time) => (
+        <AnimatedCurrency
+          still
+          className="hero-number"
+          value={chartPointAtOrBefore(data, time)?.value ?? null}
+        />
+      )}
+    >
+      <AnimatedCurrency className="hero-number" value={value} />
+    </ChartReadout>
+  )
+}
+
+/**
+ * A value chart's change over its window: Rust's, or while the chart moves or Rust measures the
+ * day it settled on (`waitingAt`), measured the same way from the points drawn by then.
+ */
+export function LineChange({
+  data,
+  seconds,
+  change,
+  waitingAt,
+}: {
+  /** The points the chart draws from its start date; none when it draws no history. */
+  data: LivelinePoint[]
+  seconds: number
+  change: { change: number; percent: number | null } | undefined
+  waitingAt?: number
+}) {
+  return (
+    <ChartReadout
+      waitingAt={waitingAt}
+      read={(time) => {
+        const moved = chartChangeAt(data, seconds, time)
+        return <ChartChange still amount={moved?.change ?? null} percent={moved?.percent ?? null} />
+      }}
+    >
+      <ChartChange amount={change?.change ?? null} percent={change?.percent ?? null} />
+    </ChartReadout>
+  )
+}
+
+/** The days a chart scrolled back in time shows, as it scrolls; nothing at today. } goes back. */
+export function ChartSpan({ seconds }: { seconds: number }) {
+  const [settled] = useGraphEnd()
+  const live = useLiveGraphEnd()
+  const end = live ? live.day : settled
   const days = scrollPeriodDays(seconds)
   if (!end || !days) return null
   return (
