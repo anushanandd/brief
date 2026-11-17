@@ -148,7 +148,6 @@
 }
 .security-position-accounts > .account-row {
   padding-inline: 8px;
-  border-radius: var(--radius-control);
 }
 /* In a companion card the name keeps its line and the figures go beneath it, rather than
    squeezing the name to a couple of letters. */
@@ -703,7 +702,6 @@ div.investments-attention-row:hover {
   min-height: var(--row-height);
   padding-block: 10px;
   border-bottom: var(--hairline) solid var(--border-subtle);
-  border-radius: var(--radius-control);
   color: inherit;
   font-size: var(--type-body);
   text-decoration: none;

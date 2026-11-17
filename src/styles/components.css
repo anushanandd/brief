@@ -775,6 +775,36 @@ number-flow-react {
 :is(.account-row, .financial-activity-row, .expected-activity-item):last-child {
   border-bottom: 0;
 }
+/* A washed row is rounded, as macOS draws a list's selection, and the rules on either side of it
+   hide so they don't run into its corners. Only a washed row is rounded: a rounded row's rule
+   curls at its ends. */
+.holdings-table-row:is(:hover, [aria-current='page']),
+.accounts-menu .account-row:is(:hover, [aria-current='page']),
+.people-table-row:is(:hover, .is-current),
+.financial-activity-row:is([data-selected], [data-highlighted], :focus, .is-openable:hover),
+.account-statement-row:hover,
+.logs-page :is(.connection-row, .activity-log-row):focus,
+.benefit-period-row:hover,
+.benefit-periods li:focus > .benefit-period-row,
+.health-issue:focus,
+.taxes-list-link:hover {
+  border-radius: var(--radius-control);
+  border-bottom-color: transparent;
+}
+.holdings-table-row:has(+ .holdings-table-row:is(:hover, [aria-current='page'])),
+.accounts-menu .account-row:has(+ .account-row:is(:hover, [aria-current='page'])),
+.people-table-body > li:has(+ li > .people-table-row:is(:hover, .is-current)) > .people-table-row,
+.financial-activity-row:has(
+  + .financial-activity-row:is([data-selected], [data-highlighted], :focus, .is-openable:hover)
+),
+.account-statement-row:has(+ .account-statement-row:hover),
+.logs-page :is(.connection-row, .activity-log-row):has(+ :focus) {
+  border-bottom-color: transparent;
+}
+.health-issue:is(:focus, :focus + .health-issue),
+.taxes-list > li:is(:has(> .taxes-list-link:hover), :has(> .taxes-list-link:hover) + li) {
+  border-top-color: transparent;
+}
 .financial-activity-row {
   display: grid;
   grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;

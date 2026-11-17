@@ -208,7 +208,6 @@
 
 /* Linked to the day under a chart's pointer. */
 .financial-activity-row[data-highlighted] {
-  border-radius: var(--radius-control);
   background: var(--hover-wash);
 }
 /* Rows chosen for a bulk edit keep their mark while focus moves on. */

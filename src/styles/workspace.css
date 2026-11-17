@@ -383,8 +383,11 @@
 .accounts-menu .account-group-section-heading {
   margin-inline: -8px;
   padding-inline: 8px;
-  border-radius: var(--radius-control);
   color: inherit;
+}
+.accounts-menu .account-group-section-heading,
+.accounts-menu .account-group-section-link {
+  border-radius: var(--radius-control);
 }
 .accounts-menu .account-row {
   grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;

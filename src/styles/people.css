@@ -376,7 +376,6 @@
   min-height: var(--row-height);
   padding: 10px 8px;
   border-bottom: var(--hairline) solid var(--border-subtle);
-  border-radius: var(--radius-control);
   color: inherit;
   font-size: var(--type-body);
   text-decoration: none;
