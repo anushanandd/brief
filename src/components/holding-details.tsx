@@ -22,7 +22,7 @@ import type { FinanceSnapshot } from '../lib/schema'
 import { AccountMark } from './account-mark'
 import { ActivityList } from './activity-list'
 import { HoldingEarnings } from './holding-earnings'
-import { ChevronRight, ReceiptText, X } from './icons'
+import { ReceiptText, X } from './icons'
 import { useObjectDetailsAction } from './object-details'
 import { SecurityMark } from './security-mark'
 import { SettingsLink } from './settings-dialog'
@@ -290,7 +290,6 @@ export function HoldingAccounts({ data, ticker }: { data: FinanceSnapshot; ticke
                     ) : null}
                   </small>
                 </span>
-                <ChevronRight size={15} aria-hidden="true" />
               </Link>
             )
           })}

@@ -4,7 +4,6 @@ import type { ReactNode } from 'react'
 import { formatCurrency } from '../lib/format'
 import type { Account } from '../lib/schema'
 import { AccountMark } from './account-mark'
-import { ChevronRight } from './icons'
 
 export function AccountRow({
   account,
@@ -43,7 +42,6 @@ export function AccountRow({
         <strong data-copy-amount>{formatCurrency(account.value)}</strong>
         {valueDetail}
       </span>
-      <ChevronRight size={15} aria-hidden="true" />
     </Link>
   )
 }

@@ -7,7 +7,6 @@ import { countOf, formatCurrency, valueTone } from '../lib/format'
 import type { Account } from '../lib/schema'
 import { AccountMark } from './account-mark'
 import { AccountRow } from './account-row'
-import { ChevronDown } from './icons'
 import { DisclosedPanel } from './ui/presence'
 
 function PeriodChange({ change }: { change: number | null | undefined }) {
@@ -107,7 +106,6 @@ export function AccountGroups({
             <strong data-copy-amount>{formatCurrency(group.value)}</strong>
             <PeriodChange change={group.change} />
           </span>
-          <ChevronDown size={15} aria-hidden="true" />
         </button>
         <DisclosedPanel open={open} className="account-group-accounts tree-children" id={panel}>
           {group.accounts.map((account) => (

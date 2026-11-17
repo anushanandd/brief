@@ -152,7 +152,7 @@
 }
 @container account-rows (max-width: 320px) {
   .security-position-accounts > .account-row {
-    grid-template-columns: var(--mark-size) minmax(0, 1fr) 16px;
+    grid-template-columns: var(--mark-size) minmax(0, 1fr);
     row-gap: 4px;
   }
   .security-position-accounts .account-row-values {
@@ -162,10 +162,6 @@
     align-items: baseline;
     gap: 8px;
     text-align: left;
-  }
-  .security-position-accounts > .account-row > svg {
-    grid-row: 1 / span 2;
-    grid-column: 3;
   }
   .security-position-accounts > .account-row > .transaction-mark {
     grid-row: 1 / span 2;

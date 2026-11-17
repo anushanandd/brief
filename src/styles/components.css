@@ -598,13 +598,6 @@ number-flow-react {
   text-align: left;
   cursor: pointer;
 }
-.account-group-row:hover > svg {
-  transform: none;
-}
-.account-group[data-open] > .account-group-row > svg {
-  color: var(--text-secondary);
-  transform: rotate(180deg);
-}
 .account-row-nested .account-row-name > small {
   text-transform: none;
 }
@@ -680,11 +673,6 @@ number-flow-react {
   left: calc(var(--tree-spine) - var(--tree-indent));
   border-left: var(--tree-line);
   content: '';
-}
-@media (prefers-reduced-motion: reduce) {
-  .account-group-row > svg {
-    transition: none;
-  }
 }
 .overview-list {
   margin-top: 12px;

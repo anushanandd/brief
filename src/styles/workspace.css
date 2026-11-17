@@ -396,12 +396,7 @@
   border-radius: var(--radius-control);
 }
 .accounts-menu .account-row {
-  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
   transition: background-color var(--duration-quick) var(--ease-out);
-}
-/* A menu changes the view in place, so its rows carry no chevron out. */
-.accounts-menu .account-row > svg {
-  display: none;
 }
 .accounts-menu .account-group-section {
   display: grid;
