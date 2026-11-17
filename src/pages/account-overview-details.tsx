@@ -1,3 +1,4 @@
+import { Link } from '@tanstack/react-router'
 import type { Ref } from 'react'
 
 import {
@@ -9,7 +10,7 @@ import {
 import { AccountStatements } from '../components/account-statements'
 import { CashAheadChart, ExpandableChart } from '../components/charts'
 import { ExternalLink } from '../components/external-link'
-import { ArrowUpRight } from '../components/icons'
+import { ArrowUpRight, ChevronRight } from '../components/icons'
 import { SettingsLink } from '../components/settings-dialog'
 import { Card, Metric, SectionHeading } from '../components/ui'
 import type { AccountGroup } from '../lib/account-groups'
@@ -68,17 +69,12 @@ export function AccountOverviewDetails({
   /** The Details disclosure, which the page's I key opens and closes. */
   detailsRef: Ref<HTMLDetailsElement>
 }) {
-  // Across every account, the gains Rust summed at the values shown.
   const rollup = data.insights?.rollup
-  const gain = isAll ? (rollup?.unrealized ?? null) : account.knownUnrealizedGain
-  const realizedGain = isAll ? (rollup?.realizedYtd ?? null) : account.estimatedRealizedGainYtd
-  const unrealizedLabel =
-    isAll || account.costBasisCoverage === 'partial' ? 'Known unrealized P/L' : 'Unrealized P/L'
   if (isAll) {
     // Without Rust's rollup, what the accounts own and owe is unknown, not zero.
     const sheet = rollup?.sheet
-    // What the accounts own and owe, then investment and income figures across every account.
-    // Group totals are in "Balances".
+    // What the accounts own and owe, and the interest they earned. Group totals are in
+    // "Balances"; gains, dividends, and contributions across the portfolio are Investments'.
     return (
       <Card className="account-overview-summary-card">
         <SectionHeading title="Account details" />
@@ -93,24 +89,6 @@ export function AccountOverviewDetails({
             tone={sheet && sheet.liabilities < 0 ? 'negative' : undefined}
           />
           <ReportMetric chart="interest" label="Interest" value={summary.interest} range={period} />
-          <ReportMetric
-            chart="dividends"
-            label="Dividends"
-            value={summary.dividends}
-            range={period}
-          />
-          <Metric label={unrealizedLabel} value={formatCurrency(gain)} tone={valueTone(gain)} />
-          <Metric
-            label="Estimated realized P/L"
-            value={formatCurrency(realizedGain)}
-            tone={valueTone(realizedGain)}
-          />
-          <Metric label="Net contributions" value={formatCurrency(summary.contributions)} />
-          <Metric
-            label="Investment gain"
-            value={formatCurrency(summary.marketChange)}
-            tone={valueTone(summary.marketChange)}
-          />
         </div>
       </Card>
     )
@@ -124,6 +102,19 @@ export function AccountOverviewDetails({
         <SectionHeading
           title={`${group.label} details`}
           detail={group.outsideTotal ? 'Spending cards, not in totals' : undefined}
+          action={
+            // What a type of investment holds, and how it performs, is Investments'.
+            group.type === 'brokerage' || group.type === 'retirement' ? (
+              <Link
+                className="section-heading-link"
+                to={group.type === 'retirement' ? '/holdings/retirement' : '/holdings'}
+                data-command="navigation.open./holdings"
+              >
+                {group.type === 'retirement' ? 'Retirement' : 'Holdings'}
+                <ChevronRight size={14} aria-hidden="true" />
+              </Link>
+            ) : undefined
+          }
         />
         <div className="account-summary-metrics">
           <Metric label="Total" value={formatCurrency(group.value)} />
@@ -157,9 +148,6 @@ export function AccountOverviewDetails({
     isInvestment,
     isCredit,
     transactionCount,
-    gain,
-    realizedGain,
-    unrealizedLabel,
     apy: accountDetails?.apy,
   })
   const primaryMetrics = ordered.slice(0, primaryMetricCount)
@@ -218,9 +206,6 @@ function accountMetrics({
   isInvestment,
   isCredit,
   transactionCount,
-  gain,
-  realizedGain,
-  unrealizedLabel,
   apy,
 }: {
   account: Account
@@ -231,9 +216,6 @@ function accountMetrics({
   isInvestment: boolean
   isCredit: boolean
   transactionCount: number
-  gain: number | null | undefined
-  realizedGain: number | null | undefined
-  unrealizedLabel: string
   apy: number | undefined
 }) {
   const spending = currentSpendingPeriod(data.insights, account.id, 'month')
@@ -246,13 +228,11 @@ function accountMetrics({
         rangeGain: summary.marketChange,
         contributions: summary.contributions,
         unrealized: {
-          value: gain,
+          value: account.knownUnrealizedGain,
           label:
-            unrealizedLabel === 'Known unrealized P/L'
-              ? 'Known total unrealized'
-              : 'Total unrealized',
+            account.costBasisCoverage === 'partial' ? 'Known total unrealized' : 'Total unrealized',
         },
-        realized: realizedGain,
+        realized: account.estimatedRealizedGainYtd,
       })
     : isCredit
       ? creditMetrics({

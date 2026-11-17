@@ -124,6 +124,7 @@ export function AccountOverview({
     () => data.trades.filter(({ accountId }) => isAll || relatedAccountIds.has(accountId)),
     [data.trades, isAll, relatedAccountIds],
   )
+  // One account's sales and positions; a type of account and All accounts show neither.
   const sales = useMemo(
     () =>
       trades
@@ -136,9 +137,9 @@ export function AccountOverview({
   const positions = useMemo(
     () =>
       data.holdings
-        .filter(({ accountId }) => isAll || relatedAccountIds.has(accountId))
+        .filter(({ accountId }) => relatedAccountIds.has(accountId))
         .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity)),
-    [data.holdings, isAll, relatedAccountIds],
+    [data.holdings, relatedAccountIds],
   )
   const activities = useMemo(
     () =>
@@ -404,8 +405,8 @@ export function AccountOverview({
     </Card>
   )
 
-  // Beside the chart: the view's figures, then what an investment holds and sold, or what's
-  // coming up for everything else.
+  // Beside the chart: the view's figures, then what an investment account holds and sold, or
+  // what's coming up for everything else. A type of investment's holdings are Investments'.
   const side = (
     <>
       <AccountOverviewDetails
@@ -422,7 +423,7 @@ export function AccountOverview({
         spendingAccountIds={spendingAccountIds}
         detailsRef={detailsRef}
       />
-      {isInvestment && !isAll ? (
+      {isInvestment && !isCombined ? (
         <>
           <Card className="account-preview-card account-holdings-preview">
             <PositionTable

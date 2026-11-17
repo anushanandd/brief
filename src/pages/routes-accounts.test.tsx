@@ -51,6 +51,10 @@ it('shows a type of account in place, under the same menu, with only figures Rus
   expect(html).not.toContain('<span>Known unrealized P/L</span>')
   // Its activity link opens the ledger filtered to the group's accounts.
   expect(html).toMatch(/href="\/activities\?account=[^"]*other/)
+  // What the type holds is Investments', one link away; Accounts lists no holdings for it.
+  expect(html).toMatch(/href="\/holdings" class="section-heading-link">Holdings/)
+  expect(html).not.toContain('account-holdings-preview')
+  expect(html).toContain('<h2>Coming up</h2>')
 })
 
 it('shows cash ahead and runway on Cash, with the line behind its disclosure', async () => {
@@ -66,7 +70,7 @@ it('shows cash ahead and runway on Cash, with the line behind its disclosure', a
   expect(html).toContain('<h2>Coming up</h2>')
 })
 
-it('shows all-account investment figures in their own card before Coming up', async () => {
+it('shows what all accounts own, owe, and earn, leaving investment figures to Investments', async () => {
   scenario.accountType = 'brokerage'
   scenario.partialBasis = true
   scenario.trades = [
@@ -81,7 +85,6 @@ it('shows all-account investment figures in their own card before Coming up', as
     },
   ]
   const html = await renderRoute('/accounts')
-  // Gains, income, and contributions across accounts sit in Account details, above "Coming up".
   expect(html).toContain('<h2>Balances</h2>')
   expect(html).not.toContain('account-details-more')
   const details = html.slice(
@@ -91,12 +94,13 @@ it('shows all-account investment figures in their own card before Coming up', as
   // The scenario's accounts are all owed balances.
   expect(details).toContain('<span>Assets</span>')
   expect(details).toContain('<span>Liabilities</span>')
-  expect(details).toContain('<span>Known unrealized P/L</span>')
-  expect(details).toContain('<span>Estimated realized P/L</span>')
-  expect(details).toContain('<span>Net contributions</span>')
-  expect(details).toContain('<span>Investment gain</span>')
   expect(details).toContain('chart=interest')
-  expect(details).toContain('chart=dividends')
+  // Gains, dividends, and contributions across the portfolio are on Investments.
+  expect(details).not.toContain('<span>Known unrealized P/L</span>')
+  expect(details).not.toContain('<span>Estimated realized P/L</span>')
+  expect(details).not.toContain('<span>Net contributions</span>')
+  expect(details).not.toContain('<span>Investment gain</span>')
+  expect(details).not.toContain('chart=dividends')
   expect(html).not.toContain('Estimated FIFO P/L $5.00')
 })
 
