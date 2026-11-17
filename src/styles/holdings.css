@@ -144,10 +144,6 @@
 
 .security-position-accounts {
   display: grid;
-  margin: 0 -8px;
-}
-.security-position-accounts > .account-row {
-  padding-inline: 8px;
 }
 /* In a companion card the name keeps its line and the figures go beneath it, rather than
    squeezing the name to a couple of letters. */

@@ -160,6 +160,8 @@
 .spending-benefits-card,
 .spending-transactions-preview {
   min-width: 0;
+}
+.spending-benefits-card {
   overflow: hidden;
 }
 .spending-companion {

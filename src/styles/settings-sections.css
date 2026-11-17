@@ -278,7 +278,7 @@
 .settings-destination-row {
   display: grid;
   min-height: 52px;
-  padding: 8px 0;
+  padding-block: 8px;
   grid-template-columns: 20px minmax(0, 1fr) 16px;
   align-items: center;
   gap: 12px;

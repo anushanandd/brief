@@ -282,7 +282,7 @@
 }
 .news-story > .news-row {
   min-height: 0;
-  padding: 0;
+  padding-block: 0;
 }
 .news-related {
   padding-bottom: 0;

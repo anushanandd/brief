@@ -166,7 +166,7 @@
   margin-top: 8px;
 }
 .activity-log-row {
-  padding: 10px 0;
+  padding-block: 10px;
 }
 .connection-row > div {
   padding: 10px 0;

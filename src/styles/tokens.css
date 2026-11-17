@@ -150,6 +150,8 @@
   /* Every card in a page's selector strip is one width. */
   --strip-item-width: 192px;
   --row-height: 64px;
+  /* How far a row that washes reaches into the gutter, padded back so its text doesn't move. */
+  --row-bleed: 8px;
   /* Dense data rows: ledgers and position tables. */
   --row-height-compact: 40px;
 }

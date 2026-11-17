@@ -42,6 +42,7 @@ const detailTokens = [
   'card-padding',
   'control-height',
   'row-height',
+  'row-bleed',
   'control-background',
   'control-border',
   'surface-hover',

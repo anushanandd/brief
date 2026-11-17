@@ -327,9 +327,9 @@
 
 .benefit-period-row {
   display: grid;
-  width: 100%;
+  width: calc(100% + 2 * var(--row-bleed));
   min-height: 34px;
-  padding: 0;
+  padding-block: 0;
   grid-template-columns: 12px 72px minmax(0, 1fr) 92px;
   align-items: center;
   gap: 8px;

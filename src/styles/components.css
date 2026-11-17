@@ -627,7 +627,8 @@ number-flow-react {
    child rows center a mark of --mark-size, so the geometry holds for every row kind. */
 .tree-parent,
 .tree-children {
-  --tree-spine: calc(var(--mark-size) / 2 - 0.5px);
+  /* Measured from the row's edge, which sits a bleed before its mark. */
+  --tree-spine: calc(var(--row-bleed) + var(--mark-size) / 2 - 0.5px);
   --tree-indent: calc(var(--mark-size) / 2 + 20px);
   --tree-line: 1px solid var(--border-strong);
   /* Children tuck up under the parent, into the space its row keeps below its mark. */
@@ -664,7 +665,7 @@ number-flow-react {
   position: absolute;
   top: 0;
   left: calc(var(--tree-spine) - var(--tree-indent));
-  width: calc(var(--tree-indent) - var(--tree-spine) - 6px);
+  width: calc(var(--tree-indent) - var(--tree-spine) + var(--row-bleed) - 6px);
   height: 50%;
   border-bottom: var(--tree-line);
   border-left: var(--tree-line);
@@ -765,12 +766,37 @@ number-flow-react {
 .expected-activity-item,
 .spending-benefit-row {
   min-height: var(--row-height);
-  padding: 10px 0;
+  padding-block: 10px;
   border-bottom: var(--hairline) solid var(--border-subtle);
   font-variant-numeric: tabular-nums;
 }
 :is(.account-row, .financial-activity-row, .expected-activity-item):last-child {
   border-bottom: 0;
+}
+/* A row that washes reaches into the gutter, so its wash has room before the first item and its
+   text still lines up with the heading. Rows set only their block padding. */
+.account-row,
+.financial-activity-row:not(.financial-activity-row-columns),
+.news-row,
+.settings-destination-row,
+.calendar-entry,
+.account-statement-row,
+.benefit-period-row,
+.health-issue,
+.taxes-list-link,
+.connection-row,
+.activity-log-row {
+  margin-inline: calc(-1 * var(--row-bleed));
+  padding-inline: var(--row-bleed);
+}
+/* Lists that scroll leave room for that reach, and the cards around them don't clip it. */
+.spending-activity-scroll,
+.holding-activity-scroll,
+.analytics-activity-scroll,
+.holding-news-content,
+.activity-log {
+  margin-inline: calc(-1 * var(--row-bleed));
+  padding-inline: var(--row-bleed);
 }
 /* Hovering a row washes it; only a link inside text turns the accent. */
 .account-row:hover,

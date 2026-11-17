@@ -134,7 +134,7 @@
   contain-intrinsic-block-size: auto 82px;
   display: grid;
   min-height: 82px;
-  padding: 12px 0;
+  padding-block: 12px;
   grid-template-columns: minmax(0, 1fr) 16px;
   align-items: center;
   gap: 16px;

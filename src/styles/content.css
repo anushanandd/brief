@@ -145,14 +145,15 @@
   transform: translateX(2px);
 }
 
-/* Room for row hover to bleed, given back in the margin so cells align with the heading. Tables
-   never scroll sideways: each drops its least needed columns as its container narrows. */
+/* Rows reach into the gutter as every washed row does, and their end cells give it back, so the
+   cells line up with the heading. Tables never scroll sideways: each drops its least needed
+   columns as its container narrows. */
 .financial-table-scroll {
-  width: calc(100% + 8px);
+  width: calc(100% + 2 * var(--row-bleed));
   max-width: none;
   min-width: 0;
-  margin: 12px -4px 0;
-  padding: 4px;
+  margin: 12px calc(-1 * var(--row-bleed)) 0;
+  padding: 4px 0;
   container: financial-table / inline-size;
 }
 
@@ -208,6 +209,12 @@
 .financial-table th:last-child,
 .financial-table td:last-child {
   padding-right: 0;
+}
+.financial-table-scroll > .financial-table :is(th, td):first-child {
+  padding-left: var(--row-bleed);
+}
+.financial-table-scroll > .financial-table :is(th, td):last-child {
+  padding-right: var(--row-bleed);
 }
 
 .financial-table tbody tr:last-child > * {

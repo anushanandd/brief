@@ -191,6 +191,10 @@
 .account-overview-summary-card,
 .account-preview-card {
   min-width: 0;
+}
+/* A preview's rows reach into the gutter, so only the chart and summary clip. */
+.account-overview-chart-card,
+.account-overview-summary-card {
   overflow: hidden;
 }
 .account-overview-chart-card {
@@ -379,10 +383,12 @@
 .accounts-menu > nav {
   display: grid;
 }
-.accounts-menu .account-row,
+.accounts-menu .account-row {
+  color: inherit;
+}
 .accounts-menu .account-group-section-heading {
-  margin-inline: -8px;
-  padding-inline: 8px;
+  margin-inline: calc(-1 * var(--row-bleed));
+  padding-inline: var(--row-bleed);
   color: inherit;
 }
 .accounts-menu .account-group-section-heading,
@@ -481,7 +487,7 @@
 .account-statement-row {
   display: flex;
   min-height: var(--row-height-compact);
-  padding: 6px 0;
+  padding-block: 6px;
   align-items: baseline;
   justify-content: space-between;
   gap: 12px;
