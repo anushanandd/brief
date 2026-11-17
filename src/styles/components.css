@@ -756,9 +756,6 @@ number-flow-react {
   max-width: 220px;
   overflow-wrap: break-word;
 }
-.position-security:hover strong {
-  color: var(--accent);
-}
 .financial-activity-list {
   margin-top: 12px;
 }
@@ -775,11 +772,22 @@ number-flow-react {
 :is(.account-row, .financial-activity-row, .expected-activity-item):last-child {
   border-bottom: 0;
 }
+/* Hovering a row washes it; only a link inside text turns the accent. */
+.account-row:hover,
+.news-row:hover,
+.settings-destination-row:hover,
+a.calendar-entry:hover,
+.position-table tbody tr:has(a):hover > * {
+  background: var(--hover-wash);
+}
 /* A washed row is rounded, as macOS draws a list's selection, and the rules on either side of it
    hide so they don't run into its corners. Only a washed row is rounded: a rounded row's rule
    curls at its ends. */
 .holdings-table-row:is(:hover, [aria-current='page']),
-.accounts-menu .account-row:is(:hover, [aria-current='page']),
+.account-row:is(:hover, [aria-current='page']),
+.news-row:hover,
+.settings-destination-row:hover,
+a.calendar-entry:hover,
 .people-table-row:is(:hover, .is-current),
 .financial-activity-row:is([data-selected], [data-highlighted], :focus, .is-openable:hover),
 .account-statement-row:hover,
@@ -792,7 +800,10 @@ number-flow-react {
   border-bottom-color: transparent;
 }
 .holdings-table-row:has(+ .holdings-table-row:is(:hover, [aria-current='page'])),
-.accounts-menu .account-row:has(+ .account-row:is(:hover, [aria-current='page'])),
+.account-row:has(+ .account-row:is(:hover, [aria-current='page'])),
+.news-row:has(+ .news-row:hover),
+.position-table tbody tr:has(a):hover > *,
+.position-table tbody tr:has(+ tr:has(a):hover) > *,
 .people-table-body > li:has(+ li > .people-table-row:is(:hover, .is-current)) > .people-table-row,
 .financial-activity-row:has(
   + .financial-activity-row:is([data-selected], [data-highlighted], :focus, .is-openable:hover)
@@ -802,8 +813,20 @@ number-flow-react {
   border-bottom-color: transparent;
 }
 .health-issue:is(:focus, :focus + .health-issue),
-.taxes-list > li:is(:has(> .taxes-list-link:hover), :has(> .taxes-list-link:hover) + li) {
+.settings-destination-row:is(:hover, :hover + .settings-destination-row),
+.taxes-list > li:is(:has(> .taxes-list-link:hover), :has(> .taxes-list-link:hover) + li),
+.calendar-day-list > li:is(:has(> a.calendar-entry:hover), :has(> a.calendar-entry:hover) + li) {
   border-top-color: transparent;
+}
+/* A table row rounds through its first and last cells. */
+.position-table tbody tr:has(a):hover > :first-child {
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+.position-table tbody tr:has(a):hover > :last-child {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+.position-table tbody tr:has(a) {
+  cursor: pointer;
 }
 .financial-activity-row {
   display: grid;

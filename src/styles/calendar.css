@@ -292,9 +292,6 @@
   font-size: var(--type-body);
   text-decoration: none;
 }
-a.calendar-entry:hover .calendar-entry-title {
-  color: var(--accent);
-}
 .calendar-entry-bar {
   grid-row: 1 / 3;
   align-self: stretch;

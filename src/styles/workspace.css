@@ -412,13 +412,8 @@
   text-decoration: none;
   transition: background-color var(--duration-quick) var(--ease-out);
 }
-.accounts-menu .account-row:hover,
 .accounts-menu .account-group-section-link:hover {
   background: var(--hover-wash);
-}
-/* A menu shows the row hovered by its wash, not the accent its name turns elsewhere. */
-.accounts-menu a:hover strong {
-  color: inherit;
 }
 .accounts-menu .account-row[aria-current='page'],
 .accounts-menu .account-group-section-link[aria-current='page'] {

@@ -307,9 +307,6 @@
     color var(--duration-quick) var(--ease-out),
     transform var(--duration-quick) var(--ease-out);
 }
-.settings-destination-row:hover strong {
-  color: var(--accent);
-}
 .settings-destination-row:hover > svg:last-child {
   color: var(--text-secondary);
   transform: translateX(2px);

@@ -393,9 +393,6 @@
   text-align: right;
   white-space: nowrap;
 }
-.people-table-row:hover strong {
-  color: var(--accent);
-}
 
 /* One person. */
 .people-hero {

@@ -145,10 +145,6 @@
   transform: translateX(2px);
 }
 
-.account-row:hover .account-row-name > strong {
-  color: var(--accent);
-}
-
 /* Room for row hover to bleed, given back in the margin so cells align with the heading. Tables
    never scroll sideways: each drops its least needed columns as its container narrows. */
 .financial-table-scroll {
@@ -171,7 +167,9 @@
 
 .financial-table {
   width: 100%;
-  border-collapse: collapse;
+  /* Separate, so a washed row's end cells can round. */
+  border-collapse: separate;
+  border-spacing: 0;
   font-size: var(--type-body);
   font-variant-numeric: tabular-nums;
 }

@@ -170,9 +170,6 @@
 .news-row > svg {
   color: var(--text-tertiary);
 }
-.news-row:hover .news-row-copy > strong {
-  color: var(--accent);
-}
 
 .cash-flow-sankey-scroll {
   max-height: 560px;

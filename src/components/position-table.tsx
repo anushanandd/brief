@@ -97,6 +97,11 @@ export function PositionTable({
               key={`${holding.accountId ?? ''}:${holding.ticker}`}
               data-keyboard-row
               tabIndex={-1}
+              // The row washes as one, so a click anywhere on it opens the security.
+              onClick={(event) => {
+                if (event.target instanceof Element && !event.target.closest('a, button'))
+                  event.currentTarget.querySelector('a')?.click()
+              }}
             >
               <th scope="row">
                 <SecurityLink

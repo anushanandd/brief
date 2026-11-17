@@ -445,9 +445,6 @@ div.investments-attention-row:hover {
   color: var(--text-secondary);
   transform: translateX(2px);
 }
-.investments-attention-row:hover .investments-attention-copy > strong {
-  color: var(--accent);
-}
 /* Taxes open on request, in the inspector the transaction details use. */
 .transaction-details-header > .security-mark {
   width: 36px;
@@ -589,9 +586,6 @@ div.investments-attention-row:hover {
 }
 .brief-story-detail {
   color: var(--text-secondary);
-}
-.brief-headlines a:hover .brief-story-copy > span:first-child {
-  color: var(--accent);
 }
 .investment-brief-pending {
   display: grid;
@@ -752,9 +746,6 @@ div.investments-attention-row:hover {
 .investments-coming-row small {
   color: var(--text-tertiary);
   font-size: var(--type-meta);
-}
-.investments-coming-row:hover > span:nth-child(2) {
-  color: var(--accent);
 }
 /* What's expected sits on its own line under the event. */
 .investments-coming-row .investments-coming-detail {
