@@ -25,7 +25,12 @@ function StoryRow({
 }) {
   return (
     <div className="news-story">
-      <ExternalLink className="news-row" data-keyboard-row data-keyboard-open href={article.url}>
+      <ExternalLink
+        className="list-row news-row"
+        data-keyboard-row
+        data-keyboard-open
+        href={article.url}
+      >
         <span className="news-row-copy">
           <span className="news-row-meta">
             <Relevance value={article.relevance} />
@@ -63,7 +68,12 @@ function StoryRow({
 function FilingRow({ filing }: { filing: SecFiling }) {
   return (
     <div className="news-story">
-      <ExternalLink className="news-row" data-keyboard-row data-keyboard-open href={filing.url}>
+      <ExternalLink
+        className="list-row news-row"
+        data-keyboard-row
+        data-keyboard-open
+        href={filing.url}
+      >
         <span className="news-row-copy">
           <span className="news-row-meta">
             <span>{`SEC ${filing.form}`}</span>

@@ -1,5 +1,12 @@
 import { Link } from '@tanstack/react-router'
-import { useMemo, useRef, type Dispatch, type ReactNode, type SetStateAction } from 'react'
+import {
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type ReactNode,
+  type SetStateAction,
+} from 'react'
 
 import { ActivityList } from '../components/activity-list'
 import { AccountsLayout } from '../components/all-accounts-overview'
@@ -21,7 +28,9 @@ import { useObjectDetailsAction } from '../components/object-details'
 import { PositionTable } from '../components/position-table'
 import { SalesTable } from '../components/sales-table'
 import { SnapTradeReference } from '../components/snaptrade-reference'
+import { TransactionDialog } from '../components/transaction-dialog'
 import { Button, Card, ScrollCueCard, SectionHeading } from '../components/ui'
+import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { asOfWaiting, useAsOf } from '../hooks/use-as-of'
 import { useCsvExport } from '../hooks/use-csv-export'
 import { useFinance } from '../hooks/use-finance'
@@ -37,7 +46,7 @@ import { financeSettings } from '../lib/finance-settings'
 import { formatShortDay } from '../lib/format'
 import { chartPeriod, useGraphEnd } from '../lib/graph-preferences'
 import { chartDayTime, chartPointsFromStartDate } from '../lib/live-chart'
-import { getExternalLogosEnabled } from '../lib/logos'
+import { useExternalLogosEnabled } from '../lib/logos'
 import type { Account, FinanceSnapshot } from '../lib/schema'
 import { monthlySpendingHistory, sortTransactionsByRecency } from '../lib/spending'
 import { useAccountChart } from './account-overview-chart'
@@ -91,7 +100,7 @@ export function AccountOverview({
         .flatMap(({ id }) => accountStartDate(data, id, accountStartDates) ?? [])
         .toSorted()[0]
     : accountStartDate(data, isAll ? 'net-worth' : account.id, accountStartDates)
-  const externalLogosEnabled = getExternalLogosEnabled()
+  const externalLogosEnabled = useExternalLogosEnabled()
   const displayName = group
     ? group.label
     : isAll
@@ -141,6 +150,10 @@ export function AccountOverview({
         .toSorted((left, right) => (right.value ?? -Infinity) - (left.value ?? -Infinity)),
     [data.holdings, relatedAccountIds],
   )
+  // The recent activity open in the details dialog.
+  const [opened, setOpened] = useState<string>()
+  // Activities carry formatted amounts, which screen privacy masks.
+  const amountsHidden = useAmountsHidden()
   const activities = useMemo(
     () =>
       buildActivities(
@@ -156,6 +169,7 @@ export function AccountOverview({
       externalLogosEnabled,
       trades,
       transactions,
+      amountsHidden,
     ],
   )
   const monthlySpending = useMemo(
@@ -189,6 +203,7 @@ export function AccountOverview({
     incomplete,
     historyIsAvailable,
     chartValue,
+    currentValue,
     netDeposits,
     benchmark,
     chartEvents,
@@ -306,8 +321,15 @@ export function AccountOverview({
           referenceIso={data.updatedAt}
           emptyMessage="No imported account activity."
           conciseTradeGain
+          onOpen={(activity) => setOpened(activity.id)}
+          selectedId={opened}
         />
       </div>
+      <TransactionDialog
+        activity={activities.find(({ id }) => id === opened)}
+        data={data}
+        onClose={() => setOpened(undefined)}
+      />
     </Card>
   )
 
@@ -366,12 +388,12 @@ export function AccountOverview({
               >
                 <MonthlyBarChart data={monthlySpending} label={`${displayName} monthly spending`} />
               </div>
-            ) : historyIsAvailable && chartValue != null ? (
+            ) : historyIsAvailable && currentValue != null ? (
               <PerformanceChart
                 data={chartData}
                 netDeposits={netDeposits}
                 benchmark={benchmark}
-                value={chartValue}
+                value={chartValue ?? currentValue}
                 events={chartEvents}
                 referenceIso={data.updatedAt}
                 startDate={startDate}
@@ -385,7 +407,10 @@ export function AccountOverview({
                 scroll={chartScroll}
               />
             ) : (
-              <ValueHistoryEmptyState incomplete={incomplete} valueAvailable={chartValue != null} />
+              <ValueHistoryEmptyState
+                incomplete={incomplete}
+                valueAvailable={currentValue != null}
+              />
             )}
           </div>
         </div>
@@ -426,23 +451,14 @@ export function AccountOverview({
       {isInvestment && !isCombined ? (
         <>
           <Card className="account-preview-card account-holdings-preview">
-            <PositionTable
-              title={holdingsLink}
-              positions={positions.slice(0, 5)}
-              externalLogosEnabled={externalLogosEnabled}
-            />
+            <PositionTable title={holdingsLink} positions={positions.slice(0, 5)} />
           </Card>
           {sales.length ? (
             <ScrollCueCard
               className="account-preview-card account-sales-preview"
               scrollSelector=".financial-table-scroll"
             >
-              <SalesTable
-                sales={sales}
-                externalLogosEnabled={externalLogosEnabled}
-                referenceIso={data.updatedAt}
-                scrollRef={salesScrollRef}
-              />
+              <SalesTable sales={sales} referenceIso={data.updatedAt} scrollRef={salesScrollRef} />
             </ScrollCueCard>
           ) : null}
         </>

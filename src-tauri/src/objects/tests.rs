@@ -120,6 +120,52 @@ fn ids_derive_from_names_so_every_read_gives_the_same_ones() {
 }
 
 #[test]
+fn a_trade_and_a_wallet_match_each_find_their_own_records() {
+    let (directory, storage) = lived(1);
+    let mut data = storage.data.clone();
+    data.provider_data.snaptrade = Some(crate::providers::SnapTradeData {
+        activities: BTreeMap::from([("account".into(), vec![json!({ "id": "buy", "units": 2 })])]),
+        ..Default::default()
+    });
+    data.provider_data.wallet = Some(crate::providers::wallet::WalletData {
+        rows: vec![crate::providers::wallet::WalletRow {
+            id: "record".into(),
+            merchant_code: Some(7929),
+            amount: 400_000,
+            ..Default::default()
+        }],
+        ..Default::default()
+    });
+    let object = |kind: Kind, key: &str, record: Value| Object {
+        id: kind.id(key),
+        kind,
+        title: String::new(),
+        subtitle: None,
+        date: None,
+        amount: None,
+        text: String::new(),
+        record,
+    };
+    let trade = source_records(&data, &object(Kind::Trade, "buy", json!({})));
+    assert_eq!(trade["SnapTrade"]["units"], 2);
+    let matched = object(
+        Kind::Transaction,
+        "unknown",
+        json!({ "wallet": { "recordId": "record" } }),
+    );
+    let sources = source_records(&data, &matched);
+    assert_eq!(sources.keys().collect::<Vec<_>>(), ["Apple Wallet"]);
+    assert_eq!(sources["Apple Wallet"]["merchantCode"], 7929);
+    // Wallet's ten-thousandths read as dollars.
+    assert_eq!(sources["Apple Wallet"]["amount"], 40.0);
+    // A row that exists only in Wallet names its record in its id.
+    let only = object(Kind::Transaction, "wallet:record", json!({}));
+    assert!(source_records(&data, &only).contains_key("Apple Wallet"));
+    drop(storage);
+    std::fs::remove_dir_all(directory).unwrap();
+}
+
+#[test]
 fn reads_come_from_the_tables_which_never_drift_from_the_view() {
     let (directory, mut storage) = lived(3);
     let transaction = storage.read_view().unwrap().snapshot.transactions[0].clone();
@@ -131,7 +177,10 @@ fn reads_come_from_the_tables_which_never_drift_from_the_view() {
         .iter()
         .any(|link| link.relation == Relation::Account && link.from == id));
     assert!(detail.facts.iter().any(|fact| fact.predicate == "amount"));
-    assert!(detail.provider.is_some(), "Plaid's own record of it");
+    assert!(
+        detail.sources.contains_key("Plaid"),
+        "Plaid's own record of it"
+    );
 
     // A row changed behind Brief's back is rewritten before it's read.
     rusqlite::Connection::open(storage.database_path())

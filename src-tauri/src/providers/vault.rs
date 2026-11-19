@@ -320,24 +320,19 @@ impl Providers {
     }
 }
 
-pub(super) fn keychain_entry(user: &str) -> Result<keyring::Entry, String> {
-    keyring::Entry::new(KEYCHAIN_SERVICE, user).map_err(|error| error.to_string())
-}
-
 pub(super) fn read_keychain<T: DeserializeOwned>(user: &str) -> Result<Option<T>, String> {
-    match keychain_entry(user)?.get_password() {
-        Ok(value) => serde_json::from_str(&value)
+    match crate::keychain::read(KEYCHAIN_SERVICE, user) {
+        Ok(Some(value)) => serde_json::from_slice(&value)
             .map(Some)
             .map_err(|error| error.to_string()),
-        Err(keyring::Error::NoEntry) => Ok(None),
+        Ok(None) => Ok(None),
         Err(error) => Err(format!("Could not read secure provider settings: {error}")),
     }
 }
 
 pub(super) fn write_keychain<T: Serialize>(user: &str, value: &T) -> Result<(), String> {
     let encoded = serde_json::to_string(value).map_err(|error| error.to_string())?;
-    keychain_entry(user)?
-        .set_password(&encoded)
+    crate::keychain::write(KEYCHAIN_SERVICE, user, encoded.as_bytes())
         .map_err(|error| format!("Could not save provider settings securely: {error}"))
 }
 

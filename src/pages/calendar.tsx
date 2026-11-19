@@ -13,7 +13,7 @@ import { usePopupPortal } from '../components/ui/popup-container'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useFinance } from '../hooks/use-finance'
-import { accountDisplayName } from '../lib/account-names'
+import { accountName as namedAccount } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { buildActivities, type ActivityItem } from '../lib/activity'
 import { getEarningsCalendar, isTauri } from '../lib/api'
@@ -34,17 +34,18 @@ import {
   type CalendarAccess,
   type DayEntry,
 } from '../lib/calendar'
-import { addDays } from '../lib/dates'
+import { addDays, snapshotToday } from '../lib/dates'
 import { errorMessage } from '../lib/errors'
 import { financeSettings } from '../lib/finance-settings'
 import {
   formatActivityName,
   formatCalendarDate,
   formatCurrency,
+  formatPublicCurrency,
   formatSignedCurrency,
   valueTone,
 } from '../lib/format'
-import { getExternalLogosEnabled } from '../lib/logos'
+import { useExternalLogosEnabled } from '../lib/logos'
 import type { AgendaItem, FinanceSnapshot } from '../lib/schema'
 
 /** Each kind's color, by what it concerns: cards, bills, money in, investments, travel. */
@@ -90,19 +91,14 @@ export function CalendarPage() {
 function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVantage: boolean }) {
   const search = useSearch({ from: '/calendar' })
   const navigate = useNavigate({ from: '/calendar' })
-  const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
+  const today = snapshotToday(data)
   const day = search.day ?? today
   const month = search.month ?? monthOf(day)
   const days = useMemo(() => monthGrid(month), [month])
   const native = typeof window !== 'undefined' && isTauri()
   const agenda = data.insights?.agenda ?? []
   const names = financeSettings(data).accountNames
-  const accountName = (id: string) =>
-    accountDisplayName(
-      id,
-      data.accounts.find((account) => account.id === id)?.name ?? 'Card',
-      names,
-    )
+  const accountName = (id: string) => namedAccount(data, id, names)
 
   const watch = (data.insights?.investmentAttention?.earningsWatch ?? []).toSorted()
   const earnings = useQuery({
@@ -149,10 +145,11 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
   })
 
   const valuesHidden = useAmountsHidden()
+  const externalLogosEnabled = useExternalLogosEnabled()
   // Activities carry formatted amounts, which screen privacy masks.
   const activities = useMemo(
-    () => buildActivities(data, names, getExternalLogosEnabled()),
-    [data, names, valuesHidden],
+    () => buildActivities(data, names, externalLogosEnabled),
+    [data, names, externalLogosEnabled, valuesHidden],
   )
   const spentByDay = useMemo(() => {
     const byDay = new Map<string, ActivityItem[]>()
@@ -354,13 +351,13 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
           />
           <p className="calendar-month-summary">
             <span className="sensitive-value">
-              <strong className={monthTotals.spent ? 'negative' : 'muted'}>
+              <strong className={monthTotals.spent ? undefined : 'muted'}>
                 {formatCurrency(monthTotals.spent)}
               </strong>{' '}
               spent
             </span>
             <span className="sensitive-value">
-              <strong className={monthTotals.income ? 'positive' : 'muted'}>
+              <strong className={monthTotals.income ? undefined : 'muted'}>
                 {formatCurrency(monthTotals.income)}
               </strong>{' '}
               in
@@ -415,12 +412,12 @@ function CalendarView({ data, alphaVantage }: { data: FinanceSnapshot; alphaVant
             <div className="calendar-day-metrics">
               <Metric
                 label="Spent"
-                tone={totals.spent ? 'negative' : 'muted'}
+                tone={totals.spent ? undefined : 'muted'}
                 value={<span className="sensitive-value">{formatCurrency(totals.spent)}</span>}
               />
               <Metric
                 label="In"
-                tone={totals.income ? 'positive' : 'muted'}
+                tone={totals.income ? undefined : 'muted'}
                 value={<span className="sensitive-value">{formatCurrency(totals.income)}</span>}
               />
             </div>
@@ -661,9 +658,9 @@ function EntryList({
   accountName: (id: string) => string
 }) {
   return (
-    <ul className="calendar-day-list">
+    <ul className="calendar-day-list" data-keyboard-region>
       {entries.map((entry) => (
-        <li key={entry.key} data-keyboard-row>
+        <li key={entry.key}>
           <EntryRow entry={entry} accountName={accountName} />
         </li>
       ))}
@@ -680,6 +677,7 @@ function EntryRow({
   accountName: (id: string) => string
 }) {
   if (entry.type === 'activity') return null
+  const row = { className: 'list-row calendar-entry', 'data-keyboard-row': true, tabIndex: -1 }
   const title = entryTitle(entry, accountName)
   const body = (detail: string, amount?: number) => (
     <>
@@ -697,7 +695,7 @@ function EntryRow({
     const { event } = entry
     const people = (event.attendees ?? []).map(({ name }) => name).filter(Boolean)
     return (
-      <div className="calendar-entry">
+      <div {...row}>
         {body(
           [
             eventTime(event) ?? 'All day',
@@ -714,11 +712,13 @@ function EntryRow({
   if (entry.type === 'earnings') {
     const { earnings } = entry
     return (
-      <Link to="/holdings/$ticker" params={{ ticker: earnings.symbol }} className="calendar-entry">
+      <Link to="/holdings/$ticker" params={{ ticker: earnings.symbol }} {...row} data-keyboard-open>
         {body(
           [
             'Earnings',
-            earnings.estimate === null ? null : `estimated EPS $${earnings.estimate.toFixed(2)}`,
+            earnings.estimate === null
+              ? null
+              : `estimated EPS ${formatPublicCurrency(earnings.estimate)}`,
           ]
             .filter(Boolean)
             .join(' · '),
@@ -730,7 +730,7 @@ function EntryRow({
   const content = body(agendaDetail(item, accountName, formatCurrency), item.amount)
   if (item.ticker)
     return (
-      <Link to="/holdings/$ticker" params={{ ticker: item.ticker }} className="calendar-entry">
+      <Link to="/holdings/$ticker" params={{ ticker: item.ticker }} {...row} data-keyboard-open>
         {content}
       </Link>
     )
@@ -740,19 +740,20 @@ function EntryRow({
         to="/insights"
         // The item is `trip:<trip id>:<start>`.
         search={{ trip: item.id.slice('trip:'.length, -':0000-00-00'.length) }}
-        className="calendar-entry"
+        {...row}
+        data-keyboard-open
       >
         {content}
       </Link>
     )
   if (item.kind === 'bill' || item.kind === 'subscription' || item.kind === 'income')
     return (
-      <Link to="/spending" className="calendar-entry">
+      <Link to="/spending" {...row} data-keyboard-open>
         {content}
       </Link>
     )
   return (
-    <Link to="/accounts" search={{ account: item.accountId }} className="calendar-entry">
+    <Link to="/accounts" search={{ account: item.accountId }} {...row} data-keyboard-open>
       {content}
     </Link>
   )

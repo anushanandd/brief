@@ -8,12 +8,10 @@ import { EmptyState, SectionHeading } from './ui'
 
 export function SalesTable({
   sales,
-  externalLogosEnabled,
   referenceIso,
   scrollRef,
 }: {
   sales: Trade[]
-  externalLogosEnabled: boolean
   referenceIso: string
   scrollRef?: Ref<HTMLDivElement>
 }) {
@@ -50,13 +48,20 @@ export function SalesTable({
         </thead>
         <tbody>
           {sales.map((trade) => (
-            <tr key={trade.id} data-keyboard-row tabIndex={-1}>
+            <tr
+              key={trade.id}
+              className="list-row"
+              data-keyboard-row
+              data-keyboard-open={trade.ticker ? true : undefined}
+              tabIndex={-1}
+              // The row washes as one, so a click anywhere on it opens the security.
+              onClick={(event) => {
+                if (event.target instanceof Element && !event.target.closest('a, button'))
+                  event.currentTarget.querySelector('a')?.click()
+              }}
+            >
               <th scope="row">
-                <SecurityLink
-                  ticker={trade.ticker}
-                  note={trade.description ?? 'Sell execution'}
-                  externalLogosEnabled={externalLogosEnabled}
-                />
+                <SecurityLink ticker={trade.ticker} note={trade.description ?? 'Sell execution'} />
               </th>
               <td>
                 <time dateTime={trade.date}>{formatListDate(trade.date, referenceIso)}</time>

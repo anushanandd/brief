@@ -207,12 +207,8 @@ pub struct Insights {
     pub activity_months: Vec<flows::Totals>,
     pub returns: Vec<returns::AccountReturns>,
     /// The combined brokerages' statement for each chart window: the identity, two labeled
-    /// returns beside the benchmark, the waterfall, and risk.
+    /// returns beside the benchmark, and the waterfall.
     pub periods: Vec<reconcile::Statement>,
-    /// How concentrated the combined brokerages' holdings are now.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional)]
-    pub exposure: Option<reconcile::Exposure>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub allocation: Option<allocation::Allocation>,
@@ -620,7 +616,6 @@ pub fn derive_with_documents(
         activity_months,
         returns: returns::returns(performance),
         periods: reconcile::statements(performance, trades, transactions),
-        exposure: reconcile::exposure(performance, holdings),
         allocation,
         securities,
         recap,

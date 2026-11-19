@@ -234,11 +234,12 @@ pub(super) fn plaid_transaction(
     account_names: &BTreeMap<&str, String>,
 ) -> Option<Transaction> {
     let posted_date = plaid_posted_date(&transaction)?;
+    // The bank's own calendar day; the instant's is UTC's, a day late for an evening purchase.
     let occurred_date = iso_date(
         transaction
-            .authorized_datetime
+            .authorized_date
             .as_deref()
-            .or(transaction.authorized_date.as_deref()),
+            .or(transaction.authorized_datetime.as_deref()),
     );
     let counterparty = transaction.counterparties.as_ref().and_then(|values| {
         values
@@ -325,6 +326,8 @@ pub(super) fn plaid_transaction(
         account_owner: non_blank(transaction.account_owner.as_deref()),
         transaction_code: transaction.transaction_code.clone(),
         pending_transaction_id: transaction.pending_transaction_id.clone(),
+        occurred_at: plaid_instant(transaction.authorized_datetime.as_deref()),
+        payment_meta: transaction.payment_meta(),
         ..Transaction::default()
     })
 }

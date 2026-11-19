@@ -10,7 +10,7 @@ use std::{
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use chrono::{DateTime, Duration, NaiveDate, Utc};
 use futures_util::{stream, SinkExt, StreamExt, TryStreamExt};
-use hmac::{Hmac, Mac};
+use hmac::{Hmac, KeyInit, Mac};
 use reqwest::{Method, Url};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{json, Value};
@@ -627,7 +627,7 @@ pub struct Providers {
 
 impl Providers {
     pub fn new() -> Result<Self, String> {
-        let http = reqwest::Client::builder()
+        let http = http::client_builder()
             .user_agent("Brief/0.1")
             .timeout(std::time::Duration::from_secs(30))
             .build()
@@ -902,7 +902,10 @@ mod tests {
                 stream.write_all(reply.as_bytes()).unwrap();
             }
         });
-        let request = reqwest::Client::new().get(format!("http://{address}/page"));
+        let request = http::client_builder()
+            .build()
+            .unwrap()
+            .get(format!("http://{address}/page"));
         let retry = request.try_clone();
         let response = send_with_retry("Test", request, retry).await.unwrap();
         assert_eq!(response.status(), reqwest::StatusCode::OK);

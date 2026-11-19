@@ -117,7 +117,11 @@ export function EarningsReport({
 function NextQuarter({ summary }: { summary?: InvestmentSummary }) {
   const expectation = summary?.expectations.find((item) => item.ticker === summary.ticker)
   const quarter = expectation?.estimates.find((estimate) => estimate.horizon === 'fiscal quarter')
-  if (!expectation || (!quarter && expectation.expectedMovePct == null)) return null
+  const move =
+    expectation?.nextReport && expectation.expectedMovePct != null
+      ? { pct: expectation.expectedMovePct, on: expectation.nextReport }
+      : undefined
+  if (!quarter && !move) return null
   return (
     <div className="holding-earnings-quote">
       <small>Expected</small>
@@ -134,10 +138,10 @@ function NextQuarter({ summary }: { summary?: InvestmentSummary }) {
           .
         </span>
       ) : null}
-      {expectation.nextReport && expectation.expectedMovePct != null ? (
+      {move ? (
         <span>
-          The options market prices in {formatShare(expectation.expectedMovePct)} either way around
-          the {formatShortDay(expectation.nextReport)} report.
+          The options market prices in {formatShare(move.pct)} either way around the{' '}
+          {formatShortDay(move.on)} report.
         </span>
       ) : null}
     </div>

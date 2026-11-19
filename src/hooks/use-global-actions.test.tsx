@@ -11,12 +11,13 @@ vi.mock('@tanstack/react-router', () => {
   const navigate = vi.fn()
   return { useNavigate: () => navigate, useLocation: () => '/' }
 })
-vi.mock('./use-finance', () => ({
-  useFinance: () => ({ data: undefined, integrationStatus: { plaid: false } }),
+const finance = vi.hoisted(() => ({
+  current: { data: undefined as object | undefined, integrationStatus: { plaid: false } },
 }))
+vi.mock('./use-finance', () => ({ useFinance: () => finance.current }))
 vi.mock('./use-finance-edits', () => {
   const undo = vi.fn()
-  return { useFinanceEdits: () => ({ undo, undoLabel: undefined }) }
+  return { useUndo: () => ({ undo, undoLabel: undefined }) }
 })
 vi.mock('./use-refresh-finance', () => {
   const refresh = vi.fn()
@@ -68,4 +69,16 @@ it('keeps the same action list across renders that change nothing it reads', () 
   // A new list each render would re-register with the action registry and loop the shell.
   expect(new Set(seen).size).toBe(1)
   expect(seen[0]?.some(({ id }) => id === 'settings.open')).toBe(true)
+})
+
+it('says recovery is why a live refresh is unavailable', () => {
+  finance.current = {
+    data: { recovery: {}, accounts: [], transactions: [] },
+    integrationStatus: { plaid: true },
+  }
+  act(() => root.render(<Probe />))
+  finance.current = { data: undefined, integrationStatus: { plaid: false } }
+  const live = seen.at(-1)?.find(({ id }) => id === 'finance.refresh-live')
+  expect(live?.disabled).toBe(true)
+  expect(live?.disabledReason).toBe('Resolve local data recovery first')
 })

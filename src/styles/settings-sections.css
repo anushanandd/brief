@@ -279,7 +279,7 @@
   display: grid;
   min-height: 52px;
   padding-block: 8px;
-  grid-template-columns: 20px minmax(0, 1fr) 16px;
+  grid-template-columns: 20px minmax(0, 1fr);
   align-items: center;
   gap: 12px;
   color: var(--text-tertiary);
@@ -301,15 +301,6 @@
 .settings-destination-row small {
   font-size: var(--type-meta);
   line-height: 1.45;
-}
-.settings-destination-row > svg:last-child {
-  transition:
-    color var(--duration-quick) var(--ease-out),
-    transform var(--duration-quick) var(--ease-out);
-}
-.settings-destination-row:hover > svg:last-child {
-  color: var(--text-secondary);
-  transform: translateX(2px);
 }
 .about-settings > div {
   display: flex;
@@ -358,11 +349,6 @@
   .spending-overview-grid,
   .account-overview-primary-grid {
     grid-template-columns: minmax(0, 1fr);
-  }
-
-  .metric:nth-child(odd) {
-    padding-left: 0;
-    border-left: 0;
   }
 
   .home-primary-grid {

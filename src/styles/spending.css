@@ -3,12 +3,14 @@
 .spending-overview-grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr) var(--companion-card-width);
-  align-items: start;
+  align-items: stretch;
   gap: 16px;
 }
+/* Height the window adds goes to the lists, not the chart. */
 .spending-main {
   display: grid;
   min-width: 0;
+  grid-template-rows: auto minmax(0, 1fr);
   gap: 16px;
 }
 .spending-hero-card {
@@ -40,7 +42,7 @@
 }
 .spending-tabs > button {
   display: inline-flex;
-  padding: 2px 8px;
+  padding: 2px 6px;
   align-items: center;
   gap: 6px;
   border: 0;
@@ -161,13 +163,59 @@
 .spending-transactions-preview {
   min-width: 0;
 }
-.spending-benefits-card {
-  overflow: hidden;
-}
+/* The companion adds nothing to the row's height, as Home's does: it fills what the main column
+   sets. Categories and subscriptions keep their own height, subscriptions up to half the column,
+   and the benefits list takes the rest, scrolling past it. A main column too short for them
+   lets the column run on below rather than crop it. */
 .spending-companion {
-  display: grid;
+  display: flex;
   min-width: 0;
+  flex-direction: column;
   gap: 16px;
+  contain: size;
+}
+.spending-companion > * {
+  flex: none;
+}
+.spending-companion > .spending-benefits-card {
+  display: flex;
+  min-height: 180px;
+  flex: 1 1 0;
+  flex-direction: column;
+  overflow: visible clip;
+}
+.spending-benefits-scroll {
+  min-height: 0;
+  flex: 1 1 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+.spending-companion > .spending-subscriptions-card {
+  display: flex;
+  min-height: 0;
+  max-height: 50%;
+  flex: 0 1 auto;
+  flex-direction: column;
+}
+.spending-subscriptions-card .expected-activity-list {
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+}
+/* Stacked, the column has no row to fill, so it sizes itself and the page scrolls whole. */
+@media (max-width: 1050px) {
+  .spending-companion {
+    contain: none;
+  }
+  .spending-companion > .spending-benefits-card,
+  .spending-benefits-scroll {
+    min-height: 0;
+    flex: none;
+    overflow: visible;
+  }
+  .spending-companion > .spending-subscriptions-card {
+    max-height: none;
+  }
 }
 .spending-benefits-card .benefit-detail-row {
   gap: 6px 8px;
@@ -233,9 +281,10 @@
 }
 .benefit-title-row {
   display: flex;
-  align-items: center;
-  gap: 4px;
   min-width: 0;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 0 8px;
 }
 .benefit-title-row h4 {
   min-width: 0;
@@ -281,57 +330,24 @@
   font-weight: 500;
   line-height: 1.5;
 }
-.benefit-info-trigger {
-  flex: none;
+/* How the credit works, shown over the name. */
+.benefit-info-tooltip {
+  width: min(320px, calc(100vw - 24px));
+  padding: 12px;
+  line-height: 1.5;
 }
-.benefit-info-positioner {
-  z-index: 40;
-}
-.benefit-info-popup {
-  box-sizing: border-box;
-  width: 360px;
-  max-width: var(--available-width);
-  max-height: var(--available-height);
-  overflow: auto;
-  overscroll-behavior: contain;
-  padding: 16px;
-  border: var(--hairline) solid var(--popup-border);
-  border-radius: var(--radius-card);
-  background: var(--popup-surface);
-  box-shadow: var(--shadow-popup);
-  color: var(--text-secondary);
-  font-size: var(--type-meta);
-  line-height: 1.6;
-  transform-origin: var(--transform-origin);
-  transition:
-    opacity var(--duration-instant) var(--ease-out),
-    scale var(--duration-instant) var(--ease-out);
-}
-.benefit-info-popup[data-starting-style],
-.benefit-info-popup[data-ending-style] {
-  opacity: 0;
-  scale: 0.98;
-}
-.benefit-info-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16px;
-}
-.benefit-info-heading h2 {
+.benefit-info-tooltip p {
   margin: 0;
-  color: var(--text-primary);
-  font-size: var(--type-body);
-  font-weight: 600;
 }
-.benefit-info-popup p {
-  margin: 12px 0;
+.benefit-info-tooltip p + p {
+  margin-top: 8px;
 }
-.benefit-terms-link {
-  display: inline-flex;
-  min-height: 32px;
-  align-items: center;
-  color: var(--accent);
+/* The last credit, beside the name it was for. */
+.benefit-last-credit {
+  flex: none;
+  color: var(--text-tertiary);
+  font-size: var(--type-meta);
+  white-space: nowrap;
 }
 .benefit-allowance {
   color: var(--text-secondary);
@@ -506,13 +522,25 @@
 .merchant-group:last-child {
   border-bottom: 0;
 }
+/* A washed row hides the divider on either side of it, as rows in a plain list do. */
+.merchant-group:has(> .merchant-group-row:is(:hover, :focus:not([data-pointer] *))),
+.merchant-group:has(
+  + .merchant-group > .merchant-group-row:is(:hover, :focus:not([data-pointer] *))
+),
+.merchant-group-single:has(
+  .financial-activity-row:is(:hover, :focus:not([data-pointer] *), [data-selected])
+),
+.merchant-group:has(
+  + .merchant-group-single
+    .financial-activity-row:is(:hover, :focus:not([data-pointer] *), [data-selected])
+) {
+  border-bottom-color: transparent;
+}
 .merchant-group-row {
-  width: 100%;
   border: 0;
   background: transparent;
   color: inherit;
   text-align: left;
-  cursor: pointer;
 }
 /* The chevron follows the count, so the total lines up with its activities' amounts. */
 .merchant-group-count {

@@ -78,11 +78,10 @@ impl Totals {
 }
 
 /// Percent change with two decimals, from whole cents. Measured against the earlier figure's
-/// size, so a net that rises from a loss reads as an increase. A change more than ten times the
-/// earlier figure says only that it was small (+5,040%), so it has no percent.
+/// size, so a net that rises from a loss reads as an increase. Nothing earlier has no percent;
+/// the renderer reads a change of ten times or more as a multiple.
 fn change_pct(current: i64, previous: i64) -> Option<f64> {
-    let change = (current - previous).abs();
-    (previous != 0 && change <= previous.abs() * 10)
+    (previous != 0)
         .then(|| ((current - previous) as f64 * 10_000.0 / previous.abs() as f64).round() / 100.0)
 }
 
@@ -244,12 +243,12 @@ mod tests {
     #[test]
     // Cents are written as dollars_cents.
     #[allow(clippy::inconsistent_digit_grouping)]
-    fn a_percent_needs_a_base_at_least_a_tenth_of_the_change() {
+    fn a_percent_needs_only_a_base() {
         assert_eq!(change_pct(150_00, 100_00), Some(50.0));
         // From a loss to a gain reads as an increase against the loss's size.
         assert_eq!(change_pct(50_00, -100_00), Some(150.0));
-        assert_eq!(change_pct(1_100_00, 100_00), Some(1_000.0));
-        assert_eq!(change_pct(1_100_01, 100_00), None);
+        // However large the change, it has a percent; the renderer reads it as a multiple.
+        assert_eq!(change_pct(1_100_01, 100_00), Some(1_000.01));
         assert_eq!(change_pct(5_00, 0), None);
     }
 
@@ -283,11 +282,11 @@ mod tests {
         assert_eq!(week.spending, 1_540.0);
         assert_eq!(week.income, 4_000.0);
         assert_eq!(week.net, 2_448.0);
-        // The week before spent $40 with no income: spending rose 38-fold and net 62-fold, more
-        // than tenfold, and income has no base, so none has a percent.
-        assert_eq!(week.spending_change_pct, None);
+        // The week before spent $40 with no income: spending rose 38-fold and net 62-fold, which
+        // still have a percent, and income has no base, so it has none.
+        assert_eq!(week.spending_change_pct, Some(3_750.0));
         assert_eq!(week.income_change_pct, None);
-        assert_eq!(week.net_change_pct, None);
+        assert_eq!(week.net_change_pct, Some(6_220.0));
         assert_eq!(
             week.categories,
             vec![

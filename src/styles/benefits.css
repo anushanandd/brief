@@ -162,7 +162,7 @@
 
 .benefit-row-name:hover,
 .benefit-cell:hover,
-.benefit-grid tr:focus-within .benefit-row-name {
+.benefit-grid tr:focus-within:not([data-pointer] *) .benefit-row-name {
   background: var(--hover-wash);
 }
 
@@ -327,7 +327,6 @@
 
 .benefit-period-row {
   display: grid;
-  width: calc(100% + 2 * var(--row-bleed));
   min-height: 34px;
   padding-block: 0;
   grid-template-columns: 12px 72px minmax(0, 1fr) 92px;
@@ -339,12 +338,6 @@
   font: inherit;
   font-variant-numeric: tabular-nums;
   text-align: left;
-  cursor: pointer;
-}
-
-.benefit-period-row:hover,
-.benefit-periods li:focus > .benefit-period-row {
-  background: var(--hover-wash);
 }
 
 .benefit-period-row > small {

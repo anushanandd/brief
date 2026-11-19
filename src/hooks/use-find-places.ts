@@ -25,13 +25,14 @@ function subscribe(listener: () => void) {
 async function start() {
   if (progress.running) return
   update({ running: true, done: 0, total: 0 })
-  const stop = await listen<{ done: number; total: number }>('places-progress', (event) =>
-    update({ running: true, ...event.payload }),
-  )
+  let stop: (() => void) | undefined
   try {
+    stop = await listen<{ done: number; total: number }>('places-progress', (event) =>
+      update({ running: true, ...event.payload }),
+    )
     await findPlaces()
   } finally {
-    stop()
+    stop?.()
     update({ running: false, done: 0, total: 0 })
   }
 }

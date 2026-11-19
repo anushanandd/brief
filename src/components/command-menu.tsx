@@ -27,7 +27,7 @@ import { activityMatchesSearch, buildActivities, linkedAccountIds } from '../lib
 import { financeSettings } from '../lib/finance-settings'
 import { countOf } from '../lib/format'
 import { ledgerView } from '../lib/ledger-view'
-import { getExternalLogosEnabled } from '../lib/logos'
+import { useExternalLogosEnabled } from '../lib/logos'
 import { useOrderedNavigation } from '../lib/navigation-preferences'
 import { objectKinds, objectQuery, searchObjects, type ObjectKind } from '../lib/objects'
 import { activityMatchesChips, activityTerm, filterFields } from '../lib/palette-filters'
@@ -55,7 +55,7 @@ import { initialPalette, paletteReducer } from '../lib/palette-state'
 import { isPinned, savePins, usePins, withPin } from '../lib/pins'
 import { verbById } from '../lib/verbs'
 import { acceptAutofill, AutofillField, autofillCompletion } from './autofill'
-import { ActionsPopover, useActionsMenu } from './command-menu-popover'
+import { ActionsPopover, plainMeta, useActionsMenu } from './command-menu-popover'
 import {
   activityRow,
   choiceRow,
@@ -70,10 +70,8 @@ import { Ellipsis, RefreshCw, Star, X } from './icons'
 import { Keys } from './keys'
 import { LedgerResult } from './ledger-result'
 import { useShowObject } from './object-details'
+import { Button } from './ui'
 import { Dialog, dialogAutofocus } from './ui/dialog'
-
-const plainMeta = (event: KeyboardEvent, key: string) =>
-  event.key.toLowerCase() === key && event.metaKey && !event.ctrlKey && !event.shiftKey
 
 // Accounts, holdings, and Activity have rows of their own outside the Objects tab, which
 // read the snapshot's richer fields; Activity's rows come from the search below.
@@ -113,12 +111,10 @@ function useObjectHits(
  * Intelligence. Rows come from `command-menu-rows`; their order from `palette-rows`.
  */
 export function CommandMenu({
-  open,
   onOpenChange,
   onShowShortcuts,
   onRunAction,
 }: {
-  open: boolean
   onOpenChange: (open: boolean) => void
   onShowShortcuts: () => void
   onRunAction?: (action: AppAction) => void
@@ -146,7 +142,7 @@ export function CommandMenu({
   const askReady = ask.ready(trimmedQuery)
   const names = financeSettings(finance.data).accountNames
   const accountName = (id: string, name: string) => accountDisplayName(id, name, names)
-  const [externalLogos] = useState(getExternalLogosEnabled)
+  const externalLogos = useExternalLogosEnabled()
   const referenceIso = finance.data?.updatedAt ?? ''
   const activities = useMemo(
     () =>
@@ -360,7 +356,7 @@ export function CommandMenu({
 
   useLayoutEffect(() => {
     if (list.current) list.current.scrollTop = 0
-  }, [query, tabId, filterStep, chips, mode, open])
+  }, [query, tabId, filterStep, chips, mode])
 
   useEffect(() => {
     if (!notice) return undefined
@@ -475,7 +471,7 @@ export function CommandMenu({
   return (
     <Dialog
       ref={dialog}
-      open={open}
+      open
       // Escape closes an open actions menu first, then the palette.
       onClose={() => (menu.open ? closeMenu() : onOpenChange(false))}
       className="command-dialog command-palette-dialog"
@@ -603,9 +599,9 @@ export function CommandMenu({
                               {view.scope ? <small>{view.scope}</small> : null}
                             </summary>
                             <LedgerResult call={call} />
-                            <button
+                            <Button
                               type="button"
-                              className="button-base button-secondary button-compact"
+                              size="compact"
                               disabled={pinned}
                               onClick={() =>
                                 savePins(
@@ -619,7 +615,7 @@ export function CommandMenu({
                               }
                             >
                               {pinned ? 'Pinned to Home' : 'Pin to Home'}
-                            </button>
+                            </Button>
                           </details>
                         )
                       })}

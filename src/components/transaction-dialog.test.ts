@@ -2,7 +2,13 @@ import { expect, it } from 'vitest'
 
 import { transaction as record } from '../data/fixtures/records'
 import type { Transaction } from '../lib/schema'
-import { conflictNote, evidenceDetails, inspectorKey, walletDetails } from './transaction-dialog'
+import {
+  conflictNote,
+  evidenceDetails,
+  inspectorKey,
+  sourceComparison,
+  walletDetails,
+} from './transaction-dialog'
 
 const transaction = (patch: Partial<Transaction>): Transaction =>
   record({
@@ -92,4 +98,44 @@ it('keeps only Wallet’s identifiers and a name it disagrees on under Raw recor
     label: 'Wallet’s name',
     value: 'Cafe Inc',
   })
+})
+
+it('compares what each source said with what Brief shows, and why', () => {
+  const rows = sourceComparison(
+    transaction({
+      accountId: 'plaid:card',
+      category: 'Shopping',
+      categoryConfidence: 'HIGH',
+      merchant: 'Example Venue',
+      wallet: {
+        recordId: 'w1',
+        categorized: false,
+        merchant: 'Example Venue Club',
+        terminalAmount: -42,
+        codeCategory: 'Entertainment',
+        network: { merchantCode: 7929 },
+      },
+    }),
+    'From the bank',
+    true,
+  )
+  expect(rows.map(({ label }) => label)).toEqual(['Amount', 'Date', 'Merchant', 'Category'])
+  expect(rows[0]!.says).toEqual(['Plaid: −$40.00', 'Apple Wallet: −$42.00', 'Statement: −$40.00'])
+  expect(rows[3]).toEqual({
+    label: 'Category',
+    shown: 'Shopping',
+    says: ['Plaid: Shopping, high confidence', 'Apple Wallet: merchant code 7929 · Entertainment'],
+    basis: 'From the bank; Plaid was sure, so the merchant code wasn’t used',
+  })
+  // When Plaid was unsure, the code decided and Plaid's own guess isn't kept.
+  const coded = sourceComparison(
+    transaction({
+      accountId: 'plaid:card',
+      category: 'Entertainment',
+      wallet: { recordId: 'w1', categorized: true, codeCategory: 'Entertainment' },
+    }),
+    'From the card network',
+    false,
+  )
+  expect(coded.find(({ label }) => label === 'Category')?.says[0]).toBe('Plaid: unsure')
 })

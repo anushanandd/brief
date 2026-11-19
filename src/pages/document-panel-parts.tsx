@@ -102,9 +102,7 @@ export function DocumentDetails({
           />
         </label>
       </div>
-      <p className="documents-file" title={document.fileName}>
-        {document.fileName}
-      </p>
+      <p className="documents-file">{document.fileName}</p>
     </details>
   )
 }

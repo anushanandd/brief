@@ -19,6 +19,11 @@ import { router } from '../router'
 // focus, and the shell's key dispatch all run, which server-rendered route tests can't show.
 // Activity's total is here too, since it follows filters and selection as they change.
 
+// jsdom can't run an animated figure (NumberFlow) once it updates, as a menu's view does in place.
+vi.mock('@number-flow/react', () => ({
+  default: ({ value }: { value: number }) => <span>{value}</span>,
+}))
+
 // Rust's totals by how many rows were asked about; any other set reads what Rust wrote for the
 // preview. Selections the seed has no totals for answer from here.
 const cannedTotals = vi.hoisted(() => new Map<number, ActivityTotals | Error>())
@@ -185,6 +190,21 @@ it('/: Return on recent activity opens it in Activity, and Escape closes it', as
   await press('Escape')
   expect(document.querySelector('dialog[open]')).toBeNull()
   expect(new URLSearchParams(history.location.search).get('open')).toBeNull()
+  await unmount()
+})
+
+it('/activities: an ?open= arriving after the page mounted opens it, and Back closes it', async () => {
+  const { history, rows, unmount } = await mount('/activities', 'Activity entries')
+  const id = rows()[1]?.dataset.activityId?.replace(/^spending:/, '')
+  expect(document.querySelector('dialog[open]')).toBeNull()
+
+  await act(async () => history.push(`/activities?open=${id}`))
+  await settle()
+  expect(document.querySelector('dialog[open]')).not.toBeNull()
+
+  await act(async () => history.back())
+  await settle()
+  expect(document.querySelector('dialog[open]')).toBeNull()
   await unmount()
 })
 
@@ -533,10 +553,11 @@ it.each([
   const link = row.matches('a') ? row : row.querySelector('[data-keyboard-open]')
   if (!(link instanceof HTMLAnchorElement)) throw new Error('The row links to its page')
   const target = new URL(link.href)
+  const shown = () => `${history.location.pathname}${history.location.search}`
+  // Accounts' list is its menu, so stepping onto a row already shows it.
+  if (region === 'Accounts') expect(shown()).toBe(`${target.pathname}${target.search}`)
 
   await press('Enter')
-  expect(`${history.location.pathname}${history.location.search}`).toBe(
-    `${target.pathname}${target.search}`,
-  )
+  expect(shown()).toBe(`${target.pathname}${target.search}`)
   await unmount()
 })

@@ -153,23 +153,46 @@ export function ScrollCueCard({
   useLayoutEffect(() => {
     const card = ref.current
     if (!card) return undefined
-    const scrollRegion = card.querySelector<HTMLElement>(scrollSelector)
-    if (!scrollRegion) return undefined
+    let region: HTMLElement | null = null
+    let content: Element | null = null
     const update = () => {
-      if (hasMoreBelow(scrollRegion)) scrollRegion.dataset.moreBelow = ''
-      else delete scrollRegion.dataset.moreBelow
+      if (!region) return
+      if (hasMoreBelow(region)) region.dataset.moreBelow = ''
+      else delete region.dataset.moreBelow
     }
-    const observer = new ResizeObserver(update)
-    observer.observe(card)
-    observer.observe(scrollRegion)
-    if (scrollRegion.firstElementChild) observer.observe(scrollRegion.firstElementChild)
-    scrollRegion.addEventListener('scroll', update, { passive: true })
-    update()
+    const sizes = new ResizeObserver(update)
+    // Content can replace the region or its list without a resize, so each change finds them again.
+    const attach = () => {
+      const nextRegion = card.querySelector<HTMLElement>(scrollSelector)
+      if (nextRegion !== region) {
+        if (region) {
+          sizes.unobserve(region)
+          region.removeEventListener('scroll', update)
+        }
+        if (nextRegion) {
+          sizes.observe(nextRegion)
+          nextRegion.addEventListener('scroll', update, { passive: true })
+        }
+        region = nextRegion
+      }
+      const nextContent = region?.firstElementChild ?? null
+      if (nextContent !== content) {
+        if (content) sizes.unobserve(content)
+        if (nextContent) sizes.observe(nextContent)
+        content = nextContent
+      }
+      update()
+    }
+    const mutations = new MutationObserver(attach)
+    sizes.observe(card)
+    mutations.observe(card, { childList: true, subtree: true })
+    attach()
     return () => {
-      observer.disconnect()
-      scrollRegion.removeEventListener('scroll', update)
+      sizes.disconnect()
+      mutations.disconnect()
+      region?.removeEventListener('scroll', update)
     }
-  }, [children, scrollSelector])
+  }, [scrollSelector])
 
   return (
     <Card ref={ref} className={className} {...props}>

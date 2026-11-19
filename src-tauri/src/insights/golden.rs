@@ -218,8 +218,9 @@ fn check(record: &Value, zone: &dyn Zone, cards: &Catalog) -> Result<(), String>
                 let optional = ["deadlineNote", "renewalCheck"];
                 let last_credit = match &actual.last_credit {
                     None => expected["lastCredit"].is_null(),
+                    // Records keep the day as the renderer's label of the time they were taken.
                     Some(last) => {
-                        expected["lastCredit"]["date"] == json!(last.date)
+                        expected["lastCredit"]["date"] == json!(calendar::long_label(last.date))
                             && close(&expected["lastCredit"]["amount"], last.amount)
                     }
                 };

@@ -29,7 +29,6 @@
     .benefit-evidence li > strong,
     .benefit-progress,
     .command-answer > p,
-    .benefit-last-credit-tooltip,
     .sensitive-value
   ) {
   filter: blur(12px);
@@ -47,7 +46,7 @@
     .holding-chart-card .performance-chart,
     .public-market-value,
     .public-market-value .change,
-    .holding-earnings > strong
+    .holding-next-earnings > strong
   ) {
   filter: none;
   user-select: auto;

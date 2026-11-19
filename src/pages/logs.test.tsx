@@ -151,9 +151,9 @@ it('makes every Diagnostics list a keyboard region whose rows J and K step throu
     ]),
   )
   // Each provider, the quoted symbol, and the refresh are rows.
-  expect(html).toMatch(/class="market-data-row" data-keyboard-row="true" tabindex="-1"/i)
-  expect(html).toMatch(/class="activity-log-row" data-keyboard-row="true" tabindex="-1"/i)
-  expect(html.match(/class="connection-row" data-keyboard-row="true"/g)).toHaveLength(5)
+  expect(html).toMatch(/class="list-row market-data-row" data-keyboard-row="true" tabindex="-1"/i)
+  expect(html).toMatch(/class="list-row activity-log-row" data-keyboard-row="true" tabindex="-1"/i)
+  expect(html.match(/class="list-row connection-row" data-keyboard-row="true"/g)).toHaveLength(5)
 })
 
 it('names each detector whose precision Diagnostics shows, and says when there is none', () => {

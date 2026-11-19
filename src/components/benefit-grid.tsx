@@ -23,7 +23,8 @@ import {
   formatCurrencyRange,
   formatProseCurrency,
 } from '../lib/format'
-import { getExternalLogosEnabled } from '../lib/logos'
+import { listMotions } from '../lib/keyboard-regions'
+import { useExternalLogosEnabled } from '../lib/logos'
 import type {
   BenefitActivity,
   BenefitHistory,
@@ -170,6 +171,7 @@ function RowName({
   waiting?: number
   onOpen: () => void
 }) {
+  const externalLogosEnabled = useExternalLogosEnabled()
   return (
     <th scope="row">
       <button type="button" className="benefit-row-name" data-keyboard-open onClick={onOpen}>
@@ -180,7 +182,7 @@ function RowName({
           logoUrl={mark.logoUrl}
           logoBrand={mark.logoBrand}
           category={mark.category}
-          externalLogosEnabled={getExternalLogosEnabled()}
+          externalLogosEnabled={externalLogosEnabled}
         />
         <span>{withoutCredit(name)}</span>
         {waiting ? (
@@ -253,12 +255,12 @@ function WindowRow({ benefit, onOpen }: { benefit: BenefitWindow; onOpen: () => 
       <td colSpan={12}>
         <button type="button" className="benefit-cell is-renewal" onClick={onOpen}>
           <span className="benefit-cell-text sensitive-value">
-            {benefitStatus(benefit).text} · {benefitNote(benefit)}
+            {[benefitStatus(benefit).text, benefitNote(benefit)].filter(Boolean).join(' · ')}
           </span>
         </button>
       </td>
       <td className="benefit-grid-figure sensitive-value">
-        {formatProseCurrency(benefit.creditedAmount)}
+        {formatCurrency(benefit.creditedAmount)}
       </td>
       <td />
       <td />
@@ -456,60 +458,7 @@ function Inspector({
   const [dialog, setDialog] = useState<HTMLDialogElement | null>(null)
   // Its keys run through the app's dispatcher, scoped to this dialog: a transaction opened from
   // here sits on top and takes them over.
-  const actions = useMemo<AppAction[]>(() => {
-    const rows = () =>
-      [...(dialog?.querySelectorAll<HTMLElement>('[data-keyboard-row]') ?? [])].filter(
-        (row) => row.getClientRects().length > 0,
-      )
-    const focused = () => document.activeElement?.closest<HTMLElement>('[data-keyboard-row]')
-    const step = (direction: 1 | -1) => {
-      const all = rows()
-      const current = focused()
-      const index = current ? all.indexOf(current) : direction > 0 ? -1 : all.length
-      const next = all[Math.max(0, Math.min(all.length - 1, index + direction))]
-      next?.focus()
-      next?.scrollIntoView({ block: 'nearest' })
-    }
-    return [
-      {
-        id: 'inspector.rows.next',
-        title: 'Next item',
-        group: 'Here',
-        scope: 'dialog',
-        bindings: [
-          { sequence: ['j'], label: 'J' },
-          { sequence: ['ArrowDown'], label: '↓' },
-        ],
-        run: () => step(1),
-      },
-      {
-        id: 'inspector.rows.previous',
-        title: 'Previous item',
-        group: 'Here',
-        scope: 'dialog',
-        bindings: [
-          { sequence: ['k'], label: 'K' },
-          { sequence: ['ArrowUp'], label: '↑' },
-        ],
-        run: () => step(-1),
-      },
-      {
-        id: 'inspector.rows.open',
-        title: 'Open item',
-        group: 'Here',
-        scope: 'dialog',
-        bindings: [{ sequence: ['Enter'], label: '↵' }],
-        run: () => {
-          const current = focused()
-          if (!current || document.activeElement !== current) return
-          const target = current.matches('[data-keyboard-open]')
-            ? current
-            : current.querySelector<HTMLElement>('[data-keyboard-open]')
-          target?.click()
-        },
-      },
-    ]
-  }, [dialog])
+  const actions = useMemo<AppAction[]>(() => (dialog ? listMotions(dialog) : []), [dialog])
   return (
     <Dialog
       ref={setDialog}
@@ -528,7 +477,7 @@ function Inspector({
               Next <Keys label="J" /> <Keys label="K" />
             </span>
             <span className="command-footer-hint">
-              Open <Keys label="Return" />
+              Open <Keys label="↵" />
             </span>
             <span className="command-footer-hint">
               Close <Keys label="Esc" />
@@ -665,6 +614,7 @@ function BenefitDetail({
         .filter(({ state }) => state !== 'future')
         .toReversed()
     : []
+  const externalLogosEnabled = useExternalLogosEnabled()
   const [open, setOpen] = useState(
     () =>
       new Set(
@@ -690,7 +640,7 @@ function BenefitDetail({
             logoUrl={benefit?.logoUrl ?? current?.logoUrl}
             logoBrand={benefit?.logoBrand ?? current?.logoBrand}
             category={benefit?.category ?? current?.category}
-            externalLogosEnabled={getExternalLogosEnabled()}
+            externalLogosEnabled={externalLogosEnabled}
           />
         }
         title={name}
@@ -792,11 +742,12 @@ function BenefitDetail({
                 const expanded = open.has(period.start)
                 const items = rows(period.activityIds)
                 return (
-                  <li key={period.start} data-keyboard-row tabIndex={-1}>
+                  <li key={period.start}>
                     <button
                       type="button"
-                      className="benefit-period-row"
+                      className="list-row benefit-period-row"
                       aria-expanded={expanded}
+                      data-keyboard-row
                       data-keyboard-open
                       onClick={() =>
                         setOpen((shown) => {

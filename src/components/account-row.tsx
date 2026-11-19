@@ -24,7 +24,7 @@ export function AccountRow({
 }) {
   return (
     <Link
-      className={`account-row${nested ? ' account-row-nested' : ''}`}
+      className={`list-row account-row${nested ? ' account-row-nested' : ''}`}
       data-keyboard-row
       data-keyboard-open
       to="/accounts"

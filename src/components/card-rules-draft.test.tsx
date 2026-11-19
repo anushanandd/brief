@@ -27,7 +27,7 @@ it('labels each drafted term by its evidence and cites the credit behind it', ()
   expect(html).toContain('<blockquote>TEST BANK STREAMING CREDIT</blockquote>')
   expect(html).toContain('No credit has posted yet')
   // A benefit the draft leaves out reads as left out, unchecked.
-  expect(html).toMatch(/<tr[^>]*class="is-left-out"/)
+  expect(html).toMatch(/<tr[^>]*class="list-row is-left-out"/)
   expect(html).toMatch(/aria-label="Keep streaming" checked=""/)
 })
 

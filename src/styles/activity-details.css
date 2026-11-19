@@ -40,11 +40,18 @@
     opacity: 0;
   }
 }
+/* Every labeled row in the inspector (facts, edits, sources, each record) shares one label
+   column, so their values line up down the dialog. */
 .transaction-details {
+  --details-label: 88px;
   display: flex;
   height: 100%;
   max-height: inherit;
   flex-direction: column;
+}
+/* A note under an edit reads as a fact's second line does. */
+.transaction-details .transaction-edit-note {
+  color: var(--text-tertiary);
 }
 .transaction-details-header {
   display: grid;
@@ -58,15 +65,14 @@
   width: 36px;
   height: 36px;
 }
+/* A long merchant name wraps rather than losing its end. */
 .transaction-details-header h2 {
   margin: 0;
-  overflow: hidden;
   font-family: var(--font-editorial);
   font-size: var(--type-page);
   font-weight: 400;
   line-height: 1.25;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .transaction-details-header p {
   display: flex;
@@ -123,7 +129,7 @@ a.transaction-details-tag {
 .transaction-details-facts > div {
   display: grid;
   padding: 10px 0;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: var(--details-label) minmax(0, 1fr);
   align-items: baseline;
   gap: 12px;
 }
@@ -185,29 +191,33 @@ a.transaction-details-tag {
 .transaction-details-value > svg.positive {
   color: var(--positive);
 }
-/* What each detail rests on, folded under Verified. */
+/* What each source said, folded under Sources. Its rows read as the facts above do, flush
+   with the section rather than indented again. */
 .transaction-details-why > summary {
   color: var(--accent);
   font-size: var(--type-meta);
   cursor: default;
 }
-.transaction-details-why > .transaction-details-facts {
-  padding: 4px 0 0;
+.transaction-details-why .transaction-details-facts {
+  padding: 0;
 }
-.transaction-details-why > .transaction-details-facts > div {
-  padding: 6px 0;
-  grid-template-columns: 64px minmax(0, 1fr);
-}
-.transaction-details-why dd {
-  color: var(--text-secondary);
-  font-size: var(--type-meta);
-}
-/* Raw records: each source's own fields, under its name. */
+/* Each source's record, under its name, as a subheading of Sources. */
 .transaction-details-record > h4 {
-  margin: 8px 0 0;
+  margin: 16px 0 0;
   color: var(--text-secondary);
-  font-size: var(--type-meta);
+  font-size: var(--type-body);
   font-weight: 500;
+}
+/* Every field as sent: keys in the label column, both at the size of a fact's second line. */
+.transaction-details-sources .raw-tree {
+  font-size: var(--type-meta);
+}
+.transaction-details-sources .raw-tree > div {
+  grid-template-columns: var(--details-label) minmax(0, 1fr);
+  gap: 12px;
+}
+.transaction-details-sources .raw-tree dt {
+  color: var(--text-tertiary);
 }
 /* Each document that states the transaction, on its own line, with how it states it. */
 .transaction-details-documents {
@@ -234,7 +244,17 @@ a.transaction-details-tag {
   padding: 16px 20px;
   border-left: var(--hairline) solid var(--border-subtle);
 }
-.transaction-details-history h3 {
+/* Who reported it, last, with what each source said folded under it. */
+.transaction-details-sources {
+  padding: 12px 20px 16px;
+  border-top: var(--hairline) solid var(--border-subtle);
+}
+.transaction-details-sources > p {
+  margin: 0 0 6px;
+  font-size: var(--type-body);
+}
+.transaction-details-history h3,
+.transaction-details-sources h3 {
   display: flex;
   margin: 0 0 4px;
   align-items: baseline;
@@ -263,16 +283,33 @@ a.transaction-details-tag {
   font-size: var(--type-body);
   font-variant-numeric: tabular-nums;
 }
-.transaction-details-history li > span {
+/* An earlier visit is a row that opens: its cells sit in a button, a list row of its own. */
+.transaction-details-history li:has(> .list-row) {
+  display: block;
+}
+.transaction-history-row {
+  display: grid;
+  min-height: 34px;
+  padding-block: 0;
+  grid-template-columns: auto minmax(0, 1fr) 92px;
+  align-items: center;
+  gap: 12px;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+}
+.transaction-details-history :is(li, .transaction-history-row) > span {
   padding-block: 4px;
   color: var(--text-primary);
   overflow-wrap: break-word;
 }
-.transaction-details-history li > small {
+.transaction-details-history :is(li, .transaction-history-row) > small {
   color: var(--text-tertiary);
   font-size: var(--type-meta);
 }
-.transaction-details-history li > strong {
+.transaction-details-history :is(li, .transaction-history-row) > strong {
   font-weight: 500;
   text-align: right;
 }
@@ -284,7 +321,4 @@ a.transaction-details-tag {
 }
 .transaction-details-history li.is-expected > span {
   color: var(--accent);
-}
-.transaction-details-record .transaction-details-facts > div {
-  grid-template-columns: 96px minmax(0, 1fr);
 }

@@ -48,12 +48,17 @@ export function actionsFor(
   const pressesControl = event?.key === 'Enter' && onControl
   const overlay = shortcutOverlayOpen()
   const modal = overlay ? openModal() : undefined
-  const regionReachable = !overlay || Boolean(modal && focusRegion && modal.contains(focusRegion))
+  // Focus can leave a list without a focusin, as when it drops to the body, so it's checked here.
+  const region = focusRegion?.contains(document.activeElement) ? focusRegion : undefined
+  const regionReachable = Boolean(region && (!overlay || modal?.contains(region)))
   const pressesDialogControl =
     event?.key === ' '
       ? spaceActivates(target, modal)
       : event?.key === 'Enter' && onControl && Boolean(modal?.contains(target))
-  if (!overlay && !pressesControl) return actions.filter(({ scope }) => scope !== 'dialog')
+  if (!overlay && !pressesControl)
+    return actions.filter(
+      ({ scope }) => scope !== 'dialog' && (scope !== 'region' || regionReachable),
+    )
   return actions.filter((action) =>
     action.scope === 'app'
       ? true
@@ -95,7 +100,8 @@ export function useKeyboardDispatch(
     (action: AppAction) => {
       if (action.disabled) return
       closeKeyState()
-      recordActionUsage(action.id)
+      // List motions run on every j/k and carry their list's name, so ranking skips them.
+      if (action.scope !== 'region') recordActionUsage(action.id)
       void Promise.resolve(action.run()).catch(() => undefined)
     },
     [closeKeyState],

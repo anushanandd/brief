@@ -69,7 +69,6 @@ export function DesignPage() {
         title="Design"
         parent={{ label: 'Settings', to: '/settings' }}
         showSnapshot={false}
-        showRefresh={false}
       />
       <div className="design-sections">
         <Card>

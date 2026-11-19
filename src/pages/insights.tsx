@@ -9,7 +9,7 @@ import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { buildActivities } from '../lib/activity'
 import { financeSettings } from '../lib/finance-settings'
 import { insightsViews, insightsViewSearch, type InsightsView } from '../lib/insights-views'
-import { getExternalLogosEnabled } from '../lib/logos'
+import { useExternalLogosEnabled } from '../lib/logos'
 import { personFromSearch } from '../lib/people'
 import type { FinanceSnapshot } from '../lib/schema'
 import { tripTitle } from '../lib/trips'
@@ -34,13 +34,12 @@ function Insights({ data }: { data: FinanceSnapshot }) {
   const view: InsightsView = search.view ?? 'trips'
   const names = financeSettings(data).accountNames
   const valuesHidden = useAmountsHidden()
+  const externalLogosEnabled = useExternalLogosEnabled()
   // Activities carry formatted amounts, which screen privacy masks.
   const activities = useMemo(
     () =>
-      new Map(
-        buildActivities(data, names, getExternalLogosEnabled()).map((item) => [item.id, item]),
-      ),
-    [data, names, valuesHidden],
+      new Map(buildActivities(data, names, externalLogosEnabled).map((item) => [item.id, item])),
+    [data, names, externalLogosEnabled, valuesHidden],
   )
   const label = insightsViews.find(({ id }) => id === view)?.label ?? 'Trips'
   const trip = view === 'trips' ? tripFromSearch(data, search.trip) : undefined

@@ -110,7 +110,7 @@ function RegisteredMenu() {
     [],
   )
   useRegisterActions(actions)
-  return <CommandMenu open onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />
+  return <CommandMenu onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />
 }
 
 beforeEach(() => {
@@ -143,12 +143,12 @@ afterEach(() => {
 const renderMenu = () =>
   renderToStaticMarkup(
     <QueryClientProvider client={new QueryClient()}>
-      <CommandMenu open onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />
+      <CommandMenu onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />
     </QueryClientProvider>,
   )
 
 async function mountMenu(
-  element = <CommandMenu open onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />,
+  element = <CommandMenu onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />,
 ) {
   const container = document.createElement('div')
   document.body.appendChild(container)
@@ -369,7 +369,7 @@ it('changes type with the arrow keys and with a leading prefix', async () => {
 it('finds any kind of object, narrows to one, and shows its raw view with ⌘I', async () => {
   const menu = await mountMenu(
     <ObjectDetailsProvider>
-      <CommandMenu open onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />
+      <CommandMenu onOpenChange={vi.fn()} onShowShortcuts={vi.fn()} />
     </ObjectDetailsProvider>,
   )
   await menu.type('@trip austin')
@@ -468,7 +468,7 @@ it('switches to Ask with ? and only offers Ask ↵ when Brief can answer', async
 it('steps back one level per Esc before closing', async () => {
   const onOpenChange = vi.fn()
   const menu = await mountMenu(
-    <CommandMenu open onOpenChange={onOpenChange} onShowShortcuts={vi.fn()} />,
+    <CommandMenu onOpenChange={onOpenChange} onShowShortcuts={vi.fn()} />,
   )
   await menu.type('/')
   await menu.press('Escape')

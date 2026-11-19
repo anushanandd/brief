@@ -16,8 +16,8 @@ import {
 import { errorMessage } from '../../lib/errors'
 import { financeSettings } from '../../lib/finance-settings'
 import { formatUpdatedAt } from '../../lib/format'
-import { Trash2, X } from '../icons'
-import { SettingsCard, SettingsRow, SettingsSwitch } from '../settings-ui'
+import { Trash2 } from '../icons'
+import { InlineConfirm, SettingsCard, SettingsRow, SettingsSwitch } from '../settings-ui'
 import { Button, ChartRangeSelect } from '../ui'
 
 function describe(status: CalendarStatus | undefined, enabled: boolean) {
@@ -138,35 +138,34 @@ export function CalendarSyncCard() {
         </SettingsRow>
       ) : null}
       {confirmingOff ? (
-        <div
-          className="connection-confirmation"
-          role="group"
-          aria-label="Turn off the Brief calendar"
+        <InlineConfirm
+          label="Turn off the Brief calendar"
+          pending={pending !== null}
+          onCancel={() => setConfirmingOff(false)}
+          returnFocus={() => document.querySelector<HTMLElement>('#brief-calendar input')}
+          actions={
+            <>
+              <Button
+                size="compact"
+                disabled={pending !== null}
+                onClick={() => void turnOff(false)}
+              >
+                {pending === 'keep' ? 'Turning off…' : 'Keep events'}
+              </Button>
+              <Button
+                icon={Trash2}
+                size="compact"
+                variant="destructive"
+                disabled={pending !== null || !allowed}
+                onClick={() => void turnOff(true)}
+              >
+                {pending === 'remove' ? 'Removing…' : 'Remove events'}
+              </Button>
+            </>
+          }
         >
           <p>Keep Brief’s events in the calendar, or remove them?</p>
-          <div>
-            <Button
-              icon={X}
-              size="compact"
-              disabled={pending !== null}
-              onClick={() => setConfirmingOff(false)}
-            >
-              Cancel
-            </Button>
-            <Button size="compact" disabled={pending !== null} onClick={() => void turnOff(false)}>
-              {pending === 'keep' ? 'Turning off…' : 'Keep events'}
-            </Button>
-            <Button
-              icon={Trash2}
-              size="compact"
-              variant="destructive"
-              disabled={pending !== null || !allowed}
-              onClick={() => void turnOff(true)}
-            >
-              {pending === 'remove' ? 'Removing…' : 'Remove events'}
-            </Button>
-          </div>
-        </div>
+        </InlineConfirm>
       ) : null}
     </SettingsCard>
   )

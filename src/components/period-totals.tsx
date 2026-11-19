@@ -14,15 +14,33 @@ const periodLabels: Record<ChangeWindow, string> = {
   all: 'All time',
 }
 
+/**
+ * A change in percent as Home reads it: a rise to ten times or more as the multiple it is
+ * ("12×"), since "+1,100%" says only that the earlier figure was small. Net can cross zero, so
+ * it stays a percent.
+ */
+export function periodChangeText(value: number, multiple: boolean) {
+  return multiple && value >= 900 ? `${Math.round(value / 100 + 1)}×` : formatPercent(value)
+}
+
 /** A figure's change from the period before, toned by whether its direction is favorable. */
-function PeriodChange({ value, favorable }: { value?: number; favorable: 'up' | 'down' }) {
+function PeriodChange({
+  value,
+  favorable,
+  multiple = true,
+}: {
+  value?: number
+  favorable: 'up' | 'down'
+  multiple?: boolean
+}) {
   if (value == null) return null
+  const text = periodChangeText(value, multiple)
   return (
     <small
       className={valueTone(favorable === 'up' ? value : -value)}
-      aria-label={`${formatPercent(value)} versus the period before`}
+      aria-label={`${text} versus the period before`}
     >
-      {formatPercent(value)}
+      {text}
     </small>
   )
 }
@@ -93,7 +111,7 @@ export function PeriodTotals({ data, window }: { data: FinanceSnapshot; window: 
                 >
                   {formatCurrency(recap.net)}
                 </Link>
-                <PeriodChange value={recap.netChangePct} favorable="up" />
+                <PeriodChange value={recap.netChangePct} favorable="up" multiple={false} />
               </span>
             ) : (
               '—'

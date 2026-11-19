@@ -111,7 +111,7 @@ export const formatCurrency = (value: number | null | undefined) =>
  */
 export const formatProseCurrency = (value: number) =>
   amountsMasked ? HIDDEN_AMOUNT : typographicMinus(wholeCurrencyFormatter.format(value))
-export const formatProsePercent = (value: number) => `${Math.abs(value).toFixed(1)}%`
+export const formatProsePercent = (value: number) => `${typographicMinus(value.toFixed(1))}%`
 
 /** A change at a glance: cents below $1,000, then compact ("+$12.3K"). */
 export const formatSignedCompactCurrency = (value: number | null | undefined) =>

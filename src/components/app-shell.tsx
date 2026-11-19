@@ -176,7 +176,6 @@ function Shell() {
 
         {commandOpen ? (
           <CommandMenu
-            open
             onOpenChange={setCommandOpen}
             onShowShortcuts={() => setShortcutsOpen(true)}
             onRunAction={keyboard.executeAction}

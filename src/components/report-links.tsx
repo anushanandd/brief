@@ -16,7 +16,7 @@ import {
 import { snapshotToday } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import { analyticsIconColors, analyticsIcons, destinationPages } from '../lib/navigation'
-import type { FinanceSnapshot } from '../lib/schema'
+import type { FinanceSnapshot, SpendingOwner } from '../lib/schema'
 import {
   reportRangeForPeriod,
   spendingHeadline,
@@ -36,6 +36,7 @@ export function MoneyStrip({
   period,
   search = {},
   spendingAccount,
+  owner = 'me',
 }: {
   data: FinanceSnapshot
   current: '/spending' | AnalyticsChart
@@ -45,6 +46,8 @@ export function MoneyStrip({
   search?: AnalyticsSearch
   /** Spending's account scope, on Spending. */
   spendingAccount?: string
+  /** Whose spending Spending counts, on Spending. */
+  owner?: SpendingOwner
 }) {
   const settings = financeSettings(data)
   const spendingAccountId = settings.spendingAccountId ?? ''
@@ -79,7 +82,13 @@ export function MoneyStrip({
           analyticsAccountMatches(reportSearch.account, id),
       ),
     )
-    const spending = spendingHeadline(data, spendingAccountId, spendingPeriod, spendingAccount)
+    const spending = spendingHeadline(
+      data,
+      spendingAccountId,
+      spendingPeriod,
+      spendingAccount,
+      owner,
+    )
     const {
       icon: SpendingIcon,
       label: spendingLabel,
@@ -97,7 +106,11 @@ export function MoneyStrip({
         ),
         link: {
           to: '/spending',
-          search: { account: spendingAccount, range: spendingRangeForPeriod(spendingPeriod) },
+          search: {
+            account: spendingAccount,
+            range: spendingRangeForPeriod(spendingPeriod),
+            for: owner === 'me' ? undefined : owner,
+          },
         },
         current: current === '/spending',
         value: spending.value,
@@ -151,6 +164,7 @@ export function MoneyStrip({
     benefitsYear,
     current,
     data,
+    owner,
     reportSearch,
     reports,
     spendingAccount,
@@ -158,5 +172,5 @@ export function MoneyStrip({
     spendingPeriod,
     today,
   ])
-  return <SelectorStrip label="Spending" items={items} />
+  return <SelectorStrip label="Money" items={items} />
 }

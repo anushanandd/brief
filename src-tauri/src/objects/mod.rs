@@ -228,15 +228,19 @@ pub struct Detail {
     pub object: Object,
     pub links: Vec<Link>,
     pub facts: Vec<Fact>,
-    /// The record as its provider sent it, for accounts and transactions a provider reported.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    #[ts(optional, type = "Record<string, unknown>")]
-    pub provider: Option<Value>,
+    /// Each source's own record of it, by source name (Plaid, SnapTrade, Apple Wallet), as
+    /// saved in that source's cache.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    #[ts(optional, type = "Record<string, Record<string, unknown>>")]
+    pub sources: BTreeMap<String, Value>,
 }
 
-/// The record a provider sent for an account or transaction, as saved in its cache.
-pub fn provider_record(state: &FinanceState, object: &Object) -> Option<Value> {
-    let key = object.id.split_once(':')?.1;
+/// The records each source sent for an account, transaction, or trade, as saved in its cache.
+pub fn source_records(state: &FinanceState, object: &Object) -> BTreeMap<String, Value> {
+    let mut sources = BTreeMap::new();
+    let Some((_, key)) = object.id.split_once(':') else {
+        return sources;
+    };
     let find = |records: &[Value], field: &str, id: &str| {
         records
             .iter()
@@ -245,23 +249,58 @@ pub fn provider_record(state: &FinanceState, object: &Object) -> Option<Value> {
     };
     let plaid = state.provider_data.plaid.as_ref();
     let snaptrade = state.provider_data.snaptrade.as_ref();
-    match (object.kind, key.split_once(':')) {
-        (Kind::Account, Some(("plaid", id))) => plaid.and_then(|data| {
-            find(&data.accounts, "account_id", id)
-                .or_else(|| find(&data.investment_accounts, "account_id", id))
-        }),
-        (Kind::Account, Some(("snaptrade", id))) => {
-            snaptrade.and_then(|data| find(&data.accounts, "id", id))
-        }
+    let provider = match (object.kind, key.split_once(':')) {
+        (Kind::Account, Some(("plaid", id))) => plaid
+            .and_then(|data| {
+                find(&data.accounts, "account_id", id)
+                    .or_else(|| find(&data.investment_accounts, "account_id", id))
+            })
+            .map(|record| ("Plaid", record)),
+        (Kind::Account, Some(("snaptrade", id))) => snaptrade
+            .and_then(|data| find(&data.accounts, "id", id))
+            .map(|record| ("SnapTrade", record)),
         (Kind::Transaction, Some(("snaptrade", rest))) => {
-            let (account, activity) = rest.split_once(':')?;
-            snaptrade.and_then(|data| find(data.activities.get(account)?, "id", activity))
+            rest.split_once(':').and_then(|(account, activity)| {
+                snaptrade
+                    .and_then(|data| find(data.activities.get(account)?, "id", activity))
+                    .map(|record| ("SnapTrade", record))
+            })
         }
-        (Kind::Transaction, None) => {
-            plaid.and_then(|data| find(&data.transactions, "transaction_id", key))
-        }
+        // A trade keeps SnapTrade's activity id, in whichever account it was made.
+        (Kind::Trade, _) => snaptrade
+            .and_then(|data| {
+                data.activities
+                    .values()
+                    .find_map(|activities| find(activities, "id", key))
+            })
+            .map(|record| ("SnapTrade", record)),
+        (Kind::Transaction, None) => plaid
+            .and_then(|data| find(&data.transactions, "transaction_id", key))
+            .map(|record| ("Plaid", record)),
         _ => None,
+    };
+    if let Some((source, record)) = provider {
+        sources.insert(source.to_owned(), record);
     }
+    // Wallet's record: the one a transaction matched, or the one it stands in for.
+    let wallet_id = object
+        .record
+        .pointer("/wallet/recordId")
+        .and_then(Value::as_str)
+        .or_else(|| key.strip_prefix("wallet:"));
+    if let (Kind::Transaction, Some(id), Some(wallet)) =
+        (object.kind, wallet_id, state.provider_data.wallet.as_ref())
+    {
+        if let Some(row) = wallet.rows.iter().find(|row| row.id == id) {
+            let mut saved = record(row);
+            // Saved in ten-thousandths, as Wallet keeps it; read in the account's currency.
+            if let Some(amount) = rust_decimal::prelude::ToPrimitive::to_f64(&row.amount()) {
+                saved["amount"] = json!(amount);
+            }
+            sources.insert("Apple Wallet".to_owned(), saved);
+        }
+    }
+    sources
 }
 
 /// The key an organization's name gives: its words, lowercased, joined by `-`. The same name

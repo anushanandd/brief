@@ -5,9 +5,6 @@
   border-bottom: var(--hairline) solid var(--border-subtle);
 }
 
-.coming-up {
-  padding-top: 16px;
-}
 .coming-up-list {
   margin: 4px 0 0;
   padding: 0;
@@ -16,7 +13,7 @@
 .coming-up-row {
   display: grid;
   min-height: 48px;
-  padding: 8px 0;
+  padding-block: 8px;
   grid-template-columns: 44px var(--mark-size) minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
@@ -109,7 +106,8 @@
   padding: 0 8px 0 0;
   border-bottom: var(--hairline) solid var(--border-subtle);
   text-align: left;
-  white-space: nowrap;
+  /* A wide answer wraps within its card rather than running under the card's clip. */
+  overflow-wrap: anywhere;
 }
 .ledger-result-table th {
   color: var(--text-tertiary);
@@ -180,9 +178,6 @@
 .overview-page .home-secondary-grid {
   gap: 16px;
 }
-.overview-page .home-holdings-row {
-  margin-top: 16px;
-}
 .overview-page .accounts-overview-card {
   align-self: stretch;
 }
@@ -193,9 +188,6 @@
 .security-taxes .financial-table td {
   height: var(--row-height-compact);
   padding-block: 6px;
-}
-.pinned-grid {
-  margin-top: 16px;
 }
 
 /* The chart sets the top row's height; the column beside it fills that and no more. */
@@ -221,16 +213,6 @@
 }
 .overview-page .brokerage-chart-content > .empty-state {
   flex: 1 1 auto;
-}
-/* Sections inside a card are separated from each other, never from the card's edge. */
-.home-overview-summary .coming-up:last-child {
-  border-bottom: 0;
-}
-
-/* Today's companion lists are one line per row. */
-.home-overview-summary .coming-up-row,
-.home-overview-summary .home-overview-summary .coming-up {
-  padding-block: 12px;
 }
 .home-overview-summary .account-summary-metrics {
   padding-bottom: 12px;
@@ -386,12 +368,6 @@
 .taxes-list-link {
   color: inherit;
 }
-.taxes-list-link.taxes-residency-link {
-  grid-template-columns: minmax(0, 1fr) auto;
-}
-.taxes-list-link:hover {
-  background: var(--hover-wash);
-}
 .taxes-list > li > span,
 .taxes-list-link > span {
   display: grid;
@@ -415,41 +391,8 @@
   align-content: start;
   gap: 16px;
 }
-.home-companion .coming-up {
-  padding-top: 0;
-}
 .home-preview-more {
   margin-top: 8px;
-}
-
-/* In the companion's narrow column a row is mark, words, then figure, with the date under the
-   figure: titles keep the width they need instead of wrapping word by word. */
-.home-companion .coming-up-row {
-  grid-template-columns: var(--mark-size) minmax(0, 1fr) auto;
-  grid-template-areas:
-    'mark copy amount'
-    'mark copy date';
-  row-gap: 2px;
-}
-.home-companion .coming-up-row > time,
-.home-companion .coming-up-row > span:first-child:empty {
-  grid-area: date;
-  justify-self: end;
-}
-.home-companion .coming-up-row > .transaction-mark,
-.home-companion .coming-up-row > .brand-mark,
-.home-companion .coming-up-row > :nth-child(2) {
-  grid-area: mark;
-}
-.home-companion .coming-up-row > .coming-up-copy {
-  grid-area: copy;
-}
-.home-companion .coming-up-row > :last-child {
-  grid-area: amount;
-  justify-self: end;
-}
-.home-companion .coming-up-copy > strong {
-  text-wrap: balance;
 }
 
 /* Home: the chart beside what's ahead, then holdings and accounts beside what changed and
@@ -471,9 +414,10 @@
 }
 /* What's ahead adds nothing to the row's height: it fills what the chart sets and clips below,
    where Coming up scrolls. */
+/* Clipped top and bottom only, so a washed row's reach into the gutter keeps its rounded ends. */
 .home-ahead {
   display: flex;
-  overflow: hidden;
+  overflow: visible clip;
   flex-direction: column;
   contain: size;
 }

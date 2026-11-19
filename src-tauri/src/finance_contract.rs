@@ -410,8 +410,9 @@ pub struct Transaction {
     pub date: String,
     #[serde(default)]
     pub occurred_on: Option<String>,
-    /// The moment of purchase at the place it happened, as RFC 3339 with that place's offset.
-    /// Absent unless a source reports the time and its zone.
+    /// The moment of purchase, as RFC 3339: with the place's offset when Wallet saw it, or in
+    /// UTC (ending `Z`) as Plaid reports it, which the renderer reads in the Mac's zone. Absent
+    /// unless a source reports the time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     #[ts(optional)]
     pub occurred_at: Option<String>,
@@ -563,6 +564,10 @@ pub struct Transaction {
     /// Who was on the other side: the merchant, a payment app, a marketplace, or a bank.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub counterparties: Vec<Counterparty>,
+    /// What the bank's payment record says: who paid whom, its reference, and why.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub payment_meta: Option<PaymentMeta>,
     /// `qualified` or `nonQualified`, for a dividend whose provider says which, or
     /// `capitalGain` for a fund's long-term capital gain distribution.
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -683,6 +688,10 @@ pub struct WalletDetail {
     /// The category is the card network's merchant code, because Plaid wasn't sure of its own.
     #[serde(default, skip_serializing_if = "std::ops::Not::not")]
     pub categorized: bool,
+    /// The category the network's merchant code files it under, whichever one Brief used.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub code_category: Option<String>,
 }
 
 /// A Wallet charge the provider never reported, past the days it could still be pending.
@@ -831,6 +840,37 @@ pub struct MissingStatementRow {
     /// The user confirmed it, so it is in history until Plaid reports it.
     pub confirmed: bool,
 }
+/// Plaid's payment record for a transfer, check, or payment-app transaction; each field only
+/// when the bank sent it.
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq, TS)]
+#[serde(rename_all = "camelCase")]
+pub struct PaymentMeta {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub payer: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub payee: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub by_order_of: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reference_number: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub ppd_id: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub reason: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub payment_method: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
+    pub payment_processor: Option<String>,
+}
+
 #[derive(Clone, Debug, Deserialize, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct Counterparty {

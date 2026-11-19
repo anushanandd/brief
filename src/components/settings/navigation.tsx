@@ -116,7 +116,7 @@ function NumberKeysBlock() {
     <SettingsBlock
       id="number-keys"
       title="Number keys"
-      description="Each opens what you choose from anywhere but a text field. A key with nothing chosen does nothing."
+      description="Each opens what you choose from anywhere but a text field."
       action={
         <Button
           icon={RotateCcw}
@@ -133,7 +133,7 @@ function NumberKeysBlock() {
           const saved = choices[key]
           const gone = saved && !resolved[key]
           return (
-            <li className="settings-list-row" key={key} data-keyboard-row tabIndex={-1}>
+            <li className="list-row settings-list-row" key={key} data-keyboard-row tabIndex={-1}>
               <kbd className="settings-list-key">{key}</kbd>
               <FilterSelect
                 label={`What the ${key} key opens`}

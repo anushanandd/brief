@@ -9,7 +9,7 @@ import {
 import { completeSettings, saveFinanceSettings, type Settings } from '../lib/finance-settings'
 import type { FinanceSettings, FinanceSnapshot } from '../lib/schema'
 import { rememberEdit, takeLastEdit, useUndoStack } from '../lib/undo'
-import { financeQueryKey, setFinanceSnapshot, useFinance } from './use-finance'
+import { financeQueryKey, setFinanceSnapshot } from './use-finance'
 
 /** A few words for what an edit changed, for the undo action's title. */
 function describeEdit(changes: TransactionAnnotationChanges) {
@@ -67,8 +67,6 @@ export function saveSettingsInTurn(
  */
 export function useFinanceEdits() {
   const client = useQueryClient()
-  const finance = useFinance()
-  const undoStack = useUndoStack()
   const commit = useCallback(
     (snapshot: FinanceSnapshot) => {
       setFinanceSnapshot(client, snapshot)
@@ -100,12 +98,11 @@ export function useFinanceEdits() {
       throw error
     }
   }, [commit])
-  return {
-    settings: finance.data?.settings,
-    updateSettings,
-    annotate,
-    undo,
-    /** What ⌘Z would undo, or nothing. */
-    undoLabel: undoStack.at(-1)?.label,
-  }
+  return { updateSettings, annotate, undo }
+}
+
+/** Undo and what ⌘Z would undo, or nothing; only this re-renders when the undo stack changes. */
+export function useUndo() {
+  const { undo } = useFinanceEdits()
+  return { undo, undoLabel: useUndoStack().at(-1)?.label }
 }

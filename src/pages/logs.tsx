@@ -172,7 +172,6 @@ export function LogsPage() {
         title="Diagnostics"
         parent={{ label: 'Settings', to: '/settings' }}
         showSnapshot={false}
-        showRefresh={false}
       />
       <Card className="diagnostics-summary" aria-label="System status">
         <div className="diagnostics-stat">
@@ -284,7 +283,7 @@ export function LogsPage() {
                       : 'Configured'
                   : 'Not configured'
               return (
-                <div className="connection-row" key={id} data-keyboard-row tabIndex={-1}>
+                <div className="list-row connection-row" key={id} data-keyboard-row tabIndex={-1}>
                   <div>
                     <strong>{name}</strong>
                     {error ? (
@@ -315,7 +314,12 @@ export function LogsPage() {
             data-keyboard-region
           >
             {quoteUpdates.map(({ ticker, updatedAt }) => (
-              <div className="market-data-row" key={ticker} data-keyboard-row tabIndex={-1}>
+              <div
+                className="list-row market-data-row"
+                key={ticker}
+                data-keyboard-row
+                tabIndex={-1}
+              >
                 <strong>{ticker}</strong>
                 <time dateTime={updatedAt}>{formatTime(updatedAt)}</time>
               </div>
@@ -329,7 +333,12 @@ export function LogsPage() {
           <SectionHeading title="Sync history" />
           <div {...logRegion('Sync history')}>
             {syncRuns.data?.map((run) => (
-              <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={run.id}>
+              <div
+                className="list-row activity-log-row"
+                data-keyboard-row
+                tabIndex={-1}
+                key={run.id}
+              >
                 <StatusDot tone={run.outcome === 'committed' ? 'positive' : 'negative'} />
                 <div>
                   <strong>{run.outcome === 'committed' ? 'Committed' : 'Failed safely'}</strong>
@@ -350,7 +359,12 @@ export function LogsPage() {
           <SectionHeading title="Summary runs" />
           <div {...logRegion('Summary runs')}>
             {summaryRuns.data?.map((run) => (
-              <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={run.id}>
+              <div
+                className="list-row activity-log-row"
+                data-keyboard-row
+                tabIndex={-1}
+                key={run.id}
+              >
                 <StatusDot
                   tone={
                     run.outcome === 'ok'
@@ -387,7 +401,7 @@ export function LogsPage() {
           <div {...logRegion('Calibration')}>
             {calibration.data?.sessions ? (
               <>
-                <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
+                <div className="list-row activity-log-row" data-keyboard-row tabIndex={-1}>
                   <StatusDot tone="neutral" />
                   <div>
                     <strong>Per session</strong>
@@ -401,7 +415,7 @@ export function LogsPage() {
                       : null}
                   </span>
                 </div>
-                <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
+                <div className="list-row activity-log-row" data-keyboard-row tabIndex={-1}>
                   <StatusDot tone="neutral" />
                   <div>
                     <strong>Quiet sessions</strong>
@@ -410,7 +424,12 @@ export function LogsPage() {
                   <span>{calibration.data.quiet}</span>
                 </div>
                 {calibration.data.perFund.map((rate) => (
-                  <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={rate.fund}>
+                  <div
+                    className="list-row activity-log-row"
+                    data-keyboard-row
+                    tabIndex={-1}
+                    key={rate.fund}
+                  >
                     <StatusDot tone="neutral" />
                     <div>
                       <strong>{rate.fund}</strong>
@@ -435,7 +454,7 @@ export function LogsPage() {
             {data.insights?.precision?.length ? (
               data.insights.precision.map((row) => (
                 <div
-                  className="activity-log-row"
+                  className="list-row activity-log-row"
                   data-keyboard-row
                   tabIndex={-1}
                   key={row.detector}
@@ -471,7 +490,7 @@ export function LogsPage() {
           <div {...logRegion('Change log')}>
             {changeLog.data ? (
               <>
-                <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
+                <div className="list-row activity-log-row" data-keyboard-row tabIndex={-1}>
                   <StatusDot
                     tone={
                       !changeLog.data.check
@@ -504,7 +523,7 @@ export function LogsPage() {
                     </time>
                   ) : null}
                 </div>
-                <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
+                <div className="list-row activity-log-row" data-keyboard-row tabIndex={-1}>
                   <StatusDot tone="neutral" />
                   <div>
                     <strong>Stored</strong>
@@ -515,7 +534,7 @@ export function LogsPage() {
                   <span>{size(changeLog.data.summary.storedBytes)}</span>
                 </div>
                 {changeLog.data.summary.firstRecordedAt ? (
-                  <div className="activity-log-row" data-keyboard-row tabIndex={-1}>
+                  <div className="list-row activity-log-row" data-keyboard-row tabIndex={-1}>
                     <StatusDot tone="neutral" />
                     <div>
                       <strong>Kept since</strong>
@@ -539,7 +558,12 @@ export function LogsPage() {
           <div {...logRegion('Runtime activity')} aria-live="polite">
             {runtimeLog.length ? (
               runtimeLog.map((entry) => (
-                <div className="activity-log-row" data-keyboard-row tabIndex={-1} key={entry.id}>
+                <div
+                  className="list-row activity-log-row"
+                  data-keyboard-row
+                  tabIndex={-1}
+                  key={entry.id}
+                >
                   <StatusDot tone={entry.tone} />
                   <div>
                     <strong>{entry.message}</strong>
@@ -580,7 +604,7 @@ export function LogsPage() {
               {data.accounts
                 .filter(({ id }) => id !== 'all')
                 .map((account) => (
-                  <tr key={account.id} data-keyboard-row tabIndex={-1}>
+                  <tr className="list-row" key={account.id} data-keyboard-row tabIndex={-1}>
                     <th scope="row">
                       {accountDisplayName(account.id, account.name, accountDisplayNames)}
                     </th>

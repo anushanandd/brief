@@ -1,5 +1,6 @@
+import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
-import { useState } from 'react'
+import { type ReactNode, useState } from 'react'
 import { toast } from 'sonner'
 
 import { useFinanceEdits } from '../hooks/use-finance-edits'
@@ -9,18 +10,22 @@ import {
   activityPlace,
   type ActivityItem,
 } from '../lib/activity'
+import { withoutCredit } from '../lib/benefit-copy'
 import {
   countOf,
   displayCase,
   formatActivityName,
   formatCurrency,
+  formatCurrencyIn,
+  formatPercent,
   formatProseCurrency,
   valueTone,
 } from '../lib/format'
 import { confidenceLabel, needView } from '../lib/needs'
+import { getObject } from '../lib/objects'
 import { placeMapsUrl, placeSource } from '../lib/places'
-import type { BenefitActivity, FinanceSnapshot, Transaction } from '../lib/schema'
-import { formatActivityDate } from '../lib/spending'
+import type { BenefitActivity, FinanceSnapshot, Trade, Transaction } from '../lib/schema'
+import { formatActivityDate, formatListDate } from '../lib/spending'
 import { mapsUrl, type transactionDetail } from '../lib/transaction-detail'
 import { PlaceMark } from './activity-method-mark'
 import { ExternalLink } from './external-link'
@@ -35,13 +40,14 @@ import {
   X,
 } from './icons'
 import { Keys } from './keys'
+import { RawTree } from './object-details'
 import { AnimatedCurrency, Button } from './ui'
 
 // The inspector's sections, one component each, so `TransactionDetails` reads as their order.
 
 export type Detail = NonNullable<ReturnType<typeof transactionDetail>>
 
-/** The amount, when it was bought and posted, and what Rust flagged about it. */
+/** The amount, when it was bought and posted and how it was paid, and what Rust flagged. */
 export function TransactionHero({
   activity,
   detail,
@@ -60,6 +66,7 @@ export function TransactionHero({
   disagree: boolean
   onClose: () => void
 }) {
+  const method = activity.transfer || activity.kind === 'trade' ? '' : activityMethod(activity)
   return (
     <section className="transaction-details-hero" aria-label="Amount">
       <AnimatedCurrency
@@ -67,16 +74,25 @@ export function TransactionHero({
         value={activity.amount}
       />
       <p>
-        {occurred && occurred !== posted ? (
-          <>
-            Purchased {formatActivityDate(occurred)}
-            {atTime}
-            <span aria-hidden="true"> · </span>
-            posted {formatActivityDate(posted)}
-          </>
-        ) : (
-          `${formatActivityDate(posted)}${atTime}`
-        )}
+        {/* When and how, as one phrase, so the tags after it wrap as a group. */}
+        <span>
+          {occurred && occurred !== posted ? (
+            <>
+              Purchased {formatActivityDate(occurred)}
+              {atTime}
+              <span aria-hidden="true"> · </span>
+              posted {formatActivityDate(posted)}
+            </>
+          ) : (
+            `${formatActivityDate(posted)}${atTime}`
+          )}
+          {method && method !== 'Other' ? (
+            <>
+              <span aria-hidden="true"> · </span>
+              {method}
+            </>
+          ) : null}
+        </span>
         {detail?.duplicate ? (
           <span className="transaction-details-tag is-warning">
             <AlertCircle size={12} aria-hidden="true" />
@@ -114,14 +130,24 @@ export function TransactionHero({
             onClick={onClose}
           >
             {benefit.kind === 'credit'
-              ? `${benefit.benefitName} credit`
-              : `Counts toward ${benefit.benefitName}`}
+              ? `${withoutCredit(benefit.benefitName)} credit`
+              : `Counts toward ${withoutCredit(benefit.benefitName)}`}
             <ArrowUpRight size={12} aria-hidden="true" />
           </Link>
         ))}
       </p>
     </section>
   )
+}
+
+function reviewFlagShows(detail: Detail | undefined, conflictText: string | undefined) {
+  return Boolean(
+    detail?.duplicate || detail?.unusual || detail?.inferred || conflictText !== undefined,
+  )
+}
+
+function suggestionShows(transaction: Transaction | undefined) {
+  return transaction?.categorySource === 'suggested' && Boolean(transaction.categorySuggestion)
 }
 
 /**
@@ -149,7 +175,7 @@ export function ReviewFlag({
   const [dismissing, setDismissing] = useState(false)
   const [reviewFailed, setReviewFailed] = useState(false)
   const inferred = detail?.inferred ? needView(detail.inferred, data) : undefined
-  if (!detail?.duplicate && !detail?.unusual && !inferred && conflictText === undefined) return null
+  if (!reviewFlagShows(detail, conflictText)) return null
   // How sure Rust is, and how many transactions it read to say so.
   const basis =
     inferred?.confidence != null
@@ -258,16 +284,28 @@ export function WhereFacts({
     business?.closed ? 'Listed as closed' : '',
   ].filter(Boolean)
   const website = business?.website ?? transaction?.website
+  const foreign = wallet?.foreign
+  const reward = wallet?.reward
+  // How it was paid reads in the hero; this row holds only what Wallet adds to it.
   const paid = transaction
     ? [
+        foreign
+          ? `Charged ${formatCurrencyIn(Math.abs(foreign.amount), foreign.currency)}${foreign.rate ? ` at ${foreign.rate} per dollar` : ''}`
+          : '',
         wallet?.terminalAmount != null
           ? `Approved for ${formatCurrency(Math.abs(wallet.terminalAmount))} at the terminal`
           : '',
-        wallet?.reward && wallet.reward.amount > 0
-          ? `Earned ${formatCurrency(wallet.reward.amount)} Daily Cash · ${wallet.reward.percent}%`
-          : '',
+        reward && reward.amount > 0
+          ? `Earned ${formatCurrency(reward.amount)} Daily Cash · ${reward.percent}%`
+          : reward && reward.amount < 0
+            ? `Returned ${formatCurrency(-reward.amount)} Daily Cash`
+            : '',
       ].filter(Boolean)
     : []
+  // A place leads; online or in store, the hero already says how, so only where it billed from
+  // or what's known about the business is left to say.
+  const named = place.kind === 'place' || (!transaction && place.kind !== 'none')
+  const lead = named ? place.primary : billedFrom ? `Billed from ${displayCase(billedFrom)}` : ''
   // Google Maps opens the business's card from its name and street address, when known.
   const mapsHref = resolved
     ? placeMapsUrl(
@@ -280,61 +318,61 @@ export function WhereFacts({
     : !remote && (address || coordinates?.lat != null)
       ? mapsUrl(address || merchant, coordinates)
       : undefined
+  const where = lead || resolved || businessFacts.length || mapsHref || website
   return (
     <>
-      <div>
-        <dt>Where</dt>
-        <dd>
-          <span className="transaction-details-value">
-            {place.kind === 'none' ? null : <PlaceMark kind={place.kind} />}
-            <span>
-              {place.kind === 'none' ? 'Not reported by the bank' : place.primary}
-              {resolved ? (
-                <small>
-                  {street ? `${displayCase(street)} · ` : ''}
-                  {business ? 'From Overture Maps' : placeSource(resolved)}
-                </small>
-              ) : billedFrom ? (
-                <small>Billed from {displayCase(billedFrom)}</small>
-              ) : address && address !== place.primary && !remote ? (
-                <small>{address}</small>
-              ) : null}
-              {businessFacts.length ? <small>{businessFacts.join(' · ')}</small> : null}
-              {!transaction && place.kind !== 'place' && method && method !== place.primary ? (
-                <small>{method}</small>
-              ) : null}
+      {where ? (
+        <div>
+          <dt>Where</dt>
+          <dd>
+            <span className="transaction-details-value">
+              {place.kind === 'none' ? null : <PlaceMark kind={place.kind} />}
+              <span>
+                {lead || null}
+                {resolved ? (
+                  <small>
+                    {street ? `${displayCase(street)} · ` : ''}
+                    {business ? 'From Overture Maps' : placeSource(resolved)}
+                  </small>
+                ) : address && address !== place.primary && !remote && named ? (
+                  <small>{address}</small>
+                ) : null}
+                {businessFacts.length ? <small>{businessFacts.join(' · ')}</small> : null}
+                {!transaction && place.kind !== 'place' && method && method !== place.primary ? (
+                  <small>{method}</small>
+                ) : null}
+              </span>
             </span>
-          </span>
-          {mapsHref || website ? (
-            <span className="transaction-details-links">
-              {mapsHref ? (
-                <ExternalLink className="transaction-details-link" href={mapsHref}>
-                  <MapPinned size={12} aria-hidden="true" />
-                  Open in Google Maps
-                </ExternalLink>
-              ) : null}
-              {website ? (
-                <ExternalLink
-                  className="transaction-details-link"
-                  href={/^https?:\/\//.test(website) ? website : `https://${website}`}
-                >
-                  <Globe2 size={12} aria-hidden="true" />
-                  {website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
-                </ExternalLink>
-              ) : null}
-            </span>
-          ) : null}
-        </dd>
-      </div>
-      {transaction && (method || paid.length) ? (
+            {mapsHref || website ? (
+              <span className="transaction-details-links">
+                {mapsHref ? (
+                  <ExternalLink className="transaction-details-link" href={mapsHref}>
+                    <MapPinned size={12} aria-hidden="true" />
+                    Open in Google Maps
+                  </ExternalLink>
+                ) : null}
+                {website ? (
+                  <ExternalLink
+                    className="transaction-details-link"
+                    href={/^https?:\/\//.test(website) ? website : `https://${website}`}
+                  >
+                    <Globe2 size={12} aria-hidden="true" />
+                    {website.replace(/^https?:\/\/(www\.)?/, '').replace(/\/$/, '')}
+                  </ExternalLink>
+                ) : null}
+              </span>
+            ) : null}
+          </dd>
+        </div>
+      ) : null}
+      {paid.length ? (
         <div>
           <dt>Paid</dt>
           <dd>
-            {method || 'With the card'}
             {paid.map((line) => (
-              <small key={line} className="sensitive-value">
+              <span key={line} className="sensitive-value">
                 {line}
-              </small>
+              </span>
             ))}
           </dd>
         </div>
@@ -343,48 +381,178 @@ export function WhereFacts({
   )
 }
 
-/** Who recorded it besides the bank, and what each detail rests on. A facts list row. */
-export function VerifiedFact({
-  activity,
-  sources,
-  quality,
-}: {
-  activity: ActivityItem
-  /** Wallet, a statement, or a pay statement, as they read in a sentence. */
-  sources: string[]
-  quality: { label: string; value: string; conflict?: boolean }[]
-}) {
+/**
+ * A trade's facts: the security, linked to its holding, its shares at their price, and what the
+ * sale cost and gained, split into short and long term. Rows of the inspector's facts list.
+ */
+export function TradeFacts({ trade, onClose }: { trade: Trade; onClose: () => void }) {
+  const gain = trade.estimatedRealizedGain
+  const terms = [
+    trade.estimatedShortTermGain != null
+      ? `${formatCurrency(trade.estimatedShortTermGain)} short term`
+      : '',
+    trade.estimatedLongTermGain != null
+      ? `${formatCurrency(trade.estimatedLongTermGain)} long term`
+      : '',
+  ].filter(Boolean)
   return (
-    <div>
-      <dt>Verified</dt>
-      <dd>
-        <span className="transaction-details-value">
-          {sources.length ? (
-            <ShieldCheck size={14} aria-hidden="true" className="positive" />
-          ) : null}
-          <span>
-            {sources.length
-              ? `${activity.pending ? 'Pending' : 'Posted'} and confirmed by ${sources.join(' and ')}`
-              : activity.pending
-                ? 'Pending with the bank'
-                : 'Reported by the bank'}
-          </span>
-        </span>
-        {quality.length ? (
-          <details className="transaction-details-why">
-            <summary>How Brief knows</summary>
-            <dl className="transaction-details-facts">
-              {quality.map(({ label, value, conflict }) => (
-                <div key={label}>
-                  <dt>{label}</dt>
-                  <dd className={conflict ? 'is-warning' : undefined}>{value}</dd>
-                </div>
-              ))}
-            </dl>
-          </details>
+    <>
+      <div>
+        <dt>Security</dt>
+        <dd>
+          {trade.ticker ? (
+            <Link
+              className="transaction-details-link"
+              to="/holdings/$ticker"
+              params={{ ticker: trade.ticker }}
+              onClick={onClose}
+            >
+              {trade.ticker}
+              <ArrowUpRight size={12} aria-hidden="true" />
+            </Link>
+          ) : (
+            'Not named'
+          )}
+          {trade.description ? <small>{trade.description}</small> : null}
+        </dd>
+      </div>
+      {trade.units != null ? (
+        <div>
+          <dt>Shares</dt>
+          <dd className="sensitive-value">
+            {trade.price != null
+              ? `${trade.units} at ${formatCurrency(trade.price)}`
+              : String(trade.units)}
+            {trade.splitRatio ? (
+              <small>Restated for a {trade.splitRatio}-for-1 split since</small>
+            ) : null}
+          </dd>
+        </div>
+      ) : null}
+      {trade.realizedCostBasis != null ? (
+        <div>
+          <dt>Cost basis</dt>
+          <dd className="sensitive-value">{formatCurrency(trade.realizedCostBasis)}</dd>
+        </div>
+      ) : null}
+      {gain != null ? (
+        <div>
+          <dt>Estimated P/L</dt>
+          <dd>
+            <span className={`sensitive-value ${valueTone(gain)}`}>
+              {formatCurrency(gain)}
+              {trade.estimatedRealizedGainPct != null
+                ? ` · ${formatPercent(trade.estimatedRealizedGainPct)}`
+                : ''}
+            </span>
+            <small className="sensitive-value">
+              {[
+                ...terms,
+                !trade.realizedGainMethod || trade.realizedGainMethod === 'estimated-fifo'
+                  ? 'First in, first out'
+                  : trade.realizedGainMethod,
+              ].join(' · ')}
+            </small>
+          </dd>
+        </div>
+      ) : null}
+    </>
+  )
+}
+
+type RecordRows = { label: string; value: string; raw?: boolean }[]
+
+/** One fact as Brief shows it, what each source said of it, and what Brief's choice rests on. */
+export type SourceRow = {
+  label: string
+  shown: string
+  says: string[]
+  basis?: string
+  conflict?: boolean
+}
+
+/**
+ * Who reported it and who confirmed it, then, opened, what each source said of the facts that
+ * matter beside what Brief shows and why, and each source's record: its fields in words, then
+ * every field as it was sent. The records load only when opened.
+ */
+export function SourcesSection({
+  pending,
+  reportedBy,
+  confirmedBy,
+  comparison,
+  records,
+  objectId,
+  titleId,
+}: {
+  pending: boolean
+  /** Plaid, SnapTrade, or Apple Wallet for a row only it holds. */
+  reportedBy: string
+  /** Wallet, a statement, or a pay statement, as they read in a sentence. */
+  confirmedBy: string[]
+  comparison: SourceRow[]
+  /** Each source's fields in words, by its name. */
+  records: Array<{ source: string; rows: RecordRows }>
+  objectId: string | undefined
+  titleId: string
+}) {
+  const [open, setOpen] = useState(false)
+  const sent = useQuery({
+    queryKey: ['object', objectId],
+    queryFn: () => getObject(objectId ?? ''),
+    enabled: open && Boolean(objectId),
+  })
+  const raw: Record<string, unknown> = sent.data?.sources ?? {}
+  const worded = new Map(records.filter(({ rows }) => rows.length).map((r) => [r.source, r.rows]))
+  const names = [...new Set([...worded.keys(), ...Object.keys(raw)])]
+  return (
+    <section className="transaction-details-sources" aria-labelledby={`${titleId}-sources`}>
+      <h3 id={`${titleId}-sources`}>Sources</h3>
+      <p className="transaction-details-value">
+        {confirmedBy.length ? (
+          <ShieldCheck size={14} aria-hidden="true" className="positive" />
         ) : null}
-      </dd>
-    </div>
+        <span>
+          {`${pending ? 'Pending · ' : ''}Reported by ${reportedBy}${confirmedBy.length ? `, confirmed by ${confirmedBy.join(' and ')}` : ''}`}
+        </span>
+      </p>
+      {comparison.length || names.length || objectId ? (
+        <details
+          className="transaction-details-why"
+          onToggle={(event) => setOpen(event.currentTarget.open)}
+        >
+          <summary>{comparison.length ? 'Who said what' : `What ${reportedBy} sent`}</summary>
+          <dl className="transaction-details-facts">
+            {comparison.map(({ label, shown, says, basis, conflict }) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>
+                  <span className="sensitive-value">{shown}</span>
+                  {says.map((line) => (
+                    <small key={line} className="sensitive-value">
+                      {line}
+                    </small>
+                  ))}
+                  {basis ? (
+                    <small className={conflict ? 'is-warning' : undefined}>{basis}</small>
+                  ) : null}
+                </dd>
+              </div>
+            ))}
+          </dl>
+          {names.map((name) => (
+            <RawRecord key={name} title={name} rows={worded.get(name) ?? []}>
+              {raw[name] ? (
+                <details className="transaction-details-why">
+                  <summary>Every field from {name}</summary>
+                  <RawTree value={raw[name]} />
+                </details>
+              ) : null}
+            </RawRecord>
+          ))}
+        </details>
+      ) : null}
+    </section>
   )
 }
 
@@ -395,13 +563,20 @@ export function MerchantHistory({
   merchant,
   posted,
   titleId,
+  referenceIso,
+  onOpen,
 }: {
   activity: ActivityItem
   detail: Detail
   merchant: string
   posted: string
   titleId: string
+  /** The snapshot's time, so dates name the year only when it isn't this one. */
+  referenceIso: string
+  /** Opens an earlier visit, by its transaction id. */
+  onOpen: (id: string) => void
 }) {
+  const day = (date: string) => formatListDate(date, referenceIso)
   return (
     <section className="transaction-details-history" aria-labelledby={`${titleId}-history`}>
       <h3 id={`${titleId}-history`}>
@@ -411,7 +586,7 @@ export function MerchantHistory({
       <ul>
         {detail.expected ? (
           <li className="is-expected">
-            <span>{formatActivityDate(detail.expected.date)}</span>
+            <span>{day(detail.expected.date)}</span>
             <small>Expected · {detail.expected.frequency.toLowerCase()}</small>
             <strong className="sensitive-value">
               {detail.expected.amountHigh - detail.expected.amountLow >
@@ -423,26 +598,34 @@ export function MerchantHistory({
           </li>
         ) : null}
         <li className="is-current">
-          <span>{formatActivityDate(posted)}</span>
+          <span>{day(posted)}</span>
           <small>This one</small>
           <strong className={`sensitive-value ${valueTone(activity.amount)}`}>
             {formatCurrency(activity.amount)}
           </strong>
         </li>
+        {/* An earlier visit opens in place, as its row would in a list. */}
         {detail.history.map((item) => (
           <li key={item.id}>
-            <span>{formatActivityDate(item.postedOn ?? item.date)}</span>
-            <small>
-              {[
-                item.pending ? 'Pending' : '',
-                item.account !== activity.account ? item.account : '',
-              ]
-                .filter(Boolean)
-                .join(' · ')}
-            </small>
-            <strong className={`sensitive-value ${valueTone(item.amount)}`}>
-              {formatCurrency(item.amount)}
-            </strong>
+            <button
+              type="button"
+              className="list-row transaction-history-row"
+              aria-label={`Open ${merchant} on ${day(item.postedOn ?? item.date)}`}
+              onClick={() => onOpen(item.id)}
+            >
+              <span>{day(item.postedOn ?? item.date)}</span>
+              <small>
+                {[
+                  item.pending ? 'Pending' : '',
+                  item.account !== activity.account ? item.account : '',
+                ]
+                  .filter(Boolean)
+                  .join(' · ')}
+              </small>
+              <strong className={`sensitive-value ${valueTone(item.amount)}`}>
+                {formatCurrency(item.amount)}
+              </strong>
+            </button>
           </li>
         ))}
       </ul>
@@ -450,19 +633,36 @@ export function MerchantHistory({
   )
 }
 
-/** The inspector's keys, as its footer lists them. */
-export function InspectorKeysFooter({ detail }: { detail: Detail | undefined }) {
+/**
+ * The inspector's keys, as its footer lists them: each only while the control or action it
+ * presses exists, read from the same conditions the flags and the dialog use.
+ */
+export function InspectorKeysFooter({
+  detail,
+  transaction,
+  conflictText,
+  canStep,
+  hasObject,
+}: {
+  detail: Detail | undefined
+  transaction: Transaction | undefined
+  conflictText: string | undefined
+  canStep: boolean
+  hasObject: boolean
+}) {
   return (
     <footer className="command-footer transaction-details-keys" aria-label="Keyboard">
-      <span className="command-footer-hint">
-        Next <Keys label="J" /> <Keys label="K" />
-      </span>
-      {detail?.duplicate || detail?.unusual || detail?.inferred ? (
+      {canStep ? (
+        <span className="command-footer-hint">
+          Next <Keys label="J" /> <Keys label="K" />
+        </span>
+      ) : null}
+      {reviewFlagShows(detail, conflictText) ? (
         <span className="command-footer-hint">
           Reviewed <Keys label="R" />
         </span>
       ) : null}
-      {detail?.categoryOrigin === 'suggested' ? (
+      {suggestionShows(transaction) ? (
         <span className="command-footer-hint">
           Keep <Keys label="A" /> Decline <Keys label="D" />
         </span>
@@ -472,14 +672,19 @@ export function InspectorKeysFooter({ detail }: { detail: Detail | undefined }) 
           Unlink <Keys label="U" />
         </span>
       ) : null}
-      {/* The edit rows' first letters: Category, For, Tags, People, Note, Split. */}
-      <span className="command-footer-hint">
-        Edit <Keys label="C" /> <Keys label="F" /> <Keys label="T" /> <Keys label="P" />{' '}
-        <Keys label="N" /> <Keys label="S" />
-      </span>
-      <span className="command-footer-hint">
-        Details <Keys label="⌘I" />
-      </span>
+      {/* The edit rows' first letters: Category, For, Tags, People, Note, Split; B links a
+          payback, as in paid Back. */}
+      {transaction ? (
+        <span className="command-footer-hint">
+          Edit <Keys label="C" /> <Keys label="F" /> <Keys label="T" /> <Keys label="P" />{' '}
+          <Keys label="N" /> <Keys label="S" /> <Keys label="B" />
+        </span>
+      ) : null}
+      {hasObject ? (
+        <span className="command-footer-hint">
+          Details <Keys label="⌘I" />
+        </span>
+      ) : null}
       <span className="command-footer-hint">
         Close <Keys label="Esc" />
       </span>
@@ -487,25 +692,30 @@ export function InspectorKeysFooter({ detail }: { detail: Detail | undefined }) 
   )
 }
 
-/** One source's raw record, under Raw records. */
-export function RawRecord({
+/** One source's record under Sources: its fields in words, then whatever follows them. */
+function RawRecord({
   title,
   rows,
+  children,
 }: {
   title: string
-  rows: { label: string; value: string; raw?: boolean }[]
+  rows: RecordRows
+  children?: ReactNode
 }) {
   return (
     <section className="transaction-details-record" aria-label={title}>
       <h4>{title}</h4>
-      <dl className="transaction-details-facts">
-        {rows.map(({ label, value, raw }) => (
-          <div key={label}>
-            <dt>{label}</dt>
-            <dd className={raw ? 'transaction-details-raw' : undefined}>{value}</dd>
-          </div>
-        ))}
-      </dl>
+      {rows.length ? (
+        <dl className="transaction-details-facts">
+          {rows.map(({ label, value, raw }) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd className={raw ? 'transaction-details-raw' : undefined}>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
+      {children}
     </section>
   )
 }
@@ -539,7 +749,7 @@ export function CategorySuggestionFlag({
   const [pending, setPending] = useState(false)
   const [failed, setFailed] = useState(false)
   const suggestion = transaction?.categorySuggestion
-  if (!transaction || transaction.categorySource !== 'suggested' || !suggestion) return null
+  if (!transaction || !suggestionShows(transaction) || !suggestion) return null
   const { id, category } = transaction
   const run = (edit: () => Promise<unknown>) => {
     if (pending) return
@@ -633,7 +843,7 @@ export function BenefitLinkFlag({
     setFailed(false)
     void annotate({ [purchaseId]: { benefitId: '', benefitConfirmed: false } })
       .then(() =>
-        toast.success(`Unlinked from ${match.benefitName}`, {
+        toast.success(`Unlinked from ${withoutCredit(match.benefitName)}`, {
           action: {
             label: 'Undo',
             onClick: () => void undo().catch(() => toast.error('Couldn’t undo that')),
@@ -652,9 +862,9 @@ export function BenefitLinkFlag({
             {formatActivityDate(paired.postedOn ?? paired.date)}
           </>
         ) : match.pairedId ? (
-          `Earned the ${match.benefitName} credit`
+          `Earned the ${withoutCredit(match.benefitName)} credit`
         ) : (
-          `Counts toward ${match.benefitName}`
+          `Counts toward ${withoutCredit(match.benefitName)}`
         )}
       </p>
       <Button

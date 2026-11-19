@@ -6,7 +6,6 @@ import { type ChartPeriod } from '../lib/graph-preferences'
 import type { Account, Insights, SpendingPeriodJudgment, Transaction } from '../lib/schema'
 import { Metric } from './ui'
 
-/** What moved through the account over the period, as Rust summed it. */
 /** A period's flows as Rust summed them; each is null when Rust has none for the view. */
 type TransactionSummary = {
   [Key in 'moneyIn' | 'moneyOut' | 'netFlow' | 'interest' | 'dividends']:

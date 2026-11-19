@@ -38,22 +38,29 @@ export function openFocusedKeyboardRow() {
 /** Motions over the focused list's rows: next, previous, to either end, and open. */
 export function contextualListActions(region: HTMLElement | undefined): AppAction[] {
   if (!region || !visibleKeyboardRows(region).length) return []
+  return listMotions(region)
+}
+
+/** The same motions whether or not rows have mounted yet, for a dialog that steps its rows. */
+export function listMotions(region: HTMLElement): AppAction[] {
   const label = region.getAttribute('aria-label') || 'focused list'
+  const land = (row: HTMLElement | undefined) => {
+    if (!row) return
+    row.focus()
+    row.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    // A menu (`data-keyboard-selects`) shows the row it lands on, as a sidebar does.
+    if (region.hasAttribute('data-keyboard-selects')) openFocusedKeyboardRow()
+  }
   // Rows are read when an action runs, since a list can grow or shrink while focus stays in it.
   const move = (direction: -1 | 1) => {
     const rows = visibleKeyboardRows(region)
     const current = document.activeElement?.closest<HTMLElement>('[data-keyboard-row]')
     const index = current ? rows.indexOf(current) : direction > 0 ? -1 : 0
-    const next = rows[adjacentRowIndex(index, rows.length, direction)]
-    if (!next) return
-    next.focus()
-    next.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    land(rows[adjacentRowIndex(index, rows.length, direction)])
   }
   const edge = (position: 'first' | 'last') => {
     const rows = visibleKeyboardRows(region)
-    const row = position === 'first' ? rows[0] : rows.at(-1)
-    row?.focus()
-    row?.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    land(position === 'first' ? rows[0] : rows.at(-1))
   }
   return [
     {

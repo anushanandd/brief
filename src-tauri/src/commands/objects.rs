@@ -163,7 +163,7 @@ pub(crate) async fn get_object(
                 object: object.clone(),
                 links: Vec::new(),
                 facts: Vec::new(),
-                provider: None,
+                sources: Default::default(),
             }));
     }
     state.storage()?.object(&id)

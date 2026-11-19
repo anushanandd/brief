@@ -25,10 +25,6 @@ use crate::session::is_trading_day;
 use crate::session::{CloseSeries, DailyCloses};
 use crate::transaction_policy::Kind;
 
-/// Sessions in a year, for annualizing daily volatility.
-const SESSIONS_A_YEAR: f64 = 252.0;
-/// Fewer daily returns than this say nothing about volatility or beta.
-const MIN_RISK_SESSIONS: usize = 20;
 /// Drivers and movers listed on each side.
 const LISTED: usize = 3;
 /// The key of the row that holds cash and everything not priced.
@@ -61,7 +57,6 @@ pub struct Statement {
     /// Time-weighted return less the benchmark's, in points.
     pub active_pct: Option<f64>,
     pub waterfall: Waterfall,
-    pub risk: Risk,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
@@ -93,47 +88,13 @@ pub struct Waterfall {
     pub end: f64,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct Risk {
-    /// The deepest fall from a high in the time-weighted index, so a withdrawal never reads as
-    /// a loss; zero or negative.
-    pub drawdown_pct: Option<f64>,
-    /// The daily time-weighted return's standard deviation, annualized.
-    pub volatility_pct: Option<f64>,
-    /// How far the portfolio moved for each 1% the S&P 500 moved, from the period's sessions.
-    pub beta: Option<BetaFit>,
-}
-
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct BetaFit {
-    pub beta: f64,
-    /// The share of the portfolio's daily variance the S&P 500 explains.
-    pub r_squared: f64,
-    pub sessions: usize,
-}
-
-/// How spread out the holdings are now.
-#[derive(Clone, Debug, PartialEq, Serialize, TS)]
-#[serde(rename_all = "camelCase")]
-pub struct Exposure {
-    pub holdings: usize,
-    /// One over the sum of squared weights: ten equal holdings are ten; one at 40% beside
-    /// nine equal ones makes five.
-    pub effective_holdings: f64,
-    /// The five largest holdings' share of the securities held.
-    pub top_five_pct: f64,
-}
-
-/// One period, reconciled: the statement, how concentrated the holdings are, and the return
-/// split among them when daily closes are known.
+/// One period, reconciled: the statement, and the return split among the holdings when daily
+/// closes are known.
 #[derive(Clone, Debug, PartialEq, Serialize, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodReport {
     /// `None` when the combined brokerages' history doesn't record flows or reach the start.
     pub statement: Option<Statement>,
-    pub exposure: Option<Exposure>,
     pub attribution: Option<Attribution>,
 }
 
@@ -154,7 +115,6 @@ pub fn report(
     } = snapshot;
     PeriodReport {
         statement: statement(performance, trades, transactions, start),
-        exposure: exposure(performance, holdings),
         attribution: (!closes.is_empty())
             .then(|| attribute(performance, holdings, trades, closes, start, only))
             .flatten(),
@@ -188,18 +148,6 @@ fn window(days: &[Day], start: Option<NaiveDate>) -> Option<&[Day]> {
     };
     let slice = &days[from..];
     (slice.len() >= 2).then_some(slice)
-}
-
-/// Each interval's return, its flow counted at the interval's end as the time-weighted return
-/// counts it; an interval that opens at zero has none.
-fn daily_returns(days: &[Day], value: impl Fn(&Day) -> Option<f64>) -> Vec<Option<f64>> {
-    days.windows(2)
-        .map(|pair| {
-            let (prior, current) = (value(&pair[0])?, value(&pair[1])?);
-            let flow = pair[1].deposits - pair[0].deposits;
-            (prior > 0.0).then(|| (current - flow) / prior - 1.0)
-        })
-        .collect()
 }
 
 /// The ledger's realized gains, income, fees, and taxes after `start` through `end`, in
@@ -273,60 +221,6 @@ fn booked(
     booked
 }
 
-fn risk(days: &[Day]) -> Risk {
-    let portfolio = daily_returns(days, |day| Some(day.value));
-    let benchmark = daily_returns(days, |day| day.benchmark);
-    let mut index = 1.0_f64;
-    let mut peak = 1.0_f64;
-    let mut drawdown = 0.0_f64;
-    for r in portfolio.iter().flatten() {
-        index *= 1.0 + r;
-        peak = peak.max(index);
-        drawdown = drawdown.min(index / peak - 1.0);
-    }
-    // Sessions only: a weekend's flat day isn't a day of risk.
-    let sessions: Vec<(f64, Option<f64>)> = days
-        .get(1..)
-        .unwrap_or_default()
-        .iter()
-        .zip(portfolio.iter().zip(&benchmark))
-        .filter(|(day, _)| is_trading_day(day.date))
-        .filter_map(|(_, (r, b))| Some(((*r)?, *b)))
-        .collect();
-    let mean = |values: &[f64]| values.iter().sum::<f64>() / values.len().max(1) as f64;
-    let own: Vec<f64> = sessions.iter().map(|(r, _)| *r).collect();
-    let volatility = (own.len() >= MIN_RISK_SESSIONS).then(|| {
-        let m = mean(&own);
-        let variance =
-            own.iter().map(|r| (r - m).powi(2)).sum::<f64>() / (own.len() - 1).max(1) as f64;
-        round2(variance.sqrt() * SESSIONS_A_YEAR.sqrt() * 100.0)
-    });
-    let paired: Vec<(f64, f64)> = sessions
-        .iter()
-        .filter_map(|(r, b)| Some((*r, (*b)?)))
-        .collect();
-    let beta = (paired.len() >= MIN_RISK_SESSIONS)
-        .then(|| {
-            let x: Vec<f64> = paired.iter().map(|(_, b)| *b).collect();
-            let y: Vec<f64> = paired.iter().map(|(r, _)| *r).collect();
-            let (mx, my) = (mean(&x), mean(&y));
-            let sxx: f64 = x.iter().map(|x| (x - mx).powi(2)).sum();
-            let syy: f64 = y.iter().map(|y| (y - my).powi(2)).sum();
-            let sxy: f64 = x.iter().zip(&y).map(|(x, y)| (x - mx) * (y - my)).sum();
-            (sxx > 0.0 && syy > 0.0).then(|| BetaFit {
-                beta: round2(sxy / sxx),
-                r_squared: round2(sxy * sxy / (sxx * syy)),
-                sessions: paired.len(),
-            })
-        })
-        .flatten();
-    Risk {
-        drawdown_pct: (!portfolio.is_empty()).then(|| round2(drawdown * 100.0)),
-        volatility_pct: volatility,
-        beta,
-    }
-}
-
 /// The statement for `days`, labeled with its window.
 fn statement_of(
     window: Option<Window>,
@@ -397,7 +291,6 @@ fn statement_of(
             taxes: from_minor(booked.taxes),
             end: from_minor(end),
         },
-        risk: risk(days),
     })
 }
 
@@ -501,26 +394,6 @@ fn held(holdings: &[Holding], accounts: &BTreeSet<String>) -> BTreeMap<String, (
         }
     }
     held
-}
-
-/// How concentrated the combined brokerages' securities are now.
-pub fn exposure(performance: &[Performance], holdings: &[Holding]) -> Option<Exposure> {
-    let (_, accounts) = combined(performance)?;
-    let mut values: Vec<f64> = held(holdings, &accounts)
-        .into_values()
-        .map(|(_, value)| value)
-        .collect();
-    let total: f64 = values.iter().sum();
-    if total <= 0.0 {
-        return None;
-    }
-    values.sort_by(|a, b| b.total_cmp(a));
-    let squares: f64 = values.iter().map(|value| (value / total).powi(2)).sum();
-    Some(Exposure {
-        holdings: values.len(),
-        effective_holdings: (10.0 / squares).round() / 10.0,
-        top_five_pct: (values.iter().take(5).sum::<f64>() / total * 1_000.0).round() / 10.0,
-    })
 }
 
 /// One holding's part in the period, or the cash and unpriced row.

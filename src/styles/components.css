@@ -143,17 +143,15 @@
   line-height: var(--heading-line);
   letter-spacing: -0.015em;
 }
-/* A control beside a heading overhangs it instead of making it taller, so every card's title
-   sits the same distance from its top edge. */
+/* A control beside a heading centers on the title's line and overhangs it instead of making it
+   taller, whatever its height, so every card's title sits the same distance from its top edge. */
 .section-heading-action {
   display: flex;
+  height: var(--heading-line);
   flex: none;
   align-items: center;
   gap: 8px;
   line-height: var(--heading-line);
-}
-.section-heading-action:has(button, [role='combobox']) {
-  margin-block: calc((var(--heading-line) - var(--button-height)) / 2);
 }
 .section-heading p {
   margin: 4px 0 0;
@@ -423,12 +421,9 @@ number-flow-react {
 .brokerage-performance-card .home-balance-header {
   margin-bottom: 16px;
 }
-.home-primary-grid,
 .home-secondary-grid {
   display: grid;
   gap: 16px;
-}
-.home-secondary-grid {
   align-items: stretch;
   grid-template-columns: minmax(0, 1fr) repeat(2, var(--companion-card-width));
 }
@@ -591,7 +586,6 @@ number-flow-react {
   border-bottom: 0;
 }
 .account-group-row {
-  width: 100%;
   border: 0;
   background: transparent;
   color: inherit;
@@ -604,12 +598,14 @@ number-flow-react {
 /* Disclosed rows fade in where they open and leave at once; merchant groups and ranked-bar
    details share this. */
 .account-group-accounts,
-.merchant-group-activities {
+.merchant-group-activities,
+.ranked-bars-details {
   transition: opacity var(--duration-quick) var(--ease-out);
 }
 @starting-style {
   .account-group-accounts,
-  .merchant-group-activities {
+  .merchant-group-activities,
+  .ranked-bars-details {
     opacity: 0;
   }
 }
@@ -761,86 +757,173 @@ number-flow-react {
 :is(.account-row, .financial-activity-row, .expected-activity-item):last-child {
   border-bottom: 0;
 }
-/* A row that washes reaches into the gutter, so its wash has room before the first item and its
-   text still lines up with the heading. Rows set only their block padding. */
-.account-row,
-.financial-activity-row:not(.financial-activity-row-columns),
-.news-row,
-.settings-destination-row,
-.calendar-entry,
-.account-statement-row,
-.benefit-period-row,
-.health-issue,
-.taxes-list-link,
-.connection-row,
-.activity-log-row {
+/* Every list row is a `.list-row`, and this is all of its behavior. It reaches into the gutter, so
+   its wash starts before the first mark while its text lines up with the heading; rows set only
+   their block padding. Under the pointer it washes only when it opens. The row the keyboard
+   reached, the selected row, and the current page take the selection tone. Focus counts only
+   when the keyboard put it there: `[data-pointer]` marks a click as the last input (main.tsx). */
+.list-row {
   margin-inline: calc(-1 * var(--row-bleed));
   padding-inline: var(--row-bleed);
+}
+button.list-row {
+  width: calc(100% + 2 * var(--row-bleed));
+}
+.list-row:where(a[href], button, [data-keyboard-open]) {
+  cursor: pointer;
+}
+.list-row:where(a[href], button, [data-keyboard-open]):hover,
+.list-row[data-highlighted] {
+  background: var(--hover-wash);
+}
+.list-row:is([data-selected], [aria-current='page'], :focus:not([data-pointer] *)) {
+  background: var(--sidebar-accent);
+}
+/* A washed row is rounded, as macOS draws a list's selection, and the rules on either side of it
+   hide so they don't run into its corners, whether rows are siblings or each sits in an item.
+   Only a washed row is rounded: a rounded row's rule curls at its ends. */
+.list-row:is(
+  :where(a[href], button, [data-keyboard-open]):hover,
+  [data-highlighted],
+  [data-selected],
+  [aria-current='page'],
+  :focus:not([data-pointer] *)
+),
+li:has(
+  > .list-row:is(
+    :where(a[href], button, [data-keyboard-open]):hover,
+    [data-highlighted],
+    [data-selected],
+    [aria-current='page'],
+    :focus:not([data-pointer] *)
+  )
+) {
+  border-radius: var(--radius-control);
+  border-color: transparent;
+}
+.list-row:has(
+  + .list-row:is(
+    :where(a[href], button, [data-keyboard-open]):hover,
+    [data-highlighted],
+    [data-selected],
+    [aria-current='page'],
+    :focus:not([data-pointer] *)
+  )
+),
+li:has(
+  + li
+    > .list-row:is(
+      :where(a[href], button, [data-keyboard-open]):hover,
+      [data-highlighted],
+      [data-selected],
+      [aria-current='page'],
+      :focus:not([data-pointer] *)
+    )
+),
+li:has(
+    + li
+      > .list-row:is(
+        :where(a[href], button, [data-keyboard-open]):hover,
+        [data-highlighted],
+        [data-selected],
+        [aria-current='page'],
+        :focus:not([data-pointer] *)
+      )
+  )
+  > .list-row {
+  border-bottom-color: transparent;
+}
+.list-row:is(
+    :where(a[href], button, [data-keyboard-open]):hover,
+    [data-highlighted],
+    [data-selected],
+    [aria-current='page'],
+    :focus:not([data-pointer] *)
+  )
+  + .list-row,
+li:has(
+    > .list-row:is(
+      :where(a[href], button, [data-keyboard-open]):hover,
+      [data-highlighted],
+      [data-selected],
+      [aria-current='page'],
+      :focus:not([data-pointer] *)
+    )
+  )
+  + li,
+li:has(
+    > .list-row:is(
+      :where(a[href], button, [data-keyboard-open]):hover,
+      [data-highlighted],
+      [data-selected],
+      [aria-current='page'],
+      :focus:not([data-pointer] *)
+    )
+  )
+  + li
+  > .list-row {
+  border-top-color: transparent;
+}
+/* A table row washes through its cells and rounds through its first and last. */
+tr.list-row[data-keyboard-open] {
+  cursor: pointer;
+}
+tr.list-row[data-keyboard-open]:hover > * {
+  background: var(--hover-wash);
+}
+tr.list-row:is([data-selected], [aria-current='page'], :focus:not([data-pointer] *)) > * {
+  background: var(--sidebar-accent);
+}
+tr.list-row:is(
+    [data-keyboard-open]:hover,
+    [data-selected],
+    [aria-current='page'],
+    :focus:not([data-pointer] *)
+  )
+  > * {
+  border-bottom-color: transparent;
+}
+tr.list-row:is(
+    [data-keyboard-open]:hover,
+    [data-selected],
+    [aria-current='page'],
+    :focus:not([data-pointer] *)
+  )
+  > :first-child {
+  border-radius: var(--radius-control) 0 0 var(--radius-control);
+}
+tr.list-row:is(
+    [data-keyboard-open]:hover,
+    [data-selected],
+    [aria-current='page'],
+    :focus:not([data-pointer] *)
+  )
+  > :last-child {
+  border-radius: 0 var(--radius-control) var(--radius-control) 0;
+}
+tr.list-row:has(
+    + tr.list-row:is(
+        [data-keyboard-open]:hover,
+        [data-selected],
+        [aria-current='page'],
+        :focus:not([data-pointer] *)
+      )
+  )
+  > * {
+  border-bottom-color: transparent;
 }
 /* Lists that scroll leave room for that reach, and the cards around them don't clip it. */
 .spending-activity-scroll,
 .holding-activity-scroll,
 .analytics-activity-scroll,
 .holding-news-content,
-.activity-log {
+.activity-log,
+.expected-activity-list,
+.spending-benefits-scroll,
+.people-table-body,
+.trips-places {
   margin-inline: calc(-1 * var(--row-bleed));
   padding-inline: var(--row-bleed);
-}
-/* Hovering a row washes it; only a link inside text turns the accent. */
-.account-row:hover,
-.news-row:hover,
-.settings-destination-row:hover,
-a.calendar-entry:hover,
-.position-table tbody tr:has(a):hover > * {
-  background: var(--hover-wash);
-}
-/* A washed row is rounded, as macOS draws a list's selection, and the rules on either side of it
-   hide so they don't run into its corners. Only a washed row is rounded: a rounded row's rule
-   curls at its ends. */
-.holdings-table-row:is(:hover, [aria-current='page']),
-.account-row:is(:hover, [aria-current='page']),
-.news-row:hover,
-.settings-destination-row:hover,
-a.calendar-entry:hover,
-.people-table-row:is(:hover, .is-current),
-.financial-activity-row:is([data-selected], [data-highlighted], :focus, .is-openable:hover),
-.account-statement-row:hover,
-.logs-page :is(.connection-row, .activity-log-row):focus,
-.benefit-period-row:hover,
-.benefit-periods li:focus > .benefit-period-row,
-.health-issue:focus,
-.taxes-list-link:hover {
-  border-radius: var(--radius-control);
-  border-bottom-color: transparent;
-}
-.holdings-table-row:has(+ .holdings-table-row:is(:hover, [aria-current='page'])),
-.account-row:has(+ .account-row:is(:hover, [aria-current='page'])),
-.news-row:has(+ .news-row:hover),
-.position-table tbody tr:has(a):hover > *,
-.position-table tbody tr:has(+ tr:has(a):hover) > *,
-.people-table-body > li:has(+ li > .people-table-row:is(:hover, .is-current)) > .people-table-row,
-.financial-activity-row:has(
-  + .financial-activity-row:is([data-selected], [data-highlighted], :focus, .is-openable:hover)
-),
-.account-statement-row:has(+ .account-statement-row:hover),
-.logs-page :is(.connection-row, .activity-log-row):has(+ :focus) {
-  border-bottom-color: transparent;
-}
-.health-issue:is(:focus, :focus + .health-issue),
-.settings-destination-row:is(:hover, :hover + .settings-destination-row),
-.taxes-list > li:is(:has(> .taxes-list-link:hover), :has(> .taxes-list-link:hover) + li),
-.calendar-day-list > li:is(:has(> a.calendar-entry:hover), :has(> a.calendar-entry:hover) + li) {
-  border-top-color: transparent;
-}
-/* A table row rounds through its first and last cells. */
-.position-table tbody tr:has(a):hover > :first-child {
-  border-radius: var(--radius-control) 0 0 var(--radius-control);
-}
-.position-table tbody tr:has(a):hover > :last-child {
-  border-radius: 0 var(--radius-control) var(--radius-control) 0;
-}
-.position-table tbody tr:has(a) {
-  cursor: pointer;
 }
 .financial-activity-row {
   display: grid;
@@ -1001,23 +1084,6 @@ a.calendar-entry:hover,
 .transaction-mark.brand-mark img {
   padding: 0;
   object-fit: cover;
-}
-.transaction-mark-interest,
-.transaction-mark-dividend,
-.transaction-mark-income,
-.transaction-mark-refund {
-  background: var(--positive-soft);
-  color: var(--positive);
-}
-.transaction-mark-transfer,
-.transaction-mark-payment,
-.transaction-mark-cash {
-  background: color-mix(in srgb, var(--chart-secondary) 13%, var(--surface-raised));
-  color: var(--chart-secondary);
-}
-.transaction-mark-fee {
-  background: var(--negative-soft);
-  color: var(--negative);
 }
 .brand-mark {
   position: relative;

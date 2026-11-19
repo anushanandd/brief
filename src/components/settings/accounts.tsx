@@ -11,6 +11,7 @@ import { accountDisplayName } from '../../lib/account-names'
 import { accountStartDate } from '../../lib/account-start-dates'
 import { useRegisterActions, type AppAction } from '../../lib/action-system'
 import { chooseCatalogCard, readCardRules, saveAccountLink } from '../../lib/api'
+import { withoutCredit } from '../../lib/benefit-copy'
 import type { CardRules } from '../../lib/bindings/CardRules'
 import { cardsWithoutRules } from '../../lib/card-drafts'
 import { snapshotToday } from '../../lib/dates'
@@ -21,8 +22,9 @@ import {
   type Settings,
 } from '../../lib/finance-settings'
 import { formatCurrency, formatShortDay } from '../../lib/format'
-import { getExternalLogosEnabled } from '../../lib/logos'
+import { useExternalLogosEnabled } from '../../lib/logos'
 import { manualAccountKinds, type FinanceSettings, type FinanceSnapshot } from '../../lib/schema'
+import { parseAmount } from '../../lib/taxes'
 import { AccountMark } from '../account-mark'
 import { BenefitMark } from '../card-benefits'
 import { CardDraftReview, CardRulesChanges } from '../card-rules-draft'
@@ -412,7 +414,7 @@ function CardPreferences({ data, settings, save }: SectionProps) {
   const accountDisplayNames = settings.accountNames
   const spendingAccountId = settings.spendingAccountId ?? ''
   const hiddenBenefits = settings.hiddenBenefitIds
-  const externalLogosEnabled = getExternalLogosEnabled()
+  const externalLogosEnabled = useExternalLogosEnabled()
   const creditAccounts = data.accounts.filter(({ type }) => type === 'credit')
   const selectedSpendingAccount = creditAccounts.some(({ id }) => id === spendingAccountId)
     ? spendingAccountId
@@ -544,7 +546,7 @@ function CardPreferences({ data, settings, save }: SectionProps) {
                     }))
                   }}
                 />
-                <span>{benefit.name}</span>
+                <span>{withoutCredit(benefit.name)}</span>
               </label>
             ))}
           </div>
@@ -579,12 +581,6 @@ const field = (label: string, input: React.ReactNode) => (
     {input}
   </label>
 )
-
-/** A dollar amount typed by hand, as a number, or nothing when it isn't one. */
-function parseAmount(value: string) {
-  const amount = Number(value.replaceAll(/[,$\s]/g, ''))
-  return Number.isFinite(amount) ? Math.round(amount * 100) / 100 : undefined
-}
 
 /**
  * Accounts no provider reports, each a name, a kind, and dated balances. The latest balance
@@ -726,7 +722,11 @@ function ManualAccounts({ data, settings, save }: SectionProps) {
                       <Button size="compact" variant="ghost" onClick={() => setUpdating(undefined)}>
                         Cancel
                       </Button>
-                      <Button size="compact" type="submit">
+                      <Button
+                        size="compact"
+                        type="submit"
+                        disabled={parseAmount(updating.value) === undefined || !updating.date}
+                      >
                         Save balance
                       </Button>
                     </span>

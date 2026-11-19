@@ -201,7 +201,7 @@ export function rowObjectId(rowId: string): string | undefined {
  * One of Rust's search results as a row, keeping Rust's order: word matches, then meaning
  * matches below them. Enter opens its page; ⌘↵ or ⌘I shows its raw view.
  */
-export function objectRow(
+function objectRow(
   hit: SearchHit,
   index: number,
   context: RowContext & Pick<PaletteActionsInput, 'showObject' | 'runVerb'>,

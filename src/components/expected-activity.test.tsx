@@ -131,15 +131,11 @@ it('scopes recurring subscriptions to the selected account', async () => {
   expect(html).toContain('selected · Monthly subscription')
   expect(html).toContain('category-mark')
   expect(html).not.toContain('selected streaming transaction logo')
-  const merchantLink = html.match(/<a [^>]*class="expected-activity-merchant"[^>]*>/)?.[0]
-  expect(merchantLink).toContain('/activities?')
-  expect(merchantLink).toContain('account=selected')
-  expect(merchantLink).toContain('q=description%3Aselected')
-  expect(merchantLink).toContain(
-    'aria-label="View previous selected streaming activity in selected"',
-  )
-  expect(html).toContain('class="expected-activity-info"')
-  expect(html).toContain('aria-label="Estimate details for selected streaming"')
+  // The whole row opens its latest charge, as activity rows do; the name is plain text.
+  expect(html).toMatch(/<li class="list-row expected-activity-item"[^>]*data-keyboard-open/)
+  expect(html).not.toMatch(/<a [^>]*class="expected-activity-merchant"/)
+  // The name itself carries the estimate's details; no separate info mark sits beside it.
+  expect(html).not.toContain('expected-activity-info')
   expect(html).toContain('class="financial-activity-copy"')
   expect(html).toContain('class="financial-activity-meta"')
   expect(html).toContain('<time dateTime="2026-09-20">in 2 days</time>')

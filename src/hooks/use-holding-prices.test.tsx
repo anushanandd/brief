@@ -67,15 +67,15 @@ function mount() {
   const client = new QueryClient()
   const root = createRoot(document.createElement('div'))
   let result!: ReturnType<typeof useHoldingPrices>
-  function Probe({ symbol, range }: { symbol: string; range: number }) {
-    result = useHoldingPrices(symbol, range, true, ['AAA', 'BBB'])
+  function Probe({ symbol, range, warm }: { symbol: string; range: number; warm: string }) {
+    result = useHoldingPrices(symbol, range, true, warm.split(','))
     return null
   }
-  const render = (symbol: string, range: number) =>
+  const render = (symbol: string, range: number, warm = 'AAA,BBB') =>
     act(async () =>
       root.render(
         <QueryClientProvider client={client}>
-          <Probe symbol={symbol} range={range} />
+          <Probe symbol={symbol} range={range} warm={warm} />
         </QueryClientProvider>,
       ),
     )
@@ -109,5 +109,16 @@ it('keeps the previous range on screen, marked stale, until the new range arrive
   await chart.render('BBB', 0)
   expect(chart.current().history).toBeUndefined()
   expect(chart.current().stale).toBe(false)
+  await chart.unmount()
+})
+
+it('restarts the chart only when the warmed symbols change, not on each new list', async () => {
+  const chart = mount()
+  await chart.render('AAA', 86400)
+  await chart.render('AAA', 86400)
+  expect(startHoldingChart).toHaveBeenCalledTimes(1)
+  await chart.render('AAA', 86400, 'AAA,CCC')
+  expect(startHoldingChart).toHaveBeenCalledTimes(2)
+  expect(vi.mocked(startHoldingChart).mock.calls.at(-1)?.[3]).toEqual(['AAA', 'CCC'])
   await chart.unmount()
 })

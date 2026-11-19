@@ -31,6 +31,18 @@ function playFirstReveal() {
 // Never leave the page held if startup stalls.
 setTimeout(playFirstReveal, 4000)
 
+// A row focused by a click, or handed focus back when its dialog closes, draws no wash until a key
+// other than Escape or a bare modifier is pressed.
+window.addEventListener('pointerdown', () => (root.dataset.pointer = ''), true)
+window.addEventListener(
+  'keydown',
+  (event) => {
+    if (!['Escape', 'Meta', 'Shift', 'Alt', 'Control'].includes(event.key))
+      delete root.dataset.pointer
+  },
+  true,
+)
+
 function StartupReady() {
   const finance = useLiveFinance()
   useEffect(() => {

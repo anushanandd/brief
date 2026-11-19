@@ -136,11 +136,10 @@
   flex-direction: column;
   gap: 2px;
 }
+/* A long label or figure wraps rather than losing its end. */
 .account-switcher-copy > span,
 .account-switcher-copy > strong {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  overflow-wrap: break-word;
 }
 .account-switcher-copy > span {
   font-size: var(--type-meta);
@@ -383,20 +382,9 @@
 .accounts-menu > nav {
   display: grid;
 }
-.accounts-menu .account-row {
-  color: inherit;
-}
+.accounts-menu .account-row,
 .accounts-menu .account-group-section-heading {
-  margin-inline: calc(-1 * var(--row-bleed));
-  padding-inline: var(--row-bleed);
   color: inherit;
-}
-.accounts-menu .account-group-section-heading,
-.accounts-menu .account-group-section-link {
-  border-radius: var(--radius-control);
-}
-.accounts-menu .account-row {
-  transition: background-color var(--duration-quick) var(--ease-out);
 }
 .accounts-menu .account-group-section {
   display: grid;
@@ -411,14 +399,6 @@
 }
 .accounts-menu .account-group-section-link {
   text-decoration: none;
-  transition: background-color var(--duration-quick) var(--ease-out);
-}
-.accounts-menu .account-group-section-link:hover {
-  background: var(--hover-wash);
-}
-.accounts-menu .account-row[aria-current='page'],
-.accounts-menu .account-group-section-link[aria-current='page'] {
-  background: var(--sidebar-accent);
 }
 /* An unavailable value's note under the institution keeps its own case. */
 .account-row-name > small + small {
@@ -493,7 +473,6 @@
   font: inherit;
   font-size: var(--type-body);
   text-align: left;
-  transition: background-color var(--duration-quick) var(--ease-out);
 }
 .account-statement-row:last-child {
   border-bottom: 0;
@@ -520,9 +499,6 @@ a.account-statement-row {
 .account-statement-import small {
   color: var(--text-tertiary);
   font-size: var(--type-meta);
-}
-.account-statement-row:hover {
-  background: var(--hover-wash);
 }
 .account-statement-row > strong {
   font-weight: 500;

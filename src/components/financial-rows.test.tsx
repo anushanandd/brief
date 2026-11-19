@@ -48,9 +48,7 @@ async function renderWithRouter(view: ReactNode) {
 it.each(['positions', 'market', 'summary'] as const)(
   'keeps security links, coverage and neutral zero changes in the %s view',
   async (view) => {
-    const html = await renderWithRouter(
-      <PositionTable positions={[position]} view={view} externalLogosEnabled={false} />,
-    )
+    const html = await renderWithRouter(<PositionTable positions={[position]} view={view} />)
     expect(html).toContain('href="/holdings/TEST"')
     expect(html).toContain('USD valuation unavailable')
     expect(html).toContain('data-keyboard-row="true"')
@@ -69,12 +67,8 @@ it('marks public security prices and market changes separately from position val
     dailyChangePct: 1,
     weeklyChangePct: 2,
   }
-  const market = await renderWithRouter(
-    <PositionTable positions={[priced]} view="market" externalLogosEnabled={false} />,
-  )
-  const positions = await renderWithRouter(
-    <PositionTable positions={[priced]} view="positions" externalLogosEnabled={false} />,
-  )
+  const market = await renderWithRouter(<PositionTable positions={[priced]} view="market" />)
+  const positions = await renderWithRouter(<PositionTable positions={[priced]} view="positions" />)
   expect(market.match(/class="public-market-value"/g)).toHaveLength(3)
   expect(market).toContain('class="public-market-value">$25.00</td>')
   expect(market).toContain('<td>$53.13</td>')
@@ -84,7 +78,6 @@ it('marks public security prices and market changes separately from position val
 it('keeps unmatched sales visible without inventing profit or a current-year date', async () => {
   const html = await renderWithRouter(
     <SalesTable
-      externalLogosEnabled={false}
       referenceIso="2026-09-03T12:00:00Z"
       sales={[
         trade({

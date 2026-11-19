@@ -59,7 +59,6 @@ it('starts a summary where the portfolio’s reconciled period does, or the day 
       taxes: 0,
       end: 1010,
     },
-    risk: { drawdownPct: null, volatilityPct: null, beta: null },
   }
   const withPeriods = {
     ...data,

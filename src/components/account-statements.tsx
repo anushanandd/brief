@@ -142,7 +142,9 @@ export function AccountStatements({ accountId }: { accountId: string }) {
           <SettingsLink
             key={statement.id}
             target="statement-history"
-            className="account-statement-row"
+            className="list-row account-statement-row"
+            data-keyboard-row
+            data-keyboard-open
           >
             <strong>{statement.fileName}</strong>
             <small>
@@ -161,7 +163,7 @@ export function AccountStatements({ accountId }: { accountId: string }) {
           <button
             type="button"
             key={statement.id}
-            className="account-statement-row"
+            className="list-row account-statement-row"
             data-keyboard-row
             data-keyboard-open
             onClick={() => open(statement)}
@@ -186,13 +188,7 @@ export function AccountStatements({ accountId }: { accountId: string }) {
                   : 'This statement can’t go into this account'}
             </small>
           </p>
-          <Button
-            icon={X}
-            size="compact"
-            disabled={pending}
-            data-command="account.statements.import"
-            onClick={() => setPreview(undefined)}
-          >
+          <Button icon={X} size="compact" disabled={pending} onClick={() => setPreview(undefined)}>
             Cancel
           </Button>
           <Button

@@ -444,11 +444,6 @@
       "trading": 0.0,
       "unpriced": []
     },
-    "exposure": {
-      "effectiveHoldings": 1.9,
-      "holdings": 2,
-      "topFivePct": 100.0
-    },
     "statement": {
       "activePct": 2.76,
       "annualized": null,
@@ -459,11 +454,6 @@
       "investmentGain": 480.5,
       "moneyWeightedPct": 4.58,
       "netFlows": 1000.0,
-      "risk": {
-        "beta": null,
-        "drawdownPct": 0.0,
-        "volatilityPct": null
-      },
       "start": "2026-08-31",
       "startValue": 10000.0,
       "timeWeightedPct": 4.6,

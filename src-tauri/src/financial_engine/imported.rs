@@ -168,6 +168,7 @@ fn plaid_record(
         account_owner: None,
         iso_currency_code: Some("USD".into()),
         unofficial_currency_code: None,
+        payment_meta: None,
     }
 }
 

@@ -60,7 +60,7 @@ export function activityBenefitNote(
   item: BenefitActivity,
   paired?: { merchant: string; date: string },
 ): ActivityBenefitNote | null {
-  const name = item.benefitName
+  const benefit = withoutCredit(item.benefitName)
   if (item.kind === 'purchase') {
     const label = purchaseCreditLabel(item.credit)
     if (!label) return null
@@ -70,10 +70,9 @@ export function activityBenefitNote(
         : item.credit?.state === 'late' || item.credit?.state === 'not-credited'
           ? 'warning'
           : undefined
-    return { text: `${name} · ${label}`, label: purchaseCreditBadge(item.credit), tone }
+    return { text: `${benefit} · ${label}`, label: purchaseCreditBadge(item.credit), tone }
   }
   if (item.pending) return null
-  const benefit = withoutCredit(name)
   if (item.kind === 'credit')
     return {
       text: paired
@@ -86,10 +85,17 @@ export function activityBenefitNote(
   return null
 }
 
-/** A benefit's name without a trailing "credit", for copy that adds its own. */
-export const withoutCredit = (name: string) => name.replace(/\s+credit$/i, '')
+/** A benefit's last credit as its row names it, from Rust's calendar day. */
+export const lastCreditText = ({ amount, date }: NonNullable<BenefitWindow['lastCredit']>) =>
+  `Last credit ${formatCurrency(amount)} · ${formatDay(date)}`
 
-/** The one-line state of a benefit window. */
+/**
+ * A benefit's name without a trailing "credit" or "credits", as titles show it and as copy
+ * that adds its own wants it. A name that is only the word keeps it.
+ */
+export const withoutCredit = (name: string) => name.replace(/\s+credits?$/i, '')
+
+/** The one-line state of a benefit window; empty when nothing has happened in it. */
 export function benefitStatus(benefit: BenefitWindow): {
   text: string
   tone?: 'positive'
@@ -114,7 +120,8 @@ export function benefitStatus(benefit: BenefitWindow): {
   if (benefit.awaitingCreditAmount > 0)
     return { text: `${formatCurrency(benefit.awaitingCreditAmount)} credit expected` }
   if (benefit.status === 'matched') return { text: 'Purchase found · no credit yet' }
-  return { text: 'No credit detected' }
+  // Nothing credited and nothing bought says itself through the empty progress.
+  return { text: '' }
 }
 
 /** The supporting line under a benefit's status: what is left and how sure that is. */

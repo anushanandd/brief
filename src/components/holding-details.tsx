@@ -26,17 +26,18 @@ import { ReceiptText, X } from './icons'
 import { useObjectDetailsAction } from './object-details'
 import { SecurityMark } from './security-mark'
 import { SettingsLink } from './settings-dialog'
+import { TransactionDialog } from './transaction-dialog'
 import { Button, Card, EmptyState, Metric, ScrollCueCard, SectionHeading } from './ui'
 import { Dialog, dialogAutofocus } from './ui/dialog'
+
+/** Pooled instruments, which have no earnings dates of their own. */
+export const isFundKind = (kind: string | null | undefined) =>
+  /^(etf|mutual ?_?fund|fund|cef|index)$/i.test(kind?.trim() ?? '')
 
 /**
  * What you own of one security, in a card beside its price: worth and weight, gain, shares,
  * and cost. Taxes matter when deciding to sell, not on every look, so they open on request.
  */
-/** Pooled instruments, which have no earnings dates of their own. */
-export const isFundKind = (kind: string | null | undefined) =>
-  /^(etf|mutual ?_?fund|fund|cef|index)$/i.test(kind?.trim() ?? '')
-
 export function PositionCard({
   data,
   ticker,
@@ -256,7 +257,7 @@ export function HoldingAccounts({ data, ticker }: { data: FinanceSnapshot; ticke
             return (
               <Link
                 key={id}
-                className="account-row"
+                className="list-row account-row"
                 to="/accounts"
                 search={{ account: id }}
                 data-keyboard-row
@@ -513,6 +514,7 @@ export function HoldingActivity({ data, ticker }: { data: FinanceSnapshot; ticke
     },
     financeSettings(data).accountNames,
   )
+  const [opened, setOpened] = useState<string>()
   return (
     <ScrollCueCard className="holding-detail-card" scrollSelector=".holding-activity-scroll">
       <SectionHeading title="Activity" />
@@ -527,8 +529,15 @@ export function HoldingActivity({ data, ticker }: { data: FinanceSnapshot; ticke
           activities={activities}
           referenceIso={data.updatedAt}
           emptyMessage={`No imported activity linked to ${ticker || 'this holding'}.`}
+          onOpen={(activity) => setOpened(activity.id)}
+          selectedId={opened}
         />
       </div>
+      <TransactionDialog
+        activity={activities.find(({ id }) => id === opened)}
+        data={data}
+        onClose={() => setOpened(undefined)}
+      />
     </ScrollCueCard>
   )
 }

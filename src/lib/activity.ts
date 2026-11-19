@@ -1,6 +1,6 @@
 import { accountDisplayName, type AccountDisplayNames } from './account-names'
 import { activityBenefitNote, type ActivityBenefitNote } from './benefit-copy'
-import { daysBetween } from './dates'
+import { daysBetween, localDateKey } from './dates'
 import { asciiMinus, displayCase, formatCalendarDate, formatCurrency } from './format'
 import { stockLogoUrl, transactionLogoUrl } from './logos'
 import { inferredNeedSubjects } from './needs'
@@ -212,13 +212,27 @@ export function activityMethod(activity: ActivityItem) {
   return paymentChannelLabel(activity.paymentChannel)
 }
 
-/** The time of purchase as the clock read where it happened, or nothing when unknown. */
-export function activityTime(activity: Pick<ActivityItem, 'occurredAt'>) {
-  const time = activity.occurredAt && /T(\d{2}):(\d{2})/.exec(activity.occurredAt)
-  if (!time) return ''
-  const hour = Number(time[1])
-  return `${hour % 12 || 12}:${time[2]} ${hour < 12 ? 'AM' : 'PM'}`
+/**
+ * The time of purchase as the clock read where it happened, or nothing when unknown. A UTC
+ * instant (Plaid's, ending `Z`) reads in this Mac's zone, and only when that falls on the
+ * purchase's own `date`, since a bank that sends a bare date as a time would read a day off.
+ */
+export function activityTime(activity: Pick<ActivityItem, 'occurredAt'> & { date?: string }) {
+  const at = activity.occurredAt
+  if (at?.endsWith('Z')) {
+    const instant = Date.parse(at)
+    if (Number.isNaN(instant)) return ''
+    if (activity.date && localDateKey(instant / 1000) !== transactionDateKey(activity.date))
+      return ''
+    const local = new Date(instant)
+    return clockTime(local.getHours(), String(local.getMinutes()).padStart(2, '0'))
+  }
+  const time = at && /T(\d{2}):(\d{2})/.exec(at)
+  return time ? clockTime(Number(time[1]), time[2]!) : ''
 }
+
+const clockTime = (hour: number, minutes: string) =>
+  `${hour % 12 || 12}:${minutes} ${hour < 12 ? 'AM' : 'PM'}`
 
 export function activityMatchesSearch(activity: ActivityItem, query: string) {
   const text = query.trim().toLocaleLowerCase()

@@ -3,12 +3,22 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 
 import { styles } from '@number-flow/react'
+import { act } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 
 import { setAmountsHidden } from '../lib/format'
 import { Save } from './icons'
-import { AnimatedCurrency, Button, Change, ChartChange, ChartRangeSelect, hasMoreBelow } from './ui'
+import {
+  AnimatedCurrency,
+  Button,
+  Change,
+  ChartChange,
+  ChartRangeSelect,
+  hasMoreBelow,
+  ScrollCueCard,
+} from './ui'
 
 afterEach(() => setAmountsHidden(false))
 
@@ -79,6 +89,42 @@ it('shows a card scroll cue only while content remains below', () => {
   expect(hasMoreBelow({ scrollHeight: 300, clientHeight: 200, scrollTop: 0 })).toBe(true)
   expect(hasMoreBelow({ scrollHeight: 300, clientHeight: 200, scrollTop: 100 })).toBe(false)
   expect(hasMoreBelow({ scrollHeight: 200, clientHeight: 200, scrollTop: 0 })).toBe(false)
+})
+
+const card = (loaded: boolean) => (
+  <ScrollCueCard scrollSelector=".list-scroll">
+    {loaded ? (
+      <div className="list-scroll">
+        <ul>
+          <li>Row</li>
+        </ul>
+      </div>
+    ) : (
+      <p>Loading</p>
+    )}
+  </ScrollCueCard>
+)
+
+it('finds a scroll region that appears after the card first renders', async () => {
+  vi.stubGlobal(
+    'ResizeObserver',
+    class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    },
+  )
+  // jsdom lays nothing out, so the region reports a list taller than itself.
+  vi.spyOn(HTMLElement.prototype, 'scrollHeight', 'get').mockReturnValue(300)
+  vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(200)
+  const root = createRoot(document.body.appendChild(document.createElement('div')))
+  await act(async () => root.render(card(false)))
+  await act(async () => root.render(card(true)))
+  expect(document.querySelector('.list-scroll')?.hasAttribute('data-more-below')).toBe(true)
+  await act(async () => root.unmount())
+  document.body.replaceChildren()
+  vi.restoreAllMocks()
+  vi.unstubAllGlobals()
 })
 
 it('renders available currency with NumberFlow and keeps unavailable values static', () => {

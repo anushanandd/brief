@@ -1,13 +1,13 @@
 import { Link, useNavigate, useSearch } from '@tanstack/react-router'
 import { useMemo, useRef } from 'react'
 
-import { PageError, HomeLoading } from '../components/data-state'
+import { PageError, PageLoading } from '../components/data-state'
 import { SecurityMark } from '../components/security-mark'
 import { SettingsLink } from '../components/settings-dialog'
 import { Card, ChartRangeSelect, EmptyState, Metric, SectionHeading } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
 import { useFinance } from '../hooks/use-finance'
-import { accountDisplayName } from '../lib/account-names'
+import { accountName as namedAccount } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { financeSettings } from '../lib/finance-settings'
 import {
@@ -47,14 +47,13 @@ export function TaxesPage() {
   )
   useRegisterActions(yearActions)
 
-  if (query.isLoading) return <HomeLoading />
+  if (query.isLoading) return <PageLoading />
   if (query.isError || !query.data) return <PageError />
   const data = query.data
   const selected = taxYear(taxes, search.year)
   const names = financeSettings(data).accountNames
   const day = (date: string) => formatListDate(date, data.updatedAt)
-  const accountName = (id: string) =>
-    accountDisplayName(id, data.accounts.find((account) => account.id === id)?.name ?? id, names)
+  const accountName = (id: string) => namedAccount(data, id, names)
 
   return (
     <div className="page taxes-page">
@@ -141,7 +140,7 @@ export function TaxesPage() {
                   {taxes.harvest.map((item) => (
                     <li key={`${item.accountId}:${item.ticker}`}>
                       <Link
-                        className="taxes-list-link"
+                        className="list-row taxes-list-link"
                         to="/holdings/$ticker"
                         params={{ ticker: item.ticker }}
                         data-keyboard-row

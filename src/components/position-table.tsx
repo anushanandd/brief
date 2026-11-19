@@ -34,7 +34,6 @@ export type PositionRow = Pick<
 export function PositionTable({
   title,
   positions,
-  externalLogosEnabled,
   accountNames,
   marketChangeNote,
   marketLoading = false,
@@ -43,7 +42,6 @@ export function PositionTable({
 }: {
   title?: ReactNode
   positions: readonly PositionRow[]
-  externalLogosEnabled: boolean
   accountNames?: Record<string, string>
   marketLoading?: boolean
   marketChangeNote?: string
@@ -95,7 +93,9 @@ export function PositionTable({
           {positions.map((holding) => (
             <tr
               key={`${holding.accountId ?? ''}:${holding.ticker}`}
+              className="list-row"
               data-keyboard-row
+              data-keyboard-open={holding.ticker ? true : undefined}
               tabIndex={-1}
               // The row washes as one, so a click anywhere on it opens the security.
               onClick={(event) => {
@@ -108,7 +108,6 @@ export function PositionTable({
                   ticker={holding.ticker}
                   name={holding.name}
                   note={holding.valuationNote ?? formatSecurityName(holding.name)}
-                  externalLogosEnabled={externalLogosEnabled}
                 />
               </th>
               {accountNames ? (

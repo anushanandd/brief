@@ -1,4 +1,4 @@
-import { getExternalLogosEnabled, institutionLogoUrl } from '../lib/logos'
+import { institutionLogoUrl, useExternalLogosEnabled } from '../lib/logos'
 import { BrandMark } from './brand-mark'
 import { ChartNoAxesCombined, CreditCard, Landmark, WalletCards, type IconComponent } from './icons'
 
@@ -25,7 +25,7 @@ export function AccountMark({
 }) {
   const Icon = accountMarks[type] ?? Landmark
   const icon = <Icon size={15} />
-  const src = institutionLogoUrl({ institution, domain }, getExternalLogosEnabled())
+  const src = institutionLogoUrl({ institution, domain }, useExternalLogosEnabled())
   return src ? (
     <BrandMark
       className={`transaction-mark account-mark account-mark-${type}`}

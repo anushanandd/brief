@@ -200,7 +200,6 @@ pub fn rows(directory: &Path, file: &str, table: &str, offset: usize) -> Result<
         .map_err(|error| error.to_string())?;
     let columns = statement
         .column_names()
-        .into_iter()
         .map(str::to_owned)
         .collect::<Vec<_>>();
     let width = columns.len();

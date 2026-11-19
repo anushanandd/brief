@@ -82,18 +82,17 @@ export const SettingsDialog = memo(function SettingsDialog() {
 /** A link that opens Settings at a section or row without leaving the current page. */
 export function SettingsLink({
   target,
-  className,
   children,
-}: {
+  ...props
+}: Omit<ComponentProps<'a'>, 'href' | 'onClick'> & {
   target?: string
-  className?: string
   children: ReactNode
 }) {
   const { show } = useSettingsDialog()
   return (
     <a
+      {...props}
       href={`#settings${target ? `/${target}` : ''}`}
-      className={className}
       data-command="settings.open"
       onClick={(event) => {
         event.preventDefault()

@@ -153,7 +153,18 @@ pub fn assign(transactions: &mut [Transaction], people: &[Person]) {
         if !person_to_person(t) {
             continue;
         }
-        if let Some(id) = best_match(&t.descriptors(), people) {
+        // The bank's payment record can name the person when the descriptor doesn't.
+        let payment = t.payment_meta.as_ref();
+        let text = [
+            Some(t.descriptors()),
+            payment.and_then(|meta| meta.payer.clone()),
+            payment.and_then(|meta| meta.payee.clone()),
+        ]
+        .into_iter()
+        .flatten()
+        .collect::<Vec<_>>()
+        .join(" ");
+        if let Some(id) = best_match(&text, people) {
             t.people.push(id.to_owned());
             t.people_source = Some(PeopleSource::Matched);
         }

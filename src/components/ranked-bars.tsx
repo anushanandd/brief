@@ -1,6 +1,6 @@
 import { useId, useState, type ReactNode } from 'react'
 
-import { formatCurrency, valueTone } from '../lib/format'
+import { formatCurrency, formatSignedCurrency, valueTone } from '../lib/format'
 import { ChevronRight } from './icons'
 
 export type RankedBar = {
@@ -103,11 +103,7 @@ export function RankedBars({
             change ? valueTone(favorable === 'decrease' ? -change : change) : 'muted'
           }`}
         >
-          {change == null
-            ? ''
-            : change === 0
-              ? 'No change'
-              : `${change > 0 ? '+' : ''}${formatCurrency(change)}`}
+          {change == null ? '' : change === 0 ? 'No change' : formatSignedCurrency(change)}
           {change == null ? null : <span className="sr-only"> versus {comparison}</span>}
         </small>
       ) : null}
@@ -115,7 +111,11 @@ export function RankedBars({
   )
 
   return (
-    <ul className={`ranked-bars${comparable ? '' : ' ranked-bars-totals'}`} aria-label={label}>
+    <ul
+      className={`ranked-bars${comparable ? '' : ' ranked-bars-totals'}`}
+      aria-label={label}
+      data-keyboard-region
+    >
       {visible.map((item, index) => {
         const open = onSelect ? selected === item.name : expanded.has(item.name)
         const panel = `${id}-${index}`
@@ -129,7 +129,9 @@ export function RankedBars({
               <>
                 <button
                   type="button"
-                  className="ranked-bars-row"
+                  className="list-row ranked-bars-row"
+                  data-keyboard-row
+                  data-keyboard-open
                   aria-expanded={item.details ? open : undefined}
                   aria-pressed={onSelect ? open : undefined}
                   aria-controls={item.details ? panel : undefined}
@@ -154,7 +156,9 @@ export function RankedBars({
         <li>
           <button
             type="button"
-            className="ranked-bars-row"
+            className="list-row ranked-bars-row"
+            data-keyboard-row
+            data-keyboard-open
             aria-expanded={false}
             onClick={() => setShowAll(true)}
           >

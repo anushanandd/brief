@@ -84,7 +84,7 @@ it('links each Home ledger preview to its primary page', async () => {
   expect(main).toContain('href="/holdings"')
   expect(main).toContain('href="/activities"')
   expect(main).not.toContain('<h2>Overview</h2>')
-  expect(main.match(/class="financial-activity-row/g)).toHaveLength(1)
+  expect(main.match(/class="list-row financial-activity-row/g)).toHaveLength(1)
   expect(main).not.toContain('home-finance-grid')
 })
 
@@ -126,8 +126,8 @@ it('places graph ranges at the top right, above the change row', async () => {
     const chart = html.slice(html.indexOf(heading))
     const summary = chart.slice(chart.indexOf('chart-summary-row'), chart.indexOf('</header>'))
     expect(summary).toContain('hero-change')
-    // Every chart opens larger.
-    expect(chart).toContain('expands-on-click')
+    // Every chart opens larger, from the keyboard too.
+    expect(chart).toMatch(/expands-on-click"[^>]*aria-keyshortcuts="Enter"[^>]*tabindex="0"/)
     if (path === '/analytics?chart=income') {
       expect(summary).not.toContain('chart-range-select')
       expect(chart.slice(0, chart.indexOf('chart-summary-row'))).toContain('chart-range-select')
@@ -145,12 +145,16 @@ it('shows as much recent activity on Home as the longer preview beside it', asyn
     html.indexOf('home-activity-card'),
   )
   const activity = html.slice(html.indexOf('home-activity-card'))
-  expect(accounts.match(/class="account-row account-group-row tree-parent"/g)).toHaveLength(1)
+  expect(
+    accounts.match(/class="list-row account-row account-group-row tree-parent"/g),
+  ).toHaveLength(1)
   expect(accounts).toContain('2 accounts')
   expect(accounts).not.toContain('href="/accounts?account=')
   // No holdings and one account category, so one activity.
   // Each row opens its transaction on Activity.
-  expect(activity.match(/class="financial-activity-row is-openable"/g)).toHaveLength(1)
+  expect(
+    activity.match(/class="list-row financial-activity-row"[^>]*data-keyboard-open/g),
+  ).toHaveLength(1)
   // Without holdings or a positive balance there is no line to split.
   expect(html).not.toContain('class="share-line"')
 })

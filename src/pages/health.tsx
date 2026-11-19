@@ -69,8 +69,9 @@ function IssueLink({ issue }: { issue: HealthReport['issues'][number] }) {
 export function HealthPage() {
   const finance = useFinance()
   const health = useQuery({ ...dataHealthQuery(finance.data), enabled: Boolean(finance.data) })
+  // The report waits on finance data, so a failed snapshot would otherwise leave it pending.
+  if (finance.isError || health.isError) return <PageError />
   if (finance.isLoading || health.isPending) return <PageLoading />
-  if (finance.isError || health.isError || !health.data) return <PageError />
 
   const report = health.data
   const StatusIcon = report.overallStatus === 'healthy' ? ShieldCheck : AlertCircle
@@ -135,7 +136,7 @@ export function HealthPage() {
             >
               {issues.map((issue) => (
                 <article
-                  className={`health-issue health-issue-${severity}`}
+                  className={`list-row health-issue health-issue-${severity}`}
                   key={issue.id}
                   data-keyboard-row
                   tabIndex={-1}

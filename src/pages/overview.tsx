@@ -1,5 +1,5 @@
 import { Link, useNavigate } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import { AccountGroups, AccountRows } from '../components/account-groups'
 import { ActivityList } from '../components/activity-list'
@@ -54,7 +54,7 @@ import {
   chartRangeChange,
   firstChartDay,
 } from '../lib/live-chart'
-import { getExternalLogosEnabled } from '../lib/logos'
+import { useExternalLogosEnabled } from '../lib/logos'
 import type { FinanceSnapshot, Rollup } from '../lib/schema'
 
 // Home previews the largest holdings; Investments lists them all.
@@ -74,7 +74,7 @@ export function OverviewPage() {
   const settings = financeSettings(committed)
   const accountDisplayNames = settings.accountNames
   const accountStartDates = settings.accountStartDates
-  const [externalLogosEnabled] = useState(getExternalLogosEnabled)
+  const externalLogosEnabled = useExternalLogosEnabled()
   const [graphEnd] = useGraphEnd()
   // Scrolled back in time, the period's figures are the ones Rust measured to the end day.
   const asOf = useAsOf(committed)
@@ -132,14 +132,15 @@ export function OverviewPage() {
   )
   useGraphWindowShortcuts(setGraphWindow, scroll)
 
+  // Activities and event labels carry formatted amounts, so they are built again when the mask
+  // changes.
+  const amountsHidden = useAmountsHidden()
   const details = useMemo(() => {
     if (!committed) return undefined
     return {
       latestActivities: buildActivities(committed, accountDisplayNames, externalLogosEnabled),
     }
-  }, [committed, accountDisplayNames, externalLogosEnabled])
-  // Event labels carry formatted amounts, so they are built again when the mask changes.
-  const amountsHidden = useAmountsHidden()
+  }, [committed, accountDisplayNames, externalLogosEnabled, amountsHidden])
   const chartEvents = useMemo(
     () =>
       committed && resolvedAccountId
@@ -297,14 +298,13 @@ export function OverviewPage() {
                   </Link>
                 }
                 positions={holdings.slice(0, holdingsPreviewRows)}
-                externalLogosEnabled={externalLogosEnabled}
                 view="market"
                 emptyMessage="No holdings yet."
               />
               {holdings.length > holdingsPreviewRows ? (
                 <Link
                   to="/holdings"
-                  className="ranked-bars-details-more home-preview-more"
+                  className="section-heading-link home-preview-more"
                   data-command="navigation.open./holdings"
                 >
                   All {countOf(holdings.length, 'holding')}{' '}

@@ -25,7 +25,10 @@ it('keeps a short card benefits preview on Spending and links to Benefits', asyn
   expect(html).toContain('href="/analytics?chart=card-credits"')
   const preview = html.slice(html.indexOf('class="surface-card spending-benefits-card"'))
   // Only windows with allowance left, soonest deadline first: a used credit has nothing to act on.
-  expect(preview.match(/class="spending-benefit-row"/g)).toHaveLength(2)
+  // Each opens on Benefits, washing gray as rows that open do.
+  expect(
+    preview.match(/class="list-row spending-benefit-row"[^>]*data-keyboard-open/g),
+  ).toHaveLength(2)
   expect(preview).toMatch(/class="benefit-allowance">\$[\d,.]+<\/strong>/)
   expect(preview).not.toMatch(/class="benefit-allowance">[^<]*\//)
   expect(preview).toContain('Dining')
@@ -275,7 +278,7 @@ it('shows every account without a saved card and never treats another card as th
   scenario.partnerPurchase = true
   const html = await renderRoute('/spending', '')
   // Spending is across accounts; statements and benefits still wait for a saved card.
-  expect(html).toContain('class="financial-activity-row')
+  expect(html).toContain('class="list-row financial-activity-row')
   expect(html).not.toContain('Current statement')
   expect(html).toContain('No spending card')
   expect(html).toContain('href="#settings/spending-account"')
@@ -305,7 +308,7 @@ it('shows where spending went beside the latest activity', async () => {
   const merchants = columns.slice(0, activitiesHeading)
   // Merchants stay closed until opened, each with how many activities it holds.
   expect(merchants).toMatch(
-    /class="financial-activity-row merchant-group-row tree-parent"[^>]*aria-expanded="false"/,
+    /class="list-row financial-activity-row merchant-group-row tree-parent"[^>]*aria-expanded="false"/,
   )
   // The chevron follows the count, so the total lines up with its activities' amounts.
   expect(merchants).toMatch(/<small class="merchant-group-count">2 purchases<svg/)
@@ -315,7 +318,7 @@ it('shows where spending went beside the latest activity', async () => {
   // Activities in both lists open the details dialog Activity uses.
   expect(merchants).toMatch(/data-activity-id="spending:transaction-0"[^>]*data-keyboard-open/)
   const latest = columns.slice(columns.indexOf('aria-label="Spending activities"'))
-  expect(latest).toContain('financial-activity-row is-openable')
+  expect(latest).toMatch(/list-row financial-activity-row"[^>]*data-keyboard-open/)
   expect(latest).not.toContain('href="https://example.com/"')
   expect(latest).toContain('Pending')
 })
@@ -345,8 +348,8 @@ it('uses the shared Spending range control and keyboard period navigation', asyn
 it('opens the selected analytics chart with shared account and date scope', async () => {
   scenario.creditKind = 'income'
   const html = await renderRoute('/analytics?chart=income&from=2026-09-01&to=2026-09-03')
-  expect(html).toContain('class="account-switcher" aria-label="Spending"')
-  expect(html).toContain('aria-keyshortcuts="Meta+ArrowUp Meta+ArrowDown"')
+  expect(html).toContain('class="account-switcher" aria-label="Money"')
+  expect(html).toContain('aria-keyshortcuts="ArrowUp ArrowDown Meta+ArrowUp Meta+ArrowDown"')
   expect(html).toContain('aria-current="page">Income')
   expect(html).toContain('$35.00')
   expect(html).toMatch(/role="combobox"[^>]*aria-label="Analytics period"/)
@@ -516,6 +519,23 @@ it('keeps relevant zero-net and unavailable accounts but hides accounts outside 
   expect(earlierRows[0]).toContain('Selected card')
 })
 
+it('opens a breakdown group in place to its transactions', async () => {
+  scenario.otherCategory = 'Income'
+  scenario.otherKind = 'interest'
+  scenario.otherMerchant = 'Interest payment'
+  const html = await renderRoute('/analytics?chart=interest&account=other')
+  const card = html.slice(
+    html.indexOf('analytics-breakdown-card'),
+    html.indexOf('analytics-companion'),
+  )
+  // A group is a row that expands, not a filter that swaps the card for a list.
+  expect(card).toMatch(
+    /<button type="button" class="list-row ranked-bars-row"[^>]*aria-expanded="false"/,
+  )
+  expect(card).not.toContain('aria-pressed')
+  expect(card).not.toContain('Remove group filter')
+})
+
 it('shows scoped interest activity beneath its chart and account type subtext', async () => {
   scenario.otherKind = 'income'
   scenario.otherCategory = 'Income'
@@ -527,8 +547,11 @@ it('shows scoped interest activity beneath its chart and account type subtext', 
     html.indexOf('analytics-breakdown-card'),
     html.indexOf('analytics-companion'),
   )
-  expect(activityCard).toContain('<h2>Transactions</h2>')
-  expect(activityCard).toMatch(/<a[^>]*href="\/activities\?[^"]*"[^>]*>Open in Activity/)
+  // Its heading opens the same transactions in Activity.
+  expect(activityCard).toMatch(
+    /<h2><a[^>]*href="\/activities\?[^"]*"[^>]*class="section-heading-link"[^>]*>Transactions/,
+  )
+  expect(activityCard).not.toContain('Open in Activity')
   expect(activityCard).toContain('<strong>Interest payment</strong>')
   expect(activityCard).toContain('$900.00')
   expect(activityCard).not.toContain('Example Tables dining credit')
@@ -547,7 +570,10 @@ it('lists each matching activity separately in Analytics', async () => {
     '/analytics?chart=income&from=2026-09-01&to=2026-09-03&view=transactions',
   )
   const list = html.slice(html.indexOf('aria-label="Period totals"'))
-  expect(list.match(/class="financial-activity-row"/g)).toHaveLength(7)
+  // Each opens its details, as activity rows do everywhere.
+  expect(
+    list.match(/class="list-row financial-activity-row"[^>]*data-keyboard-open/g),
+  ).toHaveLength(7)
   expect(list).toContain('Selected card')
   expect(list).not.toContain('Other account transaction')
 })
@@ -608,7 +634,7 @@ it('lists a report beside the others of its destination, after that destinationâ
   scenario.otherCategory = 'Income'
   const html = await renderRoute('/analytics?range=month')
   const selector = html.slice(
-    html.indexOf('class="account-switcher" aria-label="Spending"'),
+    html.indexOf('class="account-switcher" aria-label="Money"'),
     html.indexOf('account-overview-dashboard'),
   )
   expect(selector.indexOf('>Spending<')).toBeGreaterThan(-1)

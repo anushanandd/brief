@@ -22,6 +22,7 @@ mod foundation_model;
 mod health;
 mod insights;
 mod inventory;
+mod keychain;
 mod market;
 mod merchants;
 mod native_menu;

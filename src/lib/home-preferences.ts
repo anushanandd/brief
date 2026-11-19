@@ -12,8 +12,5 @@ export const parseAccountGroupsMode = (value: unknown): AccountGroupsMode =>
 
 const accountGroups = preference('brief.homeAccountGroups', parseAccountGroupsMode)
 
-export const getAccountGroupsMode = accountGroups.get
 export const saveAccountGroupsMode = accountGroups.save
 export const useAccountGroupsMode = accountGroups.use
-
-export const homePreferenceKeys = [accountGroups.key] as const

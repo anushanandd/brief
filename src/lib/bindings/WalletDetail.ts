@@ -37,4 +37,8 @@ merchant?: string,
 /**
  * The category is the card network's merchant code, because Plaid wasn't sure of its own.
  */
-categorized?: boolean, };
+categorized?: boolean, 
+/**
+ * The category the network's merchant code files it under, whichever one Brief used.
+ */
+codeCategory?: string, };

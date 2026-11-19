@@ -1514,17 +1514,51 @@ mod tests {
                 ),
             ]
         );
-        // Everything dated in the month is listed, newest first, and netted by merchant.
-        assert_eq!(
-            month.view.transaction_ids,
-            ["payment", "pending", "transfer", "current"]
-        );
-        assert_eq!(month.view.merchants[0].name, "transfer");
-        assert_eq!(month.view.merchants.last().unwrap().total, 40.0);
+        // Spending dated in the month is listed newest first, and payments are left out.
+        assert_eq!(month.view.transaction_ids, ["pending", "current"]);
+        assert_eq!(month.view.merchants[0].name, "current");
+        assert_eq!(month.view.merchants.last().unwrap().total, -25.0);
         // August has nothing before it, so the history reaches no earlier month.
         let august = scope.detail(PeriodKind::Month, 1).unwrap();
         assert_eq!((august.period.spent.total, august.earlier), (950.0, false));
         assert!(scope.detail(PeriodKind::Month, 2).is_none());
+    }
+
+    #[test]
+    fn refunds_and_linked_paybacks_net_against_their_merchant_and_income_is_not_listed() {
+        let transactions = [
+            transaction("shop", "2026-09-01", -100.0, "Shopping"),
+            with(
+                transaction("refund", "2026-09-02", 30.0, "Shopping"),
+                json!({ "merchant": "shop", "classification": {
+                    "mark": "refund", "kind": "reimbursement", "spending": false, "zelle": false,
+                } }),
+            ),
+            with(
+                transaction("payback", "2026-09-03", 20.0, "Shopping"),
+                json!({ "merchant": "Zelle from a friend", "refundOf": "shop", "classification": {
+                    "mark": "refund", "kind": "reimbursement", "spending": false, "zelle": true,
+                } }),
+            ),
+            with(
+                transaction("pay", "2026-09-03", 500.0, "Income"),
+                json!({ "classification": {
+                    "mark": "income", "kind": "income", "spending": false, "zelle": false,
+                } }),
+            ),
+        ];
+        let accounts = [card(None)];
+        let scope = card_scope(&transactions, &accounts, None, Owner::Me, "2026-09-03");
+        let view = scope.detail(PeriodKind::Month, 0).unwrap().view;
+        assert_eq!(view.transaction_ids, ["payback", "refund", "shop"]);
+        // A payback linked to the purchase nets under its merchant, whatever it's called.
+        assert_eq!(
+            view.merchants
+                .iter()
+                .map(|merchant| (merchant.key.as_str(), merchant.total))
+                .collect::<Vec<_>>(),
+            [("shop", -50.0)]
+        );
     }
 
     #[test]

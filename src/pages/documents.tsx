@@ -32,7 +32,7 @@ import { setFinanceSnapshot, useFinance } from '../hooks/use-finance'
 import { useFinanceEdits } from '../hooks/use-finance-edits'
 import { useGraphAccountShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { useSearchShortcuts } from '../hooks/use-search-shortcuts'
-import { accountDisplayName } from '../lib/account-names'
+import { accountName as namedAccount } from '../lib/account-names'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import {
   addDocumentHistory,
@@ -46,6 +46,7 @@ import {
   type DocumentChange,
   type DocumentImport,
 } from '../lib/api'
+import { snapshotToday } from '../lib/dates'
 import { documentKindNames as kindNames, documentTitle as title } from '../lib/documents'
 import { errorMessage } from '../lib/errors'
 import { financeSettings } from '../lib/finance-settings'
@@ -112,7 +113,7 @@ function DocumentMark({ document }: { document: BriefDocument }) {
 
 /** The tax years the strip offers: this year, last year, and any a document names. */
 function taxYears(data: FinanceSnapshot | undefined) {
-  const today = data?.insights?.today ?? new Date().toISOString().slice(0, 10)
+  const today = snapshotToday(data ?? {})
   const thisYear = Number(today.slice(0, 4))
   const years = [
     ...new Set([
@@ -325,16 +326,16 @@ export function DocumentsPage() {
           bindings: [{ sequence: ['Meta+O'], label: '⇧⌘O' }],
           run: () => void addFiles(true),
         },
-        {
-          id: 'documents.close',
-          title: 'Close document',
-          group: 'View',
-          scope: 'page',
-          bindings: [{ sequence: ['Escape'], label: 'Esc' }],
-          run: () => void navigate({ to: '/documents', search: { year: search.year } }),
-        },
         ...(open
           ? [
+              {
+                id: 'documents.close',
+                title: 'Close document',
+                group: 'View',
+                scope: 'page' as const,
+                bindings: [{ sequence: ['Escape'], label: 'Esc' }],
+                run: () => void navigate({ to: '/documents', search: { year: search.year } }),
+              },
               {
                 id: 'documents.view',
                 title: 'View the original',
@@ -413,12 +414,7 @@ export function DocumentsPage() {
   const year = search.year && years.includes(search.year) ? search.year : thisYear
   const selected = documents.find((document) => document.id === search.document)
   const names = financeSettings(data).accountNames
-  const accountName = (id: string) =>
-    accountDisplayName(
-      id,
-      data.accounts.find((account) => account.id === id)?.name ?? 'Account',
-      names,
-    )
+  const accountName = (id: string) => namedAccount(data, id, names)
   // A search looks through every year; otherwise the list is the year's.
   const terms = searchTerms(find)
   const inYear = documents.filter((document) => (document.taxYear ?? thisYear) === year)
@@ -547,14 +543,14 @@ export function DocumentsPage() {
           <SectionHeading
             title={`Not added · ${importer.result.failed.length}`}
             action={
-              <Button size="compact" data-command="documents.close" onClick={importer.dismiss}>
+              <Button size="compact" onClick={importer.dismiss}>
                 Dismiss
               </Button>
             }
           />
           <ul className="documents-rows">
             {importer.result.failed.map((failure) => (
-              <li className="documents-row" key={failure.name}>
+              <li className="list-row documents-row" key={failure.name}>
                 <span className="documents-row-mark" aria-hidden="true">
                   <FileText size={15} />
                 </span>
@@ -743,14 +739,10 @@ function DocumentList({
   const commit = useCommit()
   const navigate = useNavigate()
   const names = financeSettings(data).accountNames
-  const accountName = (id: string) =>
-    accountDisplayName(
-      id,
-      data.accounts.find((account) => account.id === id)?.name ?? 'Account',
-      names,
-    )
+  const accountName = (id: string) => namedAccount(data, id, names)
   // ↑ and ↓ step through every group in the order shown, opening each document beside the list.
   const order = groups.flatMap(({ kinds }) => grouped(documents, kinds))
+  const orderKey = order.map((document) => `${document.id}:${document.taxYear}`).join(',')
   const step = useCallback(
     (direction: -1 | 1) => {
       const index = order.findIndex((document) => document.id === selected)
@@ -763,7 +755,8 @@ function DocumentList({
           replace: true,
         })
     },
-    [navigate, order, selected, year],
+    // oxlint-disable-next-line react-hooks/exhaustive-deps -- keyed by the documents listed
+    [navigate, orderKey, selected, year],
   )
   useRegisterActions(
     useMemo<AppAction[]>(
@@ -793,7 +786,7 @@ function DocumentList({
   // The open row stays in view as the arrows move through a long list.
   useEffect(() => {
     globalThis.document
-      ?.querySelector('.documents-row.is-selected')
+      ?.querySelector('.documents-row[data-selected]')
       ?.scrollIntoView({ block: 'nearest' })
   }, [selected])
   if (!documents.length && searching)
@@ -873,7 +866,8 @@ function DocumentList({
                 return (
                   <li key={document.id}>
                     <Link
-                      className={`documents-row${document.id === selected ? ' is-selected' : ''}`}
+                      className="list-row documents-row"
+                      data-selected={document.id === selected || undefined}
                       data-keyboard-row
                       data-keyboard-open
                       to="/documents"
@@ -901,7 +895,7 @@ function DocumentList({
                           </span>
                         ) : null}
                         {state.tone === 'quiet' ? null : (
-                          <span className={`documents-badge is-${state.tone}`} title={state.label}>
+                          <span className={`documents-badge is-${state.tone}`}>
                             {state.tone === 'done' ? <Check size={12} aria-hidden="true" /> : null}
                             {state.label}
                           </span>
@@ -936,15 +930,11 @@ function DocumentPanel({
 }) {
   const commit = useCommit()
   const navigate = useNavigate()
+  const search = useSearch({ from: '/documents' })
   const [confirmDelete, setConfirmDelete] = useState(false)
   const [busy, setBusy] = useState<string>()
   const names = financeSettings(data).accountNames
-  const accountName = (id: string) =>
-    accountDisplayName(
-      id,
-      data.accounts.find((account) => account.id === id)?.name ?? 'Account',
-      names,
-    )
+  const accountName = (id: string) => namedAccount(data, id, names)
   const keep = insights?.keep.find((item) => item.documentId === document.id)
   const pay = insights?.pay.filter((link) => link.documentId === document.id) ?? []
   const prediction = insights?.years
@@ -1038,7 +1028,7 @@ function DocumentPanel({
             icon={X}
             aria-keyshortcuts="Escape"
             data-command="documents.close"
-            onClick={() => void navigate({ to: '/documents', search: {} })}
+            onClick={() => void navigate({ to: '/documents', search: { year: search.year } })}
           >
             Close
           </Button>
@@ -1141,7 +1131,7 @@ function DocumentPanel({
                 onClick={() =>
                   void run('delete the document', async () => {
                     const snapshot = await deleteDocuments([document.id])
-                    await navigate({ to: '/documents', search: {} })
+                    await navigate({ to: '/documents', search: { year: search.year } })
                     return snapshot
                   })
                 }

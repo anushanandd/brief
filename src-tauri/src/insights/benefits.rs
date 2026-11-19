@@ -769,7 +769,8 @@ pub struct BenefitLogo {
 #[serde(rename_all = "camelCase")]
 pub struct LastCredit {
     pub amount: f64,
-    pub date: String,
+    /// A calendar day, which the renderer formats.
+    pub date: NaiveDate,
 }
 
 #[derive(Clone, Debug, Serialize, TS)]

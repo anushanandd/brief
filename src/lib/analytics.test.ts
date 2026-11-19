@@ -85,7 +85,7 @@ it('assigns distinct colors from the complete chart domain, independent of recor
   expect(analyticsGroupColors(groups.toReversed())).toEqual(colors)
 })
 
-it('keeps a report’s transactions view and group in the URL, and drops them between reports', () => {
+it('keeps a report’s transactions view in the URL, and drops it between reports', () => {
   expect(analyticsSearch({ chart: 'income', view: 'transactions', group: 'Payroll' })).toEqual({
     chart: 'income',
     range: undefined,
@@ -93,12 +93,11 @@ it('keeps a report’s transactions view and group in the URL, and drops them be
     from: undefined,
     to: undefined,
     view: 'transactions',
-    group: 'Payroll',
   })
-  // A group means nothing without the transactions view, and unknown views are ignored.
-  expect(analyticsSearch({ view: 'breakdown', group: 'Payroll' })).not.toHaveProperty('view')
-  expect(analyticsSearch({ group: 'Payroll' })).not.toHaveProperty('group')
-  expect(
-    withoutReportView({ chart: 'fees', range: 'month', view: 'transactions', group: 'ATM' }),
-  ).toEqual({ chart: 'fees', range: 'month' })
+  // Unknown views are ignored; a group opens in place, so it never reaches the URL.
+  expect(analyticsSearch({ view: 'breakdown' })).not.toHaveProperty('view')
+  expect(withoutReportView({ chart: 'fees', range: 'month', view: 'transactions' })).toEqual({
+    chart: 'fees',
+    range: 'month',
+  })
 })

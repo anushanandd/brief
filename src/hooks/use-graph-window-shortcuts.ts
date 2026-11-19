@@ -159,8 +159,8 @@ export function useGraphScrollShortcuts(scroll: GraphScroll | undefined) {
 }
 
 /**
- * ⌘↑ and ⌘↓ step through a page's selector; bare arrows are left to the page's lists. Off
- * while something inside the selected view (one person) takes the keys instead.
+ * ↑ and ↓, or ⌘↑ and ⌘↓, step through a page's selector. A focused list keeps the bare arrows
+ * for its own rows. Off while something inside the selected view (one person) takes the keys.
  */
 export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => void, enabled = true) {
   const latest = useLatest(onDirection)
@@ -174,7 +174,10 @@ export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => voi
               search: 'previous account holding report chart selector strip',
               group: 'View',
               scope: 'page',
-              bindings: [{ sequence: ['Meta+ArrowUp'], label: '⌘↑' }],
+              bindings: [
+                { sequence: ['ArrowUp'], label: '↑' },
+                { sequence: ['Meta+ArrowUp'], label: '⌘↑' },
+              ],
               run: () => latest.current(-1),
             },
             {
@@ -183,7 +186,10 @@ export function useGraphAccountShortcuts(onDirection: (direction: -1 | 1) => voi
               search: 'next account holding report chart selector strip',
               group: 'View',
               scope: 'page',
-              bindings: [{ sequence: ['Meta+ArrowDown'], label: '⌘↓' }],
+              bindings: [
+                { sequence: ['ArrowDown'], label: '↓' },
+                { sequence: ['Meta+ArrowDown'], label: '⌘↓' },
+              ],
               run: () => latest.current(1),
             },
           ]

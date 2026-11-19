@@ -411,15 +411,7 @@ function scenarioInsights(transactions: ScenarioTransaction[]): import('../lib/s
       activity: diningActivity,
       ...(lastCredit
         ? {
-            lastCredit: {
-              amount: lastCredit.amount,
-              date: new Date(`${lastCredit.date}T00:00:00Z`).toLocaleDateString('en-US', {
-                month: 'short',
-                day: 'numeric',
-                year: 'numeric',
-                timeZone: 'UTC',
-              }),
-            },
+            lastCredit: { amount: lastCredit.amount, date: lastCredit.date },
           }
         : {}),
     },

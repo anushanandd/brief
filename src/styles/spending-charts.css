@@ -217,7 +217,7 @@
   display: grid;
   width: 100%;
   min-height: 40px;
-  padding: 0;
+  padding-block: 0;
   grid-template-columns: minmax(120px, 0.9fr) minmax(80px, 1.6fr) minmax(84px, auto) 84px;
   align-items: center;
   gap: 16px;
@@ -227,15 +227,10 @@
   font: inherit;
   font-variant-numeric: tabular-nums;
   text-align: left;
+  transition: opacity var(--duration-quick) var(--ease-out);
 }
 .ranked-bars-totals .ranked-bars-row {
   grid-template-columns: minmax(120px, 0.9fr) minmax(80px, 1.8fr) minmax(84px, auto);
-}
-button.ranked-bars-row {
-  cursor: pointer;
-}
-button.ranked-bars-row:hover .ranked-bars-name {
-  color: var(--text-primary);
 }
 
 .ranked-bars-name {
@@ -284,9 +279,6 @@ li[data-open] .ranked-bars-chevron {
 .ranked-bars > li[data-dimmed] .ranked-bars-row {
   opacity: 0.55;
 }
-.ranked-bars-row {
-  transition: opacity var(--duration-quick) var(--ease-out);
-}
 button.ranked-bars-row[aria-pressed='true'] .ranked-bars-name {
   font-weight: 600;
 }
@@ -313,7 +305,6 @@ button.ranked-bars-row[aria-pressed='true'] .ranked-bars-name {
 }
 .ranked-bars-details {
   padding: 0 0 8px 18px; /* scale-exempt: aligns with the row label after its chevron */
-  animation: disclosure-enter var(--duration-quick) var(--ease-out);
 }
 .ranked-bars-details .financial-activity-list {
   margin-top: 0;
@@ -382,7 +373,7 @@ button.ranked-bars-row[aria-pressed='true'] .ranked-bars-name {
    the figures never run past the card at the companion's width. */
 .spending-companion .ranked-bars-row {
   min-height: 48px;
-  padding: 8px 0;
+  padding-block: 8px;
   grid-template-columns: minmax(0, 1fr) auto;
   grid-template-areas:
     'name amount'
@@ -409,7 +400,9 @@ button.ranked-bars-row[aria-pressed='true'] .ranked-bars-name {
     'name amount'
     'track track';
 }
+/* Both tab groups share the heading's row; only a card too narrow for them wraps the second. */
 .spending-category-card .section-heading {
   flex-wrap: wrap;
+  column-gap: 8px;
   row-gap: 2px;
 }

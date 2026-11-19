@@ -1,9 +1,11 @@
-import { Link } from '@tanstack/react-router'
+import { useState } from 'react'
 
 import { snapshotToday } from '../lib/dates'
 import { formatActivityName, formatCurrency, formatShortDay } from '../lib/format'
+import { useExternalLogosEnabled } from '../lib/logos'
 import type { FinanceSnapshot } from '../lib/schema'
 import { expectedActivityDateLabel, RecurringMark, recurringActivities } from './expected-activity'
+import { TransactionDialog } from './transaction-dialog'
 import { Card, EmptyState, SectionHeading } from './ui'
 
 /** Every active subscription: what it costs, how often, when it charges next, and price changes. */
@@ -20,9 +22,11 @@ export function SubscriptionsCard({
   const activities = recurringActivities(
     data,
     items.map(({ sourceTransactionId }) => sourceTransactionId),
+    useExternalLogosEnabled(),
   )
   // Without insights, as with data too old to forecast from, the list is unknown.
   const stale = data.insights?.forecastStale ?? true
+  const [opened, setOpened] = useState<string>()
 
   return (
     <Card
@@ -42,25 +46,30 @@ export function SubscriptionsCard({
         }
       />
       {items.length ? (
-        <ul className="expected-activity-list" aria-label="Active subscriptions" tabIndex={0}>
+        <ul
+          className="expected-activity-list"
+          aria-label="Active subscriptions"
+          tabIndex={0}
+          data-keyboard-region
+        >
           {items.map((item) => {
             const activity = activities.get(`spending:${item.sourceTransactionId}`)
             const name = formatActivityName(item.title)
             return (
-              <li className="expected-activity-item" key={item.recurringId}>
+              // The row opens its latest charge, whose details list the rest of them.
+              <li
+                className="list-row expected-activity-item"
+                key={item.recurringId}
+                data-keyboard-row={activity ? true : undefined}
+                data-keyboard-open={activity ? true : undefined}
+                tabIndex={activity ? -1 : undefined}
+                onClick={activity ? () => setOpened(activity.id) : undefined}
+              >
                 <RecurringMark activity={activity} />
                 <div className="expected-activity-content">
                   <span className="financial-activity-copy">
                     <span className="expected-activity-title">
-                      <Link
-                        className="expected-activity-merchant"
-                        to="/activities"
-                        search={{ account: item.accountId, q: `description:${item.title}` }}
-                        aria-label={`View ${name} charges`}
-                        title={item.title}
-                      >
-                        {name}
-                      </Link>
+                      <span className="expected-activity-merchant">{name}</span>
                     </span>
                     <small>
                       {item.frequency}
@@ -104,6 +113,11 @@ export function SubscriptionsCard({
           {stale ? 'Refresh to see subscriptions.' : 'No subscriptions found.'}
         </EmptyState>
       )}
+      <TransactionDialog
+        activity={opened ? activities.get(opened) : undefined}
+        data={data}
+        onClose={() => setOpened(undefined)}
+      />
     </Card>
   )
 }

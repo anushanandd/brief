@@ -23,6 +23,7 @@ import {
 import { activityViewSearch, activityViews, withActivityView } from '../lib/activity-views'
 import { localDateKey } from '../lib/dates'
 import { errorMessage } from '../lib/errors'
+import { useExternalLogosEnabled } from '../lib/logos'
 import type { FinanceSnapshot } from '../lib/schema'
 import { nextSort } from '../lib/sort'
 
@@ -57,10 +58,17 @@ export function useActivityFilters(data: FinanceSnapshot) {
     Boolean(search.analysis),
   ).data?.report?.entries
   const valuesHidden = useAmountsHidden()
+  const externalLogosEnabled = useExternalLogosEnabled()
   const rows = useMemo(
-    () => activityRows(data, { analysis: search.analysis, review: search.review }, reportEntries),
+    () =>
+      activityRows(
+        data,
+        { analysis: search.analysis, review: search.review },
+        reportEntries,
+        externalLogosEnabled,
+      ),
     // Rows carry formatted amounts, which screen privacy masks.
-    [data, reportEntries, search.analysis, search.review, valuesHidden],
+    [data, reportEntries, search.analysis, search.review, externalLogosEnabled, valuesHidden],
   )
   const today = localDateKey(Date.now() / 1000)
   const ledger = activityLedger({ data, rows, search, draft, sort, today })

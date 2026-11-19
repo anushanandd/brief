@@ -271,7 +271,7 @@
       ]
     }
   ],
-  "calculationVersion": 44,
+  "calculationVersion": 45,
   "calendarDate": "2026-09-09",
   "dividendHistory": [
     {
@@ -538,6 +538,7 @@
       "logoUrl": "https://plaid-merchant-logos.plaid.com/coffee.png",
       "merchant": "Coffee",
       "merchantEntityId": "entity-coffee",
+      "occurredAt": "2026-09-07T15:42:00Z",
       "occurredOn": "2026-09-07",
       "originalDescription": "SQ *COFFEE 0412 PORTLAND OR",
       "paymentChannel": "in store",

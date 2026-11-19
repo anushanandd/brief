@@ -1,6 +1,8 @@
+import { daysBetween } from './dates'
 import { inferredNeedSubjects } from './needs'
 import { googleMapsUrl } from './places'
 import type { FinanceSnapshot, Transaction } from './schema'
+import { transactionDateKey } from './spending'
 
 const byRecency = (left: Transaction, right: Transaction) =>
   (right.postedOn ?? right.date).localeCompare(left.postedOn ?? left.date) ||
@@ -72,6 +74,50 @@ export function mapsUrl(address: string, coordinates?: { lat?: number; lon?: num
   if (coordinates?.lat != null && coordinates.lon != null)
     return googleMapsUrl(`${coordinates.lat},${coordinates.lon}`)
   return googleMapsUrl(address)
+}
+
+/** How far back a payback finds the purchase it repays. */
+const PAYBACK_DAYS = 60
+
+/**
+ * Whether money in could repay a purchase, such as a friend's share of tickets you bought:
+ * spending on any account, at least as large, within 60 days before it. Income, interest,
+ * and moves between your own accounts repay nothing.
+ */
+function repays(payback: Transaction, purchase: Transaction) {
+  const kind = payback.classification?.kind
+  const paid = transactionDateKey(payback.date)
+  const bought = transactionDateKey(purchase.date)
+  return (
+    payback.amount > 0 &&
+    !payback.transferPairId &&
+    kind !== 'income' &&
+    kind !== 'interest' &&
+    kind !== 'dividend' &&
+    kind !== 'tax' &&
+    purchase.amount < 0 &&
+    -purchase.amount >= payback.amount &&
+    Boolean(purchase.classification?.spending || purchase.classification?.othersSpending) &&
+    bought <= paid &&
+    daysBetween(bought, paid) <= PAYBACK_DAYS
+  )
+}
+
+const newestFirst = (left: Transaction, right: Transaction) => right.date.localeCompare(left.date)
+
+/** The purchases a payback could repay, newest first. */
+export function repayablePurchases(data: FinanceSnapshot, payback: Transaction) {
+  return data.transactions.filter((purchase) => repays(payback, purchase)).toSorted(newestFirst)
+}
+
+/** A purchase's paybacks: those linked to it, and the unlinked ones that could repay it. */
+export function purchasePaybacks(data: FinanceSnapshot, purchase: Transaction) {
+  return {
+    linked: data.transactions.filter(({ refundOf }) => refundOf === purchase.id),
+    candidates: data.transactions
+      .filter((payback) => !payback.refundOf && repays(payback, purchase))
+      .toSorted(newestFirst),
+  }
 }
 
 /** Categories already in use, for choosing one; the current category is always offered. */

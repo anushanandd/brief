@@ -8,6 +8,7 @@ import type { GraphObject } from "./GraphObject";
  */
 export type ObjectDetail = { object: GraphObject, links: Array<GraphLink>, facts: Array<GraphFact>, 
 /**
- * The record as its provider sent it, for accounts and transactions a provider reported.
+ * Each source's own record of it, by source name (Plaid, SnapTrade, Apple Wallet), as
+ * saved in that source's cache.
  */
-provider?: Record<string, unknown>, };
+sources?: Record<string, Record<string, unknown>>, };

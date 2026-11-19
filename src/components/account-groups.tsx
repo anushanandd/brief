@@ -3,7 +3,7 @@ import { useId, useState } from 'react'
 
 import type { AccountGroup } from '../lib/account-groups'
 import { accountDisplayName } from '../lib/account-names'
-import { countOf, formatCurrency, valueTone } from '../lib/format'
+import { countOf, formatCurrency, formatSignedCurrency, valueTone } from '../lib/format'
 import type { Account } from '../lib/schema'
 import { AccountMark } from './account-mark'
 import { AccountRow } from './account-row'
@@ -15,11 +15,11 @@ function PeriodChange({ change }: { change: number | null | undefined }) {
       className={`sensitive-value ${valueTone(change)}`}
       aria-label={
         change == null
-          ? 'No change over the chart period'
-          : `Change over the chart period ${formatCurrency(change)}`
+          ? 'Change over the chart period unavailable'
+          : `Change over the chart period ${formatSignedCurrency(change)}`
       }
     >
-      {change == null ? '—' : `${change > 0 ? '+' : ''}${formatCurrency(change)}`}
+      {formatSignedCurrency(change)}
     </small>
   )
 }
@@ -90,7 +90,7 @@ export function AccountGroups({
       <div key={group.type} className="account-group" data-open={open || undefined}>
         <button
           type="button"
-          className="account-row account-group-row tree-parent"
+          className="list-row account-row account-group-row tree-parent"
           data-keyboard-row
           data-keyboard-open
           aria-expanded={open}
@@ -174,7 +174,7 @@ export function AccountGroupList({
           <header className="account-group-section-heading">{heading}</header>
         ) : (
           <Link
-            className="account-group-section-heading account-group-section-link"
+            className="list-row account-group-section-heading account-group-section-link"
             data-keyboard-row
             data-keyboard-open
             to="/accounts"

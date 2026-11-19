@@ -35,7 +35,7 @@ export function HoldingEarnings({ symbols, connected }: { symbols: string[]; con
     ),
   )
   return (
-    <div className="metric holding-earnings">
+    <div className="metric holding-next-earnings">
       <span>Next earnings</span>
       {native && connected && earnings.isLoading ? (
         <strong className="muted" role="status">

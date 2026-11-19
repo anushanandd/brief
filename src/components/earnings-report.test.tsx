@@ -58,3 +58,12 @@ it('says plainly when there is no report or the release isn’t read', () => {
   })
   expect(unread).toContain('The release hasn’t been read yet.')
 })
+
+it('leaves out Expected when it has nothing to say', () => {
+  const expectations = summary.expectations.map((item) => ({
+    ...item,
+    estimates: item.estimates.filter(({ horizon }) => horizon !== 'fiscal quarter'),
+    nextReport: null,
+  }))
+  expect(render({ ...summary, expectations })).not.toContain('<small>Expected</small>')
+})

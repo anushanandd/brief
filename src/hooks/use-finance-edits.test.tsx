@@ -113,6 +113,11 @@ afterEach(async () => {
 
 /** Types a note and leaves the field, which saves it. */
 async function writeNote(text: string) {
+  // An empty note shows as a button that adds one.
+  const add = container.querySelector<HTMLButtonElement>(
+    '.transaction-edit-add button[aria-keyshortcuts="N"]',
+  )
+  if (add) await act(async () => add.click())
   const field = container.querySelector<HTMLTextAreaElement>('textarea[aria-label="Note"]')
   if (!field) throw new Error('The note field renders')
   await act(async () => {

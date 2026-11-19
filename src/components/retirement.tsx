@@ -175,8 +175,9 @@ function Deposits({ retirement, name }: { retirement: Retirement; name: Names })
               : `Counts for ${deposit.countsFor}`
           return (
             <li
-              className="coming-up-row retirement-inflow"
+              className="list-row coming-up-row retirement-inflow"
               data-keyboard-row
+              tabIndex={-1}
               key={deposit.transactionId}
             >
               <time dateTime={deposit.date}>{formatShortDay(deposit.date)}</time>

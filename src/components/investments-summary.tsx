@@ -1,13 +1,12 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from '@tanstack/react-router'
 import type { LivelinePoint } from 'liveline'
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react'
+import { type ReactNode, useEffect, useState } from 'react'
 
 import { useGraphWindowShortcuts } from '../hooks/use-graph-window-shortcuts'
 import { usePortfolioSectors } from '../hooks/use-portfolio-sectors'
 import { useReports } from '../hooks/use-reports'
 import { accountDisplayName } from '../lib/account-names'
-import { useRegisterActions, type AppAction } from '../lib/action-system'
 import { getEarningsCalendar, isTauri } from '../lib/api'
 import { addDays, snapshotToday } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
@@ -32,16 +31,10 @@ import {
 } from '../lib/graph-preferences'
 import { rangeDates } from '../lib/investment-range'
 import { chartChangeAt, chartPointAtOrBefore } from '../lib/live-chart'
-import type {
-  Exposure,
-  FinanceSnapshot,
-  InvestmentSummary,
-  ReportSummary,
-  Statement,
-} from '../lib/schema'
+import type { FinanceSnapshot, InvestmentSummary, ReportSummary, Statement } from '../lib/schema'
 import { ChartRangeSelector, ChartReadout } from './charts'
 import { ExternalLink } from './external-link'
-import { AlertCircle, ChevronRight } from './icons'
+import { AlertCircle } from './icons'
 import { SecurityMark } from './security-mark'
 import { Card, ChartChange, EmptyState, Metric, SectionHeading } from './ui'
 
@@ -58,7 +51,7 @@ const COMING_DAYS = 31
 const COMING_LISTED = 5
 
 const money = (value: number) => formatProseCurrency(Math.abs(value))
-const percent = formatProsePercent
+const percent = (value: number) => formatProsePercent(Math.abs(value))
 /**
  * The page's one period, chosen from the main chart card with the app's chart range control.
  * It is the period Home and Accounts share, and every card here follows it.
@@ -128,7 +121,7 @@ export function PeriodChange({
 }
 
 /** A difference in points, signed with a true minus. */
-export const formatPoints = (value: number) =>
+const formatPoints = (value: number) =>
   `${value > 0 ? '+' : value < 0 ? '−' : ''}${Math.abs(value).toFixed(2)} pts`
 
 // Interest belongs to Money: it is mostly cash and savings accounts.
@@ -253,94 +246,7 @@ export function PeriodCard({
           />
         ))}
       </nav>
-      <PeriodRisk span={span} exposure={data.insights?.exposure} />
     </Card>
-  )
-}
-
-/**
- * How the period's path went, one disclosure below its return: the deepest fall from a high,
- * how much the days moved, how closely the S&P 500 explains them, and how spread out the
- * holdings are now. Each is Rust's figure for the page's period, or unavailable.
- */
-function PeriodRisk({ span, exposure }: { span?: Statement; exposure?: Exposure }) {
-  const detailsRef = useRef<HTMLDetailsElement>(null)
-  useRegisterActions(
-    useMemo<AppAction[]>(
-      () => [
-        {
-          id: 'investments.risk.toggle',
-          title: 'Show or hide the period’s risk',
-          search: 'risk drawdown volatility beta concentration effective holdings',
-          group: 'View',
-          scope: 'page',
-          bindings: [{ sequence: ['i'], label: 'I' }],
-          run: () => {
-            const details = detailsRef.current
-            if (details) details.open = !details.open
-          },
-        },
-      ],
-      [],
-    ),
-  )
-  const risk = span?.risk
-  const unavailable = <span className="muted">Unavailable</span>
-  return (
-    <details ref={detailsRef} className="account-details-more">
-      <summary data-command="investments.risk.toggle">Risk</summary>
-      <div className="investments-side-stats">
-        <Metric
-          label="Deepest fall"
-          value={risk?.drawdownPct != null ? formatPercent(risk.drawdownPct) : unavailable}
-          tone={risk?.drawdownPct ? 'negative' : undefined}
-        />
-        <Metric
-          label="Volatility"
-          value={
-            risk?.volatilityPct != null ? (
-              <>
-                {formatShare(risk.volatilityPct)}
-                <small className="metric-detail">a year</small>
-              </>
-            ) : (
-              unavailable
-            )
-          }
-        />
-        <Metric
-          label="Beta"
-          value={
-            risk?.beta ? (
-              <>
-                {risk.beta.beta.toFixed(2)}
-                <small className="metric-detail">
-                  R² {risk.beta.rSquared.toFixed(2)} · {risk.beta.sessions}{' '}
-                  {pluralize(risk.beta.sessions, 'session')}
-                </small>
-              </>
-            ) : (
-              unavailable
-            )
-          }
-        />
-        <Metric
-          label="Effective holdings"
-          value={
-            exposure ? (
-              <>
-                {exposure.effectiveHoldings.toFixed(1)}
-                <small className="metric-detail">
-                  of {exposure.holdings} now · top five {formatShare(exposure.topFivePct)}
-                </small>
-              </>
-            ) : (
-              unavailable
-            )
-          }
-        />
-      </div>
-    </details>
   )
 }
 
@@ -366,8 +272,8 @@ export function InvestmentsAttention({ data }: { data: FinanceSnapshot }) {
             key: `concentrated:${flag.ticker}`,
             ticker: flag.ticker,
             kind: 'Concentration',
-            title: `${flag.ticker} is ${formatShare(flag.percent)} of investments`,
-            detail: <>Over a fifth of your investments in one company.</>,
+            title: `${flag.ticker} is ${formatShare(flag.percent)} of your investments`,
+            detail: null,
           }
         : flag.kind === 'longTermSoon'
           ? {
@@ -429,14 +335,14 @@ export function InvestmentsAttention({ data }: { data: FinanceSnapshot }) {
             <span className="investments-attention-copy">
               <small>{item.kind}</small>
               <strong>{item.title}</strong>
-              <span>{item.detail}</span>
+              {item.detail ? <span>{item.detail}</span> : null}
             </span>
           )
           return (
             <li key={item.key}>
               {item.ticker ? (
                 <Link
-                  className="investments-attention-row"
+                  className="list-row investments-attention-row"
                   to="/holdings/$ticker"
                   params={{ ticker: item.ticker }}
                   data-keyboard-row
@@ -444,10 +350,9 @@ export function InvestmentsAttention({ data }: { data: FinanceSnapshot }) {
                 >
                   <SecurityMark ticker={item.ticker} small />
                   {copy}
-                  <ChevronRight size={15} aria-hidden="true" />
                 </Link>
               ) : (
-                <div className="investments-attention-row">
+                <div className="list-row investments-attention-row">
                   <span className="investments-attention-mark" aria-hidden="true">
                     <AlertCircle size={14} />
                   </span>
@@ -491,14 +396,14 @@ function ComingRow({ item }: { item: ComingItem }) {
         {item.detail ? <small className="investments-coming-detail">{item.detail}</small> : null}
       </span>
       {item.amount != null ? (
-        <span className="sensitive-value positive">{`+${formatCurrency(item.amount)}`}</span>
+        <span className="sensitive-value positive">{formatSignedCurrency(item.amount)}</span>
       ) : null}
     </>
   )
   if (item.ticker)
     return (
       <Link
-        className="investments-coming-row"
+        className="list-row investments-coming-row"
         to="/holdings/$ticker"
         params={{ ticker: item.ticker }}
         data-keyboard-row
@@ -510,7 +415,7 @@ function ComingRow({ item }: { item: ComingItem }) {
   if (item.url)
     return (
       <ExternalLink
-        className="investments-coming-row"
+        className="list-row investments-coming-row"
         href={item.url}
         data-keyboard-row
         data-keyboard-open
@@ -518,7 +423,7 @@ function ComingRow({ item }: { item: ComingItem }) {
         {content}
       </ExternalLink>
     )
-  return <div className="investments-coming-row">{content}</div>
+  return <div className="list-row investments-coming-row">{content}</div>
 }
 
 /**
@@ -670,11 +575,13 @@ export function InvestmentsPerformance({
                 <li key={window} role="row">
                   <button
                     type="button"
-                    className="investments-performance-row"
+                    className="list-row investments-performance-row"
                     aria-pressed={window === range}
+                    data-selected={window === range || undefined}
                     aria-label={`Show ${label.toLowerCase()}`}
                     onClick={() => setGraphWindow(chartPeriodSeconds(window))}
                     data-keyboard-row
+                    data-keyboard-open
                   >
                     <span role="cell">{label}</span>
                     <span role="cell" className={valueTone(span.timeWeightedPct)}>

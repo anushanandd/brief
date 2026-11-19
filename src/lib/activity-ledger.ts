@@ -30,7 +30,6 @@ import {
 import { analyticsCharts, type AnalyticsChart } from './analytics'
 import { financeSettings } from './finance-settings'
 import { formatCurrency, formatDay } from './format'
-import { getExternalLogosEnabled } from './logos'
 import { placeLabel } from './places'
 import type { FinanceSnapshot, ReportEntry } from './schema'
 import { transactionDateKey } from './spending'
@@ -95,12 +94,13 @@ export function activityRows(
   search: LedgerSearch,
   /** The report's entries on any day, as Rust chose them, when a report scopes the page. */
   reportEntries: readonly ReportEntry[] = [],
+  externalLogosEnabled = false,
 ) {
   const settings = financeSettings(data)
   const analyticEntries = search.analysis
     ? new Map(reportEntries.map((entry) => [entry.id, entry]))
     : undefined
-  const allActivities = buildActivities(data, settings.accountNames, getExternalLogosEnabled())
+  const allActivities = buildActivities(data, settings.accountNames, externalLogosEnabled)
   const activities = allActivities
     .filter(({ id }) => !analyticEntries || analyticEntries.has(id))
     .filter(({ flag }) => !search.review || flag)

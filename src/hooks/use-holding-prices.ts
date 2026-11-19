@@ -22,6 +22,8 @@ export function useHoldingPrices(
 ) {
   const client = useQueryClient()
   const key = `${symbol}:${range}`
+  // Keyed by content, so a caller's new array with the same symbols doesn't restart the chart.
+  const warmKey = warmSymbols.join(',')
   const cacheKey = ['holding-chart-preview', symbol, range] as const
   const preview = () =>
     enabled
@@ -127,7 +129,7 @@ export function useHoldingPrices(
           if (disposed) return
           previousRequest = latestRequest.current
           latestRequest.current = requestId
-          await startHoldingChart(symbol, range, requestId, warmSymbols)
+          await startHoldingChart(symbol, range, requestId, warmKey ? warmKey.split(',') : [])
           if (activeSession.current !== session) await stopHoldingChart(requestId)
         })
         startQueue.current = start.catch(() => undefined)
@@ -151,7 +153,7 @@ export function useHoldingPrices(
       disposed = true
       stop?.()
     }
-  }, [active, symbol, range, client])
+  }, [active, symbol, range, client, warmKey])
   // Never display a prior ticker during effect cleanup and startup. While the ticker's new
   // range loads, its last drawn range stays up, marked `stale`.
   const shown: HoldingChartState =

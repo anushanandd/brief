@@ -103,18 +103,15 @@ fn passphrase_key(passphrase: &str, salt: &[u8]) -> Result<Key<Aes256Gcm>, Strin
 
 /// The key this Mac keeps for documents, created the first time a document is saved.
 pub fn keychain_key(create: bool) -> Result<Option<DocumentKey>, String> {
-    let entry =
-        keyring::Entry::new(KEYCHAIN_SERVICE, KEYCHAIN_USER).map_err(|error| error.to_string())?;
-    match entry.get_secret() {
-        Ok(bytes) => DocumentKey::from_bytes(&bytes).map(Some),
-        Err(keyring::Error::NoEntry) if create => {
+    match crate::keychain::read(KEYCHAIN_SERVICE, KEYCHAIN_USER) {
+        Ok(Some(bytes)) => DocumentKey::from_bytes(&bytes).map(Some),
+        Ok(None) if create => {
             let key = DocumentKey::generate();
-            entry
-                .set_secret(key.bytes())
+            crate::keychain::write(KEYCHAIN_SERVICE, KEYCHAIN_USER, key.bytes())
                 .map_err(|error| format!("Could not save the document key in Keychain: {error}"))?;
             Ok(Some(key))
         }
-        Err(keyring::Error::NoEntry) => Ok(None),
+        Ok(None) => Ok(None),
         Err(error) => Err(format!(
             "Could not read the document key from Keychain: {error}"
         )),

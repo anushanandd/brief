@@ -3,7 +3,7 @@ import { useLayoutEffect, useState, type KeyboardEvent, type RefObject } from 'r
 import { groupKind, type MenuAction, type MenuRow } from '../lib/palette-rows'
 import { Keys } from './keys'
 
-const plainMeta = (event: KeyboardEvent, key: string) =>
+export const plainMeta = (event: KeyboardEvent, key: string) =>
   event.key.toLowerCase() === key && event.metaKey && !event.ctrlKey && !event.shiftKey
 
 /**

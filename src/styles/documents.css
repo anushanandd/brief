@@ -142,11 +142,10 @@
   min-width: 0;
 }
 
-/* Rows bleed into the gutter on hover so their text lines up with the heading. */
 .documents-rows {
   display: grid;
   gap: 2px;
-  margin: 8px -8px 0;
+  margin: 8px 0 0;
   padding: 0;
   list-style: none;
 }
@@ -156,18 +155,10 @@
   align-items: center;
   gap: 12px;
   min-height: var(--row-height-compact);
-  padding: 6px 8px;
-  border-radius: var(--radius-control);
+  padding-block: 6px;
   color: inherit;
   font-size: var(--type-body);
   text-decoration: none;
-  transition: background-color var(--duration-quick) var(--ease-out);
-}
-.documents-row:hover {
-  background: var(--hover-wash);
-}
-.documents-row.is-selected {
-  background: var(--sidebar-accent);
 }
 .documents-row-mark {
   display: grid;

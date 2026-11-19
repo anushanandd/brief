@@ -1,10 +1,16 @@
-import { Link } from '@tanstack/react-router'
+import { Link, useNavigate } from '@tanstack/react-router'
 import { useId, useMemo, useState } from 'react'
 
 import type { AppAction } from '../lib/action-system'
 import { activityLocationText, activityTime, type ActivityItem } from '../lib/activity'
 import { documentTitle, transactionDocuments } from '../lib/documents'
-import { formatActivityName, formatCurrency, formatProseCurrency, valueTone } from '../lib/format'
+import {
+  displayCase,
+  formatActivityName,
+  formatCurrency,
+  formatProseCurrency,
+  valueTone,
+} from '../lib/format'
 import { activityObjectId } from '../lib/objects'
 import { placeLabel } from '../lib/places'
 import type { FinanceSnapshot, QualityEvidence, Transaction } from '../lib/schema'
@@ -21,10 +27,11 @@ import {
   CategorySuggestionFlag,
   InspectorKeysFooter,
   MerchantHistory,
-  RawRecord,
   ReviewFlag,
+  SourcesSection,
+  type SourceRow,
+  TradeFacts,
   TransactionHero,
-  VerifiedFact,
   WhereFacts,
 } from './transaction-details-sections'
 import { TransactionEdits } from './transaction-edits'
@@ -34,8 +41,8 @@ import { usePresence } from './ui/presence'
 
 /**
  * The inspector's own keys: J and K step through the list; C, T, P, N, and S start an edit; F
- * switches between yours and someone else's; R marks a flagged transaction reviewed; U unlinks
- * a benefit match; O opens a transfer's other side; A keeps a suggested category and D declines
+ * switches between yours and someone else's; B chooses the purchase money in repays; R marks a
+ * flagged transaction reviewed; U unlinks a benefit match; O opens a transfer's other side; A keeps a suggested category and D declines
  * it. Each edit key presses the control marked
  * with its `data-inspector-key`, when the transaction has one.
  */
@@ -48,6 +55,7 @@ const inspectorKeys = [
   { id: 'note', title: 'Write a note', keys: ['n'] },
   { id: 'split', title: 'Split', keys: ['s'] },
   { id: 'other', title: 'Switch between mine and someone else’s', keys: ['f'] },
+  { id: 'repays', title: 'Choose the purchase this repays', keys: ['b'] },
   { id: 'reviewed', title: 'Mark reviewed', keys: ['r'] },
   { id: 'unlink', title: 'Unlink the benefit match', keys: ['u'] },
   { id: 'transfer', title: 'Open the other side of the transfer', keys: ['o'] },
@@ -150,6 +158,7 @@ export function TransactionDialog({
           data={data}
           titleId={titleId}
           onClose={onClose}
+          canStep={Boolean(onStep)}
           onReviewed={onReviewed}
           onOpenActivity={onOpenActivity}
         />
@@ -163,6 +172,7 @@ function TransactionDetails({
   data,
   titleId,
   onClose,
+  canStep,
   onReviewed,
   onOpenActivity,
 }: {
@@ -170,11 +180,17 @@ function TransactionDetails({
   data: FinanceSnapshot
   titleId: string
   onClose: () => void
+  canStep: boolean
   onReviewed?: (id: string) => void
   onOpenActivity?: (id: string) => void
 }) {
+  const navigate = useNavigate()
   const detail = transactionDetail(data, activity.id)
   const transaction = detail?.transaction
+  const trade =
+    activity.kind === 'trade'
+      ? data.trades.find(({ id }) => `trade:${id}` === activity.id)
+      : undefined
   const booking = detail?.trip?.bookings.find(
     ({ transactionId }) => transactionId === transaction?.id,
   )
@@ -193,14 +209,19 @@ function TransactionDetails({
     onStatement ? 'the statement' : onPayStatement ? 'the pay statement' : '',
   ].filter(Boolean)
   const quality = transaction ? evidenceDetails(transaction) : []
-  const details = transaction ? bankDetails(transaction) : []
-  const walletFacts = transaction ? walletDetails(transaction) : []
   // Details whose sources disagree, until the user marks the transaction reviewed.
   const conflicts =
     transaction?.quality && !transaction.reviewed
       ? quality.filter(({ conflict }) => conflict).map(({ label }) => label)
       : []
+  const conflictText =
+    transaction && conflicts.length
+      ? conflicts.map((label) => conflictNote(transaction, label)).join(' ')
+      : undefined
+  const objectId = activityObjectId(activity.id)
 
+  // A merchant seen once has no history to list, so the header says so instead.
+  const firstVisit = detail && !detail.historyCount && !detail.expected
   const categoryOrigin =
     detail?.categoryOrigin === 'manual'
       ? 'Set by you'
@@ -224,6 +245,7 @@ function TransactionDetails({
           <p>
             {activity.account ?? 'Account unavailable'}
             {activity.pending ? ' · Pending' : ''}
+            {firstVisit ? ' · First time here' : ''}
           </p>
         </div>
         <Button
@@ -251,17 +273,13 @@ function TransactionDetails({
           data={data}
           detail={detail}
           transaction={transaction}
-          conflictText={
-            transaction && conflicts.length
-              ? conflicts.map((label) => conflictNote(transaction, label)).join(' ')
-              : undefined
-          }
+          conflictText={conflictText}
           onReviewed={onReviewed}
         />
         <CategorySuggestionFlag data={data} transaction={transaction} />
         {detail ? <BenefitLinkFlag data={data} benefits={detail.benefits} /> : null}
         <dl className="transaction-details-facts">
-          {transaction ? null : (
+          {transaction || trade ? null : (
             <div>
               <dt>Category</dt>
               <dd>
@@ -322,7 +340,11 @@ function TransactionDetails({
                   <dd>Not matched to another of your accounts</dd>
                 </div>
               ) : null}
-              <WhereFacts activity={activity} transaction={transaction} />
+              {trade ? (
+                <TradeFacts trade={trade} onClose={onClose} />
+              ) : (
+                <WhereFacts activity={activity} transaction={transaction} />
+              )}
             </>
           )}
           {detail?.expected ? (
@@ -401,16 +423,13 @@ function TransactionDetails({
               </dd>
             </div>
           ) : null}
-          {activity.estimatedRealizedGain != null ? (
+          {activity.estimatedRealizedGain != null && !trade ? (
             <div>
               <dt>Estimated P/L</dt>
               <dd className={valueTone(activity.estimatedRealizedGain)}>
                 {formatCurrency(activity.estimatedRealizedGain)}
               </dd>
             </div>
-          ) : null}
-          {transaction ? (
-            <VerifiedFact activity={activity} sources={sources} quality={quality} />
           ) : null}
         </dl>
 
@@ -423,25 +442,59 @@ function TransactionDetails({
           />
         ) : null}
 
-        {detail ? (
+        {detail && !firstVisit ? (
           <MerchantHistory
             activity={activity}
             detail={detail}
             merchant={merchant}
             posted={posted}
             titleId={titleId}
+            referenceIso={data.updatedAt}
+            // In place where the page can show another activity, else in Activity.
+            onOpen={(id) => {
+              if (onOpenActivity) return onOpenActivity(`spending:${id}`)
+              onClose()
+              void navigate({ to: '/activities', search: { open: id } })
+            }}
           />
         ) : null}
 
-        {walletFacts.length || details.length ? (
-          <details className="transaction-details-more">
-            <summary>Raw records</summary>
-            {walletFacts.length ? <RawRecord title="Apple Wallet" rows={walletFacts} /> : null}
-            {details.length ? <RawRecord title="Bank" rows={details} /> : null}
-          </details>
+        {transaction ? (
+          <SourcesSection
+            pending={Boolean(activity.pending)}
+            reportedBy={
+              providerName(transaction) ??
+              (transaction.id.startsWith('wallet:') ? 'Apple Wallet' : 'the bank')
+            }
+            confirmedBy={sources}
+            comparison={sourceComparison(transaction, categoryOrigin, onStatement)}
+            records={[
+              { source: providerName(transaction) ?? 'Bank', rows: bankDetails(transaction) },
+              { source: 'Apple Wallet', rows: walletDetails(transaction) },
+              { source: 'Card issuer’s export', rows: issuerDetails(transaction) },
+            ]}
+            objectId={objectId}
+            titleId={titleId}
+          />
+        ) : trade ? (
+          <SourcesSection
+            pending={false}
+            reportedBy="SnapTrade"
+            confirmedBy={[]}
+            comparison={[]}
+            records={[]}
+            objectId={objectId}
+            titleId={titleId}
+          />
         ) : null}
       </div>
-      <InspectorKeysFooter detail={detail} />
+      <InspectorKeysFooter
+        detail={detail}
+        transaction={transaction}
+        conflictText={conflictText}
+        canStep={canStep}
+        hasObject={Boolean(objectId)}
+      />
     </article>
   )
 }
@@ -507,7 +560,7 @@ export function evidenceDetails(transaction: Transaction) {
       label: 'Merchant',
       evidence: quality.merchant,
       value: transaction.providerMerchant
-        ? `Plaid called it ${transaction.providerMerchant}; the bank’s records don’t`
+        ? `Plaid called it ${transaction.providerMerchant}; ${transaction.wallet?.merchant ? 'Apple Wallet' : 'the bank’s text'} names another merchant`
         : undefined,
     },
     { label: 'Category', evidence: quality.category },
@@ -533,6 +586,122 @@ export function evidenceDetails(transaction: Transaction) {
   )
 }
 
+/** The provider that reported a transaction; none for a row only Wallet or a statement holds. */
+function providerName(transaction: Transaction) {
+  if (transaction.id.startsWith('wallet:')) return undefined
+  if (transaction.accountId?.startsWith('snaptrade:')) return 'SnapTrade'
+  if (transaction.accountId?.startsWith('plaid:')) return 'Plaid'
+  return undefined
+}
+
+/** The lines a source has something to say on. */
+const said = (...lines: Array<string | false | undefined | null>) =>
+  lines.filter((line): line is string => Boolean(line))
+
+/**
+ * What each source said about the amount, date, merchant, category, and place, beside what
+ * Brief shows and why; a fact only one source can speak to still says who.
+ */
+export function sourceComparison(
+  transaction: Transaction,
+  categoryOrigin: string,
+  onStatement: boolean,
+): SourceRow[] {
+  const provider = providerName(transaction)
+  const { wallet, issuer, quality } = transaction
+  const graded = new Map(evidenceDetails(transaction).map((row) => [row.label, row]))
+  const day = formatActivityDate
+  const posted = transaction.postedOn ?? transaction.date
+  const bought = transaction.occurredOn ?? posted
+  const time = activityTime({ occurredAt: transaction.occurredAt, date: bought })
+  // Plaid's instant is UTC; any other time is Wallet's, read where it happened.
+  const plaidTime = transaction.occurredAt?.endsWith('Z') ? time : ''
+  const walletTime = plaidTime ? '' : time
+  const confidence = confidenceLabels[transaction.categoryConfidence ?? '']
+  const plaidPlace = [transaction.location?.city, transaction.location?.region]
+    .filter(Boolean)
+    .join(', ')
+  const issuerPlace = [issuer?.city, issuer?.region].filter(Boolean).join(', ')
+  const billedFrom = displayCase(issuerPlace || plaidPlace)
+  const shownCategory = [transaction.category, transaction.subcategory].filter(Boolean).join(' · ')
+  const codeUnused =
+    wallet?.codeCategory &&
+    !wallet.categorized &&
+    wallet.codeCategory !== transaction.category &&
+    categoryOrigin === 'From the bank'
+  const rows: SourceRow[] = [
+    {
+      label: 'Amount',
+      shown: formatCurrency(transaction.amount),
+      says: said(
+        provider && `${provider}: ${formatCurrency(transaction.amount)}`,
+        wallet && `Apple Wallet: ${formatCurrency(wallet.terminalAmount ?? transaction.amount)}`,
+        (quality?.statementAmount != null || onStatement) &&
+          `Statement: ${formatCurrency(quality?.statementAmount ?? transaction.amount)}`,
+      ),
+    },
+    {
+      label: 'Date',
+      shown: `${day(bought)}${time ? ` at ${time}` : ''}`,
+      says: said(
+        provider &&
+          `${provider}: ${bought !== posted || plaidTime ? `authorized ${day(bought)}${plaidTime ? ` at ${plaidTime}` : ''}, ` : ''}posted ${day(posted)}`,
+        wallet && walletTime && `Apple Wallet: ${day(transaction.occurredAt!)} at ${walletTime}`,
+      ),
+    },
+    {
+      label: 'Merchant',
+      shown: formatActivityName(transaction.merchant),
+      says: said(
+        provider &&
+          `${provider}: ${formatActivityName(transaction.providerMerchant ?? transaction.merchant)}`,
+        wallet?.merchant && `Apple Wallet: ${wallet.merchant}`,
+        transaction.business && `Overture Maps: ${transaction.business.name}`,
+        issuer?.name && `Card issuer: ${issuer.name}`,
+      ),
+      basis: transaction.providerMerchant
+        ? wallet?.merchant
+          ? 'Apple Wallet saw the purchase, so its name wins'
+          : 'The bank’s own text wins over Plaid’s name'
+        : undefined,
+    },
+    {
+      label: 'Category',
+      shown: shownCategory,
+      says: said(
+        provider &&
+          `${provider}: ${wallet?.categorized ? 'unsure' : (transaction.providerCategory ?? shownCategory)}${confidence && !wallet?.categorized ? `, ${confidence}` : ''}`,
+        wallet?.codeCategory &&
+          `Apple Wallet: merchant code ${wallet.network?.merchantCode ?? ''} · ${wallet.codeCategory}`,
+        issuer?.category && `Card issuer: ${issuer.category}`,
+      ),
+      basis: codeUnused
+        ? `${categoryOrigin}; Plaid was sure, so the merchant code wasn’t used`
+        : categoryOrigin,
+    },
+    {
+      label: 'Place',
+      // As Where reads it: an online purchase names only where it billed from.
+      shown:
+        placeLabel(transaction.place) ||
+        (transaction.presence === 'remote'
+          ? `Online${billedFrom ? `, billed from ${billedFrom}` : ''}`
+          : 'Not known'),
+      says: said(
+        provider && plaidPlace && `${provider}: ${plaidPlace}`,
+        wallet?.place && `Apple Wallet: ${placeLabel(wallet.place)}`,
+        issuerPlace && `Card issuer: ${displayCase(issuerPlace)}`,
+      ),
+    },
+  ]
+  return rows
+    .filter(({ says }) => says.length)
+    .map((row) => {
+      const grade = graded.get(row.label)
+      return row.basis || !grade ? row : { ...row, basis: grade.value, conflict: grade.conflict }
+    })
+}
+
 /** What a conflicted detail's sources say, and which one Brief shows. */
 export function conflictNote(transaction: Transaction, label: string) {
   if (label === 'Place') {
@@ -546,7 +715,10 @@ export function conflictNote(transaction: Transaction, label: string) {
   return `Sources disagree on the ${label.toLowerCase()}.`
 }
 
-/** What Apple Wallet recorded that the page doesn't show: its name and the network's identifiers. */
+/**
+ * What Apple Wallet recorded that the page doesn't show: its name, the network's identifiers,
+ * and the reward program.
+ */
 export function walletDetails(transaction: FinanceSnapshot['transactions'][number]) {
   const wallet = transaction.wallet
   const rows: { label: string; value: string; raw?: boolean }[] = []
@@ -561,10 +733,36 @@ export function walletDetails(transaction: FinanceSnapshot['transactions'][numbe
   if (network?.merchantId) rows.push({ label: 'Merchant ID', value: network.merchantId, raw: true })
   if (network?.terminalId) rows.push({ label: 'Terminal ID', value: network.terminalId, raw: true })
   if (network?.entryMode) rows.push({ label: 'Entry mode', value: network.entryMode, raw: true })
+  if (wallet.reward) rows.push({ label: 'Reward', value: wallet.reward.program, raw: true })
   rows.push({ label: 'Wallet ID', value: wallet.recordId, raw: true })
   return rows
 }
 
+/** What the card issuer's imported export says of the merchant, beside Plaid's view. */
+export function issuerDetails(transaction: Transaction) {
+  const rows: { label: string; value: string; raw?: boolean }[] = []
+  const issuer = transaction.issuer
+  if (!issuer) return rows
+  if (issuer.name) rows.push({ label: 'Name', value: issuer.name, raw: true })
+  if (issuer.address || issuer.city)
+    rows.push({
+      label: 'Address',
+      value: [
+        issuer.address,
+        [issuer.city, issuer.region].filter(Boolean).join(' '),
+        issuer.postalCode,
+      ]
+        .filter(Boolean)
+        .join(', '),
+      raw: true,
+    })
+  if (issuer.country) rows.push({ label: 'Country', value: issuer.country })
+  if (issuer.category) rows.push({ label: 'Category', value: issuer.category })
+  if (issuer.phone) rows.push({ label: 'Phone', value: issuer.phone })
+  return rows
+}
+
+/** What Plaid reported that the page doesn't show, in words. */
 export function bankDetails(transaction: FinanceSnapshot['transactions'][number]) {
   const rows: { label: string; value: string; raw?: boolean }[] = []
   if (transaction.originalDescription)
@@ -577,23 +775,6 @@ export function bankDetails(transaction: FinanceSnapshot['transactions'][number]
         .join(' · '),
     })
   }
-  // What the card issuer's imported export says, beside Plaid's view.
-  const issuer = transaction.issuer
-  if (issuer?.name) rows.push({ label: 'Issuer’s name', value: issuer.name, raw: true })
-  if (issuer?.address || issuer?.city)
-    rows.push({
-      label: 'Issuer’s address',
-      value: [
-        issuer.address,
-        [issuer.city, issuer.region].filter(Boolean).join(' '),
-        issuer.postalCode,
-      ]
-        .filter(Boolean)
-        .join(', '),
-      raw: true,
-    })
-  if (issuer?.category) rows.push({ label: 'Issuer’s category', value: issuer.category })
-  if (issuer?.phone) rows.push({ label: 'Merchant phone', value: issuer.phone })
   if (transaction.accountOwner) rows.push({ label: 'Card holder', value: transaction.accountOwner })
   if (transaction.checkNumber)
     rows.push({ label: 'Check', value: `No. ${transaction.checkNumber}` })
@@ -618,5 +799,25 @@ export function bankDetails(transaction: FinanceSnapshot['transactions'][number]
     })
   if (transaction.transactionCode)
     rows.push({ label: 'Kind', value: transaction.transactionCode.replaceAll('_', ' ') })
+  if (transaction.paymentChannel) rows.push({ label: 'Channel', value: transaction.paymentChannel })
+  if (transaction.categoryDetail)
+    rows.push({ label: 'Category code', value: transaction.categoryDetail, raw: true })
+  if (transaction.merchantEntityId)
+    rows.push({ label: 'Merchant ID', value: transaction.merchantEntityId, raw: true })
+  if (transaction.pendingTransactionId)
+    rows.push({ label: 'Pending ID', value: transaction.pendingTransactionId, raw: true })
+  // The bank's payment record: who paid whom, why, and its references.
+  const meta = transaction.paymentMeta
+  const payment: Array<[string, string | undefined, boolean?]> = [
+    ['Payer', meta?.payer],
+    ['Payee', meta?.payee],
+    ['On behalf of', meta?.byOrderOf],
+    ['Reason', meta?.reason],
+    ['Paid by', meta?.paymentMethod],
+    ['Processor', meta?.paymentProcessor],
+    ['Reference', meta?.referenceNumber, true],
+    ['ACH ID', meta?.ppdId, true],
+  ]
+  for (const [label, value, raw] of payment) if (value) rows.push({ label, value, raw })
   return rows
 }

@@ -63,7 +63,6 @@ export const withoutAccountPreferences = (current: FinanceSettings): FinanceSett
   hiddenBenefitIds: defaultFinanceSettings.hiddenBenefitIds,
 })
 
-/** Every card the user spends from: the saved spending card, then the others. */
 /** The chosen spending cards, then any spending-only account, which is always one. */
 export function spendingAccountIds(
   settings: FinanceSettings,

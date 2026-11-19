@@ -25,7 +25,7 @@ import { useSearchShortcuts } from '../hooks/use-search-shortcuts'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
 import type { ActivityItem } from '../lib/activity'
 import { matchContacts, requestContactsAccess } from '../lib/contacts'
-import { daysBetween } from '../lib/dates'
+import { daysBetween, snapshotToday } from '../lib/dates'
 import { errorMessage } from '../lib/errors'
 import { countOf, formatCurrency } from '../lib/format'
 import {
@@ -48,6 +48,8 @@ import { tripDates, tripFlags, tripTitle } from '../lib/trips'
 type Activities = Map<string, ActivityItem>
 type PersonSummary = Insights['people']['people'][number]
 type Suggestion = Insights['people']['suggestions'][number]
+// One empty list, so memos over people keep their identity while none are saved.
+const noPeople: Person[] = []
 
 const personSearch = (person: Pick<Person, 'id'>) => ({
   view: 'people' as const,
@@ -103,6 +105,15 @@ const columns: ReadonlyArray<{ id: Column; label: string }> = [
   { id: 'sent', label: 'Sent' },
 ]
 
+/** The people the list shows; someone with nothing tagged is reached through Find or add. */
+function knownPeople(people: readonly Person[], summaries: readonly PersonSummary[]): Row[] {
+  const byId = new Map(people.map((person) => [person.id, person]))
+  return summaries.flatMap((summary) => {
+    const person = byId.get(summary.id)
+    return person && summary.transactionCount > 0 ? [{ person, summary }] : []
+  })
+}
+
 /** Most recent first until a column is chosen; ties fall back to the name. */
 function comparePeople(left: Row, right: Row, sort: SortState<Column> | undefined) {
   const byName = left.person.name.localeCompare(right.person.name)
@@ -131,7 +142,7 @@ function Amount({ value }: { value: number }) {
  */
 function PeopleList({ data, photos }: { data: FinanceSnapshot; photos: Record<string, string> }) {
   const navigate = useNavigate({ from: '/insights' })
-  const people = data.settings?.people ?? []
+  const people = data.settings?.people ?? noPeople
   const summaries = data.insights?.people.people ?? []
   const suggestions = data.insights?.people.suggestions ?? []
   const field = useRef<HTMLInputElement>(null)
@@ -141,16 +152,9 @@ function PeopleList({ data, photos }: { data: FinanceSnapshot; photos: Record<st
   const [sort, setSort] = useState<SortState<Column>>()
   const [cursor, setCursor] = useState<string>()
   const searchRef = useSearchShortcuts(query, setQuery)
-  const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
+  const today = snapshotToday(data)
 
-  // Someone with nothing tagged has nothing to show here; Find or add still reaches them.
-  const known = useMemo(() => {
-    const byId = new Map(people.map((person) => [person.id, person]))
-    return summaries.flatMap((summary) => {
-      const person = byId.get(summary.id)
-      return person && summary.transactionCount > 0 ? [{ person, summary }] : []
-    })
-  }, [people, summaries])
+  const known = useMemo(() => knownPeople(people, summaries), [people, summaries])
   const rows = useMemo(() => {
     const matching = new Set(
       filterPeople(
@@ -351,7 +355,8 @@ function PeopleList({ data, photos }: { data: FinanceSnapshot; photos: Record<st
                 {rows.map(({ person, summary }) => (
                   <li key={person.id}>
                     <Link
-                      className={`people-table-row${person.id === cursor ? ' is-current' : ''}`}
+                      className="list-row people-table-row"
+                      data-selected={person.id === cursor || undefined}
                       to="/insights"
                       search={personSearch(person)}
                       data-keyboard-row
@@ -582,10 +587,14 @@ function WhoIsThis({
   const choices = people
     .map(({ id, name }) => ({ value: id, label: name }))
     .toSorted((left, right) => left.label.localeCompare(right.label))
-  const rows = suggestions.map((suggestion) => ({
-    suggestion,
-    options: identities(suggestion, people, contacts.data?.[suggestion.matchName]),
-  }))
+  const rows = useMemo(
+    () =>
+      suggestions.map((suggestion) => ({
+        suggestion,
+        options: identities(suggestion, people, contacts.data?.[suggestion.matchName]),
+      })),
+    [suggestions, people, contacts.data],
+  )
   const save = useCallback(
     async (suggestion: Suggestion, identity: Parameters<typeof withIdentity>[2]) => {
       if (pending) return
@@ -603,9 +612,13 @@ function WhoIsThis({
     [client, pending, updateSettings],
   )
   // The first name with a match, and its best match.
-  const first = rows
-    .map(({ suggestion, options: [best] }) => (best ? { suggestion, best } : undefined))
-    .find((row) => row !== undefined)
+  const first = useMemo(
+    () =>
+      rows
+        .map(({ suggestion, options: [best] }) => (best ? { suggestion, best } : undefined))
+        .find((row) => row !== undefined),
+    [rows],
+  )
 
   useRegisterActions(
     useMemo<AppAction[]>(
@@ -798,10 +811,18 @@ function PersonView({
   const [details, setDetails] = useState(false)
   const summaries = data.insights?.people.people ?? []
   const summary = summaries.find(({ id }) => id === person.id)
-  const index = summaries.findIndex(({ id }) => id === person.id)
-  const earlier = index > 0 ? summaries[index - 1] : undefined
-  const later = index >= 0 ? summaries[index + 1] : undefined
   const saved = data.settings?.people
+  // ↑ and ↓ step through the people the list shows, in its order before a column is chosen.
+  const order = useMemo(
+    () =>
+      knownPeople(saved ?? [], data.insights?.people.people ?? []).toSorted((left, right) =>
+        comparePeople(left, right, undefined),
+      ),
+    [saved, data.insights?.people.people],
+  )
+  const index = order.findIndex((row) => row.person.id === person.id)
+  const earlier = index > 0 ? order[index - 1]?.summary : undefined
+  const later = index >= 0 ? order[index + 1]?.summary : undefined
   const names = useMemo(() => new Map((saved ?? []).map(({ id, name }) => [id, name])), [saved])
   const trips = (data.insights?.trips.trips ?? []).filter(({ id }) => summary?.tripIds.includes(id))
   const rows = data.transactions
@@ -825,8 +846,11 @@ function PersonView({
           detail: earlier ? names.get(earlier.id) : undefined,
           group: 'View',
           scope: 'page',
-          // ⌘↑ and ⌘↓ step through what's open, as on every selector.
-          bindings: [{ sequence: ['Meta+ArrowUp'], label: '⌘↑' }],
+          // ↑ and ↓ step through what's open, as on every selector.
+          bindings: [
+            { sequence: ['ArrowUp'], label: '↑' },
+            { sequence: ['Meta+ArrowUp'], label: '⌘↑' },
+          ],
           disabled: !earlier,
           disabledReason: 'This is the first person',
           run: () => go(earlier),
@@ -837,7 +861,10 @@ function PersonView({
           detail: later ? names.get(later.id) : undefined,
           group: 'View',
           scope: 'page',
-          bindings: [{ sequence: ['Meta+ArrowDown'], label: '⌘↓' }],
+          bindings: [
+            { sequence: ['ArrowDown'], label: '↓' },
+            { sequence: ['Meta+ArrowDown'], label: '⌘↓' },
+          ],
           disabled: !later,
           disabledReason: 'This is the last person',
           run: () => go(later),
@@ -864,7 +891,7 @@ function PersonView({
     ),
   )
 
-  const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
+  const today = snapshotToday(data)
   const line = [
     summary?.first ? `Together since ${formatListDate(summary.first, data.updatedAt)}` : null,
     summary?.last ? `last ${timeAgo(summary.last, today)}` : 'Nothing tagged yet',
@@ -956,7 +983,12 @@ function PersonView({
                 tabIndex={-1}
                 style={{ '--postcard-tilt': `${position % 2 ? 1.2 : -1.2}deg` }}
               >
-                <Link to="/insights" search={{ trip: trip.id }} className="people-postcard">
+                <Link
+                  to="/insights"
+                  search={{ trip: trip.id }}
+                  className="people-postcard"
+                  data-keyboard-open
+                >
                   <span className="people-postcard-stamp" aria-hidden="true">
                     {tripFlags(trip) || <Plane size={15} />}
                   </span>

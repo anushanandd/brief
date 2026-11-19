@@ -229,8 +229,9 @@ export function currentSpendingPeriod(
   insights: Pick<Insights, 'spending'> | undefined,
   scope: string,
   kind: SpendingPeriodJudgment['kind'],
+  owner: SpendingOwner = 'me',
 ) {
-  const periods = spendingJudgments(insights, scope)
+  const periods = spendingJudgments(insights, scope, owner)
   return (
     periods.find((period) => period.kind === kind) ??
     (kind === 'statement' ? periods.find((period) => period.kind === 'month') : undefined)
@@ -238,8 +239,8 @@ export function currentSpendingPeriod(
 }
 
 /**
- * What Spending's headline shows for a period: the statement balance when the period is a real
- * statement, otherwise the period's spending, with its change from the same point last period.
+ * What Spending's headline shows for the current period: what one owner spent, as the page's
+ * hero does, with its change from the same point last period.
  */
 export function spendingHeadline(
   data: Pick<FinanceSnapshot, 'accounts' | 'transactions'> & {
@@ -248,17 +249,19 @@ export function spendingHeadline(
   spendingAccountId: string,
   period: SpendingPeriod,
   requested?: string,
+  owner: SpendingOwner = 'me',
 ) {
   const scope = spendingScope(data.accounts, data.transactions, spendingAccountId, requested)
   const current = currentSpendingPeriod(
     data.insights,
     scope.selected?.id ?? allSpendingAccounts,
     spendingPeriodKind(period),
+    owner,
   )
   return {
     hasScope: scope.options.length > 0,
-    // No period from Rust, or a statement without its balance, is unknown rather than $0.
-    value: current?.kind === 'statement' ? (current.balance ?? null) : (current?.total ?? null),
+    // No period from Rust is unknown rather than $0.
+    value: current?.total ?? null,
     change: period ? (current?.change ?? null) : null,
   }
 }

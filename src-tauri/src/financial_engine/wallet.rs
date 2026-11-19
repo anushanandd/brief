@@ -141,6 +141,10 @@ fn detail(row: &WalletRow) -> WalletDetail {
         terminal_amount: None,
         merchant: row.merchant.as_deref().map(readable),
         categorized: false,
+        code_category: row
+            .merchant_code
+            .and_then(plaid_code)
+            .map(|code| super::categories::categorize("OTHER", Some(code), None).category),
     }
 }
 
@@ -183,6 +187,7 @@ fn record(
         account_owner: None,
         iso_currency_code: Some("USD".into()),
         unofficial_currency_code: None,
+        payment_meta: None,
     }
 }
 
@@ -412,7 +417,8 @@ impl Projected {
         };
         let terminal_amount = matched.detail.terminal_amount;
         Transaction {
-            occurred_at: matched.occurred_at,
+            // Wallet's time is the place's own; Plaid's UTC instant stands in without it.
+            occurred_at: matched.occurred_at.or(transaction.occurred_at.clone()),
             wallet: Some(WalletDetail {
                 terminal_amount: terminal_amount.filter(|amount| {
                     crate::numeric::minor_units(*amount)
@@ -821,10 +827,13 @@ mod tests {
                 amount: -27.65,
                 ..Transaction::default()
             });
-            enriched.wallet.unwrap().categorized
+            let wallet = enriched.wallet.unwrap();
+            (wallet.categorized, wallet.code_category)
         };
-        assert!(!categorized("VERY_HIGH"));
-        assert!(categorized("LOW"));
+        // Either way, what the code says stays beside Plaid's, for the inspector to compare.
+        let dining = Some("Dining".to_owned());
+        assert_eq!(categorized("VERY_HIGH"), (false, dining.clone()));
+        assert_eq!(categorized("LOW"), (true, dining));
     }
 
     #[test]

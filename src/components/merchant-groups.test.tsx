@@ -4,7 +4,7 @@ import { createRoot } from 'react-dom/client'
 import { expect, it } from 'vitest'
 
 import type { ActivityItem } from '../lib/activity'
-import { MerchantGroups } from './merchant-groups'
+import { MerchantGroups, merchantDates } from './merchant-groups'
 
 const purchase = (id: string, amount: number): ActivityItem => ({
   id: `spending:${id}`,
@@ -47,6 +47,19 @@ it('shows a merchant with one purchase as that purchase', async () => {
   expect(container.textContent).not.toContain('1 purchase')
   await act(async () => root.unmount())
   container.remove()
+})
+
+it('dates a merchant by its days, or their range past three', () => {
+  const on = (...dates: string[]) =>
+    dates.map((date, index) => ({ ...purchase(`${index}`, -10), date }))
+  const reference = '2026-09-30T12:00:00Z'
+  expect(merchantDates(on('2026-09-14', '2026-09-14'), reference)).toBe('Sep 14')
+  expect(merchantDates(on('2026-09-14', '2026-08-30', '2026-09-03'), reference)).toBe(
+    'Aug 30, Sep 3, 14',
+  )
+  expect(merchantDates(on('2026-09-01', '2026-09-02', '2026-09-03', '2026-09-20'), reference)).toBe(
+    'Sep 1 – Sep 20',
+  )
 })
 
 it('collapses a merchant at once', async () => {

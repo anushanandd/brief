@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react'
+import { createContext, useContext, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import type { ComponentPropsWithoutRef, ReactNode } from 'react'
 
 import { errorMessage } from '../lib/errors'
@@ -116,13 +116,11 @@ export function SettingsBlock({
   title,
   description,
   action,
-  mark,
   children,
   className,
 }: {
   id: string
   title: string
-  mark?: ReactNode
   description?: ReactNode
   action?: ReactNode
   children?: ReactNode
@@ -138,23 +136,11 @@ export function SettingsBlock({
       hidden={useItemHidden(id)}
     >
       <div className="settings-block-header">
-        <span className={mark ? 'settings-control-lead' : 'settings-control-copy'}>
-          {mark}
-          {mark ? (
-            <span className="settings-control-copy">
-              <strong id={`${id}-title`}>
-                <SettingsHighlight text={title} />
-              </strong>
-              {description ? <small>{description}</small> : null}
-            </span>
-          ) : (
-            <>
-              <strong id={`${id}-title`}>
-                <SettingsHighlight text={title} />
-              </strong>
-              {description ? <small>{description}</small> : null}
-            </>
-          )}
+        <span className="settings-control-copy">
+          <strong id={`${id}-title`}>
+            <SettingsHighlight text={title} />
+          </strong>
+          {description ? <small>{description}</small> : null}
         </span>
         {action ? <span className="settings-control-action">{action}</span> : null}
       </div>
@@ -268,6 +254,78 @@ export function SettingsResetButton({
         {pending ? 'Resetting…' : 'Reset'}
       </Button>
     </span>
+  )
+}
+
+/**
+ * An in-app confirmation under the control that opened it (window.confirm cancels in WebKit):
+ * Cancel takes focus as it opens, Escape cancels, and focus goes back to `returnFocus` when it
+ * closes, since the control that opened it has often been replaced in the meantime.
+ */
+export function InlineConfirm({
+  label,
+  labelledBy,
+  id,
+  className,
+  pending = false,
+  onCancel,
+  returnFocus,
+  actions,
+  children,
+}: {
+  label?: string
+  labelledBy?: string
+  id?: string
+  className?: string
+  /** An action is running: Cancel and Escape wait for it. */
+  pending?: boolean
+  onCancel: () => void
+  returnFocus: () => HTMLElement | null | undefined
+  /** The buttons after Cancel. */
+  actions: ReactNode
+  children: ReactNode
+}) {
+  const group = useRef<HTMLDivElement>(null)
+  const cancel = useRef<HTMLButtonElement>(null)
+  const restore = useRef(returnFocus)
+  useLayoutEffect(() => {
+    restore.current = returnFocus
+  })
+  useLayoutEffect(() => {
+    cancel.current?.focus({ preventScroll: true })
+    const node = group.current
+    return () => {
+      if (!node?.contains(document.activeElement)) return
+      // After the commit, once removal has dropped focus to the body, and only then.
+      queueMicrotask(() => {
+        if (document.activeElement && document.activeElement !== document.body) return
+        restore.current()?.focus({ preventScroll: true })
+      })
+    }
+  }, [])
+  return (
+    <div
+      ref={group}
+      id={id}
+      className={`connection-confirmation${className ? ` ${className}` : ''}`}
+      role="group"
+      aria-label={label}
+      aria-labelledby={labelledBy}
+      onKeyDown={(event) => {
+        if (event.key !== 'Escape') return
+        event.preventDefault()
+        event.stopPropagation()
+        if (!pending) onCancel()
+      }}
+    >
+      {children}
+      <div>
+        <Button ref={cancel} icon={X} size="compact" disabled={pending} onClick={onCancel}>
+          Cancel
+        </Button>
+        {actions}
+      </div>
+    </div>
   )
 }
 

@@ -25,7 +25,7 @@ const HINT_ROOM = 44
  * A sidebar row has room at its end, so its hint sits inside; any other control keeps its icon
  * and label clear, with the hint beside it, on the right unless the window ends there.
  */
-export function commandKeyHints(actions: readonly AppAction[]): CommandHint[] {
+function commandKeyHints(actions: readonly AppAction[]): CommandHint[] {
   const byId = new Map(actions.map((action) => [action.id, action]))
   return visibleActionTargets().flatMap(({ element }, id) => {
     // A breadcrumb's page shows its shortcut in the sidebar, and a hint here would cover the

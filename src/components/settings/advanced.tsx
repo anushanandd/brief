@@ -8,7 +8,7 @@ import { getAppVersion, getLoginItem, isTauri, setLoginItem } from '../../lib/ap
 import { errorMessage } from '../../lib/errors'
 import { financeSettings } from '../../lib/finance-settings'
 import { ExternalLink } from '../external-link'
-import { ChevronRight, Palette, ScrollText, ShieldCheck } from '../icons'
+import { Palette, ScrollText, ShieldCheck } from '../icons'
 import { Keys } from '../keys'
 import {
   SettingsBlock,
@@ -115,30 +115,27 @@ export function AdvancedSection() {
       <SettingsCard>
         <SettingsBlock id="diagnostics" title="Diagnostics">
           <div className="settings-destination-list">
-            <Link to="/health" className="settings-destination-row">
+            <Link to="/health" className="list-row settings-destination-row">
               <ShieldCheck size={16} aria-hidden="true" />
               <span>
                 <strong>Data health</strong>
                 <small>Freshness, coverage, and reconciliation checks</small>
               </span>
-              <ChevronRight size={15} aria-hidden="true" />
             </Link>
-            <Link to="/logs" className="settings-destination-row">
+            <Link to="/logs" className="list-row settings-destination-row">
               <ScrollText size={16} aria-hidden="true" />
               <span>
                 <strong>Diagnostics</strong>
                 <small>Sync history, runtime state, and source times</small>
               </span>
-              <ChevronRight size={15} aria-hidden="true" />
             </Link>
             {import.meta.env.DEV ? (
-              <Link to="/settings/design" className="settings-destination-row">
+              <Link to="/settings/design" className="list-row settings-destination-row">
                 <Palette size={16} aria-hidden="true" />
                 <span>
                   <strong>Design</strong>
                   <small>Tokens and shared components</small>
                 </span>
-                <ChevronRight size={15} aria-hidden="true" />
               </Link>
             ) : null}
           </div>
@@ -148,10 +145,6 @@ export function AdvancedSection() {
             <div>
               <span>Version</span>
               <strong>{version.data ?? (version.isLoading ? 'Loading…' : 'Unavailable')}</strong>
-            </div>
-            <div>
-              <span>Hosted backend</span>
-              <strong>None</strong>
             </div>
             {/* Places read from bank descriptors use this bundled city list. */}
             <div>

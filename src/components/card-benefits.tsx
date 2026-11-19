@@ -1,6 +1,5 @@
-import { Popover } from '@base-ui/react/popover'
-import { Link } from '@tanstack/react-router'
-import { useEffect, useState, type ReactNode } from 'react'
+import { Link, useNavigate } from '@tanstack/react-router'
+import { useEffect, useState } from 'react'
 
 import { useFinance } from '../hooks/use-finance'
 import { catalogBrands } from '../lib/api'
@@ -9,7 +8,9 @@ import {
   benefitStatus,
   benefitWarning,
   creditLagNote,
+  lastCreditText,
   purchaseCreditLabel,
+  withoutCredit,
 } from '../lib/benefit-copy'
 import { financeSettings } from '../lib/finance-settings'
 import { formatActivityName, formatCurrency, formatDay, formatProseCurrency } from '../lib/format'
@@ -17,20 +18,17 @@ import {
   benefitLogoUrls,
   brandLogoUrl,
   brandMarkLabel,
-  getExternalLogosEnabled,
+  useExternalLogosEnabled,
   warmBenefitLogos,
 } from '../lib/logos'
 import type { BenefitActivity, BenefitWindow, Insights } from '../lib/schema'
 import { benefitReviewItems, benefitsToUseFirst, formatActivityDate } from '../lib/spending'
 import { BrandMark } from './brand-mark'
-import { ExternalLink } from './external-link'
 import {
   BedDouble,
   CarFront,
   ChevronRight,
   HeartPulse,
-  History,
-  Info,
   MonitorPlay,
   Plane,
   ReceiptText,
@@ -39,10 +37,9 @@ import {
   ShoppingBasket,
   Sofa,
   UtensilsCrossed,
-  X,
   type IconComponent,
 } from './icons'
-import { Button, Card, EmptyState, SectionHeading } from './ui'
+import { Button, EmptyState, ScrollCueCard, SectionHeading } from './ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
 type Benefit = BenefitWindow
@@ -159,53 +156,6 @@ function BenefitProgress({ benefit }: { benefit: Benefit }) {
   )
 }
 
-function BenefitInfo({
-  title,
-  command,
-  children,
-}: {
-  title: string
-  /** The registered action that opens it, for a trigger outside a list row. */
-  command?: string
-  children: ReactNode
-}) {
-  return (
-    <Popover.Root>
-      <Popover.Trigger
-        aria-label={`About ${title}`}
-        data-command={command}
-        data-keyboard-open
-        render={
-          <Button size="icon" variant="ghost" className="icon-only-subtle benefit-info-trigger" />
-        }
-      >
-        <Info size={14} aria-hidden="true" />
-      </Popover.Trigger>
-      <Popover.Portal>
-        <Popover.Positioner
-          side="bottom"
-          align="start"
-          sideOffset={8}
-          className="benefit-info-positioner"
-        >
-          <Popover.Popup className="benefit-info-popup" data-popup-open="" initialFocus>
-            <div className="benefit-info-heading">
-              <Popover.Title>{title}</Popover.Title>
-              <Popover.Close
-                aria-label={`Close ${title} information`}
-                render={<Button size="icon-compact" variant="ghost" />}
-              >
-                <X size={14} aria-hidden="true" />
-              </Popover.Close>
-            </div>
-            {children}
-          </Popover.Popup>
-        </Popover.Positioner>
-      </Popover.Portal>
-    </Popover.Root>
-  )
-}
-
 function BenefitEvidence({
   activity,
   externalLogosEnabled,
@@ -260,11 +210,12 @@ function BenefitEvidence({
 function BenefitRow({
   benefit,
   externalLogosEnabled,
-  compact = false,
+  onOpen,
 }: {
   benefit: Benefit
   externalLogosEnabled: boolean
-  compact?: boolean
+  /** Opens the benefit on Benefits, where its periods, evidence, and terms are. */
+  onOpen?: (id: string) => void
 }) {
   const hasPostedCredits = benefit.activity.some(
     ({ kind, pending }) => !pending && (kind === 'credit' || kind === 'reversal'),
@@ -274,19 +225,26 @@ function BenefitRow({
   )
   const qualifyingPurchases = supportingActivity.filter(({ kind }) => kind === 'purchase')
   const visibleSupportingActivity = supportingActivity.filter(({ kind }) => kind !== 'purchase')
-  const lastCreditLabel = benefit.lastCredit
-    ? `Last detected credit: ${formatCurrency(benefit.lastCredit.amount)} on ${formatActivityDate(benefit.lastCredit.date)}.`
-    : null
   const status = benefitStatus(benefit)
   const warning = benefitWarning(benefit)
 
   return (
-    // A row in the list's keyboard model: J and K move through benefits, Return opens About.
+    // A row in the list's keyboard model: J and K move through benefits, Return opens it. Its
+    // evidence buttons keep their own clicks.
     <article
-      className="spending-benefit-row"
+      className="list-row spending-benefit-row"
       aria-labelledby={`benefit-${benefit.id}`}
       tabIndex={-1}
       data-keyboard-row
+      data-keyboard-open={onOpen ? true : undefined}
+      onClick={
+        onOpen
+          ? (event) => {
+              const target = event.target
+              if (!(target instanceof Element && target.closest('button, a'))) onOpen(benefit.id)
+            }
+          : undefined
+      }
     >
       <div className="benefit-detail-row">
         <BenefitMark
@@ -299,22 +257,30 @@ function BenefitRow({
           externalLogosEnabled={externalLogosEnabled}
         />
         <div className="benefit-title-row">
-          <h4 id={`benefit-${benefit.id}`}>{benefit.name}</h4>
-          <BenefitInfo title={benefit.name}>
-            <p>{benefit.instruction}</p>
-            {benefit.deadlineNote ? <p>Cutoff: {benefit.deadlineNote}.</p> : null}
-            {benefit.cadence === 'renewal' ? <p>Based on the last posted credit.</p> : null}
-            {hasPostedCredits || qualifyingPurchases.length ? (
-              <p>Credits post: {creditLagNote(benefit)}</p>
-            ) : null}
-            <ExternalLink className="benefit-terms-link" href={benefit.url}>
-              Official benefit terms
-            </ExternalLink>
-          </BenefitInfo>
+          {/* The name opens the official terms; hovering or reaching it says how the credit
+              works. */}
+          <h4 id={`benefit-${benefit.id}`}>
+            <Tooltip>
+              <TooltipTrigger render={<span className="benefit-name" />}>
+                {withoutCredit(benefit.name)}
+              </TooltipTrigger>
+              <TooltipContent className="benefit-info-tooltip" sideOffset={6}>
+                <p>{benefit.instruction}</p>
+                {benefit.deadlineNote ? <p>Cutoff: {benefit.deadlineNote}.</p> : null}
+                {benefit.cadence === 'renewal' ? <p>Based on the last posted credit.</p> : null}
+                {hasPostedCredits || qualifyingPurchases.length ? (
+                  <p>Credits post: {creditLagNote(benefit)}</p>
+                ) : null}
+              </TooltipContent>
+            </Tooltip>
+          </h4>
+          {benefit.lastCredit ? (
+            <small className="benefit-last-credit sensitive-value">
+              {lastCreditText(benefit.lastCredit)}
+            </small>
+          ) : null}
         </div>
-        <strong className="benefit-allowance">
-          {compact ? formatCurrency(benefit.cap) : benefit.limit}
-        </strong>
+        <strong className="benefit-allowance">{formatCurrency(benefit.cap)}</strong>
         <BenefitProgress benefit={benefit} />
         <span
           className={
@@ -322,26 +288,6 @@ function BenefitRow({
           }
         >
           {status.text}
-          {lastCreditLabel ? (
-            <Tooltip>
-              <TooltipTrigger
-                render={
-                  <Button
-                    type="button"
-                    size="icon-compact"
-                    variant="ghost"
-                    className="benefit-evidence-trigger"
-                    aria-label={lastCreditLabel}
-                  />
-                }
-              >
-                <History size={14} aria-hidden="true" />
-              </TooltipTrigger>
-              <TooltipContent className="benefit-last-credit-tooltip" sideOffset={6}>
-                {lastCreditLabel}
-              </TooltipContent>
-            </Tooltip>
-          ) : null}
           {qualifyingPurchases.length ? (
             <Tooltip>
               <TooltipTrigger
@@ -381,11 +327,11 @@ const special = ({ cadence }: Benefit) => cadence === 'renewal' || cadence === '
 function BenefitGroups({
   benefits,
   externalLogosEnabled,
-  compact = false,
+  onOpen,
 }: {
   benefits: Benefit[]
   externalLogosEnabled: boolean
-  compact?: boolean
+  onOpen?: (id: string) => void
 }) {
   const calendarBenefits = benefits.filter((benefit) => !special(benefit) && !benefit.recurring)
   // Subscriptions spend these on their own: there is no deadline to act on, only a credit to check.
@@ -405,7 +351,6 @@ function BenefitGroups({
             className="benefit-deadline-group"
             key={deadline}
             aria-label={`Benefits ending ${first.reset}`}
-            data-keyboard-region
           >
             <h3>
               Ending {first.reset}
@@ -418,42 +363,34 @@ function BenefitGroups({
                 key={benefit.id}
                 benefit={benefit}
                 externalLogosEnabled={externalLogosEnabled}
-                compact={compact}
+                onOpen={onOpen}
               />
             ))}
           </section>
         )
       })}
       {recurringBenefits.length ? (
-        <section
-          className="benefit-deadline-group"
-          aria-label="Recurring credits"
-          data-keyboard-region
-        >
+        <section className="benefit-deadline-group" aria-label="Recurring credits">
           <h3>Recurring</h3>
           {recurringBenefits.map((benefit) => (
             <BenefitRow
               key={benefit.id}
               benefit={benefit}
               externalLogosEnabled={externalLogosEnabled}
-              compact={compact}
+              onOpen={onOpen}
             />
           ))}
         </section>
       ) : null}
       {specialBenefits.length ? (
-        <section
-          className="benefit-deadline-group"
-          aria-label="Renewals and purchases"
-          data-keyboard-region
-        >
+        <section className="benefit-deadline-group" aria-label="Renewals and purchases">
           <h3>Renewals & purchases</h3>
           {specialBenefits.map((benefit) => (
             <BenefitRow
               key={benefit.id}
               benefit={benefit}
               externalLogosEnabled={externalLogosEnabled}
-              compact={compact}
+              onOpen={onOpen}
             />
           ))}
         </section>
@@ -525,9 +462,10 @@ export function CardBenefits({
   accountId?: string
 }) {
   const data = useFinance().data
+  const navigate = useNavigate()
   const settings = financeSettings(data)
   const insights = data?.insights
-  const externalLogosEnabled = getExternalLogosEnabled()
+  const externalLogosEnabled = useExternalLogosEnabled()
   const card = accountId
     ? insights?.otherCardBenefits?.find((other) => other.accountId === accountId)
     : insights?.benefits
@@ -536,7 +474,7 @@ export function CardBenefits({
   const useFirst = benefitsToUseFirst(benefits, card?.useFirst ?? [])
   const review = accountId ? [] : benefitReviewItems(card, settings.hiddenBenefitIds)
   return (
-    <Card className="spending-benefits-card">
+    <ScrollCueCard className="spending-benefits-card" scrollSelector=".spending-benefits-scroll">
       <SectionHeading
         title={
           <Link
@@ -562,15 +500,27 @@ export function CardBenefits({
         </p>
       ) : null}
       {useFirst.length || !benefits.length ? (
-        // The most urgent first: grouped by when each resets, soonest deadline leading.
-        <BenefitGroups
-          benefits={useFirst.slice(0, 3)}
-          externalLogosEnabled={externalLogosEnabled}
-          compact
-        />
+        // The most urgent first: grouped by when each resets, soonest deadline leading. The list
+        // fills what the column leaves and scrolls past it.
+        <div className="spending-benefits-scroll" data-keyboard-region>
+          <BenefitGroups
+            benefits={useFirst}
+            externalLogosEnabled={externalLogosEnabled}
+            // Benefits reads the saved card; another card's benefits open nothing.
+            onOpen={
+              accountId
+                ? undefined
+                : (id) =>
+                    void navigate({
+                      to: '/analytics',
+                      search: { chart: 'card-credits', benefit: id },
+                    })
+            }
+          />
+        </div>
       ) : (
         <EmptyState>Every credit in its current window is used.</EmptyState>
       )}
-    </Card>
+    </ScrollCueCard>
   )
 }

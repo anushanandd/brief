@@ -200,7 +200,7 @@
 .activity-filter-row:hover {
   background: var(--hover-wash);
 }
-.activity-filter-row:focus {
+.activity-filter-row:focus:not([data-pointer] *) {
   background: var(--sidebar-accent);
 }
 .activity-filter-option {
@@ -416,6 +416,10 @@
 .financial-activity-table[data-hidden-columns~='account'] [data-column='account'] {
   display: none;
 }
+/* The ledger's rows line up with its header, so they don't reach into the gutter. */
+.list-row.financial-activity-row-columns {
+  margin-inline: 0;
+}
 .activity-page-list .financial-activity-row-columns {
   min-height: 52px;
   padding: 0 8px;
@@ -476,13 +480,6 @@
 .financial-activity-cell-text > small {
   color: var(--text-tertiary);
   font-size: var(--type-meta);
-}
-.financial-activity-row.is-openable {
-  cursor: pointer;
-  transition: background-color var(--duration-quick) var(--ease-out);
-}
-.financial-activity-row.is-openable:hover {
-  background: var(--hover-wash);
 }
 .financial-activity-open {
   position: absolute;

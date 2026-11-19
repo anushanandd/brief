@@ -2,16 +2,23 @@ import { Link, useNavigate } from '@tanstack/react-router'
 import { useMemo, useRef, useState } from 'react'
 
 import { AccountMark } from '../components/account-mark'
-import { GroupedActivityList } from '../components/activity-list'
+import { ActivityList, GroupedActivityList } from '../components/activity-list'
 import { BenefitGrid, type BenefitInspection } from '../components/benefit-grid'
 import { CashFlowSankey } from '../components/cash-flow-sankey'
-import { ChartSpan, ExpandableChart, expandOnClick, useWheelSteps } from '../components/charts'
+import {
+  ChartSpan,
+  ExpandableChart,
+  expandOnClick,
+  expandOnEnter,
+  useWheelSteps,
+} from '../components/charts'
 import { PageError, PageLoading } from '../components/data-state'
 import { ExpectedActivity } from '../components/expected-activity'
 import { ChevronRight, X } from '../components/icons'
 import { RankedBars } from '../components/ranked-bars'
 import { MoneyStrip } from '../components/report-links'
 import { SettingsLink } from '../components/settings-dialog'
+import { TransactionDialog } from '../components/transaction-dialog'
 import {
   AnimatedCurrency,
   Button,
@@ -38,7 +45,6 @@ import {
   type AnalyticsChart,
 } from '../lib/analytics'
 import {
-  countOf,
   formatCalendarDate,
   formatCompactCurrency,
   formatCurrency,
@@ -108,6 +114,9 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
   // flow scrolls its own rows, so it keeps the wheel.
   const [bars, setBars] = useState<HTMLDivElement | null>(null)
   const [expandedBars, setExpandedBars] = useState<HTMLDivElement | null>(null)
+  // The activity open in the details dialog, from either of the report's lists.
+  const [opened, setOpened] = useState<string>()
+  const openActivity = (activity: ActivityItem) => setOpened(activity.id)
   const stepPeriod = (direction: -1 | 1) => {
     const days = scrollPeriodDays(graphWindow)
     if (scroll && days)
@@ -119,7 +128,7 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
   useWheelSteps(flow ? null : expandedBars, stepPeriod)
   const home =
     group === 'money'
-      ? ({ label: 'Spending', to: '/spending' } as const)
+      ? ({ label: 'Money', to: '/spending' } as const)
       : ({ label: 'Investments', to: '/holdings' } as const)
   const periodChange = unavailable ? null : report.change
   if (reportsQuery.isLoading) return <PageLoading />
@@ -176,6 +185,8 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
             .toSorted((left, right) => right.date.localeCompare(left.date))}
           referenceIso={data.updatedAt}
           emptyMessage="No posted activity in this period."
+          onOpen={openActivity}
+          selectedId={opened}
         />
       </div>
     </ScrollCueCard>
@@ -237,10 +248,6 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
               <ScrollCueCard
                 className="account-overview-chart-card analytics-chart-card"
                 scrollSelector=".cash-flow-sankey-scroll"
-                role="region"
-                aria-label={`${report.label} chart`}
-                tabIndex={0}
-                data-range-focus-region
               >
                 <ExpandableChart
                   title={definition.heading ?? report.label}
@@ -293,7 +300,13 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                       <div
                         ref={expanded ? setExpandedBars : setBars}
                         className={`brokerage-chart-viewport${expand ? ' expands-on-click' : ''}`}
+                        role="region"
+                        aria-label={`${report.label} chart`}
+                        aria-keyshortcuts={expand ? 'Enter' : undefined}
+                        tabIndex={0}
+                        data-range-focus-region
                         onClick={expandOnClick(expand)}
+                        onKeyDown={expandOnEnter(expand)}
                       >
                         {unavailable ? (
                           <EmptyState>
@@ -344,13 +357,11 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
               {definition.benefits ? null : (
                 <ReportBreakdown
                   view={search.view ?? 'breakdown'}
-                  group={search.view ? search.group : undefined}
-                  onChange={(nextView, nextGroup) =>
+                  onChange={(nextView) =>
                     void navigate({
                       search: (current) => ({
                         ...current,
                         view: nextView === 'transactions' ? nextView : undefined,
-                        group: nextView === 'transactions' ? nextGroup : undefined,
                       }),
                       replace: true,
                     })
@@ -362,6 +373,8 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
                   referenceIso={data.updatedAt}
                   activitySearch={activitySearch}
                   briefTitles={Boolean(definition.briefTitles)}
+                  onOpen={openActivity}
+                  openedId={opened}
                 />
               )}
             </div>
@@ -400,6 +413,11 @@ function AnalyticsWorkspace({ data }: { data: FinanceSnapshot }) {
           </div>
         </div>
       )}
+      <TransactionDialog
+        activity={opened ? activities.get(opened) : undefined}
+        data={data}
+        onClose={() => setOpened(undefined)}
+      />
     </div>
   )
 }
@@ -695,13 +713,11 @@ const reportViews: Array<{ value: ReportView; label: string; accessibleLabel: st
 ]
 
 /**
- * The report's lower card: its groups largest first, or the transactions behind them. Choosing
- * a group switches to its transactions, so the activity is listed once rather than under every
- * expanded row.
+ * The report's lower card: its groups largest first, each opening in place to the transactions
+ * behind it, or every transaction, whose heading opens them in Activity.
  */
 function ReportBreakdown({
   view,
-  group: focusGroup,
   onChange,
   report,
   colors,
@@ -710,11 +726,15 @@ function ReportBreakdown({
   referenceIso,
   activitySearch,
   briefTitles,
+  onOpen,
+  openedId,
 }: {
   view: ReportView
-  group?: string
-  /** The view and group live in the URL, so a report reopens, and links, as it was left. */
-  onChange: (view: ReportView, group?: string) => void
+  /** Opens a transaction's details; `openedId` is the one open. */
+  onOpen: (activity: ActivityItem) => void
+  openedId?: string
+  /** The view lives in the URL, so a report reopens, and links, as it was left. */
+  onChange: (view: ReportView) => void
   report: Report & { label: string }
   colors: ReadonlyMap<string, string>
   activities: ReadonlyMap<string, ActivityItem>
@@ -724,124 +744,115 @@ function ReportBreakdown({
   /** Income lists its payers by a short name, as its chart does. */
   briefTitles: boolean
 }) {
-  const latest = useRef({ onChange, focusGroup })
-  latest.current = { onChange, focusGroup }
+  const latest = useRef(onChange)
+  latest.current = onChange
   useRegisterActions(
     useMemo<AppAction[]>(
-      () => [
-        ...reportViews.map(({ value, accessibleLabel }) => ({
+      () =>
+        reportViews.map(({ value, accessibleLabel }) => ({
           id: `report.view.${value}`,
           title: `Show report ${accessibleLabel.toLowerCase()}`,
           search: 'report breakdown transactions activity groups',
           group: 'View',
           scope: 'page' as const,
-          run: () => latest.current.onChange(value, latest.current.focusGroup),
+          run: () => latest.current(value),
         })),
-        {
-          id: 'report.group.clear',
-          title: 'Show every group’s transactions',
-          search: 'report clear group filter transactions',
-          group: 'View',
-          scope: 'page',
-          run: () => latest.current.onChange('transactions'),
-        },
-      ],
       [],
     ),
   )
-  const transactions = report.entries
-    .filter(({ group }) => !focusGroup || group === focusGroup)
+  const transactions = (unavailable ? [] : report.entries)
     .flatMap((entry) => {
       const activity = activities.get(entry.id)
       return activity
         ? [
             {
-              ...activity,
-              title: briefTitles ? briefMerchant(activity.title) : activity.title,
-              date: entry.date,
+              group: entry.group,
+              activity: {
+                ...activity,
+                title: briefTitles ? briefMerchant(activity.title) : activity.title,
+                date: entry.date,
+              },
             },
           ]
         : []
     })
-    .toSorted((left, right) => right.date.localeCompare(left.date))
+    .toSorted((left, right) => right.activity.date.localeCompare(left.activity.date))
 
   return (
     <Card className="account-overview-summary-card analytics-breakdown-card">
       <SectionHeading
-        title={view === 'breakdown' ? 'Breakdown' : 'Transactions'}
+        title={
+          view === 'breakdown' ? (
+            'Breakdown'
+          ) : (
+            <Link
+              to="/activities"
+              search={activitySearch}
+              className="section-heading-link"
+              data-command="navigation.open./activities"
+            >
+              Transactions <ChevronRight size={14} aria-hidden="true" />
+            </Link>
+          )
+        }
         action={
           <ChartRangeSelect<ReportView>
             label={`Report view: ${view}`}
             command="report.view."
             value={view}
             options={reportViews}
-            onValueChange={(next) =>
-              onChange(next, next === 'transactions' ? focusGroup : undefined)
-            }
+            onValueChange={onChange}
           />
         }
       />
       {view === 'breakdown' ? (
         <RankedBars
           // A group whose total is unknown draws no bar rather than a zero one.
-          items={(unavailable ? [] : report.breakdown).flatMap(({ label, value }) =>
-            value == null
+          items={(unavailable ? [] : report.breakdown).flatMap(({ label, value }) => {
+            const listed = transactions.flatMap(({ group, activity }) =>
+              group === label ? [activity] : [],
+            )
+            return value == null
               ? []
-              : [{ name: label, value, color: colors.get(label) ?? 'var(--text-tertiary)' }],
-          )}
+              : [
+                  {
+                    name: label,
+                    value,
+                    color: colors.get(label) ?? 'var(--text-tertiary)',
+                    details: listed.length ? (
+                      <ActivityList
+                        activities={listed}
+                        referenceIso={referenceIso}
+                        onOpen={onOpen}
+                        selectedId={openedId}
+                      />
+                    ) : undefined,
+                  },
+                ]
+          })}
           label={`${report.label} by group`}
           emptyMessage={
             unavailable
               ? 'This report is unavailable for these dates.'
               : 'No posted activity in this period.'
           }
-          selected={null}
-          onSelect={(name) => {
-            if (name) onChange('transactions', name)
-          }}
         />
       ) : (
-        <>
-          {focusGroup ? (
-            <div className="report-group-scope">
-              <button
-                type="button"
-                className="query-chip"
-                aria-label={`Remove group filter: ${focusGroup}`}
-                data-command="report.group.clear"
-                onClick={() => onChange('transactions')}
-              >
-                <span>Group</span>
-                {focusGroup}
-                <X size={12} aria-hidden="true" />
-              </button>
-              <span className="report-group-count">
-                {countOf(transactions.length, 'transaction')}
-              </span>
-            </div>
-          ) : null}
-          <div
-            className="analytics-activity-scroll report-transactions-scroll"
-            role="region"
-            aria-label={`${report.label} transactions`}
-            tabIndex={0}
-            data-keyboard-region
-          >
-            <GroupedActivityList
-              activities={unavailable ? [] : transactions}
-              referenceIso={referenceIso}
-              emptyMessage="No posted activity in this period."
-            />
-          </div>
-          <Link
-            className="ranked-bars-details-more report-open-activity"
-            to="/activities"
-            search={activitySearch}
-            data-command="navigation.open./activities"
-          >
-            Open in Activity <ChevronRight size={14} aria-hidden="true" />
-          </Link>
-        </>
+        <div
+          className="analytics-activity-scroll report-transactions-scroll"
+          role="region"
+          aria-label={`${report.label} transactions`}
+          tabIndex={0}
+          data-keyboard-region
+        >
+          <GroupedActivityList
+            activities={transactions.map(({ activity }) => activity)}
+            referenceIso={referenceIso}
+            emptyMessage="No posted activity in this period."
+            onOpen={onOpen}
+            selectedId={openedId}
+          />
+        </div>
       )}
     </Card>
   )

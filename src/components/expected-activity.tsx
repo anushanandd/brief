@@ -1,15 +1,15 @@
-import { Link } from '@tanstack/react-router'
-import type { Ref } from 'react'
+import { useState, type Ref } from 'react'
 
 import { buildActivities, type ActivityItem } from '../lib/activity'
 import { analyticsAccountMatches } from '../lib/analytics'
 import { daysBetween, snapshotToday } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import { formatActivityName, formatCurrency, formatDay, formatShortDay } from '../lib/format'
-import { getExternalLogosEnabled } from '../lib/logos'
+import { useExternalLogosEnabled } from '../lib/logos'
 import type { FinanceSnapshot } from '../lib/schema'
 import { ActivityMark } from './activity-list'
-import { Info, Repeat2 } from './icons'
+import { Repeat2 } from './icons'
+import { TransactionDialog } from './transaction-dialog'
 import { Card, EmptyState, SectionHeading } from './ui'
 import { Tooltip, TooltipContent, TooltipTrigger } from './ui/tooltip'
 
@@ -36,6 +36,7 @@ export function expectedActivityDateLabel(date: string, today: string) {
 export function recurringActivities(
   data: FinanceSnapshot,
   transactionIds: readonly (string | undefined)[],
+  externalLogosEnabled: boolean,
 ) {
   const transactionsById = new Map(data.transactions.map((entry) => [entry.id, entry]))
   return new Map(
@@ -49,12 +50,12 @@ export function recurringActivities(
         trades: [],
       },
       financeSettings(data).accountNames,
-      getExternalLogosEnabled(),
+      externalLogosEnabled,
     ).map((activity) => [activity.id, activity]),
   )
 }
 
-export const expectedActivityTone = (amount: number): 'positive' | 'negative' =>
+const expectedActivityTone = (amount: number): 'positive' | 'negative' =>
   amount >= 0 ? 'positive' : 'negative'
 
 export function ExpectedActivity({
@@ -83,8 +84,10 @@ export function ExpectedActivity({
   const activities = recurringActivities(
     data,
     expected.flatMap((event) => [event.matchedTransactionId, event.sourceTransactionId]),
+    useExternalLogosEnabled(),
   )
   const stale = data.insights?.forecastStale ?? true
+  const [opened, setOpened] = useState<string>()
 
   return (
     <Card
@@ -100,6 +103,7 @@ export function ExpectedActivity({
           className="expected-activity-list"
           aria-label="Estimated recurring activity"
           tabIndex={0}
+          data-keyboard-region
         >
           {expected.map((event) => {
             const variable =
@@ -110,35 +114,23 @@ export function ExpectedActivity({
             const activity = transaction ? activities.get(`spending:${transaction.id}`) : undefined
             const name = formatActivityName(event.title)
             return (
-              <li className="expected-activity-item" key={event.id}>
+              // The row opens its latest charge, whose details list the rest of them.
+              <li
+                className="list-row expected-activity-item"
+                key={event.id}
+                data-keyboard-row={activity ? true : undefined}
+                data-keyboard-open={activity ? true : undefined}
+                tabIndex={activity ? -1 : undefined}
+                onClick={activity ? () => setOpened(activity.id) : undefined}
+              >
                 <RecurringMark activity={activity} />
                 <div className="expected-activity-content">
                   <span className="financial-activity-copy">
                     <span className="expected-activity-title">
-                      <Link
-                        className="expected-activity-merchant"
-                        to="/activities"
-                        search={{
-                          account: event.accountId,
-                          q: `description:${event.title}`,
-                        }}
-                        title={event.title}
-                        aria-label={`View previous ${name} activity${activity?.account ? ` in ${activity.account}` : ''}`}
-                      >
-                        {name}
-                      </Link>
+                      {/* Hovering the name says what the estimate rests on. */}
                       <Tooltip>
-                        <TooltipTrigger
-                          render={
-                            <span
-                              className="expected-activity-info"
-                              role="img"
-                              tabIndex={0}
-                              aria-label={`Estimate details for ${name}`}
-                            />
-                          }
-                        >
-                          <Info size={14} aria-hidden="true" />
+                        <TooltipTrigger render={<span className="expected-activity-merchant" />}>
+                          {name}
                         </TooltipTrigger>
                         <TooltipContent
                           className="expected-activity-tooltip"
@@ -170,9 +162,7 @@ export function ExpectedActivity({
                         </TooltipContent>
                       </Tooltip>
                     </span>
-                    <small
-                      title={`${activity?.account ?? transaction?.account ?? 'Account'} · ${event.frequency}`}
-                    >
+                    <small>
                       {activity?.account ?? transaction?.account ?? 'Account'} · {event.frequency}
                       {event.kind === 'subscription'
                         ? ' subscription'
@@ -211,6 +201,11 @@ export function ExpectedActivity({
           {stale ? 'Refresh to see what’s coming up.' : 'Nothing expected soon.'}
         </EmptyState>
       )}
+      <TransactionDialog
+        activity={opened ? activities.get(opened) : undefined}
+        data={data}
+        onClose={() => setOpened(undefined)}
+      />
     </Card>
   )
 }

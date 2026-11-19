@@ -102,6 +102,13 @@ pub async fn counted<T>(
         .await
 }
 
+/// reqwest is built without a TLS crypto provider, so every client installs rustls's ring
+/// provider first, the one the updater plugin installs too.
+pub fn client_builder() -> reqwest::ClientBuilder {
+    let _ = rustls::crypto::ring::default_provider().install_default();
+    reqwest::Client::builder()
+}
+
 /// Counts one request sent to `provider`, a retry when `retry`, for the counted operation.
 pub fn count_request(provider: &str, retry: bool) {
     let _ = USAGE.try_with(|usage| {
@@ -372,7 +379,10 @@ fn redact_path_segment(path: &str, index: usize, replacement: &str) -> String {
 
 fn request_reference(request_id: &str) -> String {
     let digest = Sha256::digest(request_id.as_bytes());
-    format!("{:x}", digest)[..12].to_owned()
+    digest[..6]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect()
 }
 
 fn bounded(value: &str, max: usize) -> String {
@@ -434,7 +444,11 @@ mod tests {
                 .write_all(b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n10\r\n0123456789abcdef\r\n0\r\n\r\n")
                 .unwrap();
         });
-        let response = reqwest::get(format!("http://{address}/large"))
+        let response = client_builder()
+            .build()
+            .unwrap()
+            .get(format!("http://{address}/large"))
+            .send()
             .await
             .unwrap();
         assert!(response_bytes(response, 8).await.is_err());
@@ -460,7 +474,11 @@ mod tests {
             )
             .unwrap();
         });
-        let response = reqwest::get(format!("http://{address}/failure"))
+        let response = client_builder()
+            .build()
+            .unwrap()
+            .get(format!("http://{address}/failure"))
+            .send()
             .await
             .unwrap();
         let error = ProviderError::from_response(

@@ -42,7 +42,7 @@ const noActions: readonly AppAction[] = []
  * Marks the element a `Dialog` focuses when it opens: `{...dialogAutofocus}` on a field, or on a
  * title with `tabIndex={-1}` so no control starts out ringed. Without it the first control wins.
  */
-export const autofocusAttribute = 'data-dialog-autofocus'
+const autofocusAttribute = 'data-dialog-autofocus'
 export const dialogAutofocus = { 'data-dialog-autofocus': '' } as const
 
 /**

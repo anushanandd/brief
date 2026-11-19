@@ -44,7 +44,7 @@ Live market prices take a separate path. They can overlay the saved snapshot on 
 
 **Rust owns the market data schedule.** Stories, filings, earnings, and model readings are fetched by Rust's jobs (`news_job`, `reading_job`, `close`), never because a page opened, and every SEC and Alpaca request takes a token from its provider's pace (`providers::pace`). A job that saved something new says so (`data-updated`), and pages read the saved data again.
 
-**Nothing is stored where it can't be seen.** Every saved field appears in some record's raw view or in a table the Storage page opens, and the `objects` tests check this.
+**Nothing is stored where it can't be seen.** Every saved field that holds a value appears in some record's raw view or in a table the Storage page opens, and the `objects` tests check this. An empty field is left out of the raw view.
 
 **Settings that change results** are saved in the finance database (`FinanceSettings`), never in the browser's storage.
 

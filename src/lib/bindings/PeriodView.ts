@@ -7,8 +7,8 @@ import type { Pace } from "./Pace";
  */
 export type PeriodView = { 
 /**
- * The transactions listed, newest first: someone else's only when counting theirs, and
- * for a category only those with spending in it.
+ * The spending and refunds listed, newest first: someone else's only when counting
+ * theirs, and for a category only those with spending in it.
  */
 transactionIds: Array<string>, 
 /**

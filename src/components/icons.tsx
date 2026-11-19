@@ -25,7 +25,6 @@ import {
   Coffee01Icon,
   Coins01Icon,
   CreditCardIcon,
-  Clock01Icon,
   DatabaseIcon,
   Download01Icon,
   EllipsisIcon,
@@ -48,7 +47,6 @@ import {
   LandmarkIcon,
   LinkIcon,
   ListIcon,
-  MagicWand01Icon,
   MapPinnedIcon,
   MonitorPlayIcon,
   PackageIcon,
@@ -73,7 +71,6 @@ import {
   StarIcon,
   Store01Icon,
   Tag01Icon,
-  Target02Icon,
   TrashIcon,
   TrendingUpIcon,
   Unlink01Icon,
@@ -114,8 +111,6 @@ function createIcon(icon: IconSvgElement) {
 export type IconComponent = ReturnType<typeof createIcon>
 
 export const Activity = createIcon(Activity01Icon)
-export const WandSparkles = createIcon(MagicWand01Icon)
-export const Target = createIcon(Target02Icon)
 export const AlertCircle = createIcon(AlertCircleIcon)
 export const ArrowDown = createIcon(ArrowDown01Icon)
 export const ArrowDownUp = createIcon(ArrowUpDownIcon)
@@ -144,7 +139,6 @@ export const CreditCard = createIcon(CreditCardIcon)
 export const Database = createIcon(DatabaseIcon)
 export const Download = createIcon(Download01Icon)
 export const Upload = createIcon(Upload01Icon)
-export const Clock = createIcon(Clock01Icon)
 export const Copy = createIcon(Copy01Icon)
 export const Ellipsis = createIcon(EllipsisIcon)
 export const Eye = createIcon(EyeIcon)

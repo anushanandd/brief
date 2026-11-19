@@ -1,9 +1,7 @@
 use std::{collections::BTreeMap, fs, path::Path, time::Duration};
 
 use chrono::NaiveDate;
-use rusqlite::{
-    backup::Backup, params, Connection, DatabaseName, OpenFlags, OptionalExtension, Transaction,
-};
+use rusqlite::{backup::Backup, params, Connection, OpenFlags, OptionalExtension, Transaction};
 use serde::{de::DeserializeOwned, Deserialize, Serialize};
 use serde_json::{Map, Value};
 
@@ -588,7 +586,11 @@ impl Database {
 
     pub fn backup(&self, path: &Path) -> Result<(), String> {
         self.connection
-            .backup(DatabaseName::Main, path, None)
+            .backup(
+                rusqlite::MAIN_DB,
+                path,
+                None::<fn(rusqlite::backup::Progress)>,
+            )
             .map_err(db_error)?;
         secure_file(path)
     }
@@ -597,7 +599,11 @@ impl Database {
         let connection = Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY)
             .map_err(|_| "Backup cannot be read".to_string())?;
         connection
-            .backup(DatabaseName::Main, destination, None)
+            .backup(
+                rusqlite::MAIN_DB,
+                destination,
+                None::<fn(rusqlite::backup::Progress)>,
+            )
             .map_err(|_| "Backup cannot be copied".to_string())?;
         secure_file(destination)
     }

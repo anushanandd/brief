@@ -201,15 +201,6 @@
 .financial-activity-location.place-none .financial-activity-cell-button {
   color: var(--text-tertiary);
 }
-.financial-activity-row[data-selected],
-.financial-activity-row:focus {
-  background: var(--sidebar-accent);
-}
-
-/* Linked to the day under a chart's pointer. */
-.financial-activity-row[data-highlighted] {
-  background: var(--hover-wash);
-}
 /* Rows chosen for a bulk edit keep their mark while focus moves on. */
 .financial-activity-row[data-checked] {
   background: var(--accent-soft);

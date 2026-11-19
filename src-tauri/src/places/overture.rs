@@ -493,7 +493,7 @@ mod tests {
     #[tokio::test]
     #[ignore]
     async fn reads_an_area_from_the_current_release() {
-        let client = reqwest::Client::builder()
+        let client = crate::providers::http::client_builder()
             .user_agent("Brief/0.1")
             .build()
             .unwrap();

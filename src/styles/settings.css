@@ -465,6 +465,11 @@
   opacity: 0;
   pointer-events: none;
 }
+/* The setting J and K have reached takes the selection tone that list rows take. */
+.settings-item:focus:not([data-pointer] *)::before {
+  background: var(--sidebar-accent);
+  opacity: 1;
+}
 .settings-item[data-flash]::before {
   animation: settings-flash 1600ms var(--ease-out); /* scale-exempt: a highlight that fades as you read */
 }
@@ -509,12 +514,6 @@
   color: var(--text-tertiary);
   font-size: var(--type-meta);
   line-height: 1.45;
-}
-.settings-control-lead {
-  display: flex;
-  min-width: 0;
-  align-items: flex-start;
-  gap: 12px;
 }
 /* Settings marks are compact versions of the shared transaction marks. */
 .settings-panel .transaction-mark {

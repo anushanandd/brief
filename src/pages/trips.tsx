@@ -33,7 +33,7 @@ import {
   calendarStatus,
   eventTime,
 } from '../lib/calendar'
-import { addDays } from '../lib/dates'
+import { addDays, snapshotToday } from '../lib/dates'
 import { errorMessage } from '../lib/errors'
 import { countOf, formatCalendarDate, formatCurrency, formatShortDay } from '../lib/format'
 import { peopleById, withTripCompanions } from '../lib/people'
@@ -64,6 +64,8 @@ const longDay = (date: string) =>
   formatCalendarDate(date, { weekday: 'long', month: 'short', day: 'numeric' })
 
 const tripSearch = (trip: Trip) => ({ trip: trip.id })
+// One empty list, so memos over trips keep their identity without insights.
+const noTrips: Trip[] = []
 
 /** The trip a search names, when it exists, for the page's breadcrumb. */
 export function tripFromSearch(data: FinanceSnapshot, id: string | undefined) {
@@ -78,7 +80,7 @@ export function tripFromSearch(data: FinanceSnapshot, id: string | undefined) {
  */
 export function TripsView({ data, activities }: { data: FinanceSnapshot; activities: Activities }) {
   const search = useSearch({ from: '/insights' })
-  const trips = data.insights?.trips.trips ?? []
+  const trips = data.insights?.trips.trips ?? noTrips
   const [openTransaction, setOpenTransaction] = useState<string>()
   const trip = tripFromSearch(data, search.trip)
   return (
@@ -110,12 +112,12 @@ function YearView({ data, trips }: { data: FinanceSnapshot; trips: Trip[] }) {
   const search = useSearch({ from: '/insights' })
   const navigate = useNavigate({ from: '/insights' })
   const [hovered, setHovered] = useState<string>()
-  const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
+  const today = snapshotToday(data)
   const currentYear = Number(today.slice(0, 4))
   const knowsHome = Boolean(data.insights?.trips.bases.length)
-  const years = tripYears(trips, today)
+  const years = useMemo(() => tripYears(trips, today), [trips, today])
   const year = search.year && years.includes(search.year) ? search.year : currentYear
-  const shown = trips.filter(inYear(year))
+  const shown = useMemo(() => trips.filter(inYear(year)), [trips, year])
   const homes = tripBaseLabels(data.insights?.trips, year)
   const totals = tripYearTotals(data.insights?.trips, year)
   const lastYear = tripYearTotals(data.insights?.trips, year - 1)
@@ -340,7 +342,8 @@ function Journey({
     <Link
       to="/insights"
       search={tripSearch(trip)}
-      className={`trips-journey${picked ? ' is-picked' : ''}`}
+      className="list-row trips-journey"
+      data-highlighted={picked || undefined}
       data-command={`trips.open.${trip.id}`}
       style={{ '--trip-color': color }}
       onPointerEnter={() => onHover(trip.id)}
@@ -394,11 +397,10 @@ function TripView({
   onOpenTransaction: (id: string) => void
 }) {
   const navigate = useNavigate({ from: '/insights' })
-  const today = data.insights?.today ?? data.updatedAt.slice(0, 10)
+  const today = snapshotToday(data)
   const currentYear = Number(today.slice(0, 4))
   const year = Number(trip.start.slice(0, 4))
-  const siblings = trips.filter(inYear(year))
-  const colors = useMemo(() => tripColors(siblings), [siblings])
+  const colors = useMemo(() => tripColors(trips.filter(inYear(year))), [trips, year])
   const color = colors.get(trip.id)
   const { earlier, later } = tripNeighbours(trips, trip.id)
   const peak = tripPeakDay(trip)
@@ -601,10 +603,10 @@ function TripCalendar({ data, trip }: { data: FinanceSnapshot; trip: Trip }) {
   return (
     <Card className="trips-places-card">
       <SectionHeading title="Your calendar" />
-      <ul className="calendar-day-list">
+      <ul className="calendar-day-list" data-keyboard-region>
         {events.data.map((event) => (
-          <li key={event.id} data-keyboard-row>
-            <div className="calendar-entry">
+          <li key={event.id}>
+            <div className="list-row calendar-entry" data-keyboard-row tabIndex={-1}>
               <span className="calendar-entry-title">{event.title || 'Busy'}</span>
               <span className="calendar-entry-meta">
                 {formatShortDay(event.start.slice(0, 10))}
@@ -616,7 +618,7 @@ function TripCalendar({ data, trip }: { data: FinanceSnapshot; trip: Trip }) {
           </li>
         ))}
         {invited.map((person) => (
-          <li key={person.id} data-keyboard-row>
+          <li key={person.id} data-keyboard-row tabIndex={-1}>
             <Button
               size="compact"
               variant="ghost"
@@ -817,7 +819,7 @@ function Places({ places, year }: { places: TripPlace[]; year: number }) {
           </div>
           <ul className="trips-places" aria-label={`Places in ${year}`} data-keyboard-region>
             {places.map((place) => (
-              <li key={place.key} data-keyboard-row tabIndex={-1}>
+              <li className="list-row" key={place.key} data-keyboard-row tabIndex={-1}>
                 <span className="trips-place-mark" aria-hidden="true">
                   {countryFlag(place.country)}
                 </span>

@@ -112,8 +112,7 @@ details[open]::details-content {
   .data-status-popup,
   .tooltip-content,
   .date-range-popup,
-  .ledger-select-popup,
-  .benefit-info-popup {
+  .ledger-select-popup {
     transform: none !important;
     scale: none !important;
   }

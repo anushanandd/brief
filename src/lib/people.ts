@@ -2,7 +2,7 @@ import type { ContactFit } from './contacts'
 import { daysBetween } from './dates'
 import type { Settings } from './finance-settings'
 import { formatCalendarDate } from './format'
-import type { FinanceSnapshot, Person, Transaction, Trip } from './schema'
+import type { FinanceSnapshot, Person, Trip } from './schema'
 
 /**
  * A person's own color, one of the seven data colors, chosen from their id so it stays theirs
@@ -162,15 +162,6 @@ export function filterPeople(people: readonly Person[], query: string) {
 /** The person a search names, when they exist. */
 export function personFromSearch(data: FinanceSnapshot, id: string | undefined) {
   return id ? data.settings?.people?.find((person) => person.id === id) : undefined
-}
-
-/** A person's tagged transactions, newest first. */
-export function personTransactions(data: FinanceSnapshot, id: string): Transaction[] {
-  return data.transactions
-    .filter((transaction) => transaction.people?.includes(id))
-    .toSorted((left, right) =>
-      (right.postedOn ?? right.date).localeCompare(left.postedOn ?? left.date),
-    )
 }
 
 /**

@@ -43,6 +43,8 @@ import {
   type ChartTimeline,
   ChartSpan,
   ExpandableChart,
+  expandOnClick,
+  expandOnEnter,
   useChartColors,
   useChartPan,
 } from './charts'
@@ -517,14 +519,8 @@ export function HoldingChart({
               }
               tabIndex={0}
               data-range-focus-region
-              onClick={(event) => {
-                if (event.target instanceof HTMLCanvasElement) expand?.()
-              }}
-              onKeyDown={(event) => {
-                if (event.key !== 'Enter' || event.target !== event.currentTarget || !expand) return
-                event.preventDefault()
-                expand()
-              }}
+              onClick={expandOnClick(expand)}
+              onKeyDown={expandOnEnter(expand)}
             >
               {chartVisible ? (
                 <div className="chart-container performance-chart live-performance-chart">

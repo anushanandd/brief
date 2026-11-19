@@ -366,27 +366,22 @@
 .people-table-body {
   min-height: 0;
   flex: 1;
-  margin: 0 -8px;
-  padding: 0;
+  margin-block: 0;
+  padding-block: 0;
   overflow-y: auto;
   list-style: none;
 }
 /* Rows measure as the home page's holdings do. */
 .people-table-row {
   min-height: var(--row-height);
-  padding: 10px 8px;
+  padding-block: 10px;
   border-bottom: var(--hairline) solid var(--border-subtle);
   color: inherit;
   font-size: var(--type-body);
   text-decoration: none;
-  transition: background-color var(--duration-quick) var(--ease-out);
 }
 .people-table-body > li:last-child > .people-table-row {
   border-bottom: 0;
-}
-.people-table-row:hover,
-.people-table-row.is-current {
-  background: var(--hover-wash);
 }
 .people-table-row > :not(:first-child) {
   justify-self: end;
@@ -557,7 +552,6 @@
   }
 }
 @media (prefers-reduced-motion: reduce) {
-  .people-roster tbody tr,
   .people-postcard,
   .people-who-option {
     transition: none;

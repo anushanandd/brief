@@ -48,6 +48,8 @@ export type WorkspaceBreadcrumb = {
     trip?: string
     person?: string
     window?: ChangeWindow
+    /** On Accounts: one type of account. */
+    group?: string
   }
 }
 
@@ -63,22 +65,19 @@ export function WorkspaceHeader({
   title,
   parent,
   breadcrumbs,
-  detail,
   status,
   actions,
   showSnapshot = true,
-  showRefresh = true,
 }: {
   title: string
   parent?: WorkspaceParent
   breadcrumbs?: WorkspaceBreadcrumb[]
-  detail?: string
   status?: ReactNode
   actions?: ReactNode
+  /** Whether the header shows when data was saved and offers a refresh. */
   showSnapshot?: boolean
-  showRefresh?: boolean
 }) {
-  const data = useFinance().data
+  const { data, annotationWarning } = useFinance()
   // A tab of a sidebar page reads as that page's: "Activity / Calendar".
   const section = useSection()
   const shownParent: WorkspaceParent | undefined =
@@ -89,6 +88,7 @@ export function WorkspaceHeader({
   const hasWarning = Boolean(
     data?.recovery ||
     data?.syncWarnings?.length ||
+    annotationWarning ||
     Object.values(data?.providerStatus ?? {}).some(({ error }) => error),
   )
 
@@ -147,7 +147,6 @@ export function WorkspaceHeader({
               title
             )}
           </h1>
-          {detail ? <p>{detail}</p> : null}
         </div>
         <div className="workspace-actions">
           {status || (showSnapshot && data?.updatedAt) ? (
@@ -166,7 +165,7 @@ export function WorkspaceHeader({
             </DataStatus>
           ) : null}
           {actions}
-          {showRefresh ? <RefreshButton /> : null}
+          {showSnapshot ? <RefreshButton /> : null}
         </div>
       </header>
       {/* A tab of Activity or Taxes is headed by its page's strip of tabs. */}

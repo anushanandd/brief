@@ -167,7 +167,6 @@ const yearWindow: Statement = {
     taxes: 0,
     end: 252300,
   },
-  risk: { drawdownPct: null, volatilityPct: null, beta: null },
 }
 
 it('states the period as its market gain and return, like every chart', async () => {
@@ -242,7 +241,7 @@ it('lists only decisions, and shows nothing when there are none', async () => {
       earningsWatch: [],
     },
   })
-  expect(html.indexOf('BIG is 23.3% of investments')).toBeLessThan(
+  expect(html.indexOf('BIG is 23.3% of your investments')).toBeLessThan(
     html.indexOf('40 BIG shares go long-term Oct 8'),
   )
   expect(html).toContain('<span class="sensitive-value">$3,900</span> gain')

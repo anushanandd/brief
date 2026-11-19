@@ -25,7 +25,7 @@ import {
 } from '../lib/statement-import'
 import { FilterSelect } from './filter-select'
 import { Check, Trash2, Upload, X } from './icons'
-import { SettingsBlock } from './settings-ui'
+import { InlineConfirm, SettingsBlock } from './settings-ui'
 import { Button } from './ui'
 
 export const statementImportsQueryKey = ['statement-imports'] as const
@@ -267,21 +267,19 @@ export function StatementImports({
                 </small>
               </span>
               {confirmRemove === statement.id ? (
-                <div className="connection-confirmation" role="group" aria-label="Remove statement">
-                  <p>Its activity leaves your history. You can import it again.</p>
-                  {removeError ? <p role="alert">{removeError}</p> : null}
-                  <div>
-                    <Button
-                      icon={X}
-                      size="compact"
-                      disabled={removing}
-                      onClick={() => {
-                        setConfirmRemove(undefined)
-                        setRemoveError(undefined)
-                      }}
-                    >
-                      Cancel
-                    </Button>
+                <InlineConfirm
+                  label="Remove statement"
+                  pending={removing}
+                  onCancel={() => {
+                    setConfirmRemove(undefined)
+                    setRemoveError(undefined)
+                  }}
+                  returnFocus={() =>
+                    document.querySelector<HTMLElement>(
+                      `[data-statement-remove="${CSS.escape(statement.id)}"]`,
+                    )
+                  }
+                  actions={
                     <Button
                       icon={Trash2}
                       size="compact"
@@ -292,14 +290,18 @@ export function StatementImports({
                     >
                       {removing ? 'Removing…' : 'Remove'}
                     </Button>
-                  </div>
-                </div>
+                  }
+                >
+                  <p>Its activity leaves your history. You can import it again.</p>
+                  {removeError ? <p role="alert">{removeError}</p> : null}
+                </InlineConfirm>
               ) : (
                 <Button
                   icon={Trash2}
                   size="compact"
                   disabled={removing || importing}
                   aria-label={`Remove ${statement.fileName}`}
+                  data-statement-remove={statement.id}
                   onClick={() => {
                     setConfirmRemove(statement.id)
                     setRemoveError(undefined)

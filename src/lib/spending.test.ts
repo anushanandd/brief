@@ -150,7 +150,7 @@ describe('spending periods', () => {
     expect(spendingFigures(undefined, 'Dining')).toBeUndefined()
   })
 
-  it('leaves the headline unknown without a period or a statement balance from Rust', () => {
+  it('leaves the headline unknown without a period from Rust', () => {
     const accounts: Account[] = [
       accountRecord({ id: 'card', name: 'Card', institution: 'Bank', type: 'credit', value: -50 }),
     ]
@@ -159,19 +159,6 @@ describe('spending periods', () => {
     const unread = spendingHeadline({ accounts, transactions }, 'card', 1, 'card')
     expect(unread).toEqual({ hasScope: true, value: null, change: null })
     expect(formatCurrency(unread.value)).toBe('—')
-    const insights = {
-      spending: [
-        {
-          scope: 'card',
-          owner: 'me' as const,
-          periods: [rustPeriod({ kind: 'statement', total: 30, balance: undefined })],
-          months: [],
-        },
-      ],
-    }
-    expect(
-      spendingHeadline({ accounts, transactions, insights }, 'card', 'statement', 'card').value,
-    ).toBeNull()
   })
 
   it("lists and paces a category from Rust's view of it, and nothing for one without spending", () => {
@@ -252,7 +239,7 @@ describe('spending periods', () => {
     expect(monthlySpendingHistory(insights, 'cash')).toEqual([])
   })
 
-  it("heads Money with the statement balance, or the period's spending and its change", () => {
+  it("heads Money with what one owner spent in the period, as Spending's hero does", () => {
     const accounts: Account[] = [
       accountRecord({ id: 'card', name: 'Card', institution: 'Bank', type: 'credit', value: -50 }),
     ]
@@ -267,13 +254,25 @@ describe('spending periods', () => {
           ],
           months: [],
         },
+        {
+          scope: 'card',
+          owner: 'all' as const,
+          periods: [rustPeriod({ total: 40, change: 10 })],
+          months: [],
+        },
       ],
     }
     const data = { accounts, transactions: [transaction({ accountId: 'card' })], insights }
+    // A statement heads with what was spent, never its balance.
     expect(spendingHeadline(data, 'card', 'statement', 'card')).toEqual({
       hasScope: true,
-      value: 50,
+      value: 30,
       change: 4,
+    })
+    expect(spendingHeadline(data, 'card', 1, 'card', 'all')).toEqual({
+      hasScope: true,
+      value: 40,
+      change: 10,
     })
     expect(spendingHeadline(data, 'card', 1, 'card')).toEqual({
       hasScope: true,

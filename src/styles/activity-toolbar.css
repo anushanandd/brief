@@ -113,19 +113,6 @@
   flex-basis: 100%;
   color: var(--negative);
 }
-.transaction-details-more {
-  margin: 0 20px 12px;
-  border-top: var(--hairline) solid var(--border-subtle);
-}
-.transaction-details-more > summary {
-  padding: 10px 0 4px;
-  color: var(--text-tertiary);
-  font-size: var(--type-meta);
-  cursor: default;
-}
-.transaction-details-more .transaction-details-facts {
-  padding: 0;
-}
 .security-taxes-flag {
   margin: 0 0 12px;
   padding: 10px 12px;

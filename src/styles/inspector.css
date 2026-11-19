@@ -10,7 +10,7 @@
   display: grid;
   min-height: 44px;
   padding: 8px 0;
-  grid-template-columns: 72px minmax(0, 1fr);
+  grid-template-columns: var(--details-label) minmax(0, 1fr);
   align-items: start;
   gap: 12px;
   border-top: var(--hairline) solid var(--border-subtle);
@@ -30,6 +30,18 @@
   flex-wrap: wrap;
   align-items: center;
   gap: 6px 8px;
+}
+/* A purchase's paybacks, one a line, then the share left and the way to link another. */
+.transaction-edit-row > .transaction-paybacks {
+  display: grid;
+  justify-items: start;
+  gap: 4px;
+}
+.transaction-payback {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 8px;
 }
 .transaction-edit-note {
   margin: 0;

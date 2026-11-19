@@ -104,9 +104,9 @@ export function useAccountChart({
     chartChange,
     incomplete,
     historyIsAvailable,
-    chartValue: end
-      ? (chartPointAtOrBefore(chartData, chartDayTime(end))?.value ?? current)
-      : current,
+    // Scrolled back to a day with no saved value, the value is unknown, as on Home.
+    chartValue: end ? (chartPointAtOrBefore(chartData, chartDayTime(end))?.value ?? null) : current,
+    currentValue: current,
     netDeposits,
     benchmark,
     chartEvents,

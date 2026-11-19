@@ -579,14 +579,8 @@ export function PerformanceChart({
       tabIndex={0}
       aria-keyshortcuts={`D W M Q Y A${scroll ? ' [ ] }' : ''}${expand ? ' Enter' : ''}`}
       aria-label={`Account value over time${lineNames.length ? ` beside ${lineNames.join(', ')}` : ''}${events.length ? `, with ${events.length} key event markers` : ''}`}
-      onClick={(event) => {
-        if (event.target instanceof HTMLCanvasElement) expand?.()
-      }}
-      onKeyDown={(event) => {
-        if (event.key !== 'Enter' || event.target !== event.currentTarget || !expand) return
-        event.preventDefault()
-        expand()
-      }}
+      onClick={expandOnClick(expand)}
+      onKeyDown={expandOnEnter(expand)}
     >
       <span className="sr-only" role="status">
         Chart range: {graphWindows.find(({ secs }) => secs === selectedWindow)?.settingsLabel}
@@ -923,7 +917,7 @@ export function ChartSpan({ seconds, children }: { seconds: number; children: Re
 const ChartExpansionContext = createContext<(() => void) | undefined>(undefined)
 
 /** Opens the expanded chart this one sits in; undefined inside the expanded window itself. */
-export const useChartExpansion = () => useContext(ChartExpansionContext)
+const useChartExpansion = () => useContext(ChartExpansionContext)
 
 /**
  * A chart card's content, and the same content in a large window that E, a click on the chart,

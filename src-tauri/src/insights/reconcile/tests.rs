@@ -143,16 +143,10 @@ fn two_labeled_returns_beside_the_benchmark_and_nothing_annualized_under_a_year(
         statement.active_pct,
         Some(round2(statement.time_weighted_pct - benchmark))
     );
-    // The drawdown is measured on the linked index, so the withdrawal isn't a fall.
-    let drawdown = statement.risk.drawdown_pct.unwrap();
-    assert!(drawdown < 0.0 && drawdown > -1.0, "{drawdown}");
-    // Too few sessions to say anything about volatility or beta.
-    assert_eq!(statement.risk.volatility_pct, None);
-    assert_eq!(statement.risk.beta, None);
 }
 
 #[test]
-fn a_year_or_more_is_annualized_and_risk_needs_enough_sessions() {
+fn a_year_or_more_is_annualized() {
     let mut points = Vec::new();
     let mut value = 1_000.0;
     let mut benchmark = 1_000.0;
@@ -174,10 +168,6 @@ fn a_year_or_more_is_annualized_and_risk_needs_enough_sessions() {
         .collect();
     let statement = statement(&performance(&points), &[], &[], day("2025-01-01")).unwrap();
     assert!(statement.annualized.is_some());
-    let beta = statement.risk.beta.unwrap();
-    assert!((beta.beta - 1.5).abs() < 0.01, "{beta:?}");
-    assert!(beta.r_squared > 0.99);
-    assert!(statement.risk.volatility_pct.unwrap() > 10.0);
 }
 
 #[test]
@@ -336,23 +326,4 @@ fn a_holding_whose_trades_dont_explain_its_shares_is_unpriced_not_guessed() {
     assert_eq!(report.unpriced, ["AAA", "BBB"]);
     assert_eq!(report.contributions.len(), 1);
     assert_eq!(report.contributions[0].key, CASH);
-}
-
-#[test]
-fn exposure_counts_effective_holdings_and_the_top_five() {
-    let ten: Vec<Holding> = (0..9)
-        .map(|index| holding(&format!("T{index}"), 1.0, 600.0 / 9.0))
-        .chain([holding("BIG", 1.0, 400.0)])
-        .collect();
-    let exposure = exposure(&month(), &ten).unwrap();
-    assert_eq!(exposure.holdings, 10);
-    // One holding at 40% beside nine equal ones makes five.
-    assert_eq!(exposure.effective_holdings, 5.0);
-    assert_eq!(exposure.top_five_pct, 66.7);
-}
-
-#[test]
-fn risk_over_no_days_is_unknown_rather_than_a_panic() {
-    let risk = risk(&[]);
-    assert_eq!((risk.volatility_pct, risk.beta.is_none()), (None, true));
 }

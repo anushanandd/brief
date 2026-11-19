@@ -186,9 +186,36 @@ pub(super) struct PlaidTransaction {
     /// Plaid's code for a currency without an ISO one, such as a cryptocurrency.
     #[serde(default)]
     pub(super) unofficial_currency_code: Option<String>,
+    /// Who paid whom, the reference, and the reason, for transfers and checks.
+    #[serde(default)]
+    pub(super) payment_meta: Option<Value>,
 }
 
 impl PlaidTransaction {
+    /// Plaid's payment record with its blank fields left out; none when it says nothing.
+    pub(super) fn payment_meta(&self) -> Option<crate::finance_contract::PaymentMeta> {
+        use crate::finance_contract::PaymentMeta;
+        let field = |key: &str| {
+            non_blank(
+                self.payment_meta
+                    .as_ref()
+                    .and_then(|meta| meta.get(key))
+                    .and_then(Value::as_str),
+            )
+        };
+        let meta = PaymentMeta {
+            payer: field("payer"),
+            payee: field("payee"),
+            by_order_of: field("by_order_of"),
+            reference_number: field("reference_number"),
+            ppd_id: field("ppd_id"),
+            reason: field("reason"),
+            payment_method: field("payment_method"),
+            payment_processor: field("payment_processor"),
+        };
+        (meta != PaymentMeta::default()).then_some(meta)
+    }
+
     /// Whether the amount is in a currency other than US dollars.
     pub(super) fn foreign_currency(&self) -> bool {
         match (&self.iso_currency_code, &self.unofficial_currency_code) {
@@ -535,9 +562,21 @@ pub(super) struct SnapActivity {
     pub(super) fee: Option<Decimal>,
     #[serde(default)]
     pub(super) external_reference_id: Option<String>,
+    /// SnapTrade's currency object, or a bare code.
+    #[serde(default)]
+    pub(super) currency: Option<Value>,
 }
 
 impl SnapActivity {
+    /// Whether SnapTrade names a currency other than US dollars; an unnamed one is taken as USD.
+    pub(super) fn foreign_currency(&self) -> bool {
+        let code = self
+            .currency
+            .as_ref()
+            .and_then(|currency| currency.as_str().or_else(|| currency["code"].as_str()));
+        code.is_some_and(|code| !code.eq_ignore_ascii_case("USD"))
+    }
+
     /// The day the activity happened: its trade date, or else its settlement date.
     pub(super) fn date(&self) -> Option<String> {
         iso_date(
@@ -605,13 +644,22 @@ pub(super) fn iso_date(value: Option<&str>) -> Option<String> {
     crate::insights::calendar::parse_date(date).map(|_| date.to_string())
 }
 
+/// The day Plaid posted it: the bank's calendar day, else the day of its UTC instant.
 pub(super) fn plaid_posted_date(transaction: &PlaidTransaction) -> Option<String> {
     iso_date(
         transaction
-            .datetime
+            .date
             .as_deref()
-            .or(transaction.date.as_deref()),
+            .or(transaction.datetime.as_deref()),
     )
+}
+
+/// Plaid's authorization instant, kept in UTC for the renderer to read in the Mac's zone. An
+/// instant at exactly midnight UTC is a bare date some banks send, not a time.
+pub(super) fn plaid_instant(value: Option<&str>) -> Option<String> {
+    let instant = chrono::DateTime::parse_from_rfc3339(value?).ok()?.to_utc();
+    (instant.time() != chrono::NaiveTime::MIN)
+        .then(|| instant.to_rfc3339_opts(chrono::SecondsFormat::Secs, true))
 }
 
 pub(super) fn text(value: Option<&str>, fallback: &str) -> String {
@@ -704,17 +752,27 @@ impl Parsed {
                 calculated_snap_valuation(positions, balances).map(|value| (id.clone(), value))
             })
             .collect::<BTreeMap<_, _>>();
+        // Brief sums only US dollars, so an activity in another currency is left out with a
+        // notice, as Plaid's are.
+        let mut foreign = 0;
         let snap_activities = sync
             .snaptrade
             .activities
             .iter()
             .map(|(id, records)| {
-                (
-                    id.clone(),
-                    parse_records::<SnapActivity>(records, "SnapTrade activity", warnings),
-                )
+                let mut activities =
+                    parse_records::<SnapActivity>(records, "SnapTrade activity", warnings);
+                let before = activities.len();
+                activities.retain(|activity| !activity.foreign_currency());
+                foreign += before - activities.len();
+                (id.clone(), activities)
             })
             .collect::<BTreeMap<_, _>>();
+        if foreign > 0 {
+            warnings.push(format!(
+                "{foreign} brokerage activities not in US dollars are left out of activity and trades"
+            ));
+        }
         Self {
             plaid_accounts,
             plaid_investment_accounts,

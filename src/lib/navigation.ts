@@ -27,7 +27,7 @@ import { analyticsCharts } from './analytics'
 
 export const primaryNavigation = [
   { to: '/', label: 'Home', icon: House, shortcut: '⌘1' },
-  { to: '/spending', label: 'Spending', icon: WalletCards, shortcut: '⌘2' },
+  { to: '/spending', label: 'Money', icon: WalletCards, shortcut: '⌘2' },
   { to: '/holdings', label: 'Investments', icon: BriefcaseBusiness, shortcut: '⌘3' },
   { to: '/accounts', label: 'Accounts', icon: Landmark, shortcut: '⌘4' },
   { to: '/activities', label: 'Activity', icon: Activity, shortcut: '⌘5' },

@@ -291,10 +291,6 @@
 .activity-log-row:last-child {
   border-bottom: 0;
 }
-/* The row J and K have reached in a Diagnostics list. */
-.logs-page [data-keyboard-row]:focus {
-  background: var(--sidebar-accent);
-}
 .connection-row > div,
 .activity-log-row > div {
   min-width: 0;
@@ -382,11 +378,12 @@
   margin-top: 4px;
   overflow-wrap: anywhere;
 }
-.settings-panel input:not([type='checkbox']):not([type='radio']) {
+/* The search field draws its own box, so it keeps its transparent fill. */
+.settings-panel input:not([type='checkbox'], [type='radio'], .settings-search *) {
   background: var(--control-background);
   border-color: var(--control-border);
 }
-.settings-panel input:not([type='checkbox']):not([type='radio']):focus {
+.settings-panel input:not([type='checkbox'], [type='radio'], .settings-search *):focus {
   border-color: var(--border-strong);
 }
 .command-dialog {

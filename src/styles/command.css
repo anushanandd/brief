@@ -571,9 +571,6 @@ kbd.keycap {
   margin: 0;
   padding-left: 20px;
 }
-.raw-null {
-  color: var(--text-tertiary);
-}
 .object-link {
   padding: 0;
   border: 0;

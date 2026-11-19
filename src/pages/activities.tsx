@@ -77,6 +77,10 @@ function useFocusedActivity() {
   return focused
 }
 
+// Ledger transactions are addressed by their bare ID; trades keep their `trade:` prefix.
+const openFromSearch = (open: string | undefined) =>
+  open ? (open.startsWith('trade:') ? open : `spending:${open}`) : undefined
+
 function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
   const { annotate } = useFinanceEdits()
   const filters = useActivityFilters(data)
@@ -103,14 +107,13 @@ function ActivityLedgerPage({ data }: { data: FinanceSnapshot }) {
   const csv = useCsvExport()
   // Me/Other choices shown at once, by activity ID, while their save is on its way.
   const [flipped, setFlipped] = useState<Record<string, boolean>>({})
-  // Ledger transactions are addressed by their bare ID; trades keep their `trade:` prefix.
-  const [openId, setOpenId] = useState<string | undefined>(() =>
-    search.open
-      ? search.open.startsWith('trade:')
-        ? search.open
-        : `spending:${search.open}`
-      : undefined,
-  )
+  const [openId, setOpenId] = useState(() => openFromSearch(search.open))
+  // A later ?open=, from Back, Forward, or the palette, opens that activity too.
+  const [searchOpen, setSearchOpen] = useState(search.open)
+  if (search.open !== searchOpen) {
+    setSearchOpen(search.open)
+    setOpenId(openFromSearch(search.open))
+  }
   const openerRef = useRef<HTMLElement | null>(null)
   const shown = Object.keys(flipped).length
     ? ledger.sorted.map((activity) =>

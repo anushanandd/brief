@@ -84,8 +84,8 @@ function allowedProviderLogo(value?: string): string | undefined {
 
 const externalLogos = preference(externalLogosKey, (raw) => raw === 'true')
 
-export const getExternalLogosEnabled = externalLogos.get
 export const saveExternalLogosEnabled = externalLogos.save
+export const useExternalLogosEnabled = externalLogos.use
 
 export function stockMarkLabel(ticker: string): string {
   const normalized = ticker.trim().toUpperCase()

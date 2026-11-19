@@ -62,20 +62,16 @@
   white-space: nowrap;
 }
 .expected-activity-list {
-  margin: 0;
-  padding: 0;
+  margin-block: 0;
+  padding-block: 0;
   outline: 0;
   list-style: none;
 }
 .expected-activity-item {
   display: grid;
   grid-template-columns: var(--mark-size) minmax(0, 1fr);
-  align-items: start;
+  align-items: center;
   gap: 12px;
-}
-.expected-activity-item > .transaction-mark {
-  width: 32px;
-  height: 32px;
 }
 .expected-activity-content {
   display: grid;
@@ -98,17 +94,6 @@
   font-weight: 600;
   overflow-wrap: break-word;
 }
-.expected-activity-merchant:hover {
-  color: var(--accent);
-}
-.expected-activity-info {
-  display: inline-flex;
-  flex: none;
-  color: var(--text-tertiary);
-}
-.expected-activity-info:hover {
-  color: var(--text-primary);
-}
 .expected-activity-amount.positive {
   color: var(--positive);
 }
@@ -127,8 +112,7 @@
 .expected-activity-tooltip p + p {
   margin-top: 8px;
 }
-.metric-link:hover,
-.analytics-breakdown-row a:hover {
+.metric-link:hover {
   color: var(--accent);
 }
 .analytics-plot {
@@ -436,22 +420,8 @@
   cursor: default;
 }
 
-/* A report's lower card lists its transactions once, behind the Breakdown/Transactions switch. */
-.report-group-scope {
-  display: flex;
-  margin: 8px 0 4px;
-  align-items: center;
-  gap: 10px;
-}
-.report-group-count {
-  color: var(--text-tertiary);
-  font-size: var(--type-meta);
-  font-variant-numeric: tabular-nums;
-}
+/* A report's lower card lists every transaction behind its Breakdown/Transactions switch. */
 .report-transactions-scroll {
   max-height: 520px;
-  margin-top: 4px;
-}
-.report-open-activity {
   margin-top: 4px;
 }

@@ -25,8 +25,8 @@ pub struct PeriodDetail {
 #[derive(Clone, Debug, Serialize, PartialEq, TS)]
 #[serde(rename_all = "camelCase")]
 pub struct PeriodView {
-    /// The transactions listed, newest first: someone else's only when counting theirs, and
-    /// for a category only those with spending in it.
+    /// The spending and refunds listed, newest first: someone else's only when counting
+    /// theirs, and for a category only those with spending in it.
     pub transaction_ids: Vec<String>,
     /// The listed transactions by merchant, refunds netting out, largest spending first.
     pub merchants: Vec<Merchant>,
@@ -124,14 +124,19 @@ fn by_name(left: &str, right: &str) -> std::cmp::Ordering {
 }
 
 impl Scope<'_> {
-    /// Whether a transaction belongs on this owner's list: someone else's spending lists only
+    /// Whether a transaction belongs on this owner's list: spending, or a refund or credit set
+    /// against it, never a transfer, payment, or income. Someone else's spending lists only
     /// their purchases, and yours leaves theirs out.
     fn lists(&self, transaction: &Transaction) -> bool {
-        match self.owner {
+        let owned = match self.owner {
             Owner::Me => !transaction.other,
             Owner::Other => transaction.other,
             Owner::All => true,
-        }
+        };
+        let refund = transaction.amount > 0.0
+            && (is_credit(transaction)
+                || transaction.kind() == Some(crate::transaction_policy::Kind::Reimbursement));
+        owned && (refund || spending_for(transaction, self.owner))
     }
 
     /// Spending from `from` through `through` in whole cents, by transaction and date: whole
@@ -361,15 +366,25 @@ impl Scope<'_> {
 }
 
 /// Transactions grouped by merchant, refunds netting out, largest spending first; each keeps
-/// its transactions in the order given.
+/// its transactions in the order given. A refund linked to a listed purchase, such as a
+/// friend's payback, joins that purchase's merchant.
 fn merchants(listed: &[&Transaction]) -> Vec<Merchant> {
+    let merchant_of = listed
+        .iter()
+        .map(|transaction| (transaction.id.as_str(), transaction.merchant.as_str()))
+        .collect::<std::collections::HashMap<_, _>>();
     let mut groups: Vec<(String, String, i64, Vec<String>)> = Vec::new();
     for transaction in listed {
-        let key = transaction.merchant.trim().to_lowercase();
+        let merchant = transaction
+            .refund_of
+            .as_deref()
+            .and_then(|purchase| merchant_of.get(purchase).copied())
+            .unwrap_or(&transaction.merchant);
+        let key = merchant.trim().to_lowercase();
         let index = match groups.iter().position(|group| group.0 == key) {
             Some(index) => index,
             None => {
-                groups.push((key, transaction.merchant.clone(), 0, Vec::new()));
+                groups.push((key, merchant.to_owned(), 0, Vec::new()));
                 groups.len() - 1
             }
         };

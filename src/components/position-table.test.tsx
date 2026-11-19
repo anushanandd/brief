@@ -19,7 +19,6 @@ it('opens the security from anywhere on its row, once', async () => {
         <PositionTable
           positions={[holding({ accountId: 'synthetic', ticker: 'TEST', price: 10, value: 20 })]}
           view="market"
-          externalLogosEnabled={false}
         />
       ),
     }),

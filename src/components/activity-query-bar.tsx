@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState, type Ref } from 'react'
+import { useMemo, useState, type Ref } from 'react'
 
 import { useLatest } from '../hooks/use-latest'
 import { useRegisterActions, type AppAction } from '../lib/action-system'
@@ -38,7 +38,6 @@ export function ActivityQueryBar({
   canSave: boolean
   onSave: () => void
 }) {
-  const fieldRef = useRef<HTMLInputElement | null>(null)
   // Each chip's removal is a command too, so the palette reaches every filter the pointer can.
   // The chips are rebuilt on every render, so registration follows what they say, not their
   // identity, and each command removes the chip as it is now.
@@ -91,11 +90,7 @@ export function ActivityQueryBar({
         ))}
         <AutofillField query={draft} completion={completion} className="query-bar-input">
           <input
-            ref={(element) => {
-              fieldRef.current = element
-              if (typeof inputRef === 'function') inputRef(element)
-              else if (inputRef) inputRef.current = element
-            }}
+            ref={inputRef}
             type="text"
             aria-label="Search and filter activity"
             aria-autocomplete={completion ? 'inline' : undefined}

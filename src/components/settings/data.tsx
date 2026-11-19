@@ -1,6 +1,6 @@
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { open, save } from '@tauri-apps/plugin-dialog'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { setFinanceSnapshot } from '../../hooks/use-finance'
@@ -19,12 +19,13 @@ import { localDateKey } from '../../lib/dates'
 import { errorMessage } from '../../lib/errors'
 import { exportLotsCsv, exportUpcomingCalendar } from '../../lib/exports'
 import { countOf, formatUpdatedAt } from '../../lib/format'
-import { getExternalLogosEnabled, saveExternalLogosEnabled } from '../../lib/logos'
+import { saveExternalLogosEnabled, useExternalLogosEnabled } from '../../lib/logos'
 import { getPrivacyPreferences, savePrivacyPreferences } from '../../lib/privacy-preferences'
 import type { BackupInfo } from '../../lib/schema'
 import { dataPreferenceKeys } from '../../lib/settings-preferences'
 import { CalendarDays, Download, Fingerprint, MapPinned, Trash2, Upload, X } from '../icons'
 import {
+  InlineConfirm,
   SettingsBlock,
   SettingsCard,
   SettingsResetButton,
@@ -317,6 +318,7 @@ function EraseData() {
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const [erasing, setErasing] = useState<'erase' | null>(null)
+  const trigger = useRef<HTMLButtonElement>(null)
 
   const eraseData = () =>
     runTask(setErasing, 'erase', 'Could not erase local data', async () => {
@@ -337,6 +339,7 @@ function EraseData() {
       action={
         confirming ? null : (
           <Button
+            ref={trigger}
             icon={Trash2}
             size="compact"
             variant="destructive"
@@ -348,17 +351,12 @@ function EraseData() {
       }
     >
       {confirming ? (
-        <div className="connection-confirmation" role="group" aria-label="Erase local data">
-          <p>This can’t be undone without a backup.</p>
-          <div>
-            <Button
-              icon={X}
-              size="compact"
-              disabled={erasing !== null}
-              onClick={() => setConfirming(false)}
-            >
-              Cancel
-            </Button>
+        <InlineConfirm
+          label="Erase local data"
+          pending={erasing !== null}
+          onCancel={() => setConfirming(false)}
+          returnFocus={() => trigger.current}
+          actions={
             <Button
               icon={Trash2}
               size="compact"
@@ -368,8 +366,10 @@ function EraseData() {
             >
               {erasing ? 'Erasing…' : 'Authenticate and erase'}
             </Button>
-          </div>
-        </div>
+          }
+        >
+          <p>This can’t be undone without a backup.</p>
+        </InlineConfirm>
       ) : null}
     </SettingsBlock>
   )
@@ -381,7 +381,7 @@ export function PrivacySection() {
     queryFn: getFoundationModelStatus,
     staleTime: Number.POSITIVE_INFINITY,
   })
-  const [externalLogosEnabled, setExternalLogosEnabled] = useState(getExternalLogosEnabled)
+  const externalLogosEnabled = useExternalLogosEnabled()
   const [privacy, setPrivacy] = useState(getPrivacyPreferences)
   const updatePrivacy = (next: typeof privacy) => {
     savePrivacyPreferences(next)
@@ -404,10 +404,7 @@ export function PrivacySection() {
             labelledBy="external-logos-title"
             describedBy="external-logos-description"
             checked={externalLogosEnabled}
-            onCheckedChange={(checked) => {
-              saveExternalLogosEnabled(checked)
-              setExternalLogosEnabled(checked)
-            }}
+            onCheckedChange={saveExternalLogosEnabled}
           />
         </SettingsRow>
         <SettingsRow id="hide-on-launch" title="Hide values when Brief opens">

@@ -1,4 +1,4 @@
-import { useQueryClient } from '@tanstack/react-query'
+import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useState } from 'react'
 import { toast } from 'sonner'
 
@@ -56,12 +56,13 @@ export function AppleWalletOption() {
       setSaving(false)
     }
   }
-  const confirm = (id: string, confirmed: boolean) =>
-    void confirmWalletRow(id, confirmed)
-      .then(apply)
-      .catch((error) =>
-        toast.error('Could not save that charge', { description: errorMessage(error) }),
-      )
+  const confirmRow = useMutation({
+    mutationFn: ({ id, confirmed }: { id: string; confirmed: boolean }) =>
+      confirmWalletRow(id, confirmed),
+    onSuccess: apply,
+    onError: (error) =>
+      toast.error('Could not save that charge', { description: errorMessage(error) }),
+  })
   const cash = wallet?.dailyCash
   const account = wallet?.appleCard
   return (
@@ -146,8 +147,17 @@ export function AppleWalletOption() {
           <span className="settings-section-meta sensitive-value">
             {formatCurrency(row.amount)}
           </span>
-          <Button size="compact" onClick={() => confirm(row.id, !row.confirmed)}>
-            {row.confirmed ? 'Take out' : 'Add to history'}
+          <Button
+            size="compact"
+            disabled={confirmRow.isPending}
+            aria-busy={(confirmRow.isPending && confirmRow.variables.id === row.id) || undefined}
+            onClick={() => confirmRow.mutate({ id: row.id, confirmed: !row.confirmed })}
+          >
+            {confirmRow.isPending && confirmRow.variables.id === row.id
+              ? 'Saving…'
+              : row.confirmed
+                ? 'Take out'
+                : 'Add to history'}
           </Button>
         </SettingsRow>
       ))}

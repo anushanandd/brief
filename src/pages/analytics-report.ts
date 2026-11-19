@@ -28,7 +28,7 @@ import {
   useGraphWindow,
   type ChartPeriod,
 } from '../lib/graph-preferences'
-import { getExternalLogosEnabled } from '../lib/logos'
+import { useExternalLogosEnabled } from '../lib/logos'
 import type { FinanceSnapshot } from '../lib/schema'
 import { resolveSpendingAccount } from '../lib/spending'
 
@@ -108,7 +108,7 @@ export function useAnalyticsReport(data: FinanceSnapshot) {
   const spendingAccountId = settings.spendingAccountId ?? ''
   const spendingAccount = resolveSpendingAccount(data.accounts, spendingAccountId)
   const names = settings.accountNames
-  const externalLogosEnabled = getExternalLogosEnabled()
+  const externalLogosEnabled = useExternalLogosEnabled()
   // Rust reads every report over the window and accounts, and this one in full.
   const reportsQuery = useReports(data, request)
   const reports = reportsQuery.data ?? undefined

@@ -119,13 +119,7 @@ export function InvestmentSummaryCard({
     <Card className="portfolio-card investment-summary-card">
       <SectionHeading
         title="Summary"
-        action={
-          result ? (
-            <>
-              <Updated summary={result} refreshing={refreshing} />
-            </>
-          ) : undefined
-        }
+        action={result ? <Updated summary={result} refreshing={refreshing} /> : undefined}
       />
       {!native && ticker ? (
         <EmptyState>Needs the desktop app.</EmptyState>

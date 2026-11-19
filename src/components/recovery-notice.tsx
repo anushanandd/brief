@@ -1,10 +1,12 @@
 import { useMutation, useQueryClient } from '@tanstack/react-query'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 
 import { setFinanceSnapshot } from '../hooks/use-finance'
 import { recoverFinanceState } from '../lib/api'
+import { errorMessage } from '../lib/errors'
 import type { FinanceSnapshot } from '../lib/schema'
 import { FilePlus, History } from './icons'
+import { InlineConfirm } from './settings-ui'
 import { Button } from './ui'
 
 type Recovery = NonNullable<FinanceSnapshot['recovery']>
@@ -17,7 +19,6 @@ export function RecoveryNotice({ recovery }: { recovery: Recovery }) {
   const client = useQueryClient()
   const [confirming, setConfirming] = useState(false)
   const trigger = useRef<HTMLButtonElement>(null)
-  const cancelButton = useRef<HTMLButtonElement>(null)
   const recover = useMutation({
     mutationFn: recoverFinanceState,
     onSuccess: (snapshot) => {
@@ -26,13 +27,9 @@ export function RecoveryNotice({ recovery }: { recovery: Recovery }) {
       void client.invalidateQueries({ queryKey: ['transaction-annotations'] })
     },
   })
-  useEffect(() => {
-    if (confirming) cancelButton.current?.focus()
-  }, [confirming])
   const cancel = () => {
     setConfirming(false)
     recover.reset()
-    trigger.current?.focus()
   }
   return (
     <section className="sync-notice" aria-label="Local data recovery" aria-busy={recover.isPending}>
@@ -65,37 +62,30 @@ export function RecoveryNotice({ recovery }: { recovery: Recovery }) {
         </Button>
       </div>
       {confirming ? (
-        <div
+        <InlineConfirm
           id="new-snapshot-confirmation"
-          className="connection-confirmation recovery-confirmation"
-          role="group"
-          aria-labelledby="new-snapshot-confirmation-title"
-          onKeyDown={(event) => {
-            if (event.key === 'Escape') {
-              event.preventDefault()
-              event.stopPropagation()
-              if (!recover.isPending) cancel()
-            }
-          }}
-        >
-          <strong id="new-snapshot-confirmation-title">Start a new empty local snapshot?</strong>
-          <p>Original files and Keychain credentials are kept.</p>
-          <div>
-            <Button ref={cancelButton} disabled={recover.isPending} onClick={cancel}>
-              Cancel
-            </Button>
+          className="recovery-confirmation"
+          labelledBy="new-snapshot-confirmation-title"
+          pending={recover.isPending}
+          onCancel={cancel}
+          returnFocus={() => trigger.current}
+          actions={
             <Button
               icon={FilePlus}
+              size="compact"
               variant="destructive"
               disabled={recover.isPending}
               onClick={() => recover.mutate(false)}
             >
               {recover.isPending ? 'Starting…' : 'Confirm start'}
             </Button>
-          </div>
-        </div>
+          }
+        >
+          <strong id="new-snapshot-confirmation-title">Start a new empty local snapshot?</strong>
+          <p>Original files and Keychain credentials are kept.</p>
+        </InlineConfirm>
       ) : null}
-      {recover.isError ? <p role="alert">{String(recover.error)}</p> : null}
+      {recover.isError ? <p role="alert">{errorMessage(recover.error)}</p> : null}
     </section>
   )
 }

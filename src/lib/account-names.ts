@@ -26,3 +26,16 @@ export function accountDisplayName(
 ) {
   return (accountId && names[accountId]?.trim()) || providerName
 }
+
+/** An account's shown name by id, with one fallback for an account the snapshot no longer has. */
+export function accountName(
+  data: { accounts: readonly { id: string; name: string }[] },
+  accountId: string,
+  names: AccountDisplayNames,
+) {
+  return accountDisplayName(
+    accountId,
+    data.accounts.find((account) => account.id === accountId)?.name ?? 'Account',
+    names,
+  )
+}

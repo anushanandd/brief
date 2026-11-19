@@ -1,6 +1,6 @@
 import { Link } from '@tanstack/react-router'
 
-import { stockLogoUrl, stockMarkColor, stockMarkLabel } from '../lib/logos'
+import { stockLogoUrl, stockMarkColor, stockMarkLabel, useExternalLogosEnabled } from '../lib/logos'
 import { BrandMark } from './brand-mark'
 
 /** A security's mark and ticker, opening its page on Investments. */
@@ -8,13 +8,12 @@ export function SecurityLink({
   ticker,
   name,
   note,
-  externalLogosEnabled,
 }: {
   ticker?: string | null
   name?: string
   note?: string
-  externalLogosEnabled: boolean
 }) {
+  const externalLogosEnabled = useExternalLogosEnabled()
   const label = ticker || 'Security'
   const content = (
     <>

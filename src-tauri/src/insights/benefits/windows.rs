@@ -591,7 +591,7 @@ impl RuleSet {
             .filter(|last| !credits.activity.iter().any(|item| item == last))
             .map(|last| LastCredit {
                 amount: last.amount,
-                date: calendar::long_label(last.date),
+                date: last.date,
             });
         BenefitWindow {
             id: definition.id.clone(),

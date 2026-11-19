@@ -4,7 +4,12 @@ import { classification } from '../data/fixtures/classification'
 import { benefitActivity, insights } from '../data/fixtures/insights'
 import { emptySnapshot, transaction as record } from '../data/fixtures/records'
 import type { Transaction } from './schema'
-import { mapsUrl, transactionDetail } from './transaction-detail'
+import {
+  mapsUrl,
+  purchasePaybacks,
+  repayablePurchases,
+  transactionDetail,
+} from './transaction-detail'
 
 const transaction = (id: string, patch: Partial<Transaction> = {}): Transaction =>
   record({
@@ -135,4 +140,39 @@ it('finds what Rust flagged about a transaction and opens Maps at its coordinate
   expect(mapsUrl('Cafe', { lat: 45.52, lon: -122.68 })).toBe(
     'https://www.google.com/maps/search/?api=1&query=45.52%2C-122.68',
   )
+})
+
+it('offers the purchases a payback could repay, on any account', () => {
+  const payback = transaction('payback', {
+    amount: 50,
+    merchant: 'Zelle from a friend',
+    date: '2026-09-14',
+    accountId: 'checking',
+    classification: classification('transfer'),
+  })
+  const data = {
+    ...emptySnapshot(),
+    transactions: [
+      payback,
+      transaction('tickets', { amount: -150, date: '2026-09-12' }),
+      transaction('small', { amount: -20, date: '2026-09-13' }),
+      transaction('later', { amount: -150, date: '2026-09-15' }),
+      transaction('old', { amount: -150, date: '2026-07-01' }),
+      transaction('move', { amount: -150, classification: classification('transfer') }),
+    ],
+  }
+  expect(repayablePurchases(data, payback).map(({ id }) => id)).toEqual(['tickets'])
+  expect(
+    repayablePurchases(data, { ...payback, classification: classification('income') }),
+  ).toEqual([])
+  expect(repayablePurchases(data, { ...payback, transferPairId: 'other-leg' })).toEqual([])
+
+  // From the purchase's side: the payback that could repay it, and those already linked.
+  const tickets = data.transactions[1]!
+  expect(purchasePaybacks(data, tickets).candidates.map(({ id }) => id)).toEqual(['payback'])
+  const linked = { ...data, transactions: [{ ...payback, refundOf: 'tickets' }, tickets] }
+  expect(purchasePaybacks(linked, tickets)).toEqual({
+    linked: [linked.transactions[0]],
+    candidates: [],
+  })
 })

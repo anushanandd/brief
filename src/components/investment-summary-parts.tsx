@@ -66,7 +66,7 @@ function Story({ headline, today }: { headline: BriefHeadline; today: string }) 
   const picked = headline.quote != null && headline.quotedBy !== 'summary'
   const ticker = headline.tickers[0]
   return (
-    <ExternalLink href={headline.url} data-keyboard-row data-keyboard-open>
+    <ExternalLink className="list-row" href={headline.url} data-keyboard-row data-keyboard-open>
       {ticker ? <strong className="brief-story-ticker">{ticker}</strong> : null}
       <span className="brief-story-copy">
         <span title={picked ? pickedBy(headline.quotedBy) : undefined}>
@@ -147,11 +147,11 @@ export function Changed({ summary }: { summary: InvestmentSummary }) {
           return (
             <li key={`earnings:${digest.ticker}:${digest.reportedOn}`}>
               {href ? (
-                <ExternalLink href={href} data-keyboard-row data-keyboard-open>
+                <ExternalLink className="list-row" href={href} data-keyboard-row data-keyboard-open>
                   {content}
                 </ExternalLink>
               ) : (
-                <div className="brief-story-static">{content}</div>
+                <div className="list-row brief-story-static">{content}</div>
               )}
             </li>
           )
@@ -179,11 +179,16 @@ export function Changed({ summary }: { summary: InvestmentSummary }) {
           return (
             <li key={event.id}>
               {event.url ? (
-                <ExternalLink href={event.url} data-keyboard-row data-keyboard-open>
+                <ExternalLink
+                  className="list-row"
+                  href={event.url}
+                  data-keyboard-row
+                  data-keyboard-open
+                >
                   {content}
                 </ExternalLink>
               ) : (
-                <div className="brief-story-static">{content}</div>
+                <div className="list-row brief-story-static">{content}</div>
               )}
             </li>
           )

@@ -80,9 +80,9 @@ export function AccountsMenu({
   return (
     <Card className="account-preview-card all-accounts-card accounts-menu">
       <SectionHeading title="Balances" />
-      <nav aria-label="Accounts" data-keyboard-region>
+      <nav aria-label="Accounts" data-keyboard-region data-keyboard-selects>
         <Link
-          className="account-row accounts-menu-all"
+          className="list-row account-row accounts-menu-all"
           data-keyboard-row
           data-keyboard-open
           to="/accounts"

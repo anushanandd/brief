@@ -4,7 +4,7 @@ import { act } from 'react'
 import { createRoot, type Root } from 'react-dom/client'
 import { afterEach, beforeEach, expect, it, vi } from 'vitest'
 
-import type { AppAction } from '../lib/action-system'
+import { getActionUsage, type AppAction } from '../lib/action-system'
 import { useKeyboardDispatch } from './use-keyboard-dispatch'
 
 const ran: string[] = []
@@ -24,9 +24,10 @@ const actions = [
 let root: Root
 let region: HTMLElement | undefined
 let dialogActions: AppAction[] = []
+let pageActions: AppAction[] = []
 
 function Dispatcher() {
-  useKeyboardDispatch([...actions, ...dialogActions], region, false)
+  useKeyboardDispatch([...actions, ...dialogActions, ...pageActions], region, false)
   return null
 }
 
@@ -65,6 +66,7 @@ beforeEach(() => {
   ran.length = 0
   region = undefined
   dialogActions = []
+  pageActions = []
   // jsdom lays nothing out; rows count as visible when they have a box.
   vi.spyOn(HTMLElement.prototype, 'getClientRects').mockReturnValue(
     Object.assign([new DOMRect(0, 0, 10, 10)], { item: () => null }),
@@ -77,6 +79,32 @@ afterEach(async () => {
   await act(async () => root.unmount())
   document.body.replaceChildren()
   vi.restoreAllMocks()
+})
+
+it('ranks shortcuts by use, but never list motions', async () => {
+  const rows = list(document.body)
+  const [first] = rows.querySelectorAll<HTMLElement>('[data-keyboard-row]')
+  first?.focus()
+  region = rows
+  const before = getActionUsage()['page.export']?.count ?? 0
+  await mount()
+  press(document.body, 'x')
+  press(rows, 'j')
+  expect(getActionUsage()['page.export']?.count).toBe(before + 1)
+  expect(Object.keys(getActionUsage()).some((id) => id.startsWith('motion.'))).toBe(false)
+})
+
+it('leaves a key to the page once focus has left the list', async () => {
+  const rows = list(document.body)
+  const [first] = rows.querySelectorAll<HTMLElement>('[data-keyboard-row]')
+  pageActions = [action('page.next', 'page', ['j'])]
+  region = rows
+  first?.focus()
+  first?.blur()
+  await mount()
+  press(document.body, 'j')
+  expect(ran).toEqual(['page.next'])
+  expect(document.activeElement).toBe(document.body)
 })
 
 it('runs page shortcuts with no dialog open', async () => {

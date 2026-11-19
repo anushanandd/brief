@@ -1,8 +1,18 @@
+// @vitest-environment jsdom
+
+import { act, useRef, useState } from 'react'
+import { createRoot } from 'react-dom/client'
 import { renderToString } from 'react-dom/server'
 import { expect, it } from 'vitest'
 
 import { searchSettings } from '../lib/settings-search'
-import { SettingsCard, SettingsRow, SettingsSearchProvider, SettingsSection } from './settings-ui'
+import {
+  InlineConfirm,
+  SettingsCard,
+  SettingsRow,
+  SettingsSearchProvider,
+  SettingsSection,
+} from './settings-ui'
 
 const sections = (query: string) =>
   renderToString(
@@ -42,4 +52,38 @@ it('hides non-matching rows and sections and highlights matched title text', () 
   expect(hidden(html, 'navigation')).toBe(true)
   expect(html).toContain('<mark>backup</mark>')
   expect(html).not.toContain('<button>Reset</button>')
+})
+
+function Erase() {
+  const [confirming, setConfirming] = useState(false)
+  const trigger = useRef<HTMLButtonElement>(null)
+  return confirming ? (
+    <InlineConfirm
+      label="Erase"
+      onCancel={() => setConfirming(false)}
+      returnFocus={() => trigger.current}
+      actions={<button>Erase now</button>}
+    >
+      <p>Sure?</p>
+    </InlineConfirm>
+  ) : (
+    <button ref={trigger} onClick={() => setConfirming(true)}>
+      Erase…
+    </button>
+  )
+}
+
+it('returns focus to a confirmation’s trigger even when the trigger was replaced', async () => {
+  const root = createRoot(document.body.appendChild(document.createElement('div')))
+  await act(async () => root.render(<Erase />))
+  await act(async () => document.querySelector('button')?.click())
+  expect(document.activeElement?.textContent).toBe('Cancel')
+  await act(async () =>
+    document.activeElement?.dispatchEvent(
+      new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }),
+    ),
+  )
+  expect(document.activeElement?.textContent).toBe('Erase…')
+  await act(async () => root.unmount())
+  document.body.replaceChildren()
 })

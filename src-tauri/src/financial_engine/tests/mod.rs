@@ -248,6 +248,10 @@ fn projects_exact_totals_and_keeps_posted_and_authorized_dates() {
     assert_eq!(snapshot["netWorth"], 300.22);
     assert_eq!(snapshot["transactions"][0]["date"], "2026-09-07");
     assert_eq!(snapshot["transactions"][0]["postedOn"], "2026-09-08");
+    assert_eq!(
+        snapshot["transactions"][0]["occurredAt"],
+        "2026-09-07T15:42:00Z"
+    );
     assert_eq!(snapshot["transactions"][0]["location"]["city"], "Portland");
     assert_eq!(
         snapshot["transactions"][0]["location"]["postalCode"],
@@ -286,6 +290,38 @@ fn projects_exact_totals_and_keeps_posted_and_authorized_dates() {
     );
     assert!(snapshot["brokeragePerformance"][1]["points"][0]["netDeposits"].is_null());
     assert_eq!(snapshot["provenance"]["calculation"], "rust");
+}
+
+#[test]
+fn an_evening_purchase_keeps_the_banks_day_and_a_bare_date_has_no_time() {
+    let mut input = sync();
+    // Bought at 8:30 PM in California, which is the next day in UTC.
+    input.plaid.transactions[0]["authorized_date"] = json!("2026-09-07");
+    input.plaid.transactions[0]["authorized_datetime"] = json!("2026-09-08T03:30:00Z");
+    input.plaid.transactions[0]["date"] = json!("2026-09-08");
+    input.plaid.transactions[0]["datetime"] = json!("2026-09-09T02:00:00Z");
+    input.plaid.transactions[0]["payment_meta"] =
+        json!({ "payer": "Example Payer", "reason": " ", "ppd_id": null });
+    let now = projection_time();
+    let snapshot = project_json(&input, &BTreeMap::new(), now).unwrap();
+    let evening = &snapshot["transactions"][0];
+    assert_eq!(
+        (
+            &evening["date"],
+            &evening["postedOn"],
+            &evening["occurredAt"]
+        ),
+        (
+            &json!("2026-09-07"),
+            &json!("2026-09-08"),
+            &json!("2026-09-08T03:30:00Z")
+        )
+    );
+    // The bank's payment record keeps only what it says.
+    assert_eq!(evening["paymentMeta"], json!({ "payer": "Example Payer" }));
+    input.plaid.transactions[0]["authorized_datetime"] = json!("2026-09-07T00:00:00Z");
+    let bare = project_json(&input, &BTreeMap::new(), now).unwrap();
+    assert!(bare["transactions"][0].get("occurredAt").is_none());
 }
 
 #[test]
@@ -885,6 +921,37 @@ fn transactions_in_other_currencies_are_left_out_and_said_so() {
             .as_str()
             .unwrap()
             .starts_with("2 transactions not in US dollars")));
+
+    // A brokerage activity in another currency is left out the same way, however it's named.
+    let activity = |id: &str, currency: serde_json::Value| {
+        json!({ "id": id, "type": "DIVIDEND", "amount": "10", "trade_date": "2026-09-08",
+            "description": "Example dividend", "currency": currency })
+    };
+    sync.snaptrade.activities.insert(
+        "brokerage".into(),
+        vec![
+            activity("cad", json!({ "code": "CAD" })),
+            activity("eur", json!("EUR")),
+            activity("usd", json!({ "code": "USD" })),
+        ],
+    );
+    let snapshot = project_json(&sync, &BTreeMap::new(), projection_time()).unwrap();
+    let ids = snapshot["transactions"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|transaction| transaction["id"].as_str())
+        .filter(|id| id.starts_with("snaptrade:") || ["cad", "eur", "usd"].contains(id))
+        .count();
+    assert_eq!(ids, 1);
+    assert!(snapshot["syncWarnings"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .any(|warning| warning
+            .as_str()
+            .unwrap()
+            .starts_with("2 brokerage activities not in US dollars")));
 }
 
 #[test]

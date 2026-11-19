@@ -60,7 +60,7 @@ const SPENDING_COLORS: [&str; 6] = [
     "#477d75", "#4f78a8", "#b58a3f", "#7d6da5", "#a45f79", "#79924b",
 ];
 pub(crate) use imported::{provider_activity, reconciles};
-pub(crate) const CALCULATION_VERSION: u32 = 44;
+pub(crate) const CALCULATION_VERSION: u32 = 45;
 
 pub fn project(
     sync: &ProviderSync,

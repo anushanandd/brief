@@ -68,7 +68,7 @@ const Percent = ({ value }: { value: number | null }) => (
 /**
  * Investments' menu, as Accounts has one: the portfolio, retirement, then every holding with
  * its price, its change today and since bought, its cost, and its worth. Each row changes the
- * view in place, the one shown is marked, and ⌘↑ and ⌘↓ step through them in the order shown.
+ * view in place, the one shown is marked, and ↑ and ↓ step through them in the order shown.
  */
 export function HoldingsTable({
   data,
@@ -128,12 +128,13 @@ export function HoldingsTable({
       <nav
         className="holdings-table-scroll"
         aria-label="Holdings"
-        aria-keyshortcuts="Meta+ArrowUp Meta+ArrowDown"
+        aria-keyshortcuts="ArrowUp ArrowDown Meta+ArrowUp Meta+ArrowDown"
         data-keyboard-region
+        data-keyboard-selects
       >
         <div className="holdings-table">
           <Link
-            className="holdings-table-row holdings-table-scope"
+            className="list-row holdings-table-row holdings-table-scope"
             to="/holdings"
             data-keyboard-row
             data-keyboard-open
@@ -151,7 +152,7 @@ export function HoldingsTable({
             </span>
           </Link>
           <Link
-            className="holdings-table-row holdings-table-scope"
+            className="list-row holdings-table-row holdings-table-scope"
             to="/holdings/retirement"
             data-keyboard-row
             data-keyboard-open
@@ -179,7 +180,7 @@ export function HoldingsTable({
           {holdings.map((row) => (
             <Link
               key={row.ticker}
-              className="holdings-table-row"
+              className="list-row holdings-table-row"
               to="/holdings/$ticker"
               params={{ ticker: row.ticker }}
               data-keyboard-row
@@ -190,7 +191,7 @@ export function HoldingsTable({
                 <SecurityMark ticker={row.ticker} name={row.name} />
                 <span>
                   <strong>{row.ticker}</strong>
-                  <small title={formatSecurityName(row.name)}>{formatSecurityName(row.name)}</small>
+                  <small>{formatSecurityName(row.name)}</small>
                 </span>
               </span>
               <span className="public-market-value">{formatPublicCurrency(row.price)}</span>

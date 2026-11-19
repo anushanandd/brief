@@ -373,40 +373,28 @@
 .investments-attention {
   display: grid;
   gap: 2px;
-  margin: 0 -8px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
 .investments-attention-row {
   display: grid;
-  grid-template-columns: 22px minmax(0, 1fr) 16px;
-  align-items: start;
+  grid-template-columns: 22px minmax(0, 1fr);
+  align-items: center;
   gap: 12px;
   height: 100%;
-  padding: 10px 8px;
-  border-radius: var(--radius-control);
+  padding-block: 10px;
   color: inherit;
-  transition: background-color var(--duration-quick) var(--ease-out);
-}
-.investments-attention-row:hover {
-  background: var(--hover-wash);
-}
-.investments-attention-row > .security-mark {
-  margin-top: 1px;
 }
 /* A flag about the whole portfolio has no holding to open, so it carries a warning mark. */
 .investments-attention-mark {
   display: grid;
   width: 22px;
   height: 22px;
-  margin-top: 1px;
   place-items: center;
   border-radius: 50%;
   background: color-mix(in srgb, var(--warning) 16%, transparent);
   color: var(--warning);
-}
-div.investments-attention-row:hover {
-  background: none;
 }
 .investments-attention-copy {
   display: grid;
@@ -518,22 +506,17 @@ div.investments-attention-row:hover {
 .brief-headlines {
   display: grid;
   gap: 2px;
-  margin: 12px -8px 0;
+  margin: 12px 0 0;
   padding: 0;
   list-style: none;
 }
 .brief-headlines a {
   display: grid;
   gap: 2px;
-  padding: 8px;
-  border-radius: var(--radius-control);
+  padding-block: 8px;
   color: var(--text-primary);
   font-size: var(--type-body);
   line-height: 1.45;
-  transition: background-color var(--duration-quick) var(--ease-out);
-}
-.brief-headlines a:hover {
-  background: var(--hover-wash);
 }
 .brief-headlines small {
   color: var(--text-tertiary);
@@ -564,7 +547,7 @@ div.investments-attention-row:hover {
 }
 .brief-story-static {
   display: grid;
-  padding: 8px;
+  padding-block: 8px;
   font-size: var(--type-body);
   line-height: 1.45;
 }
@@ -621,12 +604,10 @@ div.investments-attention-row:hover {
 .holdings-table-scroll {
   container: holdings-table / inline-size;
 }
-/* Rows bleed into the card's gutter so the one shown can be washed without its text moving. */
 .holdings-table {
   display: grid;
   grid-template-columns: minmax(96px, 1fr) repeat(5, auto);
   column-gap: 16px;
-  margin-inline: -8px;
   font-variant-numeric: tabular-nums;
 }
 /* Too narrow for every figure, it drops cost basis, then the change since bought; both stay on
@@ -653,7 +634,6 @@ div.investments-attention-row:hover {
   grid-column: 1 / -1;
   grid-template-columns: subgrid;
   align-items: center;
-  padding-inline: 8px;
 }
 .holdings-table-head {
   min-height: 36px;
@@ -691,16 +671,9 @@ div.investments-attention-row:hover {
   color: inherit;
   font-size: var(--type-body);
   text-decoration: none;
-  transition: background-color var(--duration-quick) var(--ease-out);
 }
 .holdings-table-row:last-child {
   border-bottom: 0;
-}
-.holdings-table-row:hover {
-  background: var(--hover-wash);
-}
-.holdings-table-row[aria-current='page'] {
-  background: var(--sidebar-accent);
 }
 .holdings-table-row > :not(:first-child) {
   justify-self: end;
@@ -716,7 +689,7 @@ div.investments-attention-row:hover {
 .investments-coming {
   display: grid;
   gap: 2px;
-  margin: 0 -8px;
+  margin: 0;
   padding: 0;
   list-style: none;
 }
@@ -725,14 +698,9 @@ div.investments-attention-row:hover {
   grid-template-columns: 48px minmax(0, 1fr) auto;
   align-items: baseline;
   gap: 12px;
-  padding: 8px;
-  border-radius: var(--radius-control);
+  padding-block: 8px;
   color: inherit;
   font-size: var(--type-body);
-  transition: background-color var(--duration-quick) var(--ease-out);
-}
-.investments-coming-row:hover {
-  background: var(--hover-wash);
 }
 .investments-coming-row > time,
 .investments-coming-row small {
@@ -755,7 +723,7 @@ div.investments-attention-row:hover {
   font-variant-numeric: tabular-nums;
 }
 .investments-performance-head {
-  padding: 0 8px 8px;
+  padding: 0 0 8px;
   border-bottom: var(--hairline) solid var(--border-subtle);
   color: var(--text-tertiary);
   font-size: var(--type-meta);
@@ -771,24 +739,16 @@ div.investments-attention-row:hover {
   list-style: none;
 }
 .investments-performance-row {
-  width: 100%;
   min-height: var(--row-height-compact);
-  padding: 0 8px;
+  padding-block: 0;
   border: 0;
-  border-radius: var(--radius-control);
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
   font-size: var(--type-body);
-  cursor: pointer;
   text-align: left;
-  transition: background-color var(--duration-quick) var(--ease-out);
-}
-.investments-performance-row:hover {
-  background: var(--hover-wash);
 }
 .investments-performance-row[aria-pressed='true'] {
-  background: var(--sidebar-accent);
   color: var(--text-primary);
 }
 .investments-performance-row[aria-pressed='true'] > span:first-child {

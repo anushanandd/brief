@@ -53,8 +53,6 @@ export type AnalyticsSearch = {
   to?: string
   /** The lower card lists the report's transactions instead of its breakdown. */
   view?: 'transactions'
-  /** One breakdown group the transactions are narrowed to. */
-  group?: string
   /** On Benefits: the benefit open in the inspector, and the first day of its period. */
   benefit?: string
   period?: string
@@ -67,7 +65,6 @@ export type AnalyticsSearch = {
 /** A report's search without its lower card's view or inspector, for a link to another report. */
 export const withoutReportView = ({
   view: _view,
-  group: _group,
   benefit: _benefit,
   period: _period,
   review: _review,
@@ -84,9 +81,6 @@ export function analyticsSearch(search: Record<string, unknown>): AnalyticsSearc
     from: validDate(search.from),
     to: validDate(search.to),
     ...(search.view === 'transactions' ? { view: 'transactions' as const } : {}),
-    ...(search.view === 'transactions' && typeof search.group === 'string' && search.group
-      ? { group: search.group }
-      : {}),
     ...(typeof search.benefit === 'string' && /^[a-z0-9-]{1,64}$/.test(search.benefit)
       ? {
           benefit: search.benefit,

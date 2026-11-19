@@ -90,7 +90,12 @@ export function DraftTable({
           const keep = included(benefit, edits)
           const cadence = edit.cadence ?? rule?.cadence
           return (
-            <tr key={benefit.id} data-keyboard-row className={keep ? undefined : 'is-left-out'}>
+            <tr
+              key={benefit.id}
+              data-keyboard-row
+              tabIndex={-1}
+              className={keep ? 'list-row' : 'list-row is-left-out'}
+            >
               <td>
                 <input
                   type="checkbox"
@@ -349,7 +354,7 @@ export function UnmatchedCredits({
       <h3>Credits no benefit explains</h3>
       <ul>
         {draft.unmatchedCredits.map((descriptor) => (
-          <li key={descriptor} data-keyboard-row>
+          <li className="list-row" key={descriptor} data-keyboard-row tabIndex={-1}>
             <code>{descriptor}</code>
             {kept.length ? (
               <FilterSelect
@@ -416,7 +421,7 @@ function CatalogSearch({
       </Button>
       <ul>
         {results.map((card) => (
-          <li key={card.id} data-keyboard-row>
+          <li className="list-row" key={card.id} data-keyboard-row tabIndex={-1}>
             <span className="chapters-row-copy">
               <strong>{card.name}</strong>
               <small>

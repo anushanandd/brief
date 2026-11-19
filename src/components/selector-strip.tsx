@@ -30,7 +30,7 @@ export type SelectorStripItem = {
 
 /**
  * The selector at the head of a page without a menu: a strip of cards, each with
- * its figure and change over the page's period. ⌘↑ and ⌘↓ step through it.
+ * its figure and change over the page's period. ↑ and ↓ step through it.
  */
 export function SelectorStrip({
   label,
@@ -88,8 +88,9 @@ export function SelectorStrip({
       ref={ref}
       className="account-switcher"
       aria-label={label}
-      aria-keyshortcuts={stepping ? 'Meta+ArrowUp Meta+ArrowDown' : undefined}
+      aria-keyshortcuts={stepping ? 'ArrowUp ArrowDown Meta+ArrowUp Meta+ArrowDown' : undefined}
       data-keyboard-region
+      data-keyboard-selects
     >
       <div className="account-switcher-grid">
         {items.map((item) => (
@@ -105,7 +106,7 @@ export function SelectorStrip({
           >
             {item.mark}
             <span className="account-switcher-copy">
-              <span title={item.label}>{item.label}</span>
+              <span>{item.label}</span>
               <strong className="account-switcher-value">
                 <span className="sensitive-value" data-copy-amount>
                   {formatCurrency(item.unavailable ? null : item.value)}

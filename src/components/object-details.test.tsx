@@ -4,7 +4,7 @@ import { expect, it } from 'vitest'
 import seedObjects from '../data/seed-objects.json'
 import type { ObjectDetail } from '../lib/objects'
 import { fromRust } from '../lib/rust-json'
-import { ObjectDetailsBody, RawTree } from './object-details'
+import { holds, ObjectDetailsBody, RawTree } from './object-details'
 
 const graph = fromRust<{
   objects: ObjectDetail['object'][]
@@ -12,11 +12,13 @@ const graph = fromRust<{
   facts: ObjectDetail['facts']
 }>(seedObjects)
 
-/** Every key anywhere in a stored value. */
+/** Every key anywhere in a stored value whose field holds something. */
 function keys(value: unknown): string[] {
   if (Array.isArray(value)) return value.flatMap(keys)
   if (value && typeof value === 'object')
-    return Object.entries(value).flatMap(([key, field]) => [key, ...keys(field)])
+    return Object.entries(value).flatMap(([key, field]) =>
+      holds(field) ? [key, ...keys(field)] : [],
+    )
   return []
 }
 
@@ -43,9 +45,14 @@ it('shows every stored field of every kind of object', () => {
   }
 })
 
-it('reads empty and missing values plainly', () => {
-  const html = renderToStaticMarkup(<RawTree value={{ a: null, b: [], c: {}, d: true }} />)
-  expect(html).toContain('<dt>a</dt><dd><span class="raw-null">none</span>')
-  expect(html).toContain('<dt>b</dt><dd><span class="raw-null">empty</span>')
-  expect(html).toContain('<dt>d</dt><dd><span>yes</span>')
+it('leaves out fields that hold nothing and keeps a false one', () => {
+  const html = renderToStaticMarkup(
+    <RawTree value={{ a: null, b: [], c: { d: null, e: '' }, f: true, g: false, h: [null, 0] }} />,
+  )
+  expect(html).not.toMatch(/<dt>[a-e]<\/dt>/)
+  expect(html).toContain('<dt>f</dt><dd><span>yes</span>')
+  expect(html).toContain('<dt>g</dt><dd><span>no</span>')
+  // A list keeps its items that say something, and a zero says something.
+  expect(html).toContain('<dt>h</dt><dd><ol class="raw-list"><li><span>0</span>')
+  expect(renderToStaticMarkup(<RawTree value={{ a: null }} />)).toBe('')
 })

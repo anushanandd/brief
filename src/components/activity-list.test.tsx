@@ -42,6 +42,26 @@ it('renders an initial batch and keeps a keyboard-accessible way to load the res
   expect(activities).toHaveLength(1000)
 })
 
+it('leaves its days to the page’s keyboard region, so J and K cross from one day to the next', () => {
+  const activities: ActivityItem[] = ['2026-09-19', '2026-09-20'].map((date) => ({
+    id: date,
+    kind: 'income',
+    category: 'Income',
+    title: 'Synthetic',
+    detail: 'Synthetic account',
+    date,
+    amount: 10,
+  }))
+  const grouped = renderToStaticMarkup(
+    <GroupedActivityList activities={activities} referenceIso="2026-09-20" />,
+  )
+  expect(grouped.match(/class="activity-date-group"/g)).toHaveLength(2)
+  expect(grouped).not.toContain('data-keyboard-region')
+  expect(
+    renderToStaticMarkup(<ActivityList activities={activities} referenceIso="2026-09-20" />),
+  ).toContain('data-keyboard-region')
+})
+
 it('sizes ledger columns using every filtered row, including later batches', () => {
   const activities: ActivityItem[] = Array.from({ length: 61 }, (_, index) => ({
     id: `synthetic-${index}`,
@@ -305,7 +325,9 @@ it('keeps the full description in the accessible name without a tooltip and labe
     />,
   )
   expect(openable).toMatch(/aria-haspopup="dialog">Open details: (<!-- -->)?Bought ABC<\/button>/)
-  expect(openable).toMatch(/financial-activity-row-columns is-openable"[^>]*data-selected="true"/)
+  expect(openable).toMatch(
+    /financial-activity-row-columns"[^>]*data-keyboard-open[^>]*data-selected="true"/,
+  )
 })
 
 it('uses signed gain colors only in the account activity preview', () => {

@@ -70,29 +70,42 @@ function MaskedNumber({ value }: { value: number }) {
 }
 
 function Leaf({ value }: { value: unknown }) {
-  if (value === null || value === undefined) return <span className="raw-null">none</span>
   if (typeof value === 'number') return <MaskedNumber value={value} />
   if (typeof value === 'boolean') return <span>{value ? 'yes' : 'no'}</span>
   return <span>{typeof value === 'string' ? value : JSON.stringify(value)}</span>
 }
 
-/** A stored value as a tree: objects and lists open into their fields; the rest is a leaf. */
+/** Whether a value holds anything: not null, blank, or only empty fields and lists. */
+export const holds = (value: unknown): boolean =>
+  Array.isArray(value)
+    ? value.some(holds)
+    : value && typeof value === 'object'
+      ? Object.values(value).some(holds)
+      : value !== null && value !== undefined && value !== ''
+
+/**
+ * A stored value as a tree: objects and lists open into their fields; the rest is a leaf. A
+ * field that holds nothing is left out, so the tree shows only what was recorded.
+ */
 export function RawTree({ value }: { value: unknown }) {
+  if (!holds(value)) return null
   if (Array.isArray(value)) {
-    if (!value.length) return <span className="raw-null">empty</span>
     return (
       <ol className="raw-list">
-        {value.map((item, index) => (
-          <li key={index}>
-            <RawTree value={item} />
-          </li>
-        ))}
+        {value.flatMap((item, index) =>
+          holds(item) ? (
+            <li key={index}>
+              <RawTree value={item} />
+            </li>
+          ) : (
+            []
+          ),
+        )}
       </ol>
     )
   }
   if (value && typeof value === 'object') {
-    const entries = Object.entries(value)
-    if (!entries.length) return <span className="raw-null">empty</span>
+    const entries = Object.entries(value).filter(([, field]) => holds(field))
     return (
       <dl className="raw-tree">
         {entries.map(([key, field]) => (
@@ -109,7 +122,7 @@ export function RawTree({ value }: { value: unknown }) {
   return <Leaf value={value} />
 }
 
-/** An object's facts, links, record, and provider record. */
+/** An object's facts, links, record, and each source's record of it. */
 export function ObjectDetailsBody({
   detail,
   onShow,
@@ -117,7 +130,7 @@ export function ObjectDetailsBody({
   detail: ObjectDetail
   onShow: (id: string) => void
 }) {
-  const { object, facts, links, provider } = detail
+  const { object, facts, links, sources } = detail
   return (
     <div className="object-details-body">
       {facts.length ? (
@@ -170,12 +183,12 @@ export function ObjectDetailsBody({
         <h3>Record</h3>
         <RawTree value={object.record} />
       </section>
-      {provider ? (
-        <section>
-          <h3>As the provider sent it</h3>
-          <RawTree value={provider} />
+      {Object.entries(sources ?? {}).map(([source, record]) => (
+        <section key={source}>
+          <h3>As {source} sent it</h3>
+          <RawTree value={record} />
         </section>
-      ) : null}
+      ))}
     </div>
   )
 }
@@ -199,10 +212,9 @@ function ObjectDetailsDialog({
     retry: false,
   })
   const detail = query.data
-  const heading = useMemo(
-    () => (detail ? `${objectKinds[detail.object.kind].label}: ${detail.object.title}` : 'Details'),
-    [detail],
-  )
+  const heading = detail
+    ? `${objectKinds[detail.object.kind].label}: ${detail.object.title}`
+    : 'Details'
 
   return (
     <Dialog

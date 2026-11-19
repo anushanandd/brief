@@ -609,7 +609,7 @@ impl Storage {
         Ok(Some(crate::objects::Detail {
             links: self.database.graph_links(id)?,
             facts: self.database.graph_facts(Some(id))?,
-            provider: crate::objects::provider_record(&self.data, &object),
+            sources: crate::objects::source_records(&self.data, &object),
             object,
         }))
     }

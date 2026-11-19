@@ -321,6 +321,15 @@ it('names how Wallet saw a card presented and reads the clock where it happened'
   expect(activityTime({})).toBe('')
 })
 
+it('reads a UTC instant in this Mac’s zone, only on the purchase’s own day', () => {
+  // Tests run in Los Angeles, where this instant is the evening before.
+  const at = '2026-09-08T03:30:00Z'
+  expect(activityTime({ occurredAt: at, date: '2026-09-07' })).toBe('8:30 PM')
+  expect(activityTime({ occurredAt: at })).toBe('8:30 PM')
+  // A bank day that isn't the instant's local day shows no time rather than a wrong one.
+  expect(activityTime({ occurredAt: at, date: '2026-09-08' })).toBe('')
+})
+
 it('links each leg of a paired transfer to the account on its other side', () => {
   const activities = buildActivities(
     {

@@ -77,6 +77,18 @@ fn matches_a_payment_to_a_person_by_whole_match_name() {
 }
 
 #[test]
+fn matches_the_person_the_banks_payment_record_names() {
+    let people = sample_people();
+    let mut paid = transaction("paid", "2026-09-03", "Zelle", "Transfer In", 25.0);
+    paid.payment_meta = Some(crate::finance_contract::PaymentMeta {
+        payer: Some("Example Person A".into()),
+        ..Default::default()
+    });
+    let read = read(vec![paid], &BTreeMap::new(), &people);
+    assert_eq!(read[0].people, ["person:a"]);
+}
+
+#[test]
 fn never_matches_a_purchase_or_part_of_a_word() {
     let people = vec![person("a", "Example", &["EXAMPLE"])];
     let read = read(

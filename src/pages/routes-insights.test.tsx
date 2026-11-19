@@ -9,9 +9,9 @@ import { scenario } from './routes.scenario'
 function currentTabs(html: string) {
   const start = html.indexOf('<nav class="account-switcher" aria-label="Insights"')
   const strip = html.slice(start, html.indexOf('</nav>', start))
-  return [...strip.matchAll(/<a [^>]*aria-current="page"[^>]*>.*?title="([^"]+)"/g)].map(
-    (match) => match[1],
-  )
+  return [
+    ...strip.matchAll(/<a [^>]*aria-current="page"[^>]*>.*?account-switcher-copy"><span>([^<]+)</g),
+  ].map((match) => match[1])
 }
 
 /** Where the synthetic trips leave from. */

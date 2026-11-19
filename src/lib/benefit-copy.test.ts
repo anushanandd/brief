@@ -6,8 +6,21 @@ import {
   benefitStatus,
   benefitWarning,
   creditLagNote,
+  lastCreditText,
   purchaseCreditLabel,
+  withoutCredit,
 } from './benefit-copy'
+
+it('titles a benefit without the word credit, unless that is all it is', () => {
+  expect(withoutCredit('Dining credit')).toBe('Dining')
+  expect(withoutCredit('Airline Fee Credits')).toBe('Airline Fee')
+  expect(withoutCredit('Credit')).toBe('Credit')
+  expect(withoutCredit('Uber Cash')).toBe('Uber Cash')
+})
+
+it('names the last credit by the calendar day Rust sends', () => {
+  expect(lastCreditText({ amount: 15, date: '2026-11-03' })).toBe('Last credit $15.00 · Nov 3')
+})
 
 const purchase = (credit: NonNullable<Parameters<typeof purchaseCreditLabel>[0]>) =>
   benefitActivity({ id: `purchase-${credit.state}`, kind: 'purchase', amount: -40, credit })

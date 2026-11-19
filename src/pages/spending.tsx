@@ -28,6 +28,7 @@ import {
   SectionHeading,
 } from '../components/ui'
 import { WorkspaceHeader } from '../components/workspace-header'
+import { useAmountsHidden } from '../hooks/use-amounts-hidden'
 import { useFinance } from '../hooks/use-finance'
 import {
   type SpendingBreakdown,
@@ -38,7 +39,7 @@ import { useSpendingPeriod } from '../hooks/use-spending-period'
 import { useViewportScroll } from '../hooks/use-viewport-scroll'
 import { accountDisplayName } from '../lib/account-names'
 import { buildActivities, type ActivityItem } from '../lib/activity'
-import { daysBetween } from '../lib/dates'
+import { daysBetween, snapshotToday } from '../lib/dates'
 import { financeSettings } from '../lib/finance-settings'
 import {
   formatCalendarDate,
@@ -47,7 +48,7 @@ import {
   pluralize,
   formatDay,
 } from '../lib/format'
-import { getExternalLogosEnabled } from '../lib/logos'
+import { useExternalLogosEnabled } from '../lib/logos'
 import type { SpendingOwner } from '../lib/schema'
 import {
   allSpendingAccounts,
@@ -206,7 +207,8 @@ export function SpendingPage() {
   // Both lists reach the foot of the window, so neither card ends in a blank band.
   const activityScrollRef = useViewportScroll()
   const merchantScrollRef = useViewportScroll()
-  const referenceIso = data?.updatedAt ?? new Date().toISOString()
+  // The columns reach the foot of the window too, so the companion's benefits fill it.
+  const columnsRef = useViewportScroll(36, 'minHeight')
   // Statement boundaries come from the issuer or native autopay evidence for this card.
   const statement =
     account && data?.insights?.benefits?.accountId === account.id
@@ -260,11 +262,48 @@ export function SpendingPage() {
   }
   useWheelSteps(chartRegion, stepPeriod)
   useWheelSteps(expandedRegion, stepPeriod)
+  // Built once per period, since scrubbing the chart renders the page for every day it crosses.
+  // Activities carry formatted amounts, so screen privacy builds them again.
+  const amountsHidden = useAmountsHidden()
+  const externalLogosEnabled = useExternalLogosEnabled()
+  const activityById = useMemo(() => {
+    if (!data) return new Map<string, ActivityItem>()
+    // Every transaction in the period, so the charts can name any purchase they mark.
+    const listedIds = new Set(detail?.transactionIds)
+    const activities = buildActivities(
+      {
+        ...data,
+        transactions: data.transactions.filter(({ id }) => listedIds.has(id)),
+        trades: [],
+      },
+      names,
+      externalLogosEnabled,
+    )
+    return new Map(activities.map((activity) => [activity.id, activity]))
+  }, [data, detail?.transactionIds, names, externalLogosEnabled, amountsHidden])
+  // Built from the snapshot's own transaction, so the dialog reads as it does on Activity
+  // whichever spending this page counts.
+  const openedId = opened?.id
+  const openedActivity = useMemo(
+    () =>
+      data && openedId
+        ? buildActivities(
+            {
+              ...data,
+              transactions: data.transactions.filter(({ id }) => `spending:${id}` === openedId),
+              trades: [],
+            },
+            names,
+            externalLogosEnabled,
+          )[0]
+        : undefined,
+    [data, openedId, names, externalLogosEnabled, amountsHidden],
+  )
 
   if (query.isLoading || (options.length > 0 && periodQuery.isLoading)) return <PageLoading />
   if (query.isError || periodQuery.isError || !data) return <PageError />
 
-  const today = data.insights?.today ?? referenceIso.slice(0, 10)
+  const today = snapshotToday(data)
   const start = detail?.start ?? today
   const end = detail?.end ?? today
   const basis = detail?.kind === 'statement' ? 'statement' : 'calendar'
@@ -311,14 +350,6 @@ export function SpendingPage() {
     period === 'statement' && basis !== 'statement'
       ? 'month'
       : spendingPeriodOptions.find((option) => option.value === period)!.unit
-  // Every transaction in the period, so the charts can name any purchase they mark.
-  const listedIds = new Set(detail?.transactionIds)
-  const activities = buildActivities(
-    { ...data, transactions: data.transactions.filter(({ id }) => listedIds.has(id)), trades: [] },
-    names,
-    getExternalLogosEnabled(),
-  )
-  const activityById = new Map(activities.map((activity) => [activity.id, activity]))
   const activitiesFor = (ids: readonly string[]) =>
     ids.flatMap((id) => activityById.get(`spending:${id}`) ?? [])
   // Your own spending still sums everything on the card, so its statement balance stays whole,
@@ -337,19 +368,6 @@ export function SpendingPage() {
     if (document.activeElement instanceof HTMLElement) opener.current = document.activeElement
     setOpened({ id: activity.id, list: list.map(({ id }) => id) })
   }
-  // Built from the snapshot's own transaction, so the dialog reads as it does on Activity
-  // whichever spending this page counts.
-  const openedActivity = opened
-    ? buildActivities(
-        {
-          ...data,
-          transactions: data.transactions.filter(({ id }) => `spending:${id}` === opened.id),
-          trades: [],
-        },
-        names,
-        getExternalLogosEnabled(),
-      )[0]
-    : undefined
   // Rows the chart highlights stay rendered so the list can show them.
   const highlightedThrough =
     linked?.from === 'chart'
@@ -378,11 +396,11 @@ export function SpendingPage() {
   return (
     <div className="page spending-workspace-page">
       <WorkspaceHeader
-        title="Spending"
+        title="Money"
         breadcrumbs={
           search.account
             ? [
-                { label: 'Spending', to: '/spending', search: { range: search.range } },
+                { label: 'Money', to: '/spending', search: { range: search.range } },
                 {
                   label: account
                     ? accountDisplayName(account.id, account.name, names)
@@ -399,11 +417,12 @@ export function SpendingPage() {
         current="/spending"
         period={period}
         spendingAccount={search.account}
+        owner={owner}
       />
       {!options.length ? (
         <SpendingAccountEmptyState />
       ) : (
-        <div className="spending-overview-grid">
+        <div ref={columnsRef} className="spending-overview-grid">
           <div className="spending-main">
             <Card className="workspace-brief-card spending-brief-card spending-hero-card">
               <ExpandableChart title="Spending" actions={spendingActions}>

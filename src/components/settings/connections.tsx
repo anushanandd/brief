@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { toast } from 'sonner'
 
 import { snapshotKey, useFinance } from '../../hooks/use-finance'
@@ -26,6 +26,7 @@ import { countOf, formatUpdatedAt } from '../../lib/format'
 import { providerCatalog, type ProviderId } from '../../lib/providers'
 import { Check, FilePlus, Fingerprint, Link2, RefreshCw, Save, Trash2, Wrench, X } from '../icons'
 import {
+  InlineConfirm,
   SettingsBlock,
   SettingsCard,
   SettingsNotice,
@@ -429,6 +430,7 @@ function ProviderConnections({
                 size="compact"
                 variant="destructive"
                 disabled={linking || forgetConnection.isPending}
+                data-forget-connection={connection.itemId}
                 onClick={() => setForgettingItem(connection.itemId)}
               >
                 Forget locally
@@ -436,41 +438,49 @@ function ProviderConnections({
             )}
           </div>
           {forgettingItem === connection.itemId ? (
-            <div className="connection-confirmation" role="group">
+            <InlineConfirm
+              label={`Forget ${connection.name}`}
+              pending={forgetConnection.isPending}
+              onCancel={() => setForgettingItem(null)}
+              returnFocus={() =>
+                document.querySelector<HTMLElement>(
+                  `[data-forget-connection="${CSS.escape(connection.itemId)}"]`,
+                )
+              }
+              actions={
+                <>
+                  <Button
+                    icon={Trash2}
+                    size="compact"
+                    variant="destructive"
+                    disabled={forgetConnection.isPending}
+                    onClick={() =>
+                      forgetConnection.mutate({ itemId: connection.itemId, removeAtPlaid: false })
+                    }
+                  >
+                    Forget on this Mac
+                  </Button>
+                  <Button
+                    icon={Trash2}
+                    size="compact"
+                    variant="destructive"
+                    disabled={forgetConnection.isPending}
+                    onClick={() =>
+                      forgetConnection.mutate({ itemId: connection.itemId, removeAtPlaid: true })
+                    }
+                  >
+                    {forgetConnection.isPending ? 'Authenticating…' : 'Remove at Plaid'}
+                  </Button>
+                </>
+              }
+            >
               <p>
                 Forget {connection.name}? Saved accounts disappear after the next successful
                 refresh. Forgetting only on this Mac leaves the connection open at Plaid, which
                 keeps billing its products on a paid plan. Removing it at Plaid ends that, but the
                 Trial plan never gives the connection back, so linking this bank again uses another.
               </p>
-              <div>
-                <Button icon={X} size="compact" onClick={() => setForgettingItem(null)}>
-                  Cancel
-                </Button>
-                <Button
-                  icon={Trash2}
-                  size="compact"
-                  variant="destructive"
-                  disabled={forgetConnection.isPending}
-                  onClick={() =>
-                    forgetConnection.mutate({ itemId: connection.itemId, removeAtPlaid: false })
-                  }
-                >
-                  Forget on this Mac
-                </Button>
-                <Button
-                  icon={Trash2}
-                  size="compact"
-                  variant="destructive"
-                  disabled={forgetConnection.isPending}
-                  onClick={() =>
-                    forgetConnection.mutate({ itemId: connection.itemId, removeAtPlaid: true })
-                  }
-                >
-                  {forgetConnection.isPending ? 'Authenticating…' : 'Remove at Plaid'}
-                </Button>
-              </div>
-            </div>
+            </InlineConfirm>
           ) : null}
         </div>
       ))}
@@ -560,11 +570,13 @@ function KeychainCredentials({
 }) {
   const queryClient = useQueryClient()
   const [confirming, setConfirming] = useState(false)
-
-  const remove = async () => {
-    try {
+  const trigger = useRef<HTMLButtonElement>(null)
+  const remove = useMutation({
+    mutationFn: async () => {
       await authenticateSensitiveAction()
-      const status = await removeIntegrationCredentials(provider.id)
+      return removeIntegrationCredentials(provider.id)
+    },
+    onSuccess: (status) => {
       queryClient.setQueryData(['integration-status'], status)
       if (provider.id === 'plaid') queryClient.setQueryData(['provider-connections'], [])
       if (provider.id === 'snaptrade')
@@ -572,10 +584,10 @@ function KeychainCredentials({
       void queryClient.invalidateQueries({ queryKey: ['provider-connections'] })
       setConfirming(false)
       toast.success(`${provider.name} credentials removed from Keychain`)
-    } catch (error) {
-      toast.error('Could not remove credentials', { description: errorMessage(error) })
-    }
-  }
+    },
+    onError: (error) =>
+      toast.error('Could not remove credentials', { description: errorMessage(error) }),
+  })
 
   return (
     <>
@@ -592,34 +604,40 @@ function KeychainCredentials({
           {unlocking ? 'Authenticating…' : 'Replace'}
         </Button>
         <Button
+          ref={trigger}
           icon={Trash2}
           size="compact"
           variant="destructive"
+          disabled={remove.isPending}
           onClick={() => setConfirming(true)}
         >
           Remove
         </Button>
       </div>
       {confirming ? (
-        <div className="connection-confirmation" role="group">
-          <p>
-            Remove {provider.name} credentials from Keychain? Saved financial data remains on this
-            Mac. Plaid institution tokens are also removed locally.
-          </p>
-          <div>
-            <Button icon={X} size="compact" onClick={() => setConfirming(false)}>
-              Cancel
-            </Button>
+        <InlineConfirm
+          label={`Remove ${provider.name} credentials`}
+          pending={remove.isPending}
+          onCancel={() => setConfirming(false)}
+          returnFocus={() => trigger.current}
+          actions={
             <Button
               icon={Fingerprint}
               size="compact"
               variant="destructive"
-              onClick={() => void remove()}
+              disabled={remove.isPending}
+              aria-busy={remove.isPending || undefined}
+              onClick={() => remove.mutate()}
             >
-              Authenticate and remove
+              {remove.isPending ? 'Authenticating…' : 'Authenticate and remove'}
             </Button>
-          </div>
-        </div>
+          }
+        >
+          <p>
+            Remove {provider.name} credentials from Keychain? Saved financial data remains on this
+            Mac. Plaid institution tokens are also removed locally.
+          </p>
+        </InlineConfirm>
       ) : null}
     </>
   )

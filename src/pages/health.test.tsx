@@ -23,9 +23,14 @@ import { HealthPage } from './health'
 vi.mock('../components/workspace-header', () => ({ WorkspaceHeader: () => <h1>Data health</h1> }))
 vi.mock('../hooks/use-finance', async (original) => ({
   ...(await original<typeof import('../hooks/use-finance')>()),
-  useFinance: () => ({ data: snapshot, isLoading: false, isError: false }),
+  useFinance: () => finance,
 }))
 const snapshot = { revision: 1, updatedAt: '2026-09-18T20:00:00Z' }
+let finance: { data?: typeof snapshot; isLoading: boolean; isError: boolean } = {
+  data: snapshot,
+  isLoading: false,
+  isError: false,
+}
 
 // jsdom lays nothing out; list motions skip rows without boxes, so every row gets one.
 beforeAll(() => {
@@ -114,6 +119,14 @@ it('steps through each severity’s issues with J and K and opens the fix with R
   await act(async () => openFocusedKeyboardRow())
   expect(history.location.pathname).toBe('/activities')
   expect(history.location.search).toContain('evidence=conflict')
+  await unmount()
+})
+
+it('shows the error, not a lasting load, when the snapshot fails', async () => {
+  finance = { data: undefined, isLoading: false, isError: true }
+  const { container, unmount } = await render()
+  expect(container.textContent).toContain('We couldn’t load your snapshot.')
+  finance = { data: snapshot, isLoading: false, isError: false }
   await unmount()
 })
 

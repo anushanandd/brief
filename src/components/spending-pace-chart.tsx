@@ -64,10 +64,6 @@ const linePath = (points: Array<[number, number]>) =>
   points.map(([x, y], index) => `${index ? 'L' : 'M'} ${x.toFixed(1)} ${y.toFixed(1)}`).join(' ')
 
 /**
- * Running spend for the selected period against the whole previous period. The projection is
- * dotted and labeled so it never reads as observed spending.
- */
-/**
  * The inclusive dates a drag covers, earliest first, or nothing for a click on one day.
  * `start` is the first day of the plot and the indexes count days from it.
  */
@@ -79,6 +75,10 @@ export function dragRange(start: string, fromIndex: number, toIndex: number) {
   }
 }
 
+/**
+ * Running spend for the selected period against the whole previous period. The projection is
+ * dotted and labeled so it never reads as observed spending.
+ */
 export function SpendingPaceChart({
   pace,
   currentLabel,

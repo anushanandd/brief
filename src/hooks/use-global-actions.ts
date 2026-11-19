@@ -35,7 +35,7 @@ import {
 import { useSettingsDialog } from '../lib/settings-dialog'
 import { checkForUpdates } from './use-app-update'
 import { useFinance } from './use-finance'
-import { useFinanceEdits } from './use-finance-edits'
+import { useUndo } from './use-finance-edits'
 import { useFindPlaces } from './use-find-places'
 import { useNumberKeyDestinations } from './use-number-keys'
 import { useFinanceRefreshState, useRefreshFinance } from './use-refresh-finance'
@@ -86,7 +86,7 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
   const finance = useFinance()
   const refresh = useRefreshFinance()
   const isRefreshing = useFinanceRefreshState()
-  const { undo, undoLabel } = useFinanceEdits()
+  const { undo, undoLabel } = useUndo()
   const recovering = Boolean(finance.data?.recovery)
   const plaidConnected = finance.integrationStatus.plaid
   const data = finance.data
@@ -281,11 +281,13 @@ export function useGlobalActions(controls: ShellControls): AppAction[] {
         icon: RefreshCw,
         scope: 'app',
         disabled: isRefreshing || recovering || !plaidConnected,
-        disabledReason: !plaidConnected
-          ? 'Connect Plaid first'
-          : isRefreshing
-            ? 'A refresh is already running'
-            : undefined,
+        disabledReason: recovering
+          ? 'Resolve local data recovery first'
+          : !plaidConnected
+            ? 'Connect Plaid first'
+            : isRefreshing
+              ? 'A refresh is already running'
+              : undefined,
         run: () => refresh({ liveBalances: true }),
       },
       {

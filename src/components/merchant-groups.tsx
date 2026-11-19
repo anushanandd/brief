@@ -2,6 +2,7 @@ import { useId, useState } from 'react'
 
 import type { ActivityItem } from '../lib/activity'
 import { countOf, displayCase, formatCurrency, valueTone } from '../lib/format'
+import { formatListDate, transactionDateKey } from '../lib/spending'
 import { ActivityList, ActivityMark } from './activity-list'
 import { ChevronDown } from './icons'
 import { EmptyState } from './ui'
@@ -16,6 +17,23 @@ const countLabel = (activities: ActivityItem[]) =>
     activities.length,
     activities.every(({ amount }) => amount < 0) ? 'purchase' : 'transaction',
   )
+
+/** The days a merchant's activities fall on: up to three, a shared month named once, else
+ * the first through the last. */
+export function merchantDates(activities: ActivityItem[], referenceIso: string) {
+  const days = [...new Set(activities.map(({ date }) => transactionDateKey(date)))]
+    .filter(Boolean)
+    .toSorted()
+  const label = (day: string) => formatListDate(day, referenceIso)
+  if (days.length > 3) return `${label(days[0]!)} – ${label(days.at(-1)!)}`
+  return days
+    .map((day, index) =>
+      days[index - 1]?.slice(0, 7) === day.slice(0, 7) && !label(day).includes(',')
+        ? String(Number(day.slice(8)))
+        : label(day),
+    )
+    .join(', ')
+}
 
 /** Where the money went: one row per merchant, largest first, opening to its activities. */
 export function MerchantGroups({
@@ -61,16 +79,17 @@ export function MerchantGroups({
           <div key={group.key} className="merchant-group" data-open={open || undefined}>
             <button
               type="button"
-              className="financial-activity-row merchant-group-row tree-parent"
+              className="list-row financial-activity-row merchant-group-row tree-parent"
               data-keyboard-row
               data-keyboard-open
               aria-expanded={open}
               aria-controls={panel}
               onClick={() => toggle(group.key)}
             >
-              <ActivityMark activity={lead} />
+              {/* A purchase marks its merchant, not a payback that joined it. */}
+              <ActivityMark activity={group.activities.find(({ amount }) => amount < 0) ?? lead} />
               <span className="financial-activity-copy">
-                <span className="financial-activity-title" title={group.name}>
+                <span className="financial-activity-title">
                   <strong>{displayCase(group.name)}</strong>
                 </span>
                 <small className="merchant-group-count">
@@ -79,6 +98,7 @@ export function MerchantGroups({
                 </small>
               </span>
               <span className="financial-activity-meta">
+                <small>{merchantDates(group.activities, referenceIso)}</small>
                 <strong className={valueTone(group.total)} data-copy-amount>
                   {formatCurrency(group.total)}
                 </strong>

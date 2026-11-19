@@ -5,6 +5,7 @@ import type { CategorySuggestion } from "./CategorySuggestion";
 import type { Classification } from "./Classification";
 import type { Counterparty } from "./Counterparty";
 import type { IssuerDetail } from "./IssuerDetail";
+import type { PaymentMeta } from "./PaymentMeta";
 import type { PeopleSource } from "./PeopleSource";
 import type { Place } from "./Place";
 import type { Presence } from "./Presence";
@@ -15,8 +16,9 @@ import type { WalletDetail } from "./WalletDetail";
 
 export type Transaction = { classification?: Classification, id: string, merchant: string, category: string, date: string, occurredOn: string | null, 
 /**
- * The moment of purchase at the place it happened, as RFC 3339 with that place's offset.
- * Absent unless a source reports the time and its zone.
+ * The moment of purchase, as RFC 3339: with the place's offset when Wallet saw it, or in
+ * UTC (ending `Z`) as Plaid reports it, which the renderer reads in the Mac's zone. Absent
+ * unless a source reports the time.
  */
 occurredAt?: string, postedOn: string | null, 
 /**
@@ -115,6 +117,10 @@ accountOwner?: string,
  * Who was on the other side: the merchant, a payment app, a marketplace, or a bank.
  */
 counterparties?: Array<Counterparty>, 
+/**
+ * What the bank's payment record says: who paid whom, its reference, and why.
+ */
+paymentMeta?: PaymentMeta, 
 /**
  * `qualified` or `nonQualified`, for a dividend whose provider says which, or
  * `capitalGain` for a fund's long-term capital gain distribution.

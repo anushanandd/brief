@@ -251,9 +251,12 @@ export const ActivityList = memo(function ActivityList({
   highlightedIds,
   onHighlight,
   pages,
+  keyboardRegion = true,
 }: {
   activities: ActivityItem[]
   referenceIso: string
+  /** Off for one group of a longer list, so J and K walk the enclosing region's rows. */
+  keyboardRegion?: boolean
   /** Draws only these pages of a long list; see `useActivityWindow`. */
   pages?: ActivityPages
   emptyMessage?: string
@@ -281,7 +284,7 @@ export const ActivityList = memo(function ActivityList({
   return (
     <div
       className={`financial-activity-list${showColumns ? ' financial-activity-list-columns' : ''}`}
-      data-keyboard-region
+      data-keyboard-region={keyboardRegion ? '' : undefined}
       role="group"
       aria-label="Activity entries"
       tabIndex={0}
@@ -513,7 +516,7 @@ export const ActivityList = memo(function ActivityList({
         )
         return (
           <div
-            className={`financial-activity-row${showColumns ? ' financial-activity-row-columns' : ''}${onOpen ? ' is-openable' : ''}`}
+            className={`list-row financial-activity-row${showColumns ? ' financial-activity-row-columns' : ''}`}
             key={activity.id}
             data-activity-id={activity.id}
             data-keyboard-row
@@ -905,7 +908,13 @@ function ProgressiveActivityList({
           return (
             <section className="activity-date-group" aria-labelledby={headingId} key={group.label}>
               <h3 id={headingId}>{group.label}</h3>
-              <ActivityList activities={group.activities} referenceIso={referenceIso} />
+              <ActivityList
+                activities={group.activities}
+                referenceIso={referenceIso}
+                onOpen={onOpen}
+                selectedId={selectedId}
+                keyboardRegion={false}
+              />
             </section>
           )
         })

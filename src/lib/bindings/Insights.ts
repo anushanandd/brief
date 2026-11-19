@@ -15,7 +15,6 @@ import type { DetectorPrecision } from "./DetectorPrecision";
 import type { DividendOutlook } from "./DividendOutlook";
 import type { Documents } from "./Documents";
 import type { ExpectedEvent } from "./ExpectedEvent";
-import type { Exposure } from "./Exposure";
 import type { GroupHistory } from "./GroupHistory";
 import type { InvestmentAttention } from "./InvestmentAttention";
 import type { LongTermSoon } from "./LongTermSoon";
@@ -116,13 +115,9 @@ flows: Array<AccountFlows>,
 activityDays: Array<Totals>, activityMonths: Array<Totals>, returns: Array<AccountReturns>, 
 /**
  * The combined brokerages' statement for each chart window: the identity, two labeled
- * returns beside the benchmark, the waterfall, and risk.
+ * returns beside the benchmark, and the waterfall.
  */
-periods: Array<Statement>, 
-/**
- * How concentrated the combined brokerages' holdings are now.
- */
-exposure?: Exposure, allocation?: PositionAllocation, 
+periods: Array<Statement>, allocation?: PositionAllocation, 
 /**
  * Every security held, merged across accounts, for the holdings list.
  */

@@ -12,6 +12,7 @@ import {
   formatCurrency,
   formatMarketTime,
   formatPercent,
+  formatProsePercent,
   formatRate,
   formatSecurityName,
   formatShare,
@@ -38,6 +39,11 @@ describe('financial formatting', () => {
     expect(formatPercent(-0.31)).toBe(`${MINUS}0.31%`)
     expect(formatPercent(0)).toBe('0.00%')
     expect(formatPercent(-0)).toBe('0.00%')
+  })
+
+  it('rounds prose percents to one decimal and keeps a negative rate negative', () => {
+    expect(formatProsePercent(12.34)).toBe('12.3%')
+    expect(formatProsePercent(-20)).toBe(`${MINUS}20.0%`)
   })
 
   it('signs currency changes with the same minus as every amount', () => {

@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useState } from 'react'
 
 import type { ActivityItem } from '../lib/activity'
 import type { FinanceSnapshot } from '../lib/schema'
@@ -35,7 +35,6 @@ export function ActivitySelectionBar({
   onClear: () => void
 }) {
   const [tag, setTag] = useState('')
-  const tagInput = useRef<HTMLInputElement>(null)
   const allOther = selected.every((activity) => activity.other)
   const choices = categoryChoices(data, '').map((category) => ({
     value: category,
@@ -77,7 +76,6 @@ export function ActivitySelectionBar({
         }}
       >
         <input
-          ref={tagInput}
           className="transaction-tag-input"
           aria-label="Tag for the selection"
           aria-keyshortcuts="T"
